@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import pandas as pd
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
@@ -183,4 +183,10 @@ cdef class BettingInstrument(Instrument):
             "selection_id",
             "selection_handicap",
         )
-        return Symbol(value=",".join([str(getattr(self, k)) for k in keys]).replace(' ', '').replace(':', ''))
+
+        def _clean(s):
+            if isinstance(s, pd.Timestamp):
+                return s.tz_convert("UTC").strftime("%Y%m%d-%H%M%S")
+            return s.replace(' ', '').replace(':', '')
+
+        return Symbol(value=",".join([_clean(getattr(self, k)) for k in keys]))

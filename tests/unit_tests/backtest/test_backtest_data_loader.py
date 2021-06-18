@@ -215,8 +215,8 @@ def test_data_catalog_queries(catalog):
         "aggressor_side": CategoricalDtype(categories=["UNKNOWN"], ordered=False),
         "instrument_id": CategoricalDtype(
             categories=[
-                "Basketball,,29628709,2019-12-21 00:10:00+00:00,ODDS,MATCH_ODDS,1.166564490,237491,.BETFAIR",
-                "Basketball,,29628709,2019-12-21 00:10:00+00:00,ODDS,MATCH_ODDS,1.166564490,60424,.BETFAIR",
+                "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,237491,.BETFAIR",
+                "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,60424,.BETFAIR",
             ],
             ordered=False,
         ),
