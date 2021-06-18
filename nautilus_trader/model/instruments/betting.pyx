@@ -176,11 +176,11 @@ cdef class BettingInstrument(Instrument):
             "event_type_name",
             "competition_name",
             "event_id",
-            "event_open_date",
+            "market_start_time",
             "betting_type",
             "market_type",
             "market_id",
             "selection_id",
             "selection_handicap",
         )
-        return Symbol(value=",".join([str(getattr(self, k)) for k in keys]))
+        return Symbol(value=",".join([str(getattr(self, k)) for k in keys]).replace(' ', ''))
