@@ -17,7 +17,7 @@
 .coverage*
 .cache/
 .git/
-.idea/test_serialization_serializers
+.idea/
 .mypy_cache/
 .profile/
 .pytest_cache/

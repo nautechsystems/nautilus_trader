@@ -40,7 +40,7 @@ def test_order_submit_to_betfair(betting_instrument):
         "instructions": [
             {
                 "customerOrderRef": "O-20210410-022422-001-001-Test",
-                "handicap": "0",
+                "handicap": "",
                 "limitOrder": {
                     "minFillSize": 0,
                     "persistenceType": "PERSIST",
