@@ -1,4 +1,5 @@
 from decimal import Decimal
+from functools import partial
 import os
 import pathlib
 
@@ -30,12 +31,53 @@ from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.serialization.arrow.core import register_parquet
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.stubs import TestStubs
 
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 catalog_DIR = TEST_DATA_DIR + "/catalog"
+
+
+@pytest.fixture(scope="function")
+def catalog_dir():
+    # Ensure we have a catalog directory, and its cleaned up after use
+    fs = fsspec.filesystem("file")
+    catalog = str(pathlib.Path(catalog_DIR))
+    os.environ.update({"NAUTILUS_BACKTEST_DIR": str(catalog)})
+    if fs.exists(catalog):
+        fs.rm(catalog, recursive=True)
+    fs.mkdir(catalog)
+    yield
+    fs.rm(catalog, recursive=True)
+
+
+@pytest.fixture(scope="function")
+def data_loader():
+    instrument_provider = BetfairInstrumentProvider.from_instruments([])
+    parser = TextParser(
+        parser=lambda x, state: on_market_update(
+            instrument_provider=instrument_provider, update=orjson.loads(x)
+        ),
+        instrument_provider_update=historical_instrument_provider_loader,
+    )
+    return DataLoader(
+        path=TEST_DATA_DIR,
+        parser=parser,
+        glob_pattern="1.166564490*",
+        instrument_provider=instrument_provider,
+    )
+
+
+@pytest.fixture(scope="function")
+def catalog(catalog_dir, data_loader):
+    catalog = DataCatalog()
+    catalog.import_from_data_loader(loader=data_loader)
+    return catalog
 
 
 @pytest.mark.parametrize(
@@ -84,6 +126,43 @@ def test_data_loader_parquet():
         path=TEST_DATA_DIR, parser=ParquetParser(), glob_pattern="**.parquet"
     )
     assert len(loader.path) == 2
+    values = [x for vals in loader.run() for x in vals if isinstance(x, pd.DataFrame)]
+    data = pd.concat(values)
+    assert len(data) == 2452
+
+
+def test_data_loader_csv(catalog_dir):
+    def parse_csv_tick(df, instrument_id, state=None):
+        for _, r in df.iterrows():
+            ts = millis_to_nanos(pd.Timestamp(r["timestamp"]).timestamp())
+            tick = QuoteTick(
+                instrument_id=instrument_id,
+                bid=Price.from_str(str(r["bid"])),
+                ask=Price.from_str(str(r["ask"])),
+                bid_size=Quantity.from_int(1_000_000),
+                ask_size=Quantity.from_int(1_000_000),
+                ts_event_ns=ts,
+                ts_recv_ns=ts,
+            )
+            yield tick
+
+    loader = DataLoader(
+        path=TEST_DATA_DIR,
+        parser=CSVParser(
+            parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id())
+        ),
+        chunksize=100 ** 2,
+        glob_pattern="truefx-usd*.csv",
+    )
+    assert len(loader.path) == 1
+    values = [x for vals in loader.run() for x in vals if isinstance(x, QuoteTick)]
+    assert len(values) == 1000
+
+    # Write to parquet
+    catalog = DataCatalog()
+    catalog.import_from_data_loader(loader=loader)
+    data = catalog.quote_ticks()
+    assert len(data) == 1000
 
 
 def test_parse_timestamp():
@@ -91,43 +170,6 @@ def test_parse_timestamp():
     assert parse_timestamp("2020-01-31T06:54:04.855000064+10:00") == 1580417644855000064
     assert parse_timestamp("2020-01-31 06:54:04.855000064") == 1580453644855000064
     assert parse_timestamp("2020-01-31") == 1580428800000000000
-
-
-@pytest.fixture(scope="function")
-def catalog_dir():
-    # Ensure we have a catalog directory, and its cleaned up after use
-    fs = fsspec.filesystem("file")
-    catalog = str(pathlib.Path(catalog_DIR))
-    os.environ.update({"NAUTILUS_BACKTEST_DIR": str(catalog)})
-    if fs.exists(catalog):
-        fs.rm(catalog, recursive=True)
-    fs.mkdir(catalog)
-    yield
-    fs.rm(catalog, recursive=True)
-
-
-@pytest.fixture(scope="function")
-def data_loader():
-    instrument_provider = BetfairInstrumentProvider.from_instruments([])
-    parser = TextParser(
-        parser=lambda x, state: on_market_update(
-            instrument_provider=instrument_provider, update=orjson.loads(x)
-        ),
-        instrument_provider_update=historical_instrument_provider_loader,
-    )
-    return DataLoader(
-        path=TEST_DATA_DIR,
-        parser=parser,
-        glob_pattern="1.166564490*",
-        instrument_provider=instrument_provider,
-    )
-
-
-@pytest.fixture(scope="function")
-def catalog(catalog_dir, data_loader):
-    catalog = DataCatalog()
-    catalog.import_from_data_loader(loader=data_loader)
-    return catalog
 
 
 def test_data_catalog_import(catalog):

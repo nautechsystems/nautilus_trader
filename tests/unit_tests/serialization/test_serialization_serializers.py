@@ -877,16 +877,15 @@ class TestParquetSerializer:
         self.serializer = ArrowSerializer()
         self.buffer = BytesIO()
 
-    # TODO(bm): WIP - Couldn't get working with new static methods
-    # def test_serialize_and_deserialize_trade_tick(self):
-    #
-    #     tick = TestStubs.trade_tick_5decimal()
-    #
-    #     serialized = self.serializer.to_parquet(buff=self.buffer, objects=[tick])
-    #     deserialized = self.serializer.from_parquet(serialized)
-    #
-    #     # Assert
-    #     assert deserialized == [tick]
+    def test_serialize_and_deserialize_trade_tick(self):
+
+        tick = TestStubs.trade_tick_5decimal()
+
+        serialized = self.serializer.to_parquet(buff=self.buffer, objects=[tick])
+        deserialized = self.serializer.from_parquet(serialized)
+
+        # Assert
+        assert deserialized == [tick]
 
     def test_serialize_and_deserialize_order_book_delta(self):
 

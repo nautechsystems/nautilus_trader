@@ -156,8 +156,19 @@ class CSVParser(TextParser):
 class ParquetParser(ByteParser):
     def read(self, stream: Generator, instrument_provider=None) -> Generator:
         for chunk in stream:
-            df = pd.read_parquet(chunk)
-            yield df
+            if isinstance(chunk, NewFile):
+                yield chunk
+            elif chunk == EOStream:
+                yield chunk
+                return
+            elif chunk is None:
+                yield
+            elif isinstance(chunk, bytes):
+                if len(chunk):
+                    df = pd.read_parquet(BytesIO(chunk))
+                    yield df
+            else:
+                raise TypeError
 
 
 class DataLoader:
