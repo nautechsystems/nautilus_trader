@@ -187,6 +187,6 @@ cdef class BettingInstrument(Instrument):
         def _clean(s):
             if isinstance(s, pd.Timestamp):
                 return s.tz_convert("UTC").strftime("%Y%m%d-%H%M%S")
-            return s.replace(' ', '').replace(':', '')
+            return str(s).replace(' ', '').replace(':', '')
 
         return Symbol(value=",".join([_clean(getattr(self, k)) for k in keys]))
