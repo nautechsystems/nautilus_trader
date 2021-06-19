@@ -380,22 +380,24 @@ cpdef bint is_tz_naive(time_object) except *:
 
 cpdef datetime as_utc_timestamp(datetime dt):
     """
-    Ensure the given timestamp is a tz-aware UTC pd.Timestamp.
+    Ensure the given timestamp is tz-aware UTC.
 
     Parameters
     ----------
     dt : datetime
-        The timestamp to ensure is UTC.
+        The timestamp to check.
 
     Returns
     -------
-    pd.Timestamp
+    datetime
 
     """
     Condition.not_none(datetime, "datetime")
 
     if dt.tzinfo is None:  # tz-naive
         return pytz.utc.localize(dt)
+    elif dt.tzinfo != pytz.utc:
+        return dt.astimezone(pytz.utc)
     else:
         return dt  # Already UTC
 
