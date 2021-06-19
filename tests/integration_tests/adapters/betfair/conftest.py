@@ -17,6 +17,7 @@ import pytest
 
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
+from nautilus_trader.adapters.betfair.execution import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
@@ -31,6 +32,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
@@ -100,7 +102,7 @@ def clock() -> LiveClock:
 
 @pytest.fixture()
 def live_logger(event_loop, clock):
-    return LiveLogger(loop=event_loop, clock=clock, level_stdout=LogLevel.DEBUG)
+    return LiveLogger(loop=event_loop, clock=clock, level_stdout=LogLevel.INFO)
 
 
 @pytest.fixture()
@@ -179,6 +181,19 @@ def betting_instrument(provider):
 
 
 @pytest.fixture()
+def betfair_account_state(betfair_client, uuid):
+    details = betfair_client.account.get_account_details()
+    funds = betfair_client.account.get_account_funds()
+    return betfair_account_to_account_state(
+        account_detail=details,
+        account_funds=funds,
+        event_id=uuid,
+        ts_updated_ns=0,
+        timestamp_ns=0,
+    )
+
+
+@pytest.fixture()
 def betfair_order_socket(betfair_client, live_logger):
     return BetfairOrderStreamClient(
         client=betfair_client, logger=live_logger, message_handler=None
@@ -194,7 +209,7 @@ def betfair_market_socket():
 
 @pytest.fixture()
 async def execution_client(
-    betfair_client, account_id, exec_engine, clock, live_logger
+    betfair_client, account_id, exec_engine, clock, live_logger, betfair_account_state
 ) -> BetfairExecutionClient:
     client = BetfairExecutionClient(
         client=betfair_client,
@@ -208,6 +223,7 @@ async def execution_client(
     )
     client.instrument_provider().load_all()
     exec_engine.register_client(client)
+    exec_engine.cache.add_account(account=Account(betfair_account_state))
     return client
 
 

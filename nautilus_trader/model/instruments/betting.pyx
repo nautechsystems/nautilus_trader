@@ -12,11 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import pandas as pd
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
-
 from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
@@ -59,6 +58,9 @@ cdef class BettingInstrument(Instrument):
         int64_t ts_event_ns,
         int64_t ts_recv_ns,
     ):
+        assert event_open_date.tzinfo is not None
+        assert market_start_time.tzinfo is not None
+
         # Event type (Sport) info e.g. Basketball
         self.event_type_id = event_type_id
         self.event_type_name = event_type_name
@@ -137,6 +139,7 @@ cdef class BettingInstrument(Instrument):
             "selection_id": obj.selection_id,
             "selection_name": obj.selection_name,
             "selection_handicap": obj.selection_handicap,
+            "currency": obj.quote_currency.code,
             "ts_event_ns": obj.ts_event_ns,
             "ts_recv_ns": obj.ts_recv_ns,
         }
@@ -174,12 +177,18 @@ cdef class BettingInstrument(Instrument):
         cdef tuple keys = (
             "event_type_name",
             "competition_name",
-            "event_name",
-            "event_open_date",
+            "event_id",
+            "market_start_time",
             "betting_type",
             "market_type",
-            "market_name",
-            "selection_name",
+            "market_id",
+            "selection_id",
             "selection_handicap",
         )
-        return Symbol(value="|".join([str(getattr(self, k)) for k in keys]))
+
+        def _clean(s):
+            if isinstance(s, (datetime, pd.Timestamp)):
+                return pd.Timestamp(s).tz_convert("UTC").strftime("%Y%m%d-%H%M%S")
+            return str(s).replace(' ', '').replace(':', '')
+
+        return Symbol(value=",".join([_clean(getattr(self, k)) for k in keys]))

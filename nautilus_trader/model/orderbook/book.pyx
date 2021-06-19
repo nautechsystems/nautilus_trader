@@ -12,10 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import json
 from operator import itemgetter
 
+import orjson
 import pandas as pd
 from tabulate import tabulate
 
@@ -1096,8 +1096,8 @@ cdef class OrderBookSnapshot(OrderBookData):
         return OrderBookSnapshot(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             level=BookLevelParser.from_str(values["level"]),
-            bids=json.loads(values["bids"]),
-            asks=json.loads(values["asks"]),
+            bids=orjson.loads(values["bids"]),
+            asks=orjson.loads(values["asks"]),
             ts_event_ns=values["ts_event_ns"],
             ts_recv_ns=values["ts_recv_ns"],
         )
@@ -1196,7 +1196,7 @@ cdef class OrderBookDeltas(OrderBookData):
         return OrderBookDeltas(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             level=BookLevelParser.from_str(values["level"]),
-            deltas=[OrderBookDelta.from_dict_c(d) for d in json.loads(values["deltas"])],
+            deltas=[OrderBookDelta.from_dict_c(d) for d in orjson.loads(values["deltas"])],
             ts_event_ns=values["ts_event_ns"],
             ts_recv_ns=values["ts_recv_ns"],
         )
@@ -1302,11 +1302,11 @@ cdef class OrderBookDelta(OrderBookData):
             "size": values["order_size"],
             "side": values["order_side"],
             "id": values["order_id"],
-        }) if delta_type != DeltaType.CLEAR else None
+        }) if values['delta_type'] != "CLEAR" else None
         return OrderBookDelta(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             level=BookLevelParser.from_str(values["level"]),
-            delta_type=delta_type,
+            delta_type=DeltaTypeParser.from_str(values["delta_type"]),
             order=order,
             ts_event_ns=values["ts_event_ns"],
             ts_recv_ns=values["ts_recv_ns"],
