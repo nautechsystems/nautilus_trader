@@ -161,7 +161,7 @@ class BetfairTestStubs(TestStubs):
             market_name="AFC Conference Winner",
             market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00").to_pydatetime(),
             market_type="SPECIAL",
-            selection_handicap="0.0",
+            selection_handicap="",
             selection_id="50214",
             selection_name="Kansas City Chiefs",
             currency="GBP",
