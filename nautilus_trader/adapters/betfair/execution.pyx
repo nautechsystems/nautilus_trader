@@ -221,6 +221,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     def _submit_order(self, SubmitOrder command):
         instrument = self._instrument_provider.find(command.instrument_id)
+        assert instrument is not None, f"Could not find instrument for {command.instrument_id}"
         kw = order_submit_to_betfair(command=command, instrument=instrument)
         self._log.debug(f"{kw}")
         return self._client.betting.place_orders(**kw)
@@ -379,7 +380,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 instrument = self._instrument_provider.get_betting_instrument(
                     market_id=market_id,
                     selection_id=str(selection["id"]),
-                    handicap=str(selection.get("hc", "0.0")),
+                    handicap=str(selection.get("hc", "")),
                 )
                 for order in selection.get("uo", []):
                     self._log.debug(f"order_update: {order}")
