@@ -16,7 +16,6 @@ import pandas as pd
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
-
 from cpython.datetime cimport datetime
 
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
@@ -59,6 +58,9 @@ cdef class BettingInstrument(Instrument):
         int64_t ts_event_ns,
         int64_t ts_recv_ns,
     ):
+        assert event_open_date.tzinfo is not None
+        assert market_start_time.tzinfo is not None
+
         # Event type (Sport) info e.g. Basketball
         self.event_type_id = event_type_id
         self.event_type_name = event_type_name
@@ -185,8 +187,8 @@ cdef class BettingInstrument(Instrument):
         )
 
         def _clean(s):
-            if isinstance(s, pd.Timestamp):
-                return s.tz_convert("UTC").strftime("%Y%m%d-%H%M%S")
+            if isinstance(s, (datetime, pd.Timestamp)):
+                return pd.Timestamp(s).tz_convert("UTC").strftime("%Y%m%d-%H%M%S")
             return str(s).replace(' ', '').replace(':', '')
 
         return Symbol(value=",".join([_clean(getattr(self, k)) for k in keys]))
