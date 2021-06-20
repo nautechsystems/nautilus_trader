@@ -91,7 +91,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         )
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run(strategies=[strategy], run_analysis=False)
 
         # Assert - Should return expected PnL
         self.assertEqual(2689, strategy.fast_ema.count)
@@ -111,7 +111,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
             slow_ema=20,
         )
 
-        self.engine.run(strategies=[strategy])
+        self.engine.run(strategies=[strategy], run_analysis=False)
         result1 = self.engine.analyzer.get_performance_stats_pnls()
 
         # Act
@@ -147,7 +147,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         # The purpose of the test is just to ensure multiple strategies can run together.
 
         # Act
-        self.engine.run(strategies=[strategy1, strategy2])
+        self.engine.run(strategies=[strategy1, strategy2], run_analysis=False)
 
         # Assert
         self.assertEqual(2689, strategy1.fast_ema.count)
@@ -210,7 +210,7 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
         )
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run(strategies=[strategy], run_analysis=False)
 
         # Assert
         self.assertEqual(8353, strategy.fast_ema.count)
@@ -261,7 +261,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         )
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run(strategies=[strategy], run_analysis=False)
 
         # Assert
         self.assertEqual(1771, strategy.fast_ema.count)
@@ -282,7 +282,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         )
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run(strategies=[strategy], run_analysis=False)
 
         # Assert
         self.assertEqual(999, strategy.fast_ema.count)
@@ -326,7 +326,7 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
         )
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run(strategies=[strategy], run_analysis=False)
 
         # Assert
         self.assertEqual(279, strategy.fast_ema.count)
@@ -375,7 +375,7 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
         )
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run(strategies=[strategy], run_analysis=False)
 
         # Assert
         self.assertEqual(39, strategy.fast_ema.count)
