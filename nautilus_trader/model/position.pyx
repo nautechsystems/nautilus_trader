@@ -17,7 +17,6 @@ from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.events cimport OrderFilled
