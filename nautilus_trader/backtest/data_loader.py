@@ -30,6 +30,8 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
+from nautilus_trader.data.wrangling import QuoteTickDataWrangler
+from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.data import Data
 
 
@@ -53,11 +55,6 @@ from nautilus_trader.serialization.arrow.core import _serialize
 NewFile = namedtuple("NewFile", "name")
 EOStream = namedtuple("EOStream", "")
 GENERIC_DATA_PREFIX = "genericdata_"
-# TODO (bm) - Line preprocessor not called / used - implement a simple log example
-# TODO (bm) - Implement chunking in CSVParser
-# TODO (bm) - Implement chunking in ParquetParser
-
-
 category_attributes = {
     "TradeTick": ["instrument_id", "type", "aggressor_side"],
     "OrderBookDelta": ["instrument_id", "type", "level", "delta_type", "order_size"],
@@ -181,9 +178,9 @@ class CSVParser(TextParser):
         parser : callable
             The handler which takes byte strings and yields Nautilus objects.
         line_preprocessor : callable
-            TBC.
+            Optional handler to clean log lines prior to processing by `parser`
         instrument_provider_update
-            TBC.
+            Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
 
         """
         super().__init__(
@@ -209,7 +206,39 @@ class ParquetParser(ByteParser):
     Provides parsing of parquet specification bytes to Nautilus objects.
     """
 
-    # Implicit initialization of base class
+    def __init__(
+        self,
+        data_type: str,
+        instrument_provider_update=None,
+    ):
+        """
+        Initialize a new instance of the ``ParquetParser`` class.
+
+        Parameters
+        ----------
+        data_type : One of `quote_ticks`, `trade_ticks`
+            The wrangler which takes pandas dataframes (from parquet) and yields Nautilus objects.
+        instrument_provider_update
+            Optional hook to call before `parser` for the purpose of loading instruments into the InstrumentProvider
+
+        """
+        data_types = ("quote_ticks", "trade_ticks")
+        assert data_type in data_types, f"data_type must be one of {data_types}"
+        super().__init__(
+            instrument_provider_update=instrument_provider_update,
+        )
+        self.filename = None
+        self.data_type = data_type
+
+    def parse(self, df):
+        if self.data_type == "quote_ticks":
+            wrangler = QuoteTickDataWrangler(df=df)
+        elif self.data_type == "trade_ticks":
+            wrangler = TradeTickDataWrangler(df=df)
+        else:
+            raise TypeError()
+        return wrangler.build_ticks()
+
     def read(self, stream: Generator, instrument_provider=None) -> Generator:
         for chunk in stream:
             if isinstance(chunk, NewFile):
@@ -222,7 +251,7 @@ class ParquetParser(ByteParser):
             elif isinstance(chunk, bytes):
                 if len(chunk):
                     df = pd.read_parquet(BytesIO(chunk))
-                    yield df
+                    yield from self.parse(df)
             else:
                 raise TypeError
 

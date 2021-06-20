@@ -201,6 +201,18 @@ def test_data_catalog_dataset_types(catalog):
     assert schema == expected
 
 
+def test_data_catalog_parquet(catalog_dir):
+    # Quote ticks
+    loader = DataLoader(
+        path=TEST_DATA_DIR,
+        parser=ParquetParser(data_type="quote_ticks"),
+        glob_pattern="*quotes*.parquet",
+    )
+    catalog = DataCatalog()
+    catalog.import_from_data_loader(loader=loader)
+    assert len(catalog.quote_ticks()) == 2000
+
+
 def test_data_catalog_filter(catalog):
     assert len(catalog.order_book_deltas()) == 2384
     assert (
