@@ -22,19 +22,19 @@ Client
    :members:
    :member-order: bysource
 
-Database
---------
+Engine
+------
 
-.. automodule:: nautilus_trader.data.database
+.. automodule:: nautilus_trader.data.engine
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 
-Engine
-------
+Messages
+--------
 
-.. automodule:: nautilus_trader.data.engine
+.. automodule:: nautilus_trader.data.messages
    :show-inheritance:
    :inherited-members:
    :members:
