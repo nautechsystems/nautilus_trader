@@ -1,9 +1,15 @@
 # NautilusTrader 1.123.0 Beta - Release Notes
 
+A major feature of this release is a complete re-design of serialization for the
+platform, along with initial support for the [Parquet](https://parquet.apache.org/) format.
+The MessagePack serialization functionality has been refined and retained.
+
 In the interests of explicitness there is now a convention that timestamps are 
 named either `timestamp_ns`, or prepended with `ts`. Timestamps which are 
 represented with an `int64` are always in nanosecond resolution, and appended 
 with `_ns` accordingly.
+
+Initial scaffolding for new backtest data tooling has been added.
 
 ## Breaking Changes
 - Renamed `OrderState.PENDING_REPLACE` to `OrderState.PENDING_UPDATE`
