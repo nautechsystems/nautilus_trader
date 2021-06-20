@@ -78,10 +78,13 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.ACCEPTED, OrderState.FILLED): OrderState.FILLED,
     (OrderState.PENDING_UPDATE, OrderState.ACCEPTED): OrderState.ACCEPTED,
     (OrderState.PENDING_UPDATE, OrderState.CANCELED): OrderState.CANCELED,
-    (OrderState.PENDING_UPDATE, OrderState.TRIGGERED): OrderState.TRIGGERED,
     (OrderState.PENDING_UPDATE, OrderState.EXPIRED): OrderState.EXPIRED,
+    (OrderState.PENDING_UPDATE, OrderState.TRIGGERED): OrderState.TRIGGERED,
+    (OrderState.PENDING_UPDATE, OrderState.PENDING_UPDATE): OrderState.PENDING_UPDATE,  # Allow multiple requests
+    (OrderState.PENDING_UPDATE, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,
     (OrderState.PENDING_UPDATE, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PENDING_UPDATE, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.PENDING_CANCEL, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,  # Allow multiple requests
     (OrderState.PENDING_CANCEL, OrderState.CANCELED): OrderState.CANCELED,
     (OrderState.PENDING_CANCEL, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PENDING_CANCEL, OrderState.FILLED): OrderState.FILLED,
