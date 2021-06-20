@@ -77,9 +77,6 @@ cdef class UUID:
     def __eq__(self, UUID other) -> bool:
         return self.int_val == other.int_val
 
-    def __ne__(self, UUID other) -> bool:
-        return self.int_val != other.int_val
-
     # Q. What's the value of being able to sort UUIDs?
     # A. Use them as keys in a B-Tree or similar mapping.
     def __lt__(self, UUID other) -> bool:

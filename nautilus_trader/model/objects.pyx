@@ -38,7 +38,6 @@ from cpython.object cimport Py_GE
 from cpython.object cimport Py_GT
 from cpython.object cimport Py_LE
 from cpython.object cimport Py_LT
-from cpython.object cimport Py_NE
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -83,9 +82,6 @@ cdef class BaseDecimal:
 
     def __eq__(self, other) -> bool:
         return BaseDecimal._compare(self, other, Py_EQ)
-
-    def __ne__(self, other) -> bool:
-        return BaseDecimal._compare(self, other, Py_NE)
 
     def __lt__(self, other) -> bool:
         return BaseDecimal._compare(self, other, Py_LT)
@@ -480,9 +476,6 @@ cdef class Money(BaseDecimal):
     def __eq__(self, Money other) -> bool:
         return self.currency == other.currency and self._value == other.as_decimal()
 
-    def __ne__(self, Money other) -> bool:
-        return not self == other
-
     def __lt__(self, Money other) -> bool:
         return self.currency == other.currency and self._value < other.as_decimal()
 
@@ -511,7 +504,7 @@ cdef class Money(BaseDecimal):
         return Money(pieces[0], Currency.from_str_c(pieces[2]))
 
     @staticmethod
-    def from_str(str value) -> Quantity:
+    def from_str(str value) -> Money:
         """
         Return money parsed from the given string.
 
@@ -606,3 +599,47 @@ cdef class AccountBalance:
             f"locked={self.locked.to_str()}, "
             f"free={self.free.to_str()})"
         )
+
+    @staticmethod
+    cdef AccountBalance from_dict_c(dict values):
+        cdef Currency currency = Currency.from_str_c(values["currency"])
+        return AccountBalance(
+            currency=currency,
+            total=Money(values["total"], currency),
+            locked=Money(values["locked"], currency),
+            free=Money(values["free"], currency),
+        )
+
+    @staticmethod
+    def from_dict(dict values):
+        """
+        Return an account balance from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        AccountBalance
+
+        """
+        return AccountBalance.from_dict_c(values)
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "currency": self.currency.code,
+            "total": str(self.total.as_decimal()),
+            "locked": str(self.locked.as_decimal()),
+            "free": str(self.free.as_decimal()),
+        }

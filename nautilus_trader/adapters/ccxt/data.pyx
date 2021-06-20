@@ -23,7 +23,6 @@ from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_millis
 from nautilus_trader.core.datetime cimport millis_to_nanos
@@ -37,12 +36,11 @@ from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -275,7 +273,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     cpdef void subscribe_order_book(
         self,
         InstrumentId instrument_id,
-        OrderBookLevel level,
+        BookLevel level,
         int depth=0,
         dict kwargs=None,
     ) except *:
@@ -286,7 +284,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : OrderBookLevel
+        level : BookLevel
             The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
@@ -655,7 +653,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 # -- STREAMS ---------------------------------------------------------------------------------------
 
     # TODO: Possibly combine this with _watch_quotes
-    async def _watch_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth, dict kwargs):
+    async def _watch_order_book(self, InstrumentId instrument_id, BookLevel level, int depth, dict kwargs):
         cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot subscribe to order book (no instrument for {instrument_id.symbol}).")
@@ -689,8 +687,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                         level=level,
                         bids=list(bids),
                         asks=list(asks),
-                        timestamp_origin_ns=self._ccxt_to_timestamp_ns(millis=timestamp_ms),
-                        timestamp_ns=self._clock.timestamp_ns(),
+                        ts_event_ns=self._ccxt_to_timestamp_ns(millis=timestamp_ms),
+                        ts_recv_ns=self._clock.timestamp_ns(),
                     )
 
                     self._handle_data(snapshot)
@@ -789,8 +787,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double best_ask,
         double best_bid_size,
         double best_ask_size,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *:
@@ -800,8 +798,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Price(best_ask, price_precision),
             Quantity(best_bid_size, size_precision),
             Quantity(best_ask_size, size_precision),
-            timestamp_origin_ns,
-            timestamp_ns,
+            ts_event_ns,
+            ts_recv_ns,
         )
 
         self._handle_data(tick)
@@ -855,9 +853,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double price,
         double amount,
         str aggressor_side,
-        str trade_match_id,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        str match_id,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *:
@@ -866,9 +864,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Price(price, price_precision),
             Quantity(amount, size_precision),
             AggressorSideParser.from_str(aggressor_side.upper()) ,
-            TradeMatchId(trade_match_id),
-            timestamp_origin_ns,
-            timestamp_ns,
+            match_id,
+            ts_event_ns,
+            ts_recv_ns,
         )
 
         self._handle_data(tick)
@@ -948,8 +946,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double low_price,
         double close_price,
         double volume,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         int price_precision,
         int size_precision,
     ) except *:
@@ -960,8 +958,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Price(low_price, price_precision),
             Price(close_price, price_precision),
             Quantity(volume, size_precision),
-            timestamp_origin_ns,
-            timestamp_ns,
+            ts_event_ns,
+            ts_recv_ns,
         )
 
         self._handle_data(bar)
@@ -1166,7 +1164,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Price(trade['price'], price_precision),
             Quantity(trade['amount'], size_precision),
             AggressorSide.BUY if trade["side"] == "buy" else AggressorSide.SELL,
-            TradeMatchId(trade["id"]),
+            trade["id"],
             self._ccxt_to_timestamp_ns(millis=trade["timestamp"]),
             self._clock.timestamp_ns(),
         )

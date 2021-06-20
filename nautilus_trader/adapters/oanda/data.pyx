@@ -28,7 +28,6 @@ from nautilus_trader.adapters.oanda.providers import OandaInstrumentProvider
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
@@ -578,9 +577,11 @@ cdef class OandaDataClient(LiveMarketDataClient):
         ]
 
         if granularity not in valid_granularities:
-            self._log.error(f"Requesting bars with invalid granularity `{granularity}`, "
-                            f"interpolation will be available in a future version, "
-                            f"valid_granularities={valid_granularities}.")
+            self._log.error(
+                f"Requesting bars with invalid granularity `{granularity}`, "
+                f"interpolation will be available in a future version, "
+                f"valid_granularities={valid_granularities}.",
+            )
 
         cdef dict params = {
             "dailyAlignment": 0,  # UTC
@@ -667,8 +668,8 @@ cdef class OandaDataClient(LiveMarketDataClient):
             instrument_id,
             Price(values["bids"][0]["price"]),
             Price(values["asks"][0]["price"]),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
+            Quantity.from_int_c(1),
+            Quantity.from_int_c(1),
             dt_to_unix_nanos(pd.to_datetime(values["time"])),  # TODO: WIP - Improve this
             self._clock.timestamp_ns(),
         )

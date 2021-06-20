@@ -16,7 +16,6 @@
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId

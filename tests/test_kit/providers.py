@@ -37,7 +37,6 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
 from nautilus_trader.model.instruments.currency import CurrencySpot
@@ -123,7 +122,7 @@ class TestDataProvider:
                         "op": "update",
                         "order": Order(
                             price=Price(row[side], precision=6),
-                            volume=Quantity(1e9, precision=2),
+                            size=Quantity(1e9, precision=2),
                             side=order_side,
                         ),
                     }
@@ -147,11 +146,11 @@ class TestDataProvider:
                         price=Price(d["trade"]["price"], 4),
                         size=Quantity(d["trade"]["volume"], 4),
                         aggressor_side=d["trade"]["side"],
-                        match_id=TradeMatchId(d["trade"]["trade_id"]),
-                        timestamp_origin_ns=millis_to_nanos(
+                        match_id=(d["trade"]["trade_id"]),
+                        ts_event_ns=millis_to_nanos(
                             pd.Timestamp(d["remote_timestamp"]).timestamp()
                         ),
-                        timestamp_ns=millis_to_nanos(
+                        ts_recv_ns=millis_to_nanos(
                             pd.Timestamp(
                                 d["remote_timestamp"]
                             ).timestamp()  # TODO(cs): Hardcoded identical for now
@@ -168,7 +167,7 @@ class TestDataProvider:
                 "op": op,
                 "order": Order(
                     price=Price(order_like["price"], precision=6),
-                    volume=Quantity(abs(order_like["volume"]), precision=4),
+                    size=Quantity(abs(order_like["volume"]), precision=4),
                     # Betting sides are reversed
                     side={2: OrderSide.BUY, 1: OrderSide.SELL}[order_like["side"]],
                     id=str(order_like["order_id"]),
@@ -197,15 +196,15 @@ class TestDataProvider:
                 print("Err", updates)
                 return
             for values in updates:
-                keys = ("order_id", "price", "volume")
+                keys = ("order_id", "price", "size")
                 data = dict(zip(keys, values))
-                side = OrderSide.BUY if data["volume"] >= 0 else OrderSide.SELL
+                side = OrderSide.BUY if data["size"] >= 0 else OrderSide.SELL
                 if data["price"] == 0:
                     yield dict(
                         op="delete",
                         order=Order(
                             price=Price(data["price"], precision=10),
-                            volume=Quantity(abs(data["volume"]), precision=10),
+                            size=Quantity(abs(data["size"]), precision=10),
                             side=side,
                             id=str(data["order_id"]),
                         ),
@@ -215,7 +214,7 @@ class TestDataProvider:
                         op="update",
                         order=Order(
                             price=Price(data["price"], precision=10),
-                            volume=Quantity(abs(data["volume"]), precision=10),
+                            size=Quantity(abs(data["size"]), precision=10),
                             side=side,
                             id=str(data["order_id"]),
                         ),
@@ -281,8 +280,8 @@ class TestInstrumentProvider:
             margin_maint=Decimal(),
             maker_fee=Decimal("0.001"),
             taker_fee=Decimal("0.001"),
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
@@ -317,8 +316,8 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.35"),
             maker_fee=Decimal("0.0001"),
             taker_fee=Decimal("0.0001"),
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
@@ -354,8 +353,8 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.0035"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
@@ -391,8 +390,8 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.007"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
@@ -455,6 +454,6 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.03"),
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )

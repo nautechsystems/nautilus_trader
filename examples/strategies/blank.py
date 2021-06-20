@@ -15,7 +15,7 @@
 
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import Data
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.tick import QuoteTick
@@ -110,13 +110,13 @@ class MyStrategy(TradingStrategy):
         """
         pass
 
-    def on_data(self, data: GenericData):
+    def on_data(self, data: Data):
         """
-        Actions to be performed when the strategy is running and receives a data object.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
-        data : GenericData
+        data : Data
             The data received.
 
         """

@@ -18,7 +18,6 @@ from cpython.datetime cimport datetime
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.timer cimport TimeEvent
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.client cimport DataClient
@@ -120,7 +119,7 @@ cdef class DataEngine(Component):
     cdef void _handle_quote_tick(self, QuoteTick tick) except *
     cdef void _handle_trade_tick(self, TradeTick tick) except *
     cdef void _handle_bar(self, Bar bar) except *
-    cdef void _handle_custom_data(self, GenericData data) except *
+    cdef void _handle_generic_data(self, GenericData data) except *
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 
@@ -139,6 +138,7 @@ cdef class DataEngine(Component):
     cdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *
     cdef void _bulk_build_tick_bars(
         self,
+        Instrument instrument,
         BarType bar_type,
         datetime from_datetime,
         datetime to_datetime,

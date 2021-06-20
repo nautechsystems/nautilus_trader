@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import json
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
@@ -53,8 +54,8 @@ cdef class CryptoSwap(Instrument):
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event_ns,
+        int64_t ts_recv_ns,
         dict info=None,
     ):
         """
@@ -100,10 +101,10 @@ cdef class CryptoSwap(Instrument):
             The fee rate for liquidity makers as a percentage of order value.
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
-        timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+        ts_event_ns: int64
+            The UNIX timestamp (nanoseconds) when data event occurred.
+        ts_recv_ns: int64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
         info : dict[str, object], optional
             The additional instrument information.
 
@@ -159,8 +160,8 @@ cdef class CryptoSwap(Instrument):
             margin_maint=margin_maint,
             maker_fee=maker_fee,
             taker_fee=taker_fee,
-            timestamp_origin_ns=timestamp_origin_ns,
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=ts_event_ns,
+            ts_recv_ns=ts_recv_ns,
             info=info,
         )
 
@@ -182,18 +183,93 @@ cdef class CryptoSwap(Instrument):
         """
         return self.base_currency
 
-    # TODO(cs): WIP
-    # cpdef Currency get_cost_currency(self):
-    #     """
-    #     Return the currency used for cost and PnL calculations.
-    #
-    #     - Standard linear instruments = quote_currency
-    #     - Inverse instruments = base_currency
-    #     - Quanto instrument = settlement_currency
-    #
-    #     Returns
-    #     -------
-    #     Currency
-    #
-    #     """
-    #     return self.settlement_currency
+    @staticmethod
+    cdef CryptoSwap from_dict_c(dict values):
+        cdef str max_q = values["max_quantity"]
+        cdef str min_q = values["min_quantity"]
+        cdef str max_n = values["max_notional"]
+        cdef str min_n = values["min_notional"]
+        cdef str max_p = values["max_price"]
+        cdef str min_p = values["min_price"]
+        cdef str info = values["info"],
+        return CryptoSwap(
+            instrument_id=InstrumentId.from_str_c(values["id"]),
+            base_currency=Currency.from_str_c(values["base_currency"]),
+            quote_currency=Currency.from_str_c(values["quote_currency"]),
+            settlement_currency=Currency.from_str_c(values["settlement_currency"]),
+            is_inverse=values["is_inverse"],
+            price_precision=values["price_precision"],
+            size_precision=values["size_precision"],
+            price_increment=Price.from_str_c(values["price_increment"]),
+            size_increment=Quantity.from_str_c(values["size_increment"]),
+            max_quantity=Quantity.from_str_c(max_q) if max_q is not None else None,
+            min_quantity=Quantity.from_str_c(min_q) if min_q is not None else None,
+            max_notional=Money.from_str_c(max_n) if max_n is not None else None,
+            min_notional=Money.from_str_c(min_n) if min_n is not None else None,
+            max_price=Price.from_str_c(max_p) if max_p is not None else None,
+            min_price=Price.from_str_c(min_p) if min_p is not None else None,
+            margin_init=Decimal(values["margin_init"]),
+            margin_maint=Decimal(values["margin_maint"]),
+            maker_fee=Decimal(values["maker_fee"]),
+            taker_fee=Decimal(values["taker_fee"]),
+            ts_event_ns=values["ts_event_ns"],
+            ts_recv_ns=values["ts_recv_ns"],
+            info=json.loads(info) if info is not None else None,
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(CryptoSwap obj):
+        return {
+            "type": "CryptoSwap",
+            "id": obj.id.value,
+            "base_currency": obj.base_currency.code,
+            "quote_currency": obj.quote_currency.code,
+            "settlement_currency": obj.settlement_currency.code,
+            "is_inverse": obj.is_inverse,
+            "price_precision": obj.price_precision,
+            "price_increment": str(obj.price_increment),
+            "size_precision": obj.size_precision,
+            "size_increment": str(obj.size_increment),
+            "max_quantity": str(obj.max_quantity) if obj.max_quantity is not None else None,
+            "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
+            "max_notional": obj.max_notional.to_str() if obj.max_notional is not None else None,
+            "min_notional": obj.min_notional.to_str() if obj.min_notional is not None else None,
+            "max_price": str(obj.max_price) if obj.max_price is not None else None,
+            "min_price": str(obj.min_price) if obj.min_price is not None else None,
+            "margin_init": str(obj.margin_init),
+            "margin_maint": str(obj.margin_maint),
+            "maker_fee": str(obj.maker_fee),
+            "taker_fee": str(obj.taker_fee),
+            "ts_event_ns": obj.ts_event_ns,
+            "ts_recv_ns": obj.ts_recv_ns,
+            "info": json.dumps(obj.info) if obj.info is not None else None,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> CryptoSwap:
+        """
+        Return an instrument from the given initialization values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values to initialize the instrument with.
+
+        Returns
+        -------
+        CryptoSwap
+
+        """
+        return CryptoSwap.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(CryptoSwap obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return CryptoSwap.to_dict_c(obj)

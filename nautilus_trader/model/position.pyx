@@ -79,8 +79,8 @@ cdef class Position:
         self.net_qty = Decimal()
         self.quantity = Quantity.zero_c(precision=instrument.size_precision)
         self.peak_qty = Quantity.zero_c(precision=instrument.size_precision)
-        self.timestamp_ns = fill.execution_ns
-        self.opened_timestamp_ns = fill.execution_ns
+        self.timestamp_ns = fill.ts_filled_ns
+        self.opened_timestamp_ns = fill.ts_filled_ns
         self.closed_timestamp_ns = 0
         self.open_duration_ns = 0
         self.avg_px_open = fill.last_px.as_decimal()
@@ -102,14 +102,50 @@ cdef class Position:
     def __eq__(self, Position other) -> bool:
         return self.id.value == other.id.value
 
-    def __ne__(self, Position other) -> bool:
-        return self.id.value != other.id.value
-
     def __hash__(self) -> int:
         return hash(self.id.value)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.status_string_c()}, id={self.id.value})"
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "type": type(self).__name__,
+            "id": self.id.value,
+            "account_id": self.account_id.value,
+            "from_order": self.from_order.value,
+            "strategy_id": self.strategy_id.value,
+            "instrument_id": self.instrument_id.value,
+            "side": PositionSideParser.to_str(self.side),
+            "net_qty": str(self.net_qty),
+            "quantity": str(self.quantity),
+            "peak_qty": str(self.peak_qty),
+            "timestamp_ns": self.timestamp_ns,
+            "opened_timestamp_ns": self.opened_timestamp_ns,
+            "closed_timestamp_ns": self.closed_timestamp_ns,
+            "open_duration_ns": self.open_duration_ns,
+            "avg_px_open": str(self.avg_px_open),
+            "avg_px_close": str(self.avg_px_close),
+            "price_precision": self.price_precision,
+            "size_precision": self.size_precision,
+            "multiplier": str(self.multiplier),
+            "is_inverse": self.is_inverse,
+            "quote_currency": self.quote_currency.code,
+            "base_currency": self.base_currency.code,
+            "cost_currency": self.cost_currency.code,
+            "realized_points": str(self.realized_points),
+            "realized_return": str(self.realized_return),
+            "realized_pnl": str(self.realized_pnl.to_str()),
+            "commissions": str([c.to_str() for c in self.commissions()]),
+        }
 
     cdef list client_order_ids_c(self):
         # Note the inner set {}
@@ -406,7 +442,7 @@ cdef class Position:
             self.side = PositionSide.SHORT
         else:
             self.side = PositionSide.FLAT
-            self.closed_timestamp_ns = fill.execution_ns
+            self.closed_timestamp_ns = fill.ts_filled_ns
             self.open_duration_ns = self.closed_timestamp_ns - self.opened_timestamp_ns
 
     cpdef Money notional_value(self, Price last):

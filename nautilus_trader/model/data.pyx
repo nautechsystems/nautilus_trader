@@ -15,8 +15,6 @@
 
 from libc.stdint cimport int64_t
 
-from nautilus_trader.core.correctness cimport Condition
-
 
 cdef class Data:
     """
@@ -25,27 +23,27 @@ cdef class Data:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, int64_t timestamp_origin_ns, int64_t timestamp_ns):
+    def __init__(self, int64_t ts_event_ns, int64_t ts_recv_ns):
         """
         Initialize a new instance of the ``Data`` class.
 
         Parameters
         ----------
-        timestamp_origin_ns : int64
-            The Unix timestamp (nanos) when originally occurred.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) when received by the Nautilus system.
+        ts_event_ns : int64
+            The UNIX timestamp (nanoseconds) when data event occurred.
+        ts_recv_ns : int64
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
-        # Design-time assert correct ordering of timestamps
-        assert timestamp_ns >= timestamp_origin_ns
-        self.timestamp_origin_ns = timestamp_origin_ns
-        self.timestamp_ns = timestamp_ns
+        # Design-time invariant: correct ordering of timestamps
+        assert ts_recv_ns >= ts_event_ns
+        self.ts_event_ns = ts_event_ns
+        self.ts_recv_ns = ts_recv_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"timestamp_origin_ns={self.timestamp_origin_ns}, "
-                f"timestamp_ns{self.timestamp_ns})")
+                f"ts_event_ns={self.ts_event_ns}, "
+                f"ts_recv_ns{self.ts_recv_ns})")
 
 
 cdef class DataType:
@@ -60,7 +58,7 @@ cdef class DataType:
         Parameters
         ----------
         data_type : type
-            The PyObject type of the data.
+            The ``Data`` type of the data.
         metadata : dict
             The data types metadata.
 
@@ -86,9 +84,6 @@ cdef class DataType:
     def __eq__(self, DataType other) -> bool:
         return self.type == other.type and self.metadata == other.metadata
 
-    def __ne__(self, DataType other) -> bool:
-        return self.type != other.type or self.metadata != other.metadata
-
     def __hash__(self) -> int:
         return self._hash
 
@@ -107,9 +102,7 @@ cdef class GenericData(Data):
     def __init__(
         self,
         DataType data_type not None,
-        data not None,
-        int64_t timestamp_origin_ns,
-        int64_t timestamp_ns,
+        Data data not None,
     ):
         """
         Initialize a new instance of the ``GenericData`` class.
@@ -118,19 +111,10 @@ cdef class GenericData(Data):
         ----------
         data_type : DataType
             The data type.
-        data : object
+        data : Data
             The data object to wrap.
-        timestamp_ns : int64
-            The Unix timestamp (nanos) of the data.
-
-        Raises
-        ------
-        ValueError
-            If type(data) is not of type data_type.type.
 
         """
-        Condition.type(data, data_type.type, "data")
-        super().__init__(timestamp_origin_ns, timestamp_ns)
-
+        super().__init__(data.ts_event_ns, data.ts_recv_ns)
         self.data_type = data_type
         self.data = data

@@ -34,9 +34,9 @@ from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import OrderBookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import PositionSide
@@ -48,7 +48,6 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -768,6 +767,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             venue_order_id=VenueOrderId("001"),
             quantity=Quantity.from_int(100000),
             price=Price.from_str("110.000"),
+            trigger=None,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=0,
         )
@@ -1625,7 +1625,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("1.00000"),
             Quantity.from_int(100000),
             AggressorSide.SELL,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -1635,7 +1635,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(100000),
             AggressorSide.BUY,
-            TradeMatchId("123456790"),
+            "123456790",
             0,
             0,
         )
@@ -1666,7 +1666,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Price.from_str("0.99899"),
             Quantity.from_int(100000),
             AggressorSide.BUY,  # Lowers bid price
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -2130,7 +2130,7 @@ class OrderBookExchangeTests(unittest.TestCase):
             cache=self.exec_engine.cache,
             clock=self.clock,
             logger=self.logger,
-            exchange_order_book_level=OrderBookLevel.L2,
+            exchange_order_book_level=BookLevel.L2,
         )
 
         self.exec_client = BacktestExecClient(
@@ -2151,7 +2151,7 @@ class OrderBookExchangeTests(unittest.TestCase):
         self.data_engine.cache.add_order_book(
             OrderBook.create(
                 instrument=USDJPY_SIM,
-                level=OrderBookLevel.L2,
+                level=BookLevel.L2,
             )
         )
         self.exec_engine.register_risk_engine(self.risk_engine)
@@ -2339,7 +2339,7 @@ class OrderBookExchangeTests(unittest.TestCase):
             Price.from_str("14.0"),
             Quantity.from_int(1000),
             OrderSide.SELL,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )

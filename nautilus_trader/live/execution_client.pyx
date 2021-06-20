@@ -372,7 +372,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 quote_currency=instrument.quote_currency,
                 commission=exec_report.commission,
                 liquidity_side=exec_report.liquidity_side,
-                execution_ns=exec_report.execution_ns,
+                ts_filled_ns=exec_report.ts_filled_ns,
             )
 
         return True

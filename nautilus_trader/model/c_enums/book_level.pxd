@@ -14,15 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class ObjectCache:
-    cdef dict _cache
-    cdef object _parser
+cpdef enum BookLevel:
+    L1 = 1,
+    L2 = 2,
+    L3 = 3,
 
-    cdef readonly type type_key
-    """The caches key type.\n\n:returns: `type`"""
-    cdef readonly type type_value
-    """The caches value type.\n\n:returns: `type`"""
 
-    cpdef object get(self, str key)
-    cpdef list keys(self)
-    cpdef void clear(self) except *
+cdef class BookLevelParser:
+
+    @staticmethod
+    cdef str to_str(int value)
+
+    @staticmethod
+    cdef BookLevel from_str(str value) except *

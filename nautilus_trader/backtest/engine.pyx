@@ -50,8 +50,8 @@ from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
@@ -68,11 +68,13 @@ from nautilus_trader.model.orderbook.book cimport OrderBookData
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.risk.engine cimport RiskEngine
-from nautilus_trader.serialization.serializers cimport MsgPackCommandSerializer
-from nautilus_trader.serialization.serializers cimport MsgPackEventSerializer
-from nautilus_trader.serialization.serializers cimport MsgPackInstrumentSerializer
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
+
+
+from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentSerializer  # isort:skip
+from nautilus_trader.serialization.msgpack.serializer cimport MsgPackCommandSerializer  # isort:skip
+from nautilus_trader.serialization.msgpack.serializer cimport MsgPackEventSerializer  # isort:skip
 
 
 cdef class BacktestEngine:
@@ -92,6 +94,7 @@ cdef class BacktestEngine:
         bint cache_db_flush=True,
         bint use_data_cache=False,
         bint bypass_logging=False,
+        bint run_analysis=True,
         int level_stdout=LogLevel.INFO,
     ):
         """
@@ -117,6 +120,8 @@ cdef class BacktestEngine:
             If use cache for DataProducer (increased performance with repeated backtests on same data).
         bypass_logging : bool, optional
             If logging should be bypassed.
+        run_analysis : bool
+            If post backtest performance analysis should be run.
         level_stdout : int, optional
             The minimum log level for logging messages to stdout.
 
@@ -128,6 +133,7 @@ cdef class BacktestEngine:
         # Options
         self._cache_db_flush = cache_db_flush
         self._use_data_cache = use_data_cache
+        self._run_analysis = run_analysis
 
         # Data
         self._generic_data = []     # type: list[GenericData]
@@ -299,7 +305,7 @@ cdef class BacktestEngine:
         # Add data
         self._generic_data = sorted(
             self._generic_data + data,
-            key=lambda x: x.timestamp_ns,
+            key=lambda x: x.ts_recv_ns,
         )
 
         self._log.info(f"Added {len(data)} GenericData points.")
@@ -357,7 +363,7 @@ cdef class BacktestEngine:
         # Add data
         self._order_book_data = sorted(
             self._order_book_data + data,
-            key=lambda x: x.timestamp_ns,
+            key=lambda x: x.ts_recv_ns,
         )
 
         self._log.info(f"Added {len(data)} {instrument_id} OrderBookData elements.")
@@ -572,7 +578,7 @@ cdef class BacktestEngine:
         bint is_frozen_account=False,
         list modules=None,
         FillModel fill_model=None,
-        OrderBookLevel order_book_level=OrderBookLevel.L1
+        BookLevel order_book_level=BookLevel.L1
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -598,7 +604,7 @@ cdef class BacktestEngine:
             The simulation modules to load into the exchange.
         fill_model : FillModel, optional
             The fill model for the exchange (if None then no probabilistic fills).
-        order_book_level : OrderBookLevel
+        order_book_level : BookLevel
             The default order book level for fill modelling.
 
         Raises
@@ -780,8 +786,8 @@ cdef class BacktestEngine:
         else:
             stop = min(as_utc_timestamp(stop), self._data_producer.max_timestamp)
 
-        Condition.equal(start.tz, pytz.utc, "start.tz", "UTC")
-        Condition.equal(stop.tz, pytz.utc, "stop.tz", "UTC")
+        Condition.equal(start.tzinfo, pytz.utc, "start.tzinfo", "UTC")
+        Condition.equal(stop.tzinfo, pytz.utc, "stop.tzinfo", "UTC")
         Condition.true(start >= self._data_producer.min_timestamp, "start was < data_client.min_timestamp")
         Condition.true(start <= self._data_producer.max_timestamp, "stop was > data_client.max_timestamp")
         Condition.true(start < stop, "start was >= stop")
@@ -791,7 +797,7 @@ cdef class BacktestEngine:
 
         cdef datetime run_started = self._clock.utc_now()
 
-        self._log_header(run_started, start, stop)
+        self._pre_run(run_started, start, stop)
         self._log.info(f"Setting up backtest...")
 
         # Reset engine to fresh state (in case already run)
@@ -830,19 +836,23 @@ cdef class BacktestEngine:
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self._data_producer.has_data:
             data = self._data_producer.next()
-            self._advance_time(data.timestamp_ns)
+            self._advance_time(data.ts_recv_ns)
             if isinstance(data, OrderBookData):
                 self._exchanges[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, Tick):
                 self._exchanges[data.instrument_id.venue].process_tick(data)
             self._data_engine.process(data)
-            self._process_modules(data.timestamp_ns)
+            self._process_modules(data.ts_recv_ns)
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
         self.trader.stop()
-
-        self._log_footer(run_started, self._clock.utc_now(), start, stop)
+        self._post_run(
+            run_started=run_started,
+            run_finished=self._clock.utc_now(),
+            start=start,
+            stop=stop,
+        )
 
     cdef void _advance_time(self, int64_t now_ns) except *:
         cdef TradingStrategy strategy
@@ -860,7 +870,7 @@ cdef class BacktestEngine:
         for exchange in self._exchanges.values():
             exchange.process_modules(now_ns)
 
-    cdef void _log_header(
+    cdef void _pre_run(
         self,
         datetime run_started,
         datetime start,
@@ -885,7 +895,7 @@ cdef class BacktestEngine:
                 balances = ', '.join([b.to_str() for b in exchange.starting_balances])
                 self._log.info(f"Account balances (starting): {balances}")
 
-    cdef void _log_footer(
+    cdef void _post_run(
         self,
         datetime run_started,
         datetime run_finished,
@@ -906,6 +916,9 @@ cdef class BacktestEngine:
         self._log.info(f"Total events: {self._exec_engine.event_count:,}")
         self._log.info(f"Total orders: {self._exec_engine.cache.orders_total_count():,}")
         self._log.info(f"Total positions: {self._exec_engine.cache.positions_total_count():,}")
+
+        if not self._run_analysis:
+            return
 
         for exchange in self._exchanges.values():
             self._log.info("=================================================================")

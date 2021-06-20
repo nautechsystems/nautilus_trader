@@ -77,7 +77,7 @@ class TestEvents:
             balances=[balance],
             info={},
             event_id=uuid,
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=0,
         )
 
@@ -165,7 +165,7 @@ class TestEvents:
         event = OrderSubmitted(
             account_id=AccountId("SIM", "000"),
             client_order_id=ClientOrderId("O-2020872378423"),
-            submitted_ns=0,
+            ts_submitted_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -185,7 +185,7 @@ class TestEvents:
             account_id=AccountId("SIM", "000"),
             client_order_id=ClientOrderId("O-2020872378423"),
             reason="INSUFFICIENT_MARGIN",
-            rejected_ns=0,
+            ts_rejected_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -208,7 +208,7 @@ class TestEvents:
             account_id=AccountId("SIM", "000"),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=venue_order_id,
-            accepted_ns=0,
+            ts_accepted_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -230,7 +230,7 @@ class TestEvents:
             venue_order_id=VenueOrderId("123456"),
             response_to="O-2020872378423",
             reason="ORDER_DOES_NOT_EXIST",
-            rejected_ns=0,
+            ts_rejected_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -256,7 +256,7 @@ class TestEvents:
             venue_order_id=VenueOrderId("123456"),
             response_to="O-2020872378423",
             reason="ORDER_DOES_NOT_EXIST",
-            rejected_ns=0,
+            ts_rejected_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -280,7 +280,7 @@ class TestEvents:
             account_id=AccountId("SIM", "000"),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            canceled_ns=0,
+            ts_canceled_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -304,7 +304,8 @@ class TestEvents:
             venue_order_id=VenueOrderId("123456"),
             quantity=Quantity.from_int(500000),
             price=Price.from_str("1.95000"),
-            updated_ns=0,
+            trigger=None,
+            ts_updated_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -312,12 +313,12 @@ class TestEvents:
         # Act
         assert (
             f"OrderUpdated(account_id=SIM-000, cl_order_id=O-2020872378423, "
-            f"venue_order_id=123456, qty=500_000, price=1.95000, event_id={uuid})"
+            f"venue_order_id=123456, qty=500_000, price=1.95000, trigger=None, event_id={uuid})"
             == str(event)
         )
         assert (
             f"OrderUpdated(account_id=SIM-000, cl_order_id=O-2020872378423, "
-            f"venue_order_id=123456, qty=500_000, price=1.95000, event_id={uuid})"
+            f"venue_order_id=123456, qty=500_000, price=1.95000, trigger=None, event_id={uuid})"
             == repr(event)
         )
 
@@ -328,7 +329,7 @@ class TestEvents:
             account_id=AccountId("SIM", "000"),
             client_order_id=ClientOrderId("O-2020872378423"),
             venue_order_id=VenueOrderId("123456"),
-            expired_ns=0,
+            ts_expired_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -360,7 +361,7 @@ class TestEvents:
             currency=USDT,
             commission=Money(12.20000000, USDT),
             liquidity_side=LiquiditySide.MAKER,
-            execution_ns=0,
+            ts_filled_ns=0,
             event_id=uuid,
             timestamp_ns=0,
         )
@@ -371,14 +372,14 @@ class TestEvents:
             f"OrderFilled(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"venue_order_id=123456, position_id=2, strategy_id=SCALPER-001, "
             f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, last_qty=0.561000, "
-            f"last_px=15600.12445, "
+            f"last_px=15600.12445 USDT, "
             f"commission=12.20000000 USDT, event_id={uuid})" == str(event)
         )
         assert (
             f"OrderFilled(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"venue_order_id=123456, position_id=2, strategy_id=SCALPER-001, "
             f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, last_qty=0.561000, "
-            f"last_px=15600.12445, "
+            f"last_px=15600.12445 USDT, "
             f"commission=12.20000000 USDT, event_id={uuid})" == repr(event)
         )
 

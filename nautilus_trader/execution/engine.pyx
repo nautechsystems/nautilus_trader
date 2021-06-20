@@ -808,9 +808,9 @@ cdef class ExecutionEngine(Component):
     cdef void _flip_position(self, Position position, OrderFilled fill) except *:
         cdef Quantity difference = None
         if position.side == PositionSide.LONG:
-            difference = Quantity.from_str_c(str(fill.last_qty - position.quantity))
+            difference = Quantity(fill.last_qty - position.quantity, position.size_precision)
         else:  # position.side == PositionSide.SHORT:
-            difference = Quantity.from_str_c(str(abs(position.quantity - fill.last_qty)))
+            difference = Quantity(abs(position.quantity - fill.last_qty), position.size_precision)
 
         # Split commission between two positions
         fill_percent1: Decimal = position.quantity / fill.last_qty
@@ -832,7 +832,7 @@ cdef class ExecutionEngine(Component):
             currency=fill.currency,
             commission=Money(fill.commission * fill_percent1, fill.commission.currency),
             liquidity_side=fill.liquidity_side,
-            execution_ns=fill.execution_ns,
+            ts_filled_ns=fill.ts_filled_ns,
             event_id=fill.id,
             timestamp_ns=fill.timestamp_ns,
         )
@@ -861,7 +861,7 @@ cdef class ExecutionEngine(Component):
             currency=fill.currency,
             commission=Money(fill.commission * fill_percent2, fill.commission.currency),
             liquidity_side=fill.liquidity_side,
-            execution_ns=fill.execution_ns,
+            ts_filled_ns=fill.ts_filled_ns,
             event_id=self._uuid_factory.generate(),  # New event identifier
             timestamp_ns=fill.timestamp_ns,
         )

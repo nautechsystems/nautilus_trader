@@ -157,18 +157,6 @@ class TestBarType:
         assert bar_type1 == bar_type2
         assert bar_type1 != bar_type3
 
-    def test_bar_type_to_serializable_string(self):
-        # Arrange
-        instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
-        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
-        bar_type = BarType(instrument_id, bar_spec)
-
-        # Act
-        result = bar_type.to_serializable_str()
-
-        # Assert
-        assert "AUD/USD.IDEALPRO-1-MINUTE-BID" == result
-
     def test_bar_type_hash_str_and_repr(self):
         # Arrange
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
@@ -193,7 +181,7 @@ class TestBarType:
         # Act
         # Assert
         with pytest.raises(ValueError):
-            BarType.from_serializable_str(value)
+            BarType.from_str(value)
 
     @pytest.mark.parametrize(
         "value, expected",
@@ -233,7 +221,7 @@ class TestBarType:
     ):
         # Arrange
         # Act
-        bar_type = BarType.from_serializable_str(value, internal_aggregation=True)
+        bar_type = BarType.from_str(value, internal_aggregation=True)
 
         # Assert
         assert expected == bar_type
@@ -345,7 +333,7 @@ class TestBar:
             == "Bar(AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0)"
         )
 
-    def test_to_serializable_string(self):
+    def test_to_dict(self):
         # Arrange
         bar = Bar(
             AUDUSD_1_MIN_BID,
@@ -359,35 +347,27 @@ class TestBar:
         )
 
         # Act
-        serializable = bar.to_serializable_str()
+        values = Bar.to_dict(bar)
 
         # Assert
-        assert serializable == "1.00001,1.00004,1.00002,1.00003,100000,0,0"
+        assert values == {
+            "type": "Bar",
+            "bar_type": "AUD/USD.SIM-1-MINUTE-BID",
+            "open": "1.00001",
+            "high": "1.00004",
+            "low": "1.00002",
+            "close": "1.00003",
+            "volume": "100000",
+            "ts_event_ns": 0,
+            "ts_recv_ns": 0,
+        }
 
-    def test_from_serializable_string_given_malformed_string_raises_value_error(self):
-        # Arrange
-        bar = Bar(
-            AUDUSD_1_MIN_BID,
-            Price.from_str("1.00001"),
-            Price.from_str("1.00004"),
-            Price.from_str("1.00002"),
-            Price.from_str("1.00003"),
-            Quantity.from_int(100000),
-            0,
-            0,
-        )
-
-        # Act
-        # Assert
-        with pytest.raises(ValueError):
-            bar.from_serializable_str(AUDUSD_1_MIN_BID, "NOT_BAR_VALUES!")
-
-    def test_from_serializable_string_given_valid_string_returns_expected_bar(self):
+    def test_from_dict_returns_expected_bar(self):
         # Arrange
         bar = TestStubs.bar_5decimal()
 
         # Act
-        result = Bar.from_serializable_str(bar.type, bar.to_serializable_str())
+        result = Bar.from_dict(Bar.to_dict(bar))
 
         # Assert
         assert result == bar

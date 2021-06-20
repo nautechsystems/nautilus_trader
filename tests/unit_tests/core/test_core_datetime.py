@@ -377,7 +377,7 @@ class TestDatetimeFunctions:
 
         # Assert
         assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
-        assert result.tz == pytz.utc
+        assert result.tzinfo == pytz.utc
 
     def test_as_utc_timestamp_given_tz_naive_pandas_timestamp(self):
         # Arrange
@@ -388,7 +388,7 @@ class TestDatetimeFunctions:
 
         # Assert
         assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
-        assert result.tz == pytz.utc
+        assert result.tzinfo == pytz.utc
 
     def test_as_utc_timestamp_given_tz_aware_datetime(self):
         # Arrange
@@ -399,7 +399,7 @@ class TestDatetimeFunctions:
 
         # Assert
         assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
-        assert result.tz == pytz.utc
+        assert result.tzinfo == pytz.utc
 
     def test_as_utc_timestamp_given_tz_aware_pandas(self):
         # Arrange
@@ -410,7 +410,7 @@ class TestDatetimeFunctions:
 
         # Assert
         assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
-        assert result.tz == pytz.utc
+        assert result.tzinfo == pytz.utc
 
     def test_as_utc_timestamp_equality(self):
         # Arrange

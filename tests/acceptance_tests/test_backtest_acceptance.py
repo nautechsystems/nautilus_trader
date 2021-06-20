@@ -43,7 +43,10 @@ from tests.test_kit.strategies import EMACross
 class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.engine = BacktestEngine(bypass_logging=True)
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            run_analysis=False,
+        )
 
         self.venue = Venue("SIM")
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
@@ -162,7 +165,10 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
 class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.engine = BacktestEngine(bypass_logging=True)
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            run_analysis=False,
+        )
 
         self.venue = Venue("SIM")
         self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
@@ -224,7 +230,10 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
 class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.engine = BacktestEngine(bypass_logging=True)
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            run_analysis=False,
+        )
 
         self.venue = Venue("SIM")
         self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -296,7 +305,10 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
 class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.engine = BacktestEngine(bypass_logging=True)
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            run_analysis=False,
+        )
 
         self.venue = Venue("BINANCE")
         self.ethusdt = TestInstrumentProvider.ethusdt_binance()
@@ -340,7 +352,10 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
 class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.engine = BacktestEngine(bypass_logging=True)
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            run_analysis=False,
+        )
 
         self.venue = Venue("BINANCE")
         self.instrument = TestInstrumentProvider.btcusdt_binance()

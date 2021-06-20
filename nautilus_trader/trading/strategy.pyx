@@ -42,7 +42,6 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport SENT
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataRequest
@@ -51,14 +50,14 @@ from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
-from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderDenied
@@ -152,9 +151,6 @@ cdef class TradingStrategy(Component):
 
     def __eq__(self, TradingStrategy other) -> bool:
         return self.id.value == other.id.value
-
-    def __ne__(self, TradingStrategy other) -> bool:
-        return self.id.value != other.id.value
 
     cdef void _check_trader_registered(self) except *:
         if self.trader_id is None:
@@ -403,13 +399,13 @@ cdef class TradingStrategy(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_data(self, GenericData data) except *:
+    cpdef void on_data(self, Data data) except *:
         """
-        Actions to be performed when the strategy is running and receives a data object.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
-        data : GenericData
+        data : Data
             The data received.
 
         Warnings
@@ -776,7 +772,7 @@ cdef class TradingStrategy(Component):
 
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
-            data_type=DataType(Instrument, metadata={INSTRUMENT_ID: instrument_id}),
+            data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
             handler=self.handle_instrument,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
@@ -787,7 +783,7 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_order_book(
         self,
         InstrumentId instrument_id,
-        OrderBookLevel level=OrderBookLevel.L2,
+        BookLevel level=BookLevel.L2,
         int depth=0,
         int interval=0,
         dict kwargs=None,
@@ -807,7 +803,7 @@ cdef class TradingStrategy(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument identifier to subscribe to.
-        level : OrderBookLevel
+        level : BookLevel
             The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
@@ -832,11 +828,11 @@ cdef class TradingStrategy(Component):
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(OrderBook, metadata={
-                INSTRUMENT_ID: instrument_id,
-                LEVEL: level,
-                DEPTH: depth,
-                INTERVAL: interval,
-                KWARGS: kwargs,
+                "instrument_id": instrument_id,
+                "level": level,
+                "depth": depth,
+                "interval": interval,
+                "kwargs": kwargs,
             }),
             handler=self.handle_order_book,
             command_id=self.uuid_factory.generate(),
@@ -847,7 +843,7 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_order_book_deltas(
         self,
         InstrumentId instrument_id,
-        OrderBookLevel level=OrderBookLevel.L2,
+        BookLevel level=BookLevel.L2,
         dict kwargs=None,
     ) except *:
         """
@@ -858,7 +854,7 @@ cdef class TradingStrategy(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument identifier to subscribe to.
-        level : OrderBookLevel
+        level : BookLevel
             The order book level (L1, L2, L3).
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
@@ -877,9 +873,9 @@ cdef class TradingStrategy(Component):
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(OrderBookData, metadata={
-                INSTRUMENT_ID: instrument_id,
-                LEVEL: level,
-                KWARGS: kwargs,
+                "instrument_id": instrument_id,
+                "level": level,
+                "kwargs": kwargs,
             }),
             handler=self.handle_order_book_delta,
             command_id=self.uuid_factory.generate(),
@@ -903,7 +899,7 @@ cdef class TradingStrategy(Component):
 
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
-            data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
+            data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
@@ -926,7 +922,7 @@ cdef class TradingStrategy(Component):
 
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
-            data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
+            data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
             handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
@@ -949,7 +945,7 @@ cdef class TradingStrategy(Component):
 
         cdef Subscribe command = Subscribe(
             client_id=ClientId(bar_type.instrument_id.venue.value),
-            data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
+            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
@@ -997,7 +993,7 @@ cdef class TradingStrategy(Component):
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
-            data_type=DataType(Instrument, metadata={INSTRUMENT_ID: instrument_id}),
+            data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
             handler=self.handle_instrument,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
@@ -1026,8 +1022,8 @@ cdef class TradingStrategy(Component):
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(OrderBook, metadata={
-                INSTRUMENT_ID: instrument_id,
-                INTERVAL: interval,
+                "instrument_id": instrument_id,
+                "interval": interval,
             }),
             handler=self.handle_order_book,
             command_id=self.uuid_factory.generate(),
@@ -1055,7 +1051,7 @@ cdef class TradingStrategy(Component):
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(OrderBookData, metadata={
-                INSTRUMENT_ID: instrument_id,
+                "instrument_id": instrument_id,
             }),
             handler=self.handle_order_book,
             command_id=self.uuid_factory.generate(),
@@ -1079,7 +1075,7 @@ cdef class TradingStrategy(Component):
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
-            data_type=DataType(QuoteTick, metadata={INSTRUMENT_ID: instrument_id}),
+            data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
@@ -1102,7 +1098,7 @@ cdef class TradingStrategy(Component):
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
-            data_type=DataType(TradeTick, metadata={INSTRUMENT_ID: instrument_id}),
+            data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
             handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
@@ -1125,7 +1121,7 @@ cdef class TradingStrategy(Component):
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(bar_type.instrument_id.venue.value),
-            data_type=DataType(Bar, metadata={BAR_TYPE: bar_type}),
+            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
             handler=self.handle_bar,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
@@ -1194,10 +1190,10 @@ cdef class TradingStrategy(Component):
         cdef DataRequest request = DataRequest(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(QuoteTick, metadata={
-                INSTRUMENT_ID: instrument_id,
-                FROM_DATETIME: from_datetime,
-                TO_DATETIME: to_datetime,
-                LIMIT: self._data_engine.cache.tick_capacity,
+                "instrument_id": instrument_id,
+                "from_datetime": from_datetime,
+                "to_datetime": to_datetime,
+                "limit": self._data_engine.cache.tick_capacity,
             }),
             callback=self.handle_quote_ticks,
             request_id=self.uuid_factory.generate(),
@@ -1240,10 +1236,10 @@ cdef class TradingStrategy(Component):
         cdef DataRequest request = DataRequest(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(TradeTick, metadata={
-                INSTRUMENT_ID: instrument_id,
-                FROM_DATETIME: from_datetime,
-                TO_DATETIME: to_datetime,
-                LIMIT: self._data_engine.cache.tick_capacity,
+                "instrument_id": instrument_id,
+                "from_datetime": from_datetime,
+                "to_datetime": to_datetime,
+                "limit": self._data_engine.cache.tick_capacity,
             }),
             callback=self.handle_trade_ticks,
             request_id=self.uuid_factory.generate(),
@@ -1286,10 +1282,10 @@ cdef class TradingStrategy(Component):
         cdef DataRequest request = DataRequest(
             client_id=ClientId(bar_type.instrument_id.venue.value),
             data_type=DataType(Bar, metadata={
-                BAR_TYPE: bar_type,
-                FROM_DATETIME: from_datetime,
-                TO_DATETIME: to_datetime,
-                LIMIT: self._data_engine.cache.bar_capacity,
+                "bar_type": bar_type,
+                "from_datetime": from_datetime,
+                "to_datetime": to_datetime,
+                "limit": self._data_engine.cache.bar_capacity,
             }),
             callback=self.handle_bars,
             request_id=self.uuid_factory.generate(),
@@ -1411,16 +1407,12 @@ cdef class TradingStrategy(Component):
 
         if quantity is not None and quantity != order.quantity:
             updating = True
-        else:
-            quantity = order.quantity
 
         if price is not None and price != order.price:
             updating = True
-        else:
-            price = order.price
 
         if trigger is not None:
-            if order.is_triggered:
+            if order.is_triggered_c():
                 self.log.warning(f"Cannot update order: "
                                  f"{repr(order.client_order_id)} already triggered.")
                 return
@@ -1430,13 +1422,23 @@ cdef class TradingStrategy(Component):
         if not updating:
             self.log.error(
                 "Cannot create command UpdateOrder "
-                "(both quantity and price were None)."
+                "(quantity, price and trigger were either None or the same as existing values)."
             )
             return
 
         if order.account_id is None:
             self.log.error(f"Cannot update order: "
                            f"no account assigned to order yet, {order}.")
+            return  # Cannot send command
+
+        if (
+            order.is_completed_c()
+            or order.is_pending_update_c()
+            or order.is_pending_cancel_c()
+        ):
+            self.log.warning(
+                f"Cannot update order: state is {order.state_string_c()}, {order}.",
+            )
             return  # Cannot send command
 
         cdef UpdateOrder command = UpdateOrder(
@@ -1447,6 +1449,7 @@ cdef class TradingStrategy(Component):
             order.venue_order_id,
             quantity,
             price,
+            trigger,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -1474,8 +1477,13 @@ cdef class TradingStrategy(Component):
 
         if order.venue_order_id.is_null():
             self.log.error(
-                f"Cannot cancel order (no venue_order_id assigned yet), "
-                f"{order}.",
+                f"Cannot cancel order: no venue_order_id assigned yet, {order}.",
+            )
+            return  # Cannot send command
+
+        if order.is_completed_c() or order.is_pending_cancel_c():
+            self.log.warning(
+                f"Cannot cancel order: state is {order.state_string_c()}, {order}.",
             )
             return  # Cannot send command
 
@@ -1879,13 +1887,13 @@ cdef class TradingStrategy(Component):
             self.log.error(f"Received <Bar[{length}]> data for unknown bar type.")
             return  # TODO: Strategy shouldn't receive zero bars
 
-        if length > 0 and first.timestamp_ns > last.timestamp_ns:
+        if length > 0 and first.ts_recv_ns > last.ts_recv_ns:
             raise RuntimeError(f"Cannot handle <Bar[{length}]> data: incorrectly sorted")
 
         for i in range(length):
             self.handle_bar(bars[i], is_historical=True)
 
-    cpdef void handle_data(self, GenericData data) except *:
+    cpdef void handle_data(self, Data data) except *:
         """
         Handle the given data.
 
@@ -1893,7 +1901,7 @@ cdef class TradingStrategy(Component):
 
         Parameters
         ----------
-        data : GenericData
+        data : Data
             The received data.
 
         Warnings

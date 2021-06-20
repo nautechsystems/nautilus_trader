@@ -57,3 +57,12 @@ Node
    :inherited-members:
    :members:
    :member-order: bysource
+
+Node Builder
+------------
+
+.. automodule:: nautilus_trader.live.node_builder
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource

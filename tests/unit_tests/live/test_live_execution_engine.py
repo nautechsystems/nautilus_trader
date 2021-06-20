@@ -592,7 +592,7 @@ class TestLiveExecutionEngine:
                 last_px=Price.from_str("1.00000"),
                 commission=Money(5.00, USD),
                 liquidity_side=LiquiditySide.MAKER,
-                execution_ns=0,
+                ts_filled_ns=0,
                 timestamp_ns=0,
             )
 
@@ -604,7 +604,7 @@ class TestLiveExecutionEngine:
                 last_px=Price.from_str("1.00000"),
                 commission=Money(2.00, USD),
                 liquidity_side=LiquiditySide.MAKER,
-                execution_ns=0,
+                ts_filled_ns=0,
                 timestamp_ns=0,
             )
 
@@ -672,7 +672,7 @@ class TestLiveExecutionEngine:
                 last_px=Price.from_str("1.00000"),
                 commission=Money(5.00, USD),
                 liquidity_side=LiquiditySide.MAKER,
-                execution_ns=0,
+                ts_filled_ns=0,
                 timestamp_ns=0,
             )
 
@@ -684,7 +684,7 @@ class TestLiveExecutionEngine:
                 last_px=Price.from_str("1.00000"),
                 commission=Money(2.00, USD),
                 liquidity_side=LiquiditySide.MAKER,
-                execution_ns=0,
+                ts_filled_ns=0,
                 timestamp_ns=0,
             )
 

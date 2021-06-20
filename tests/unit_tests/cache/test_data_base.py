@@ -16,10 +16,13 @@
 import unittest
 
 from nautilus_trader.cache.base import CacheFacade
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.trading.filters import NewsEvent
+from nautilus_trader.trading.filters import NewsImpact
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -70,18 +73,19 @@ class DataTypeTests(unittest.TestCase):
     def test_data_instantiation(self):
         # Arrange
         # Act
-        data_type = DataType(str, {"type": "NEWS_WIRE"})
-        data = GenericData(
-            data_type,
-            "Some News Headline",
-            1_000_000_000,
-            1_000_000_000,
+        data_type = DataType(NewsEvent, {"publisher": "NEWS_WIRE"})
+        data = NewsEvent(
+            impact=NewsImpact.HIGH,
+            name="Unemployment Rate",
+            currency=USD,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
+        generic_data = GenericData(data_type, data)
 
         # Assert
-        self.assertEqual(data_type, data.data_type)
-        self.assertEqual("Some News Headline", data.data)
-        self.assertEqual(1_000_000_000, data.timestamp_ns)
+        self.assertEqual(data_type, generic_data.data_type)
+        self.assertEqual(data, generic_data.data)
 
 
 class CacheFacadeTests(unittest.TestCase):

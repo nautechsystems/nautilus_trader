@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class OrderBookDeltaTypeParser:
+cdef class DeltaTypeParser:
 
     @staticmethod
     cdef str to_str(int value):
@@ -24,24 +24,28 @@ cdef class OrderBookDeltaTypeParser:
             return "UPDATE"
         elif value == 3:
             return "DELETE"
+        elif value == 4:
+            return "CLEAR"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef OrderBookDeltaType from_str(str value) except *:
+    cdef DeltaType from_str(str value) except *:
         if value == "ADD":
-            return OrderBookDeltaType.ADD
+            return DeltaType.ADD
         elif value == "UPDATE":
-            return OrderBookDeltaType.UPDATE
+            return DeltaType.UPDATE
         elif value == "DELETE":
-            return OrderBookDeltaType.DELETE
+            return DeltaType.DELETE
+        elif value == "CLEAR":
+            return DeltaType.CLEAR
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):
-        return OrderBookDeltaTypeParser.to_str(value)
+        return DeltaTypeParser.to_str(value)
 
     @staticmethod
     def from_str_py(str value):
-        return OrderBookDeltaTypeParser.from_str(value)
+        return DeltaTypeParser.from_str(value)
