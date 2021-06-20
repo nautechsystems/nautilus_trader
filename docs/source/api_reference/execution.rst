@@ -13,15 +13,6 @@ Client
    :members:
    :member-order: bysource
 
-Database
---------
-
-.. automodule:: nautilus_trader.execution.database
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Engine
 ------
 
