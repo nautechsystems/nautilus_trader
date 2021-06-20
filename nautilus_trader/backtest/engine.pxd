@@ -45,8 +45,9 @@ cdef class BacktestEngine:
     cdef bint _log_to_file
     cdef bint _cache_db_flush
     cdef bint _use_data_cache
-    cdef dict _exchanges
+    cdef bint _run_analysis
 
+    cdef dict _exchanges
     cdef list _generic_data
     cdef list _order_book_data
     cdef dict _quote_ticks
@@ -83,5 +84,4 @@ cdef class BacktestEngine:
         datetime run_finished,
         datetime start,
         datetime stop,
-        bint run_analysis,
     ) except *

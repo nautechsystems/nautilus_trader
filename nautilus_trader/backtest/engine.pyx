@@ -94,6 +94,7 @@ cdef class BacktestEngine:
         bint cache_db_flush=True,
         bint use_data_cache=False,
         bint bypass_logging=False,
+        bint run_analysis=True,
         int level_stdout=LogLevel.INFO,
     ):
         """
@@ -119,6 +120,8 @@ cdef class BacktestEngine:
             If use cache for DataProducer (increased performance with repeated backtests on same data).
         bypass_logging : bool, optional
             If logging should be bypassed.
+        run_analysis : bool
+            If post backtest performance analysis should be run.
         level_stdout : int, optional
             The minimum log level for logging messages to stdout.
 
@@ -130,6 +133,7 @@ cdef class BacktestEngine:
         # Options
         self._cache_db_flush = cache_db_flush
         self._use_data_cache = use_data_cache
+        self._run_analysis = run_analysis
 
         # Data
         self._generic_data = []     # type: list[GenericData]
@@ -732,7 +736,6 @@ cdef class BacktestEngine:
         datetime start=None,
         datetime stop=None,
         list strategies=None,
-        bint run_analysis=True,
     ) -> None:
         """
         Run a backtest from the start datetime to the stop datetime.
@@ -747,8 +750,6 @@ cdef class BacktestEngine:
             run to the end of the data.
         strategies : list, optional
             The strategies for the backtest run (if None will use previous).
-        run_analysis : bool
-            If post backtest performance analysis should be run.
 
         Raises
         ------
@@ -851,7 +852,6 @@ cdef class BacktestEngine:
             run_finished=self._clock.utc_now(),
             start=start,
             stop=stop,
-            run_analysis=run_analysis,
         )
 
     cdef void _advance_time(self, int64_t now_ns) except *:
@@ -901,7 +901,6 @@ cdef class BacktestEngine:
         datetime run_finished,
         datetime start,
         datetime stop,
-        bint run_analysis,
     ) except *:
         self._log.info("=================================================================")
         self._log.info(" BACKTEST DIAGNOSTICS")
@@ -918,7 +917,7 @@ cdef class BacktestEngine:
         self._log.info(f"Total orders: {self._exec_engine.cache.orders_total_count():,}")
         self._log.info(f"Total positions: {self._exec_engine.cache.positions_total_count():,}")
 
-        if not run_analysis:
+        if not self._run_analysis:
             return
 
         for exchange in self._exchanges.values():
