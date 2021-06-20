@@ -94,6 +94,7 @@ cdef class BacktestEngine:
         bint cache_db_flush=True,
         bint use_data_cache=False,
         bint bypass_logging=False,
+        bint run_analysis=True,
         int level_stdout=LogLevel.INFO,
     ):
         """
@@ -119,6 +120,8 @@ cdef class BacktestEngine:
             If use cache for DataProducer (increased performance with repeated backtests on same data).
         bypass_logging : bool, optional
             If logging should be bypassed.
+        run_analysis : bool
+            If post backtest performance analysis should be run.
         level_stdout : int, optional
             The minimum log level for logging messages to stdout.
 
@@ -130,6 +133,7 @@ cdef class BacktestEngine:
         # Options
         self._cache_db_flush = cache_db_flush
         self._use_data_cache = use_data_cache
+        self._run_analysis = run_analysis
 
         # Data
         self._generic_data = []     # type: list[GenericData]
@@ -793,7 +797,7 @@ cdef class BacktestEngine:
 
         cdef datetime run_started = self._clock.utc_now()
 
-        self._log_header(run_started, start, stop)
+        self._pre_run(run_started, start, stop)
         self._log.info(f"Setting up backtest...")
 
         # Reset engine to fresh state (in case already run)
@@ -843,8 +847,12 @@ cdef class BacktestEngine:
         # ---------------------------------------------------------------------#
 
         self.trader.stop()
-
-        self._log_footer(run_started, self._clock.utc_now(), start, stop)
+        self._post_run(
+            run_started=run_started,
+            run_finished=self._clock.utc_now(),
+            start=start,
+            stop=stop,
+        )
 
     cdef void _advance_time(self, int64_t now_ns) except *:
         cdef TradingStrategy strategy
@@ -862,7 +870,7 @@ cdef class BacktestEngine:
         for exchange in self._exchanges.values():
             exchange.process_modules(now_ns)
 
-    cdef void _log_header(
+    cdef void _pre_run(
         self,
         datetime run_started,
         datetime start,
@@ -887,7 +895,7 @@ cdef class BacktestEngine:
                 balances = ', '.join([b.to_str() for b in exchange.starting_balances])
                 self._log.info(f"Account balances (starting): {balances}")
 
-    cdef void _log_footer(
+    cdef void _post_run(
         self,
         datetime run_started,
         datetime run_finished,
@@ -908,6 +916,9 @@ cdef class BacktestEngine:
         self._log.info(f"Total events: {self._exec_engine.event_count:,}")
         self._log.info(f"Total orders: {self._exec_engine.cache.orders_total_count():,}")
         self._log.info(f"Total positions: {self._exec_engine.cache.positions_total_count():,}")
+
+        if not self._run_analysis:
+            return
 
         for exchange in self._exchanges.values():
             self._log.info("=================================================================")

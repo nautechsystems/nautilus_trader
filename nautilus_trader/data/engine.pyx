@@ -1255,9 +1255,17 @@ cdef class DataEngine(Component):
                 handler(order_book)
 
     cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
+        cdef Instrument instrument = self.cache.instrument(bar_type.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot start bar aggregation: "
+                f"no instrument found for {bar_type.instrument_id}.",
+            )
+
         if bar_type.spec.is_time_aggregated():
             # Create aggregator
             aggregator = TimeBarAggregator(
+                instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
                 use_previous_close=self._use_previous_close,
@@ -1268,18 +1276,21 @@ cdef class DataEngine(Component):
             self._hydrate_aggregator(client, aggregator, bar_type)
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
+                instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
                 logger=self._log.get_logger(),
             )
         elif bar_type.spec.aggregation == BarAggregation.VOLUME:
             aggregator = VolumeBarAggregator(
+                instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
                 logger=self._log.get_logger(),
             )
         elif bar_type.spec.aggregation == BarAggregation.VALUE:
             aggregator = ValueBarAggregator(
+                instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
                 logger=self._log.get_logger(),
@@ -1356,6 +1367,7 @@ cdef class DataEngine(Component):
 
     cdef void _bulk_build_tick_bars(
         self,
+        Instrument instrument,
         BarType bar_type,
         datetime from_datetime,
         datetime to_datetime,
@@ -1366,6 +1378,7 @@ cdef class DataEngine(Component):
         cdef int ticks_to_order = bar_type.spec.step * limit
 
         cdef BulkTickBarBuilder bar_builder = BulkTickBarBuilder(
+            instrument,
             bar_type,
             self._log.get_logger(),
             callback,

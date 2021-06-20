@@ -18,6 +18,7 @@ from typing import Optional
 
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -29,7 +30,8 @@ from nautilus_trader.trading.strategy import TradingStrategy
 
 class OrderbookImbalance(TradingStrategy):
     """
-    A simple strategy that sends FAK limit orders when there is a bid/ask imbalance in the order book
+    A simple strategy that sends FAK limit orders when there is a bid/ask
+    imbalance in the order book.
 
     Cancels all orders and flattens all positions on stop.
     """
@@ -37,14 +39,14 @@ class OrderbookImbalance(TradingStrategy):
     def __init__(
         self,
         # instrument_filter: dict,
-        instrument,
+        instrument: Instrument,
         max_trade_size: Decimal,
         order_id_tag: str,  # Must be unique at 'trader level'
         trigger_min_size=100.0,
         trigger_imbalance_ratio=0.20,
     ):
         """
-        Initialize a new instance of the ``BetfairTestStrategy`` class.
+        Initialize a new instance of the ``OrderbookImbalance`` class.
 
         Parameters
         ----------
@@ -86,16 +88,19 @@ class OrderbookImbalance(TradingStrategy):
         )
 
     def on_order_book_delta(self, delta: OrderBookDelta):
+        """Actions to be performed when a delta is received."""
         self._book.apply(delta)
         if self._book.spread():
             self.check_trigger()
 
     def on_order_book(self, order_book: OrderBook):
+        """Actions to be performed when an order book update is received."""
         self._book = order_book
         if self._book.spread():
             self.check_trigger()
 
     def check_trigger(self):
+        """Checking for trigger conditions."""
         bid_volume = self._book.best_bid_qty()
         ask_volume = self._book.best_ask_qty()
         if not (bid_volume and ask_volume):

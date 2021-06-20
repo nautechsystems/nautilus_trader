@@ -151,7 +151,7 @@ def test_data_loader_csv(catalog_dir):
         parser=CSVParser(
             parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id())
         ),
-        chunksize=100 ** 2,
+        chunk_size=100 ** 2,
         glob_pattern="truefx-usd*.csv",
     )
     assert len(loader.path) == 1

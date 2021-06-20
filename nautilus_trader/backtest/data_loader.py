@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 from collections import defaultdict
 from collections import namedtuple
 from io import BytesIO
@@ -50,10 +65,17 @@ category_attributes = {
 
 
 class ByteParser:
+    """
+    The base class for all byte string parsers.
+    """
+
     def __init__(
         self,
         instrument_provider_update: callable = None,
     ):
+        """
+        Initialize a new instance of the ``ByteParser`` class.
+        """
         self.instrument_provider_update = instrument_provider_update
 
     def read(self, stream: Generator, instrument_provider=None) -> Generator:
@@ -61,26 +83,38 @@ class ByteParser:
 
 
 class TextParser(ByteParser):
+    """
+    Provides parsing of byte strings to Nautilus objects.
+    """
+
     def __init__(
         self,
         parser: callable,
-        line_preprocessor=None,
-        instrument_provider_update=None,
+        line_preprocessor: callable = None,
+        instrument_provider_update: callable = None,
     ):
         """
-        Parse bytes of json into nautilus objects
+        Initialize a new instance of the ``TextParser`` class.
 
-        :param line_parser: Callable that takes a JSON object and yields nautilus objects
-        :param line_preprocessor: A context manager for doing any preprocessing (cleaning log lines) of lines before
-               json.loads is called. Nautilus objects are returned to the context manager for any post-processing also
-               (For example, setting the `timestamp_origin_ns`)
-        :param instrument_provider_update (Optional) : An optional hook/callable to update instrument provider before
-               data is passed to `line_parser` (in many cases instruments need to be known ahead of parsing)
+        Parameters
+        ----------
+        parser : callable
+            The handler which takes byte strings and yields Nautilus objects.
+        line_preprocessor : callable, optional
+            The context manager for preprocessing (cleaning log lines) of lines
+            before json.loads is called. Nautilus objects are returned to the
+            context manager for any post-processing also (for example, setting
+            the `ts_recv_ns`).
+        instrument_provider_update : callable , optional
+            An optional hook/callable to update instrument provider before
+            data is passed to `line_parser` (in many cases instruments need to
+            be known ahead of parsing).
         """
+        super().__init__(instrument_provider_update=instrument_provider_update)
+
         self.parser = parser
         self.line_preprocessor = line_preprocessor or identity
         self.state = None
-        super().__init__(instrument_provider_update=instrument_provider_update)
 
     def on_new_file(self, new_file):
         pass
@@ -129,12 +163,29 @@ class TextParser(ByteParser):
 
 
 class CSVParser(TextParser):
+    """
+    Provides parsing of CSV formatted bytes strings to Nautilus objects.
+    """
+
     def __init__(
         self,
         parser: callable,
         line_preprocessor=None,
         instrument_provider_update=None,
     ):
+        """
+        Initialize a new instance of the ``CSVParser`` class.
+
+        Parameters
+        ----------
+        parser : callable
+            The handler which takes byte strings and yields Nautilus objects.
+        line_preprocessor : callable
+            TBC.
+        instrument_provider_update
+            TBC.
+
+        """
         super().__init__(
             parser=parser,
             line_preprocessor=line_preprocessor,
@@ -154,6 +205,11 @@ class CSVParser(TextParser):
 
 
 class ParquetParser(ByteParser):
+    """
+    Provides parsing of parquet specification bytes to Nautilus objects.
+    """
+
+    # Implicit initialization of base class
     def read(self, stream: Generator, instrument_provider=None) -> Generator:
         for chunk in stream:
             if isinstance(chunk, NewFile):
@@ -172,6 +228,12 @@ class ParquetParser(ByteParser):
 
 
 class DataLoader:
+    """
+    Provides general data loading functionality.
+
+    Discover files and stream bytes of data from a local or remote filesystems.
+    """
+
     def __init__(
         self,
         path: str,
@@ -179,22 +241,32 @@ class DataLoader:
         fs_protocol="file",
         glob_pattern="**",
         progress=False,
-        chunksize=-1,
+        chunk_size=-1,
         compression="infer",
         instrument_provider=None,
     ):
         """
-        Discover files and stream bytes of data from a local or remote filesystem
+        Initialize a new instance of the ``DataLoader`` class.
 
-        :param path: A resolvable path; a file, folder, or a remote location via fsspec
-        :param parser: A `BaseReader` subclass that can convert bytes into nautilus objects.
-        :param fs_protocol: fsspec protocol; allows remote access - defaults to `file`
-        :param progress: Show progress when loading individual files
-        :param glob_pattern: Glob pattern to search for files
-        :param glob_pattern: Glob pattern to search for files
-        :param compression: The file compression, defaults to 'infer' by file extension
-        :param line_preprocessor: A callable that handles any preprocessing of the data
-        :param chunksize: Chunk size (in bytes) for processing data, -1 for no limit (will chunk per file).
+        Parameters
+        ----------
+        path : str
+            The resolvable path; a file, folder, or a remote location via fsspec.
+        parser : ByteParser
+            The parser subclass which can convert bytes into Nautilus objects.
+        fs_protocol : str
+            The fsspec protocol; allows remote access - defaults to `file`.
+        glob_pattern : str
+            The glob pattern to search for files.
+        progress : bool
+            If progress should be shown when loading individual files.
+        chunk_size : int
+            The chunk size (in bytes) for processing data, -1 for no limit (will chunk per file).
+        compression : bool
+            If compression is used. Defaults to 'infer' by file extension.
+        instrument_provider : InstrumentProvider
+            The instrument provider for the loader.
+
         """
         self._path = path
         self.parser = parser
@@ -205,7 +277,7 @@ class DataLoader:
             )
             progress = False
         self.progress = progress
-        self.chunk_size = chunksize
+        self.chunk_size = chunk_size
         self.compression = compression
         self.glob_pattern = glob_pattern
         self.fs = fsspec.filesystem(self.fs_protocol)
@@ -263,7 +335,22 @@ class DataLoader:
 
 
 class DataCatalog:
+    """
+    Provides a searchable data catalogue.
+    """
+
     def __init__(self, path=None, fs_protocol=None):
+        """
+        Initialize a new instance of the ``DataCatalog`` class.
+
+        Parameters
+        ----------
+        path : str
+            The root path to the data.
+        fs_protocol : str
+            The file system protocol to use.
+
+        """
         self.fs = fsspec.filesystem(
             fs_protocol or os.environ.get("NAUTILUS_BACKTEST_FS_PROTOCOL", "file")
         )
@@ -274,19 +361,24 @@ class DataCatalog:
 
     def import_from_data_loader(self, loader: DataLoader, append_only=False, **kwargs):
         """
-        Load data from a DataLoader instance into the backtest catalogue
+        Load data from a DataLoader instance into the backtest catalogue.
 
-        :param loader: A DataLoader instance
-        :param append_only: Don't read existing data to dedupe + sort. Use this is you're confident your data is ordered
-        :param kwargs: kwargs passed through to `ParquetWriter`
+        Parameters
+        ----------
+        loader : DataLoader
+            The data loader to use.
+        append_only : bool
+            If read existing data to dedupe + sort.
+            Use this if the data is strictly ordered.
+        kwargs : dict
+            The kwargs passed through to `ParquetWriter`.
 
-        :return:
         """
         for chunk in loader.run(progress=kwargs.pop("progress", False)):
             self._write_chunks(chunk=chunk, append_only=append_only, **kwargs)
 
     def _save_processed_raw_files(self, files):
-        # TODO (bm) - we should save a hash of the contents alongside the filename to check for changes
+        # TODO(bm): We should save a hash of the contents alongside the filename to check for changes
         # load existing
         existing = self._load_processed_raw_files()
         new = set(files + existing)
@@ -391,7 +483,7 @@ class DataCatalog:
         else:
             self.fs.rm(self.root, recursive=True)
 
-    # ---- Backtest ---------------------------------------------------------------------------------------- #
+    # ---- BACKTEST ---------------------------------------------------------------------------------------- #
 
     def setup_engine(
         self,
@@ -401,12 +493,20 @@ class DataCatalog:
         **kwargs,
     ) -> BacktestEngine:
         """
-        Load data into a backtest engine
+        Load data into a backtest engine.
 
-        :param engine: The BacktestEngine to load data into.
-        :param instruments: List of instruments to load data for
-        :param kwargs: kwargs passed to `self.load_backtest_data`
-        :return:
+        Parameters
+        ----------
+        engine : BacktestEngine
+            The backtest engine to load data into.
+        instruments : list[Instrument]
+            The instruments to load data for.
+        chunk_size : int
+            The chunk size to return (used for streaming backtest).
+            Use None for a loading all the data.
+        kwargs : dict
+            The kwargs passed to `self.load_backtest_data`.
+
         """
         data = self.load_backtest_data(
             instrument_ids=[ins.id.value for ins in instruments],
@@ -414,7 +514,7 @@ class DataCatalog:
             **kwargs,
         )
 
-        # TODO (bm) - Handle chunksize
+        # TODO(bm): Handle chunk size
         if chunk_size is not None:
             pass
 
@@ -436,7 +536,7 @@ class DataCatalog:
 
         return engine
 
-    # ---- Queries ---------------------------------------------------------------------------------------- #
+    # ---- QUERIES ---------------------------------------------------------------------------------------- #
 
     # def _load_chunked_backtest_data(self, name, query, instrument_ids, filters, chunk_size):
     #     """
@@ -471,17 +571,28 @@ class DataCatalog:
         chunk_size=None,
     ):
         """
-        Load backtest data objects from the catalogue
+        Load backtest data objects from the catalogue.
 
-        :param instrument_ids: A list of instrument_ids to load data for
-        :param start_timestamp: The starting timestamp of the data to load
-        :param end_timestamp: The ending timestamp of the data to load
-        :param order_book_deltas: Whether to load order book delta
-        :param trade_ticks: Whether to load trade ticks
-        :param quote_ticks: Whether to load quote ticks
-        :param instrument_status_events: Whether to load instrument status events
-        :param chunk_size: The chunksize to return (used for streaming backtest). Use None for a loading all the data.
-        :return:
+        Parameters
+        ----------
+        instrument_ids : list[InstrumentId]
+            The instruments to load data for.
+        start_timestamp : datetime
+            The starting timestamp of the data to load.
+        end_timestamp : datetime
+            The ending timestamp of the data to load.
+        order_book_deltas : bool
+            If order book deltas should be loaded.
+        trade_ticks : bool
+            If trade ticks should be loaded.
+        quote_ticks : bool
+            If quote ticks should be loaded.
+        instrument_status_events : bool
+            If instrument status events should be loaded.
+        chunk_size : int
+            The chunk size to return (used for streaming backtest).
+            Use None for a loading all the data.
+
         """
         assert instrument_ids is None or isinstance(
             instrument_ids, list

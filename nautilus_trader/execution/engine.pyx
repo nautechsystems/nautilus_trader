@@ -808,9 +808,9 @@ cdef class ExecutionEngine(Component):
     cdef void _flip_position(self, Position position, OrderFilled fill) except *:
         cdef Quantity difference = None
         if position.side == PositionSide.LONG:
-            difference = Quantity.from_str_c(str(fill.last_qty - position.quantity))
+            difference = Quantity(fill.last_qty - position.quantity, position.size_precision)
         else:  # position.side == PositionSide.SHORT:
-            difference = Quantity.from_str_c(str(abs(position.quantity - fill.last_qty)))
+            difference = Quantity(abs(position.quantity - fill.last_qty), position.size_precision)
 
         # Split commission between two positions
         fill_percent1: Decimal = position.quantity / fill.last_qty

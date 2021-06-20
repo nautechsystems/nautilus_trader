@@ -29,12 +29,3 @@ Database
    :inherited-members:
    :members:
    :member-order: bysource
-
-Identifier
-----------
-
-.. automodule:: nautilus_trader.cache.identifier
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource

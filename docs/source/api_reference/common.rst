@@ -3,16 +3,6 @@ Common
 
 .. automodule:: nautilus_trader.common
 
-
-Cache
------
-
-.. automodule:: nautilus_trader.common.cache
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Clock
 -----
 
