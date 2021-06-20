@@ -43,7 +43,10 @@ from tests.test_kit.strategies import EMACross
 class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.engine = BacktestEngine(bypass_logging=True)
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            run_analysis=False,
+        )
 
         self.venue = Venue("SIM")
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
@@ -91,7 +94,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         )
 
         # Act
-        self.engine.run(strategies=[strategy], run_analysis=False)
+        self.engine.run(strategies=[strategy])
 
         # Assert - Should return expected PnL
         self.assertEqual(2689, strategy.fast_ema.count)
@@ -111,7 +114,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
             slow_ema=20,
         )
 
-        self.engine.run(strategies=[strategy], run_analysis=False)
+        self.engine.run(strategies=[strategy])
         result1 = self.engine.analyzer.get_performance_stats_pnls()
 
         # Act
@@ -147,7 +150,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         # The purpose of the test is just to ensure multiple strategies can run together.
 
         # Act
-        self.engine.run(strategies=[strategy1, strategy2], run_analysis=False)
+        self.engine.run(strategies=[strategy1, strategy2])
 
         # Assert
         self.assertEqual(2689, strategy1.fast_ema.count)
@@ -162,7 +165,10 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
 class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.engine = BacktestEngine(bypass_logging=True)
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            run_analysis=False,
+        )
 
         self.venue = Venue("SIM")
         self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
@@ -210,7 +216,7 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
         )
 
         # Act
-        self.engine.run(strategies=[strategy], run_analysis=False)
+        self.engine.run(strategies=[strategy])
 
         # Assert
         self.assertEqual(8353, strategy.fast_ema.count)
@@ -224,7 +230,10 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
 class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.engine = BacktestEngine(bypass_logging=True)
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            run_analysis=False,
+        )
 
         self.venue = Venue("SIM")
         self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -261,7 +270,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         )
 
         # Act
-        self.engine.run(strategies=[strategy], run_analysis=False)
+        self.engine.run(strategies=[strategy])
 
         # Assert
         self.assertEqual(1771, strategy.fast_ema.count)
@@ -282,7 +291,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         )
 
         # Act
-        self.engine.run(strategies=[strategy], run_analysis=False)
+        self.engine.run(strategies=[strategy])
 
         # Assert
         self.assertEqual(999, strategy.fast_ema.count)
@@ -296,7 +305,10 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
 class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.engine = BacktestEngine(bypass_logging=True)
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            run_analysis=False,
+        )
 
         self.venue = Venue("BINANCE")
         self.ethusdt = TestInstrumentProvider.ethusdt_binance()
@@ -326,7 +338,7 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
         )
 
         # Act
-        self.engine.run(strategies=[strategy], run_analysis=False)
+        self.engine.run(strategies=[strategy])
 
         # Assert
         self.assertEqual(279, strategy.fast_ema.count)
@@ -340,7 +352,10 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
 class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.engine = BacktestEngine(bypass_logging=True)
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            run_analysis=False,
+        )
 
         self.venue = Venue("BINANCE")
         self.instrument = TestInstrumentProvider.btcusdt_binance()
@@ -375,7 +390,7 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
         )
 
         # Act
-        self.engine.run(strategies=[strategy], run_analysis=False)
+        self.engine.run(strategies=[strategy])
 
         # Assert
         self.assertEqual(39, strategy.fast_ema.count)
