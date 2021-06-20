@@ -43,9 +43,9 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
-from nautilus_trader.serialization.serializers import MsgPackEventSerializer
-from nautilus_trader.serialization.serializers import MsgPackInstrumentSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.trader import Trader

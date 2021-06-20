@@ -72,9 +72,6 @@ cdef class Currency:
     def __eq__(self, Currency other) -> bool:
         return self.code == other.code and self.precision == other.precision
 
-    def __ne__(self, Currency other) -> bool:
-        return self.code != other.code or self.precision != other.precision
-
     def __hash__(self) -> int:
         return hash((self.code, self.precision))
 

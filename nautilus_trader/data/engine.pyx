@@ -41,7 +41,6 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport RES
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport BarAggregator
@@ -63,8 +62,8 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
-from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -471,39 +470,39 @@ cdef class DataEngine(Component):
         if command.data_type.type == Instrument:
             self._handle_subscribe_instrument(
                 client,
-                command.data_type.metadata.get(INSTRUMENT_ID),
+                command.data_type.metadata.get("instrument_id"),
                 command.handler,
             )
         elif command.data_type.type == OrderBook:
             self._handle_subscribe_order_book(
                 client,
-                command.data_type.metadata.get(INSTRUMENT_ID),
+                command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
                 command.handler,
             )
         elif command.data_type.type == OrderBookData:
             self._handle_subscribe_order_book_deltas(
                 client,
-                command.data_type.metadata.get(INSTRUMENT_ID),
+                command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
                 command.handler,
             )
         elif command.data_type.type == QuoteTick:
             self._handle_subscribe_quote_ticks(
                 client,
-                command.data_type.metadata.get(INSTRUMENT_ID),
+                command.data_type.metadata.get("instrument_id"),
                 command.handler,
             )
         elif command.data_type.type == TradeTick:
             self._handle_subscribe_trade_ticks(
                 client,
-                command.data_type.metadata.get(INSTRUMENT_ID),
+                command.data_type.metadata.get("instrument_id"),
                 command.handler,
             )
         elif command.data_type.type == Bar:
             self._handle_subscribe_bars(
                 client,
-                command.data_type.metadata.get(BAR_TYPE),
+                command.data_type.metadata.get("bar_type"),
                 command.handler,
             )
         else:
@@ -517,32 +516,32 @@ cdef class DataEngine(Component):
         if command.data_type.type == Instrument:
             self._handle_unsubscribe_instrument(
                 client,
-                command.data_type.metadata.get(INSTRUMENT_ID),
+                command.data_type.metadata.get("instrument_id"),
                 command.handler,
             )
         elif command.data_type.type == OrderBook:
             self._handle_unsubscribe_order_book(
                 client,
-                command.data_type.metadata.get(INSTRUMENT_ID),
+                command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
                 command.handler,
             )
         elif command.data_type.type == QuoteTick:
             self._handle_unsubscribe_quote_ticks(
                 client,
-                command.data_type.metadata.get(INSTRUMENT_ID),
+                command.data_type.metadata.get("instrument_id"),
                 command.handler,
             )
         elif command.data_type.type == TradeTick:
             self._handle_unsubscribe_trade_ticks(
                 client,
-                command.data_type.metadata.get(INSTRUMENT_ID),
+                command.data_type.metadata.get("instrument_id"),
                 command.handler,
             )
         elif command.data_type.type == Bar:
             self._handle_unsubscribe_bars(
                 client,
-                command.data_type.metadata.get(BAR_TYPE),
+                command.data_type.metadata.get("bar_type"),
                 command.handler,
             )
         else:
@@ -586,7 +585,7 @@ cdef class DataEngine(Component):
         Condition.not_none(metadata, "metadata")
         Condition.callable(handler, "handler")
 
-        cdef int interval = metadata[INTERVAL]
+        cdef int interval = metadata["interval"]
         if interval > 0:
             # Subscribe to interval snapshots
             key = (instrument_id, interval)
@@ -631,7 +630,7 @@ cdef class DataEngine(Component):
                 return
             order_book = OrderBook.create(
                 instrument=instrument,
-                level=metadata[LEVEL],
+                level=metadata["level"],
             )
 
             self.cache.add_order_book(order_book)
@@ -639,9 +638,9 @@ cdef class DataEngine(Component):
         # Always re-subscribe to override previous settings
         client.subscribe_order_book(
             instrument_id=instrument_id,
-            level=metadata.get(LEVEL),
-            depth=metadata.get(DEPTH),
-            kwargs=metadata.get(KWARGS),
+            level=metadata.get("level"),
+            depth=metadata.get("depth"),
+            kwargs=metadata.get("kwargs"),
         )
 
     cdef void _handle_subscribe_order_book_deltas(
@@ -679,7 +678,7 @@ cdef class DataEngine(Component):
                 return
             order_book = OrderBook.create(
                 instrument=instrument,
-                level=metadata[LEVEL],
+                level=metadata["level"],
             )
 
             self.cache.add_order_book(order_book)
@@ -687,8 +686,8 @@ cdef class DataEngine(Component):
         # Always re-subscribe to override previous settings
         client.subscribe_order_book_deltas(
             instrument_id=instrument_id,
-            level=metadata[LEVEL],
-            kwargs=metadata.get(KWARGS),
+            level=metadata["level"],
+            kwargs=metadata.get("kwargs"),
         )
 
     cdef void _handle_subscribe_quote_ticks(
@@ -833,7 +832,7 @@ cdef class DataEngine(Component):
         Condition.not_none(metadata, "metadata")
         Condition.callable(handler, "handler")
 
-        cdef int interval = metadata.get(INTERVAL)
+        cdef int interval = metadata.get("interval")
         if interval > 0:
             # Remove interval subscribers handler
             key = (instrument_id, interval)
@@ -1007,7 +1006,7 @@ cdef class DataEngine(Component):
 
         if request.data_type.type == Instrument:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
-            instrument_id = request.data_type.metadata.get(INSTRUMENT_ID)
+            instrument_id = request.data_type.metadata.get("instrument_id")
             if instrument_id:
                 client.request_instrument(instrument_id, request.id)
             else:
@@ -1015,28 +1014,28 @@ cdef class DataEngine(Component):
         elif request.data_type.type == QuoteTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_quote_ticks(
-                request.data_type.metadata.get(INSTRUMENT_ID),
-                request.data_type.metadata.get(FROM_DATETIME),
-                request.data_type.metadata.get(TO_DATETIME),
-                request.data_type.metadata.get(LIMIT, 0),
+                request.data_type.metadata.get("instrument_id"),
+                request.data_type.metadata.get("from_datetime"),
+                request.data_type.metadata.get("to_datetime"),
+                request.data_type.metadata.get("limit", 0),
                 request.id,
             )
         elif request.data_type.type == TradeTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_trade_ticks(
-                request.data_type.metadata.get(INSTRUMENT_ID),
-                request.data_type.metadata.get(FROM_DATETIME),
-                request.data_type.metadata.get(TO_DATETIME),
-                request.data_type.metadata.get(LIMIT, 0),
+                request.data_type.metadata.get("instrument_id"),
+                request.data_type.metadata.get("from_datetime"),
+                request.data_type.metadata.get("to_datetime"),
+                request.data_type.metadata.get("limit", 0),
                 request.id,
             )
         elif request.data_type.type == Bar:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_bars(
-                request.data_type.metadata.get(BAR_TYPE),
-                request.data_type.metadata.get(FROM_DATETIME),
-                request.data_type.metadata.get(TO_DATETIME),
-                request.data_type.metadata.get(LIMIT, 0),
+                request.data_type.metadata.get("bar_type"),
+                request.data_type.metadata.get("from_datetime"),
+                request.data_type.metadata.get("to_datetime"),
+                request.data_type.metadata.get("limit", 0),
                 request.id,
             )
         else:
@@ -1063,7 +1062,7 @@ cdef class DataEngine(Component):
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
         elif isinstance(data, GenericData):
-            self._handle_custom_data(data)
+            self._handle_generic_data(data)
         else:
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}.")
 
@@ -1141,7 +1140,7 @@ cdef class DataEngine(Component):
         for handler in bar_handlers:
             handler(bar)
 
-    cdef void _handle_custom_data(self, GenericData data) except *:
+    cdef void _handle_generic_data(self, GenericData data) except *:
         # Send to all registered data handlers for that data type
         cdef list handlers = self._data_handlers.get(data.data_type, [])
         for handler in handlers:
@@ -1256,9 +1255,17 @@ cdef class DataEngine(Component):
                 handler(order_book)
 
     cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
+        cdef Instrument instrument = self.cache.instrument(bar_type.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot start bar aggregation: "
+                f"no instrument found for {bar_type.instrument_id}.",
+            )
+
         if bar_type.spec.is_time_aggregated():
             # Create aggregator
             aggregator = TimeBarAggregator(
+                instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
                 use_previous_close=self._use_previous_close,
@@ -1269,18 +1276,21 @@ cdef class DataEngine(Component):
             self._hydrate_aggregator(client, aggregator, bar_type)
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
+                instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
                 logger=self._log.get_logger(),
             )
         elif bar_type.spec.aggregation == BarAggregation.VOLUME:
             aggregator = VolumeBarAggregator(
+                instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
                 logger=self._log.get_logger(),
             )
         elif bar_type.spec.aggregation == BarAggregation.VALUE:
             aggregator = ValueBarAggregator(
+                instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
                 logger=self._log.get_logger(),
@@ -1319,9 +1329,9 @@ cdef class DataEngine(Component):
         bulk_updater = BulkTimeBarUpdater(aggregator)
 
         metadata = {
-            INSTRUMENT_ID: bar_type.instrument_id,
-            FROM_DATETIME: aggregator.get_start_time(),
-            TO_DATETIME: None,
+            "instrument_id": bar_type.instrument_id,
+            "from_datetime": aggregator.get_start_time(),
+            "to_datetime": None,
         }
 
         # noinspection bulk_updater.receive
@@ -1357,6 +1367,7 @@ cdef class DataEngine(Component):
 
     cdef void _bulk_build_tick_bars(
         self,
+        Instrument instrument,
         BarType bar_type,
         datetime from_datetime,
         datetime to_datetime,
@@ -1367,6 +1378,7 @@ cdef class DataEngine(Component):
         cdef int ticks_to_order = bar_type.spec.step * limit
 
         cdef BulkTickBarBuilder bar_builder = BulkTickBarBuilder(
+            instrument,
             bar_type,
             self._log.get_logger(),
             callback,

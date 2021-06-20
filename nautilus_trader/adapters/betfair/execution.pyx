@@ -188,7 +188,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             account_detail=account_details,
             account_funds=account_funds,
             event_id=self._uuid_factory.generate(),
-            updated_ns=timestamp_ns,
+            ts_updated_ns=timestamp_ns,
             timestamp_ns=timestamp_ns,
         )
         self._handle_event(account_state)
@@ -211,7 +211,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         self.generate_order_submitted(
             client_order_id=command.order.client_order_id,
-            submitted_ns=self._clock.timestamp_ns(),
+            ts_submitted_ns=self._clock.timestamp_ns(),
         )
         self._log.debug(f"Generated _generate_order_submitted")
 
@@ -221,6 +221,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     def _submit_order(self, SubmitOrder command):
         instrument = self._instrument_provider.find(command.instrument_id)
+        assert instrument is not None, f"Could not find instrument for {command.instrument_id}"
         kw = order_submit_to_betfair(command=command, instrument=instrument)
         self._log.debug(f"{kw}")
         return self._client.betting.place_orders(**kw)
@@ -241,7 +242,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             self.generate_order_rejected(
                 client_order_id=client_order_id,
                 reason=reason,
-                rejected_ns=self._clock.timestamp_ns(),
+                ts_rejected_ns=self._clock.timestamp_ns(),
             )
             return
         bet_id = resp['instructionReports'][0]['betId']
@@ -250,7 +251,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.generate_order_accepted(
             client_order_id=client_order_id,
             venue_order_id=VenueOrderId(bet_id),
-            accepted_ns=self._clock.timestamp_ns(),
+            ts_accepted_ns=self._clock.timestamp_ns(),
         )
 
     cpdef void update_order(self, UpdateOrder command) except *:
@@ -258,7 +259,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.generate_order_pending_replace(
             client_order_id=command.client_order_id,
             venue_order_id=command.venue_order_id,
-            pending_ns=self._clock.timestamp_ns(),
+            ts_pending_ns=self._clock.timestamp_ns(),
         )
         f = self._loop.run_in_executor(None, self._update_order, command)  # type: asyncio.Future
         self._log.debug(f"future: {f}")
@@ -302,7 +303,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             self.generate_order_rejected(
                 client_order_id=client_order_id,
                 reason=reason,
-                rejected_ns=self._clock.timestamp_ns(),
+                ts_rejected_ns=self._clock.timestamp_ns(),
             )
             return
         # Check the venue_order_id that has been deleted currently exists on our order
@@ -318,7 +319,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             venue_order_id=VenueOrderId(instructions["betId"]),
             quantity=Quantity(instructions["instruction"]['limitOrder']["size"], precision=4),
             price=price_to_probability(instructions["instruction"]['limitOrder']["price"]),
-            updated_ns=self._clock.timestamp_ns(),
+            trigger=None,  # Not applicable for Betfair
+            ts_updated_ns=self._clock.timestamp_ns(),
             venue_order_id_modified=True,
         )
 
@@ -327,7 +329,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.generate_order_pending_cancel(
             client_order_id=command.client_order_id,
             venue_order_id=command.venue_order_id,
-            pending_ns=self._clock.timestamp_ns(),
+            ts_pending_ns=self._clock.timestamp_ns(),
         )
         instrument = self._instrument_provider._instruments[command.instrument_id]
         kw = order_cancel_to_betfair(command=command, instrument=instrument)
@@ -378,7 +380,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 instrument = self._instrument_provider.get_betting_instrument(
                     market_id=market_id,
                     selection_id=str(selection["id"]),
-                    handicap=str(selection.get("hc", "0.0")),
+                    handicap=str(selection.get("hc", "")),
                 )
                 for order in selection.get("uo", []):
                     self._log.debug(f"order_update: {order}")
@@ -397,7 +399,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             self.generate_order_accepted(
                                 client_order_id=client_order_id,
                                 venue_order_id=venue_order_id,
-                                accepted_ns=millis_to_nanos(order["pd"]),
+                                ts_accepted_ns=millis_to_nanos(order["pd"]),
                             )
 
                         # Check for any portion executed
@@ -417,7 +419,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     quote_currency=instrument.quote_currency,
                                     commission=Money(0, self.get_account_currency()),
                                     liquidity_side=LiquiditySide.NONE,
-                                    execution_ns=millis_to_nanos(order["md"]),
+                                    ts_filled_ns=millis_to_nanos(order["md"]),
                                 )
                                 self.published_executions[client_order_id].append(execution_id)
 
@@ -440,7 +442,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     # avg_px=order['avp'],
                                     commission=Money(0, self.get_account_currency()),
                                     liquidity_side=LiquiditySide.TAKER,  # TODO - Fix this?
-                                    execution_ns=millis_to_nanos(order['md']),
+                                    ts_filled_ns=millis_to_nanos(order['md']),
                                 )
                         if any([order[x] != 0 for x in ("sc", "sl", "sv")]):
                             cancel_qty = sum([order[k] for k in ("sc", "sl", "sv")])
@@ -453,7 +455,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                 self.generate_order_canceled(
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
-                                    canceled_ns=millis_to_nanos(order.get("cd") or order.get("ld") or order.get('md')),
+                                    ts_canceled_ns=millis_to_nanos(order.get("cd") or order.get("ld") or order.get('md')),
                                 )
                         # Market order will not be in self.published_executions
                         if client_order_id in self.published_executions:

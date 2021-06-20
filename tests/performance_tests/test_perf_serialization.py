@@ -24,7 +24,7 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
 

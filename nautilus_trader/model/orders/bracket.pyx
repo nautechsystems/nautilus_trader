@@ -62,8 +62,5 @@ cdef class BracketOrder:
     def __eq__(self, BracketOrder other) -> bool:
         return self.id.value == other.id.value
 
-    def __ne__(self, BracketOrder other) -> bool:
-        return self.id.value != other.id.value
-
     def __repr__(self) -> str:
         return f"BracketOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={str(self.take_profit.price)})"

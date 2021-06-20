@@ -27,10 +27,9 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
-from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
@@ -43,8 +42,14 @@ from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 cdef int _SECONDS_IN_HOUR = 60 * 60
 
 
-class InstrumentSearch:
-    def __init__(self, instruments):
+class InstrumentSearch(Data):
+    def __init__(
+        self,
+        instruments,
+        ts_event_ns,
+        ts_recv_ns,
+    ):
+        super().__init__(ts_event_ns, ts_recv_ns)
         self.instruments = instruments
 
 
@@ -212,13 +217,15 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         if data_type.type == InstrumentSearch:
             # Strategy has requested a list of instruments
             instruments = self._instrument_provider.search_instruments(instrument_filter=data_type.metadata)
+            now = self._clock.timestamp_ns()
+            search = InstrumentSearch(
+                instruments=instruments,
+                ts_event_ns=now,
+                ts_recv_ns=now,
+            )
             self._handle_data_response(
-                data=GenericData(
-                    data_type=data_type,
-                    data=InstrumentSearch(instruments=instruments),
-                    timestamp_origin_ns=self._clock.timestamp_ns(),  # TODO(bm): Duplicate timestamps for now
-                    timestamp_ns=self._clock.timestamp_ns(),
-                ),
+                data_type=data_type,
+                data=search,
                 correlation_id=correlation_id
             )
         else:
@@ -228,7 +235,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     cpdef void subscribe_order_book(
         self, InstrumentId instrument_id,
-        OrderBookLevel level,
+        BookLevel level,
         int depth=0,
         dict kwargs=None,
     ) except *:
@@ -239,7 +246,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : OrderBookLevel
+        level : BookLevel
             The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
@@ -281,7 +288,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         await self._stream.send_subscription_message(market_ids=list(self._subscribed_market_ids))
         self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBookData> data.")
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, OrderBookLevel level, dict kwargs=None) except *:
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:
         self.subscribe_order_book(instrument_id=instrument_id, level=level, kwargs=kwargs)
 
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:

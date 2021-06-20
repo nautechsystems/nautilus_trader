@@ -37,8 +37,6 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
-from nautilus_trader.model.instruments.currency cimport CurrencySpot
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.tick cimport QuoteTick
@@ -245,7 +243,7 @@ cdef class Cache(CacheFacade):
         # As there should be a bi-directional one-to-one relationship between
         # caches and indexes, each cache and index must be checked individually
 
-        cdef double timestamp_us = unix_timestamp_us()
+        cdef int64_t timestamp_us = unix_timestamp_us()
         self._log.info("Checking data integrity...")
 
         # Needed type defs

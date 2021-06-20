@@ -241,6 +241,7 @@ class TestBacktestExecClientTests:
             order.venue_order_id,
             Quantity.from_int(100),
             Price.from_str("1010.00"),
+            None,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )

@@ -17,4 +17,9 @@ from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class CFDInstrument(Instrument):
-    pass
+
+    @staticmethod
+    cdef CFDInstrument from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(CFDInstrument obj)

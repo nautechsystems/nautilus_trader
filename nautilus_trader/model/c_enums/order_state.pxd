@@ -24,8 +24,8 @@ cpdef enum OrderState:
     CANCELED = 7,
     EXPIRED = 8,
     TRIGGERED = 9,
-    PENDING_CANCEL = 10,
-    PENDING_REPLACE = 11,
+    PENDING_UPDATE = 10,
+    PENDING_CANCEL = 11,
     PARTIALLY_FILLED = 12,
     FILLED = 13,
 

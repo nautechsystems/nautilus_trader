@@ -22,10 +22,9 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.data cimport DataType
-from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 
@@ -59,7 +58,7 @@ cdef class DataClient:
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cdef void _handle_data(self, Data data) except *
-    cdef void _handle_data_response(self, GenericData data, UUID correlation_id) except *
+    cdef void _handle_data_response(self, DataType data_type, Data data, UUID correlation_id) except *
 
 
 cdef class MarketDataClient(DataClient):
@@ -69,8 +68,8 @@ cdef class MarketDataClient(DataClient):
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, OrderBookLevel level, int depth=*, dict kwargs=*) except *
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, OrderBookLevel level, dict kwargs=*) except *
+    cpdef void subscribe_order_book(self, InstrumentId instrument_id, BookLevel level, int depth=*, dict kwargs=*) except *
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=*) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *

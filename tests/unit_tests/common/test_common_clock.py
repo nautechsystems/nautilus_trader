@@ -395,11 +395,12 @@ class TestTestClock:
     def test_advance_time_given_time_in_past_raises_value_error(self):
         # Arrange
         clock = TestClock()
+        clock.advance_time(1_000_000_000)
 
         # Act
         # Assert
         with pytest.raises(ValueError):
-            clock.advance_time(-1_000_000_000)
+            clock.advance_time(0)
 
     def test_cancel_timer_when_no_timers_does_nothing(self):
         # Arrange
@@ -836,7 +837,7 @@ class TestLiveClockWithThreadTimer:
             stop_time=None,
         )
 
-        time.sleep(0.9)
+        time.sleep(1.5)
 
         # Assert
         assert len(self.handler) >= 8

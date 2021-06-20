@@ -127,20 +127,13 @@ limited order feature set including simple vanilla MARKET and LIMIT orders.
 ## Installation
 
 The `master` branch will always reflect the code of the latest release version.
-Also, the documentation is always current for the latest version.
 
-The package is tested against Python 3.7 - 3.9 on Windows, MacOS and Linux 64-bit.
-We recommend running the platform with the latest stable version of Python.
+The package is tested against Python 3.7 - 3.9 on 64-bit Windows, MacOS and Linux.
+We recommend running the platform with the latest stable version of Python, and
+in a virtual environment to isolate the dependencies.
 
-It is a goal for the project to keep dependencies focused, however there are
-still a large number of dependencies as found in the `pyproject.toml` file.
-Therefore we recommend you create a new virtual environment for NautilusTrader
-to isolate the dependencies.
-
-For Unix machines, `pyenv` is the recommended tool for handling system wide
+For UNIX machines, [pyenv](https://github.com/pyenv/pyenv) is the recommended tool for handling system wide
 Python installations and virtual environments.
-
-> https://github.com/pyenv/pyenv
 
 Installation can be achieved through _one_ of the following options;
 
@@ -177,6 +170,17 @@ Installation from source requires Cython to compile the Python C extensions.
         git clone https://github.com/nautechsystems/nautilus_trader
         cd nautilus_trader
         pip install .
+
+Also, from v1.123.0 the following extras are separately available for installation.
+- `betfair` for the Betfair integration.
+- `ccxt` for the CCXT Pro integration.
+- `docs` for building the documentation.
+- `ib` for the Interactive Brokers integration.
+- `oanda` for the OANDA integration.
+
+For example to install with the `ccxt` extra using pip:
+
+    pip install nautilus_trader[ccxt]
 
 ## Examples
 
@@ -250,28 +254,30 @@ More will be added in due course including `MarketIfTouched`, `LimitIfTouched`
 and icebergs. Users are invited to open discussion issues to request specific
 order types or features.
 
+## Account Types
+
+The following account types are available for both live and backtest environments;
+
+- `Cash` single-currency (base currency).
+- `Cash` multi-currency.
+- `Margin` single-currency (base currency).
+- `Margin` multi-currency.
+
 ## Development
 
 For development we recommend using the PyCharm _Professional_ edition IDE, as it interprets Cython
 syntax. Alternatively, you could use Visual Studio Code with a Cython extension.
 
-`pyenv` is the recommended tool for handling Python installations and virtual environments.
+[pyenv](https://github.com/pyenv/pyenv) is the recommended tool for handling Python installations and virtual environments.
 
-> https://github.com/pyenv/pyenv
+[poetry](https://python-poetry.org/) is the preferred tool for handling all Python package and dev dependencies.
 
-
-`poetry` is the preferred tool for handling all Python package and dev dependencies.
-
-> https://python-poetry.org/
-
-`pre-commit` is used to automatically run various checks, auto-formatters and linting tools
+[pre-commit](https://pre-commit.com/) is used to automatically run various checks, auto-formatters and linting tools
 at commit.
-
-> https://pre-commit.com/
 
 #### Environment Setup
 
-The following steps are for Unix-like systems, and only need to be completed once.
+The following steps are for UNIX-like systems, and only need to be completed once.
 
 1. Install `poetry` by running:
 
@@ -315,7 +321,7 @@ Refer to the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader
 
 NautilusTrader is licensed under the LGPL v3.0 as found in the [LICENSE](https://github.com/nautechsystems/nautilus_trader/blob/master/LICENSE) file.
 
-Contributors are also required to sign a standard Contributor License Agreement (CLA), which is administered automatically through CLAassistant.
+Contributors are also required to sign a standard Contributor License Agreement (CLA), which is administered automatically through [CLA Assistant](https://cla-assistant.io/).
 
 ---
 

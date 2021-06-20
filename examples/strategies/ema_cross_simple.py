@@ -21,7 +21,7 @@ from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import Data
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -225,13 +225,13 @@ class EMACross(TradingStrategy):
 
         self.submit_order(order)
 
-    def on_data(self, data: GenericData):
+    def on_data(self, data: Data):
         """
         Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
-        data : GenericData
+        data : Data
             The data received.
 
         """

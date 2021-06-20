@@ -161,12 +161,12 @@ class BetfairTestStubs(TestStubs):
             market_name="AFC Conference Winner",
             market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00").to_pydatetime(),
             market_type="SPECIAL",
-            selection_handicap="0.0",
+            selection_handicap="",
             selection_id="50214",
             selection_name="Kansas City Chiefs",
             currency="GBP",
-            timestamp_origin_ns=BetfairTestStubs.clock().timestamp_ns(),
-            timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
+            ts_event_ns=BetfairTestStubs.clock().timestamp_ns(),
+            ts_recv_ns=BetfairTestStubs.clock().timestamp_ns(),
         )
 
     @staticmethod
@@ -510,6 +510,7 @@ class BetfairTestStubs(TestStubs):
             venue_order_id=VenueOrderId("001"),
             quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),
+            trigger=None,
             command_id=BetfairTestStubs.uuid(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
         )

@@ -45,8 +45,9 @@ cdef class BacktestEngine:
     cdef bint _log_to_file
     cdef bint _cache_db_flush
     cdef bint _use_data_cache
-    cdef dict _exchanges
+    cdef bint _run_analysis
 
+    cdef dict _exchanges
     cdef list _generic_data
     cdef list _order_book_data
     cdef dict _quote_ticks
@@ -71,13 +72,13 @@ cdef class BacktestEngine:
 
     cdef void _advance_time(self, int64_t now_ns) except *
     cdef void _process_modules(self, int64_t now_ns) except *
-    cdef void _log_header(
+    cdef void _pre_run(
         self,
         datetime run_started,
         datetime start,
         datetime stop,
     ) except *
-    cdef void _log_footer(
+    cdef void _post_run(
         self,
         datetime run_started,
         datetime run_finished,

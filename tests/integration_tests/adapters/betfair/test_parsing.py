@@ -40,7 +40,7 @@ def test_order_submit_to_betfair(betting_instrument):
         "instructions": [
             {
                 "customerOrderRef": "O-20210410-022422-001-001-Test",
-                "handicap": "0",
+                "handicap": "",
                 "limitOrder": {
                     "minFillSize": 0,
                     "persistenceType": "PERSIST",
@@ -97,7 +97,7 @@ def test_account_statement(betfair_client, uuid, clock):
         account_detail=detail,
         account_funds=funds,
         event_id=uuid,
-        updated_ns=timestamp_ns,
+        ts_updated_ns=timestamp_ns,
         timestamp_ns=timestamp_ns,
     )
     expected = AccountState(
@@ -112,7 +112,7 @@ def test_account_statement(betfair_client, uuid, clock):
         ],
         info={"funds": funds, "detail": detail},
         event_id=uuid,
-        updated_ns=result.timestamp_ns,
+        ts_updated_ns=result.timestamp_ns,
         timestamp_ns=result.timestamp_ns,
     )
     assert result == expected

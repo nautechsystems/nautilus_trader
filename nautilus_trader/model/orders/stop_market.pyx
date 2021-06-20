@@ -16,8 +16,8 @@
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport maybe_nanos_to_unix_dt
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -82,7 +82,7 @@ cdef class StopMarketOrder(PassiveOrder):
         init_id : UUID
             The order initialization event identifier.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the order initialization.
+            The UNIX timestamp (nanoseconds) of the order initialization.
         reduce_only : bool, optional
             If the order will only reduce an open position.
 
@@ -106,7 +106,7 @@ cdef class StopMarketOrder(PassiveOrder):
             expire_time=expire_time,
             init_id=init_id,
             timestamp_ns=timestamp_ns,
-            options={REDUCE_ONLY: reduce_only},
+            options={"reduce_only": reduce_only},
         )
 
         self.is_reduce_only = reduce_only
@@ -140,10 +140,10 @@ cdef class StopMarketOrder(PassiveOrder):
             instrument_id=init.instrument_id,
             order_side=init.order_side,
             quantity=init.quantity,
-            price=Price.from_str_c(init.options[PRICE]),
+            price=Price.from_str_c(init.options["price"]),
             time_in_force=init.time_in_force,
-            expire_time=init.options.get(EXPIRE_TIME),
+            expire_time=maybe_nanos_to_unix_dt(init.options.get("expire_time")),
             init_id=init.id,
             timestamp_ns=init.timestamp_ns,
-            reduce_only=init.options[REDUCE_ONLY],
+            reduce_only=init.options["reduce_only"],
         )

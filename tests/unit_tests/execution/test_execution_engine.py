@@ -974,6 +974,7 @@ class ExecutionEngineTests(unittest.TestCase):
             order.venue_order_id,
             Quantity.from_int(200000),
             order.price,
+            None,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -2031,7 +2032,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_order)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
-        self.exec_engine.process(TestStubs.event_order_pending_replace(order))
+        self.exec_engine.process(TestStubs.event_order_pending_update(order))
 
         # Get order, check venue_order_id
         cached_order = self.cache.order(order.client_order_id)
@@ -2045,7 +2046,8 @@ class ExecutionEngineTests(unittest.TestCase):
             venue_order_id=new_venue_id,
             quantity=order.quantity,
             price=order.price,
-            updated_ns=self.clock.timestamp_ns(),
+            trigger=None,
+            ts_updated_ns=self.clock.timestamp_ns(),
             event_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )

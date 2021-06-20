@@ -13,17 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum OrderBookDeltaType:
-    ADD = 1,
-    UPDATE = 2,
-    DELETE = 3,
+from nautilus_trader.serialization.base cimport CommandSerializer
+from nautilus_trader.serialization.base cimport EventSerializer
+from nautilus_trader.serialization.base cimport InstrumentSerializer
 
 
-cdef class OrderBookDeltaTypeParser:
+cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
+    pass
 
-    @staticmethod
-    cdef str to_str(int value)
 
-    @staticmethod
-    cdef OrderBookDeltaType from_str(str value) except *
+cdef class MsgPackCommandSerializer(CommandSerializer):
+    pass
+
+
+cdef class MsgPackEventSerializer(EventSerializer):
+    pass

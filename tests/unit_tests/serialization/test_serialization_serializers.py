@@ -14,15 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 from base64 import b64encode
+from io import BytesIO
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.model.c_enums.book_level import BookLevel
+from nautilus_trader.model.c_enums.delta_type import DeltaType
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -56,14 +60,17 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.book import OrderBookDelta
+from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
-from nautilus_trader.serialization.base import Serializer
-from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
-from nautilus_trader.serialization.serializers import MsgPackEventSerializer
-from nautilus_trader.serialization.serializers import MsgPackInstrumentSerializer
-from nautilus_trader.serialization.serializers import MsgPackOrderSerializer
+from nautilus_trader.model.orders.unpacker import OrderUnpacker
+from nautilus_trader.serialization.arrow.core import from_parquet
+from nautilus_trader.serialization.arrow.core import to_parquet
+from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -71,44 +78,6 @@ from tests.test_kit.stubs import UNIX_EPOCH
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
-
-
-class TestSerializerBase:
-    def setup(self):
-        # Fixture Setup
-        self.serializer = Serializer()
-
-    def test_py_convert_camel_to_snake(self):
-        # Arrange
-        value0 = "CamelCase"
-        value1 = "camelCase"
-        value2 = "camel"
-
-        # Act
-        result0 = self.serializer.py_convert_camel_to_snake(value0)
-        result1 = self.serializer.py_convert_camel_to_snake(value1)
-        result2 = self.serializer.py_convert_camel_to_snake(value2)
-
-        # Assert
-        assert result0 == "CAMEL_CASE"
-        assert result1 == "CAMEL_CASE"
-        assert result2 == "CAMEL"
-
-    def test_py_convert_snake_to_camel(self):
-        # Arrange
-        value0 = "SNAKE_CASE"
-        value1 = "snake_case"
-        value2 = "snake"
-
-        # Act
-        result0 = self.serializer.py_convert_snake_to_camel(value0)
-        result1 = self.serializer.py_convert_snake_to_camel(value1)
-        result2 = self.serializer.py_convert_snake_to_camel(value2)
-
-        # Assert
-        assert result0 == "SnakeCase"
-        assert result1 == "SnakeCase"
-        assert result2 == "Snake"
 
 
 class TestInstrumentSerializer:
@@ -126,6 +95,16 @@ class TestInstrumentSerializer:
         print(b64encode(serialized))
         print(deserialized)
 
+    def test_serialize_and_deserialize_crypto_swap_instrument(self):
+        # Arrange, Act
+        serialized = self.serializer.serialize(ETHUSDT_BINANCE)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == ETHUSDT_BINANCE
+        print(b64encode(serialized))
+        print(deserialized)
+
     def test_serialize_and_deserialize_crypto_instrument(self):
         # Arrange, Act
         serialized = self.serializer.serialize(ETHUSDT_BINANCE)
@@ -137,17 +116,17 @@ class TestInstrumentSerializer:
         print(deserialized)
 
 
-class TestMsgPackOrderSerializer:
+class TestOrderUnpackerSerializer:
     def setup(self):
         # Fixture Setup
-        self.serializer = MsgPackOrderSerializer()
+        self.unpacker = OrderUnpacker()
         self.order_factory = OrderFactory(
             trader_id=TraderId("TESTER-000"),
             strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
-    def test_serialize_and_deserialize_market_orders(self):
+    def test_pack_and_unpack_market_orders(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -156,15 +135,13 @@ class TestMsgPackOrderSerializer:
         )
 
         # Act
-        serialized = self.serializer.serialize(order)
-        deserialized = self.serializer.deserialize(serialized)
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
 
         # Assert
-        assert deserialized == order
-        print(b64encode(serialized))
-        print(order)
+        assert unpacked == order
 
-    def test_serialize_and_deserialize_limit_orders(self):
+    def test_pack_and_unpack_limit_orders(self):
         # Arrange
         order = self.order_factory.limit(
             AUDUSD_SIM.id,
@@ -175,15 +152,13 @@ class TestMsgPackOrderSerializer:
         )
 
         # Act
-        serialized = self.serializer.serialize(order)
-        deserialized = self.serializer.deserialize(serialized)
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
 
         # Assert
-        assert deserialized == order
-        print(b64encode(serialized))
-        print(order)
+        assert unpacked == order
 
-    def test_serialize_and_deserialize_limit_orders_with_expire_time(self):
+    def test_pack_and_unpack_limit_orders_with_expire_time(self):
         # Arrange
         order = LimitOrder(
             ClientOrderId("O-123456"),
@@ -199,15 +174,13 @@ class TestMsgPackOrderSerializer:
         )
 
         # Act
-        serialized = self.serializer.serialize(order)
-        deserialized = self.serializer.deserialize(serialized)
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
 
         # Assert
-        assert deserialized == order
-        print(b64encode(serialized))
-        print(order)
+        assert unpacked == order
 
-    def test_serialize_and_deserialize_stop_market_orders_with_expire_time(self):
+    def test_pack_and_unpack_stop_market_orders_with_expire_time(self):
         # Arrange
         order = StopMarketOrder(
             ClientOrderId("O-123456"),
@@ -223,15 +196,13 @@ class TestMsgPackOrderSerializer:
         )
 
         # Act
-        serialized = self.serializer.serialize(order)
-        deserialized = self.serializer.deserialize(serialized)
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
 
         # Assert
-        assert deserialized == order
-        print(b64encode(serialized))
-        print(order)
+        assert unpacked == order
 
-    def test_serialize_and_deserialize_stop_limit_orders(self):
+    def test_pack_and_unpack_stop_limit_orders(self):
         # Arrange
         order = StopLimitOrder(
             ClientOrderId("O-123456"),
@@ -248,15 +219,13 @@ class TestMsgPackOrderSerializer:
         )
 
         # Act
-        serialized = self.serializer.serialize(order)
-        deserialized = self.serializer.deserialize(serialized)
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
 
         # Assert
-        assert deserialized == order
-        print(b64encode(serialized))
-        print(order)
+        assert unpacked == order
 
-    def test_serialize_and_deserialize_stop_limit_orders_with_expire_time(self):
+    def test_pack_and_unpack_stop_limit_orders_with_expire_time(self):
         # Arrange
         order = StopLimitOrder(
             ClientOrderId("O-123456"),
@@ -273,13 +242,11 @@ class TestMsgPackOrderSerializer:
         )
 
         # Act
-        serialized = self.serializer.serialize(order)
-        deserialized = self.serializer.deserialize(serialized)
+        packed = OrderInitialized.to_dict(order.last_event)
+        unpacked = self.unpacker.unpack(packed)
 
         # Assert
-        assert deserialized == order
-        print(b64encode(serialized))
-        print(order)
+        assert unpacked == order
 
 
 class TestMsgPackCommandSerializer:
@@ -403,6 +370,7 @@ class TestMsgPackCommandSerializer:
             VenueOrderId("001"),
             Quantity(100000, precision=0),
             Price(1.00001, precision=5),
+            None,
             uuid4(),
             0,
         )
@@ -444,7 +412,7 @@ class TestMsgPackEventSerializer:
         self.account_id = TestStubs.account_id()
         self.serializer = MsgPackEventSerializer()
 
-    def test_serialize_and_deserialize_account_state_events(self):
+    def test_serialize_and_deserialize_account_state_with_base_currency_events(self):
         # Arrange
         event = AccountState(
             account_id=AccountId("SIM", "000"),
@@ -458,14 +426,41 @@ class TestMsgPackEventSerializer:
             ],
             info={},
             event_id=uuid4(),
-            updated_ns=0,
+            ts_updated_ns=0,
             timestamp_ns=1_000_000_000,
         )
 
         # Act
         serialized = self.serializer.serialize(event)
         deserialized = self.serializer.deserialize(serialized)
-        print(deserialized)
+
+        # Assert
+        assert deserialized == event
+
+    def test_serialize_and_deserialize_account_state_without_base_currency_events(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM", "000"),
+            account_type=AccountType.MARGIN,
+            base_currency=None,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    USDT,
+                    Money(10000, USDT),
+                    Money(0, USDT),
+                    Money(10000, USDT),
+                )
+            ],
+            info={},
+            event_id=uuid4(),
+            ts_updated_ns=0,
+            timestamp_ns=1_000_000_000,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
 
         # Assert
         assert deserialized == event
@@ -771,6 +766,7 @@ class TestMsgPackEventSerializer:
             VenueOrderId("1"),
             Quantity(100000, precision=0),
             Price(0.80010, precision=5),
+            Price(0.80050, precision=5),
             0,
             uuid4(),
             0,
@@ -874,3 +870,89 @@ class TestMsgPackEventSerializer:
 
         # Assert
         assert deserialized == event
+
+
+class TestParquetSerializer:
+    def setup(self):
+        # Fixture Setup
+        self.buffer = BytesIO()
+
+    def test_serialize_and_deserialize_trade_tick(self):
+
+        tick = TestStubs.trade_tick_5decimal()
+
+        serialized = to_parquet(buff=self.buffer, objects=[tick])
+        deserialized = from_parquet(serialized)
+
+        # Assert
+        assert deserialized == [tick]
+
+    def test_serialize_and_deserialize_order_book_delta(self):
+
+        delta = OrderBookDelta(
+            instrument_id=TestStubs.audusd_id(),
+            level=BookLevel.L2,
+            delta_type=DeltaType.CLEAR,
+            order=None,
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
+
+        serialized = to_parquet(buff=self.buffer, objects=[delta])
+        deserialized = from_parquet(serialized)
+
+        # Assert
+        assert deserialized == [delta]
+
+    def test_serialize_and_deserialize_order_book_deltas(self):
+
+        kw = {
+            "instrument_id": "AUD/USD.SIM",
+            "ts_event_ns": 0,
+            "ts_recv_ns": 0,
+            "level": "L2",
+        }
+        deltas = OrderBookDeltas(
+            instrument_id=TestStubs.audusd_id(),
+            level=BookLevel.L2,
+            deltas=[
+                OrderBookDelta.from_dict(
+                    {
+                        "delta_type": "ADD",
+                        "order_side": "BUY",
+                        "order_price": 8.0,
+                        "order_size": 30.0,
+                        "order_id": "e0364f94-8fcb-0262-cbb3-075c51ee4917",
+                        **kw,
+                    }
+                ),
+                OrderBookDelta.from_dict(
+                    {
+                        "delta_type": "ADD",
+                        "order_side": "SELL",
+                        "order_price": 15.0,
+                        "order_size": 10.0,
+                        "order_id": "cabec174-acc6-9204-9ebf-809da3896daf",
+                        **kw,
+                    }
+                ),
+            ],
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
+
+        serialized = to_parquet(buff=self.buffer, objects=[deltas])
+        deserialized = from_parquet(serialized)
+
+        # Assert
+        assert deserialized == [deltas]
+
+    def test_serialize_and_deserialize_order_book_snapshot(self):
+
+        book = TestStubs.order_book_snapshot()
+
+        serialized = to_parquet(buff=self.buffer, objects=[book])
+        deserialized = from_parquet(serialized)
+
+        # Assert
+        assert deserialized == [book]

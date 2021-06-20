@@ -98,7 +98,7 @@ strategy = EMACross(
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
     fast_ema_period=10,
     slow_ema_period=20,
-    trade_size=Decimal("10"),
+    trade_size=Decimal("100"),
     order_id_tag="002",
 )
 

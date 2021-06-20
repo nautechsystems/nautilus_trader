@@ -62,9 +62,6 @@ cdef class Account:
     def __eq__(self, Account other) -> bool:
         return self.id.value == other.id.value
 
-    def __ne__(self, Account other) -> bool:
-        return self.id.value != other.id.value
-
     def __hash__(self) -> int:
         return hash(self.id.value)
 
@@ -738,10 +735,7 @@ cdef class Account:
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
-    cdef void _update_balances(
-        self,
-        list balances,
-    ) except *:
+    cdef void _update_balances(self, list balances) except *:
         # Update the balances. Note that there is no guarantee that every
         # account currency is included in the event, which is why we don't just
         # assign a dict.

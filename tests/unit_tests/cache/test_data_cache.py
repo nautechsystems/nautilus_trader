@@ -23,9 +23,8 @@ from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.enums import OrderBookLevel
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -275,7 +274,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00000"),
             Quantity.from_int(10000),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -295,7 +294,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00000"),
             Quantity.from_int(10000),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -376,11 +375,11 @@ class CacheTests(unittest.TestCase):
         # Arrange
         snapshot = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
-            timestamp_origin_ns=0,
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         order_book = L2OrderBook(
@@ -431,7 +430,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00000"),
             Quantity.from_int(10000),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -451,7 +450,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00000"),
             Quantity.from_int(10000),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -553,7 +552,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00000"),
             Quantity.from_int(10000),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -574,7 +573,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00000"),
             Quantity.from_int(10000),
             AggressorSide.BUY,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )
@@ -584,7 +583,7 @@ class CacheTests(unittest.TestCase):
             Price.from_str("1.00001"),
             Quantity.from_int(20000),
             AggressorSide.SELL,
-            TradeMatchId("123456789"),
+            "123456789",
             0,
             0,
         )

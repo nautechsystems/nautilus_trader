@@ -1,3 +1,54 @@
+# NautilusTrader 1.123.0 Beta - Release Notes
+
+A major feature of this release is a complete re-design of serialization for the
+platform, along with initial support for the [Parquet](https://parquet.apache.org/) format.
+The MessagePack serialization functionality has been refined and retained.
+
+In the interests of explicitness there is now a convention that timestamps are 
+named either `timestamp_ns`, or prepended with `ts`. Timestamps which are 
+represented with an `int64` are always in nanosecond resolution, and appended 
+with `_ns` accordingly.
+
+Initial scaffolding for new backtest data tooling has been added.
+
+## Breaking Changes
+- Renamed `OrderState.PENDING_REPLACE` to `OrderState.PENDING_UPDATE`
+- Renamed `timestamp_origin_ns` to `ts_event_ns`.
+- Renamed `timestamp_ns` for data to `ts_recv_ns`.
+- Renamed `updated_ns` to `ts_updated_ns`.
+- Renamed `submitted_ns` to `ts_submitted_ns`.
+- Renamed `rejected_ns` to `ts_rejected_ns`.
+- Renamed `accepted_ns` to `ts_accepted_ns`.
+- Renamed `pending_ns` to `ts_pending_ns`.
+- Renamed `canceled_ns` to `ts_canceled_ns`.
+- Renamed `triggered_ns` to `ts_triggered_ns`.
+- Renamed `expired_ns` to `ts_expired_ns`.
+- Renamed `execution_ns` to `ts_filled_ns`.
+- Renamed `OrderBookLevel` to `BookLevel`.
+- Renamed `Order.volume` to `Order.size`.
+
+## Enhancements
+- Adapters dependencies are now optional extras at installation.
+- Added arrow/parquet serialization.
+- Added object `to_dict()` and `from_dict()` methods.
+- Added `Order.is_pending_update`.
+- Added `Order.is_pending_cancel`.
+- Removed `TradeMatchId` in favour of bare string.
+- Removed redundant conversion to `pd.Timestamp` when checking timestamps.
+- Removed redundant data `to_serializable_str` methods.
+- Removed redundant data `from_serializable_str` methods.
+- Removed redundant `__ne__` implementations.
+- Removed redundant MsgPackSerializer cruft.
+- Removed redundant `ObjectCache` and `IdentifierCache`.
+- Removed redundant string constants.
+
+## Fixes
+- Fixed millis to nanos in CCXT execution.
+- Added missing trigger to `UpdateOrder` handling.
+- Removed all `import *`.
+
+---
+
 # NautilusTrader 1.122.0 Beta - Release Notes
 
 This release includes numerous breaking changes with a view to enhancing the core
@@ -194,7 +245,7 @@ tick data a L1 order book is used as a proxy. A future release will include
 improved fill modelling assumptions and customizations.
 
 ## Breaking Changes
-- `OrderBook.create` now takes `Instrument` and `OrderBookLevel`.
+- `OrderBook.create` now takes `Instrument` and `BookLevel`.
 
 ## Enhancements
 - `SimulatedExchange` now maintains order books internally.
@@ -223,7 +274,7 @@ None
 - Builds for 32-bit platforms.
 
 ## Fixes
-- `OrderBook.create` for `OrderBookLevel.L3` now returns correct book.
+- `OrderBook.create` for `BookLevel.L3` now returns correct book.
 - Betfair handling of execution IDs.
 
 ---

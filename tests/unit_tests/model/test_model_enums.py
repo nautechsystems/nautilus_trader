@@ -25,8 +25,12 @@ from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import AssetTypeParser
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BarAggregationParser
+from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookLevelParser
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import CurrencyTypeParser
+from nautilus_trader.model.enums import DeltaType
+from nautilus_trader.model.enums import DeltaTypeParser
 from nautilus_trader.model.enums import DepthType
 from nautilus_trader.model.enums import DepthTypeParser
 from nautilus_trader.model.enums import InstrumentCloseType
@@ -37,10 +41,6 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import LiquiditySideParser
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OMSTypeParser
-from nautilus_trader.model.enums import OrderBookDeltaType
-from nautilus_trader.model.enums import OrderBookDeltaTypeParser
-from nautilus_trader.model.enums import OrderBookLevel
-from nautilus_trader.model.enums import OrderBookLevelParser
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderSideParser
 from nautilus_trader.model.enums import OrderState
@@ -643,7 +643,7 @@ class TestOrderState:
             [OrderState.EXPIRED, "EXPIRED"],
             [OrderState.TRIGGERED, "TRIGGERED"],
             [OrderState.PENDING_CANCEL, "PENDING_CANCEL"],
-            [OrderState.PENDING_REPLACE, "PENDING_REPLACE"],
+            [OrderState.PENDING_UPDATE, "PENDING_UPDATE"],
             [OrderState.PARTIALLY_FILLED, "PARTIALLY_FILLED"],
             [OrderState.FILLED, "FILLED"],
         ],
@@ -669,7 +669,7 @@ class TestOrderState:
             ["EXPIRED", OrderState.EXPIRED],
             ["TRIGGERED", OrderState.TRIGGERED],
             ["PENDING_CANCEL", OrderState.PENDING_CANCEL],
-            ["PENDING_REPLACE", OrderState.PENDING_REPLACE],
+            ["PENDING_UPDATE", OrderState.PENDING_UPDATE],
             ["PARTIALLY_FILLED", OrderState.PARTIALLY_FILLED],
             ["FILLED", OrderState.FILLED],
         ],
@@ -729,29 +729,29 @@ class TestOrderType:
         assert expected == result
 
 
-class TestOrderBookLevel:
+class TestBookLevel:
     def test_orderbook_level_parser_given_invalid_value_raises_value_error(self):
         # Arrange
         # Act
         # Assert
         with pytest.raises(ValueError):
-            OrderBookLevelParser.to_str_py(0)
+            BookLevelParser.to_str_py(0)
 
         with pytest.raises(ValueError):
-            OrderBookLevelParser.from_str_py("")
+            BookLevelParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [OrderBookLevel.L1, "L1"],
-            [OrderBookLevel.L2, "L2"],
-            [OrderBookLevel.L3, "L3"],
+            [BookLevel.L1, "L1"],
+            [BookLevel.L2, "L2"],
+            [BookLevel.L3, "L3"],
         ],
     )
     def test_orderbook_level_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = OrderBookLevelParser.to_str_py(enum)
+        result = BookLevelParser.to_str_py(enum)
 
         # Assert
         assert expected == result
@@ -760,9 +760,9 @@ class TestOrderBookLevel:
         "string, expected",
         [
             ["", None],
-            ["L1", OrderBookLevel.L1],
-            ["L2", OrderBookLevel.L2],
-            ["L3", OrderBookLevel.L3],
+            ["L1", BookLevel.L1],
+            ["L2", BookLevel.L2],
+            ["L3", BookLevel.L3],
         ],
     )
     def test_orderbook_level_from_str(self, string, expected):
@@ -771,35 +771,36 @@ class TestOrderBookLevel:
         if expected is None:
             return
 
-        result = OrderBookLevelParser.from_str_py(string)
+        result = BookLevelParser.from_str_py(string)
 
         # Assert
         assert expected == result
 
 
-class TestOrderBookOperationType:
-    def test_orderbook_op_parser_given_invalid_value_raises_value_error(self):
+class TestDeltaType:
+    def test_delta_type_parser_given_invalid_value_raises_value_error(self):
         # Arrange
         # Act
         # Assert
         with pytest.raises(ValueError):
-            OrderBookDeltaTypeParser.to_str_py(0)
+            DeltaTypeParser.to_str_py(0)
 
         with pytest.raises(ValueError):
-            OrderBookDeltaTypeParser.from_str_py("")
+            DeltaTypeParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [OrderBookDeltaType.ADD, "ADD"],
-            [OrderBookDeltaType.UPDATE, "UPDATE"],
-            [OrderBookDeltaType.DELETE, "DELETE"],
+            [DeltaType.ADD, "ADD"],
+            [DeltaType.UPDATE, "UPDATE"],
+            [DeltaType.DELETE, "DELETE"],
+            [DeltaType.CLEAR, "CLEAR"],
         ],
     )
-    def test_orderbook_op_to_str(self, enum, expected):
+    def test_delta_type_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = OrderBookDeltaTypeParser.to_str_py(enum)
+        result = DeltaTypeParser.to_str_py(enum)
 
         # Assert
         assert expected == result
@@ -808,18 +809,19 @@ class TestOrderBookOperationType:
         "string, expected",
         [
             ["", None],
-            ["ADD", OrderBookDeltaType.ADD],
-            ["UPDATE", OrderBookDeltaType.UPDATE],
-            ["DELETE", OrderBookDeltaType.DELETE],
+            ["ADD", DeltaType.ADD],
+            ["UPDATE", DeltaType.UPDATE],
+            ["DELETE", DeltaType.DELETE],
+            ["CLEAR", DeltaType.CLEAR],
         ],
     )
-    def test_orderbook_op_from_str(self, string, expected):
+    def test_delta_type_from_str(self, string, expected):
         # Arrange
         # Act
         if expected is None:
             return
 
-        result = OrderBookDeltaTypeParser.from_str_py(string)
+        result = DeltaTypeParser.from_str_py(string)
 
         # Assert
         assert expected == result

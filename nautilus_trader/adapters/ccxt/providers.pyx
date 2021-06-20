@@ -230,8 +230,8 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                 margin_maint=Decimal(),  # Margin trading not implemented
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
-                timestamp_origin_ns=timestamp,
-                timestamp_ns=timestamp,
+                ts_event_ns=timestamp,
+                ts_recv_ns=timestamp,
                 info=values,
             )
         elif is_swap:
@@ -255,8 +255,8 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                 margin_maint=Decimal(),  # Margin trading not implemented
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
-                timestamp_origin_ns=timestamp,
-                timestamp_ns=timestamp,
+                ts_event_ns=timestamp,
+                ts_recv_ns=timestamp,
                 info=values,
             )
         elif is_option:

@@ -240,7 +240,7 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_sell)
         self.assertFalse(order.is_passive)
         self.assertTrue(order.is_aggressive)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
         self.assertEqual(0, order.last_event.timestamp_ns)
         self.assertEqual(OrderInitialized, type(order.init_event))
         self.assertTrue(order == order)
@@ -265,7 +265,7 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(order.is_completed)
         self.assertFalse(order.is_buy)
         self.assertTrue(order.is_sell)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
         self.assertEqual(OrderInitialized, type(order.init_event))
 
     def test_order_equality(self):
@@ -281,16 +281,16 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order == order)
         self.assertFalse(order != order)
 
-    def test_order_str_and_repr(self):
+    def test_order_hash_str_and_repr(self):
         # Arrange
-        # Act
         order = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
         )
 
-        # Assert
+        # Act, Assert
+        self.assertTrue(isinstance(hash(order), int))
         self.assertEqual(
             "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, "
             "client_order_id=O-19700101-000000-000-001-1)",
@@ -301,6 +301,40 @@ class OrderTests(unittest.TestCase):
             "client_order_id=O-19700101-000000-000-001-1)",
             repr(order),
         )
+
+    def test_order_to_dict(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        # Act
+        result = order.to_dict()
+
+        # Assert
+        assert result == {
+            "type": "MarketOrder",
+            "client_order_id": "O-19700101-000000-000-001-1",
+            "venue_order_id": "NULL",
+            "position_id": "NULL",
+            "strategy_id": "S-001",
+            "account_id": None,
+            "execution_id": None,
+            "instrument_id": "AUD/USD.SIM",
+            "order_side": "BUY",
+            "order_type": "MARKET",
+            "quantity": "100000",
+            "timestamp_ns": 0,
+            "time_in_force": "GTC",
+            "filled_qty": "0",
+            "ts_filled_ns": 0,
+            "avg_px": None,
+            "slippage": "0",
+            "init_id": order.init_id.value,
+            "state": "INITIALIZED",
+        }
 
     def test_initialize_limit_order(self):
         # Arrange
@@ -586,6 +620,8 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(submitted, order.last_event)
         self.assertFalse(order.is_working)
         self.assertFalse(order.is_completed)
+        self.assertFalse(order.is_pending_update)
+        self.assertFalse(order.is_pending_cancel)
 
     def test_apply_order_accepted_event(self):
         # Arrange
@@ -678,6 +714,28 @@ class OrderTests(unittest.TestCase):
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
 
+    def test_order_state_pending_cancel(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
+
+        # Act
+        order.apply(TestStubs.event_order_pending_cancel(order))
+
+        # Assert
+        self.assertEqual(OrderState.PENDING_CANCEL, order.state)
+        self.assertTrue(order.is_working)
+        self.assertFalse(order.is_completed)
+        self.assertFalse(order.is_pending_update)
+        self.assertTrue(order.is_pending_cancel)
+        self.assertEqual(4, order.event_count)
+
     def test_apply_order_canceled_event(self):
         # Arrange
         order = self.order_factory.market(
@@ -697,7 +755,31 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(OrderState.CANCELED, order.state)
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
+        self.assertFalse(order.is_pending_update)
+        self.assertFalse(order.is_pending_cancel)
         self.assertEqual(5, order.event_count)
+
+    def test_order_state_pending_replace(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        order.apply(TestStubs.event_order_submitted(order))
+        order.apply(TestStubs.event_order_accepted(order))
+
+        # Act
+        order.apply(TestStubs.event_order_pending_update(order))
+
+        # Assert
+        self.assertEqual(OrderState.PENDING_UPDATE, order.state)
+        self.assertTrue(order.is_working)
+        self.assertFalse(order.is_completed)
+        self.assertTrue(order.is_pending_update)
+        self.assertFalse(order.is_pending_cancel)
+        self.assertEqual(4, order.event_count)
 
     def test_apply_order_updated_event_to_stop_order(self):
         # Arrange
@@ -710,7 +792,7 @@ class OrderTests(unittest.TestCase):
 
         order.apply(TestStubs.event_order_submitted(order))
         order.apply(TestStubs.event_order_accepted(order))
-        order.apply(TestStubs.event_order_pending_replace(order))
+        order.apply(TestStubs.event_order_pending_update(order))
 
         updated = OrderUpdated(
             self.account_id,
@@ -718,6 +800,7 @@ class OrderTests(unittest.TestCase):
             VenueOrderId("1"),
             Quantity.from_int(120000),
             Price.from_str("1.00001"),
+            None,
             0,
             uuid4(),
             0,
@@ -746,7 +829,7 @@ class OrderTests(unittest.TestCase):
 
         order.apply(TestStubs.event_order_submitted(order))
         order.apply(TestStubs.event_order_accepted(order))
-        order.apply(TestStubs.event_order_pending_replace(order))
+        order.apply(TestStubs.event_order_pending_update(order))
 
         updated = OrderUpdated(
             self.account_id,
@@ -754,6 +837,7 @@ class OrderTests(unittest.TestCase):
             VenueOrderId("2"),
             Quantity.from_int(120000),
             Price.from_str("1.00001"),
+            None,
             0,
             uuid4(),
             0,
@@ -795,7 +879,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(1, len(order.execution_ids))
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
 
     def test_apply_order_filled_event_to_market_order(self):
         # Arrange
@@ -826,7 +910,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(1, len(order.execution_ids))
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
 
     def test_apply_partial_fill_events_to_market_order_results_in_partially_filled(
         self,
@@ -872,7 +956,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(2, len(order.execution_ids))
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
 
     def test_apply_filled_events_to_market_order_results_in_filled(self):
         # Arrange
@@ -927,7 +1011,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(3, len(order.execution_ids))
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
 
     def test_apply_order_filled_event_to_buy_limit_order(self):
         # Arrange
@@ -971,7 +1055,7 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Decimal("0.00001"), order.slippage)
         self.assertFalse(order.is_working)
         self.assertTrue(order.is_completed)
-        self.assertEqual(0, order.execution_ns)
+        self.assertEqual(0, order.ts_filled_ns)
 
     def test_apply_order_partially_filled_event_to_buy_limit_order(self):
         # Arrange
@@ -1015,4 +1099,4 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(Decimal("-0.000001"), order.slippage)
         self.assertTrue(order.is_working)
         self.assertFalse(order.is_completed)
-        self.assertEqual(1_000_000_000, order.execution_ns)
+        self.assertEqual(1_000_000_000, order.ts_filled_ns)

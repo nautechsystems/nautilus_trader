@@ -22,10 +22,10 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.account_type cimport AccountType
+from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.orderbook_level cimport OrderBookLevel
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
@@ -64,8 +64,8 @@ cdef class SimulatedExchange:
     """The venues type.\n\n:returns: `VenueType`"""
     cdef readonly OMSType oms_type
     """The exchange order management system type.\n\n:returns: `OMSType`"""
-    cdef readonly OrderBookLevel exchange_order_book_level
-    """The exchange default order book level.\n\n:returns: `OrderBookLevel`"""
+    cdef readonly BookLevel exchange_order_book_level
+    """The exchange default order book level.\n\n:returns: `BookLevel`"""
     cdef readonly CacheFacade cache
     """The read-only cache wired to the exchange.\n\n:returns: `CacheFacade`"""
     cdef readonly BacktestExecClient exec_client
@@ -134,7 +134,7 @@ cdef class SimulatedExchange:
 # -- EVENT HANDLING --------------------------------------------------------------------------------
 
     cdef void _reject_order(self, Order order, str reason) except *
-    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price) except *
+    cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *
     cdef void _cancel_order(self, PassiveOrder order) except *
     cdef void _expire_order(self, PassiveOrder order) except *
 
@@ -146,7 +146,7 @@ cdef class SimulatedExchange:
     cdef void _generate_order_pending_cancel(self, Order order) except *
     cdef void _generate_order_update_rejected(self, ClientOrderId client_order_id, str response, str reason) except *
     cdef void _generate_order_cancel_rejected(self, ClientOrderId client_order_id, str response, str reason) except *
-    cdef void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price) except *
+    cdef void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *
     cdef void _generate_order_canceled(self, PassiveOrder order) except *
     cdef void _generate_order_triggered(self, StopLimitOrder order) except *
     cdef void _generate_order_expired(self, PassiveOrder order) except *
@@ -158,7 +158,7 @@ cdef class SimulatedExchange:
     cdef void _process_stop_limit_order(self, StopLimitOrder order) except *
     cdef void _update_limit_order(self, LimitOrder order, Quantity qty, Price price) except *
     cdef void _update_stop_market_order(self, StopMarketOrder order, Quantity qty, Price price) except *
-    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price) except *
+    cdef void _update_stop_limit_order(self, StopLimitOrder order, Quantity qty, Price price, Price trigger) except *
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 

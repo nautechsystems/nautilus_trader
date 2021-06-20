@@ -74,19 +74,21 @@ cdef class Order:
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly int64_t timestamp_ns
-    """The Unix timestamp (nanos) of order initialization.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) of order initialization.\n\n:returns: `int64`"""
     cdef readonly TimeInForce time_in_force
     """The order time-in-force.\n\n:returns: `TimeInForce`"""
     cdef readonly Quantity filled_qty
     """The order total filled quantity.\n\n:returns: `Quantity`"""
-    cdef readonly int64_t execution_ns
-    """The Unix timestamp (nanos) of the last execution (0 for no execution).\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_filled_ns
+    """The UNIX timestamp (nanoseconds) of the last execution (0 for no execution).\n\n:returns: `int64`"""
     cdef readonly object avg_px
     """The order average fill price.\n\n:returns: `Decimal` or None"""
     cdef readonly object slippage
     """The order total price slippage.\n\n:returns: `Decimal`"""
     cdef readonly UUID init_id
     """The identifier of the `OrderInitialized` event.\n\n:returns: `UUID`"""
+
+    cpdef dict to_dict(self)
 
     cdef OrderState state_c(self) except *
     cdef OrderInitialized init_event_c(self)
@@ -101,6 +103,8 @@ cdef class Order:
     cdef bint is_passive_c(self) except *
     cdef bint is_aggressive_c(self) except *
     cdef bint is_working_c(self) except *
+    cdef bint is_pending_update_c(self) except *
+    cdef bint is_pending_cancel_c(self) except *
     cdef bint is_completed_c(self) except *
 
     @staticmethod
@@ -135,6 +139,8 @@ cdef class PassiveOrder(Order):
     """The order expire time.\n\n:returns: `datetime` or None"""
     cdef readonly int64_t expire_time_ns
     """The order expire time (nanoseconds), zero for no expire time.\n\n:returns: `int64`"""
+
+    cpdef dict to_dict(self)
 
     cdef list venue_order_ids_c(self)
 

@@ -12,18 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-
-cpdef enum OrderBookLevel:
-    L1 = 1,
-    L2 = 2,
-    L3 = 3,
-
-
-cdef class OrderBookLevelParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef OrderBookLevel from_str(str value) except *

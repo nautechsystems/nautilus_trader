@@ -13,20 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.cache cimport ObjectCache
-from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport TraderId
+
+cpdef enum DeltaType:
+    ADD = 1,
+    UPDATE = 2,
+    DELETE = 3,
+    CLEAR = 4,
 
 
-cdef class IdentifierCache:
-    cdef ObjectCache _cached_trader_ids
-    cdef ObjectCache _cached_account_ids
-    cdef ObjectCache _cached_strategy_ids
-    cdef ObjectCache _cached_instrument_ids
+cdef class DeltaTypeParser:
 
-    cpdef TraderId get_trader_id(self, str value)
-    cpdef AccountId get_account_id(self, str value)
-    cpdef StrategyId get_strategy_id(self, str value)
-    cpdef InstrumentId get_instrument_id(self, str value)
+    @staticmethod
+    cdef str to_str(int value)
+
+    @staticmethod
+    cdef DeltaType from_str(str value) except *

@@ -32,7 +32,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport lround
 
 
-# Unix epoch is the UTC time at 00:00:00 on 1/1/1970
+# UNIX epoch is the UTC time at 00:00:00 on 1/1/1970
 # https://en.wikipedia.org/wiki/Unix_time
 cdef datetime UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
@@ -148,7 +148,7 @@ cpdef int64_t nanos_to_micros(int64_t nanos) except *:
 
 cpdef int64_t dt_to_unix_millis(datetime dt) except *:
     """
-    Return the round Unix timestamp (milliseconds) from the given `datetime`.
+    Return the round UNIX timestamp (milliseconds) from the given `datetime`.
 
     Parameters
     ----------
@@ -171,7 +171,7 @@ cpdef int64_t dt_to_unix_millis(datetime dt) except *:
 
 cpdef int64_t dt_to_unix_micros(datetime dt) except *:
     """
-    Return the round Unix timestamp (microseconds) from the given `datetime`.
+    Return the round UNIX timestamp (microseconds) from the given `datetime`.
 
     Parameters
     ----------
@@ -194,7 +194,7 @@ cpdef int64_t dt_to_unix_micros(datetime dt) except *:
 
 cpdef int64_t dt_to_unix_nanos(datetime dt) except *:
     """
-    Return the round Unix timestamp (nanoseconds) from the given `datetime`.
+    Return the round UNIX timestamp (nanoseconds) from the given `datetime`.
 
     Parameters
     ----------
@@ -256,7 +256,7 @@ cpdef timedelta nanos_to_timedelta(int64_t nanos):
 
 cpdef datetime nanos_to_unix_dt(double nanos):
     """
-    Return the tz-aware datetime in UTC from the given Unix time (nanoseconds).
+    Return the tz-aware datetime in UTC from the given UNIX time (nanoseconds).
 
     Parameters
     ----------
@@ -273,7 +273,7 @@ cpdef datetime nanos_to_unix_dt(double nanos):
 
 cpdef maybe_dt_to_unix_nanos(datetime dt):
     """
-    Return the Unix time (nanoseconds) from the given datetime, or None.
+    Return the UNIX time (nanoseconds) from the given datetime, or None.
 
     If dt is None, then will return None.
 
@@ -295,14 +295,14 @@ cpdef maybe_dt_to_unix_nanos(datetime dt):
 
 cpdef maybe_nanos_to_unix_dt(nanos):
     """
-    Return the datetime in UTC from the given Unix time (nanos), or None.
+    Return the datetime in UTC from the given UNIX time (nanoseconds), or None.
 
     If nanos is None, then will return None.
 
     Parameters
     ----------
     nanos : int64 or None
-        The Unix time (nanos) to convert.
+        The UNIX time (nanoseconds) to convert.
 
     Returns
     -------
@@ -380,27 +380,24 @@ cpdef bint is_tz_naive(time_object) except *:
 
 cpdef datetime as_utc_timestamp(datetime dt):
     """
-    Ensure the given timestamp is a tz-aware UTC pd.Timestamp.
+    Ensure the given timestamp is tz-aware UTC.
 
     Parameters
     ----------
     dt : datetime
-        The timestamp to ensure is UTC.
+        The timestamp to check.
 
     Returns
     -------
-    pd.Timestamp
+    datetime
 
     """
     Condition.not_none(datetime, "datetime")
 
-    if not isinstance(dt, pd.Timestamp):
-        dt = pd.Timestamp(dt)
-
-    if dt.tz is None:  # tz-naive
-        return dt.tz_localize(pytz.utc)
-    elif dt.tz != pytz.utc:
-        return dt.tz_convert(pytz.utc)
+    if dt.tzinfo is None:  # tz-naive
+        return pytz.utc.localize(dt)
+    elif dt.tzinfo != pytz.utc:
+        return dt.astimezone(pytz.utc)
     else:
         return dt  # Already UTC
 
@@ -424,10 +421,10 @@ cpdef object as_utc_index(data: pd.DataFrame):
     if data.empty:
         return data
 
-    if not hasattr(data.index, "tz") or data.index.tz is None:  # tz-naive
+    if data.index.tzinfo is None:  # tz-naive
         return data.tz_localize(pytz.utc)
-    elif data.index.tz != pytz.utc:
-        return data.tz_convert(pytz.utc)
+    elif data.index.tzinfo != pytz.utc:
+        return pytz.utc.localize(data)
     else:
         return data  # Already UTC
 
@@ -490,7 +487,7 @@ cpdef str format_iso8601_us(datetime dt):
 
 cpdef int64_t iso8601_to_unix_millis(str iso8601) except *:
     """
-    Convert the given string to the Unix timestamp (microseconds).
+    Convert the given string to the UNIX timestamp (microseconds).
 
     Parameters
     ----------
@@ -513,7 +510,7 @@ cpdef int64_t iso8601_to_unix_millis(str iso8601) except *:
 
 cpdef int64_t iso8601_to_unix_micros(str iso8601) except *:
     """
-    Convert the given string to the Unix timestamp (microseconds).
+    Convert the given string to the UNIX timestamp (microseconds).
 
     Parameters
     ----------
@@ -536,7 +533,7 @@ cpdef int64_t iso8601_to_unix_micros(str iso8601) except *:
 
 cpdef int64_t iso8601_to_unix_nanos(str iso8601) except *:
     """
-    Convert the given string to the Unix timestamp (nanoseconds).
+    Convert the given string to the UNIX timestamp (nanoseconds).
 
     Parameters
     ----------

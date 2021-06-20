@@ -41,10 +41,22 @@ cdef class SubmitOrder(TradingCommand):
     cdef readonly Order order
     """The order for the command.\n\n:returns: `Order`"""
 
+    @staticmethod
+    cdef SubmitOrder from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(SubmitOrder obj)
+
 
 cdef class SubmitBracketOrder(TradingCommand):
     cdef readonly BracketOrder bracket_order
     """The bracket order to submit.\n\n:returns: `BracketOrder`"""
+
+    @staticmethod
+    cdef SubmitBracketOrder from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(SubmitBracketOrder obj)
 
 
 cdef class UpdateOrder(TradingCommand):
@@ -53,9 +65,17 @@ cdef class UpdateOrder(TradingCommand):
     cdef readonly VenueOrderId venue_order_id
     """The venue order identifier associated with the command.\n\n:returns: `VenueOrderId`"""
     cdef readonly Quantity quantity
-    """The quantity for the command.\n\n:returns: `Quantity`"""
+    """The updated quantity for the command.\n\n:returns: `Quantity` or None"""
     cdef readonly Price price
-    """The price for the command.\n\n:returns: `Price`"""
+    """The updated price for the command.\n\n:returns: `Price` or None"""
+    cdef readonly Price trigger
+    """The updated trigger price for the command.\n\n:returns: `Price` or None"""
+
+    @staticmethod
+    cdef UpdateOrder from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(UpdateOrder obj)
 
 
 cdef class CancelOrder(TradingCommand):
@@ -63,3 +83,9 @@ cdef class CancelOrder(TradingCommand):
     """The client order identifier associated with the command.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The venue order identifier associated with the command.\n\n:returns: `VenueOrderId`"""
+
+    @staticmethod
+    cdef CancelOrder from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(CancelOrder obj)

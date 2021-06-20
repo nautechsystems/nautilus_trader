@@ -35,3 +35,9 @@ cdef class BettingInstrument(Instrument):
     cdef readonly str selection_id
     cdef readonly str selection_name
     cdef readonly str selection_handicap
+
+    @staticmethod
+    cdef BettingInstrument from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(BettingInstrument obj)
