@@ -71,16 +71,17 @@ cdef class BacktestEngine:
 
     cdef void _advance_time(self, int64_t now_ns) except *
     cdef void _process_modules(self, int64_t now_ns) except *
-    cdef void _log_header(
+    cdef void _pre_run(
         self,
         datetime run_started,
         datetime start,
         datetime stop,
     ) except *
-    cdef void _log_footer(
+    cdef void _post_run(
         self,
         datetime run_started,
         datetime run_finished,
         datetime start,
         datetime stop,
+        bint run_analysis,
     ) except *
