@@ -337,7 +337,9 @@ class DataLoader:
     def stream_bytes(self, progress=False):
         path = self.path if not progress else tqdm(self.path)
         for fn in path:
-            with fsspec.open(fn, compression=self.compression) as f:
+            with fsspec.open(
+                f"{self.fs_protocol}://{fn}", compression=self.compression
+            ) as f:
                 yield NewFile(fn)
                 data = 1
                 while data:
