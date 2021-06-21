@@ -69,6 +69,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.SUBMITTED, OrderState.ACCEPTED): OrderState.ACCEPTED,
     (OrderState.SUBMITTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.SUBMITTED, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.ACCEPTED, OrderState.REJECTED): OrderState.REJECTED,  # Covers StopLimit order
     (OrderState.ACCEPTED, OrderState.PENDING_UPDATE): OrderState.PENDING_UPDATE,
     (OrderState.ACCEPTED, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,
     (OrderState.ACCEPTED, OrderState.CANCELED): OrderState.CANCELED,
@@ -127,7 +128,7 @@ cdef class Order:
         """
         Condition.true(init.strategy_id.not_null(), f"init.strategy_id.value was 'NULL'")
 
-        self._events = [init]    # type: list[OrderEvent]
+        self._events = [init]     # type: list[OrderEvent]
         self._execution_ids = []  # type: list[ExecutionId]
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
