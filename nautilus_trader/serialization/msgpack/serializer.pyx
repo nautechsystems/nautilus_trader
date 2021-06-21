@@ -175,6 +175,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         """
         Condition.not_none(event, "event")
+
         delegate = _OBJECT_TO_DICT_MAP.get(type(event).__name__)
         if delegate is None:
             raise RuntimeError("Cannot serialize event: unrecognized type")
