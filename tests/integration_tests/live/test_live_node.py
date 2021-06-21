@@ -34,7 +34,7 @@ class TradingNodeConfigurationTests(unittest.TestCase):
             "logging": {
                 "log_level_console": "INF",
             },
-            "cache_database": {
+            "database": {
                 "type": "in-memory",
             },
             "strategy": {
@@ -74,7 +74,7 @@ class TradingNodeConfigurationTests(unittest.TestCase):
             "logging": {
                 "log_level_console": "INF",
             },
-            "cache_database": {
+            "database": {
                 "type": "redis",
                 "host": "localhost",
                 "port": 6379,
@@ -122,7 +122,7 @@ class TradingNodeOperationTests(unittest.TestCase):
             "logging": {
                 "log_level_console": "INF",
             },
-            "cache_database": {
+            "database": {
                 "type": "in-memory",
             },
             "strategy": {
