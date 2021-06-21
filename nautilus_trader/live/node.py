@@ -154,13 +154,13 @@ class TradingNode:
         self._log.info("Building...")
 
         if platform.system() != "Windows":
-            # Requires the logger to be initialized
             # Windows does not support signal handling
             # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
             self._setup_loop()
 
+        ########################################################################
         # Build platform
-        # ----------------------------------------------------------------------
+        ########################################################################
 
         if config_db["type"] == "redis":
             cache_db = RedisCacheDatabase(
