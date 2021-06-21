@@ -32,8 +32,10 @@ cdef class OrderUnpacker:
     cdef Order unpack_c(dict values):
         Condition.not_none(values, "values")
 
-        cdef OrderInitialized init = OrderInitialized.from_dict_c(values)
+        return OrderUnpacker.from_init_c(OrderInitialized.from_dict_c(values))
 
+    @staticmethod
+    cdef Order from_init_c(OrderInitialized init):
         if init.order_type == OrderType.MARKET:
             return MarketOrder.create(init=init)
         elif init.order_type == OrderType.LIMIT:
@@ -42,6 +44,8 @@ cdef class OrderUnpacker:
             return StopMarketOrder.create(init=init)
         elif init.order_type == OrderType.STOP_LIMIT:
             return StopLimitOrder.create(init=init)
+        else:
+            raise RuntimeError("invalid order type")
 
     @staticmethod
     def unpack(dict values) -> Order:
