@@ -1,3 +1,17 @@
+# NautilusTrader 1.124.0 Beta - Release Notes
+
+
+## Breaking Changes
+None
+
+## Enhancements
+None
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.123.0 Beta - Release Notes
 
 A major feature of this release is a complete re-design of serialization for the
@@ -28,22 +42,23 @@ Initial scaffolding for new backtest data tooling has been added.
 - Renamed `Order.volume` to `Order.size`.
 
 ## Enhancements
-- Adapters dependencies are now optional extras at installation.
+- Adapter dependencies are now optional extras at installation.
 - Added arrow/parquet serialization.
 - Added object `to_dict()` and `from_dict()` methods.
 - Added `Order.is_pending_update`.
 - Added `Order.is_pending_cancel`.
+- Added `run_analysis` config option for `BacktestEngine`.
 - Removed `TradeMatchId` in favour of bare string.
 - Removed redundant conversion to `pd.Timestamp` when checking timestamps.
 - Removed redundant data `to_serializable_str` methods.
 - Removed redundant data `from_serializable_str` methods.
 - Removed redundant `__ne__` implementations.
-- Removed redundant MsgPackSerializer cruft.
+- Removed redundant `MsgPackSerializer` cruft.
 - Removed redundant `ObjectCache` and `IdentifierCache`.
 - Removed redundant string constants.
 
 ## Fixes
-- Fixed millis to nanos in CCXT execution.
+- Fixed millis to nanos in `CCXTExecutionClient`.
 - Added missing trigger to `UpdateOrder` handling.
 - Removed all `import *`.
 
