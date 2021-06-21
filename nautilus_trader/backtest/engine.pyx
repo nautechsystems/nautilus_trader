@@ -175,6 +175,10 @@ cdef class BacktestEngine:
         self._log.info("=================================================================")
         self._log.info("Building engine...")
 
+        ########################################################################
+        # Build platform
+        ########################################################################
+
         if cache_db_type == "in-memory":
             cache_db = BypassCacheDatabase(
                 trader_id=trader_id,
