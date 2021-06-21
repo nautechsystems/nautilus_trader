@@ -30,8 +30,6 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
-from nautilus_trader.data.wrangling import QuoteTickDataWrangler
-from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.data import Data
 
 
@@ -49,6 +47,7 @@ from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.serialization.arrow.core import _deserialize
+from nautilus_trader.serialization.arrow.core import _partition_keys
 from nautilus_trader.serialization.arrow.core import _serialize
 
 
@@ -130,8 +129,8 @@ class TextParser(ByteParser):
                 self.on_new_file(chunk)
                 yield chunk
                 continue
-            elif chunk is EOStream:
-                yield EOStream
+            elif isinstance(chunk, EOStream):
+                yield chunk
                 return
             elif chunk is None:
                 yield
@@ -198,6 +197,8 @@ class CSVParser(TextParser):
             header, chunk = chunk.split(b"\n", maxsplit=1)
             self.header = header.decode().split(",")
         df = pd.read_csv(BytesIO(chunk), names=self.header)
+        if self.instrument_provider_update is not None:
+            self.instrument_provider_update(instrument_provider, df)
         yield from self.parser(df, state=self.state)
 
 
@@ -209,6 +210,7 @@ class ParquetParser(ByteParser):
     def __init__(
         self,
         data_type: str,
+        parser: callable = None,
         instrument_provider_update=None,
     ):
         """
@@ -227,23 +229,19 @@ class ParquetParser(ByteParser):
         super().__init__(
             instrument_provider_update=instrument_provider_update,
         )
+        self.parser = parser
         self.filename = None
         self.data_type = data_type
-
-    def parse(self, df):
-        if self.data_type == "quote_ticks":
-            wrangler = QuoteTickDataWrangler(df=df)
-        elif self.data_type == "trade_ticks":
-            wrangler = TradeTickDataWrangler(df=df)
-        else:
-            raise TypeError()
-        return wrangler.build_ticks()
 
     def read(self, stream: Generator, instrument_provider=None) -> Generator:
         for chunk in stream:
             if isinstance(chunk, NewFile):
+                self.filename = chunk.name
+                if self.instrument_provider_update is not None:
+                    self.instrument_provider_update(instrument_provider, chunk)
                 yield chunk
-            elif chunk == EOStream:
+            elif isinstance(chunk, EOStream):
+                self.filename = None
                 yield chunk
                 return
             elif chunk is None:
@@ -251,7 +249,15 @@ class ParquetParser(ByteParser):
             elif isinstance(chunk, bytes):
                 if len(chunk):
                     df = pd.read_parquet(BytesIO(chunk))
-                    yield from self.parse(df)
+                    if self.instrument_provider_update is not None:
+                        self.instrument_provider_update(
+                            instrument_provider=instrument_provider,
+                            df=df,
+                            filename=self.filename,
+                        )
+                    yield from self.parser(
+                        data_type=self.data_type, df=df, filename=self.filename
+                    )
             else:
                 raise TypeError
 
@@ -338,7 +344,7 @@ class DataLoader:
                     data = f.read(self.chunk_size)
                     yield data
                     yield None  # this is a chunk
-        yield EOStream
+        yield EOStream()
 
     def run(self, progress=False):
         stream = self.parser.read(
@@ -347,7 +353,7 @@ class DataLoader:
         )
         while 1:
             chunk = list(takewhile(lambda x: x is not None, stream))
-            if chunk == [EOStream]:
+            if chunk and isinstance(chunk[-1], EOStream):
                 break
             if not chunk:
                 continue
@@ -421,6 +427,14 @@ class DataCatalog:
         else:
             return []
 
+    @staticmethod
+    def _determine_partition_cols(cls, instrument_id):
+        if _partition_keys.get(cls.__name__) is not None:
+            return list(_partition_keys[cls.__name__])
+        elif instrument_id is not None:
+            return ["instrument_id"]
+        return
+
     def _write_chunks(self, chunk, append_only=False, **kwargs):  # noqa: C901
         processed_raw_files = self._load_processed_raw_files()
         log_filenames = kwargs.pop("log_filenames", False)
@@ -488,7 +502,9 @@ class DataCatalog:
                     table=table,
                     root_path=str(fn),
                     filesystem=self.fs,
-                    partition_cols=["instrument_id"] if ins_id is not None else None,
+                    partition_cols=self._determine_partition_cols(
+                        cls=cls, instrument_id=ins_id
+                    ),
                     # use_legacy_dataset=True,
                     version="2.0",
                     metadata_collector=metadata_collector,
@@ -672,9 +688,13 @@ class DataCatalog:
                 instrument_ids = [instrument_ids]
             filters.append(ds.field("instrument_id").isin(list(set(instrument_ids))))
         if start is not None:
-            filters.append(ds.field(ts_column) >= start)
+            filters.append(
+                ds.field(ts_column) >= int(pd.Timestamp(start).to_datetime64())
+            )
         if end is not None:
-            filters.append(ds.field(ts_column) <= end)
+            filters.append(
+                ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64())
+            )
 
         dataset = ds.dataset(
             f"{self.root}/{filename}.parquet/",
@@ -692,7 +712,7 @@ class DataCatalog:
 
     @staticmethod
     def _make_objects(df, cls):
-        return _deserialize(name=cls, chunk=df.to_dict("records"))
+        return _deserialize(cls=cls, chunk=df.to_dict("records"))
 
     def instruments(self, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query("betting_instrument", filter_expr=filter_expr, **kwargs)
@@ -791,10 +811,15 @@ def combine_filters(*filters):
 
 
 def is_custom_data(cls):
-    builtin_paths = ("nautilus_trader.models",)
-    return cls in Data.__subclasses__() and not any(
-        (cls.__name__.startswith(p) for p in builtin_paths)
-    )
+    is_nautilus_paths = cls.__module__.startswith("nautilus_trader.")
+    if not is_nautilus_paths:
+        # This object is defined outside of nautilus, definitely custom
+        return True
+    else:
+        nautilus_builtins = ("nautilus_trader.models",)
+        return cls in Data.__subclasses__() and not any(
+            (cls.__name__.startswith(p) for p in nautilus_builtins)
+        )
 
 
 def identity(x):

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from base64 import b64encode
-from io import BytesIO
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -62,12 +61,14 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
+from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
-from nautilus_trader.serialization.arrow.core import from_parquet
-from nautilus_trader.serialization.arrow.core import to_parquet
+from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.serialization.arrow.core import _deserialize
+from nautilus_trader.serialization.arrow.core import _serialize
 from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
@@ -873,16 +874,12 @@ class TestMsgPackEventSerializer:
 
 
 class TestParquetSerializer:
-    def setup(self):
-        # Fixture Setup
-        self.buffer = BytesIO()
-
     def test_serialize_and_deserialize_trade_tick(self):
 
         tick = TestStubs.trade_tick_5decimal()
 
-        serialized = to_parquet(buff=self.buffer, objects=[tick])
-        deserialized = from_parquet(serialized)
+        serialized = _serialize(tick)
+        deserialized = _deserialize(cls=TradeTick, chunk=[serialized])
 
         # Assert
         assert deserialized == [tick]
@@ -898,8 +895,8 @@ class TestParquetSerializer:
             ts_recv_ns=0,
         )
 
-        serialized = to_parquet(buff=self.buffer, objects=[delta])
-        deserialized = from_parquet(serialized)
+        serialized = _serialize(delta)
+        deserialized = _deserialize(cls=OrderBookDelta, chunk=serialized)
 
         # Assert
         assert deserialized == [delta]
@@ -941,8 +938,8 @@ class TestParquetSerializer:
             ts_recv_ns=0,
         )
 
-        serialized = to_parquet(buff=self.buffer, objects=[deltas])
-        deserialized = from_parquet(serialized)
+        serialized = _serialize(deltas)
+        deserialized = _deserialize(cls=OrderBookDeltas, chunk=serialized)
 
         # Assert
         assert deserialized == [deltas]
@@ -951,8 +948,8 @@ class TestParquetSerializer:
 
         book = TestStubs.order_book_snapshot()
 
-        serialized = to_parquet(buff=self.buffer, objects=[book])
-        deserialized = from_parquet(serialized)
+        serialized = _serialize(book)
+        deserialized = _deserialize(cls=OrderBookSnapshot, chunk=serialized)
 
         # Assert
         assert deserialized == [book]
