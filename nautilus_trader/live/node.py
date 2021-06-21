@@ -100,7 +100,7 @@ class TradingNode:
         config_trader = config.get("trader", {})
         config_system = config.get("system", {})
         config_log = config.get("logging", {})
-        config_cache_db = config.get("cache_database", {})
+        config_db = config.get("database", {})
         config_cache = config.get("cache", {})
         config_data = config.get("data_engine", {})
         config_risk = config.get("risk_engine", {})
@@ -154,15 +154,15 @@ class TradingNode:
         self._log.info("Building...")
 
         if platform.system() != "Windows":
-            # Requires the logger to be initialized
             # Windows does not support signal handling
             # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
             self._setup_loop()
 
+        ########################################################################
         # Build platform
-        # ----------------------------------------------------------------------
+        ########################################################################
 
-        if config_cache_db["type"] == "redis":
+        if config_db["type"] == "redis":
             cache_db = RedisCacheDatabase(
                 trader_id=self.trader_id,
                 logger=self._logger,
@@ -170,8 +170,8 @@ class TradingNode:
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
                 config={
-                    "host": config_cache_db["host"],
-                    "port": config_cache_db["port"],
+                    "host": config_db["host"],
+                    "port": config_db["port"],
                 },
             )
         else:

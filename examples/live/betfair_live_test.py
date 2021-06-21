@@ -48,7 +48,7 @@ config = {
     "logging": {
         "level_stdout": "DBG",
     },
-    "cache_database": {
+    "database": {
         "type": "memory",
     },
     "data_engine": {},

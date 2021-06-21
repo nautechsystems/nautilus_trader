@@ -5,7 +5,6 @@
 # NautilusTrader
 
 ![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
-![docs-status](https://img.shields.io/netlify/b89a9b0d-d308-4dd3-9a3e-e9c0845ef175?label=docs)
 [![codacy-quality](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 ![pypi-pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
@@ -23,7 +22,7 @@ on historical data with an event-driven engine, and also deploy those same strat
 NautilusTrader is AI/ML first, designed to deploy models for algorithmic trading strategies developed
 using the Python ecosystem - within a highly performant and robust Python native environment.
 
-The platform aims to be universal, with any REST/FIX/WebSocket API able to be integrated via modular
+The platform aims to be universal - with any REST/WebSocket/FIX API able to be integrated via modular
 adapters. Thus the platform can handle high-frequency trading operations for any asset classes
 including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across multiple venues simultaneously.
 
@@ -31,7 +30,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 - **Fast:** C-level speed and type safety provided through Cython. Asynchronous networking utilizing uvloop.
 - **Reliable:** Redis backed performant state persistence for live implementations.
-- **Flexible:** Any FIX, REST or WebSocket API can be integrated into the platform.
+- **Flexible:** Any REST/WebSocket/FIX API can be integrated into the platform.
 - **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick, bar and order book data.
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
@@ -74,7 +73,7 @@ language, designed to give C-like performance with code that is written mostly i
 optional additional C-inspired syntax.
 
 The project heavily utilizes Cython to provide static type safety and increased performance
-for Python through C [extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production Python code is actually
+for Python through [C extension modules](https://docs.python.org/3/extending/extending.html). The vast majority of the production code is actually
 written in Cython, however the libraries can be accessed from both pure Python and Cython.
 
 ## Values
@@ -119,7 +118,7 @@ See https://ccxt.pro for more information.
 Advanced execution clients include additional order management options such as
 `post_only`, `hidden`, `reduce_only`, and all the `TimeInForce` options. These
 advanced execution clients will be incrementally added to and additional help
-from ccxtpro users is welcome!
+from users is welcome!
 
 The other CCXT Pro exchanges are available through the unified API with a more
 limited order feature set including simple vanilla MARKET and LIMIT orders.
@@ -139,7 +138,7 @@ Installation can be achieved through _one_ of the following options;
 
 #### From PyPI
 
-To install the latest binary wheel (or sdist package) from PyPI, run:
+To install the latest binary wheel (or sdist package) from PyPI:
 
     pip install -U nautilus_trader
 
@@ -157,35 +156,35 @@ Download the appropriate `.whl` for your operating system and Python version, th
 
 Installation from source requires Cython to compile the Python C extensions.
 
-1. To install Cython, run:
+1. First, install Cython:
 
-        pip install -U Cython==3.0a6
+        pip install -U Cython==3.0a7
 
-2. Then to install NautilusTrader using `pip`, run:
+2. Then install the package using `pip`:
 
         pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
-    **Or** clone the source with `git`, and install from the projects root directory by running:
+    **Or** clone the source with `git`, and install from the projects root directory:
 
         git clone https://github.com/nautechsystems/nautilus_trader
         cd nautilus_trader
         pip install .
 
-Also, from v1.123.0 the following extras are separately available for installation.
-- `betfair` for the Betfair integration.
-- `ccxt` for the CCXT Pro integration.
+Also, the following optional dependency 'extras' are separately available for installation.
+- `betfair` for the Betfair adapter.
+- `ccxt` for the CCXT Pro adapter.
 - `docs` for building the documentation.
-- `ib` for the Interactive Brokers integration.
-- `oanda` for the OANDA integration.
+- `ib` for the Interactive Brokers adapter.
+- `oanda` for the OANDA adapter.
 
-For example to install with the `ccxt` extra using pip:
+For example, to install including the `ccxt` extra using pip:
 
     pip install nautilus_trader[ccxt]
 
 ## Examples
 
 Examples of both backtest and live trading launch scripts are available in the `examples` directory.
-These can run through PyCharm, or by running:
+These can run through your IDE, or from the command line:
 
     python <name_of_script>.py
 
@@ -194,11 +193,13 @@ These can run through PyCharm, or by running:
 The following market data types can be requested historically, and also subscribed to as live streams
 when available from an exchange/broker, and implemented in an integrations adapter.
 
-- `Instrument`
-- `OrderBook` (L1, L2 and L3 if available. Streaming or interval snapshots)
+- `OrderBookDelta`
+- `OrderBookDeltas` (L1/L2/L3)
+- `OrderBookSnapshot` (L1/L2/L3)
 - `QuoteTick`
 - `TradeTick`
 - `Bar`
+- `Instrument`
 
 The following `PriceType` options can be used for bar aggregations;
 - `BID`
@@ -238,7 +239,7 @@ only available by internal aggregation). External aggregation is normally for
 standard bar periods as available from the data client through an integrations
 adapter.
 
-Custom data types can also be requested through a users custom handler, and fed
+Custom generic data types can also be requested through a users custom handler, and fed
 back to the strategies `on_data` method.
 
 ## Order Types
@@ -279,19 +280,19 @@ at commit.
 
 The following steps are for UNIX-like systems, and only need to be completed once.
 
-1. Install `poetry` by running:
+1. Install `poetry`:
 
         curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
 
-2. Then install all Python package dependencies, and compile the C extensions by running:
+2. Then install all Python package dependencies, and compile the C extensions:
 
         poetry install
 
-3. Install the `pre-commit` package by running:
+3. Install the `pre-commit` package:
 
         pip install pre-commit
 
-4. Setup the `pre-commit` hook which will then run automatically at commit by running:
+4. Setup the `pre-commit` hook which will then run automatically at commit:
 
         pre-commit install
 
@@ -305,13 +306,13 @@ Refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/ov
 
 ## Contributing
 
-Even as some issues are marked with the `help wanted` label - this does not imply
-that help is _only_ wanted on those issues. The label indicates where 'extra attention'
-is needed.
-
 Involvement from the trading community is a goal for this project. All help is welcome!
 Developers can open issues on GitHub to discuss proposed enhancements/changes, or
 to make bug reports.
+
+Even as some issues are marked with the `help wanted` label - this does not imply
+that help is _only_ wanted on those issues. The label indicates where 'extra attention'
+is needed.
 
 Please make all pull requests to the `develop` branch.
 
