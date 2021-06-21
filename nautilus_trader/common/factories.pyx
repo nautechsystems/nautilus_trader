@@ -172,7 +172,7 @@ cdef class OrderFactory:
         Price price,
         TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
-        bint post_only=True,
+        bint post_only=False,
         bint reduce_only=False,
         bint hidden=False,
     ):
@@ -301,7 +301,7 @@ cdef class OrderFactory:
         Price trigger,
         TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
-        bint post_only=True,
+        bint post_only=False,
         bint reduce_only=False,
         bint hidden=False,
     ):

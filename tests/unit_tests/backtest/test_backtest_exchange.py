@@ -424,6 +424,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             OrderSide.BUY,
             Quantity.from_int(100000),
             Price.from_str("90.005"),
+            post_only=True,
         )
 
         # Act
@@ -998,6 +999,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             price=Price.from_str("90.000"),
             trigger=Price.from_str("90.010"),
+            post_only=True,
         )
 
         self.strategy.submit_order(order)
@@ -1324,6 +1326,7 @@ class SimulatedExchangeTests(unittest.TestCase):
             Quantity.from_int(100000),
             price=Price.from_str("90.006"),
             trigger=Price.from_str("90.006"),
+            post_only=True,
         )
 
         self.strategy.submit_order(order)

@@ -62,7 +62,7 @@ cdef class StopLimitOrder(PassiveOrder):
         datetime expire_time,  # Can be None
         UUID init_id not None,
         int64_t timestamp_ns,
-        bint post_only=True,
+        bint post_only=False,
         bint reduce_only=False,
         bint hidden=False,
     ):
