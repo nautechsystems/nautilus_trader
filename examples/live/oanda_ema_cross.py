@@ -55,7 +55,7 @@ config = {
     "logging": {
         "level_stdout": "INF",
     },
-    "cache_database": {
+    "database": {
         "type": "redis",
         "host": "localhost",
         "port": 6379,
