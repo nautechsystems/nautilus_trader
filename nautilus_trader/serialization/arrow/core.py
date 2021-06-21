@@ -104,30 +104,6 @@ def _deserialize(cls, chunk):
     )
 
 
-#
-# # TODO - are these methods even needed?
-# def to_parquet(buff, objects: list):
-#     schema = TYPE_TO_SCHEMA[objects[0].__class__]
-#     mapping = list_dicts_to_dict_lists(
-#         [x for obj in objects for x in maybe_list(_serialize(obj))]
-#     )
-#     table = pa.Table.from_pydict(mapping=mapping, schema=schema)
-#
-#     with pq.ParquetWriter(buff, schema) as writer:
-#         writer.write_table(table)
-#     return buff
-#
-#
-# def from_parquet(message_bytes, **kwargs):
-#     metadata = pq.read_metadata(message_bytes)
-#     cls = SCHEMA_TO_TYPE[metadata.metadata[b"type"]]
-#     table = pq.read_table(message_bytes, **kwargs)
-#     data = table.to_pydict()
-#     values = list(
-#         map(dict, zip(*([(key, val) for val in data[key]] for key in data.keys())))
-#     )
-#     return _deserialize(name=cls, chunk=values)
-
 # TODO (bm) - Implement for IPC / streaming. See https://arrow.apache.org/docs/python/ipc.html
 # @staticmethod
 # def to_arrow(message: bytes):
