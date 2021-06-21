@@ -335,7 +335,6 @@ cdef class LiveExecutionClient(ExecutionClient):
                 self._log.info("Generating OrderAccepted event...", color=LogColor.BLUE)
                 self.generate_order_accepted(report.client_order_id, report.venue_order_id, report.timestamp_ns)
             return True
-            # TODO: Consider other scenarios
 
         # OrderState.PARTIALLY_FILLED or FILLED
         if exec_reports is None:
