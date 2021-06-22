@@ -25,6 +25,9 @@ from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instruments.equity cimport Equity
 from nautilus_trader.model.instruments.future cimport Future
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -150,3 +153,33 @@ cdef class IBInstrumentProvider(InstrumentProvider):
         )
 
         return future
+
+    cpdef Equity retrieve_equity_contract(self, str symbol, str exchange, str currency):
+        stock = ib_insync.contract.Stock(symbol=symbol, exchange=exchange, currency=currency)
+        [contract] = self._client.qualifyContracts(stock)
+        [details] = self._client.reqContractDetails(contract)
+        cdef int price_precision = self._tick_size_to_precision(details.minTick)
+        timestamp = unix_timestamp_ns()
+        instrument_id = InstrumentId(
+            symbol=Symbol(contract.localSymbol),
+            venue=Venue(contract.primaryExchange),
+        )
+        return Equity(
+            instrument_id=instrument_id,
+            asset_class=AssetClass.EQUITY,
+            currency=Currency.from_str_c(currency),
+            price_precision=price_precision,
+            price_increment=Price(details.minTick, price_precision),
+            multiplier=Quantity.from_int_c(int(details.contract.multiplier or details.mdSizeMultiplier)),  # is this right?
+            lot_size=Quantity.from_int_c(1),
+            contract_id=contract.conId,
+            local_symbol=contract.localSymbol,
+            trading_class=contract.tradingClass,
+            market_name=contract.primaryExchange,
+            long_name=details.longName,
+            time_zone_id=details.timeZoneId,
+            trading_hours=details.tradingHours,
+            last_trade_time=details.lastTradeTime,
+            ts_event_ns=timestamp,
+            ts_recv_ns=timestamp,
+        )

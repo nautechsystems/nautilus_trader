@@ -16,6 +16,7 @@
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instruments.equity cimport Equity
 from nautilus_trader.model.instruments.future cimport Future
 
 
@@ -28,3 +29,4 @@ cdef class IBInstrumentProvider(InstrumentProvider):
     cpdef void connect(self)
     cdef int _tick_size_to_precision(self, double tick_size) except *
     cdef Future _parse_futures_contract(self, InstrumentId instrument_id, AssetClass asset_class, list details_list)
+    cpdef Equity retrieve_equity_contract(self, str name, str exchange, str currency)
