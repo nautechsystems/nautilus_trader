@@ -35,7 +35,6 @@ cdef class Equity(Instrument):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        AssetClass asset_class,
         Currency currency not None,
         int price_precision,
         Price price_increment not None,
@@ -59,8 +58,6 @@ cdef class Equity(Instrument):
         ----------
         instrument_id : InstrumentId
             The instrument identifier.
-        asset_class : AssetClass
-            The futures contract asset class.
         currency : Currency
             The futures contract currency.
         price_precision : int

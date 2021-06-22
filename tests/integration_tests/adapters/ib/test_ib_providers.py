@@ -37,7 +37,6 @@ class TestIBInstrumentProvider:
         with open(TEST_PATH + "contract_details_cl.pickle", "rb") as file:
             details = pickle.load(file)  # noqa (S301 possible security issue)
 
-        print(details)
         mock_client.reqContractDetails.return_value = [details]
 
         provider = IBInstrumentProvider(client=mock_client)
@@ -49,6 +48,7 @@ class TestIBInstrumentProvider:
         )
 
         details = {
+            "asset_type": "FUTURE",
             "asset_class": "COMMODITY",
             "expiry": "20211119",
             "currency": "USD",
@@ -82,8 +82,16 @@ class TestIBInstrumentProvider:
         provider = IBInstrumentProvider(client=mock_client)
         provider.connect()
 
+        instrument_id = InstrumentId(
+            symbol=Symbol("AAPL"),
+            venue=Venue("NASDAQ"),
+        )
+
+        details = {"asset_type": "SPOT"}
+
         # Act
-        equity = provider.retrieve_equity_contract("AAPL", "NASDAQ", "USD")
+        provider.load(instrument_id, details)
+        equity = provider.find(instrument_id)
 
         # Assert
         assert InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")) == equity.id
