@@ -359,7 +359,7 @@ def test_data_loader_generic_data(catalog_dir):
     df = catalog.generic_data(
         name="news_event", filter_expr=ds.field("currency") == "USD"
     )
-    assert len(df) == 22920
+    assert len(df) == 22925
 
 
 def test_data_catalog_backtest_data_no_filter(catalog):
