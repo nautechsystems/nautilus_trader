@@ -343,7 +343,7 @@ def test_data_loader_generic_data(catalog_dir):
     def make_news_event(df, state=None):
         for _, row in df.iterrows():
             yield NewsEvent(
-                name=row["Name"],
+                name=str(row["Name"]).strip().replace(" ", "_"),
                 impact=row["Impact"],
                 currency=row["Currency"],
                 ts_event_ns=millis_to_nanos(pd.Timestamp(row["Start"]).timestamp()),
