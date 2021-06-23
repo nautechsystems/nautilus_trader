@@ -17,7 +17,6 @@ from libc.stdint cimport int64_t
 
 from decimal import Decimal
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
@@ -87,7 +86,6 @@ cdef class Future(Instrument):
             If lot size is not positive (> 0).
 
         """
-        Condition.positive_int(multiplier, "multiplier")
         super().__init__(
             instrument_id=instrument_id,
             asset_class=asset_class,
@@ -95,7 +93,7 @@ cdef class Future(Instrument):
             quote_currency=currency,
             is_inverse=False,
             price_precision=price_precision,
-            size_precision=0,  # No fractional contracts
+            size_precision=0,  # No fractional units
             price_increment=price_increment,
             size_increment=Quantity.from_int_c(1),
             multiplier=multiplier,
