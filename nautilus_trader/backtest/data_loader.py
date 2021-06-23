@@ -58,6 +58,7 @@ category_attributes = {
     "TradeTick": ["instrument_id", "type", "aggressor_side"],
     "OrderBookDelta": ["instrument_id", "type", "level", "delta_type", "order_size"],
 }
+NAUTILUS_TS_COLUMNS = ("ts_event_ns", "ts_recv_ns", "timestamp_ns")
 
 
 class ByteParser:
@@ -396,7 +397,9 @@ class DataCatalog:
 
     # ---- Loading data ---------------------------------------------------------------------------------------- #
 
-    def import_from_data_loader(self, loader: DataLoader, append_only=False, **kwargs):
+    def import_from_data_loader(
+        self, loader: DataLoader, append_only=False, progress=False, **kwargs
+    ):
         """
         Load data from a DataLoader instance into the backtest catalogue.
 
@@ -411,7 +414,7 @@ class DataCatalog:
             The kwargs passed through to `ParquetWriter`.
 
         """
-        for chunk in loader.run(progress=kwargs.pop("progress", False)):
+        for chunk in loader.run(progress=progress):
             self._write_chunks(chunk=chunk, append_only=append_only, **kwargs)
 
     def _save_processed_raw_files(self, files):
@@ -486,27 +489,30 @@ class DataCatalog:
                             fs=self.fs,
                             filters=[("instrument_id", "=", ins_id)],
                         )
-                        df = df.append(existing).drop_duplicates()
+                        subset = [c for c in df.columns if c not in NAUTILUS_TS_COLUMNS]
+                        df = df.append(existing).drop_duplicates(subset=subset)
                         # Remove file, will be written again
                         self.fs.rm(fn, recursive=True)
 
                 df = df.astype(
                     {k: "category" for k in category_attributes.get(cls.__name__, [])}
                 )
-                for col in ("ts_event_ns", "ts_recv_ns", "timestamp_ns"):
+                for col in NAUTILUS_TS_COLUMNS:
                     if col in df.columns:
                         df = df.sort_values(col)
                         break
-                table = pa.Table.from_pandas(df)
+                partition_cols = self._determine_partition_cols(
+                    cls=cls, instrument_id=ins_id
+                )
+                clean_partition_cols(df, partition_cols)
 
+                table = pa.Table.from_pandas(df)
                 metadata_collector = []
                 pq.write_to_dataset(
                     table=table,
                     root_path=str(fn),
                     filesystem=self.fs,
-                    partition_cols=self._determine_partition_cols(
-                        cls=cls, instrument_id=ins_id
-                    ),
+                    partition_cols=partition_cols,
                     # use_legacy_dataset=True,
                     version="2.0",
                     metadata_collector=metadata_collector,
@@ -688,7 +694,11 @@ class DataCatalog:
         if instrument_ids is not None:
             if not isinstance(instrument_ids, list):
                 instrument_ids = [instrument_ids]
-            filters.append(ds.field("instrument_id").isin(list(set(instrument_ids))))
+            filters.append(
+                ds.field("instrument_id").isin(
+                    list(set(map(clean_key, instrument_ids)))
+                )
+            )
         if start is not None:
             filters.append(
                 ds.field(ts_column) >= int(pd.Timestamp(start).to_datetime64())
@@ -826,6 +836,34 @@ def is_custom_data(cls):
 
 def identity(x):
     return x
+
+
+INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
+
+
+def clean_partition_cols(df, partition_cols=None):
+    for col in partition_cols or []:
+        values = list(map(str, df[col].unique()))
+        invalid_values = {
+            val for val in values if any(x in val for x in INVALID_WINDOWS_CHARS)
+        }
+        if invalid_values:
+            if col == "instrument_id":
+                # We have control over how instrument_ids are retrieved from the cache, so we can do this replacement
+                df.loc[:, col] = df[col].map({k: clean_key(k) for k in values})
+            else:
+                # We would be arbitrarily replacing values here which could break queries, we should not do this.
+                raise ValueError(
+                    f"Some values in partition column [{col}] contain invalid characters: {invalid_values}"
+                )
+    return df
+
+
+def clean_key(s):
+    for ch in INVALID_WINDOWS_CHARS:
+        if ch in s:
+            s = s.replace(ch, "-")
+    return s
 
 
 # TODO - https://github.com/leonidessaguisagjr/filehash ?
