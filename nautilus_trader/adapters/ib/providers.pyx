@@ -13,18 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
 import ib_insync
-from ib_insync.contract import ContractDetails
 
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.time cimport unix_timestamp_ns
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
+from nautilus_trader.model.c_enums.asset_type cimport AssetType
+from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.equity cimport Equity
 from nautilus_trader.model.instruments.future cimport Future
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -85,26 +86,54 @@ cdef class IBInstrumentProvider(InstrumentProvider):
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(details, "details")
+        Condition.is_in("asset_type", details, "asset_type", "details")
 
         if not self._client.client.CONNECTED:
             self.connect()
 
-        contract = ib_insync.contract.Future(
+        contract = ib_insync.contract.Contract(
             symbol=instrument_id.symbol.value,
-            lastTradeDateOrContractMonth=details.get("expiry"),
             exchange=instrument_id.venue.value,
             multiplier=details.get("multiplier"),
             currency=details.get("currency"),
         )
 
         cdef list contract_details = self._client.reqContractDetails(contract=contract)
-        cdef Future future = self._parse_futures_contract(
+        if not contract_details:
+            raise ValueError(f"No contract details found for the given instrument identifier {instrument_id}")
+        elif len(contract_details) > 1:
+            raise ValueError(f"Multiple contract details found for the given instrument identifier {instrument_id}")
+
+        cdef Instrument instrument = self._parse_instrument(
+            asset_type=AssetTypeParser.from_str(details.get("asset_type")),
             instrument_id=instrument_id,
-            asset_class=AssetClassParser.from_str(details.get("asset_class")),
-            details_list=contract_details,
+            details=details,
+            contract_details=contract_details[0],
         )
 
-        self._instruments[instrument_id] = future
+        self._instruments[instrument_id] = instrument
+
+    cdef Instrument _parse_instrument(
+            self,
+            AssetType asset_type,
+            InstrumentId instrument_id,
+            dict details,
+            object contract_details
+    ):
+        if asset_type == AssetType.FUTURE:
+            Condition.is_in("asset_class", details, "asset_class", "details")
+            return self._parse_futures_contract(
+                instrument_id=instrument_id,
+                asset_class=AssetClassParser.from_str(details['asset_class']),
+                details=contract_details
+            )
+        elif asset_type == AssetType.SPOT:
+            return self._parse_equity_contract(
+                instrument_id=instrument_id,
+                details=contract_details
+            )
+        else:
+            raise TypeError(f"No parser for asset_type {asset_type}")
 
     cdef int _tick_size_to_precision(self, double tick_size) except *:
         cdef tick_size_str = f"{tick_size:f}"
@@ -114,15 +143,8 @@ cdef class IBInstrumentProvider(InstrumentProvider):
         self,
         InstrumentId instrument_id,
         AssetClass asset_class,
-        list details_list,
+        object details,
     ):
-        if not details_list:
-            raise ValueError(f"No contract details found for the given instrument identifier {instrument_id}")
-        elif len(details_list) > 1:
-            raise ValueError(f"Multiple contract details found for the given instrument identifier {instrument_id}")
-
-        details: ContractDetails = details_list[0]
-
         cdef int price_precision = self._tick_size_to_precision(details.minTick)
 
         timestamp = unix_timestamp_ns()
@@ -150,3 +172,30 @@ cdef class IBInstrumentProvider(InstrumentProvider):
         )
 
         return future
+
+    cpdef Equity _parse_equity_contract(
+        self,
+        InstrumentId instrument_id,
+        object details,
+    ):
+        cdef int price_precision = self._tick_size_to_precision(details.minTick)
+        timestamp = unix_timestamp_ns()
+        equity = Equity(
+            instrument_id=instrument_id,
+            currency=Currency.from_str_c(details.contract.currency),
+            price_precision=price_precision,
+            price_increment=Price(details.minTick, price_precision),
+            multiplier=Quantity.from_int_c(int(details.contract.multiplier or details.mdSizeMultiplier)),  # is this right?
+            lot_size=Quantity.from_int_c(1),
+            contract_id=details.contract.conId,
+            local_symbol=details.contract.localSymbol,
+            trading_class=details.contract.tradingClass,
+            market_name=details.contract.primaryExchange,
+            long_name=details.longName,
+            time_zone_id=details.timeZoneId,
+            trading_hours=details.tradingHours,
+            last_trade_time=details.lastTradeTime,
+            ts_event_ns=timestamp,
+            ts_recv_ns=timestamp,
+        )
+        return equity
