@@ -272,8 +272,8 @@ def test_data_catalog_parquet(catalog_dir):
     catalog = DataCatalog()
     catalog.import_from_data_loader(loader=quote_loader)
     catalog.import_from_data_loader(loader=trade_loader)
-    assert len(catalog.quote_ticks()) == 451
-    assert len(catalog.trade_ticks()) == 2001
+    assert len(catalog.quote_ticks(instrument_ids=["BTC/USDT.BINANCE"])) == 451
+    assert len(catalog.trade_ticks(instrument_ids=["BTC/USDT.BINANCE"])) == 2001
 
 
 def test_data_catalog_filter(catalog):
@@ -319,26 +319,35 @@ def test_data_catalog_query_filtered(catalog):
     assert len(ticks) == 123
 
 
+def _news_event_to_dict(self):
+    return {
+        "name": self.name,
+        "impact": self.impact,
+        "currency": self.currency,
+        "ts_event_ns": self.ts_event_ns,
+    }
+
+
+def _news_event_from_dict(data):
+    return NewsEvent(**data)
+
+
+class NewsEvent(Data):
+    def __init__(self, name, impact, currency, ts_event_ns):
+        super().__init__(ts_event_ns=ts_event_ns, ts_recv_ns=ts_event_ns)
+        self.name = name
+        self.impact = impact
+        self.currency = currency
+
+
 def test_data_loader_generic_data(catalog_dir):
-    def to_dict(self):
-        return {
-            "name": self.name,
-            "impact": self.impact,
-            "currency": self.currency,
-            "ts_event_ns": self.ts_event_ns,
-        }
-
-    def from_dict(data):
-        return NewsEvent(**data)
-
-    class NewsEvent(Data):
-        def __init__(self, name, impact, currency, ts_event_ns):
-            super().__init__(ts_event_ns=ts_event_ns, ts_recv_ns=ts_event_ns)
-            self.name = name
-            self.impact = impact
-            self.currency = currency
-
-    register_parquet(NewsEvent, to_dict, from_dict, partition_keys=("name",))
+    register_parquet(
+        NewsEvent,
+        _news_event_to_dict,
+        _news_event_from_dict,
+        partition_keys=("currency",),
+        force=True,
+    )
 
     def make_news_event(df, state=None):
         for _, row in df.iterrows():
@@ -359,7 +368,35 @@ def test_data_loader_generic_data(catalog_dir):
     df = catalog.generic_data(
         name="news_event", filter_expr=ds.field("currency") == "USD"
     )
-    assert len(df) == 22920
+    assert len(df) == 22925
+
+
+def test_catalog_invalid_partition_key(catalog_dir):
+    register_parquet(
+        NewsEvent,
+        _news_event_to_dict,
+        _news_event_from_dict,
+        partition_keys=("name",),
+        force=True,
+    )
+
+    def make_news_event(df, state=None):
+        for _, row in df.iterrows():
+            yield NewsEvent(
+                name=row["Name"],
+                impact=row["Impact"],
+                currency=row["Currency"],
+                ts_event_ns=millis_to_nanos(pd.Timestamp(row["Start"]).timestamp()),
+            )
+
+    loader = DataLoader(
+        path=TEST_DATA_DIR,
+        parser=CSVParser(parser=make_news_event),
+        glob_pattern="news_events.csv",
+    )
+    catalog = DataCatalog()
+    with pytest.raises(ValueError):
+        catalog.import_from_data_loader(loader=loader)
 
 
 def test_data_catalog_backtest_data_no_filter(catalog):
