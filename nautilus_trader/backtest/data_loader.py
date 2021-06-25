@@ -40,7 +40,7 @@ except ImportError:
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.model.events import InstrumentStatusEvent
-from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
@@ -155,7 +155,12 @@ class TextParser(ByteParser):
     def process_chunk(self, chunk, instrument_provider):
         for line in map(self.line_preprocessor, chunk.split(b"\n")):
             if self.instrument_provider_update is not None:
-                self.instrument_provider_update(instrument_provider, line)
+                # Check the user hasn't accidentally used a generator here also
+                r = self.instrument_provider_update(instrument_provider, line)
+                if isinstance(r, Generator):
+                    raise Exception(
+                        f"{self.instrument_provider_update} func should not be generator"
+                    )
             yield from self.parser(line, state=self.state)
 
 
@@ -486,13 +491,13 @@ class DataCatalog:
                     if self.fs.exists(fn):
                         existing = pd.read_parquet(
                             str(fn),
-                            fs=self.fs,
+                            filesystem=self.fs,
                             filters=[("instrument_id", "=", ins_id)],
                         )
                         subset = [c for c in df.columns if c not in NAUTILUS_TS_COLUMNS]
                         df = df.append(existing).drop_duplicates(subset=subset)
                         # Remove file, will be written again
-                        self.fs.rm(fn, recursive=True)
+                        self.fs.rm(str(fn), recursive=True)
 
                 df = df.astype(
                     {k: "category" for k in category_attributes.get(cls.__name__, [])}
@@ -708,11 +713,11 @@ class DataCatalog:
                 ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64())
             )
 
-        dataset = ds.dataset(
-            f"{self.root}/{filename}.parquet/",
-            partitioning="hive",
-            filesystem=self.fs,
-        )
+        path = f"{self.root}/{filename}.parquet/"
+        if not self.fs.exists(path):
+            return
+
+        dataset = ds.dataset(path, partitioning="hive", filesystem=self.fs)
         df = (
             dataset.to_table(filter=combine_filters(*filters))
             .to_pandas()
@@ -726,22 +731,34 @@ class DataCatalog:
     def _make_objects(df, cls):
         return _deserialize(cls=cls, chunk=df.to_dict("records"))
 
-    def instruments(self, kind=None, filter_expr=None, as_nautilus=False, **kwargs):
-        if kind is not None:
-            df = self._query(kind, filter_expr=filter_expr, **kwargs)
+    def instruments(
+        self, instrument_type=None, filter_expr=None, as_nautilus=False, **kwargs
+    ):
+        if instrument_type is not None:
+            assert isinstance(instrument_type, type)
+            instrument_types = (instrument_type,)
         else:
-            instrument_kinds = [
-                k for k in self.list_data_types() if k.endswith("instrument")
-            ]
-            df = pd.concat(
-                [
-                    self._query(kind, filter_expr=filter_expr, **kwargs)
-                    for kind in instrument_kinds
-                ]
+            instrument_types = Instrument.__subclasses__()
+
+        dfs = []
+        for ins_type in instrument_types:
+            dfs.append(
+                self._query(
+                    camel_to_snake_case(ins_type.__name__),
+                    filter_expr=filter_expr,
+                    **kwargs,
+                )
             )
+
         if not as_nautilus:
-            return df
-        return self._make_objects(df=df.drop(["type"], axis=1), cls=BettingInstrument)
+            return pd.concat([df for df in dfs if df is not None])
+        else:
+            objects = []
+            for ins_type, df in zip(instrument_types, dfs):
+                objects.extend(
+                    self._make_objects(df=df.drop(["type"], axis=1), cls=ins_type)
+                )
+            return objects
 
     def instrument_status_events(
         self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
