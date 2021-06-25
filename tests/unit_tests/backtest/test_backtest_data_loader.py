@@ -10,6 +10,7 @@ import orjson
 import pandas as pd
 from pandas import CategoricalDtype
 import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 import pytest
 
 from examples.strategies.orderbook_imbalance import OrderbookImbalance
@@ -34,6 +35,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
+from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -200,9 +202,20 @@ def test_parse_timestamp():
     assert parse_timestamp("2020-01-31") == 1580428800000000000
 
 
-def test_data_catalog_import(catalog):
+def test_data_catalog_instruments_df(catalog):
     instruments = catalog.instruments()
     assert len(instruments) == 2
+
+
+def test_data_catalog_instruments_no_partition(catalog):
+    assert not pq.ParquetDataset(
+        catalog.root / "betting_instrument.parquet/"
+    ).partitions.levels
+
+
+def test_data_catalog_instruments_as_nautilus(catalog):
+    instruments = catalog.instruments(as_nautilus=True)
+    assert all(isinstance(ins, BettingInstrument) for ins in instruments)
 
 
 def test_data_catalog_metadata(catalog):
