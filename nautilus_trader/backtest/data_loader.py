@@ -726,8 +726,19 @@ class DataCatalog:
     def _make_objects(df, cls):
         return _deserialize(cls=cls, chunk=df.to_dict("records"))
 
-    def instruments(self, filter_expr=None, as_nautilus=False, **kwargs):
-        df = self._query("betting_instrument", filter_expr=filter_expr, **kwargs)
+    def instruments(self, kind=None, filter_expr=None, as_nautilus=False, **kwargs):
+        if kind is not None:
+            df = self._query(kind, filter_expr=filter_expr, **kwargs)
+        else:
+            instrument_kinds = [
+                k for k in self.list_data_types() if k.endswith("instrument")
+            ]
+            df = pd.concat(
+                [
+                    self._query(kind, filter_expr=filter_expr, **kwargs)
+                    for kind in instrument_kinds
+                ]
+            )
         if not as_nautilus:
             return df
         return self._make_objects(df=df.drop(["type"], axis=1), cls=BettingInstrument)
@@ -793,6 +804,27 @@ class DataCatalog:
         if not as_nautilus:
             return df
         return self._make_objects(df=df, cls=OrderBookDelta)
+
+    def list_data_types(self):
+        return [p.stem for p in self.root.glob("*.parquet")]
+
+    def list_generic_data_types(self):
+        data_types = self.list_data_types()
+        return [
+            n.replace(GENERIC_DATA_PREFIX, "")
+            for n in data_types
+            if n.startswith(GENERIC_DATA_PREFIX)
+        ]
+
+    def list_partitions(self, cls_type):
+        assert isinstance(cls_type, type), "`cls_type` should be type, ie TradeTick"
+        prefix = GENERIC_DATA_PREFIX if is_custom_data(cls_type) else ""
+        name = prefix + camel_to_snake_case(cls_type.__name__)
+        dataset = pq.ParquetDataset(self.root / f"{name}.parquet")
+        partitions = {}
+        for level in dataset.partitions.levels:
+            partitions[level.name] = level.keys
+        return partitions
 
 
 def camel_to_snake_case(s):
