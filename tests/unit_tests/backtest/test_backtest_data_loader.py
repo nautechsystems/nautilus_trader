@@ -1,6 +1,7 @@
 import datetime
 from decimal import Decimal
 from functools import partial
+import json
 import os
 import pathlib
 
@@ -29,13 +30,18 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.data.wrangling import TradeTickDataWrangler
+from nautilus_trader.model import currencies
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data import Data
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -90,7 +96,7 @@ def catalog(catalog_dir, data_loader):
 @pytest.mark.parametrize(
     "glob, num_files",
     [
-        ("**.json", 2),
+        ("**.json", 3),
         ("**.txt", 1),
         ("**.parquet", 2),
         ("**.csv", 11),
@@ -382,6 +388,43 @@ def test_data_loader_generic_data(catalog_dir):
         name="news_event", filter_expr=ds.field("currency") == "USD"
     )
     assert len(df) == 22925
+
+
+def test_data_catalog_append(catalog_dir):
+    catalog = DataCatalog()
+    instrument_data = json.loads(
+        open(TEST_DATA_DIR + "/crypto_instruments.json").read()
+    )
+
+    objects = []
+    for data in instrument_data:
+        symbol, venue = data["id"].rsplit(".", maxsplit=1)
+        instrument = CurrencySpot(
+            instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
+            base_currency=getattr(currencies, data["base_currency"]),
+            quote_currency=getattr(currencies, data["quote_currency"]),
+            price_precision=data["price_precision"],
+            size_precision=data["size_precision"],
+            price_increment=Price.from_str(data["price_increment"]),
+            size_increment=Quantity.from_str(data["size_increment"]),
+            lot_size=data["lot_size"],
+            max_quantity=data["max_quantity"],
+            min_quantity=data["min_quantity"],
+            max_notional=data["max_notional"],
+            min_notional=data["min_notional"],
+            max_price=data["max_price"],
+            min_price=data["min_price"],
+            margin_init=Decimal(1.0),
+            margin_maint=Decimal(1.0),
+            maker_fee=Decimal(1.0),
+            taker_fee=Decimal(1.0),
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
+        objects.append(instrument)
+    catalog._write_chunks(chunk=objects[:3])
+    catalog._write_chunks(chunk=objects[3:])
+    assert len(catalog.instruments()) == 6
 
 
 def test_catalog_invalid_partition_key(catalog_dir):
