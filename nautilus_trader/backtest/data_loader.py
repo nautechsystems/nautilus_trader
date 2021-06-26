@@ -48,6 +48,7 @@ from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.serialization.arrow.core import _deserialize
 from nautilus_trader.serialization.arrow.core import _partition_keys
+from nautilus_trader.serialization.arrow.core import _schemas
 from nautilus_trader.serialization.arrow.core import _serialize
 
 
@@ -486,19 +487,40 @@ class DataCatalog:
                 if df.empty:
                     continue
 
+                ts_col = None
+                for c in NAUTILUS_TS_COLUMNS:
+                    if c in df.columns:
+                        ts_col = c
+                assert (
+                    ts_col is not None
+                ), f"Could not find timestamp column for type: {cls}"
+
+                partition_cols = self._determine_partition_cols(
+                    cls=cls, instrument_id=ins_id
+                )
+
                 # Load any existing data, drop dupes
                 if not append_only:
-                    if self.fs.exists(fn):
-                        existing = pd.read_parquet(
-                            str(fn),
-                            filesystem=self.fs,
-                            filters=[("instrument_id", "=", ins_id)],
+                    if self.fs.exists(fn) or self.fs.isdir(str(fn)):
+                        existing = self._query(
+                            filename=camel_to_snake_case(cls.__name__),
+                            instrument_ids=ins_id,
+                            ts_column=ts_col,
                         )
-                        subset = [c for c in df.columns if c not in NAUTILUS_TS_COLUMNS]
-                        df = df.append(existing).drop_duplicates(subset=subset)
-                        # Remove file, will be written again
-                        self.fs.rm(str(fn), recursive=True)
+                        if not existing.empty:
+                            df = df.append(existing).drop_duplicates()
+                            # Remove this file/partition, will be written again
+                            if partition_cols:
+                                assert partition_cols == [
+                                    "instrument_id"
+                                ], "Only support appending to instrument_id partitions"
+                                # We only want to remove this partition
+                                partition_path = f"/instrument_id={clean_key(ins_id)}"
+                                self.fs.rm(str(fn) + partition_path, recursive=True)
+                            else:
+                                self.fs.rm(str(fn), recursive=True)
 
+                df = df.sort_values(ts_col)
                 df = df.astype(
                     {k: "category" for k in category_attributes.get(cls.__name__, [])}
                 )
@@ -506,12 +528,10 @@ class DataCatalog:
                     if col in df.columns:
                         df = df.sort_values(col)
                         break
-                partition_cols = self._determine_partition_cols(
-                    cls=cls, instrument_id=ins_id
-                )
+
                 clean_partition_cols(df, partition_cols)
 
-                table = pa.Table.from_pandas(df)
+                table = pa.Table.from_pandas(df, schema=_schemas.get(cls.__name__))
                 metadata_collector = []
                 pq.write_to_dataset(
                     table=table,
@@ -755,6 +775,8 @@ class DataCatalog:
         else:
             objects = []
             for ins_type, df in zip(instrument_types, dfs):
+                if df is None:
+                    continue
                 objects.extend(
                     self._make_objects(df=df.drop(["type"], axis=1), cls=ins_type)
                 )
