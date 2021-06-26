@@ -14,6 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 from typing import Callable, Optional
 
+import pyarrow as pa
+
 from nautilus_trader.serialization.base import get_from_dict
 from nautilus_trader.serialization.base import get_to_dict
 
@@ -22,14 +24,16 @@ _PARQUET_OBJECT_TO_DICT_MAP = {}
 _PARQUET_OBJECT_FROM_DICT_MAP = {}
 _chunk = {}
 _partition_keys = {}
+_schemas = {}
 
 
 def register_parquet(
     cls_type,
-    serializer: Optional[callable],
-    deserializer: Optional[callable],
+    serializer: Optional[callable] = None,
+    deserializer: Optional[callable] = None,
+    schema: Optional[pa.Schema] = None,
     partition_keys=None,
-    chunk=False,
+    chunk=None,
     **kwargs,
 ):
     """
@@ -38,6 +42,8 @@ def register_parquet(
     :param cls_type: The type to register serialization for
     :param serializer (callable): The callable to serialize instances of type `cls_type` to something parquet can write
     :param deserializer (callable): The callable to deserialize rows from parquet into `cls_type`.
+    :param schema (dict): Optional dict if the schema cannot be correctly inferred from a subset of the data (ie if
+                          certain values may be missing in the first chunk)
     :param chunk (bool): Whether to group objects by timestamp and operate together (Used for complex objects where
                          we write each object as multiple rows in parquet, ie OrderBook or AccountState)
     :param partition_key (optional): Optional partition key for data written to parquet (typically an id)
@@ -51,24 +57,36 @@ def register_parquet(
     assert deserializer is None or isinstance(
         deserializer, Callable
     ), "Deserializer must be callable"
+    assert schema is None or isinstance(
+        schema, pa.Schema
+    ), "partition_keys must be tuple"
     assert partition_keys is None or isinstance(
         partition_keys, tuple
     ), "partition_keys must be tuple"
+
+    cls_name = cls_type.__name__
 
     # secret kwarg that allows overriding an existing (de)serialization method.
     if not kwargs.get("force", False):
         if serializer is not None:
             assert (
-                cls_type.__name__ not in _PARQUET_OBJECT_TO_DICT_MAP
-            ), f"Serializer already exists for {cls_type.__name__}: {_PARQUET_OBJECT_TO_DICT_MAP[cls_type.__name__]}"
+                cls_name not in _PARQUET_OBJECT_TO_DICT_MAP
+            ), f"Serializer already exists for {cls_name}: {_PARQUET_OBJECT_TO_DICT_MAP[cls_name]}"
         if deserializer is not None:
             assert (
-                cls_type.__name__ not in _PARQUET_OBJECT_FROM_DICT_MAP
-            ), f"Deserializer already exists for {cls_type.__name__}: {_PARQUET_OBJECT_TO_DICT_MAP[cls_type.__name__]}"
-    _PARQUET_OBJECT_TO_DICT_MAP[cls_type.__name__] = serializer
-    _PARQUET_OBJECT_FROM_DICT_MAP[cls_type.__name__] = deserializer
-    _chunk[cls_type.__name__] = chunk
-    _partition_keys[cls_type.__name__] = partition_keys
+                cls_name not in _PARQUET_OBJECT_FROM_DICT_MAP
+            ), f"Deserializer already exists for {cls_name}: {_PARQUET_OBJECT_TO_DICT_MAP[cls_name]}"
+
+    if serializer is not None:
+        _PARQUET_OBJECT_TO_DICT_MAP[cls_name] = serializer
+    if deserializer is not None:
+        _PARQUET_OBJECT_FROM_DICT_MAP[cls_name] = deserializer
+    if chunk is not None:
+        _chunk[cls_name] = chunk
+    if partition_keys is not None:
+        _partition_keys[cls_name] = partition_keys
+    if schema is not None:
+        _schemas[cls_name] = schema
 
 
 def _serialize(obj):

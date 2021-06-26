@@ -40,7 +40,7 @@ except ImportError:
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.model.events import InstrumentStatusEvent
-from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
@@ -48,6 +48,7 @@ from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.serialization.arrow.core import _deserialize
 from nautilus_trader.serialization.arrow.core import _partition_keys
+from nautilus_trader.serialization.arrow.core import _schemas
 from nautilus_trader.serialization.arrow.core import _serialize
 
 
@@ -155,7 +156,12 @@ class TextParser(ByteParser):
     def process_chunk(self, chunk, instrument_provider):
         for line in map(self.line_preprocessor, chunk.split(b"\n")):
             if self.instrument_provider_update is not None:
-                self.instrument_provider_update(instrument_provider, line)
+                # Check the user hasn't accidentally used a generator here also
+                r = self.instrument_provider_update(instrument_provider, line)
+                if isinstance(r, Generator):
+                    raise Exception(
+                        f"{self.instrument_provider_update} func should not be generator"
+                    )
             yield from self.parser(line, state=self.state)
 
 
@@ -481,19 +487,40 @@ class DataCatalog:
                 if df.empty:
                     continue
 
+                ts_col = None
+                for c in NAUTILUS_TS_COLUMNS:
+                    if c in df.columns:
+                        ts_col = c
+                assert (
+                    ts_col is not None
+                ), f"Could not find timestamp column for type: {cls}"
+
+                partition_cols = self._determine_partition_cols(
+                    cls=cls, instrument_id=ins_id
+                )
+
                 # Load any existing data, drop dupes
                 if not append_only:
-                    if self.fs.exists(fn):
-                        existing = pd.read_parquet(
-                            str(fn),
-                            fs=self.fs,
-                            filters=[("instrument_id", "=", ins_id)],
+                    if self.fs.exists(fn) or self.fs.isdir(str(fn)):
+                        existing = self._query(
+                            filename=camel_to_snake_case(cls.__name__),
+                            instrument_ids=ins_id,
+                            ts_column=ts_col,
                         )
-                        subset = [c for c in df.columns if c not in NAUTILUS_TS_COLUMNS]
-                        df = df.append(existing).drop_duplicates(subset=subset)
-                        # Remove file, will be written again
-                        self.fs.rm(fn, recursive=True)
+                        if not existing.empty:
+                            df = df.append(existing).drop_duplicates()
+                            # Remove this file/partition, will be written again
+                            if partition_cols:
+                                assert partition_cols == [
+                                    "instrument_id"
+                                ], "Only support appending to instrument_id partitions"
+                                # We only want to remove this partition
+                                partition_path = f"/instrument_id={clean_key(ins_id)}"
+                                self.fs.rm(str(fn) + partition_path, recursive=True)
+                            else:
+                                self.fs.rm(str(fn), recursive=True)
 
+                df = df.sort_values(ts_col)
                 df = df.astype(
                     {k: "category" for k in category_attributes.get(cls.__name__, [])}
                 )
@@ -501,12 +528,10 @@ class DataCatalog:
                     if col in df.columns:
                         df = df.sort_values(col)
                         break
-                partition_cols = self._determine_partition_cols(
-                    cls=cls, instrument_id=ins_id
-                )
+
                 clean_partition_cols(df, partition_cols)
 
-                table = pa.Table.from_pandas(df)
+                table = pa.Table.from_pandas(df, schema=_schemas.get(cls.__name__))
                 metadata_collector = []
                 pq.write_to_dataset(
                     table=table,
@@ -708,11 +733,11 @@ class DataCatalog:
                 ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64())
             )
 
-        dataset = ds.dataset(
-            f"{self.root}/{filename}.parquet/",
-            partitioning="hive",
-            filesystem=self.fs,
-        )
+        path = f"{self.root}/{filename}.parquet/"
+        if not self.fs.exists(path):
+            return
+
+        dataset = ds.dataset(path, partitioning="hive", filesystem=self.fs)
         df = (
             dataset.to_table(filter=combine_filters(*filters))
             .to_pandas()
@@ -726,11 +751,36 @@ class DataCatalog:
     def _make_objects(df, cls):
         return _deserialize(cls=cls, chunk=df.to_dict("records"))
 
-    def instruments(self, filter_expr=None, as_nautilus=False, **kwargs):
-        df = self._query("betting_instrument", filter_expr=filter_expr, **kwargs)
+    def instruments(
+        self, instrument_type=None, filter_expr=None, as_nautilus=False, **kwargs
+    ):
+        if instrument_type is not None:
+            assert isinstance(instrument_type, type)
+            instrument_types = (instrument_type,)
+        else:
+            instrument_types = Instrument.__subclasses__()
+
+        dfs = []
+        for ins_type in instrument_types:
+            dfs.append(
+                self._query(
+                    camel_to_snake_case(ins_type.__name__),
+                    filter_expr=filter_expr,
+                    **kwargs,
+                )
+            )
+
         if not as_nautilus:
-            return df
-        return self._make_objects(df=df.drop(["type"], axis=1), cls=BettingInstrument)
+            return pd.concat([df for df in dfs if df is not None])
+        else:
+            objects = []
+            for ins_type, df in zip(instrument_types, dfs):
+                if df is None:
+                    continue
+                objects.extend(
+                    self._make_objects(df=df.drop(["type"], axis=1), cls=ins_type)
+                )
+            return objects
 
     def instrument_status_events(
         self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
@@ -793,6 +843,27 @@ class DataCatalog:
         if not as_nautilus:
             return df
         return self._make_objects(df=df, cls=OrderBookDelta)
+
+    def list_data_types(self):
+        return [p.stem for p in self.root.glob("*.parquet")]
+
+    def list_generic_data_types(self):
+        data_types = self.list_data_types()
+        return [
+            n.replace(GENERIC_DATA_PREFIX, "")
+            for n in data_types
+            if n.startswith(GENERIC_DATA_PREFIX)
+        ]
+
+    def list_partitions(self, cls_type):
+        assert isinstance(cls_type, type), "`cls_type` should be type, ie TradeTick"
+        prefix = GENERIC_DATA_PREFIX if is_custom_data(cls_type) else ""
+        name = prefix + camel_to_snake_case(cls_type.__name__)
+        dataset = pq.ParquetDataset(self.root / f"{name}.parquet")
+        partitions = {}
+        for level in dataset.partitions.levels:
+            partitions[level.name] = level.keys
+        return partitions
 
 
 def camel_to_snake_case(s):
