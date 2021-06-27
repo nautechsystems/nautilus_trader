@@ -18,7 +18,6 @@ import asyncio
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
@@ -69,7 +68,7 @@ cdef class LiveDataClient(DataClient):
     """
     The abstract base class for all live data clients.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -81,7 +80,7 @@ cdef class LiveDataClient(DataClient):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveDataClient` class.
+        Initialize a new instance of the ``LiveDataClient`` class.
 
         Parameters
         ----------
@@ -98,11 +97,11 @@ cdef class LiveDataClient(DataClient):
 
         """
         super().__init__(
-            client_id,
-            engine,
-            clock,
-            logger,
-            config,
+            client_id=client_id,
+            engine=engine,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
@@ -112,7 +111,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
     """
     The abstract base class for all live data clients.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -124,7 +123,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveMarketDataClient` class.
+        Initialize a new instance of the ``LiveMarketDataClient`` class.
 
         Parameters
         ----------
@@ -141,11 +140,11 @@ cdef class LiveMarketDataClient(MarketDataClient):
 
         """
         super().__init__(
-            client_id,
-            engine,
-            clock,
-            logger,
-            config,
+            client_id=client_id,
+            engine=engine,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()

@@ -143,7 +143,7 @@ cdef class ExchangeRateCalculator:
                     exchange_rates_perm0[perm[1]] = Decimal(1) / exchange_rates_perm1[perm[0]]
 
         cdef dict quotes = exchange_rates.get(from_currency.code)
-        if quotes is not None:
+        if quotes:
             xrate = quotes.get(to_currency.code)
             if xrate is not None:
                 return xrate
@@ -194,7 +194,7 @@ cdef class RolloverInterestCalculator:
 
     def __init__(self, data not None: pd.DataFrame):
         """
-        Initialize a new instance of the `RolloverInterestCalculator` class.
+        Initialize a new instance of the ``RolloverInterestCalculator`` class.
 
         Parameters
         ----------

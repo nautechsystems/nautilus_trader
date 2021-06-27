@@ -12,10 +12,10 @@ Data Client
    :members:
    :member-order: bysource
 
-Data Container
---------------
+Data Loader
+-----------
 
-.. automodule:: nautilus_trader.backtest.data_container
+.. automodule:: nautilus_trader.backtest.data_loader
    :show-inheritance:
    :inherited-members:
    :members:

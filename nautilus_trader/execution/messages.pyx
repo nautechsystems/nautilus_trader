@@ -17,8 +17,11 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_state cimport OrderStateParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
+from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -40,7 +43,7 @@ cdef class OrderStatusReport:
         int64_t timestamp_ns,
     ):
         """
-        Initializes a new instance of the `OrderStatusReport` class.
+        Initializes a new instance of the `OrderStatusReport`` class.
 
         Parameters
         ----------
@@ -53,7 +56,7 @@ cdef class OrderStatusReport:
         filled_qty : Quantity
             The reported filled quantity at the exchange.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the report.
+            The UNIX timestamp (nanoseconds) of the report.
 
         """
         self.client_order_id = client_order_id
@@ -61,6 +64,14 @@ cdef class OrderStatusReport:
         self.order_state = order_state
         self.filled_qty = filled_qty
         self.timestamp_ns = timestamp_ns
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"client_order_id={self.client_order_id}, "
+                f"venue_order_id={self.venue_order_id}, "
+                f"order_state={OrderStateParser.to_str(self.order_state)}, "
+                f"filled_qty={self.filled_qty}, "
+                f"ts_recv_ns={self.timestamp_ns})")
 
 
 cdef class PositionStatusReport:
@@ -75,7 +86,7 @@ cdef class PositionStatusReport:
         int64_t timestamp_ns,
     ):
         """
-        Initializes a new instance of the `PositionStatusReport` class.
+        Initializes a new instance of the `PositionStatusReport`` class.
 
         Parameters
         ----------
@@ -86,13 +97,20 @@ cdef class PositionStatusReport:
         qty : Quantity
             The reported position quantity at the exchange.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the report.
+            The UNIX timestamp (nanoseconds) of the report.
 
         """
         self.instrument_id = instrument_id
         self.side = position_side
         self.qty = qty
         self.timestamp_ns = timestamp_ns
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id}, "
+                f"side={PositionSideParser.to_str(self.side)}, "
+                f"qty={self.qty}, "
+                f"ts_recv_ns={self.timestamp_ns})")
 
 
 cdef class ExecutionReport:
@@ -109,11 +127,11 @@ cdef class ExecutionReport:
         Price last_px not None,
         Money commission,  # Can be None
         LiquiditySide liquidity_side,
-        int64_t execution_ns,
+        int64_t ts_filled_ns,
         int64_t timestamp_ns,
     ):
         """
-        Initializes a new instance of the `ExecutionReport` class.
+        Initializes a new instance of the `ExecutionReport`` class.
 
         Parameters
         ----------
@@ -131,8 +149,8 @@ cdef class ExecutionReport:
             The commission for the transaction (can be None).
         liquidity_side : LiquiditySide
             The liquidity side for the fill.
-        execution_ns : int64
-            The Unix timestamp (nanos) of the execution.
+        ts_filled_ns : int64
+            The UNIX timestamp (nanoseconds) of the execution.
 
         """
         self.client_order_id = client_order_id
@@ -142,8 +160,20 @@ cdef class ExecutionReport:
         self.last_px = last_px
         self.commission = commission
         self.liquidity_side = liquidity_side
-        self.execution_ns = execution_ns
+        self.ts_filled_ns = ts_filled_ns
         self.timestamp_ns = timestamp_ns
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"client_order_id={self.client_order_id}, "
+                f"venue_order_id={self.venue_order_id}, "
+                f"id={self.id}, "
+                f"last_qty={self.last_qty}, "
+                f"last_px={self.last_px}, "
+                f"commission={self.commission.to_str()}, "
+                f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
+                f"ts_filled_ns={self.ts_filled_ns}, "
+                f"ts_recv_ns={self.timestamp_ns})")
 
 
 cdef class ExecutionMassStatus:
@@ -158,7 +188,7 @@ cdef class ExecutionMassStatus:
         int64_t timestamp_ns,
     ):
         """
-        Initializes a new instance of the `ExecutionMassStatus` class.
+        Initializes a new instance of the `ExecutionMassStatus`` class.
 
         Parameters
         ----------
@@ -167,7 +197,7 @@ cdef class ExecutionMassStatus:
         account_id : AccountId
             The account identifier for the report.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the report.
+            The UNIX timestamp (nanoseconds) of the report.
 
         Raises
         ------
@@ -182,6 +212,15 @@ cdef class ExecutionMassStatus:
         self._order_reports = {}     # type: dict[VenueOrderId, OrderStatusReport]
         self._exec_reports = {}      # type: dict[VenueOrderId, list[ExecutionReport]]
         self._position_reports = {}  # type: dict[InstrumentId, PositionStatusReport]
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"client_id={self.client_id}, "
+                f"account_id={self.account_id}, "
+                f"ts_recv_ns={self.timestamp_ns}, "
+                f"order_reports={self._order_reports}, "
+                f"exec_reports={self._exec_reports}, "
+                f"position_reports={self._position_reports})")
 
     cpdef dict order_reports(self):
         """

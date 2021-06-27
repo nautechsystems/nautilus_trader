@@ -13,14 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 import pickle
 from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.ib.providers import IBInstrumentProvider
+from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
 from tests import TESTS_PACKAGE_ROOT
 
 
@@ -35,7 +37,6 @@ class TestIBInstrumentProvider:
         with open(TEST_PATH + "contract_details_cl.pickle", "rb") as file:
             details = pickle.load(file)  # noqa (S301 possible security issue)
 
-        print(details)
         mock_client.reqContractDetails.return_value = [details]
 
         provider = IBInstrumentProvider(client=mock_client)
@@ -47,6 +48,7 @@ class TestIBInstrumentProvider:
         )
 
         details = {
+            "asset_type": "FUTURE",
             "asset_class": "COMMODITY",
             "expiry": "20211119",
             "currency": "USD",
@@ -60,6 +62,42 @@ class TestIBInstrumentProvider:
         # Assert
         assert instrument_id == future.id
         assert 1000, future.multiplier
-        assert Decimal("0.01") == future.tick_size
+        assert Price.from_str("0.01") == future.price_increment
         assert 2, future.price_precision
+        # TODO: Test all properties
+
+    def test_load_equity_contract_instrument(self):
+        # Arrange
+        mock_client = MagicMock()
+
+        with open(TEST_PATH + "contract_details_aapl_contract.pickle", "rb") as file:
+            contract = pickle.load(file)  # noqa (S301 possible security issue)
+
+        with open(TEST_PATH + "contract_details_aapl_details.pickle", "rb") as file:
+            details = pickle.load(file)  # noqa (S301 possible security issue)
+
+        mock_client.reqContractDetails.return_value = [details]
+        mock_client.qualifyContracts.return_value = [contract]
+
+        provider = IBInstrumentProvider(client=mock_client)
+        provider.connect()
+
+        instrument_id = InstrumentId(
+            symbol=Symbol("AAPL"),
+            venue=Venue("NASDAQ"),
+        )
+
+        details = {"asset_type": "SPOT"}
+
+        # Act
+        provider.load(instrument_id, details)
+        equity = provider.find(instrument_id)
+
+        # Assert
+        assert InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")) == equity.id
+        assert equity.asset_class == AssetClass.EQUITY
+        assert equity.asset_type == AssetType.SPOT
+        assert 100 == equity.multiplier
+        assert Price.from_str("0.01") == equity.price_increment
+        assert 2, equity.price_precision
         # TODO: Test all properties

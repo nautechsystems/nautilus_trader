@@ -18,6 +18,7 @@ import asyncio
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -25,7 +26,6 @@ from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageType
-from nautilus_trader.execution.database cimport ExecutionDatabase
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.messages cimport ExecutionMassStatus
 from nautilus_trader.execution.messages cimport OrderStatusReport
@@ -34,6 +34,7 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 
@@ -47,23 +48,23 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     def __init__(
         self,
         loop not None: asyncio.AbstractEventLoop,
-        ExecutionDatabase database not None,
         Portfolio portfolio not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveExecutionEngine` class.
+        Initialize a new instance of the ``LiveExecutionEngine`` class.
 
         Parameters
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the engine.
-        database : ExecutionDatabase
-            The execution database for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
+        cache : Cache
+            The cache for the engine.
         clock : Clock
             The clock for the engine.
         logger : Logger
@@ -75,11 +76,11 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         if config is None:
             config = {}
         super().__init__(
-            database,
-            portfolio,
-            clock,
-            logger,
-            config,
+            portfolio=portfolio,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self._loop = loop
@@ -121,7 +122,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         return self._queue.qsize()
 
-    async def reconcile_state(self) -> bool:
+    async def reconcile_state(self, double timeout_secs) -> bool:
         """
         Reconcile the execution engines state with all execution clients.
 
@@ -133,19 +134,28 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         the missing events will be generated. If there is not enough information
         to reconcile a state then errors will be logged.
 
+        Parameters
+        ----------
+        timeout_secs : double
+            The seconds to allow for reconciliation before timing out.
+
         Returns
         -------
         bool
             True if states reconcile within timeout, else False.
 
+        Raises
+        ------
+        ValueError
+            If timeout_secs is not positive (> 0).
+
         """
-        # TODO: Refactor pass on this, plus above docs
+        Condition.positive(timeout_secs, "timeout_secs")
         cdef dict active_orders = {
             order.client_order_id: order for order in self.cache.orders() if not order.is_completed_c()
         }  # type: dict[ClientOrderId, Order]
 
         if not active_orders:
-            self._log.info(f"State reconciled.", color=LogColor.GREEN)
             return True  # Execution states reconciled
 
         cdef int count = len(active_orders)
@@ -161,45 +171,61 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         # Build order state map
         cdef Order order
+        cdef LiveExecutionClient client
         for order in active_orders.values():
-            client_id = order.instrument_id.venue.client_id
-            if client_id in client_orders:
-                client_orders[client_id].append(order)
-            else:
-                self._log.error(f"Cannot reconcile state. No registered"
-                                f"execution client for {client_id.value} for active {order}.")
+            client = self._routing_map.get(order.instrument_id.venue)
+            if client is None:
+                self._log.error(
+                    f"Cannot reconcile state: "
+                    f"No client found for {order.instrument_id.venue} for active {order}."
+                )
                 continue
+            client_orders[client.id].append(order)
 
         cdef dict client_mass_status = {}  # type: dict[ClientId, ExecutionMassStatus]
 
-        cdef LiveExecutionClient client
         # Generate state report for each client
         for name, client in self._clients.items():
             client_mass_status[name] = await client.generate_mass_status(client_orders[name])
 
-        # Reconcile states
+        # Reconcile order states
         cdef ExecutionMassStatus mass_status
         cdef OrderStatusReport order_state_report
         for name, mass_status in client_mass_status.items():
-            for order_state_report in mass_status.order_reports().values():
+            order_reports = mass_status.order_reports()
+            if not order_reports:
+                continue
+            for order_state_report in order_reports.values():
                 order = active_orders.get(order_state_report.client_order_id)
+                if order is None:
+                    self._log.error(
+                        f"Cannot reconcile state: "
+                        f"No order found for {repr(order_state_report.client_order_id)}."
+                    )
+                    continue
                 exec_reports = mass_status.exec_reports().get(order.venue_order_id, [])
                 await self._clients[name].reconcile_state(order_state_report, order, exec_reports)
 
         # Wait for state resolution until timeout...
-        cdef int seconds = 10  # Hard coded for now
-        cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=seconds)
+        cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=timeout_secs)
         cdef OrderStatusReport report
         while True:
             if self._clock.utc_now() >= timeout:
-                self._log.error(f"Timed out ({seconds}s) waiting for "
-                                f"execution states to reconcile.")
                 return False
 
             resolved = True
             for order in active_orders.values():
-                client_id = order.instrument_id.venue.client_id
-                report = client_mass_status[client_id].order_reports().get(order.venue_order_id)
+                client = self._routing_map.get(order.instrument_id.venue)
+                if client is None:
+                    self._log.error(
+                        f"Cannot reconcile state: "
+                        f"No client found for {order.instrument_id.venue}."
+                    )
+                    return False  # Will never reconcile
+                mass_status = client_mass_status.get(client.id)
+                if mass_status is None:
+                    return False  # Will never reconcile
+                report = mass_status.order_reports().get(order.venue_order_id)
                 if report is None:
                     return False  # Will never reconcile
                 if order.state_c() != report.order_state:
@@ -209,9 +235,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                         resolved = False  # Incorrect filled quantity on this loop
             if resolved:
                 break
-            await asyncio.sleep(0.001)  # One millisecond sleep
+            await asyncio.sleep(0)  # Sleep for one event loop cycle
 
-        self._log.info(f"State reconciled.", color=LogColor.GREEN)
         return True  # Execution states reconciled
 
     cpdef void kill(self) except *:
@@ -250,7 +275,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         try:
             self._queue.put_nowait(command)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
+            self._log.warning(
+                f"Blocking on `_queue.put` as queue full "
+                f"at {self._queue.qsize()} items.",
+            )
             self._loop.create_task(self._queue.put(command))  # Blocking until qsize reduces
 
     cpdef void process(self, Event event) except *:
@@ -277,7 +305,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         try:
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
+            self._log.warning(
+                f"Blocking on `_queue.put` as queue full "
+                f"at {self._queue.qsize()} items.",
+            )
             self._loop.create_task(self._queue.put(event))  # Blocking until qsize reduces
 
     cpdef void _on_start(self) except *:
@@ -295,7 +326,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             self._enqueue_sentinel()
 
     async def _run(self):
-        self._log.debug(f"Message queue processing starting (qsize={self.qsize()})...")
+        self._log.debug(
+            f"Message queue processing starting (qsize={self.qsize()})...",
+        )
         cdef Message message
         try:
             while self.is_running:
@@ -310,11 +343,14 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                     self._log.error(f"Cannot handle message: unrecognized {message}.")
         except asyncio.CancelledError:
             if not self._queue.empty():
-                self._log.warning(f"Running cancelled "
-                                  f"with {self.qsize()} message(s) on queue.")
+                self._log.warning(
+                    f"Running canceled with {self.qsize()} message(s) on queue.",
+                )
             else:
-                self._log.debug(f"Message queue processing stopped (qsize={self.qsize()}).")
+                self._log.debug(
+                    f"Message queue processing stopped (qsize={self.qsize()}).",
+                )
 
-    cdef inline void _enqueue_sentinel(self):
+    cdef void _enqueue_sentinel(self):
         self._queue.put_nowait(self._sentinel)
         self._log.debug(f"Sentinel message placed on message queue.")

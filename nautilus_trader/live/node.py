@@ -26,24 +26,26 @@ import warnings
 import msgpack
 import redis
 
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.execution.database import BypassExecutionDatabase
+from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.redis.execution import RedisExecutionDatabase
-from nautilus_trader.serialization.serializers import MsgPackCommandSerializer
-from nautilus_trader.serialization.serializers import MsgPackEventSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.trader import Trader
@@ -98,13 +100,18 @@ class TradingNode:
         config_trader = config.get("trader", {})
         config_system = config.get("system", {})
         config_log = config.get("logging", {})
-        config_exec_db = config.get("exec_database", {})
-        config_risk = config.get("risk", {})
+        config_db = config.get("database", {})
+        config_cache = config.get("cache", {})
+        config_data = config.get("data_engine", {})
+        config_risk = config.get("risk_engine", {})
+        config_exec = config.get("exec_engine", {})
         config_strategy = config.get("strategy", {})
 
         # System config
-        self._connection_timeout = config_system.get("connection_timeout", 5.0)
-        self._disconnection_timeout = config_system.get("disconnection_timeout", 5.0)
+        self._timeout_connection = config_system.get("timeout_connection", 5.0)
+        self._timeout_reconciliation = config_system.get("timeout_reconciliation", 10.0)
+        self._timeout_portfolio = config_system.get("timeout_portfolio", 10.0)
+        self._timeout_disconnection = config_system.get("timeout_disconnection", 5.0)
         self._check_residuals_delay = config_system.get("check_residuals_delay", 5.0)
         self._load_strategy_state = config_strategy.get("load_state", True)
         self._save_strategy_state = config_strategy.get("save_state", True)
@@ -124,8 +131,7 @@ class TradingNode:
 
         # Setup identifiers
         self.trader_id = TraderId(
-            name=config_trader["name"],
-            tag=config_trader["id_tag"],
+            f"{config_trader['name']}-{config_trader['id_tag']}",
         )
 
         # Setup logging
@@ -148,14 +154,40 @@ class TradingNode:
         self._log.info("Building...")
 
         if platform.system() != "Windows":
-            # Requires the logger to be initialized
             # Windows does not support signal handling
             # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
             self._setup_loop()
 
+        ########################################################################
         # Build platform
-        # ----------------------------------------------------------------------
+        ########################################################################
+
+        if config_db["type"] == "redis":
+            cache_db = RedisCacheDatabase(
+                trader_id=self.trader_id,
+                logger=self._logger,
+                instrument_serializer=MsgPackInstrumentSerializer(),
+                command_serializer=MsgPackCommandSerializer(),
+                event_serializer=MsgPackEventSerializer(),
+                config={
+                    "host": config_db["host"],
+                    "port": config_db["port"],
+                },
+            )
+        else:
+            cache_db = BypassCacheDatabase(
+                trader_id=self.trader_id,
+                logger=self._logger,
+            )
+
+        cache = Cache(
+            database=cache_db,
+            logger=self._logger,
+            config=config_cache,
+        )
+
         self.portfolio = Portfolio(
+            cache=cache,
             clock=self._clock,
             logger=self._logger,
         )
@@ -163,59 +195,42 @@ class TradingNode:
         self._data_engine = LiveDataEngine(
             loop=self._loop,
             portfolio=self.portfolio,
+            cache=cache,
             clock=self._clock,
             logger=self._logger,
-            config={"qsize": 10000},
+            config=config_data,
         )
-
-        self.portfolio.register_cache(self._data_engine.cache)
-        self.analyzer = PerformanceAnalyzer()
-
-        if config_exec_db["type"] == "redis":
-            exec_db = RedisExecutionDatabase(
-                trader_id=self.trader_id,
-                logger=self._logger,
-                command_serializer=MsgPackCommandSerializer(),
-                event_serializer=MsgPackEventSerializer(),
-                config={
-                    "host": config_exec_db["host"],
-                    "port": config_exec_db["port"],
-                },
-            )
-        else:
-            exec_db = BypassExecutionDatabase(
-                trader_id=self.trader_id,
-                logger=self._logger,
-            )
 
         self._exec_engine = LiveExecutionEngine(
             loop=self._loop,
-            database=exec_db,
             portfolio=self.portfolio,
+            cache=cache,
             clock=self._clock,
             logger=self._logger,
-            config={"qsize": 10000},
+            config=config_exec,
         )
 
         self._risk_engine = LiveRiskEngine(
             loop=self._loop,
             exec_engine=self._exec_engine,
             portfolio=self.portfolio,
+            cache=cache,
             clock=self._clock,
             logger=self._logger,
             config=config_risk,
         )
 
-        self._exec_engine.load_cache()
+        # Wire up components
         self._exec_engine.register_risk_engine(self._risk_engine)
+        self._exec_engine.load_cache()
 
         self.trader = Trader(
             trader_id=self.trader_id,
             strategies=strategies,
             portfolio=self.portfolio,
             data_engine=self._data_engine,
-            exec_engine=self._exec_engine,
             risk_engine=self._risk_engine,
+            exec_engine=self._exec_engine,
             clock=self._clock,
             logger=self._logger,
         )
@@ -226,7 +241,6 @@ class TradingNode:
         self._builder = TradingNodeBuilder(
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
-            risk_engine=self._risk_engine,
             clock=self._clock,
             logger=self._logger,
             log=self._log,
@@ -385,11 +399,19 @@ class TradingNode:
 
         """
         try:
-            timeout = self._clock.utc_now() + timedelta(seconds=5)
+            timeout = self._clock.utc_now() + timedelta(
+                seconds=self._timeout_disconnection
+            )
             while self._is_running:
                 time.sleep(0.1)
                 if self._clock.utc_now() >= timeout:
-                    self._log.warning("Timed out (5s) waiting for node to stop.")
+                    self._log.warning(
+                        f"Timed out ({self._timeout_disconnection}s) waiting for node to stop."
+                        f"\nStatus"
+                        f"\n------"
+                        f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"
+                        f"\nExecEngine.check_disconnected() == {self._exec_engine.check_disconnected()}"
+                    )
                     break
 
             self._log.info("state=DISPOSING...")
@@ -472,19 +494,62 @@ class TradingNode:
             self._log.info("state=STARTING...")
             self._is_running = True
 
+            # Start system
             self._logger.start()
             self._data_engine.start()
             self._exec_engine.start()
             self._risk_engine.start()
 
-            result: bool = await self._await_engines_connected()
-            if not result:
+            # Await engine connection and initialization
+            self._log.info(
+                f"Waiting for engines to connect and initialize "
+                f"({self._timeout_connection}s timeout)...",
+                color=LogColor.BLUE,
+            )
+            if not await self._await_engines_connected():
+                self._log.warning(
+                    f"Timed out ({self._timeout_connection}s) waiting for engines to connect and initialize."
+                    f"\nStatus"
+                    f"\n------"
+                    f"\nDataEngine.check_connected() == {self._data_engine.check_connected()}"
+                    f"\nExecEngine.check_connected() == {self._exec_engine.check_connected()}"
+                )
                 return
+            self._log.info("Engines connected.", color=LogColor.GREEN)
 
-            result: bool = await self._exec_engine.reconcile_state()
-            if not result:
+            # Await execution state reconciliation
+            self._log.info(
+                f"Waiting for execution state to reconcile "
+                f"({self._timeout_reconciliation}s timeout)...",
+                color=LogColor.BLUE,
+            )
+            if not await self._exec_engine.reconcile_state(
+                timeout_secs=self._timeout_reconciliation,
+            ):
+                self._log.warning(
+                    f"Timed out ({self._timeout_reconciliation}s) waiting for "
+                    f"execution state to reconcile."
+                )
                 return
+            self._log.info("State reconciled.", color=LogColor.GREEN)
 
+            # Await portfolio initialization
+            self._log.info(
+                "Waiting for portfolio to initialize "
+                f"({self._timeout_portfolio}s timeout)...",
+                color=LogColor.BLUE,
+            )
+            if not await self._await_portfolio_initialized():
+                self._log.warning(
+                    f"Timed out ({self._timeout_portfolio}s) waiting for portfolio to initialize."
+                    f"\nStatus"
+                    f"\n------"
+                    f"\nPortfolio.initialized == {self.portfolio.initialized}"
+                )
+                return
+            self._log.info("Portfolio initialized.", color=LogColor.GREEN)
+
+            # Start trader and strategies
             self.trader.start()
 
             if self._loop.is_running():
@@ -500,24 +565,17 @@ class TradingNode:
             self._log.error(str(ex))
 
     async def _await_engines_connected(self) -> bool:
-        self._log.info(
-            f"Waiting for engines to initialize "
-            f"({self._connection_timeout}s timeout)..."
-        )
-
-        # The data engine clients will be set as connected when all
+        # - The data engine clients will be set connected when all
         # instruments are received and updated with the data engine.
-        # The execution engine clients will be set as connected when all
+        # - The execution engine clients will be set connected when all
         # accounts are updated and the current order and position status is
-        # reconciled. Thus any delay here will be due to blocking network IO.
-        seconds = self._connection_timeout
+        # reconciled.
+        # Thus any delay here will be due to blocking network IO.
+        seconds = self._timeout_connection
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0)
             if self._clock.utc_now() >= timeout:
-                self._log.error(
-                    f"Timed out ({seconds}s) waiting for engines to connect."
-                )
                 return False
             if not self._data_engine.check_connected():
                 continue
@@ -527,6 +585,22 @@ class TradingNode:
 
         return True  # Engines connected
 
+    async def _await_portfolio_initialized(self) -> bool:
+        # - The portfolio will be set initialized when all margin and unrealized
+        # PnL calculations are completed (may be waiting on first quote).
+        # Thus any delay here will be due to blocking network IO.
+        seconds = self._timeout_portfolio
+        timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
+        while True:
+            await asyncio.sleep(0)
+            if self._clock.utc_now() >= timeout:
+                return False
+            if not self.portfolio.initialized:
+                continue
+            break
+
+        return True  # Portfolio initialized
+
     async def _stop(self) -> None:
         self._is_stopping = True
         self._log.info("state=STOPPING...")
@@ -534,7 +608,8 @@ class TradingNode:
         if self.trader.state == ComponentState.RUNNING:
             self.trader.stop()
             self._log.info(
-                f"Awaiting residual state ({self._check_residuals_delay}s delay)..."
+                f"Awaiting residual state ({self._check_residuals_delay}s delay)...",
+                color=LogColor.BLUE,
             )
             await asyncio.sleep(self._check_residuals_delay)
             self.trader.check_residuals()
@@ -549,7 +624,19 @@ class TradingNode:
         if self._risk_engine.state == ComponentState.RUNNING:
             self._risk_engine.stop()
 
-        await self._await_engines_disconnected()
+        self._log.info(
+            f"Waiting for engines to disconnect "
+            f"({self._timeout_disconnection}s timeout)...",
+            color=LogColor.BLUE,
+        )
+        if not await self._await_engines_disconnected():
+            self._log.error(
+                f"Timed out ({self._timeout_disconnection}s) waiting for engines to disconnect."
+                f"\nStatus"
+                f"\n------"
+                f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"
+                f"\nExecEngine.check_disconnected() == {self._exec_engine.check_disconnected()}"
+            )
 
         # Clean up remaining timers
         timer_names = self._clock.timer_names()
@@ -561,26 +648,20 @@ class TradingNode:
         self._log.info("state=STOPPED.")
         self._is_running = False
 
-    async def _await_engines_disconnected(self) -> None:
-        self._log.info(
-            f"Waiting for engines to disconnect "
-            f"({self._disconnection_timeout}s timeout)..."
-        )
-
-        seconds = self._disconnection_timeout
+    async def _await_engines_disconnected(self) -> bool:
+        seconds = self._timeout_disconnection
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0)
             if self._clock.utc_now() >= timeout:
-                self._log.error(
-                    f"Timed out ({seconds}s) waiting for engines to disconnect."
-                )
-                break
+                return False
             if not self._data_engine.check_disconnected():
                 continue
             if not self._exec_engine.check_disconnected():
                 continue
             break
+
+        return True  # Engines disconnected
 
     def _cancel_all_tasks(self) -> None:
         to_cancel = asyncio.tasks.all_tasks(self._loop)

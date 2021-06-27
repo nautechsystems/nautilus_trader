@@ -25,7 +25,7 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderCancelled
+from nautilus_trader.model.events cimport OrderCanceled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderExpired
@@ -51,6 +51,7 @@ cdef class Order:
     cdef list _events
     cdef list _execution_ids
     cdef FiniteStateMachine _fsm
+    cdef OrderState _rollback_state
 
     cdef readonly ClientOrderId client_order_id
     """The client order identifier.\n\n:returns: `ClientOrderId`"""
@@ -73,19 +74,21 @@ cdef class Order:
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly int64_t timestamp_ns
-    """The Unix timestamp (nanos) of order initialization.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) of order initialization.\n\n:returns: `int64`"""
     cdef readonly TimeInForce time_in_force
     """The order time-in-force.\n\n:returns: `TimeInForce`"""
     cdef readonly Quantity filled_qty
     """The order total filled quantity.\n\n:returns: `Quantity`"""
-    cdef readonly int64_t execution_ns
-    """The Unix timestamp (nanos) of the last execution (0 for no execution).\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_filled_ns
+    """The UNIX timestamp (nanoseconds) of the last execution (0 for no execution).\n\n:returns: `int64`"""
     cdef readonly object avg_px
     """The order average fill price.\n\n:returns: `Decimal` or None"""
     cdef readonly object slippage
     """The order total price slippage.\n\n:returns: `Decimal`"""
     cdef readonly UUID init_id
     """The identifier of the `OrderInitialized` event.\n\n:returns: `UUID`"""
+
+    cpdef dict to_dict(self)
 
     cdef OrderState state_c(self) except *
     cdef OrderInitialized init_event_c(self)
@@ -100,13 +103,15 @@ cdef class Order:
     cdef bint is_passive_c(self) except *
     cdef bint is_aggressive_c(self) except *
     cdef bint is_working_c(self) except *
+    cdef bint is_pending_update_c(self) except *
+    cdef bint is_pending_cancel_c(self) except *
     cdef bint is_completed_c(self) except *
 
     @staticmethod
-    cdef inline OrderSide opposite_side_c(OrderSide side) except *
+    cdef OrderSide opposite_side_c(OrderSide side) except *
 
     @staticmethod
-    cdef inline OrderSide flatten_side_c(PositionSide side) except *
+    cdef OrderSide flatten_side_c(PositionSide side) except *
 
     cpdef void apply(self, OrderEvent event) except *
 
@@ -116,7 +121,7 @@ cdef class Order:
     cdef void _rejected(self, OrderRejected event) except *
     cdef void _accepted(self, OrderAccepted event) except *
     cdef void _updated(self, OrderUpdated event) except *
-    cdef void _cancelled(self, OrderCancelled event) except *
+    cdef void _canceled(self, OrderCanceled event) except *
     cdef void _expired(self, OrderExpired event) except *
     cdef void _triggered(self, OrderTriggered event) except *
     cdef void _filled(self, OrderFilled event) except *
@@ -134,6 +139,8 @@ cdef class PassiveOrder(Order):
     """The order expire time.\n\n:returns: `datetime` or None"""
     cdef readonly int64_t expire_time_ns
     """The order expire time (nanoseconds), zero for no expire time.\n\n:returns: `int64`"""
+
+    cpdef dict to_dict(self)
 
     cdef list venue_order_ids_c(self)
 

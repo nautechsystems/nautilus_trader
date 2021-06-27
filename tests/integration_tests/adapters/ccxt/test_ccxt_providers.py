@@ -18,6 +18,8 @@ import json
 import unittest
 from unittest.mock import MagicMock
 
+import pytest
+
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USDT
@@ -27,7 +29,7 @@ from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instrument import Instrument
+from nautilus_trader.model.instruments.currency import CurrencySpot
 from tests import TESTS_PACKAGE_ROOT
 
 
@@ -48,18 +50,18 @@ async def async_magic():
 
 
 class CCXTInstrumentProviderTests(unittest.TestCase):
+    @pytest.mark.skip  # Tests real API
+    def test_real_api(self):
+        import ccxt
 
-    # Uncomment to test real API
-    # def test_real_api(self):
-    #     import ccxt
-    #     client = ccxt.binance()
-    #     provider = CCXTInstrumentProvider(client=client)
-    #
-    #     # Act
-    #     provider.load_all()
-    #
-    #     # Assert
-    #     self.assertTrue(provider.count > 0)  # No exceptions raised
+        client = ccxt.binance()
+        provider = CCXTInstrumentProvider(client=client)
+
+        # Act
+        provider.load_all()
+
+        # Assert
+        self.assertTrue(provider.count > 0)  # No exceptions raised
 
     def test_load_all_when_decimal_precision_mode_exchange(self):
         # Arrange
@@ -237,12 +239,11 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         instrument = provider.find(instrument_id)
 
         # Assert
-        self.assertEqual(Instrument, type(instrument))
+        self.assertEqual(CurrencySpot, type(instrument))
         self.assertEqual(AssetClass.CRYPTO, instrument.asset_class)
         self.assertEqual(AssetType.SPOT, instrument.asset_type)
         self.assertEqual(BTC, instrument.base_currency)
         self.assertEqual(USDT, instrument.quote_currency)
-        self.assertEqual(USDT, instrument.settlement_currency)
 
     def test_get_btc_currency_when_loaded_returns_expected_currency(self):
         # Arrange

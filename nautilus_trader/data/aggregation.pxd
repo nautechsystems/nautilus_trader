@@ -16,6 +16,7 @@
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint8_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -31,12 +32,16 @@ from nautilus_trader.model.tick cimport TradeTick
 cdef class BarBuilder:
     cdef BarType _bar_type
 
+    cdef readonly uint8_t price_precision
+    """The price precision for the builders instrument.\n\n:returns: `uint8`"""
+    cdef readonly uint8_t size_precision
+    """The size precision for the builders instrument.\n\n:returns: `uint8`"""
     cdef readonly bint use_previous_close
     """If the builder is using the previous close for aggregation.\n\n:returns: `bool`"""
     cdef readonly bint initialized
     """If the builder is initialized.\n\n:returns: `bool`"""
     cdef readonly int64_t last_timestamp_ns
-    """The builders last update Unix timestamp (nanoseconds).\n\n:returns: `int64`"""
+    """The builders last update UNIX timestamp (nanoseconds).\n\n:returns: `int64`"""
     cdef readonly int count
     """The builders current update count.\n\n:returns: `int`"""
 
@@ -66,8 +71,8 @@ cdef class BarAggregator:
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_trade_tick(self, TradeTick tick) except *
     cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *
-    cdef inline void _build_now_and_send(self) except *
-    cdef inline void _build_and_send(self, int64_t timestamp_ns) except *
+    cdef void _build_now_and_send(self) except *
+    cdef void _build_and_send(self, int64_t timestamp_ns) except *
 
 
 cdef class TickBarAggregator(BarAggregator):

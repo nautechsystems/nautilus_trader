@@ -13,20 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint8_t
+from libc.stdint cimport uint16_t
+
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 
 
 cdef class Currency:
     cdef readonly str code
     """The currency identifier code.\n\n:returns: `str`"""
-    cdef readonly int precision
-    """The currency decimal precision.\n\n:returns: `int`"""
-    cdef readonly int iso4217
-    """The currency ISO 4217 code.\n\n:returns: `int`"""
+    cdef readonly uint8_t precision
+    """The currency decimal precision.\n\n:returns: `uint8`"""
+    cdef readonly uint16_t iso4217
+    """The currency ISO 4217 code.\n\n:returns: `uint16`"""
     cdef readonly str name
     """The currency name.\n\n:returns: `str`"""
     cdef readonly CurrencyType currency_type
     """The currency type (FIAT or CRYPTO).\n\n:returns: `CurrencyType`"""
+
+    @staticmethod
+    cdef void register_c(Currency currency, bint overwrite=*)
 
     @staticmethod
     cdef Currency from_str_c(str code)

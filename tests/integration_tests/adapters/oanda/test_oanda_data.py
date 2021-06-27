@@ -16,7 +16,6 @@
 import asyncio
 import concurrent.futures
 import json
-import unittest
 from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.oanda.data import OandaDataClient
@@ -41,6 +40,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import ObjectStorer
+from tests.test_kit.stubs import TestStubs
 
 
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
@@ -49,12 +49,12 @@ OANDA = Venue("OANDA")
 AUDUSD = InstrumentId(Symbol("AUD/USD"), OANDA)
 
 
-class OandaDataClientTests(unittest.TestCase):
-    def setUp(self):
+class TestOandaDataClient:
+    def setup(self):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER", "001")
+        self.trader_id = TraderId("TESTER-001")
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
@@ -76,7 +76,10 @@ class OandaDataClientTests(unittest.TestCase):
             clock=self.clock,
         )
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -84,6 +87,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -105,7 +109,7 @@ class OandaDataClientTests(unittest.TestCase):
 
         self.mock_oanda.request.return_value = instruments
 
-    def tearDown(self):
+    def teardown(self):
         self.executor.shutdown(wait=True)
         self.loop.stop()
         self.loop.close()
@@ -120,7 +124,7 @@ class OandaDataClientTests(unittest.TestCase):
     #         await asyncio.sleep(1)
     #
     #         # Assert
-    #         self.assertTrue(self.client.is_connected)
+    #         assert self.client.is_connected
     #
     #         # Tear Down
     #         self.data_engine.stop()
@@ -135,7 +139,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.client.disconnect()
 
         # Assert
-        self.assertFalse(self.client.is_connected)
+        assert not self.client.is_connected
 
     def test_reset(self):
         # Arrange
@@ -143,7 +147,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.client.reset()
 
         # Assert
-        self.assertFalse(self.client.is_connected)
+        assert not self.client.is_connected
 
     def test_dispose(self):
         # Arrange
@@ -151,7 +155,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.client.dispose()
 
         # Assert
-        self.assertFalse(self.client.is_connected)
+        assert not self.client.is_connected
 
     def test_subscribe_instrument(self):
         # Arrange
@@ -161,7 +165,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.client.subscribe_instrument(AUDUSD)
 
         # Assert
-        self.assertIn(AUDUSD, self.client.subscribed_instruments)
+        assert AUDUSD in self.client.subscribed_instruments
 
     def test_subscribe_quote_ticks(self):
         async def run_test():
@@ -174,7 +178,7 @@ class OandaDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             # Assert
-            self.assertIn(AUDUSD, self.client.subscribed_quote_ticks)
+            assert AUDUSD in self.client.subscribed_quote_ticks
 
             # Tear Down
             self.data_engine.stop()
@@ -190,7 +194,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.client.subscribe_bars(bar_type)
 
         # Assert
-        self.assertTrue(True)
+        assert True
 
     def test_unsubscribe_instrument(self):
         # Arrange
@@ -200,7 +204,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.client.unsubscribe_instrument(AUDUSD)
 
         # Assert
-        self.assertTrue(True)
+        assert True
 
     def test_unsubscribe_quote_ticks(self):
         async def run_test():
@@ -216,7 +220,7 @@ class OandaDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             # Assert
-            self.assertNotIn(AUDUSD, self.client.subscribed_quote_ticks)
+            assert AUDUSD not in self.client.subscribed_quote_ticks
 
             # Tear Down
             self.data_engine.stop()
@@ -232,7 +236,7 @@ class OandaDataClientTests(unittest.TestCase):
         self.client.unsubscribe_bars(bar_type)
 
         # Assert
-        self.assertTrue(True)
+        assert True
 
     def test_request_instrument(self):
         async def run_test():
@@ -245,7 +249,7 @@ class OandaDataClientTests(unittest.TestCase):
 
             # Assert
             # Instruments additionally requested on start
-            self.assertEqual(1, self.data_engine.response_count)
+            assert self.data_engine.response_count == 1
 
             # Tear Down
             self.data_engine.stop()
@@ -265,7 +269,7 @@ class OandaDataClientTests(unittest.TestCase):
 
             # Assert
             # Instruments additionally requested on start
-            self.assertEqual(1, self.data_engine.response_count)
+            assert self.data_engine.response_count == 1
 
             # Tear Down
             self.data_engine.stop()
@@ -297,10 +301,10 @@ class OandaDataClientTests(unittest.TestCase):
                 data_type=DataType(
                     Bar,
                     metadata={
-                        "BarType": bar_type,
-                        "FromDateTime": None,
-                        "ToDateTime": None,
-                        "Limit": 1000,
+                        "bar_type": bar_type,
+                        "from_datetime": None,
+                        "to_datetime": None,
+                        "limit": 1000,
                     },
                 ),
                 callback=handler.store,
@@ -315,10 +319,10 @@ class OandaDataClientTests(unittest.TestCase):
             await asyncio.sleep(1)
 
             # Assert
-            self.assertEqual(1, self.data_engine.response_count)
-            self.assertEqual(1, handler.count)
+            assert self.data_engine.response_count == 1
+            assert handler.count == 1
             # Final bar incomplete so becomes partial
-            self.assertEqual(99, len(handler.get_store()[0]))
+            assert len(handler.get_store()[0]) == 99
 
             # Tear Down
             self.data_engine.stop()

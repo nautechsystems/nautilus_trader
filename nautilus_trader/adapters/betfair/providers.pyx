@@ -26,13 +26,12 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.time cimport unix_timestamp_ns
-from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instruments.betting cimport BettingInstrument
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import EVENT_TYPE_TO_NAME
 from nautilus_trader.adapters.betfair.util import chunk
 from nautilus_trader.adapters.betfair.util import flatten_tree
-from nautilus_trader.model.instrument import BettingInstrument
 
 
 logger = logging.getLogger(__name__)
@@ -43,9 +42,14 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     Provides a means of loading `BettingInstruments` from the Betfair APIClient.
     """
 
-    def __init__(self, client not None: APIClient, logger: Logger, bint load_all=True, dict market_filter=None):
+    def __init__(
+        self, client not None: APIClient,
+        logger: Logger,
+        bint load_all=True,
+        dict market_filter=None,
+    ):
         """
-        Initialize a new instance of the `BetfairInstrumentProvider` class.
+        Initialize a new instance of the ``BetfairInstrumentProvider`` class.
 
         Parameters
         ----------
@@ -58,12 +62,14 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         super().__init__()
 
         self._client = client
-        self.market_filter = market_filter or {}
         self._log = LoggerAdapter("BetfairInstrumentProvider", logger)
-        self.venue = BETFAIR_VENUE
         self._instruments = {}
         self._cache = {}
         self._searched_filters = set()
+        self._account_currency = None
+
+        self.market_filter = market_filter or {}
+        self.venue = BETFAIR_VENUE
 
         if load_all:
             self._load_instruments()
@@ -101,11 +107,6 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
 
     cpdef void _assert_loaded_instruments(self) except *:
         assert self._instruments, "Instruments empty, has `load_all()` been called?"
-
-    cpdef instrument(self, InstrumentId instrument_id):
-        """ get an instrument by id """
-        if instrument_id in self._instruments:
-            return self._instruments[instrument_id]
 
     cpdef list search_markets(self, dict market_filter=None):
         """ Search for betfair markets. Useful for debugging / interactive use """
@@ -152,6 +153,9 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     cpdef void set_instruments(self, list instruments) except *:
         self._instruments = {ins.id: ins for ins in instruments}
 
+    cpdef void add_instruments(self, list instruments) except *:
+        self._instruments.update({ins.id: ins for ins in instruments})
+
 
 def _parse_date(s, tz):
     # pd.Timestamp is ~5x faster than datetime.datetime.isoformat here.
@@ -186,7 +190,7 @@ def parse_market_definition(market_definition):
                 {
                     "name": r.get("runnerName") or "NO_NAME",
                     "selection_id": r["selectionId"],
-                    "handicap": str(r.get("hc", r.get("handicap")) or "0.0"),
+                    "handicap": str(r.get("hc", r.get("handicap")) or ""),
                     "sort_priority": r.get("sortPriority"),
                     "runner_id": r.get("metadata", {}).get("runnerId")
                     if str(r.get("metadata", {}).get("runnerId")) != str(r["selectionId"])
@@ -202,19 +206,19 @@ def parse_market_definition(market_definition):
             "event_type_id": market_definition["eventTypeId"],
             "event_type_name": market_definition.get("eventTypeName", EVENT_TYPE_TO_NAME[market_definition["eventTypeId"]]),
             "event_id": market_definition["eventId"],
-            "event_name": market_definition.get("eventName"),
+            "event_name": market_definition.get("eventName", ""),
             "event_open_date": pd.Timestamp(market_definition["openDate"], tz=market_definition["timezone"]),
             "betting_type": market_definition["bettingType"],
             "country_code": market_definition.get("countryCode"),
             "market_type": market_definition.get("marketType"),
-            "market_name": market_definition.get("name"),
+            "market_name": market_definition.get("name", ""),
             "market_start_time": pd.Timestamp(market_definition["marketTime"], tz=market_definition["timezone"]),
             "market_id": market_definition["marketId"],
             "runners": [
                 {
                     "name": r.get("name") or "NO_NAME",
                     "selection_id": r["id"],
-                    "handicap": r.get("hc", "0.0"),
+                    "handicap": r.get("hc", ""),
                     "sort_priority": r.get("sortPriority"),
                 }
                 for r in market_definition["runners"]
@@ -241,7 +245,7 @@ def make_instruments(market_definition, currency):
             competition_id=market_definition.get("competition_id", ""),
             competition_name=market_definition.get("competition_name", ""),
             event_id=market_definition["event_id"],
-            event_name=market_definition["event_name"].strip(),
+            event_name=(market_definition.get("event_name") or '').strip(),
             event_country_code=market_definition.get("country_code") or "",
             event_open_date=market_definition["event_open_date"],
             betting_type=market_definition["betting_type"],
@@ -251,10 +255,11 @@ def make_instruments(market_definition, currency):
             market_type=market_definition["market_type"],
             selection_id=str(runner["selection_id"]),
             selection_name=runner["name"],
-            selection_handicap=str(runner.get("hc", runner.get("handicap")) or "0.0"),
+            selection_handicap=str(runner.get("hc", runner.get("handicap")) or ""),
             currency=currency,
             # TODO - Add the provider, use clock
-            timestamp_ns=unix_timestamp_ns()
+            ts_event_ns=unix_timestamp_ns(),  # TODO(bm): Duplicate timestamps for now
+            ts_recv_ns=unix_timestamp_ns(),
             # info=market_definition,  # TODO We should probably store a copy of the raw input data
         )
         instruments.append(instrument)

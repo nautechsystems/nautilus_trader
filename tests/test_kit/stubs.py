@@ -19,15 +19,18 @@ from typing import List
 
 import pytz
 
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.c_enums.orderbook_level import OrderBookLevel
+from nautilus_trader.model.c_enums.account_type import AccountType
+from nautilus_trader.model.c_enums.book_level import BookLevel
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data import Data
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
@@ -35,9 +38,11 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderCancelled
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderPendingCancel
+from nautilus_trader.model.events import OrderPendingReplace
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
@@ -49,10 +54,10 @@ from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -65,12 +70,28 @@ from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
+from tests.test_kit.mocks import MockLiveRiskEngine
 from tests.test_kit.providers import TestInstrumentProvider
 
 
-# Unix epoch is the UTC time at 00:00:00 on 1/1/1970
+# UNIX epoch is the UTC time at 00:00:00 on 1/1/1970
 # https://en.wikipedia.org/wiki/Unix_time
 UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+
+
+class MyData(Data):
+    """
+    Represents an example user defined data class.
+    """
+
+    def __init__(
+        self,
+        value,
+        ts_event_ns=0,
+        timestamp_ns=0,
+    ):
+        super().__init__(ts_event_ns, timestamp_ns)
+        self.value = value
 
 
 class TestStubs:
@@ -159,25 +180,27 @@ class TestStubs:
     @staticmethod
     def bar_5decimal() -> Bar:
         return Bar(
-            TestStubs.bartype_audusd_1min_bid(),
-            Price("1.00002"),
-            Price("1.00004"),
-            Price("1.00001"),
-            Price("1.00003"),
-            Quantity(1_000_000),
-            0,
+            bar_type=TestStubs.bartype_audusd_1min_bid(),
+            open_price=Price.from_str("1.00002"),
+            high_price=Price.from_str("1.00004"),
+            low_price=Price.from_str("1.00001"),
+            close_price=Price.from_str("1.00003"),
+            volume=Quantity.from_int(1_000_000),
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
     def bar_3decimal() -> Bar:
         return Bar(
-            TestStubs.bartype_usdjpy_1min_bid(),
-            Price("90.002"),
-            Price("90.004"),
-            Price("90.001"),
-            Price("90.003"),
-            Quantity(1_000_000),
-            0,
+            bar_type=TestStubs.bartype_usdjpy_1min_bid(),
+            open_price=Price.from_str("90.002"),
+            high_price=Price.from_str("90.004"),
+            low_price=Price.from_str("90.001"),
+            close_price=Price.from_str("90.003"),
+            volume=Quantity.from_int(1_000_000),
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
@@ -185,23 +208,29 @@ class TestStubs:
         instrument_id=None, bid=None, ask=None, bid_volume=None, ask_volume=None
     ) -> QuoteTick:
         return QuoteTick(
-            instrument_id if instrument_id is not None else TestStubs.usdjpy_id(),
-            bid or Price("90.002"),
-            ask or Price("90.005"),
-            bid_volume or Quantity(1_000_000),
-            ask_volume or Quantity(1_000_000),
-            0,
+            instrument_id=instrument_id
+            if instrument_id is not None
+            else TestStubs.usdjpy_id(),
+            bid=bid or Price.from_str("90.002"),
+            ask=ask or Price.from_str("90.005"),
+            bid_size=bid_volume or Quantity.from_int(1_000_000),
+            ask_size=ask_volume or Quantity.from_int(1_000_000),
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
     def quote_tick_5decimal(instrument_id=None, bid=None, ask=None) -> QuoteTick:
         return QuoteTick(
-            instrument_id if instrument_id is not None else TestStubs.audusd_id(),
-            bid or Price("1.00001"),
-            ask or Price("1.00003"),
-            Quantity(1_000_000),
-            Quantity(1_000_000),
-            0,
+            instrument_id=instrument_id
+            if instrument_id is not None
+            else TestStubs.audusd_id(),
+            bid=bid or Price.from_str("1.00001"),
+            ask=ask or Price.from_str("1.00003"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
@@ -209,17 +238,18 @@ class TestStubs:
         instrument_id=None, price=None, aggressor_side=None, quantity=None
     ) -> TradeTick:
         return TradeTick(
-            instrument_id or TestStubs.audusd_id(),
-            price or Price("1.00001"),
-            quantity or Quantity(100000),
-            aggressor_side or AggressorSide.BUY,
-            TradeMatchId("123456"),
-            0,
+            instrument_id=instrument_id or TestStubs.audusd_id(),
+            price=price or Price.from_str("1.00001"),
+            size=quantity or Quantity.from_int(100000),
+            aggressor_side=aggressor_side or AggressorSide.BUY,
+            match_id="123456",
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
     def order(price: float, side: OrderSide, size=10):
-        return Order(price=price, side=side, volume=size)
+        return Order(price=price, size=size, side=side)
 
     @staticmethod
     def ladder(reverse: bool, orders: List[Order]):
@@ -231,7 +261,7 @@ class TestStubs:
     @staticmethod
     def order_book(
         instrument=None,
-        level=OrderBookLevel.L2,
+        level=BookLevel.L2,
         bid_price=10,
         ask_price=15,
         bid_levels=3,
@@ -265,7 +295,7 @@ class TestStubs:
         ask_levels=3,
         bid_volume=10,
         ask_volume=10,
-        level=OrderBookLevel.L2,
+        level=BookLevel.L2,
     ) -> OrderBookSnapshot:
         err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
         assert bid_price < ask_price, err
@@ -273,14 +303,21 @@ class TestStubs:
         return OrderBookSnapshot(
             instrument_id=instrument_id or TestStubs.audusd_id(),
             level=level,
-            bids=[(bid_price - i, bid_volume * (1 + i)) for i in range(bid_levels)],
-            asks=[(ask_price + i, ask_volume * (1 + i)) for i in range(ask_levels)],
-            timestamp_ns=0,
+            bids=[
+                (float(bid_price - i), float(bid_volume * (1 + i)))
+                for i in range(bid_levels)
+            ],
+            asks=[
+                (float(ask_price + i), float(ask_volume * (1 + i)))
+                for i in range(ask_levels)
+            ],
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
     @staticmethod
     def trader_id() -> TraderId:
-        return TraderId("TESTER", "000")
+        return TraderId("TESTER-000")
 
     @staticmethod
     def account_id() -> AccountId:
@@ -288,7 +325,7 @@ class TestStubs:
 
     @staticmethod
     def strategy_id() -> StrategyId:
-        return StrategyId(name="Test", tag="1")
+        return StrategyId("Test-1")
 
     @staticmethod
     def event_account_state(account_id=None) -> AccountState:
@@ -296,23 +333,32 @@ class TestStubs:
             account_id = TestStubs.account_id()
 
         return AccountState(
-            account_id,
-            [Money(1_000_000, USD)],
-            [Money(1_000_000, USD)],
-            [Money(0, USD)],
-            {"default_currency": "USD"},
-            uuid4(),
-            0,
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,  # reported
+            balances=[
+                AccountBalance(
+                    USD,
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                )
+            ],
+            info={},
+            event_id=uuid4(),
+            ts_updated_ns=0,
+            timestamp_ns=0,
         )
 
     @staticmethod
     def event_order_submitted(order) -> OrderSubmitted:
         return OrderSubmitted(
-            TestStubs.account_id(),
-            order.client_order_id,
-            0,
-            uuid4(),
-            0,
+            account_id=TestStubs.account_id(),
+            client_order_id=order.client_order_id,
+            ts_submitted_ns=0,
+            event_id=uuid4(),
+            timestamp_ns=0,
         )
 
     @staticmethod
@@ -320,23 +366,45 @@ class TestStubs:
         if venue_order_id is None:
             venue_order_id = VenueOrderId("1")
         return OrderAccepted(
-            TestStubs.account_id(),
-            order.client_order_id,
-            venue_order_id,
-            0,
-            uuid4(),
-            0,
+            account_id=TestStubs.account_id(),
+            client_order_id=order.client_order_id,
+            venue_order_id=venue_order_id,
+            ts_accepted_ns=0,
+            event_id=uuid4(),
+            timestamp_ns=0,
         )
 
     @staticmethod
     def event_order_rejected(order) -> OrderRejected:
         return OrderRejected(
-            TestStubs.account_id(),
-            order.client_order_id,
-            0,
-            "ORDER_REJECTED",
-            uuid4(),
-            0,
+            account_id=TestStubs.account_id(),
+            client_order_id=order.client_order_id,
+            reason="ORDER_REJECTED",
+            ts_rejected_ns=0,
+            event_id=uuid4(),
+            timestamp_ns=0,
+        )
+
+    @staticmethod
+    def event_order_pending_update(order) -> OrderPendingReplace:
+        return OrderPendingReplace(
+            account_id=TestStubs.account_id(),
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            ts_pending_ns=0,
+            event_id=uuid4(),
+            timestamp_ns=0,
+        )
+
+    @staticmethod
+    def event_order_pending_cancel(order) -> OrderPendingCancel:
+        return OrderPendingCancel(
+            account_id=TestStubs.account_id(),
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            ts_pending_ns=0,
+            event_id=uuid4(),
+            timestamp_ns=0,
         )
 
     @staticmethod
@@ -350,7 +418,7 @@ class TestStubs:
         last_qty=None,
         last_px=None,
         liquidity_side=LiquiditySide.TAKER,
-        execution_ns=0,
+        ts_filled_ns=0,
     ) -> OrderFilled:
         if venue_order_id is None:
             venue_order_id = VenueOrderId("1")
@@ -361,7 +429,7 @@ class TestStubs:
         if strategy_id is None:
             strategy_id = order.strategy_id
         if last_px is None:
-            last_px = Price("1.00000")
+            last_px = Price.from_str(f"{1:.{instrument.price_precision}f}")
         if last_qty is None:
             last_qty = order.quantity
 
@@ -383,72 +451,71 @@ class TestStubs:
             last_qty=last_qty,
             last_px=order.price if last_px is None else last_px,
             currency=instrument.quote_currency,
-            is_inverse=instrument.is_inverse,
             commission=commission,
             liquidity_side=liquidity_side,
-            execution_ns=execution_ns,
+            ts_filled_ns=ts_filled_ns,
             event_id=uuid4(),
             timestamp_ns=0,
         )
 
     @staticmethod
-    def event_order_cancelled(order) -> OrderCancelled:
-        return OrderCancelled(
-            TestStubs.account_id(),
-            order.client_order_id,
-            order.venue_order_id,
-            0,
-            uuid4(),
-            0,
+    def event_order_canceled(order) -> OrderCanceled:
+        return OrderCanceled(
+            account_id=TestStubs.account_id(),
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            ts_canceled_ns=0,
+            event_id=uuid4(),
+            timestamp_ns=0,
         )
 
     @staticmethod
     def event_order_expired(order) -> OrderExpired:
         return OrderExpired(
-            TestStubs.account_id(),
-            order.client_order_id,
-            order.venue_order_id,
-            0,
-            uuid4(),
-            0,
+            account_id=TestStubs.account_id(),
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            ts_expired_ns=0,
+            event_id=uuid4(),
+            timestamp_ns=0,
         )
 
     @staticmethod
     def event_order_triggered(order) -> OrderTriggered:
         return OrderTriggered(
-            TestStubs.account_id(),
-            order.client_order_id,
-            order.venue_order_id,
-            0,
-            uuid4(),
-            0,
+            account_id=TestStubs.account_id(),
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            ts_triggered_ns=0,
+            event_id=uuid4(),
+            timestamp_ns=0,
         )
 
     @staticmethod
     def event_position_opened(position) -> PositionOpened:
         return PositionOpened(
-            position,
-            position.last_event,
-            uuid4(),
-            0,
+            position=position,
+            order_fill=position.last_event,
+            event_id=uuid4(),
+            timestamp_ns=0,
         )
 
     @staticmethod
     def event_position_changed(position) -> PositionChanged:
         return PositionChanged(
-            position,
-            position.last_event,
-            uuid4(),
-            0,
+            position=position,
+            order_fill=position.last_event,
+            event_id=uuid4(),
+            timestamp_ns=0,
         )
 
     @staticmethod
     def event_position_closed(position) -> PositionClosed:
         return PositionClosed(
-            position,
-            position.last_event,
-            uuid4(),
-            0,
+            position=position,
+            order_fill=position.last_event,
+            event_id=uuid4(),
+            timestamp_ns=0,
         )
 
     @staticmethod
@@ -460,9 +527,24 @@ class TestStubs:
         return LiveLogger(loop=asyncio.get_event_loop(), clock=TestStubs.clock())
 
     @staticmethod
+    def cache_db():
+        return BypassCacheDatabase(
+            trader_id=TestStubs.trader_id(),
+            logger=TestStubs.logger(),
+        )
+
+    @staticmethod
+    def cache():
+        return Cache(
+            database=TestStubs.cache_db(),
+            logger=TestStubs.logger(),
+        )
+
+    @staticmethod
     def portfolio():
         return Portfolio(
             clock=TestStubs.clock(),
+            cache=TestStubs.cache(),
             logger=TestStubs.logger(),
         )
 
@@ -471,19 +553,28 @@ class TestStubs:
         return MockLiveDataEngine(
             loop=asyncio.get_event_loop(),
             portfolio=TestStubs.portfolio(),
+            cache=TestStubs.cache(),
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),
         )
 
     @staticmethod
     def mock_live_exec_engine():
-        database = BypassExecutionDatabase(
-            trader_id=TestStubs.trader_id(), logger=TestStubs.logger()
-        )
         return MockLiveExecutionEngine(
             loop=asyncio.get_event_loop(),
-            database=database,
             portfolio=TestStubs.portfolio(),
+            cache=TestStubs.cache(),
+            clock=TestStubs.clock(),
+            logger=TestStubs.logger(),
+        )
+
+    @staticmethod
+    def mock_live_risk_engine():
+        return MockLiveRiskEngine(
+            loop=asyncio.get_event_loop(),
+            exec_engine=TestStubs.mock_live_exec_engine(),
+            portfolio=TestStubs.portfolio(),
+            cache=TestStubs.cache(),
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),
         )

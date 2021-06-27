@@ -18,12 +18,12 @@ cdef class Indicator:
     """
     The abstract base class for all indicators.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, list params not None):
         """
-        Initialize a new instance of the `Indicator` class.
+        Initialize a new instance of the ``Indicator`` class.
 
         Parameters
         ----------

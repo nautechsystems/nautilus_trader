@@ -31,6 +31,7 @@ from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick cimport QuoteTick
@@ -42,20 +43,36 @@ cdef class BarBuilder:
     Provides a generic bar builder for aggregation.
     """
 
-    def __init__(self, BarType bar_type not None, bint use_previous_close=False):
+    def __init__(
+        self,
+        Instrument instrument not None,
+        BarType bar_type not None,
+        bint use_previous_close=False,
+    ):
         """
-        Initialize a new instance of the `BarBuilder` class.
+        Initialize a new instance of the ``BarBuilder`` class.
 
         Parameters
         ----------
+        instrument : Instrument
+            The instrument for the builder.
         bar_type : BarType
             The bar type for the builder.
         use_previous_close : bool
             If the previous close price should set the open price of a new bar.
 
+        Raises
+        ------
+        ValueError
+            If instrument.id != bar_type.instrument_id.
+
         """
+        Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
+
         self._bar_type = bar_type
 
+        self.price_precision = instrument.price_precision
+        self.size_precision = instrument.size_precision
         self.use_previous_close = use_previous_close
         self.initialized = False
         self.last_timestamp_ns = 0
@@ -107,7 +124,7 @@ cdef class BarBuilder:
         self.volume += partial_bar.volume
 
         if self.last_timestamp_ns == 0:
-            self.last_timestamp_ns = partial_bar.timestamp_ns
+            self.last_timestamp_ns = partial_bar.ts_recv_ns
 
         self._partial_set = True
         self.initialized = True
@@ -123,7 +140,7 @@ cdef class BarBuilder:
         size : Decimal
             The update size.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the update.
+            The UNIX timestamp (nanoseconds) of the update.
 
         """
         Condition.not_none(price, "price")
@@ -186,7 +203,7 @@ cdef class BarBuilder:
         Parameters
         ----------
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the bar close.
+            The UNIX timestamp (nanoseconds) of the bar close.
 
         Returns
         -------
@@ -205,8 +222,9 @@ cdef class BarBuilder:
             high_price=self._high,
             low_price=self._low,
             close_price=self._close,
-            volume=Quantity(self.volume),
-            timestamp_ns=timestamp_ns,
+            volume=Quantity(self.volume, self.size_precision),
+            ts_event_ns=timestamp_ns,  # TODO: Hardcoded identical for now...
+            ts_recv_ns=timestamp_ns,
         )
 
         self._last_close = self._close
@@ -221,16 +239,19 @@ cdef class BarAggregator:
 
     def __init__(
         self,
+        Instrument instrument not None,
         BarType bar_type not None,
         handler not None: callable,
         Logger logger not None,
         bint use_previous_close,
     ):
         """
-        Initialize a new instance of the `BarAggregator` class.
+        Initialize a new instance of the ``BarAggregator`` class.
 
         Parameters
         ----------
+        instrument : Instrument
+            The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
         handler : callable
@@ -240,7 +261,14 @@ cdef class BarAggregator:
         use_previous_close : bool
             If the previous close price should set the open price of a new bar.
 
+        Raises
+        ------
+        ValueError
+            If instrument.id != bar_type.instrument_id.
+
         """
+        Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
+
         self.bar_type = bar_type
         self._handler = handler
         self._log = LoggerAdapter(
@@ -248,6 +276,7 @@ cdef class BarAggregator:
             logger=logger,
         )
         self._builder = BarBuilder(
+            instrument=instrument,
             bar_type=self.bar_type,
             use_previous_close=use_previous_close,
         )
@@ -267,7 +296,7 @@ cdef class BarAggregator:
         self._apply_update(
             price=tick.extract_price(self.bar_type.spec.price_type),
             size=tick.extract_volume(self.bar_type.spec.price_type),
-            timestamp_ns=tick.timestamp_ns,
+            timestamp_ns=tick.ts_recv_ns,
         )
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
@@ -285,17 +314,17 @@ cdef class BarAggregator:
         self._apply_update(
             price=tick.price,
             size=tick.size,
-            timestamp_ns=tick.timestamp_ns,
+            timestamp_ns=tick.ts_recv_ns,
         )
 
     cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef inline void _build_now_and_send(self) except *:
+    cdef void _build_now_and_send(self) except *:
         cdef Bar bar = self._builder.build_now()
         self._handler(bar)
 
-    cdef inline void _build_and_send(self, int64_t timestamp_ns) except *:
+    cdef void _build_and_send(self, int64_t timestamp_ns) except *:
         cdef Bar bar = self._builder.build(timestamp_ns)
         self._handler(bar)
 
@@ -310,15 +339,18 @@ cdef class TickBarAggregator(BarAggregator):
 
     def __init__(
         self,
+        Instrument instrument not None,
         BarType bar_type not None,
         handler not None: callable,
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `TickBarAggregator` class.
+        Initialize a new instance of the ``TickBarAggregator`` class.
 
         Parameters
         ----------
+        instrument : Instrument
+            The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
         handler : callable
@@ -326,11 +358,17 @@ cdef class TickBarAggregator(BarAggregator):
         logger : Logger
             The logger for the aggregator.
 
+        Raises
+        ------
+        ValueError
+            If instrument.id != bar_type.instrument_id.
+
         """
         super().__init__(
-            bar_type,
-            handler,
-            logger,
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
             use_previous_close=False,
         )
 
@@ -351,15 +389,18 @@ cdef class VolumeBarAggregator(BarAggregator):
 
     def __init__(
         self,
+        Instrument instrument not None,
         BarType bar_type not None,
         handler not None: callable,
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `TickBarAggregator` class.
+        Initialize a new instance of the ``TickBarAggregator`` class.
 
         Parameters
         ----------
+        instrument : Instrument
+            The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
         handler : callable
@@ -367,16 +408,21 @@ cdef class VolumeBarAggregator(BarAggregator):
         logger : Logger
             The logger for the aggregator.
 
+        Raises
+        ------
+        ValueError
+            If instrument.id != bar_type.instrument_id.
+
         """
         super().__init__(
-            bar_type,
-            handler,
-            logger,
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
             use_previous_close=False,
         )
 
     cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
-        cdef int precision = size.precision_c()
         size_update = size
 
         while size_update > 0:  # While there is size to apply
@@ -384,7 +430,7 @@ cdef class VolumeBarAggregator(BarAggregator):
                 # Update and break
                 self._builder.update(
                     price=price,
-                    size=Quantity(size_update, precision=precision),
+                    size=Quantity(size_update, precision=size.precision),
                     timestamp_ns=timestamp_ns,
                 )
                 break
@@ -393,7 +439,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
-                size=Quantity(size_diff, precision=precision),
+                size=Quantity(size_diff, precision=size.precision),
                 timestamp_ns=timestamp_ns,
             )
 
@@ -415,15 +461,18 @@ cdef class ValueBarAggregator(BarAggregator):
 
     def __init__(
         self,
+        Instrument instrument not None,
         BarType bar_type not None,
         handler not None: callable,
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `TickBarAggregator` class.
+        Initialize a new instance of the ``TickBarAggregator`` class.
 
         Parameters
         ----------
+        instrument : Instrument
+            The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
         handler : callable
@@ -431,11 +480,17 @@ cdef class ValueBarAggregator(BarAggregator):
         logger : Logger
             The logger for the aggregator.
 
+        Raises
+        ------
+        ValueError
+            If instrument.id != bar_type.instrument_id.
+
         """
         super().__init__(
-            bar_type,
-            handler,
-            logger,
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
             use_previous_close=False,
         )
 
@@ -453,7 +508,6 @@ cdef class ValueBarAggregator(BarAggregator):
         return self._cum_value
 
     cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
-        cdef int precision = size.precision_c()
         size_update = size
 
         while size_update > 0:  # While there is value to apply
@@ -463,7 +517,7 @@ cdef class ValueBarAggregator(BarAggregator):
                 self._cum_value = self._cum_value + value_update
                 self._builder.update(
                     price=price,
-                    size=Quantity(size_update, precision=precision),
+                    size=Quantity(size_update, precision=size.precision),
                     timestamp_ns=timestamp_ns,
                 )
                 break
@@ -473,7 +527,7 @@ cdef class ValueBarAggregator(BarAggregator):
             # Update builder to the step threshold
             self._builder.update(
                 price=price,
-                size=Quantity(size_diff, precision=precision),
+                size=Quantity(size_diff, precision=size.precision),
                 timestamp_ns=timestamp_ns,
             )
 
@@ -495,6 +549,7 @@ cdef class TimeBarAggregator(BarAggregator):
     """
     def __init__(
         self,
+        Instrument instrument not None,
         BarType bar_type not None,
         handler not None: callable,
         bint use_previous_close,
@@ -502,10 +557,12 @@ cdef class TimeBarAggregator(BarAggregator):
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `TimeBarAggregator` class.
+        Initialize a new instance of the ``TimeBarAggregator`` class.
 
         Parameters
         ----------
+        instrument : Instrument
+            The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
         handler : callable
@@ -517,11 +574,17 @@ cdef class TimeBarAggregator(BarAggregator):
         logger : Logger
             The logger for the aggregator.
 
+        Raises
+        ------
+        ValueError
+            If instrument.id != bar_type.instrument_id.
+
         """
         super().__init__(
-            bar_type,
-            handler,
-            logger,
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=handler,
+            logger=logger,
             use_previous_close=use_previous_close,
         )
 
@@ -690,15 +753,18 @@ cdef class BulkTickBarBuilder:
 
     def __init__(
         self,
+        Instrument instrument not None,
         BarType bar_type not None,
         Logger logger not None,
         callback not None: callable,
     ):
         """
-        Initialize a new instance of the `BulkTickBarBuilder` class.
+        Initialize a new instance of the ``BulkTickBarBuilder`` class.
 
         Parameters
         ----------
+        instrument : Instrument
+            The instrument for the aggregator.
         bar_type : BarType
             The bar_type to build.
         logger : Logger
@@ -710,12 +776,19 @@ cdef class BulkTickBarBuilder:
         ------
         ValueError
             If callback is not of type callable.
+        ValueError
+            If instrument.id != bar_type.instrument_id.
 
         """
         Condition.callable(callback, "callback")
 
         self.bars = []
-        self.aggregator = TickBarAggregator(bar_type, self.bars.append, logger)
+        self.aggregator = TickBarAggregator(
+            instrument=instrument,
+            bar_type=bar_type,
+            handler=self.bars.append,
+            logger=logger,
+        )
         self.callback = callback
 
     def receive(self, list ticks):
@@ -749,7 +822,7 @@ cdef class BulkTimeBarUpdater:
 
     def __init__(self, TimeBarAggregator aggregator not None):
         """
-        Initialize a new instance of the `BulkTimeBarUpdater` class.
+        Initialize a new instance of the ``BulkTimeBarUpdater`` class.
 
         Parameters
         ----------

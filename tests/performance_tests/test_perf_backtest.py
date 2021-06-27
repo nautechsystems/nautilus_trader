@@ -26,9 +26,11 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -63,9 +65,12 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             TestDataProvider.usdjpy_1min_ask(),
         )
 
-        engine.add_exchange(
+        engine.add_venue(
             venue=Venue("SIM"),
+            venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             fill_model=FillModel(),
         )
@@ -119,9 +124,12 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             TestDataProvider.usdjpy_1min_ask(),
         )
 
-        engine.add_exchange(
+        engine.add_venue(
             venue=Venue("SIM"),
+            venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
         )
 
@@ -170,9 +178,12 @@ class TestBacktestEnginePerformance(PerformanceHarness):
         )
         fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        engine.add_exchange(
+        engine.add_venue(
             venue=Venue("SIM"),
+            venue_type=VenueType.BROKERAGE,
             oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             modules=[fx_rollover_interest],
         )
@@ -238,3 +249,5 @@ class TestBacktestEnginePerformance(PerformanceHarness):
         # 24/04/21  5375115 function calls (5337643 primitive calls) in 10.009 seconds (order book optimizations)
         # 26/04/21  5405727 function calls (5368039 primitive calls) in 7.469 seconds (order book optimizations)
         # 01/05/21  5405727 function calls (5368039 primitive calls) in 7.533 seconds (refactorings)
+        # 22/05/21  5517969 function calls (5479092 primitive calls) in 8.639 seconds (rewire risk engine)
+        # 25/05/21  5517969 function calls (5479092 primitive calls) in 8.387 seconds (rewrite account states)

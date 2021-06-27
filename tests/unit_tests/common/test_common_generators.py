@@ -17,16 +17,18 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.generators import ClientOrderIdGenerator
 from nautilus_trader.common.generators import PositionIdGenerator
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import IdTag
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TraderId
 
 
 class TestOrderIdGenerator:
     def setup(self):
         # Fixture Setup
         self.order_id_generator = ClientOrderIdGenerator(
-            id_tag_trader=IdTag("001"), id_tag_strategy=IdTag("001"), clock=TestClock()
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("SCALPER-001"),
+            clock=TestClock(),
         )
 
     def test_generate_order_id(self):
@@ -59,16 +61,16 @@ class TestPositionIdGenerator:
     def setup(self):
         # Fixture Setup
         self.position_id_generator = PositionIdGenerator(
-            id_tag_trader=IdTag("001"),
+            trader_id=TraderId("TRADER-001"),
             clock=TestClock(),
         )
 
     def test_generate_position_id(self):
         # Arrange
         # Act
-        result1 = self.position_id_generator.generate(StrategyId("S", "002"))
-        result2 = self.position_id_generator.generate(StrategyId("S", "002"))
-        result3 = self.position_id_generator.generate(StrategyId("S", "002"))
+        result1 = self.position_id_generator.generate(StrategyId("S-002"))
+        result2 = self.position_id_generator.generate(StrategyId("S-002"))
+        result3 = self.position_id_generator.generate(StrategyId("S-002"))
 
         # Assert
         assert result1 == PositionId("P-19700101-000000-001-002-1")
@@ -78,13 +80,9 @@ class TestPositionIdGenerator:
     def test_generate_position_id_with_flip_appends_correctly(self):
         # Arrange
         # Act
-        result1 = self.position_id_generator.generate(StrategyId("S", "001"))
-        result2 = self.position_id_generator.generate(
-            StrategyId("S", "002"), flipped=True
-        )
-        result3 = self.position_id_generator.generate(
-            StrategyId("S", "001"), flipped=True
-        )
+        result1 = self.position_id_generator.generate(StrategyId("S-001"))
+        result2 = self.position_id_generator.generate(StrategyId("S-002"), flipped=True)
+        result3 = self.position_id_generator.generate(StrategyId("S-001"), flipped=True)
 
         # Assert
         assert result1 == PositionId("P-19700101-000000-001-001-1")
@@ -93,7 +91,7 @@ class TestPositionIdGenerator:
 
     def test_set_count_with_valid_strategy_identifier(self):
         # Arrange
-        strategy_id = StrategyId("S", "001")
+        strategy_id = StrategyId("S-001")
 
         # Act
         self.position_id_generator.set_count(strategy_id, 5)
@@ -103,7 +101,7 @@ class TestPositionIdGenerator:
 
     def test_get_count_when_strategy_id_has_no_count_returns_zero(self):
         # Arrange
-        strategy_id = StrategyId("S", "001")
+        strategy_id = StrategyId("S-001")
 
         # Act
         result = self.position_id_generator.get_count(strategy_id)
@@ -113,13 +111,13 @@ class TestPositionIdGenerator:
 
     def test_reset_id_generator(self):
         # Arrange
-        self.position_id_generator.generate(StrategyId("S", "002"))
-        self.position_id_generator.generate(StrategyId("S", "002"))
-        self.position_id_generator.generate(StrategyId("S", "002"))
+        self.position_id_generator.generate(StrategyId("S-002"))
+        self.position_id_generator.generate(StrategyId("S-002"))
+        self.position_id_generator.generate(StrategyId("S-002"))
 
         # Act
         self.position_id_generator.reset()
-        result1 = self.position_id_generator.generate(StrategyId("S", "002"))
+        result1 = self.position_id_generator.generate(StrategyId("S-002"))
 
         # Assert
         assert result1 == PositionId("P-19700101-000000-001-002-1")

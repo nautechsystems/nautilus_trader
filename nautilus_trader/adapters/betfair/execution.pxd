@@ -16,12 +16,14 @@
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+from nautilus_trader.model.currency cimport Currency
 
 
 cdef class BetfairExecutionClient(LiveExecutionClient):
     cdef object _client
     cdef object _stream
-    cdef str _account_currency
+    cdef Currency _account_currency
+
     cdef public dict venue_order_id_to_client_order_id
     cdef public set pending_update_order_client_ids
     cdef public object published_executions
@@ -31,7 +33,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef BetfairInstrumentProvider instrument_provider(self)
     cpdef object client(self)
     cpdef LiveExecutionEngine engine(self)
-    cpdef str get_account_currency(self)
+    cpdef Currency get_account_currency(self)
     cpdef dict _get_account_details(self)
     cpdef dict _get_account_funds(self)
 

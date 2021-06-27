@@ -17,7 +17,6 @@ from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport TradeMatchId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -37,12 +36,13 @@ cdef class QuoteTick(Tick):
     cdef readonly Quantity ask_size
     """The tick top of book ask size.\n\n:returns: `Quantity`"""
 
-    cpdef Price extract_price(self, PriceType price_type)
-    cpdef Quantity extract_volume(self, PriceType price_type)
+    @staticmethod
+    cdef QuoteTick from_dict_c(dict values)
 
     @staticmethod
-    cdef QuoteTick from_serializable_str_c(InstrumentId instrument_id, str values)
-    cpdef str to_serializable_str(self)
+    cdef dict to_dict_c(QuoteTick obj)
+    cpdef Price extract_price(self, PriceType price_type)
+    cpdef Quantity extract_volume(self, PriceType price_type)
 
 
 cdef class TradeTick(Tick):
@@ -52,9 +52,11 @@ cdef class TradeTick(Tick):
     """The tick traded size.\n\n:returns: `Quantity`"""
     cdef readonly AggressorSide aggressor_side
     """The tick aggressor side.\n\n:returns: `AggressorSide`"""
-    cdef readonly TradeMatchId match_id
-    """The tick trade match identifier.\n\n:returns: `TradeMatchId`"""
+    cdef readonly str match_id
+    """The tick trade match identifier.\n\n:returns: `str`"""
 
     @staticmethod
-    cdef TradeTick from_serializable_str_c(InstrumentId instrument_id, str values)
-    cpdef str to_serializable_str(self)
+    cdef TradeTick from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(TradeTick obj)

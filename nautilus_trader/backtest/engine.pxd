@@ -43,10 +43,11 @@ cdef class BacktestEngine:
     cdef Logger _logger
     cdef Logger _test_logger
     cdef bint _log_to_file
-    cdef bint _exec_db_flush
+    cdef bint _cache_db_flush
     cdef bint _use_data_cache
-    cdef dict _exchanges
+    cdef bint _run_analysis
 
+    cdef dict _exchanges
     cdef list _generic_data
     cdef list _order_book_data
     cdef dict _quote_ticks
@@ -55,22 +56,29 @@ cdef class BacktestEngine:
     cdef dict _bars_ask
 
     cdef readonly Trader trader
+    """The trader for the backtest.\n\n:returns: `Trader`"""
     cdef readonly UUID system_id
+    """The backtest engine system identifier.\n\n:returns: `UUID`"""
     cdef readonly datetime created_time
+    """The backtest engine created time.\n\n:returns: `datetime`"""
     cdef readonly timedelta time_to_initialize
+    """The backtest engine time to initialize.\n\n:returns: `timedelta`"""
     cdef readonly int iteration
+    """The backtest engine iteration count.\n\n:returns: `int`"""
     cdef readonly Portfolio portfolio
+    """The portfolio for the backtest.\n\n:returns: `Portfolio`"""
     cdef readonly PerformanceAnalyzer analyzer
+    """The performance analyzer for the backtest.\n\n:returns: `PerformanceAnalyzer`"""
 
-    cdef inline void _advance_time(self, int64_t now_ns) except *
-    cdef inline void _process_modules(self, int64_t now_ns) except *
-    cdef inline void _log_header(
+    cdef void _advance_time(self, int64_t now_ns) except *
+    cdef void _process_modules(self, int64_t now_ns) except *
+    cdef void _pre_run(
         self,
         datetime run_started,
         datetime start,
         datetime stop,
     ) except *
-    cdef inline void _log_footer(
+    cdef void _post_run(
         self,
         datetime run_started,
         datetime run_finished,

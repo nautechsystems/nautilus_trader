@@ -4,6 +4,9 @@ import nox
 from nox.sessions import Session
 
 
+ALL_EXTRAS = "betfair ccxt docs ib oanda"
+
+
 # Ensure everything runs within Poetry venvs
 nox.options.error_on_external_run = True
 
@@ -22,21 +25,21 @@ def tests(session: Session) -> None:
 @nox.session
 def tests_with_integration(session: Session) -> None:
     """Run the test suite including integration tests."""
-    _setup_poetry(session)
+    _setup_poetry(session, "--extras", ALL_EXTRAS)
     _run_pytest(session, "--ignore=tests/performance_tests/")
 
 
 @nox.session
 def integration_tests(session: Session) -> None:
     """Run the integration test suite."""
-    _setup_poetry(session)
+    _setup_poetry(session, "--extras", ALL_EXTRAS)
     _run_pytest(session, "tests/integration_tests/")
 
 
 @nox.session
 def performance_tests(session: Session) -> None:
     """Run the performance test suite."""
-    _setup_poetry(session)
+    _setup_poetry(session, "--extras", ALL_EXTRAS)
     _run_pytest(
         session,
         "tests/performance_tests/",
@@ -48,21 +51,14 @@ def performance_tests(session: Session) -> None:
 @nox.session
 def coverage(session: Session) -> None:
     """Run with test coverage."""
-    _setup_poetry(session, env={"PROFILING_MODE": "true"})
+    _setup_poetry(session, "--extras", ALL_EXTRAS, env={"PROFILING_MODE": "true"})
     _run_coverage(session)
-
-
-@nox.session
-def annotations(session: Session) -> None:
-    """Generate Cython annotation HTMLs."""
-    _setup_poetry(session)
-    session.run("poetry", "install", env={"ANNOTATION_MODE": "true"})
 
 
 @nox.session
 def build_docs(session: Session) -> None:
     """Build documentation."""
-    _setup_poetry(session, "-E", "docs")
+    _setup_poetry(session, "--extras", ALL_EXTRAS)
     session.run("poetry", "run", "sphinx-build", "docs/source", "docs/build")
 
 

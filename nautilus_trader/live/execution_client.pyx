@@ -17,8 +17,6 @@ import asyncio
 
 from cpython.datetime cimport datetime
 
-from decimal import Decimal
-
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LogColor
@@ -31,12 +29,16 @@ from nautilus_trader.execution.messages cimport ExecutionMassStatus
 from nautilus_trader.execution.messages cimport ExecutionReport
 from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_state cimport OrderStateParser
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
+from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 
 
@@ -85,13 +87,16 @@ cdef class LiveExecutionClient(ExecutionClient):
     """
     The abstract base class for all live execution clients.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
         self,
         ClientId client_id not None,
+        VenueType venue_type,
         AccountId account_id not None,
+        AccountType account_type,
+        Currency base_currency,  # Can be None
         LiveExecutionEngine engine not None,
         InstrumentProvider instrument_provider not None,
         LiveClock clock not None,
@@ -99,14 +104,20 @@ cdef class LiveExecutionClient(ExecutionClient):
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveExecutionClient` class.
+        Initialize a new instance of the ``LiveExecutionClient`` class.
 
         Parameters
         ----------
         client_id : ClientId
             The client identifier.
+        venue_type : VenueType
+            The client venue type.
         account_id : AccountId
             The account identifier for the client.
+        account_type : AccountType
+            The account type for the client.
+        base_currency : Currency, optional
+            The account base currency for the client. Use ``None`` for multi-currency accounts.
         engine : LiveDataEngine
             The data engine for the client.
         instrument_provider : InstrumentProvider
@@ -120,20 +131,19 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         """
         super().__init__(
-            client_id,
-            account_id,
-            engine,
-            clock,
-            logger,
-            config,
+            client_id=client_id,
+            venue_type=venue_type,
+            account_id=account_id,
+            account_type=account_type,
+            base_currency=base_currency,
+            engine=engine,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
         self._instrument_provider = instrument_provider
-
-        self._account_last_free = {}
-        self._account_last_used = {}
-        self._account_last_total = {}
 
     cpdef void reset(self) except *:
         """
@@ -309,23 +319,22 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         if report.order_state == OrderState.REJECTED:
             # No VenueOrderId would have been assigned from the exchange
-            self._log.info("Generating OrderRejected event...", color=LogColor.GREEN)
+            self._log.info("Generating OrderRejected event...", color=LogColor.BLUE)
             self.generate_order_rejected(report.client_order_id, "unknown", report.timestamp_ns)
             return True
         elif report.order_state == OrderState.EXPIRED:
-            self._log.info("Generating OrderExpired event...", color=LogColor.GREEN)
+            self._log.info("Generating OrderExpired event...", color=LogColor.BLUE)
             self.generate_order_expired(report.client_order_id, report.venue_order_id, report.timestamp_ns)
             return True
-        elif report.order_state == OrderState.CANCELLED:
-            self._log.info("Generating OrderCancelled event...", color=LogColor.GREEN)
-            self.generate_order_cancelled(report.client_order_id, report.venue_order_id, report.timestamp_ns)
+        elif report.order_state == OrderState.CANCELED:
+            self._log.info("Generating OrderCanceled event...", color=LogColor.BLUE)
+            self.generate_order_canceled(report.client_order_id, report.venue_order_id, report.timestamp_ns)
             return True
         elif report.order_state == OrderState.ACCEPTED:
             if order.state_c() == OrderState.SUBMITTED:
-                self._log.info("Generating OrderAccepted event...", color=LogColor.GREEN)
+                self._log.info("Generating OrderAccepted event...", color=LogColor.BLUE)
                 self.generate_order_accepted(report.client_order_id, report.venue_order_id, report.timestamp_ns)
             return True
-            # TODO: Consider other scenarios
 
         # OrderState.PARTIALLY_FILLED or FILLED
         if exec_reports is None:
@@ -335,17 +344,20 @@ cdef class LiveExecutionClient(ExecutionClient):
             return False  # Cannot reconcile state
 
         cdef ExecutionReport exec_report
+        cdef Instrument instrument
         for exec_report in exec_reports:
             if exec_report.id in order.execution_ids_c():
                 continue  # Trade already applied
             self._log.info(
                 f"Generating OrderFilled event for {repr(exec_report.id)}...",
-                color=LogColor.GREEN,
+                color=LogColor.BLUE,
             )
 
             instrument = self._instrument_provider.find(order.instrument_id)
             if instrument is None:
-                self._log.error(f"Cannot fill order: no instrument found for {order.instrument_id}")
+                self._log.error(f"Cannot fill order: "
+                                f"no instrument found for {order.instrument_id}")
+                return False  # Cannot reconcile state
 
             self.generate_order_filled(
                 client_order_id=order.client_order_id,
@@ -358,9 +370,8 @@ cdef class LiveExecutionClient(ExecutionClient):
                 last_px=exec_report.last_px,
                 quote_currency=instrument.quote_currency,
                 commission=exec_report.commission,
-                is_inverse=instrument.is_inverse,
                 liquidity_side=exec_report.liquidity_side,
-                timestamp_ns=exec_report.execution_ns,
+                ts_filled_ns=exec_report.ts_filled_ns,
             )
 
         return True

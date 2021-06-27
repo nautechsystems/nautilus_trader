@@ -41,12 +41,12 @@ cdef class Clock:
     """
     The abstract base class for all clocks.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self):
         """
-        Initialize a new instance of the `Clock` class.
+        Initialize a new instance of the ``Clock`` class.
         """
         self._uuid_factory = UUIDFactory()
         self._timers = {}    # type: dict[str, Timer]
@@ -63,7 +63,7 @@ cdef class Clock:
 
     cpdef double timestamp(self) except *:
         """
-        Return the current Unix time in seconds.
+        Return the current UNIX time in seconds.
 
         Returns
         -------
@@ -78,7 +78,7 @@ cdef class Clock:
 
     cpdef int64_t timestamp_ns(self) except *:
         """
-        Return the current Unix time in nanoseconds.
+        Return the current UNIX time in nanoseconds.
 
         Returns
         -------
@@ -336,7 +336,7 @@ cdef class Clock:
         Notes
         -----
         Logs a warning if a timer with the given name is not found (it may have
-        already been cancelled).
+        already been canceled).
 
         """
         Condition.valid_string(name, "name")
@@ -372,13 +372,13 @@ cdef class Clock:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef inline void _add_timer(self, Timer timer, handler: callable) except *:
+    cdef void _add_timer(self, Timer timer, handler: callable) except *:
         self._timers[timer.name] = timer
         self._handlers[timer.name] = handler
         self._update_stack()
         self._update_timing()
 
-    cdef inline void _remove_timer(self, Timer timer) except *:
+    cdef void _remove_timer(self, Timer timer) except *:
         self._timers.pop(timer.name, None)
         self._handlers.pop(timer.name, None)
         self._update_stack()
@@ -397,7 +397,7 @@ cdef class Clock:
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef inline void _update_timing(self) except *:
+    cdef void _update_timing(self) except *:
         if self.timer_count == 0:
             self.next_event_time_ns = 0
             return
@@ -424,12 +424,12 @@ cdef class TestClock(Clock):
 
     def __init__(self, int64_t initial_ns=0):
         """
-        Initialize a new instance of the `TestClock` class.
+        Initialize a new instance of the ``TestClock`` class.
 
         Parameters
         ----------
         initial_ns : int64
-            The initial Unix time for the clock (nanos).
+            The initial UNIX time for the clock (nanoseconds).
 
         """
         super().__init__()
@@ -451,7 +451,7 @@ cdef class TestClock(Clock):
 
     cpdef double timestamp(self) except *:
         """
-        Return the current Unix time in seconds.
+        Return the current UNIX time in seconds.
 
         Returns
         -------
@@ -466,7 +466,7 @@ cdef class TestClock(Clock):
 
     cpdef int64_t timestamp_ns(self) except *:
         """
-        Return the current Unix time in nanoseconds (ns).
+        Return the current UNIX time in nanoseconds (ns).
 
         Returns
         -------
@@ -486,7 +486,7 @@ cdef class TestClock(Clock):
         Parameters
         ----------
         to_time_ns : int64
-            The Unix time (nanos) to set.
+            The UNIX time (nanoseconds) to set.
 
         """
         self._time_ns = to_time_ns
@@ -498,7 +498,7 @@ cdef class TestClock(Clock):
         Parameters
         ----------
         to_time_ns : int64
-            The Unix time (nanos) advance the clock to.
+            The UNIX time (nanoseconds) advance the clock to.
 
         Returns
         -------
@@ -560,7 +560,7 @@ cdef class LiveClock(Clock):
 
     def __init__(self, loop=None):
         """
-        Initialize a new instance of the `LiveClock` class.
+        Initialize a new instance of the ``LiveClock`` class.
 
         If loop is None then threads will be used for timers.
 
@@ -577,7 +577,7 @@ cdef class LiveClock(Clock):
 
     cpdef double timestamp(self) except *:
         """
-        Return the current Unix time in seconds from the system clock.
+        Return the current UNIX time in seconds from the system clock.
 
         Returns
         -------
@@ -592,7 +592,7 @@ cdef class LiveClock(Clock):
 
     cpdef int64_t timestamp_ns(self) except *:
         """
-        Return the current Unix time in nanoseconds (ns) from the system clock.
+        Return the current UNIX time in nanoseconds (ns) from the system clock.
 
         Returns
         -------
@@ -670,7 +670,7 @@ cdef class LiveClock(Clock):
             timer.repeat(now_ns=self.timestamp_ns())
             self._update_timing()
 
-    cdef inline void _handle_time_event(self, TimeEvent event) except *:
+    cdef void _handle_time_event(self, TimeEvent event) except *:
         handler = self._handlers.get(event.name)
         if handler is not None:
             handler(event)

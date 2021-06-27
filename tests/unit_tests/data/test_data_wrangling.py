@@ -23,7 +23,6 @@ from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.providers import TestDataProvider
@@ -127,12 +126,12 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(100000, len(ticks))
-        self.assertEqual(Price("0.67067"), ticks[0].bid)
-        self.assertEqual(Price("0.67070"), ticks[0].ask)
-        self.assertEqual(Quantity("1000000"), ticks[0].bid_size)
-        self.assertEqual(Quantity("1000000"), ticks[0].ask_size)
-        self.assertEqual(1580398089820000000, ticks[0].timestamp_ns)
-        self.assertEqual(1580504394500999936, ticks[99999].timestamp_ns)
+        self.assertEqual(Price.from_str("0.67067"), ticks[0].bid)
+        self.assertEqual(Price.from_str("0.67070"), ticks[0].ask)
+        self.assertEqual(Quantity.from_str("1000000"), ticks[0].bid_size)
+        self.assertEqual(Quantity.from_str("1000000"), ticks[0].ask_size)
+        self.assertEqual(1580398089820000000, ticks[0].ts_recv_ns)
+        self.assertEqual(1580504394500999936, ticks[99999].ts_recv_ns)
 
     def test_build_ticks_with_bar_data(self):
         # Arrange
@@ -151,11 +150,11 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(115044, len(ticks))
-        self.assertEqual(Price("91.715"), ticks[0].bid)
-        self.assertEqual(Price("91.717"), ticks[0].ask)
-        self.assertEqual(Quantity("1000000"), ticks[0].bid_size)
-        self.assertEqual(Quantity("1000000"), ticks[0].ask_size)
-        self.assertEqual(1359676799700000000, ticks[0].timestamp_ns)
+        self.assertEqual(Price.from_str("91.715"), ticks[0].bid)
+        self.assertEqual(Price.from_str("91.717"), ticks[0].ask)
+        self.assertEqual(Quantity.from_str("1000000"), ticks[0].bid_size)
+        self.assertEqual(Quantity.from_str("1000000"), ticks[0].ask_size)
+        self.assertEqual(1359676799700000000, ticks[0].ts_recv_ns)
 
 
 class TradeTickDataWranglerTests(unittest.TestCase):
@@ -203,11 +202,11 @@ class TradeTickDataWranglerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(69806, len(ticks))
-        self.assertEqual(Price("423.760"), ticks[0].price)
-        self.assertEqual(Quantity("2.67900"), ticks[0].size)
+        self.assertEqual(Price.from_str("423.760"), ticks[0].price)
+        self.assertEqual(Quantity.from_str("2.67900"), ticks[0].size)
         self.assertEqual(AggressorSide.SELL, ticks[0].aggressor_side)
-        self.assertEqual(TradeMatchId("148568980"), ticks[0].match_id)
-        self.assertEqual(1597399200223000064, ticks[0].timestamp_ns)
+        self.assertEqual("148568980", ticks[0].match_id)
+        self.assertEqual(1597399200223000064, ticks[0].ts_recv_ns)
 
 
 class BarDataWranglerTests(unittest.TestCase):
@@ -351,8 +350,8 @@ class TardisTradeDataWranglerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(9999, len(ticks))
-        self.assertEqual(Price("9682.00"), ticks[0].price)
-        self.assertEqual(Quantity("0.132000"), ticks[0].size)
+        self.assertEqual(Price.from_str("9682.00"), ticks[0].price)
+        self.assertEqual(Quantity.from_str("0.132000"), ticks[0].size)
         self.assertEqual(AggressorSide.BUY, ticks[0].aggressor_side)
-        self.assertEqual(TradeMatchId("42377944"), ticks[0].match_id)
-        self.assertEqual(1582329602418379008, ticks[0].timestamp_ns)
+        self.assertEqual("42377944", ticks[0].match_id)
+        self.assertEqual(1582329602418379008, ticks[0].ts_recv_ns)

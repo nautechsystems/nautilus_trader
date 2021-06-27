@@ -13,41 +13,153 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.model.instrument cimport Instrument
-from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.model.commands cimport CancelOrder
+from nautilus_trader.model.commands cimport SubmitBracketOrder
+from nautilus_trader.model.commands cimport SubmitOrder
+from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.events cimport AccountState
+from nautilus_trader.model.events cimport InstrumentStatusEvent
+from nautilus_trader.model.events cimport OrderAccepted
+from nautilus_trader.model.events cimport OrderCancelRejected
+from nautilus_trader.model.events cimport OrderCanceled
+from nautilus_trader.model.events cimport OrderDenied
+from nautilus_trader.model.events cimport OrderExpired
+from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.events cimport OrderInvalid
+from nautilus_trader.model.events cimport OrderPendingCancel
+from nautilus_trader.model.events cimport OrderPendingReplace
+from nautilus_trader.model.events cimport OrderRejected
+from nautilus_trader.model.events cimport OrderSubmitted
+from nautilus_trader.model.events cimport OrderTriggered
+from nautilus_trader.model.events cimport OrderUpdateRejected
+from nautilus_trader.model.events cimport OrderUpdated
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.betting cimport BettingInstrument
+from nautilus_trader.model.instruments.cfd cimport CFDInstrument
+from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
+from nautilus_trader.model.instruments.currency cimport CurrencySpot
+from nautilus_trader.model.tick cimport TradeTick
 
 
-cdef class Serializer:
+# Default mappings for Nautilus objects
+_OBJECT_TO_DICT_MAP = {
+    CancelOrder.__name__: CancelOrder.to_dict_c,
+    SubmitBracketOrder.__name__: SubmitBracketOrder.to_dict_c,
+    SubmitOrder.__name__: SubmitOrder.to_dict_c,
+    UpdateOrder.__name__: UpdateOrder.to_dict_c,
+    AccountState.__name__: AccountState.to_dict_c,
+    OrderAccepted.__name__: OrderAccepted.to_dict_c,
+    OrderCancelRejected.__name__: OrderCancelRejected.to_dict_c,
+    OrderCanceled.__name__: OrderCanceled.to_dict_c,
+    OrderDenied.__name__: OrderDenied.to_dict_c,
+    OrderExpired.__name__: OrderExpired.to_dict_c,
+    OrderFilled.__name__: OrderFilled.to_dict_c,
+    OrderInitialized.__name__: OrderInitialized.to_dict_c,
+    OrderInvalid.__name__: OrderInvalid.to_dict_c,
+    OrderPendingCancel.__name__: OrderPendingCancel.to_dict_c,
+    OrderPendingReplace.__name__: OrderPendingReplace.to_dict_c,
+    OrderRejected.__name__: OrderRejected.to_dict_c,
+    OrderSubmitted.__name__: OrderSubmitted.to_dict_c,
+    OrderTriggered.__name__: OrderTriggered.to_dict_c,
+    OrderUpdateRejected.__name__: OrderUpdateRejected.to_dict_c,
+    OrderUpdated.__name__: OrderUpdated.to_dict_c,
+    Instrument.__name__: Instrument.to_dict_c,
+    BettingInstrument.__name__: BettingInstrument.to_dict_c,
+    CFDInstrument.__name__: CFDInstrument.to_dict_c,
+    CryptoSwap.__name__: CryptoSwap.to_dict_c,
+    CurrencySpot.__name__: CurrencySpot.to_dict_c,
+    TradeTick.__name__: TradeTick.to_dict_c,
+    InstrumentStatusEvent.__name__: InstrumentStatusEvent.to_dict_c,
+}
+
+
+# Default mappings for Nautilus objects
+_OBJECT_FROM_DICT_MAP = {
+    CancelOrder.__name__: CancelOrder.from_dict_c,
+    SubmitBracketOrder.__name__: SubmitBracketOrder.from_dict_c,
+    SubmitOrder.__name__: SubmitOrder.from_dict_c,
+    UpdateOrder.__name__: UpdateOrder.from_dict_c,
+    AccountState.__name__: AccountState.from_dict_c,
+    OrderAccepted.__name__: OrderAccepted.from_dict_c,
+    OrderCancelRejected.__name__: OrderCancelRejected.from_dict_c,
+    OrderCanceled.__name__: OrderCanceled.from_dict_c,
+    OrderDenied.__name__: OrderDenied.from_dict_c,
+    OrderExpired.__name__: OrderExpired.from_dict_c,
+    OrderFilled.__name__: OrderFilled.from_dict_c,
+    OrderInitialized.__name__: OrderInitialized.from_dict_c,
+    OrderInvalid.__name__: OrderInvalid.from_dict_c,
+    OrderPendingCancel.__name__: OrderPendingCancel.from_dict_c,
+    OrderPendingReplace.__name__: OrderPendingReplace.from_dict_c,
+    OrderRejected.__name__: OrderRejected.from_dict_c,
+    OrderSubmitted.__name__: OrderSubmitted.from_dict_c,
+    OrderTriggered.__name__: OrderTriggered.from_dict_c,
+    OrderUpdateRejected.__name__: OrderUpdateRejected.from_dict_c,
+    OrderUpdated.__name__: OrderUpdated.from_dict_c,
+    Instrument.__name__: Instrument.from_dict_c,
+    BettingInstrument.__name__: BettingInstrument.from_dict_c,
+    CFDInstrument.__name__: CFDInstrument.from_dict_c,
+    CryptoSwap.__name__: CryptoSwap.from_dict_c,
+    CurrencySpot.__name__: CurrencySpot.from_dict_c,
+    TradeTick.__name__: TradeTick.from_dict_c,
+    InstrumentStatusEvent.__name__: InstrumentStatusEvent.from_dict_c,
+}
+
+
+cpdef inline void register_serializable_object(
+    object obj,
+    to_dict: callable,
+    from_dict: callable,
+) except *:
     """
-    The abstract base class for all serializers.
+    Register the given object with the global serialization object maps.
 
-    This class should not be used directly, but through its concrete subclasses.
+    Parameters
+    ----------
+    obj : object
+        The object to register.
+    to_dict : callable
+        The delegate to instantiate a dict of primitive types from the object.
+    from_dict : callable
+        The delegate to instantiate the object from a dict of primitive types.
+
+    Raises
+    ------
+    TypeError
+        If `to_dict` or `from_dict` are not of type callable.
+    KeyError
+        If obj already registered with the global object maps.
+
     """
-    cdef inline str convert_camel_to_snake(self, str value):
-        return ''.join([f'_{c.lower()}' if c.isupper() else c for c in value]).lstrip('_').upper()
+    Condition.callable(to_dict, "to_dict")
+    Condition.callable(from_dict, "from_dict")
+    Condition.not_in(obj.__name__, _OBJECT_TO_DICT_MAP, "obj.__name__", "_OBJECT_TO_DICT_MAP")
+    Condition.not_in(obj.__name__, _OBJECT_FROM_DICT_MAP, "obj.__name__", "_OBJECT_FROM_DICT_MAP")
 
-    cdef inline str convert_snake_to_camel(self, str value):
-        return ''.join(x.title() for x in value.split('_'))
-
-    cpdef str py_convert_camel_to_snake(self, str value):
-        return self.convert_camel_to_snake(value)
-
-    cpdef str py_convert_snake_to_camel(self, str value):
-        return self.convert_snake_to_camel(value)
+    _OBJECT_TO_DICT_MAP[obj.__name__] = to_dict
+    _OBJECT_FROM_DICT_MAP[obj.__name__] = from_dict
 
 
-cdef class InstrumentSerializer(Serializer):
+cpdef inline object get_to_dict(str obj_name):
+    return _OBJECT_TO_DICT_MAP.get(obj_name)
+
+cpdef inline object get_from_dict(str obj_name):
+    return _OBJECT_FROM_DICT_MAP.get(obj_name)
+
+
+cdef class InstrumentSerializer:
     """
     The abstract base class for all instrument serializers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self):
         """
-        Initialize a new instance of the `InstrumentSerializer` class.
+        Initialize a new instance of the ``InstrumentSerializer`` class.
 
         """
         super().__init__()
@@ -61,39 +173,16 @@ cdef class InstrumentSerializer(Serializer):
         raise NotImplementedError("method must be implemented in the subclass")
 
 
-cdef class OrderSerializer(Serializer):
-    """
-    The abstract base class for all order serializers.
-
-    This class should not be used directly, but through its concrete subclasses.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the `OrderSerializer` class.
-
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, Order order):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef Order deserialize(self, bytes order_bytes):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass ")
-
-
-cdef class CommandSerializer(Serializer):
+cdef class CommandSerializer:
     """
     The abstract base class for all command serializers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self):
         """
-        Initialize a new instance of the `CommandSerializer` class.
+        Initialize a new instance of the ``CommandSerializer`` class.
         """
         super().__init__()
 
@@ -106,16 +195,16 @@ cdef class CommandSerializer(Serializer):
         raise NotImplementedError("method must be implemented in the subclass")
 
 
-cdef class EventSerializer(Serializer):
+cdef class EventSerializer:
     """
     The abstract base class for all event serializers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self):
         """
-        Initialize a new instance of the `EventSerializer` class.
+        Initialize a new instance of the ``EventSerializer`` class.
         """
         super().__init__()
 

@@ -22,12 +22,12 @@ from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.enums import OrderBookLevel
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import TradeMatchId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -35,6 +35,8 @@ from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.trading.filters import NewsEvent
+from nautilus_trader.trading.filters import NewsImpact
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -52,13 +54,17 @@ class DataClientTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -121,22 +127,37 @@ class DataClientTests(unittest.TestCase):
 
     def test_handle_data_sends_to_data_engine(self):
         # Arrange
-        data_type = DataType(str, {"Type": "NEWS_WIRE"})
-        data = GenericData(data_type, "Some news headline", 0)
+        data_type = DataType(NewsEvent, {"Type": "NEWS_WIRE"})
+        data = NewsEvent(
+            impact=NewsImpact.HIGH,
+            name="Unemployment Rate",
+            currency=USD,
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
+        generic_data = GenericData(data_type, data)
 
         # Act
-        self.client._handle_data_py(data)
+        self.client._handle_data_py(generic_data)
 
         # Assert
         self.assertEqual(1, self.data_engine.data_count)
 
     def test_handle_data_response_sends_to_data_engine(self):
         # Arrange
-        data_type = DataType(str, {"Type": "ECONOMIC_DATA", "topic": "unemployment"})
-        data = GenericData(data_type, "may 2020, 6.9%", 0)
+        data_type = DataType(NewsEvent, {"Type": "NEWS_WIRE"})
+        data = NewsEvent(
+            impact=NewsImpact.HIGH,
+            name="Unemployment Rate",
+            currency=USD,
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
 
         # Act
-        self.client._handle_data_response_py(data, self.uuid_factory.generate())
+        self.client._handle_data_response_py(
+            data_type, data, self.uuid_factory.generate()
+        )
 
         # Assert
         self.assertEqual(1, self.data_engine.response_count)
@@ -149,13 +170,17 @@ class MarketDataClientTests(unittest.TestCase):
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -347,10 +372,11 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         snapshot = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         # Act
@@ -363,9 +389,10 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         deltas = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             deltas=[],
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
         # Act
@@ -378,10 +405,11 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         tick = QuoteTick(
             AUDUSD_SIM.id,
-            Price("1.00050"),
-            Price("1.00048"),
-            Quantity(1),
-            Quantity(1),
+            Price.from_str("1.00050"),
+            Price.from_str("1.00048"),
+            Quantity.from_int(1),
+            Quantity.from_int(1),
+            0,
             0,
         )
 
@@ -395,10 +423,11 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         tick = TradeTick(
             AUDUSD_SIM.id,
-            Price("1.00050"),
-            Quantity(1),
+            Price.from_str("1.00050"),
+            Quantity.from_int(1),
             AggressorSide.BUY,
-            TradeMatchId("123456"),
+            "123456",
+            0,
             0,
         )
 
@@ -414,11 +443,12 @@ class MarketDataClientTests(unittest.TestCase):
 
         bar = Bar(
             bar_type,
-            Price("1.00001"),
-            Price("1.00004"),
-            Price("1.00002"),
-            Price("1.00003"),
-            Quantity(100000),
+            Price.from_str("1.00001"),
+            Price.from_str("1.00004"),
+            Price.from_str("1.00002"),
+            Price.from_str("1.00003"),
+            Quantity.from_int(100000),
+            0,
             0,
         )
 

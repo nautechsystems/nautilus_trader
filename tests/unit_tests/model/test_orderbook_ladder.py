@@ -44,16 +44,16 @@ def test_reverse(asks):
 
 def test_insert():
     orders = [
-        Order(price=100.0, volume=10.0, side=OrderSide.BUY),
-        Order(price=100.0, volume=1.0, side=OrderSide.BUY),
-        Order(price=105.0, volume=20.0, side=OrderSide.BUY),
+        Order(price=100.0, size=10.0, side=OrderSide.BUY),
+        Order(price=100.0, size=1.0, side=OrderSide.BUY),
+        Order(price=105.0, size=20.0, side=OrderSide.BUY),
     ]
     ladder = Ladder(reverse=False, price_precision=0, size_precision=0)
     for order in orders:
         ladder.add(order=order)
-    ladder.add(order=Order(price=100.0, volume=10.0, side=OrderSide.BUY))
-    ladder.add(order=Order(price=101.0, volume=5.0, side=OrderSide.BUY))
-    ladder.add(order=Order(price=101.0, volume=5.0, side=OrderSide.BUY))
+    ladder.add(order=Order(price=100.0, size=10.0, side=OrderSide.BUY))
+    ladder.add(order=Order(price=101.0, size=5.0, side=OrderSide.BUY))
+    ladder.add(order=Order(price=101.0, size=5.0, side=OrderSide.BUY))
 
     expected = [
         (100, 21),
@@ -66,8 +66,8 @@ def test_insert():
 
 def test_delete_individual_order(asks):
     orders = [
-        Order(price=100.0, volume=10.0, side=OrderSide.BUY, id="1"),
-        Order(price=100.0, volume=5.0, side=OrderSide.BUY, id="2"),
+        Order(price=100.0, size=10.0, side=OrderSide.BUY, id="1"),
+        Order(price=100.0, size=5.0, side=OrderSide.BUY, id="2"),
     ]
     ladder = TestStubs.ladder(reverse=True, orders=orders)
     ladder.delete(orders[0])
@@ -75,37 +75,37 @@ def test_delete_individual_order(asks):
 
 
 def test_delete_level():
-    orders = [Order(price=100.0, volume=10.0, side=OrderSide.BUY)]
+    orders = [Order(price=100.0, size=10.0, side=OrderSide.BUY)]
     ladder = TestStubs.ladder(reverse=True, orders=orders)
     ladder.delete(orders[0])
     assert ladder.levels == []
 
 
 def test_update_level():
-    order = Order(price=100.0, volume=10.0, side=OrderSide.BUY, id="1")
+    order = Order(price=100.0, size=10.0, side=OrderSide.BUY, id="1")
     ladder = TestStubs.ladder(reverse=True, orders=[order])
-    order.update_volume(volume=20.0)
+    order.update_size(size=20.0)
     ladder.update(order)
     assert ladder.levels[0].volume() == 20
 
 
 def test_update_no_volume(bids):
     order = bids.levels[0].orders[0]
-    order.update_volume(volume=0.0)
+    order.update_size(size=0.0)
     bids.update(order)
     assert order.price not in bids.prices()
 
 
 def test_top_level(bids, asks):
-    assert bids.top().price == Price("10")
-    assert asks.top().price == Price("15")
+    assert bids.top().price == Price.from_str("10")
+    assert asks.top().price == Price.from_str("15")
 
 
 def test_exposure():
     orders = [
-        Order(price=100.0, volume=10.0, side=OrderSide.SELL),
-        Order(price=101.0, volume=10.0, side=OrderSide.SELL),
-        Order(price=105.0, volume=5.0, side=OrderSide.SELL),
+        Order(price=100.0, size=10.0, side=OrderSide.SELL),
+        Order(price=101.0, size=10.0, side=OrderSide.SELL),
+        Order(price=105.0, size=5.0, side=OrderSide.SELL),
     ]
     ladder = TestStubs.ladder(reverse=True, orders=orders)
     assert tuple(ladder.exposures()) == (525.0, 1000.0, 1010.0)
@@ -123,37 +123,37 @@ def test_repr(asks):
 
 def test_simulate_order_fills_no_trade(asks):
     fills = asks.simulate_order_fills(
-        order=Order(price=10, volume=10, side=OrderSide.BUY, id="1")
+        order=Order(price=10, size=10, side=OrderSide.BUY, id="1")
     )
     assert fills == []
 
 
 def test_simulate_order_fills_single(asks):
     fills = asks.simulate_order_fills(
-        order=Order(price=15, volume=10, side=OrderSide.BUY, id="1")
+        order=Order(price=15, size=10, side=OrderSide.BUY, id="1")
     )
-    assert fills == [(Price("15.0000"), Quantity("10.0000"))]
+    assert fills == [(Price.from_str("15.0000"), Quantity.from_str("10.0000"))]
 
 
 def test_simulate_order_fills_multiple_levels(asks):
     fills = asks.simulate_order_fills(
-        order=Order(price=20, volume=20, side=OrderSide.BUY, id="1")
+        order=Order(price=20, size=20, side=OrderSide.BUY, id="1")
     )
     expected = [
-        (Price("15.0000"), Quantity("10.0000")),
-        (Price("16.0000"), Quantity("10.0000")),
+        (Price.from_str("15.0000"), Quantity.from_str("10.0000")),
+        (Price.from_str("16.0000"), Quantity.from_str("10.0000")),
     ]
     assert fills == expected
 
 
 def test_simulate_order_fills_whole_ladder(asks):
     fills = asks.simulate_order_fills(
-        order=Order(price=100, volume=1000, side=OrderSide.BUY, id="1")
+        order=Order(price=100, size=1000, side=OrderSide.BUY, id="1")
     )
     expected = [
-        (Price("15.0000"), Quantity("10.0000")),
-        (Price("16.0000"), Quantity("20.0000")),
-        (Price("17.0000"), Quantity("30.0000")),
+        (Price.from_str("15.0000"), Quantity.from_str("10.0000")),
+        (Price.from_str("16.0000"), Quantity.from_str("20.0000")),
+        (Price.from_str("17.0000"), Quantity.from_str("30.0000")),
     ]
     assert fills == expected
 
@@ -161,20 +161,20 @@ def test_simulate_order_fills_whole_ladder(asks):
 def test_simulate_order_fills_l3():
     ladder = Ladder(False, 4, 4)
     orders = [
-        Order(price=15, volume=1, side=OrderSide.SELL, id="1"),
-        Order(price=16, volume=2, side=OrderSide.SELL, id="2"),
-        Order(price=16, volume=3, side=OrderSide.SELL, id="3"),
-        Order(price=20, volume=10, side=OrderSide.SELL, id="4"),
+        Order(price=15, size=1, side=OrderSide.SELL, id="1"),
+        Order(price=16, size=2, side=OrderSide.SELL, id="2"),
+        Order(price=16, size=3, side=OrderSide.SELL, id="3"),
+        Order(price=20, size=10, side=OrderSide.SELL, id="4"),
     ]
     for order in orders:
         ladder.add(order)
 
     fills = ladder.simulate_order_fills(
-        order=Order(price=16.5, volume=4, side=OrderSide.BUY, id="1")
+        order=Order(price=16.5, size=4, side=OrderSide.BUY, id="1")
     )
     expected = [
-        (Price("15.0000"), Quantity("1.0000")),
-        (Price("16.0000"), Quantity("2.0000")),
-        (Price("16.0000"), Quantity("1.0000")),
+        (Price.from_str("15.0000"), Quantity.from_str("1.0000")),
+        (Price.from_str("16.0000"), Quantity.from_str("2.0000")),
+        (Price.from_str("16.0000"), Quantity.from_str("1.0000")),
     ]
     assert fills == expected

@@ -18,16 +18,16 @@ cdef class Identifier:
     cdef readonly str value
     """The identifier value.\n\n:returns: `str`"""
 
+    cdef bint is_null(self) except *
+    cdef bint not_null(self) except *
+
 
 cdef class Symbol(Identifier):
     pass
 
 
 cdef class Venue(Identifier):
-    cdef readonly str broker
-    """The optional broker name.\n\n:returns: `str` or None"""
-    cdef readonly ClientId client_id
-    """The client identifier for routing.\n\n:returns: `ClientId`"""
+    pass
 
 
 cdef class InstrumentId(Identifier):
@@ -40,58 +40,28 @@ cdef class InstrumentId(Identifier):
     cdef InstrumentId from_str_c(str value)
 
 
-cdef class IdTag(Identifier):
-    pass
-
-
 cdef class TraderId(Identifier):
-    cdef readonly str name
-    """The name identifier of the trader.\n\n:returns: `str`"""
-    cdef readonly IdTag tag
-    """The order identifier tag of the trader.\n\n:returns: `IdTag`"""
-
-    @staticmethod
-    cdef TraderId from_str_c(str value)
+    cpdef str get_tag(self)
 
 
 cdef class StrategyId(Identifier):
-    cdef readonly str name
-    """The name identifier of the strategy.\n\n:returns: `str`"""
-    cdef readonly IdTag tag
-    """The order identifier tag of the strategy.\n\n:returns: `str`"""
+    cpdef str get_tag(self)
 
     @staticmethod
     cdef StrategyId null_c()
-    cdef inline bint is_null(self) except *
-    cdef inline bint not_null(self) except *
-
-    @staticmethod
-    cdef StrategyId from_str_c(str value)
-
-
-cdef class Issuer(Identifier):
-    pass
 
 
 cdef class AccountId(Identifier):
-    cdef readonly Issuer issuer
-    """The account issuer.\n\n:returns: `Issuer`"""
-    cdef readonly Identifier identifier
-    """The account identifier value.\n\n:returns: `Identifier`"""
-
-    cdef Venue issuer_as_venue(self)
+    cdef readonly str issuer
+    """The account issuer.\n\n:returns: `str`"""
+    cdef readonly str number
+    """The account number.\n\n:returns: `str`"""
 
     @staticmethod
     cdef AccountId from_str_c(str value)
 
 
 cdef class ClientId(Identifier):
-
-    @staticmethod
-    cdef ClientId from_str_c(str value)
-
-
-cdef class BracketOrderId(Identifier):
     pass
 
 
@@ -107,21 +77,13 @@ cdef class VenueOrderId(Identifier):
 
     @staticmethod
     cdef VenueOrderId null_c()
-    cdef inline bint is_null(self) except *
-    cdef inline bint not_null(self) except *
 
 
 cdef class PositionId(Identifier):
 
     @staticmethod
     cdef PositionId null_c()
-    cdef inline bint is_null(self) except *
-    cdef inline bint not_null(self) except *
 
 
 cdef class ExecutionId(Identifier):
-    pass
-
-
-cdef class TradeMatchId(Identifier):
     pass

@@ -40,7 +40,7 @@ cdef class Clock:
     cdef readonly datetime next_event_time
     """The timestamp of the next time event.\n\n:returns: `datetime`"""
     cdef readonly int64_t next_event_time_ns
-    """The Unix timestamp (nanos) of the next time event.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) of the next time event.\n\n:returns: `int64`"""
     cdef readonly str next_event_name
     """The name of the next time event.\n\n:returns: `str`"""
 
@@ -72,10 +72,10 @@ cdef class Clock:
         int64_t start_time_ns,
         int64_t stop_time_ns,
     )
-    cdef inline void _add_timer(self, Timer timer, handler: callable) except *
-    cdef inline void _remove_timer(self, Timer timer) except *
-    cdef inline void _update_stack(self) except *
-    cdef inline void _update_timing(self) except *
+    cdef void _add_timer(self, Timer timer, handler: callable) except *
+    cdef void _remove_timer(self, Timer timer) except *
+    cdef void _update_stack(self) except *
+    cdef void _update_timing(self) except *
 
 
 cdef class TestClock(Clock):
@@ -92,4 +92,4 @@ cdef class LiveClock(Clock):
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *
 
-    cdef inline void _handle_time_event(self, TimeEvent event) except *
+    cdef void _handle_time_event(self, TimeEvent event) except *

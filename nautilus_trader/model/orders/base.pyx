@@ -22,10 +22,10 @@ from decimal import Decimal
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
-from nautilus_trader.core.constants cimport *  # str constants only
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -37,16 +37,20 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderCancelled
+from nautilus_trader.model.events cimport OrderCancelRejected
+from nautilus_trader.model.events cimport OrderCanceled
 from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderInvalid
+from nautilus_trader.model.events cimport OrderPendingCancel
+from nautilus_trader.model.events cimport OrderPendingReplace
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderTriggered
+from nautilus_trader.model.events cimport OrderUpdateRejected
 from nautilus_trader.model.events cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -62,39 +66,54 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderState.INITIALIZED, OrderState.DENIED): OrderState.DENIED,
     (OrderState.INITIALIZED, OrderState.SUBMITTED): OrderState.SUBMITTED,
     (OrderState.SUBMITTED, OrderState.REJECTED): OrderState.REJECTED,
-    (OrderState.SUBMITTED, OrderState.CANCELLED): OrderState.CANCELLED,
     (OrderState.SUBMITTED, OrderState.ACCEPTED): OrderState.ACCEPTED,
     (OrderState.SUBMITTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.SUBMITTED, OrderState.FILLED): OrderState.FILLED,
-    (OrderState.ACCEPTED, OrderState.CANCELLED): OrderState.CANCELLED,
-    (OrderState.ACCEPTED, OrderState.EXPIRED): OrderState.EXPIRED,
+    (OrderState.ACCEPTED, OrderState.REJECTED): OrderState.REJECTED,  # Covers StopLimit order
+    (OrderState.ACCEPTED, OrderState.PENDING_UPDATE): OrderState.PENDING_UPDATE,
+    (OrderState.ACCEPTED, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,
+    (OrderState.ACCEPTED, OrderState.CANCELED): OrderState.CANCELED,
     (OrderState.ACCEPTED, OrderState.TRIGGERED): OrderState.TRIGGERED,
+    (OrderState.ACCEPTED, OrderState.EXPIRED): OrderState.EXPIRED,
     (OrderState.ACCEPTED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.ACCEPTED, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.PENDING_UPDATE, OrderState.ACCEPTED): OrderState.ACCEPTED,
+    (OrderState.PENDING_UPDATE, OrderState.CANCELED): OrderState.CANCELED,
+    (OrderState.PENDING_UPDATE, OrderState.EXPIRED): OrderState.EXPIRED,
+    (OrderState.PENDING_UPDATE, OrderState.TRIGGERED): OrderState.TRIGGERED,
+    (OrderState.PENDING_UPDATE, OrderState.PENDING_UPDATE): OrderState.PENDING_UPDATE,  # Allow multiple requests
+    (OrderState.PENDING_UPDATE, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,
+    (OrderState.PENDING_UPDATE, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
+    (OrderState.PENDING_UPDATE, OrderState.FILLED): OrderState.FILLED,
+    (OrderState.PENDING_CANCEL, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,  # Allow multiple requests
+    (OrderState.PENDING_CANCEL, OrderState.CANCELED): OrderState.CANCELED,
+    (OrderState.PENDING_CANCEL, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
+    (OrderState.PENDING_CANCEL, OrderState.FILLED): OrderState.FILLED,
     (OrderState.TRIGGERED, OrderState.REJECTED): OrderState.REJECTED,
-    (OrderState.TRIGGERED, OrderState.CANCELLED): OrderState.CANCELLED,
+    (OrderState.TRIGGERED, OrderState.PENDING_UPDATE): OrderState.PENDING_UPDATE,
+    (OrderState.TRIGGERED, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,
+    (OrderState.TRIGGERED, OrderState.CANCELED): OrderState.CANCELED,
     (OrderState.TRIGGERED, OrderState.EXPIRED): OrderState.EXPIRED,
     (OrderState.TRIGGERED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.TRIGGERED, OrderState.FILLED): OrderState.FILLED,
-    (OrderState.PARTIALLY_FILLED, OrderState.CANCELLED): OrderState.FILLED,
+    (OrderState.PARTIALLY_FILLED, OrderState.PENDING_UPDATE): OrderState.PENDING_UPDATE,
+    (OrderState.PARTIALLY_FILLED, OrderState.PENDING_CANCEL): OrderState.PENDING_CANCEL,
+    (OrderState.PARTIALLY_FILLED, OrderState.CANCELED): OrderState.FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.PARTIALLY_FILLED): OrderState.PARTIALLY_FILLED,
     (OrderState.PARTIALLY_FILLED, OrderState.FILLED): OrderState.FILLED,
 }
-
-# Valid states to update an order in
-cdef (int, int) _UPDATABLE_STATES = (OrderState.ACCEPTED, OrderState.TRIGGERED)  # noqa
 
 
 cdef class Order:
     """
     The abstract base class for all orders.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(self, OrderInitialized init not None):
         """
-        Initialize a new instance of the `Order` class.
+        Initialize a new instance of the ``Order`` class.
 
         Parameters
         ----------
@@ -109,7 +128,7 @@ cdef class Order:
         """
         Condition.true(init.strategy_id.not_null(), f"init.strategy_id.value was 'NULL'")
 
-        self._events = [init]    # type: list[OrderEvent]
+        self._events = [init]     # type: list[OrderEvent]
         self._execution_ids = []  # type: list[ExecutionId]
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
@@ -117,6 +136,7 @@ cdef class Order:
             trigger_parser=OrderStateParser.to_str,  # order_state_to_str correct here
             state_parser=OrderStateParser.to_str,
         )
+        self._rollback_state = OrderState.INITIALIZED
 
         self.client_order_id = init.client_order_id
         self.venue_order_id = VenueOrderId.null_c()
@@ -130,8 +150,8 @@ cdef class Order:
         self.quantity = init.quantity
         self.timestamp_ns = init.timestamp_ns
         self.time_in_force = init.time_in_force
-        self.filled_qty = Quantity()
-        self.execution_ns = 0
+        self.filled_qty = Quantity.zero_c(precision=0)
+        self.ts_filled_ns = 0
         self.avg_px = None  # Can be None
         self.slippage = Decimal()
         self.init_id = init.id
@@ -139,28 +159,36 @@ cdef class Order:
     def __eq__(self, Order other) -> bool:
         return self.client_order_id.value == other.client_order_id.value
 
-    def __ne__(self, Order other) -> bool:
-        return self.client_order_id.value != other.client_order_id.value
-
     def __hash__(self) -> int:
         return hash(self.client_order_id.value)
 
     def __repr__(self) -> str:
-        cdef str id_string = f", venue_order_id={self.venue_order_id.value})" if self.venue_order_id.not_null() else ")"
+        cdef str id_string = f", venue_order_id={self.venue_order_id.value}" if self.venue_order_id.not_null() else ""
         return (f"{type(self).__name__}("
                 f"{self.status_string_c()}, "
                 f"state={self._fsm.state_string_c()}, "
                 f"client_order_id={self.client_order_id.value}"
-                f"{id_string}")
+                f"{id_string})")
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cdef OrderState state_c(self) except *:
         return <OrderState>self._fsm.state
 
     cdef OrderInitialized init_event_c(self):
-        return self._events[0]  # Guaranteed to have the initialized event
+        return self._events[0]  # Guaranteed to contain the initialized event
 
     cdef OrderEvent last_event_c(self):
-        return self._events[-1]  # Guaranteed to have the initialized event
+        return self._events[-1]  # Guaranteed to contain the initialized event
 
     cdef list events_c(self):
         return self._events.copy()
@@ -190,17 +218,29 @@ cdef class Order:
         return self.type == OrderType.MARKET
 
     cdef bint is_working_c(self) except *:
-        return self._fsm.state == OrderState.ACCEPTED \
-            or self._fsm.state == OrderState.PARTIALLY_FILLED \
+        return (
+            self._fsm.state == OrderState.ACCEPTED
             or self._fsm.state == OrderState.TRIGGERED
+            or self._fsm.state == OrderState.PENDING_CANCEL
+            or self._fsm.state == OrderState.PENDING_UPDATE
+            or self._fsm.state == OrderState.PARTIALLY_FILLED
+        )
+
+    cdef bint is_pending_update_c(self) except *:
+        return self._fsm.state == OrderState.PENDING_UPDATE
+
+    cdef bint is_pending_cancel_c(self) except *:
+        return self._fsm.state == OrderState.PENDING_CANCEL
 
     cdef bint is_completed_c(self) except *:
-        return self._fsm.state == OrderState.INVALID \
-            or self._fsm.state == OrderState.DENIED \
-            or self._fsm.state == OrderState.REJECTED \
-            or self._fsm.state == OrderState.CANCELLED \
-            or self._fsm.state == OrderState.EXPIRED \
+        return (
+            self._fsm.state == OrderState.INVALID
+            or self._fsm.state == OrderState.DENIED
+            or self._fsm.state == OrderState.REJECTED
+            or self._fsm.state == OrderState.CANCELED
+            or self._fsm.state == OrderState.EXPIRED
             or self._fsm.state == OrderState.FILLED
+        )
 
     @property
     def symbol(self):
@@ -355,8 +395,12 @@ cdef class Order:
         """
         If the order is open/working at the trading venue.
 
-        An order is considered working when its state is either `ACCEPTED`,
-        `TRIGGERED` or `PARTIALLY_FILLED`.
+        An order is considered working when its state is either:
+         - `ACCEPTED`
+         - `TRIGGERED`
+         - `PENDING_CANCEL`
+         - `PENDING_UPDATE`
+         - `PARTIALLY_FILLED`
 
         Returns
         -------
@@ -367,13 +411,44 @@ cdef class Order:
         return self.is_working_c()
 
     @property
+    def is_pending_update(self):
+        """
+        If the order is pending update.
+
+        Returns
+        -------
+        bool
+            True if order.state == OrderState.PENDING_UPDATE, else False.
+
+        """
+        return self.is_pending_update_c()
+
+    @property
+    def is_pending_cancel(self):
+        """
+        If the order is pending cancel.
+
+        Returns
+        -------
+        bool
+            True if order.state == OrderState.PENDING_CANCEL, else False.
+
+        """
+        return self.is_pending_cancel_c()
+
+    @property
     def is_completed(self):
         """
         If the order is closed/completed.
 
         An order is considered completed when its state can no longer change.
-        The possible states of completed orders include; `INVALID`, `DENIED`,
-        `REJECTED`, `CANCELLED`, `EXPIRED` and `FILLED`.
+        The possible states of completed orders include:
+         - `INVALID`
+         - `DENIED`
+         - `REJECTED`
+         - `CANCELED`
+         - `EXPIRED`
+         - `FILLED`
 
         Returns
         -------
@@ -393,7 +468,7 @@ cdef class Order:
             raise ValueError(f"side was invalid, was {side}")
 
     @staticmethod
-    cdef inline OrderSide flatten_side_c(PositionSide side) except *:
+    cdef OrderSide flatten_side_c(PositionSide side) except *:
         if side == PositionSide.LONG:
             return OrderSide.SELL
         elif side == PositionSide.SHORT:
@@ -457,6 +532,8 @@ cdef class Order:
         Raises
         ------
         ValueError
+            If self.client_order_id is not equal to event.client_order_id.
+        ValueError
             If self.venue_order_id and event.venue_order_id are both not 'NULL', and are not equal.
         InvalidStateTrigger
             If event is not a valid trigger from the current order.state.
@@ -485,12 +562,25 @@ cdef class Order:
         elif isinstance(event, OrderAccepted):
             self._fsm.trigger(OrderState.ACCEPTED)
             self._accepted(event)
+        elif isinstance(event, OrderPendingReplace):
+            self._rollback_state = <OrderState>self._fsm.state
+            self._fsm.trigger(OrderState.PENDING_UPDATE)
+        elif isinstance(event, OrderPendingCancel):
+            self._rollback_state = <OrderState>self._fsm.state
+            self._fsm.trigger(OrderState.PENDING_CANCEL)
+        elif isinstance(event, OrderUpdateRejected):
+            if self._fsm.state == OrderState.PENDING_UPDATE:
+                self._fsm.trigger(self._rollback_state)
+        elif isinstance(event, OrderCancelRejected):
+            if self._fsm.state == OrderState.PENDING_CANCEL:
+                self._fsm.trigger(self._rollback_state)
         elif isinstance(event, OrderUpdated):
-            Condition.true(self._fsm.state in _UPDATABLE_STATES, "state was invalid for updating")
+            if self._fsm.state == OrderState.PENDING_UPDATE:
+                self._fsm.trigger(self._rollback_state)
             self._updated(event)
-        elif isinstance(event, OrderCancelled):
-            self._fsm.trigger(OrderState.CANCELLED)
-            self._cancelled(event)
+        elif isinstance(event, OrderCanceled):
+            self._fsm.trigger(OrderState.CANCELED)
+            self._canceled(event)
         elif isinstance(event, OrderExpired):
             self._fsm.trigger(OrderState.EXPIRED)
             self._expired(event)
@@ -499,10 +589,12 @@ cdef class Order:
             self._fsm.trigger(OrderState.TRIGGERED)
             self._triggered(event)
         elif isinstance(event, OrderFilled):
-            if self.venue_order_id.not_null():
-                Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
-            else:
+            # Check identifiers
+            if self.venue_order_id.is_null():
                 self.venue_order_id = event.venue_order_id
+            else:
+                Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
+            # Fill order
             if self.filled_qty + event.last_qty < self.quantity:
                 self._fsm.trigger(OrderState.PARTIALLY_FILLED)
             else:
@@ -531,7 +623,7 @@ cdef class Order:
         """Abstract method (implement in subclass)."""
         raise NotImplemented("method must be implemented in subclass")
 
-    cdef void _cancelled(self, OrderCancelled event) except *:
+    cdef void _canceled(self, OrderCanceled event) except *:
         pass  # Do nothing else
 
     cdef void _expired(self, OrderExpired event) except *:
@@ -550,14 +642,15 @@ cdef class Order:
             return last_px
 
         total_qty: Decimal = self.filled_qty + last_qty
-        return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_qty
+        if total_qty > 0:  # Protect divide by zero
+            return ((self.avg_px * self.filled_qty) + (last_px * last_qty)) / total_qty
 
 
 cdef class PassiveOrder(Order):
     """
     The abstract base class for all passive orders.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
     def __init__(
         self,
@@ -575,7 +668,7 @@ cdef class PassiveOrder(Order):
         dict options not None,
     ):
         """
-        Initialize a new instance of the `PassiveOrder` class.
+        Initialize a new instance of the ``PassiveOrder`` class.
 
         Parameters
         ----------
@@ -620,9 +713,9 @@ cdef class PassiveOrder(Order):
             # Should not have an expire time
             Condition.none(expire_time, "expire_time")
 
-        options[PRICE] = str(price)  # price checked not None
+        options["price"] = str(price)  # price checked not None
         if expire_time is not None:
-            options[EXPIRE_TIME] = expire_time
+            options["expire_time"] = maybe_dt_to_unix_nanos(expire_time)
 
         cdef OrderInitialized init = OrderInitialized(
             client_order_id=client_order_id,
@@ -646,6 +739,17 @@ cdef class PassiveOrder(Order):
         self.expire_time = expire_time
         self.expire_time_ns = dt_to_unix_nanos(dt=expire_time) if expire_time else 0
         self.slippage = Decimal()
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cdef str status_string_c(self):
         cdef str expire_time = "" if self.expire_time is None else f" {format_iso8601(self.expire_time)}"
@@ -682,8 +786,8 @@ cdef class PassiveOrder(Order):
         self._execution_ids.append(fill.execution_id)
         self.execution_id = fill.execution_id
         self.liquidity_side = fill.liquidity_side
-        self.filled_qty = Quantity(self.filled_qty + fill.last_qty)
-        self.execution_ns = fill.execution_ns
+        self.filled_qty = Quantity(self.filled_qty + fill.last_qty, fill.last_qty.precision)
+        self.ts_filled_ns = fill.ts_filled_ns
         self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
         self._set_slippage()
 

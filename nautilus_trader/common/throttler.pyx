@@ -47,7 +47,7 @@ cdef class Throttler:
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `Throttler` class.
+        Initialize a new instance of the ``Throttler`` class.
 
         Parameters
         ----------
@@ -150,7 +150,7 @@ cdef class Throttler:
             self._run_timer()
             self._process_queue()
 
-    cdef inline void _run_timer(self) except *:
+    cdef void _run_timer(self) except *:
         self.is_active = True
         self._log.debug("Active.")
         self._clock.set_time_alert(

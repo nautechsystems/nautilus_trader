@@ -15,7 +15,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import pathlib
+import os
 import sys
 
 import ccxt
@@ -23,7 +23,7 @@ import pandas as pd
 
 
 sys.path.insert(
-    0, str(pathlib.Path(__file__).parents[2])
+    0, str(os.path.abspath(__file__ + "/../../../"))
 )  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
@@ -31,11 +31,13 @@ from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.currencies import BTC
+from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -75,10 +77,13 @@ if __name__ == "__main__":
 
     # Add an exchange (multiple exchanges possible)
     # Add starting balances for single-currency or multi-currency accounts
-    engine.add_exchange(
+    engine.add_venue(
         venue=BINANCE,
+        venue_type=VenueType.EXCHANGE,
         oms_type=OMSType.NETTING,
-        starting_balances=[Money(1_000_000, USDT), Money(1, BTC)],
+        account_type=AccountType.CASH,  # Spot cash account
+        base_currency=None,  # Multi-currency account
+        starting_balances=[Money(1_000_000, USDT), Money(10, ETH)],
         fill_model=fill_model,
     )
 

@@ -17,6 +17,7 @@ import asyncio
 from asyncio import AbstractEventLoop
 from asyncio import CancelledError
 
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
@@ -39,12 +40,13 @@ cdef class LiveRiskEngine(RiskEngine):
         loop not None: AbstractEventLoop,
         ExecutionEngine exec_engine not None,
         Portfolio portfolio not None,
+        CacheFacade cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict config=None,
     ):
         """
-        Initialize a new instance of the `LiveRiskEngine` class.
+        Initialize a new instance of the ``LiveRiskEngine`` class.
 
         Parameters
         ----------
@@ -52,6 +54,8 @@ cdef class LiveRiskEngine(RiskEngine):
             The event loop for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
+        cache : CacheFacade
+            The read-only cache for the engine.
         clock : Clock
             The clock for the engine.
         logger : Logger
@@ -62,16 +66,19 @@ cdef class LiveRiskEngine(RiskEngine):
         """
         if config is None:
             config = {}
+        if "qsize" not in config:
+            config["qsize"] = 10000
         super().__init__(
-            exec_engine,
-            portfolio,
-            clock,
-            logger,
-            config,
+            exec_engine=exec_engine,
+            portfolio=portfolio,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            config=config,
         )
 
         self._loop = loop
-        self._queue = Queue(maxsize=config.get("qsize", 10000))
+        self._queue = Queue(maxsize=config.get("qsize"))
 
         self._run_queue_task = None
         self.is_running = False
@@ -210,7 +217,7 @@ cdef class LiveRiskEngine(RiskEngine):
                     self._log.error(f"Cannot handle message: unrecognized {message}.")
         except CancelledError:
             if self.qsize() > 0:
-                self._log.warning(f"Running cancelled "
+                self._log.warning(f"Running canceled "
                                   f"with {self.qsize()} message(s) on queue.")
             else:
                 self._log.debug(f"Message queue processing stopped (qsize={self.qsize()}).")

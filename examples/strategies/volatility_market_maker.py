@@ -16,19 +16,18 @@
 from decimal import Decimal
 from typing import Union
 
+from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import Data
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instrument import Instrument
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.tick import QuoteTick
@@ -58,7 +57,7 @@ class VolatilityMarketMaker(TradingStrategy):
         order_id_tag: str,  # Must be unique at 'trader level'
     ):
         """
-        Initialize a new instance of the `VolatilityMarketMaker` class.
+        Initialize a new instance of the ``VolatilityMarketMaker`` class.
 
         Parameters
         ----------
@@ -81,11 +80,10 @@ class VolatilityMarketMaker(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
+        self.instrument = None  # Initialize in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.atr_multiple = atr_multiple
-        self.instrument = None  # Request on start instead
-        self.price_precision = None  # Initialized on start
 
         # Create the indicators for the strategy
         self.atr = AverageTrueRange(atr_period)
@@ -96,8 +94,11 @@ class VolatilityMarketMaker(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        self.instrument = self.data.instrument(self.instrument_id)
-        self.price_precision = self.instrument.price_precision
+        self.instrument = self.cache.instrument(self.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.stop()
+            return
 
         # Register the indicators for updating
         self.register_indicator_for_bars(self.bar_type, self.atr)
@@ -181,13 +182,14 @@ class VolatilityMarketMaker(TradingStrategy):
         if not self.indicators_initialized():
             self.log.info(
                 f"Waiting for indicators to warm up "
-                f"[{self.data.bar_count(self.bar_type)}]..."
+                f"[{self.cache.bar_count(self.bar_type)}]...",
+                color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
 
-        last: QuoteTick = self.data.quote_tick(self.instrument_id)
+        last: QuoteTick = self.cache.quote_tick(self.instrument_id)
         if last is None:
-            self.log.error("No quotes yet.")
+            self.log.info("No quotes yet...")
             return
 
         # Maintain buy orders
@@ -208,8 +210,8 @@ class VolatilityMarketMaker(TradingStrategy):
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
-            quantity=Quantity(self.trade_size),
-            price=Price(price, self.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(price),
             time_in_force=TimeInForce.GTC,
             post_only=True,  # Default value is True
             hidden=False,  # Default value is False
@@ -226,8 +228,8 @@ class VolatilityMarketMaker(TradingStrategy):
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
-            quantity=Quantity(self.trade_size),
-            price=Price(price, self.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+            price=self.instrument.make_price(price),
             time_in_force=TimeInForce.GTC,
             post_only=True,  # Default value is True
             hidden=False,  # Default value is False
@@ -236,14 +238,14 @@ class VolatilityMarketMaker(TradingStrategy):
         self.sell_order = order
         self.submit_order(order)
 
-    def on_data(self, data: GenericData):
+    def on_data(self, data: Data):
         """
         Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
-        data : GenericData
-            The data object received.
+        data : Data
+            The data received.
 
         """
         pass
@@ -258,9 +260,9 @@ class VolatilityMarketMaker(TradingStrategy):
             The event received.
 
         """
-        last: QuoteTick = self.data.quote_tick(self.instrument_id)
+        last: QuoteTick = self.cache.quote_tick(self.instrument_id)
         if last is None:
-            self.log.error("No quotes yet.")
+            self.log.info("No quotes yet...")
             return
 
         # If order filled then replace order at atr multiple distance from the market

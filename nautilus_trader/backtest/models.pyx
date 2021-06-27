@@ -32,7 +32,7 @@ cdef class FillModel:
         random_seed=None,
     ):
         """
-        Initialize a new instance of the `FillModel` class.
+        Initialize a new instance of the ``FillModel`` class.
 
         Parameters
         ----------
@@ -99,7 +99,7 @@ cdef class FillModel:
         """
         return self._event_success(self.prob_slippage)
 
-    cdef inline bint _event_success(self, double probability) except *:
+    cdef bint _event_success(self, double probability) except *:
         # Return a result indicating whether an event occurred based on the
         # given probability.
 

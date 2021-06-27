@@ -41,8 +41,8 @@ class AnalyzerTests(unittest.TestCase):
         # Fixture Setup
         self.analyzer = PerformanceAnalyzer()
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER", "000"),
-            strategy_id=StrategyId("S", "001"),
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
@@ -107,63 +107,63 @@ class AnalyzerTests(unittest.TestCase):
         order1 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order2 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order3 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         order4 = self.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
-            Quantity(100000),
+            Quantity.from_int(100000),
         )
 
         fill1 = TestStubs.event_order_filled(
             order1,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            strategy_id=StrategyId("S", "001"),
-            last_px=Price("1.00000"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
         )
 
         fill2 = TestStubs.event_order_filled(
             order2,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
-            strategy_id=StrategyId("S", "001"),
-            last_px=Price("1.00010"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00010"),
         )
 
         fill3 = TestStubs.event_order_filled(
             order3,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
-            strategy_id=StrategyId("S", "001"),
-            last_px=Price("1.00000"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00000"),
         )
 
         fill4 = TestStubs.event_order_filled(
             order4,
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-2"),
-            strategy_id=StrategyId("S", "001"),
-            last_px=Price("1.00020"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00020"),
         )
 
-        position1 = Position(fill=fill1)
+        position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         position1.apply(fill2)
 
-        position2 = Position(fill=fill3)
+        position2 = Position(instrument=AUDUSD_SIM, fill=fill3)
         position2.apply(fill4)
 
         self.analyzer.add_positions([position1, position2])

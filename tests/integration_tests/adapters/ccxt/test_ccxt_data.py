@@ -65,7 +65,7 @@ class CCXTDataClientTests(unittest.TestCase):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER", "001")
+        self.trader_id = TraderId("TESTER-001")
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
@@ -77,7 +77,10 @@ class CCXTDataClientTests(unittest.TestCase):
             clock=self.clock,
         )
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -85,6 +88,7 @@ class CCXTDataClientTests(unittest.TestCase):
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -446,10 +450,10 @@ class CCXTDataClientTests(unittest.TestCase):
                 data_type=DataType(
                     TradeTick,
                     metadata={
-                        "InstrumentId": ETHUSDT,
-                        "FromDateTime": None,
-                        "ToDateTime": None,
-                        "Limit": 100,
+                        "instrument_id": ETHUSDT,
+                        "from_datetime": None,
+                        "to_datetime": None,
+                        "limit": 100,
                     },
                 ),
                 callback=handler.store,
@@ -493,10 +497,10 @@ class CCXTDataClientTests(unittest.TestCase):
                 data_type=DataType(
                     Bar,
                     metadata={
-                        "BarType": bar_type,
-                        "FromDateTime": None,
-                        "ToDateTime": None,
-                        "Limit": 100,
+                        "bar_type": bar_type,
+                        "from_datetime": None,
+                        "to_datetime": None,
+                        "limit": 100,
                     },
                 ),
                 callback=handler.store,

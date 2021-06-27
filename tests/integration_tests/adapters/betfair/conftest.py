@@ -1,18 +1,38 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import pytest
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
+from nautilus_trader.adapters.betfair.execution import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
@@ -82,12 +102,29 @@ def clock() -> LiveClock:
 
 @pytest.fixture()
 def live_logger(event_loop, clock):
-    return LiveLogger(loop=event_loop, clock=clock, level_stdout=LogLevel.DEBUG)
+    return LiveLogger(loop=event_loop, clock=clock, level_stdout=LogLevel.INFO)
 
 
 @pytest.fixture()
-def portfolio(clock, live_logger):
+def cache_db(trader_id, live_logger):
+    return BypassCacheDatabase(
+        trader_id=trader_id,
+        logger=live_logger,
+    )
+
+
+@pytest.fixture()
+def cache(live_logger, cache_db):
+    return Cache(
+        database=cache_db,
+        logger=live_logger,
+    )
+
+
+@pytest.fixture()
+def portfolio(cache, clock, live_logger):
     return Portfolio(
+        cache=cache,
         clock=clock,
         logger=live_logger,
     )
@@ -115,7 +152,7 @@ def position_id():
 
 @pytest.fixture()
 def instrument_id():
-    return InstrumentId(symbol=Symbol("Test"), venue=BETFAIR_VENUE)
+    return InstrumentId(symbol=Symbol("Test"), venue=Venue("BETFAIR"))
 
 
 @pytest.fixture()
@@ -134,8 +171,26 @@ def exec_engine(event_loop, clock, live_logger, portfolio, trader_id):
 
 
 @pytest.fixture()
+def risk_engine(event_loop, clock, live_logger, portfolio, trader_id):
+    return BetfairTestStubs.mock_live_risk_engine()
+
+
+@pytest.fixture()
 def betting_instrument(provider):
     return BetfairTestStubs.betting_instrument()
+
+
+@pytest.fixture()
+def betfair_account_state(betfair_client, uuid):
+    details = betfair_client.account.get_account_details()
+    funds = betfair_client.account.get_account_funds()
+    return betfair_account_to_account_state(
+        account_detail=details,
+        account_funds=funds,
+        event_id=uuid,
+        ts_updated_ns=0,
+        timestamp_ns=0,
+    )
 
 
 @pytest.fixture()
@@ -154,11 +209,12 @@ def betfair_market_socket():
 
 @pytest.fixture()
 async def execution_client(
-    betfair_client, account_id, exec_engine, clock, live_logger
+    betfair_client, account_id, exec_engine, clock, live_logger, betfair_account_state
 ) -> BetfairExecutionClient:
     client = BetfairExecutionClient(
         client=betfair_client,
         account_id=account_id,
+        base_currency=AUD,
         engine=exec_engine,
         clock=clock,
         logger=live_logger,
@@ -167,6 +223,7 @@ async def execution_client(
     )
     client.instrument_provider().load_all()
     exec_engine.register_client(client)
+    exec_engine.cache.add_account(account=Account(betfair_account_state))
     return client
 
 
@@ -178,8 +235,7 @@ def betfair_data_client(betfair_client, data_engine, clock, live_logger):
         clock=clock,
         logger=live_logger,
         market_filter={},
-        load_instruments=False,
+        load_instruments=True,
     )
-    client.instrument_provider().load_all()
     data_engine.register_client(client)
     return client

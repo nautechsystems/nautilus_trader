@@ -27,6 +27,7 @@ def test_create(mocker, data_engine, exec_engine, clock, live_logger):
     config = {
         "data_client": True,
         "exec_client": True,
+        "base_currency": "AUD",
     }
 
     # TODO - Fix mock for login assertion

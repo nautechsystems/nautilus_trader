@@ -14,9 +14,5 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `model` subpackage provides a rich and expressive trading domain model.
-
-The framework provides various basic value objects, entities and aggregates.
-Continuing with the message passing design philosophy - command and
-event objects are provided for common trading operations.
+The `orders` subpackage defines various order types.
 """

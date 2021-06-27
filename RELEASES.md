@@ -1,23 +1,250 @@
+# NautilusTrader 1.124.0 Beta - Release Notes
+
+
+## Breaking Changes
+None
+
+## Enhancements
+None
+
+## Fixes
+None
+
+---
+
+# NautilusTrader 1.123.0 Beta - Release Notes
+
+A major feature of this release is a complete re-design of serialization for the
+platform, along with initial support for the [Parquet](https://parquet.apache.org/) format.
+The MessagePack serialization functionality has been refined and retained.
+
+In the interests of explicitness there is now a convention that timestamps are 
+named either `timestamp_ns`, or prepended with `ts`. Timestamps which are 
+represented with an `int64` are always in nanosecond resolution, and appended 
+with `_ns` accordingly.
+
+Initial scaffolding for new backtest data tooling has been added.
+
+## Breaking Changes
+- Renamed `OrderState.PENDING_REPLACE` to `OrderState.PENDING_UPDATE`
+- Renamed `timestamp_origin_ns` to `ts_event_ns`.
+- Renamed `timestamp_ns` for data to `ts_recv_ns`.
+- Renamed `updated_ns` to `ts_updated_ns`.
+- Renamed `submitted_ns` to `ts_submitted_ns`.
+- Renamed `rejected_ns` to `ts_rejected_ns`.
+- Renamed `accepted_ns` to `ts_accepted_ns`.
+- Renamed `pending_ns` to `ts_pending_ns`.
+- Renamed `canceled_ns` to `ts_canceled_ns`.
+- Renamed `triggered_ns` to `ts_triggered_ns`.
+- Renamed `expired_ns` to `ts_expired_ns`.
+- Renamed `execution_ns` to `ts_filled_ns`.
+- Renamed `OrderBookLevel` to `BookLevel`.
+- Renamed `Order.volume` to `Order.size`.
+
+## Enhancements
+- Adapter dependencies are now optional extras at installation.
+- Added arrow/parquet serialization.
+- Added object `to_dict()` and `from_dict()` methods.
+- Added `Order.is_pending_update`.
+- Added `Order.is_pending_cancel`.
+- Added `run_analysis` config option for `BacktestEngine`.
+- Removed `TradeMatchId` in favour of bare string.
+- Removed redundant conversion to `pd.Timestamp` when checking timestamps.
+- Removed redundant data `to_serializable_str` methods.
+- Removed redundant data `from_serializable_str` methods.
+- Removed redundant `__ne__` implementations.
+- Removed redundant `MsgPackSerializer` cruft.
+- Removed redundant `ObjectCache` and `IdentifierCache`.
+- Removed redundant string constants.
+
+## Fixes
+- Fixed millis to nanos in `CCXTExecutionClient`.
+- Added missing trigger to `UpdateOrder` handling.
+- Removed all `import *`.
+
+---
+
+# NautilusTrader 1.122.0 Beta - Release Notes
+
+This release includes numerous breaking changes with a view to enhancing the core
+functionality and API of the platform. The data and execution caches have been 
+unified for simplicity. There have also been large changes to the accounting 
+functionality, with 'hooks' added in preparation for accurate calculation and 
+handling of margins.
+
+## Breaking Changes
+- Renamed `Account.balance()` to `Account.balance_total()`.
+- Consolidated`TradingStrategy.data` into `TradingStrategy.cache`.
+- Consolidated `TradingStrategy.execution` into `TradingStrategy.cache`.
+- Moved `redis` subpackage into `infrastructure`.
+- Moved some accounting methods back to `Instrument`.
+- Removed `Instrument.market_value()`.
+- Renamed `Portfolio.market_values()` to `Portfolio.net_exposures()`.
+- Renamed `Portfolio.market_value()` to `Portfolio.net_exposure()`.
+- Renamed `InMemoryExecutionDatabase` to `BypassCacheDatabase`.
+- Renamed `Position.relative_qty` to `Position.net_qty`.
+- Renamed `default_currency` to `base_currency`.
+- Removed `cost_currency` property from `Instrument`.
+
+## Enhancements
+- `ExecutionClient` now has the option of calculating account state.
+- Unified data and execution caches into single `Cache`.
+- Improved configuration options and naming.
+- Simplified `Portfolio` component registration.
+- Simplified wiring of `Cache` into components.
+- Added `repr` to execution messages.
+- Added `AccountType` enum.
+- Added `cost_currency` to `Position`.
+- Added `get_cost_currency()` to `Instrument`.
+- Added `get_base_currency()` to `Instrument`.
+
+## Fixes
+- Fixed `Order.is_working` for `PENDING_CANCEL` and `PENDING_REPLACE` states.
+- Fixed loss of precision for nanosecond timestamps in Redis.
+- Fixed state reconciliation when uninstantiated client.
+
+---
+
+# NautilusTrader 1.121.0 Beta - Release Notes
+
+In this release there has been a major change to the use of inlines for method
+signatures. From the Cython docs:
+_"Note that class-level cdef functions are handled via a virtual function table
+so the compiler won’t be able to inline them in almost all cases."_.
+https://cython.readthedocs.io/en/latest/src/userguide/pyrex_differences.html?highlight=inline.
+
+It has been found that adding `inline` to method signatures makes no difference
+to the performance of the system - and so they have been removed to reduce 
+'noise' and simplify the codebase. Please note that the use of `inline` for 
+module level functions will be passed to the C compiler with the expected 
+result of inlining the function.
+
+## Breaking Changes
+- `BacktestEngine.add_venue` added `venue_type` to method params.
+- `ExecutionClient` added `venue_type` to constructor params.
+- `TraderId` instantiation.
+- `StrategyId` instantiation.
+- `Instrument` serialization.
+
+## Enhancements
+- `Portfolio` pending calculations if data not immediately available.
+- Added `instruments` subpackage with expanded class definitions.
+- Added `timestamp_origin_ns` timestamp when originally occurred.
+- Added `AccountState.is_reported` flagging if reported by exchange or calculated.
+- Simplified `TraderId` and `StrategyId` identifiers.
+- Improved `ExecutionEngine` order routing.
+- Improved `ExecutionEngine` client registration.
+- Added order routing configuration.
+- Added `VenueType` enum and parser.
+- Improved param typing for identifier generators.
+- Improved log formatting of `Money` and `Quantity` thousands commas.
+
+## Fixes
+- CCXT `TICK_SIZE` precision mode - size precisions (BitMEX, FTX).
+- State reconciliation (various bugs).
+
+---
+
+# NautilusTrader 1.120.0 Beta - Release Notes
+
+This release focuses on simplifications and enhancements of existing machinery.
+
+## Breaking Changes
+- `Position` now requires an `Instrument` param.
+- `is_inverse` removed from `OrderFilled`.
+- `ClientId` removed from `TradingCommand` and subclasses.
+- `AccountId` removed from `TradingCommand` and subclasses.
+- `TradingCommand` serialization.
+
+## Enhancements
+- Added `Instrument` methods to `ExecutionCache`.
+- Added `Venue` filter to cache queries.
+- Moved order validations into `RiskEngine`.
+- Refactored `RiskEngine`.
+- Removed routing type information from identifiers.
+
+## Fixes
+None
+
+---
+
+# NautilusTrader 1.119.0 Beta - Release Notes
+
+This release applies another major refactoring to the value object API for
+`BaseDecimal` and its subclasses `Price` and `Quantity`. Previously a precision
+was not explicitly required when passing in a `decimal.Decimal` type which
+sometimes resulted in unexpected behavior when a user passed in a decimal with
+a very large precision (when wrapping a float with `decimal.Decimal`).
+
+Convenience methods have been added to `Price` and `Quantity` where precision
+is implicitly zero for ints, or implied in the number of digits after the '.'
+point for strings. Convenience methods have also been added to `Instrument` to
+assist the UX.
+
+The serialization of `Money` has been improved with the inclusion of the 
+currency code in the string delimited by whitespace. This avoids an additional
+field for the currency code.
+
+`RiskEngine` has been rewired ahead of `ExecutionEngine` which clarifies areas
+of responsibility and cleans up the registration sequence and allows a more
+natural flow of command and event messages.
+
+## Breaking Changes
+- Serializations involving `Money`.
+- Changed usage of `Price` and `Quantity`.
+- Renamed `BypassExecutionDatabase` to `BypassCacheDatabase`.
+
+## Enhancements
+- Rewired `RiskEngine` and `ExecutionEngine` sequence.
+- Added `Instrument` database operations.
+- Added `MsgPackInstrumentSerializer`.
+- Added `Price.from_str()`.
+- Added `Price.from_int()`.
+- Added `Quantity.zero()`.
+- Added `Quantity.from_str()`.
+- Added `Quantity.from_int()`.
+- Added `Instrument.make_price()`.
+- Added `Instrument.make_qty()`.
+- Improved serialization of `Money`.
+
+## Fixes
+- Handling of precision for `decimal.Decimal` values passed to value objects.
+
+---
+
 # NautilusTrader 1.118.0 Beta - Release Notes
 
 This release simplifies the backtesting workflow by removing the need for the 
-intermediate `BacktestDataContainer`.
+intermediate `BacktestDataContainer`. There has also been some simplifications
+for `OrderFill` events, as well as additional order states and events.
 
 ## Breaking Changes
+- Standardized all 'cancelled' references to 'canceled'.
+- `SimulatedExchange` no longer generates `OrderAccepted` for `MarketOrder`.
 - Removed redundant `BacktestDataContainer`.
 - Removed redundant `OrderFilled.cum_qty`.
-- Removed redundant `OrderFilled.leave_qty`.
+- Removed redundant `OrderFilled.leaves_qty`.
 - `BacktestEngine` constructor simplified.
 - `BacktestMarketDataClient` no longer needs instruments.
-- Rename `PerformanceAnalyzer` `.get_realized_pnls` to `.realized_pnls`.
+- Rename `PerformanceAnalyzer.get_realized_pnls` to `.realized_pnls`.
 
 ## Enhancements
-- Re-engineered `BacktestDataEngine` to take data directly.
-- Simplified `CCXTExecutionClient` by removing redundant 'hot cache'.
+- Re-engineered `BacktestEngine` to take data directly.
+- Added `OrderState.PENDING_CANCEL`.
+- Added `OrderState.PENDING_REPLACE`.
+- Added `OrderPendingReplace` event.
+- Added `OrderPendingCancel` event.
+- Added `OrderFilled.is_buy` property (with corresponding `is_buy_c()` fast method).
+- Added `OrderFilled.is_sell` property (with corresponding `is_sell_c()` fast method).
+- Added `Position.is_opposite_side(OrderSide side)` convenience method.
+- Modified the `Order` FSM and event handling for the above.
 - Consolidated event generation into `ExecutionClient` base class.
 - Refactored `SimulatedExchange` for greater clarity.
 
 ## Fixes
+- `ExecutionCache` positions open queries.
+- Exchange accounting for exchange `OMSType.NETTING`.
+- Position flipping logic for exchange `OMSType.NETTING`.
 - Multi-currency account terminology.
 - Windows wheel packaging.
 - Windows path errors.
@@ -33,7 +260,7 @@ tick data a L1 order book is used as a proxy. A future release will include
 improved fill modelling assumptions and customizations.
 
 ## Breaking Changes
-- `OrderBook.create` now takes `Instrument` and `OrderBookLevel`.
+- `OrderBook.create` now takes `Instrument` and `BookLevel`.
 
 ## Enhancements
 - `SimulatedExchange` now maintains order books internally.
@@ -62,7 +289,7 @@ None
 - Builds for 32-bit platforms.
 
 ## Fixes
-- `OrderBook.create` for `OrderBookLevel.L3` now returns correct book.
+- `OrderBook.create` for `BookLevel.L3` now returns correct book.
 - Betfair handling of execution IDs.
 
 ---

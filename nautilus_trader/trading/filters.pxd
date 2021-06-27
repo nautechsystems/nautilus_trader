@@ -15,6 +15,9 @@
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.data cimport Data
+
 
 cdef class ForexSessionFilter:
     cdef object _tz_sydney
@@ -29,15 +32,13 @@ cdef class ForexSessionFilter:
     cpdef datetime prev_end(self, session, datetime time_now)
 
 
-cdef class NewsEvent:
-    cdef readonly datetime timestamp
-    """The news events timestamp.\n\n:returns: `datetime`"""
+cdef class NewsEvent(Data):
     cdef readonly object impact
-    """The expected news impact.\n\n:returns: `object`"""
+    """The expected news impact.\n\n:returns: `Enum`"""
     cdef readonly str name
     """The descriptive name of the news event.\n\n:returns: `str`"""
-    cdef readonly str currency
-    """The currency affected by the news event.\n\n:returns: `str`"""
+    cdef readonly Currency currency
+    """The currency affected by the news event.\n\n:returns: `Currency`"""
 
 
 cdef class EconomicNewsEventFilter:

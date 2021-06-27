@@ -42,7 +42,7 @@ cdef class TimeEvent(Event):
         int64_t timestamp_ns,
     ):
         """
-        Initialize a new instance of the `TimeEvent` class.
+        Initialize a new instance of the ``TimeEvent`` class.
 
         Parameters
         ----------
@@ -53,9 +53,9 @@ cdef class TimeEvent(Event):
         event_timestamp : datetime
             The event timestamp (UTC).
         event_timestamp_ns : int64
-            The Unix timestamp (nanos) of the event.
+            The UNIX timestamp (nanoseconds) of the event.
         timestamp_ns : int64
-            The Unix timestamp (nanos) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
         Condition.valid_string(name, "name")
@@ -67,9 +67,6 @@ cdef class TimeEvent(Event):
 
     def __eq__(self, TimeEvent other) -> bool:
         return self.name == other.name
-
-    def __ne__(self, TimeEvent other) -> bool:
-        return self.name != other.name
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -99,9 +96,6 @@ cdef class TimeEventHandler:
     def __eq__(self, TimeEventHandler other) -> bool:
         return self.event.event_timestamp_ns == other.event.event_timestamp_ns
 
-    def __ne__(self, TimeEventHandler other) -> bool:
-        return self.event.event_timestamp_ns != other.event.event_timestamp_ns
-
     def __lt__(self, TimeEventHandler other) -> bool:
         return self.event.event_timestamp_ns < other.event.event_timestamp_ns
 
@@ -123,7 +117,7 @@ cdef class Timer:
     """
     The abstract base class for all timers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -135,7 +129,7 @@ cdef class Timer:
         int64_t stop_time_ns=0,
     ):
         """
-        Initialize a new instance of the `Timer` class.
+        Initialize a new instance of the ``Timer`` class.
 
         Parameters
         ----------
@@ -146,14 +140,13 @@ cdef class Timer:
         interval_ns : int64
             The time interval for the timer (not negative).
         start_time_ns : int64
-            The Unix time (nanoseconds) for timer start.
+            The UNIX time (nanoseconds) for timer start.
         stop_time_ns : int64, optional
-            The Unix time (nanoseconds) for timer stop (if 0 then timer is continuous).
+            The UNIX time (nanoseconds) for timer stop (if 0 then timer is continuous).
 
         """
         Condition.valid_string(name, "name")
         Condition.callable(callback, "function")
-        Condition.positive_int64(interval_ns, "interval_ns")
 
         self.name = name
         self.callback = callback
@@ -169,9 +162,6 @@ cdef class Timer:
 
     def __eq__(self, Timer other) -> bool:
         return self.name == other.name
-
-    def __ne__(self, Timer other) -> bool:
-        return self.name != other.name
 
     def __hash__(self) -> int:
         return hash(self.name)
@@ -194,7 +184,7 @@ cdef class Timer:
         event_id : UUID
             The identifier for the time event.
         timestamp_ns : int64
-            The Unix timestamp (nanos) for time event initialization.
+            The UNIX timestamp (nanoseconds) for time event initialization.
 
         Returns
         -------
@@ -218,7 +208,7 @@ cdef class Timer:
         Parameters
         ----------
         now_ns : int64
-            The Unix time now (nanoseconds).
+            The UNIX time now (nanoseconds).
 
         """
         self.next_time_ns += self.interval_ns
@@ -245,7 +235,7 @@ cdef class TestTimer(Timer):
         int64_t stop_time_ns=0,
     ):
         """
-        Initialize a new instance of the `TestTimer` class.
+        Initialize a new instance of the ``TestTimer`` class.
 
         Parameters
         ----------
@@ -256,9 +246,9 @@ cdef class TestTimer(Timer):
         interval_ns : int64
             The time interval for the timer (not negative).
         start_time_ns : int64
-            The Unix time (nanoseconds) for timer start.
+            The UNIX time (nanoseconds) for timer start.
         stop_time_ns : int64, optional
-            The Unix time (nanoseconds) for timer stop (if 0 then timer is continuous).
+            The UNIX time (nanoseconds) for timer stop (if 0 then timer is continuous).
 
         """
         Condition.valid_string(name, "name")
@@ -281,21 +271,13 @@ cdef class TestTimer(Timer):
         Parameters
         ----------
         to_time_ns : int64
-            The Unix time (nanoseconds) to advance the timer to.
+            The UNIX time (nanoseconds) to advance the timer to.
 
         Returns
         -------
         list[TimeEvent]
 
-        Raises
-        ------
-        ValueError
-            If to_time is < the timers next event time.
-
         """
-        # Ensure monotonic
-        Condition.true(to_time_ns >= self.next_time_ns, "to_time_ns was < self.next_time_ns")
-
         cdef list events = []  # type: list[TimeEvent]
         while not self.is_expired and to_time_ns >= self.next_time_ns:
             events.append(self.pop_event(
@@ -339,7 +321,7 @@ cdef class LiveTimer(Timer):
     """
     The abstract base class for all live timers.
 
-    This class should not be used directly, but through its concrete subclasses.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -352,7 +334,7 @@ cdef class LiveTimer(Timer):
         int64_t stop_time_ns=0,
     ):
         """
-        Initialize a new instance of the `LiveTimer` class.
+        Initialize a new instance of the ``LiveTimer`` class.
 
         Parameters
         ----------
@@ -424,7 +406,7 @@ cdef class ThreadTimer(LiveTimer):
         int64_t stop_time_ns=0,
     ):
         """
-        Initialize a new instance of the `LiveTimer` class.
+        Initialize a new instance of the ``LiveTimer`` class.
 
         Parameters
         ----------
@@ -484,7 +466,7 @@ cdef class LoopTimer(LiveTimer):
         int64_t stop_time_ns=0,
     ):
         """
-        Initialize a new instance of the `LoopTimer` class.
+        Initialize a new instance of the ``LoopTimer`` class.
 
         Parameters
         ----------

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
@@ -21,17 +20,17 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.data.cache import DataCache
-from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands import CancelOrder
 from nautilus_trader.model.commands import SubmitBracketOrder
 from nautilus_trader.model.commands import SubmitOrder
 from nautilus_trader.model.commands import UpdateOrder
-from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -43,6 +42,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestInstrumentProvider
+from tests.test_kit.stubs import TestStubs
 
 
 BINANCE = Venue("BINANCE")
@@ -56,37 +56,35 @@ class TestBacktestExecClientTests:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER", "000")
+        self.trader_id = TraderId("TESTER-000")
         self.account_id = AccountId("BINANCE", "000")
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
-            logger=self.logger,
-        )
-        self.portfolio.register_cache(DataCache(self.logger))
-
-        self.analyzer = PerformanceAnalyzer()
-
-        database = BypassExecutionDatabase(
-            trader_id=self.trader_id,
             logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
-            database=database,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.exchange = SimulatedExchange(
             venue=Venue("BINANCE"),
+            venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
+            starting_balances=[Money(1_000_000, USDT)],
             is_frozen_account=False,
-            starting_balances=[Money(1_000_000, USD)],
             instruments=[ETHUSDT_BINANCE],
             modules=[],
-            exec_cache=self.exec_engine.cache,
+            cache=self.exec_engine.cache,
             fill_model=FillModel(),
             clock=self.clock,
             logger=self.logger,
@@ -95,6 +93,8 @@ class TestBacktestExecClientTests:
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
             account_id=self.account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
             engine=self.exec_engine,
             clock=self.clock,
             logger=self.logger,
@@ -102,7 +102,7 @@ class TestBacktestExecClientTests:
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("SCALPER", "000"),
+            strategy_id=StrategyId("SCALPER-001"),
             clock=self.clock,
         )
 
@@ -153,13 +153,11 @@ class TestBacktestExecClientTests:
         order = self.order_factory.market(
             ETHUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity(100),
+            Quantity.from_int(100),
         )
 
         command = SubmitOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             PositionId.null(),
             order,
@@ -179,19 +177,17 @@ class TestBacktestExecClientTests:
         entry = self.order_factory.market(
             ETHUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity(100),
+            Quantity.from_int(100),
         )
 
         bracket = self.order_factory.bracket(
             entry,
-            Price("500.00000"),
-            Price("600.00000"),
+            Price.from_str("500.00000"),
+            Price.from_str("600.00000"),
         )
 
         command = SubmitBracketOrder(
-            entry.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
             strategy.id,
             bracket,
             self.uuid_factory.generate(),
@@ -209,13 +205,12 @@ class TestBacktestExecClientTests:
         order = self.order_factory.market(
             ETHUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity(100),
+            Quantity.from_int(100),
         )
 
         command = CancelOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            self.order_factory.strategy_id,
             order.instrument_id,
             order.client_order_id,
             order.venue_order_id,
@@ -234,18 +229,19 @@ class TestBacktestExecClientTests:
         order = self.order_factory.stop_market(
             ETHUSDT_BINANCE.id,
             OrderSide.BUY,
-            Quantity(100),
-            Price("1000.00"),
+            Quantity.from_int(100),
+            Price.from_str("1000.00"),
         )
 
         command = UpdateOrder(
-            order.instrument_id.venue.client_id,
             self.trader_id,
-            self.account_id,
+            order.strategy_id,
             order.instrument_id,
             order.client_order_id,
-            Quantity(100),
-            Price("1010.00"),
+            order.venue_order_id,
+            Quantity.from_int(100),
+            Price.from_str("1010.00"),
+            None,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )

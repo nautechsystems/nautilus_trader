@@ -28,8 +28,8 @@ cdef class Trader(Component):
     cdef list _strategies
     cdef Portfolio _portfolio
     cdef DataEngine _data_engine
-    cdef ExecutionEngine _exec_engine
     cdef RiskEngine _risk_engine
+    cdef ExecutionEngine _exec_engine
     cdef ReportProvider _report_provider
 
     cdef readonly TraderId id

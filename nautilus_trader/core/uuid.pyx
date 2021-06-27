@@ -49,7 +49,7 @@ cdef class UUID:
 
     def __init__(self, bytes value not None):
         """
-        Initialize a new instance of the `UUID` class.
+        Initialize a new instance of the ``UUID`` class.
 
         Parameters
         ----------
@@ -76,9 +76,6 @@ cdef class UUID:
 
     def __eq__(self, UUID other) -> bool:
         return self.int_val == other.int_val
-
-    def __ne__(self, UUID other) -> bool:
-        return self.int_val != other.int_val
 
     # Q. What's the value of being able to sort UUIDs?
     # A. Use them as keys in a B-Tree or similar mapping.

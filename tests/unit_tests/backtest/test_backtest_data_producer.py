@@ -21,10 +21,11 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import OrderBookLevel
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
+from tests.test_kit.stubs import MyData
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -42,13 +43,13 @@ class TestBacktestDataProducer:
 
         # Act
         # Assert
-        assert producer.min_timestamp_ns == 9223372036854774784  # int64 max
-        assert producer.max_timestamp_ns == -9223372036854774784  # int64 min
+        assert producer.min_timestamp_ns == 9223372036854774784
+        assert producer.max_timestamp_ns == -9223372036854774784
         assert producer.min_timestamp == pd.Timestamp(
             "2262-04-11 23:47:16.854774+0000", tz="UTC"
         )
         assert producer.max_timestamp == pd.Timestamp(
-            "1677-09-21 00:12:43.145226+0000", tz="UTC"
+            "1677-09-21 00:12:43.145226", tz="UTC"
         )
         assert not producer.has_data
         assert producer.next() is None
@@ -57,26 +58,40 @@ class TestBacktestDataProducer:
         # Assert
         snapshot1 = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
-            timestamp_ns=0,
+            ts_event_ns=0,
+            ts_recv_ns=0,
         )
 
-        data_type = DataType(str, metadata={"news_wire": "hacks"})
+        data_type = DataType(MyData, metadata={"news_wire": "hacks"})
         generic_data1 = [
-            GenericData(data_type, data="AAPL hacked", timestamp_ns=0),
-            GenericData(data_type, data="AMZN hacked", timestamp_ns=500_000),
-            GenericData(data_type, data="NFLX hacked", timestamp_ns=1_000_000),
-            GenericData(data_type, data="MSFT hacked", timestamp_ns=2_000_000),
+            GenericData(
+                data_type,
+                data=MyData("AAPL hacked"),
+            ),
+            GenericData(
+                data_type,
+                data=MyData("AMZN hacked", 500_000, 500_000),
+            ),
+            GenericData(
+                data_type,
+                data=MyData("NFLX hacked", 1_000_000, 1_000_000),
+            ),
+            GenericData(
+                data_type,
+                data=MyData("MSFT hacked", 2_000_000, 2_000_000),
+            ),
         ]
 
         snapshot2 = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=OrderBookLevel.L2,
+            level=BookLevel.L2,
             bids=[[1551.15, 0.51], [1581.00, 1.20]],
             asks=[[1553.15, 1.51], [1583.00, 2.20]],
-            timestamp_ns=1_000_000,
+            ts_event_ns=1_000_000,
+            ts_recv_ns=1_000_000,
         )
 
         producer = BacktestDataProducer(
@@ -85,6 +100,7 @@ class TestBacktestDataProducer:
             generic_data=generic_data1,
             order_book_data=[snapshot1, snapshot2],
         )
+
         producer.setup(producer.min_timestamp_ns, producer.max_timestamp_ns)
 
         # Act
@@ -94,7 +110,7 @@ class TestBacktestDataProducer:
             streamed_data.append(producer.next())
 
         # Assert
-        timestamps = [x.timestamp_ns for x in streamed_data]
+        timestamps = [x.ts_recv_ns for x in streamed_data]
         assert timestamps == [0, 0, 500000, 1000000, 1000000, 2000000]
         assert producer.min_timestamp_ns == 0
         assert producer.max_timestamp_ns == 2_000_000
@@ -127,7 +143,7 @@ class TestBacktestDataProducer:
         next_data = producer.next()
 
         # Assert
-        assert next_data.timestamp_ns == 1359676799800000000
+        assert next_data.ts_recv_ns == 1359676799800000000
         assert next_data.instrument_id == USDJPY_SIM.id
         assert str(next_data.bid) == "91.715"
         assert str(next_data.ask) == "91.717"

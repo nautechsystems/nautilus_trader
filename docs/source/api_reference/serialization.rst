@@ -13,11 +13,28 @@ Base
    :members:
    :member-order: bysource
 
+MsgPack
+-------
 
-Serializers
------------
+.. automodule:: nautilus_trader.serialization.msgpack.serializer
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
 
-.. automodule:: nautilus_trader.serialization.serializers
+Arrow - Core
+------------
+
+.. automodule:: nautilus_trader.serialization.arrow.core
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Arrow - Schema
+--------------
+
+.. automodule:: nautilus_trader.serialization.arrow.schema
    :show-inheritance:
    :inherited-members:
    :members:

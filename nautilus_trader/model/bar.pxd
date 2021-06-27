@@ -45,8 +45,7 @@ cdef class BarType:
     """If bar aggregation is internal to the platform.\n\n:returns: `bool`"""
 
     @staticmethod
-    cdef BarType from_serializable_str_c(str value, bint internal_aggregation=*)
-    cpdef str to_serializable_str(self)
+    cdef BarType from_str_c(str value, bint internal_aggregation=*)
 
 
 cdef class Bar(Data):
@@ -66,5 +65,7 @@ cdef class Bar(Data):
     """If the input values were integrity checked.\n\n:returns: `bool`"""
 
     @staticmethod
-    cdef Bar from_serializable_str_c(BarType bar_type, str values)
-    cpdef str to_serializable_str(self)
+    cdef Bar from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(Bar obj)

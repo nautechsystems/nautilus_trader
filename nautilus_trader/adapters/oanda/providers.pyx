@@ -23,12 +23,12 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.time cimport unix_timestamp_ns
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
-from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instrument cimport Instrument
+from nautilus_trader.model.instruments.cfd cimport CFDInstrument
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -44,7 +44,7 @@ cdef class OandaInstrumentProvider(InstrumentProvider):
         bint load_all=False,
     ):
         """
-        Initialize a new instance of the `OandaInstrumentProvider` class.
+        Initialize a new instance of the ``OandaInstrumentProvider`` class.
 
         Parameters
         ----------
@@ -79,7 +79,7 @@ cdef class OandaInstrumentProvider(InstrumentProvider):
         req = AccountInstruments(accountID=self._account_id)
         res = self._client.request(req)
 
-        cdef list instruments = res.get("instruments", {})
+        cdef list instruments = res.get("instruments", [])
         cdef dict values
         cdef Instrument instrument
         for values in instruments:
@@ -96,14 +96,10 @@ cdef class OandaInstrumentProvider(InstrumentProvider):
 
         if oanda_type == "CURRENCY":
             asset_class = AssetClass.FX
-            asset_type = AssetType.SPOT
-            base_currency = Currency.from_str_c(instrument_id_pieces[0])
         elif oanda_type == "METAL":
             asset_class = AssetClass.METAL
-            asset_type = AssetType.SPOT
         else:
             asset_class = AssetClassParser.from_str(values["tags"][0]["name"])
-            asset_type = AssetType.CFD
 
         cdef InstrumentId instrument_id = InstrumentId(
             symbol=Symbol(oanda_name.replace('_', '/', 1)),
@@ -113,35 +109,30 @@ cdef class OandaInstrumentProvider(InstrumentProvider):
         cdef int price_precision = int(values["displayPrecision"])
         cdef int size_precision = int(values["tradeUnitsPrecision"])
 
-        tick_size: Decimal = Decimal(f"{1.0 / 10 ** price_precision:.{price_precision}f}")
-
         # TODO: Depends on account currency (refactor)
         maker_fee: Decimal = Decimal("0.00025")
         taker_fee: Decimal = Decimal("0.00025")
 
-        return Instrument(
+        return CFDInstrument(
             instrument_id=instrument_id,
             asset_class=asset_class,
-            asset_type=asset_type,
-            base_currency=base_currency,
             quote_currency=quote_currency,
-            settlement_currency=quote_currency,
-            is_inverse=False,
             price_precision=price_precision,
             size_precision=size_precision,
-            tick_size=tick_size,
-            multiplier=Decimal(1),
-            lot_size=Quantity(1),
-            max_quantity=Quantity(values["maximumOrderUnits"]),
-            min_quantity=Quantity(values["minimumTradeSize"]),
-            max_notional=None,
-            min_notional=None,
-            max_price=None,
-            min_price=None,
+            price_increment=Price(1.0 / 10 ** price_precision, price_precision),
+            size_increment=Quantity(1.0 / 10 ** size_precision, size_precision),
+            lot_size=Quantity.from_int_c(1),
+            max_quantity=Quantity.from_str_c(values["maximumOrderUnits"]),
+            min_quantity=Quantity.from_str_c(values["minimumTradeSize"]),
+            max_notional=None,  # TODO
+            min_notional=None,  # TODO
+            max_price=None,     # TODO
+            min_price=None,     # TODO
             margin_init=Decimal(values["marginRate"]),
             margin_maint=Decimal(values["marginRate"]),
             maker_fee=maker_fee,
             taker_fee=taker_fee,
-            timestamp_ns=unix_timestamp_ns(),
+            ts_event_ns=unix_timestamp_ns(),
+            ts_recv_ns=unix_timestamp_ns(),
             info=values,
         )

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from distutils.version import LooseVersion
 import itertools
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import List
 from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
+from Cython.Compiler.Version import version as cython_compiler_version
 import numpy as np
 from setuptools import Distribution
 from setuptools import Extension
@@ -51,11 +53,9 @@ CYTHON_COMPILER_DIRECTIVES = {
     "embedsignature": True,  # If docstrings should be embedded into C signatures
     "profile": PROFILING_MODE,  # If we're profiling, turn on line tracing
     "linetrace": PROFILING_MODE,
-    # "always_allow_keywords": False,  TODO: Performance profiling needed (faster calling)
-    "warn.maybe_uninitialized": True,  # Warns about use of variables that are uninitialized
-    # "warn.unused": True,  TODO: Determine fix for Unused entry 'genexpr'
-    # "warn.unused_arg": True,  TODO: Closer investigation required
-    # "warn.unused_result": True,  TODO: Closer investigation required
+    "warn.maybe_uninitialized": True,
+    # "warn.unused_result": True,  # TODO(cs): Picks up legitimate unused
+    # "warn.unused": True,  # TODO(cs): Unused entry 'genexpr'
 }
 
 
@@ -65,6 +65,10 @@ def _build_extensions() -> List[Extension]:
     define_macros = []
     if PROFILING_MODE or ANNOTATION_MODE:
         define_macros.append(("CYTHON_TRACE", "1"))
+
+    if LooseVersion("3.0a7") <= LooseVersion(cython_compiler_version):
+        # https://github.com/nautechsystems/nautilus_trader/issues/303
+        define_macros.append(("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"))
 
     # Regarding the compiler warning: #warning "Using deprecated NumPy API,
     # disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
@@ -89,7 +93,7 @@ def _build_distribution(extensions: List[Extension]) -> Distribution:
     # Build a Distribution using cythonize()
     # Determine the build output directory
     if PROFILING_MODE:
-        # For subsequent annotation, the c source needs to be in
+        # For subsequent annotation, the C source needs to be in
         # the same tree as the Cython code.
         build_dir = None
     elif ANNOTATION_MODE:
@@ -167,4 +171,8 @@ if __name__ == "__main__":
     # sys.maxsize attribute:
     bits = "64-bit" if sys.maxsize > 2 ** 32 else "32-bit"
     print(f"System: {platform.system()} {bits}")
+    print(f"Python: {platform.python_version()}")
+    print(f"Cython: {cython_compiler_version}")
+    print(f"NumPy:  {np.__version__}")
+
     build({})

@@ -28,6 +28,9 @@ from nautilus_trader.core.datetime import format_iso8601
 from nautilus_trader.core.datetime import is_datetime_utc
 from nautilus_trader.core.datetime import is_tz_aware
 from nautilus_trader.core.datetime import is_tz_naive
+from nautilus_trader.core.datetime import iso8601_to_unix_micros
+from nautilus_trader.core.datetime import iso8601_to_unix_millis
+from nautilus_trader.core.datetime import iso8601_to_unix_nanos
 from nautilus_trader.core.datetime import micros_to_nanos
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_micros
@@ -374,7 +377,7 @@ class TestDatetimeFunctions:
 
         # Assert
         assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
-        assert result.tz == pytz.utc
+        assert result.tzinfo == pytz.utc
 
     def test_as_utc_timestamp_given_tz_naive_pandas_timestamp(self):
         # Arrange
@@ -385,7 +388,7 @@ class TestDatetimeFunctions:
 
         # Assert
         assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
-        assert result.tz == pytz.utc
+        assert result.tzinfo == pytz.utc
 
     def test_as_utc_timestamp_given_tz_aware_datetime(self):
         # Arrange
@@ -396,7 +399,7 @@ class TestDatetimeFunctions:
 
         # Assert
         assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
-        assert result.tz == pytz.utc
+        assert result.tzinfo == pytz.utc
 
     def test_as_utc_timestamp_given_tz_aware_pandas(self):
         # Arrange
@@ -407,7 +410,7 @@ class TestDatetimeFunctions:
 
         # Assert
         assert result == pd.Timestamp("2013-02-01 00:00:00+00:00")
-        assert result.tz == pytz.utc
+        assert result.tzinfo == pytz.utc
 
     def test_as_utc_timestamp_equality(self):
         # Arrange
@@ -491,3 +494,79 @@ class TestDatetimeFunctions:
         # Assert
         assert result1.index[0] == result2.index[0]
         assert result1.index.tz == result2.index.tz
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc).isoformat(), -2674800000],
+            [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc).isoformat(), 0],
+            [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc).isoformat(), 1357002000000],
+            [
+                datetime(
+                    2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc
+                ).isoformat(),
+                1577934120001,
+            ],
+        ],
+    )
+    def test_iso8601_to_unix_millis_given_iso8601_datetime_string(
+        self, value, expected
+    ):
+        # Arrange
+        # Act
+        result = iso8601_to_unix_millis(value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc).isoformat(), -2674800000000],
+            [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc).isoformat(), 0],
+            [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc).isoformat(), 1357002000000000],
+            [
+                datetime(
+                    2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc
+                ).isoformat(),
+                1577934120001000,
+            ],
+        ],
+    )
+    def test_iso8601_to_unix_micros_given_iso8601_datetime_string(
+        self, value, expected
+    ):
+        # Arrange
+        # Act
+        result = iso8601_to_unix_micros(value)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            [
+                datetime(1969, 12, 1, 1, 0, tzinfo=pytz.utc).isoformat(),
+                -2674800000000000,
+            ],
+            [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc).isoformat(), 0],
+            [
+                datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc).isoformat(),
+                1357002000000000000,
+            ],
+            [
+                datetime(
+                    2020, 1, 2, 3, 2, microsecond=333, tzinfo=pytz.utc
+                ).isoformat(),
+                1577934120003330000,
+            ],
+        ],
+    )
+    def test_iso8601_to_unix_nanos_given_iso8601_datetime_string(self, value, expected):
+        # Arrange
+        # Act
+        result = iso8601_to_unix_nanos(value)
+
+        # Assert
+        assert result == pytest.approx(expected, 100)  # 100 nanoseconds

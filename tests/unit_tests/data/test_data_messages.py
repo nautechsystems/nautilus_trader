@@ -74,10 +74,10 @@ class DataMessageTests(unittest.TestCase):
             data_type=DataType(
                 str,
                 metadata={  # str data type is invalid
-                    "InstrumentId": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                    "FromDateTime": None,
-                    "ToDateTime": None,
-                    "Limit": 1000,
+                    "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+                    "from_datetime": None,
+                    "to_datetime": None,
+                    "limit": 1000,
                 },
             ),
             callback=handler,
@@ -88,17 +88,17 @@ class DataMessageTests(unittest.TestCase):
         # Assert
         self.assertEqual(
             "DataRequest("
-            "<str> {'InstrumentId': InstrumentId('SOMETHING.RANDOM'), "
-            "'FromDateTime': None, 'ToDateTime': None, 'Limit': 1000})",
+            "<str> {'instrument_id': InstrumentId('SOMETHING.RANDOM'), "
+            "'from_datetime': None, 'to_datetime': None, 'limit': 1000})",
             str(request),
         )
         self.assertEqual(
             f"DataRequest("
             f"client_id=BINANCE, "
-            f"data_type=<str> {{'InstrumentId': InstrumentId('SOMETHING.RANDOM'), "
-            f"'FromDateTime': None, "
-            f"'ToDateTime': None, "
-            f"'Limit': 1000}}, "
+            f"data_type=<str> {{'instrument_id': InstrumentId('SOMETHING.RANDOM'), "
+            f"'from_datetime': None, "
+            f"'to_datetime': None, "
+            f"'limit': 1000}}, "
             f"callback={repr(handler)}, "
             f"id={request_id})",
             repr(request),
@@ -113,7 +113,7 @@ class DataMessageTests(unittest.TestCase):
 
         response = DataResponse(
             client_id=ClientId(BINANCE.value),
-            data_type=DataType(QuoteTick, metadata={"InstrumentId": instrument_id}),
+            data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             data=[],
             correlation_id=correlation_id,
             response_id=response_id,
@@ -122,13 +122,13 @@ class DataMessageTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(
-            "DataResponse(<QuoteTick> {'InstrumentId': InstrumentId('AUD/USD.IDEALPRO')})",
+            "DataResponse(<QuoteTick> {'instrument_id': InstrumentId('AUD/USD.IDEALPRO')})",
             str(response),
         )
         self.assertEqual(
             f"DataResponse("
             f"client_id=BINANCE, "
-            f"data_type=<QuoteTick> {{'InstrumentId': InstrumentId('AUD/USD.IDEALPRO')}}, "
+            f"data_type=<QuoteTick> {{'instrument_id': InstrumentId('AUD/USD.IDEALPRO')}}, "
             f"correlation_id={correlation_id}, "
             f"id={response_id})",
             repr(response),

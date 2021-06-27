@@ -18,14 +18,13 @@ import unittest
 from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.oanda.providers import OandaInstrumentProvider
-from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instrument import Instrument
+from nautilus_trader.model.instruments.cfd import CFDInstrument
 from tests import TESTS_PACKAGE_ROOT
 
 
@@ -120,9 +119,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         instrument = provider.find(instrument_id)
 
         # Assert
-        self.assertEqual(Instrument, type(instrument))
+        self.assertEqual(CFDInstrument, type(instrument))
         self.assertEqual(AssetClass.FX, instrument.asset_class)
-        self.assertEqual(AssetType.SPOT, instrument.asset_type)
-        self.assertEqual(AUD, instrument.base_currency)
+        self.assertEqual(AssetType.CFD, instrument.asset_type)
         self.assertEqual(USD, instrument.quote_currency)
-        self.assertEqual(USD, instrument.settlement_currency)

@@ -23,12 +23,12 @@ from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.execution.database import BypassExecutionDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.portfolio import Portfolio
+from tests.test_kit.stubs import TestStubs
 
 
 class TestCCXTDataClientFactory:
@@ -36,7 +36,7 @@ class TestCCXTDataClientFactory:
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER", "001")
+        self.trader_id = TraderId("TESTER-001")
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
@@ -47,7 +47,10 @@ class TestCCXTDataClientFactory:
             clock=self.clock,
         )
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -55,15 +58,15 @@ class TestCCXTDataClientFactory:
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
-        database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            database=database,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -104,7 +107,7 @@ class TestCCXTExecClientFactory:
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER", "001")
+        self.trader_id = TraderId("TESTER-001")
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
@@ -115,7 +118,10 @@ class TestCCXTExecClientFactory:
             clock=self.clock,
         )
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -123,15 +129,15 @@ class TestCCXTExecClientFactory:
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
-        database = BypassExecutionDatabase(trader_id=self.trader_id, logger=self.logger)
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            database=database,
             portfolio=self.portfolio,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )

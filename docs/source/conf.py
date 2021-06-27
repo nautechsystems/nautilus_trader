@@ -19,7 +19,7 @@ import sphinx_rtd_theme
 # -- Project information -----------------------------------------------------
 
 project = "NautilusTrader"
-copyright = "2015-2020, Nautech Systems Pty Ltd."
+copyright = "2015-2021, Nautech Systems Pty Ltd."
 author = "Nautech Systems"
 
 version = ""

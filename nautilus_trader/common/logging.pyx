@@ -110,7 +110,7 @@ cdef class Logger:
         bint bypass_logging=False,
     ):
         """
-        Initialize a new instance of the `Logger` class.
+        Initialize a new instance of the ``Logger`` class.
 
         Parameters
         ----------
@@ -151,7 +151,7 @@ cdef class Logger:
         """
         self._log(record)
 
-    cdef inline dict create_record(
+    cdef dict create_record(
         self,
         LogLevel level,
         LogColor color,
@@ -174,7 +174,7 @@ cdef class Logger:
 
         return record
 
-    cdef inline void _log(self, dict record) except *:
+    cdef void _log(self, dict record) except *:
         cdef LogLevel level = LogLevelParser.from_str(record["level"])
         cdef LogColor color = record.get("color", 0)
 
@@ -186,7 +186,7 @@ cdef class Logger:
         if level >= self._log_level_raw:
             pass  # TODO: Raw sink out - str(record)
 
-    cdef inline str _format_record(
+    cdef str _format_record(
         self,
         LogLevel level,
         LogColor color,
@@ -223,7 +223,7 @@ cdef class LoggerAdapter:
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the `LoggerAdapter` class.
+        Initialize a new instance of the ``LoggerAdapter`` class.
 
         Parameters
         ----------

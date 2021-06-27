@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.identifiers cimport BracketOrderId
+from nautilus_trader.model.identifiers cimport ClientOrderLinkId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
@@ -40,7 +40,7 @@ cdef class BracketOrder:
         LimitOrder take_profit not None,
     ):
         """
-        Initialize a new instance of the `BracketOrder` class.
+        Initialize a new instance of the ``BracketOrder`` class.
 
         Parameters
         ----------
@@ -52,7 +52,8 @@ cdef class BracketOrder:
             The take-profit (TP) 'child' order.
 
         """
-        self.id = BracketOrderId(f"B{entry.client_order_id.value}")
+        self.id = ClientOrderLinkId(f"B{entry.client_order_id.value}")
+        self.instrument_id = entry.instrument_id
         self.entry = entry
         self.stop_loss = stop_loss
         self.take_profit = take_profit
@@ -61,9 +62,5 @@ cdef class BracketOrder:
     def __eq__(self, BracketOrder other) -> bool:
         return self.id.value == other.id.value
 
-    def __ne__(self, BracketOrder other) -> bool:
-        return self.id.value != other.id.value
-
     def __repr__(self) -> str:
-        cdef str take_profit_price = "NONE" if self.take_profit is None else str(self.take_profit.price)
-        return f"BracketOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={take_profit_price})"
+        return f"BracketOrder(id={self.id.value}, Entry{self.entry}, SL={self.stop_loss.price}, TP={str(self.take_profit.price)})"

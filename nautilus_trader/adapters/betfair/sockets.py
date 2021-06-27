@@ -144,22 +144,6 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         subscribe_trade_updates=True,
         subscribe_market_definitions=True,
     ):
-        """
-        See `betfairlightweight.filters.streaming_market_filter` for full docstring
-
-        :param market_ids:
-        :param betting_types:
-        :param event_type_ids:
-        :param event_ids:
-        :param turn_in_play_enabled:
-        :param market_types:
-        :param venues:
-        :param country_codes:
-        :param race_types:
-        :param subscribe_book_updates: Subscribe to market orderbook events
-        :param subscribe_trade_updates: Subscribe to market trade events
-        :return:
-        """
         filters = (
             market_ids,
             betting_types,

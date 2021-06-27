@@ -49,7 +49,7 @@ cdef class OrderFactory:
         int initial_count=0,
     ):
         """
-        Initialize a new instance of the `OrderFactory` class.
+        Initialize a new instance of the ``OrderFactory`` class.
 
         Parameters
         ----------
@@ -78,8 +78,8 @@ cdef class OrderFactory:
         self.strategy_id = strategy_id
 
         self._id_generator = ClientOrderIdGenerator(
-            id_tag_trader=trader_id.tag,
-            id_tag_strategy=strategy_id.tag,
+            trader_id=trader_id,
+            strategy_id=strategy_id,
             clock=clock,
             initial_count=initial_count,
         )
@@ -172,7 +172,7 @@ cdef class OrderFactory:
         Price price,
         TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
-        bint post_only=True,
+        bint post_only=False,
         bint reduce_only=False,
         bint hidden=False,
     ):
@@ -301,7 +301,7 @@ cdef class OrderFactory:
         Price trigger,
         TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
-        bint post_only=True,
+        bint post_only=False,
         bint reduce_only=False,
         bint hidden=False,
     ):
