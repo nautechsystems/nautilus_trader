@@ -226,7 +226,7 @@ cdef class Cache(CacheFacade):
 
     cpdef bint check_integrity(self) except *:
         """
-        Check integrity of data within the cache and clients.
+        Check integrity of data within the cache.
 
         All data should be loaded from the database prior to this call. If an
         error is found then a log error message will also be produced.
@@ -507,7 +507,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void clear_cache(self) except *:
         """
-        Clear the account, orders and positions caches.
+        Clear the cache.
 
         Warnings
         --------
@@ -569,7 +569,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void flush_db(self) except *:
         """
-        Flush the execution database which permanently removes all persisted data.
+        Flush the caches database which permanently removes all persisted data.
 
         Warnings
         --------
@@ -682,7 +682,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
         """
-        Load the state dictionary for the given strategy from the execution cache.
+        Load the state dictionary for the given strategy.
 
         Parameters
         ----------
@@ -971,7 +971,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void add_currency(self, Currency currency) except *:
         """
-        Add the given currency to the execution cache.
+        Add the given currency to the cache.
 
         Parameters
         ----------
@@ -1013,7 +1013,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void add_account(self, Account account) except *:
         """
-        Add the given account to the execution cache.
+        Add the given account to the cache.
 
         Parameters
         ----------
@@ -1023,7 +1023,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If account_id is already contained in the cached_accounts.
+            If account_id is already contained in the cache.
 
         """
         Condition.not_none(account, "account")
@@ -1040,8 +1040,8 @@ cdef class Cache(CacheFacade):
 
     cpdef void add_order(self, Order order, PositionId position_id) except *:
         """
-        Add the given order to the execution cache indexed with the given
-        identifiers.
+        Add the given order to the cache indexed with the given position
+        identifier.
 
         Parameters
         ----------
@@ -1053,7 +1053,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If order.client_order_id is already contained in the cached_orders.
+            If order.client_order_id is already contained in the cache.
         ValueError
             If order.client_order_id is already contained in the index_orders.
         ValueError
@@ -1163,7 +1163,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void add_position(self, Position position) except *:
         """
-        Add the given position associated with the given strategy identifier.
+        Add the given position to the cache.
 
         Parameters
         ----------
@@ -1173,7 +1173,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If position.id is already contained in the cached_positions.
+            If position.id is already contained in the cache.
         ValueError
             If position.id is already contained in the index_positions.
         ValueError
@@ -1219,7 +1219,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void update_account(self, Account account) except *:
         """
-        Update the given account in the execution cache.
+        Update the given account in the cache.
 
         Parameters
         ----------
@@ -1233,7 +1233,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void update_order(self, Order order) except *:
         """
-        Update the given order in the execution cache.
+        Update the given order in the cache.
 
         Parameters
         ----------
@@ -1260,7 +1260,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void update_position(self, Position position) except *:
         """
-        Update the given position in the execution cache.
+        Update the given position in the cache.
 
         Parameters
         ----------
@@ -1279,7 +1279,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
         """
-        Update the given strategy state in the execution cache.
+        Update the given strategy state in the cache.
 
         Parameters
         ----------
@@ -1295,8 +1295,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
-        Delete the given strategy from the execution cache.
-        Logs error if strategy not found in the cache.
+        Delete the given strategy from the cache.
 
         Parameters
         ----------
@@ -1742,7 +1741,7 @@ cdef class Cache(CacheFacade):
 
     cpdef list instrument_ids(self, Venue venue=None):
         """
-        Return all instrument identifiers held by the data cache.
+        Return all instrument identifiers held by the cache.
 
         Parameters
         ----------
@@ -1758,7 +1757,7 @@ cdef class Cache(CacheFacade):
 
     cpdef list instruments(self, Venue venue=None):
         """
-        Return all instruments held by the data cache.
+        Return all instruments held by the cache.
 
         Parameters
         ----------
