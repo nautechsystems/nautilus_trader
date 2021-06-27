@@ -41,9 +41,8 @@ class TestThrottler:
         # Act
         # Assert
         assert self.throttler.name == "Throttler-1"
+        assert not self.throttler.is_buffering
         assert self.throttler.qsize == 0
-        assert not self.throttler.is_active
-        assert not self.throttler.is_throttling
 
     def test_send_when_not_active_becomes_active(self):
         # Arrange
@@ -53,8 +52,7 @@ class TestThrottler:
         self.throttler.send(item)
 
         # Assert
-        assert self.throttler.is_active
-        assert not self.throttler.is_throttling
+        assert not self.throttler.is_buffering
         assert self.handler == ["MESSAGE"]
 
     def test_send_to_limit_becomes_throttled(self):
@@ -70,9 +68,8 @@ class TestThrottler:
         self.throttler.send(item)
 
         # Assert: Only 5 items are sent
-        assert self.clock.timer_names() == ["Throttler-1-REFRESH-TOKEN"]
-        assert self.throttler.is_active
-        assert self.throttler.is_throttling
+        assert self.clock.timer_names() == ["Throttler-1-DEQUE"]
+        assert self.throttler.is_buffering
         assert self.handler == ["MESSAGE"] * 5
         assert self.throttler.qsize == 1
 
@@ -93,8 +90,7 @@ class TestThrottler:
         events[0].handle_py()
 
         # Assert: Remaining items sent
-        assert self.clock.timer_names() == ["Throttler-1-REFRESH-TOKEN"]
-        assert self.throttler.is_active
-        assert self.throttler.is_throttling is False
+        assert self.clock.timer_names() == []  # No longer timing to process
+        assert self.throttler.is_buffering is False
         assert self.handler == ["MESSAGE"] * 6
         assert self.throttler.qsize == 0

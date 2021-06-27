@@ -14,19 +14,24 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport timedelta
+from libc.stdint cimport int64_t
+
+from collections import deque
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport nanos_to_unix_dt
+from nautilus_trader.core.datetime cimport secs_to_nanos
 
 
 cdef class Throttler:
     """
     Provides a generic throttler with an internal queue.
 
-    Will throttle messages to the given limit-interval combination.
+    Will throttle messages to the given maximum limit-interval rate.
 
     Warnings
     --------
@@ -76,85 +81,103 @@ cdef class Throttler:
         """
         Condition.valid_string(name, "name")
         Condition.positive_int(limit, "limit")
+        Condition.positive(interval.total_seconds(), "interval.total_seconds()")
         Condition.callable(output, "output")
 
         self._clock = clock
         self._log = LoggerAdapter(component=name, logger=logger)
-        self._queue = Queue()
         self._limit = limit
-        self._vouchers = limit
-        self._token = name + "-REFRESH-TOKEN"
         self._interval = interval
+        self._interval_ns = secs_to_nanos(interval.total_seconds())
+        self._buffer = Queue()
+        self._timestamps = deque(maxlen=limit)
+        self._timer_name = f"{name}-DEQUE"
         self._output = output
 
         self.name = name
-        self.is_active = False
-        self.is_throttling = False
+        self.is_buffering = False
 
     @property
     def qsize(self):
         """
-        The qsize of the internal queue.
+        The qsize of the internal buffer.
 
         Returns
         -------
         int
 
         """
-        return self._queue.qsize()
+        return self._buffer.qsize()
+
+    cpdef double utilization(self) except *:
+        """
+        Return the percentage of maximum rate currently used.
+
+        Returns
+        -------
+        double
+
+        """
+        cdef next_delta = self._next_delta()
+        if next_delta >= 0:
+            return 1  # Maximum
+        return (self._interval_ns - next_delta) / self._interval_ns
 
     cpdef void send(self, item) except *:
         """
-        Send the given item on the throttler.
-
-        If currently idle then internal refresh token timer will start running.
-        If currently throttling then item will be placed on the internal queue
-        to be sent when vouchers are refreshed.
+        Send the given item through the throttler.
 
         Parameters
         ----------
         item : object
-            The item to send on the throttler.
-
-        Notes
-        -----
-        Test system specs: x86_64 @ 4000 MHz Linux-4.15.0-136-lowlatency-x86_64-with-glibc2.27
-        Performance overhead ~0.3μs.
+            The item to send.
 
         """
-        if not self.is_active:
-            self._run_timer()
-        self._queue.put_nowait(item)
-        self._process_queue()
+        # Throttling is occurring: place item on buffer
+        if self.is_buffering:
+            self._buffer.put_nowait(item)
+            return
 
-    cpdef void _process_queue(self) except *:
-        while self._vouchers > 0 and not self._queue.empty():
-            item = self._queue.get_nowait()
-            self._output(item)
-            self._vouchers -= 1
+        cdef int64_t next_delta = self._next_delta()
+        if next_delta <= 0:
+            self._send_item(item)
+            return
 
-        if self._vouchers == 0 and not self._queue.empty():
-            self.is_throttling = True
-            self._log.debug("At limit.")
-        else:
-            self.is_throttling = False
-
-    cpdef void _refresh_vouchers(self, TimeEvent event) except *:
-        self._vouchers = self._limit
-
-        if self._queue.empty():
-            self.is_active = False
-            self.is_throttling = False
-            self._log.debug("Idle.")
-        else:
-            self._run_timer()
-            self._process_queue()
-
-    cdef void _run_timer(self) except *:
-        self.is_active = True
-        self._log.debug("Active.")
+        # Start throttling
+        self.is_buffering = True
+        self._buffer.put_nowait(item)
         self._clock.set_time_alert(
-            name=self._token,
-            alert_time=self._clock.utc_now() + self._interval,
-            handler=self._refresh_vouchers,
+            name=self._timer_name,
+            alert_time=nanos_to_unix_dt(self._clock.timestamp_ns() + next_delta),
+            handler=self._process,
         )
+
+    cdef int64_t _next_delta(self) except *:
+        if len(self._timestamps) < self._limit:
+            return 0
+        cdef int64_t diff = self._timestamps[0] - self._timestamps[-1]
+        return self._interval_ns - diff
+
+    cdef void _send_item(self, item) except *:
+        self._timestamps.appendleft(self._clock.timestamp_ns())
+        self._output(item)
+
+    cpdef void _process(self, TimeEvent event) except *:
+        item = self._buffer.get_nowait()
+        self._send_item(item)
+
+        cdef int64_t next_delta
+        while not self._buffer.empty():
+            next_delta = self._next_delta()
+            if next_delta <= 0:
+                self._send_item(item)
+                continue
+
+            self._clock.set_time_alert(
+                name=self._timer_name,
+                alert_time=nanos_to_unix_dt(event + next_delta),
+                handler=self._process,
+            )
+            break
+
+        self.is_buffering = False
