@@ -592,7 +592,7 @@ cdef class LiveLogger(Logger):
                 self._queue.put_nowait(record)
             except asyncio.QueueFull:
                 now = self._clock.utc_now()
-                next_msg = self._queue.peek().get("msg")
+                next_msg = self._queue.peek_front().get("msg")
 
                 # Log blocking message once a second
                 if (
