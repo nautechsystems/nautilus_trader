@@ -52,6 +52,7 @@ pytz = "^2021.1"
 redis = "^3.5.3"
 scipy = "1.6.1"  # Pinned at 1.6.1 due Python 3.7.9
 tabulate = "^0.8.9"
+tqdm = "^4.61.1"
 uvloop = { version = "^0.15.2", markers = "sys_platform != 'win32'" }
 betfairlightweight = {extras = ["speed"], version = "^2.12.1", optional = true}
 ccxt = { version = "^1.52.4", optional = true }
@@ -85,7 +86,6 @@ ccxt = ["ccxt"]
 docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]
 ib = ["ib_insync"]
 oanda = ["oandapyV20"]
-tqdm = ["tqdm"]
 
 
 #################
