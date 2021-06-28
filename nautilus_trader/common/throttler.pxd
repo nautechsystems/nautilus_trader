@@ -32,14 +32,16 @@ cdef class Throttler:
     cdef object _timestamps
     cdef str _timer_name
     cdef object _output
+    cdef bint _initialized
 
     cdef readonly str name
     """The name of the throttler.\n\n:returns: `str`"""
     cdef readonly bint is_buffering
     """If the throttler is currently buffering items.\n\n:returns: `bool`"""
 
-    cpdef double utilization(self) except *
+    cpdef double used(self) except *
     cpdef void send(self, item) except *
-    cdef int64_t _next_delta(self) except *
-    cdef void _send_item(self, item) except *
+    cdef int64_t _delta_next(self) except *
     cpdef void _process(self, TimeEvent event) except *
+    cdef void _set_timer(self, int64_t delta_next) except *
+    cdef void _send_item(self, item) except *

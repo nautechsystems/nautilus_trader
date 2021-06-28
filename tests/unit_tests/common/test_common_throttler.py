@@ -37,12 +37,11 @@ class TestThrottler:
         )
 
     def test_throttler_instantiation(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.throttler.name == "Throttler-1"
         assert not self.throttler.is_buffering
         assert self.throttler.qsize == 0
+        assert self.throttler.used() == 0
 
     def test_send_when_not_active_becomes_active(self):
         # Arrange
@@ -72,6 +71,7 @@ class TestThrottler:
         assert self.throttler.is_buffering
         assert self.handler == ["MESSAGE"] * 5
         assert self.throttler.qsize == 1
+        assert self.throttler.used() == 1
 
     def test_refresh_when_at_limit_sends_remaining_items(self):
         # Arrange
@@ -94,3 +94,4 @@ class TestThrottler:
         assert self.throttler.is_buffering is False
         assert self.handler == ["MESSAGE"] * 6
         assert self.throttler.qsize == 0
+        assert self.throttler.used() == 0
