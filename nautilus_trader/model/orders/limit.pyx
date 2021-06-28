@@ -99,14 +99,10 @@ cdef class LimitOrder(PassiveOrder):
             If time_in_force is GTD and expire_time is None.
         ValueError
             If post_only and hidden.
-        ValueError
-            If hidden and post_only.
 
         """
         if post_only:
-            Condition.false(hidden, "A post-only order is not hidden")
-        if hidden:
-            Condition.false(post_only, "A hidden order is not post-only")
+            Condition.false(hidden, "A post-only order cannot be hidden")
         super().__init__(
             client_order_id=client_order_id,
             strategy_id=strategy_id,
