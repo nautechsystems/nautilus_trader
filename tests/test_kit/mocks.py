@@ -612,7 +612,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
 class MockCacheDatabase(CacheDatabase):
     """
     Provides a mock cache database for testing.
-
     """
 
     def __init__(self, trader_id: TraderId, logger: Logger):

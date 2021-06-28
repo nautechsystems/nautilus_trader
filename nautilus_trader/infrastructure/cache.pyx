@@ -52,7 +52,6 @@ cdef str _STRATEGIES = 'Strategies'
 cdef class RedisCacheDatabase(CacheDatabase):
     """
     Provides a cache database backed by Redis.
-
     """
 
     def __init__(
