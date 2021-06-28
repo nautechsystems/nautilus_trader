@@ -35,7 +35,6 @@ cdef class Queue:
     --------
     This queue is not thread-safe and must be called from the same thread as the
     event loop.
-
     """
 
     def __init__(self, int maxsize=0):
@@ -48,7 +47,6 @@ cdef class Queue:
             The maximum capacity of the queue before blocking.
 
         """
-
         self.maxsize = maxsize
         self.count = 0
 
