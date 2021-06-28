@@ -143,7 +143,6 @@ cdef class CacheDatabase:
 cdef class BypassCacheDatabase(CacheDatabase):
     """
     Provides a bypass cache database which does nothing.
-
     """
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):

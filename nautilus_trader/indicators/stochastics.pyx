@@ -28,7 +28,6 @@ cdef class Stochastics(Indicator):
     References
     ----------
     https://www.forextraders.com/forex-education/forex-indicators/stochastics-indicator-explained/
-
     """
 
     def __init__(self, int period_k, int period_d):

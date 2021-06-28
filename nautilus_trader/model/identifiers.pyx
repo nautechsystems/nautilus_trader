@@ -242,8 +242,8 @@ cdef class StrategyId(Identifier):
         Initialize a new instance of the ``StrategyId`` class.
 
         Must be correctly formatted with two valid strings either side of a hyphen.
-        Is is expected a strategy identifier is the class name of the strategy with
-        an order identifier tag number separated by a hyphen.
+        It is expected a strategy identifier is the class name of the strategy,
+        with an order identifier tag number separated by a hyphen.
 
         Example: "EMACross-001".
 
@@ -421,7 +421,6 @@ cdef class ClientOrderLinkId(Identifier):
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_583.html
-
     """
 
     def __init__(self, str value):

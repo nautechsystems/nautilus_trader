@@ -244,7 +244,6 @@ cdef class Quantity(BaseDecimal):
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Qty
-
     """
 
     def __init__(self, value, uint8_t precision):
@@ -377,7 +376,6 @@ cdef class Price(BaseDecimal):
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Price
-
     """
 
     def __init__(self, value, uint8_t precision):

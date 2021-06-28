@@ -75,7 +75,6 @@ cdef class SubmitOrder(TradingCommand):
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_D_68.html
-
     """
 
     def __init__(
@@ -191,7 +190,6 @@ cdef class SubmitBracketOrder(TradingCommand):
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_E_69.html
-
     """
 
     def __init__(
@@ -302,7 +300,6 @@ cdef class UpdateOrder(TradingCommand):
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
-
     """
 
     def __init__(
@@ -442,7 +439,6 @@ cdef class CancelOrder(TradingCommand):
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_F_70.html
-
     """
 
     def __init__(
