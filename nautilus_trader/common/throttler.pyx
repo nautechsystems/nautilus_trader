@@ -39,7 +39,6 @@ cdef class Throttler:
     the event loop.
 
     The internal queue is unbounded and so a bounded queue should be upstream.
-
     """
 
     def __init__(
@@ -93,6 +92,7 @@ cdef class Throttler:
         self._timestamps = deque(maxlen=limit)
         self._timer_name = f"{name}-DEQUE"
         self._output = output
+        self._initialized = False
 
         self.name = name
         self.is_buffering = False
@@ -109,19 +109,17 @@ cdef class Throttler:
         """
         return self._buffer.qsize()
 
-    cpdef double utilization(self) except *:
+    cpdef double used(self) except *:
         """
         Return the percentage of maximum rate currently used.
 
         Returns
         -------
         double
+            [0, 1.0]
 
         """
-        cdef next_delta = self._next_delta()
-        if next_delta >= 0:
-            return 1  # Maximum
-        return (self._interval_ns - next_delta) / self._interval_ns
+        return max(0, self._delta_next()) / self._interval_ns
 
     cpdef void send(self, item) except *:
         """
@@ -138,46 +136,49 @@ cdef class Throttler:
             self._buffer.put_nowait(item)
             return
 
-        cdef int64_t next_delta = self._next_delta()
-        if next_delta <= 0:
+        cdef int64_t delta_next = self._delta_next()
+        if delta_next <= 0:
             self._send_item(item)
             return
 
         # Start throttling
         self.is_buffering = True
         self._buffer.put_nowait(item)
-        self._clock.set_time_alert(
-            name=self._timer_name,
-            alert_time=nanos_to_unix_dt(self._clock.timestamp_ns() + next_delta),
-            handler=self._process,
-        )
+        self._set_timer(delta_next)
 
-    cdef int64_t _next_delta(self) except *:
-        if len(self._timestamps) < self._limit:
-            return 0
+    cdef int64_t _delta_next(self) except *:
+        if not self._initialized:
+            if len(self._timestamps) < self._limit:
+                return 0
+            else:
+                self._initialized = True
+
         cdef int64_t diff = self._timestamps[0] - self._timestamps[-1]
         return self._interval_ns - diff
-
-    cdef void _send_item(self, item) except *:
-        self._timestamps.appendleft(self._clock.timestamp_ns())
-        self._output(item)
 
     cpdef void _process(self, TimeEvent event) except *:
         item = self._buffer.get_nowait()
         self._send_item(item)
 
-        cdef int64_t next_delta
+        cdef int64_t delta_next
         while not self._buffer.empty():
-            next_delta = self._next_delta()
-            if next_delta <= 0:
+            delta_next = self._delta_next()
+            if delta_next <= 0:
                 self._send_item(item)
                 continue
 
-            self._clock.set_time_alert(
-                name=self._timer_name,
-                alert_time=nanos_to_unix_dt(event + next_delta),
-                handler=self._process,
-            )
+            self._set_timer(delta_next)
             break
 
         self.is_buffering = False
+
+    cdef void _set_timer(self, int64_t delta_next) except *:
+        self._clock.set_time_alert(
+            name=self._timer_name,
+            alert_time=nanos_to_unix_dt(self._clock.timestamp_ns() + delta_next),
+            handler=self._process,
+        )
+
+    cdef void _send_item(self, item) except *:
+        self._timestamps.appendleft(self._clock.timestamp_ns())
+        self._output(item)
