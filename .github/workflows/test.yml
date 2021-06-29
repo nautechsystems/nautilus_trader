@@ -33,7 +33,7 @@ jobs:
 
       # Test pip installation
       - name: Test pip installation
-        run: pip install .[docs]
+        run: pip install .[betfair ccxt docs ib oanda]
 
       # Setup Poetry caching
       - name: Get Poetry cache dir

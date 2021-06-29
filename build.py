@@ -22,15 +22,19 @@ from setuptools import Extension
 DEBUG_MODE = bool(os.getenv("DEBUG_MODE", ""))
 # If PROFILING mode is enabled, include traces necessary for coverage and profiling
 PROFILING_MODE = bool(os.getenv("PROFILING_MODE", ""))
-# Annotation lets Cython compile in a coverage.xml database
+# If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
 ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
-# Skipping the build copy prevents copying built *.so files back into the source tree
+# If PARALLEL build is enabled, uses all CPUs for compile stage of build
+PARALLEL_BUILD = bool(os.getenv("PARALLEL_BUILD", "true"))
+# If PARALLEL tests is enabled, uses pytest-xdist to run tests in parallel
 SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 
 print(
-    f"DEBUG_MODE={DEBUG_MODE}, "
-    f"PROFILING_MODE={PROFILING_MODE}, "
-    f"ANNOTATION_MODE={ANNOTATION_MODE}, "
+    f"DEBUG_MODE={DEBUG_MODE}\n"
+    f"PROFILING_MODE={PROFILING_MODE}\n"
+    f"ANNOTATION_MODE={ANNOTATION_MODE}\n"
+    f"PARALLEL_BUILD={PARALLEL_BUILD}\n"
+    f"SKIP_BUILD_COPY={SKIP_BUILD_COPY}"
 )
 
 ##########################
@@ -54,8 +58,8 @@ CYTHON_COMPILER_DIRECTIVES = {
     "profile": PROFILING_MODE,  # If we're profiling, turn on line tracing
     "linetrace": PROFILING_MODE,
     "warn.maybe_uninitialized": True,
-    # "warn.unused_result": True,  # TODO(cs): Picks up legitimate unused
-    # "warn.unused": True,  # TODO(cs): Unused entry 'genexpr'
+    # "warn.unused_result": True,  # TODO(cs): Picks up legitimate unused variables
+    # "warn.unused": True,  # TODO(cs): Fails on unused entry 'genexpr'
 }
 
 
@@ -140,7 +144,8 @@ def build(setup_kwargs):
 
     # Build and run the command
     cmd: build_ext = build_ext(distribution)
-    cmd.parallel = os.cpu_count()
+    if PARALLEL_BUILD:
+        cmd.parallel = os.cpu_count()
     cmd.ensure_finalized()
     cmd.run()
 
