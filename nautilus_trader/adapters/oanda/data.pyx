@@ -152,10 +152,11 @@ cdef class OandaDataClient(LiveMarketDataClient):
         # Schedule subscribed instruments update
         self._load_instruments()
 
-        self._update_instruments_handle: asyncio.Handle = self._loop.call_later(
-            delay=_SECONDS_IN_HOUR,  # Every hour
-            callback=self._subscribed_instruments_update,
-        )
+        # TODO(cs): Investigate a better way of doing this (coro hangs)
+        # self._update_instruments_handle: asyncio.Handle = self._loop.call_later(
+        #     delay=_SECONDS_IN_HOUR,  # Every hour
+        #     callback=self._subscribed_instruments_update,
+        # )
 
         self.is_connected = True
 

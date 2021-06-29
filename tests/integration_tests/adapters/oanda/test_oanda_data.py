@@ -114,22 +114,20 @@ class TestOandaDataClient:
         self.loop.stop()
         self.loop.close()
 
-    # TODO: WIP - why is this failing??
-    # def test_connect(self):
-    #     async def run_test():
-    #         # Arrange
-    #         # Act
-    #         self.data_engine.start()  # Also connects client
-    #         self.client.connect()
-    #         await asyncio.sleep(1)
-    #
-    #         # Assert
-    #         assert self.client.is_connected
-    #
-    #         # Tear Down
-    #         self.data_engine.stop()
-    #
-    #     self.loop.run_until_complete(run_test())
+    def test_connect(self):
+        async def run_test():
+            # Arrange, Act
+            self.data_engine.start()  # Also connects client
+            await asyncio.sleep(1)
+
+            # Assert
+            assert self.client.is_connected
+
+            # Tear Down
+            self.data_engine.stop()
+            await self.data_engine.get_run_queue_task()
+
+        self.loop.run_until_complete(run_test())
 
     def test_disconnect(self):
         # Arrange
@@ -182,6 +180,7 @@ class TestOandaDataClient:
 
             # Tear Down
             self.data_engine.stop()
+            await self.data_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -224,6 +223,7 @@ class TestOandaDataClient:
 
             # Tear Down
             self.data_engine.stop()
+            await self.data_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -326,6 +326,7 @@ class TestOandaDataClient:
 
             # Tear Down
             self.data_engine.stop()
+            await self.data_engine.get_run_queue_task()
             self.data_engine.dispose()
 
         self.loop.run_until_complete(run_test())
