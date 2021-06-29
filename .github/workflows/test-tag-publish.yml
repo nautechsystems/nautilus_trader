@@ -109,7 +109,9 @@ jobs:
 
       # Install
       - name: Install
-        run: poetry install
+        run: |
+          export PARALLEL_BUILD=false
+          poetry install
 
       # Tag the commit with the library version
       - name: Create git tag
@@ -181,6 +183,7 @@ jobs:
       # Install / Build (No need to copy built *.so files back into the source tree)
       - name: Install / Build
         run: |
+          export PARALLEL_BUILD=false
           export SKIP_BUILD_COPY=true
           poetry install
           poetry build --format sdist
@@ -255,6 +258,7 @@ jobs:
       # Install / Build
       - name: Install / Build
         run: |
+          export PARALLEL_BUILD=false
           poetry install
           poetry build --format wheel
 
