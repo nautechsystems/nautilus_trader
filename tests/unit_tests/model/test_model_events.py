@@ -34,7 +34,6 @@ from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
-from nautilus_trader.model.events import OrderInvalid
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderUpdateRejected
@@ -117,27 +116,6 @@ class TestEvents:
         )
         assert (
             f"OrderInitialized(client_order_id=O-2020872378423, strategy_id=SCALPER-001, event_id={uuid})"
-            == repr(event)
-        )
-
-    def test_order_invalid(self):
-        # Arrange
-        uuid = uuid4()
-        event = OrderInvalid(
-            client_order_id=ClientOrderId("O-2020872378423"),
-            reason="DUPLICATE_CL_ORD_ID",
-            event_id=uuid,
-            timestamp_ns=0,
-        )
-
-        # Act
-        # Assert
-        assert (
-            f"OrderInvalid(client_order_id=O-2020872378423, reason=DUPLICATE_CL_ORD_ID, event_id={uuid})"
-            == str(event)
-        )
-        assert (
-            f"OrderInvalid(client_order_id=O-2020872378423, reason=DUPLICATE_CL_ORD_ID, event_id={uuid})"
             == repr(event)
         )
 

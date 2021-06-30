@@ -37,7 +37,6 @@ from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderCanceled
 from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderPendingCancel
 from nautilus_trader.model.events cimport OrderPendingReplace
 from nautilus_trader.model.events cimport OrderRejected
@@ -251,32 +250,6 @@ cdef class ExecutionClient:
         )
 
         self._handle_event(account_state)
-
-    cpdef void generate_order_invalid(
-        self,
-        ClientOrderId client_order_id,
-        str reason,
-    ) except *:
-        """
-        Generate an `OrderInvalid` event and send it to the `ExecutionEngine`.
-
-        Parameters
-        ----------
-        client_order_id : ClientOrderId
-            The client order identifier.
-        reason : str
-            The order invalid reason.
-
-        """
-        # Generate event
-        cdef OrderInvalid invalid = OrderInvalid(
-            client_order_id=client_order_id,
-            reason=reason,
-            event_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
-        )
-
-        self._handle_event(invalid)
 
     cpdef void generate_order_submitted(
         self, ClientOrderId client_order_id,

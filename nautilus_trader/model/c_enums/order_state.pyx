@@ -51,8 +51,6 @@ cdef class OrderStateParser:
     cdef OrderState from_str(str value) except *:
         if value == "INITIALIZED":
             return OrderState.INITIALIZED
-        elif value == "INVALID":
-            return OrderState.INVALID
         elif value == "DENIED":
             return OrderState.DENIED
         elif value == "SUBMITTED":

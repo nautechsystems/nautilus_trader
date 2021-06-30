@@ -636,7 +636,6 @@ class TestOrderState:
         "enum, expected",
         [
             [OrderState.INITIALIZED, "INITIALIZED"],
-            [OrderState.INVALID, "INVALID"],
             [OrderState.DENIED, "DENIED"],
             [OrderState.SUBMITTED, "SUBMITTED"],
             [OrderState.ACCEPTED, "ACCEPTED"],
@@ -662,7 +661,6 @@ class TestOrderState:
         "string, expected",
         [
             ["INITIALIZED", OrderState.INITIALIZED],
-            ["INVALID", OrderState.INVALID],
             ["DENIED", OrderState.DENIED],
             ["SUBMITTED", OrderState.SUBMITTED],
             ["ACCEPTED", OrderState.ACCEPTED],

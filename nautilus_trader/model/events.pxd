@@ -92,17 +92,6 @@ cdef class OrderInitialized(OrderEvent):
     cdef dict to_dict_c(OrderInitialized obj)
 
 
-cdef class OrderInvalid(OrderEvent):
-    cdef readonly str reason
-    """The reason the order was invalid.\n\n:returns: `str`"""
-
-    @staticmethod
-    cdef OrderInvalid from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(OrderInvalid obj)
-
-
 cdef class OrderDenied(OrderEvent):
     cdef readonly str reason
     """The reason the order was denied.\n\n:returns: `str`"""

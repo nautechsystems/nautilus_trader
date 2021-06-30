@@ -31,7 +31,6 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
-from nautilus_trader.model.events import OrderInvalid
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ClientOrderLinkId
@@ -552,30 +551,6 @@ class OrderTests(unittest.TestCase):
             "SL=0.99990, TP=1.00010)",
             repr(bracket_order),
         )  # noqa
-
-    def test_apply_order_invalid_event(self):
-        # Arrange
-        order = self.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        invalid = OrderInvalid(
-            order.client_order_id,
-            "SOME_REASON",
-            uuid4(),
-            0,
-        )
-
-        # Act
-        order.apply(invalid)
-
-        # Assert
-        self.assertEqual(OrderState.INVALID, order.state)
-        self.assertEqual(2, order.event_count)
-        self.assertEqual(invalid, order.last_event)
-        self.assertTrue(order.is_completed)
 
     def test_apply_order_denied_event(self):
         # Arrange
