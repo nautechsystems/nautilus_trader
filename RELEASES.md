@@ -5,7 +5,7 @@
 None
 
 ## Enhancements
-None
+- Remove redundant `OrderInvalid` state and associated code.
 
 ## Fixes
 None

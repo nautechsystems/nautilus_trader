@@ -31,7 +31,6 @@ from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
-from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderTriggered
@@ -115,7 +114,6 @@ cdef class Order:
 
     cpdef void apply(self, OrderEvent event) except *
 
-    cdef void _invalid(self, OrderInvalid event) except *
     cdef void _denied(self, OrderDenied event) except *
     cdef void _submitted(self, OrderSubmitted event) except *
     cdef void _rejected(self, OrderRejected event) except *

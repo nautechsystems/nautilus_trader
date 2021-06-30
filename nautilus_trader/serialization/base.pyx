@@ -29,7 +29,6 @@ from nautilus_trader.model.events cimport OrderDenied
 from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
-from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderPendingCancel
 from nautilus_trader.model.events cimport OrderPendingReplace
 from nautilus_trader.model.events cimport OrderRejected
@@ -59,7 +58,6 @@ _OBJECT_TO_DICT_MAP = {
     OrderExpired.__name__: OrderExpired.to_dict_c,
     OrderFilled.__name__: OrderFilled.to_dict_c,
     OrderInitialized.__name__: OrderInitialized.to_dict_c,
-    OrderInvalid.__name__: OrderInvalid.to_dict_c,
     OrderPendingCancel.__name__: OrderPendingCancel.to_dict_c,
     OrderPendingReplace.__name__: OrderPendingReplace.to_dict_c,
     OrderRejected.__name__: OrderRejected.to_dict_c,
@@ -91,7 +89,6 @@ _OBJECT_FROM_DICT_MAP = {
     OrderExpired.__name__: OrderExpired.from_dict_c,
     OrderFilled.__name__: OrderFilled.from_dict_c,
     OrderInitialized.__name__: OrderInitialized.from_dict_c,
-    OrderInvalid.__name__: OrderInvalid.from_dict_c,
     OrderPendingCancel.__name__: OrderPendingCancel.from_dict_c,
     OrderPendingReplace.__name__: OrderPendingReplace.from_dict_c,
     OrderRejected.__name__: OrderRejected.from_dict_c,

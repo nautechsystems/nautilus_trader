@@ -61,7 +61,6 @@ from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderDenied
-from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderUpdateRejected
 from nautilus_trader.model.identifiers cimport ClientId
@@ -85,7 +84,6 @@ from nautilus_trader.risk.engine cimport RiskEngine
 
 # Events for WRN log level
 cdef tuple _WARNING_EVENTS = (
-    OrderInvalid,
     OrderDenied,
     OrderRejected,
     OrderCancelRejected,
