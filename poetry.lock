@@ -141,7 +141,7 @@ uvloop = ["uvloop (>=0.15.2)"]
 
 [[package]]
 name = "ccxt"
-version = "1.52.4"
+version = "1.52.19"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = true
@@ -1238,7 +1238,7 @@ oanda = ["oandapyV20"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "68f9344a2e7578c71627994a79121a0f92358b3d2a815c9d5b62c7677b387483"
+content-hash = "f9771786a85821382a29c28c7a9dd84e2fef78a083bb4bb24bb2871dea0f50db"
 
 [metadata.files]
 aiodns = [
@@ -1321,8 +1321,8 @@ black = [
     {file = "black-21.6b0.tar.gz", hash = "sha256:dc132348a88d103016726fe360cb9ede02cecf99b76e3660ce6c596be132ce04"},
 ]
 ccxt = [
-    {file = "ccxt-1.52.4-py2.py3-none-any.whl", hash = "sha256:283b88a198d2e336bdb0af77511364b9295dc147acdc272f75d6e95a0bc8c7f6"},
-    {file = "ccxt-1.52.4.tar.gz", hash = "sha256:aa794d7240ad0aee09301b54f43e69f3940d73508c5e556708b708f0125014f5"},
+    {file = "ccxt-1.52.19-py2.py3-none-any.whl", hash = "sha256:1c7480b61182671ce2b682e45a61de0c0ab16d9000597e87b123bdcfd101a4ca"},
+    {file = "ccxt-1.52.19.tar.gz", hash = "sha256:3c99df94cc3958be136decac5aa04de93563b309928a09eaba11cf6381775790"},
 ]
 certifi = [
     {file = "certifi-2021.5.30-py2.py3-none-any.whl", hash = "sha256:50b1e4f8446b06f41be7dd6338db18e0990601dce795c2b1686458aa7e8fa7d8"},

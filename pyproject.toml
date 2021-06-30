@@ -47,7 +47,7 @@ numpy = "^1.21.0"
 orjson = "3.5.1"  # Pinned at 3.5.1 due betfairlightweight
 pandas = "^1.2.5"
 psutil = "^5.8.0"
-pyarrow = { version = "^4.0.1"}
+pyarrow = "^4.0.1"
 pytz = "^2021.1"
 redis = "^3.5.3"
 scipy = "1.6.1"  # Pinned at 1.6.1 due Python 3.7.9

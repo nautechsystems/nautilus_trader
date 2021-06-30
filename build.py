@@ -26,7 +26,7 @@ PROFILING_MODE = bool(os.getenv("PROFILING_MODE", ""))
 ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 # If PARALLEL build is enabled, uses all CPUs for compile stage of build
 PARALLEL_BUILD = bool(os.getenv("PARALLEL_BUILD", "true"))
-# If PARALLEL tests is enabled, uses pytest-xdist to run tests in parallel
+# If SKIP_BUILD_COPY is enabled, prevents copying built *.so files back into the source tree
 SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 
 print(
