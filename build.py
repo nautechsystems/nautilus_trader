@@ -158,10 +158,10 @@ def build(setup_kwargs):
 if __name__ == "__main__":
     print("")
 
-    # Work around a Cython problem in Python 3.8.x on MacOS
+    # Work around a Cython problem in Python 3.8.x on macOS
     # https://github.com/cython/cython/issues/3262
     if platform.system() == "Darwin":
-        print("MacOS: Setting multiprocessing method to 'fork'.")
+        print("macOS: Setting multiprocessing method to 'fork'.")
         try:
             # noinspection PyUnresolvedReferences
             import multiprocessing
