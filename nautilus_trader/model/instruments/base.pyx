@@ -230,7 +230,7 @@ cdef class Instrument(Data):
                 f"info={self.info})")
 
     @staticmethod
-    cdef Instrument from_dict_c(dict values):
+    cdef Instrument base_from_dict_c(dict values):
         cdef str lot_s = values["lot_size"]
         cdef str max_q = values["max_quantity"]
         cdef str min_q = values["min_quantity"]
@@ -267,7 +267,7 @@ cdef class Instrument(Data):
         )
 
     @staticmethod
-    cdef dict to_dict_c(Instrument obj):
+    cdef dict base_to_dict_c(Instrument obj):
         return {
             "type": "Instrument",
             "id": obj.id.value,
@@ -297,7 +297,7 @@ cdef class Instrument(Data):
         }
 
     @staticmethod
-    def from_dict(dict values) -> Instrument:
+    def base_from_dict(dict values) -> Instrument:
         """
         Return an instrument from the given initialization values.
 
@@ -314,7 +314,7 @@ cdef class Instrument(Data):
         return Instrument.from_dict_c(values)
 
     @staticmethod
-    def to_dict(Instrument obj):
+    def base_to_dict(Instrument obj):
         """
         Return a dictionary representation of this object.
 

@@ -74,10 +74,10 @@ cdef class Instrument(Data):
     """The raw info for the instrument.\n\n:returns: `dict[str, object]`"""
 
     @staticmethod
-    cdef Instrument from_dict_c(dict values)
+    cdef Instrument base_from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(Instrument obj)
+    cdef dict base_to_dict_c(Instrument obj)
 
     cpdef Currency get_base_currency(self)
     cpdef Currency get_cost_currency(self)
