@@ -75,6 +75,8 @@ cdef class Throttler:
         ValueError
             If limit is not positive (> 0).
         ValueError
+            If interval is not positive (> 0).
+        ValueError
             If output is not of type callable.
 
         """
