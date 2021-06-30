@@ -74,6 +74,11 @@ def _build_extensions() -> List[Extension]:
         # https://github.com/nautechsystems/nautilus_trader/issues/303
         define_macros.append(("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"))
 
+    if platform.system() != "Windows":
+        extra_compile_args = ["-O3", "-pipe"]
+    else:
+        extra_compile_args = []
+
     # Regarding the compiler warning: #warning "Using deprecated NumPy API,
     # disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
     # https://stackoverflow.com/questions/52749662/using-deprecated-numpy-api
@@ -85,7 +90,7 @@ def _build_extensions() -> List[Extension]:
             include_dirs=[".", np.get_include()],
             define_macros=define_macros,
             language="c",
-            extra_compile_args=["-O3", "-pipe"],
+            extra_compile_args=extra_compile_args,
         )
         for pyx in itertools.chain(
             Path("examples").rglob("*.pyx"),
@@ -171,7 +176,7 @@ if __name__ == "__main__":
             print("multiprocessing not available")
 
     print("Starting build...")
-    # Note: On Mac OS X (and perhaps other platforms), executable files may be
+    # Note: On macOS (and perhaps other platforms), executable files may be
     # universal files containing multiple architectures. To determine the
     # “64-bitness” of the current interpreter, it is more reliable to query the
     # sys.maxsize attribute:
