@@ -447,7 +447,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_order)
 
         # Assert
-        self.assertEqual(OrderState.INVALID, order.state)
+        self.assertEqual(OrderState.DENIED, order.state)
 
     def test_order_filled_with_unrecognized_strategy_id(self):
         # Arrange
@@ -642,7 +642,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_bracket2)  # SL and TP
 
         # Assert
-        self.assertEqual(OrderState.INVALID, entry2.state)
+        self.assertEqual(OrderState.DENIED, entry2.state)
         self.assertEqual(OrderState.ACCEPTED, entry1.state)
         self.assertEqual(OrderState.ACCEPTED, stop_loss1.state)
         self.assertEqual(
@@ -737,7 +737,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_bracket2)  # SL and TP
 
         # Assert
-        self.assertEqual(OrderState.INVALID, entry2.state)
+        self.assertEqual(OrderState.DENIED, entry2.state)
         self.assertEqual(
             OrderState.ACCEPTED, entry1.state
         )  # Did not invalidate original
@@ -747,7 +747,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(
             OrderState.ACCEPTED, take_profit1.state
         )  # Did not invalidate original
-        self.assertEqual(OrderState.INVALID, take_profit2.state)
+        self.assertEqual(OrderState.DENIED, take_profit2.state)
 
     def test_submit_order(self):
         # Arrange

@@ -41,6 +41,7 @@ from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.model.identifiers cimport TraderId
 
 
+# ANSI color constants
 cdef str _HEADER = "\033[95m"
 cdef str _BLUE = "\033[94m"
 cdef str _GREEN = "\033[92m"

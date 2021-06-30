@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
@@ -26,6 +27,7 @@ from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
@@ -50,7 +52,7 @@ class TestRiskEngine:
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(self.clock, level_stdout=LogLevel.DEBUG)
 
         self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
@@ -96,13 +98,13 @@ class TestRiskEngine:
         # Prepare data
         self.exec_engine.cache.add_instrument(AUDUSD_SIM)
 
-    def test_set_block_all_orders_changes_flag_value(self):
+    def test_set_trading_state_changes_value(self):
         # Arrange
         # Act
-        self.risk_engine.set_block_all_orders()
+        self.risk_engine.set_trading_state(TradingState.HALTED)
 
         # Assert
-        assert self.risk_engine.block_all_orders
+        assert self.risk_engine.trading_state == TradingState.HALTED
 
     def test_given_random_command_logs_and_continues(self):
         # Arrange
@@ -198,7 +200,7 @@ class TestRiskEngine:
         # Assert
         assert self.exec_client.calls == ["connect", "submit_bracket_order"]
 
-    def test_submit_order_when_block_all_orders_true_then_denies_order(self):
+    def test_submit_order_when_trading_halted_then_denies_order(self):
         # Arrange
         self.exec_engine.start()
 
@@ -226,7 +228,8 @@ class TestRiskEngine:
             self.clock.timestamp_ns(),
         )
 
-        self.risk_engine.set_block_all_orders()
+        # Halt trading
+        self.risk_engine.set_trading_state(TradingState.HALTED)
 
         # Act
         self.risk_engine.execute(submit_order)
@@ -368,7 +371,8 @@ class TestRiskEngine:
             self.clock.timestamp_ns(),
         )
 
-        self.risk_engine.set_block_all_orders()
+        # Halt trading
+        self.risk_engine.set_trading_state(TradingState.HALTED)
 
         # Act
         self.risk_engine.execute(submit_bracket)
