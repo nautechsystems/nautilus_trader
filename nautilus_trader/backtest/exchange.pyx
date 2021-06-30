@@ -1129,7 +1129,7 @@ cdef class SimulatedExchange:
                 instrument_id=order.instrument_id,
             )
             if positions_open:
-                # Design-time invariant
+                # Design-time invariant: netting OMS maintains a single position
                 assert len(positions_open) == 1
                 position_id = positions_open[0].id
 

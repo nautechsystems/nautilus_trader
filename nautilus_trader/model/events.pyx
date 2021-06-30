@@ -2084,7 +2084,7 @@ cdef class PositionOpened(PositionEvent):
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
-        assert position.is_open_c()  # Design-time check
+        assert position.is_open_c()  # Design-time check: position status matched event
         super().__init__(
             position,
             order_fill,
@@ -2179,7 +2179,7 @@ cdef class PositionChanged(PositionEvent):
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
-        assert position.is_open_c()  # Design-time check
+        assert position.is_open_c()  # Design-time check: position status matched event
         super().__init__(
             position,
             order_fill,
@@ -2277,7 +2277,7 @@ cdef class PositionClosed(PositionEvent):
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
-        assert position.is_closed_c()  # Design-time check
+        assert position.is_closed_c()  # Design-time check: position status matched event
         super().__init__(
             position,
             order_fill,
