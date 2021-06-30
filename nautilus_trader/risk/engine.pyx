@@ -209,6 +209,7 @@ cdef class RiskEngine(Component):
         if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
             self._invalidate_order(
                 command.order.client_order_id,
+                f"Cannot submit order: "
                 f"{repr(command.position_id)} does not exist",
             )
             return  # Invalid command
