@@ -240,9 +240,9 @@ cdef class RiskEngine(Component):
         cdef list validation_msgs = []
         self._check_order_values(instrument, command.order, validation_msgs)
         if validation_msgs:
-            # Invalidate order
+            # Deny order
             self._deny_order(command.order.client_order_id, ",".join(validation_msgs))
-            return  # Invalid command
+            return  # Denied
 
         ########################################################################
         # Risk checks
@@ -300,7 +300,7 @@ cdef class RiskEngine(Component):
         self._check_order_values(instrument, stop_loss, validation_msgs)
         self._check_order_values(instrument, take_profit, validation_msgs)
         if validation_msgs:
-            # Invalidate order
+            # Deny order
             reasons = ",".join(validation_msgs)
             self._deny_order(entry.client_order_id, reasons)
             self._deny_order(stop_loss.client_order_id, reasons)
