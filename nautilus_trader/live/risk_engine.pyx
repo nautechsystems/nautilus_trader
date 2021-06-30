@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from asyncio import AbstractEventLoop
-from asyncio import CancelledError
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport LiveClock
@@ -37,7 +35,7 @@ cdef class LiveRiskEngine(RiskEngine):
 
     def __init__(
         self,
-        loop not None: AbstractEventLoop,
+        loop not None: asyncio.AbstractEventLoop,
         ExecutionEngine exec_engine not None,
         Portfolio portfolio not None,
         CacheFacade cache not None,
@@ -215,7 +213,7 @@ cdef class LiveRiskEngine(RiskEngine):
                     self._execute_command(message)
                 else:
                     self._log.error(f"Cannot handle message: unrecognized {message}.")
-        except CancelledError:
+        except asyncio.CancelledError:
             if self.qsize() > 0:
                 self._log.warning(f"Running canceled "
                                   f"with {self.qsize()} message(s) on queue.")
