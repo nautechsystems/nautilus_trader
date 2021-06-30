@@ -53,6 +53,8 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import PriceTypeParser
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TimeInForceParser
+from nautilus_trader.model.enums import TradingState
+from nautilus_trader.model.enums import TradingStateParser
 from nautilus_trader.model.enums import VenueStatus
 from nautilus_trader.model.enums import VenueStatusParser
 from nautilus_trader.model.enums import VenueType
@@ -961,6 +963,50 @@ class TestTimeInForce:
         # Arrange
         # Act
         result = TimeInForceParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestTradingState:
+    def test_trading_state_parser_given_invalid_value_raises_value_error(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(ValueError):
+            TradingStateParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            TradingStateParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [TradingState.ACTIVE, "ACTIVE"],
+            [TradingState.HALTED, "HALTED"],
+            [TradingState.REDUCING, "REDUCING"],
+        ],
+    )
+    def test_trading_state_to_str(self, enum, expected):
+        # Arrange
+        # Act
+        result = TradingStateParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["ACTIVE", TradingState.ACTIVE],
+            ["HALTED", TradingState.HALTED],
+            ["REDUCING", TradingState.REDUCING],
+        ],
+    )
+    def test_trading_state_from_str(self, string, expected):
+        # Arrange
+        # Act
+        result = TradingStateParser.from_str_py(string)
 
         # Assert
         assert expected == result
