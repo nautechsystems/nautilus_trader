@@ -863,7 +863,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             instrument_id,
             Price(price, price_precision),
             Quantity(amount, size_precision),
-            AggressorSideParser.from_str(aggressor_side.upper()) ,
+            AggressorSideParser.from_str(aggressor_side.upper()),
             match_id,
             ts_event_ns,
             ts_recv_ns,
