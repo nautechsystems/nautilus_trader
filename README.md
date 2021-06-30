@@ -127,7 +127,7 @@ limited order feature set including simple vanilla MARKET and LIMIT orders.
 
 The `master` branch will always reflect the code of the latest release version.
 
-The package is tested against Python 3.7 - 3.9 on 64-bit Windows, MacOS and Linux.
+The package is tested against Python 3.7 - 3.9 on 64-bit Windows, macOS and Linux.
 We recommend running the platform with the latest stable version of Python, and
 in a virtual environment to isolate the dependencies.
 
