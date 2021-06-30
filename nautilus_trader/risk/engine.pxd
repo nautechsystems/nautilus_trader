@@ -18,6 +18,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
@@ -39,12 +40,12 @@ cdef class RiskEngine(Component):
     """The trader identifier associated with the engine.\n\n:returns: `TraderId`"""
     cdef readonly Cache cache
     """The engines cache.\n\n:returns: `CacheFacade`"""
+    cdef readonly TradingState trading_state
+    """The current trading state for the engine.\n\n:returns: `TradingState`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
-    cdef readonly bint block_all_orders
-    """If all orders are blocked from being sent.\n\n:returns: `bool`"""
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -55,7 +56,8 @@ cdef class RiskEngine(Component):
 
     cpdef void execute(self, Command command) except *
     cpdef void process(self, Event event) except *
-    cpdef void set_block_all_orders(self, bint value=*) except *
+    cpdef void set_trading_state(self, TradingState state) except *
+    cdef void _log_state(self) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
@@ -82,6 +84,4 @@ cdef class RiskEngine(Component):
 
 # -- EVENT GENERATION ------------------------------------------------------------------------------
 
-    cdef void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *
-    cdef void _invalidate_bracket_order(self, BracketOrder bracket_order, str reason) except *
     cdef void _deny_order(self, ClientOrderId client_order_id, str reason) except *

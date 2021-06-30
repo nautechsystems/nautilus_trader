@@ -24,6 +24,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
@@ -32,13 +33,14 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.trading_state cimport TradingState
+from nautilus_trader.model.c_enums.trading_state cimport TradingStateParser
 from nautilus_trader.model.commands cimport CancelOrder
 from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport OrderDenied
-from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -94,8 +96,8 @@ cdef class RiskEngine(Component):
 
         self.trader_id = exec_engine.trader_id
         self.cache = cache
-
-        self.block_all_orders = False
+        self.trading_state = TradingState.ACTIVE  # Start active by default
+        self._log_state()
 
         # Counters
         self.command_count = 0
@@ -131,18 +133,26 @@ cdef class RiskEngine(Component):
 
         self._handle_event(event)
 
-    cpdef void set_block_all_orders(self, bint value=True) except *:
+    cpdef void set_trading_state(self, TradingState state) except *:
         """
-        Set the global `block_all_orders` flag to the given value.
+        Set the trading state for the engine.
 
         Parameters
         ----------
-        value : bool
-            The flag setting.
+        state : TradingState
+            The state to set.
 
         """
-        self.block_all_orders = value
-        self._log.warning(f"`block_all_orders` set to {value}.")
+        self.trading_state = state
+        self._log_state()
+
+    cdef void _log_state(self) except *:
+        cdef LogColor color = LogColor.BLUE
+        if self.trading_state == TradingState.REDUCING:
+            color = LogColor.YELLOW
+        elif self.trading_state == TradingState.HALTED:
+            color = LogColor.RED
+        self._log.info(f"State is {TradingStateParser.to_str(self.trading_state)}.", color=color)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -199,7 +209,7 @@ cdef class RiskEngine(Component):
                 f"Cannot submit order: "
                 f"{repr(command.order.client_order_id)} already exists.",
             )
-            return  # Invalid command
+            return  # Denied
 
         # Cache order
         # *** Do not complete additional risk checks before here ***
@@ -207,12 +217,12 @@ cdef class RiskEngine(Component):
 
         # Check position exists
         if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
-            self._invalidate_order(
+            self._deny_order(
                 command.order.client_order_id,
                 f"Cannot submit order: "
                 f"{repr(command.position_id)} does not exist",
             )
-            return  # Invalid command
+            return  # Denied
 
         # Get instrument for order
         cdef Instrument instrument = self._exec_engine.cache.instrument(command.order.instrument_id)
@@ -221,8 +231,8 @@ cdef class RiskEngine(Component):
                 f"Cannot check order: "
                 f"no instrument found for {command.order.instrument_id}",
             )
-            self._invalidate_order(command.order.client_order_id, "No instrument found")
-            return  # Invalid command
+            self._deny_order(command.order.client_order_id, "No instrument found")
+            return  # Denied
 
         ########################################################################
         # Validation checks
@@ -231,16 +241,18 @@ cdef class RiskEngine(Component):
         self._check_order_values(instrument, command.order, validation_msgs)
         if validation_msgs:
             # Invalidate order
-            self._invalidate_order(command.order.client_order_id, ",".join(validation_msgs))
+            self._deny_order(command.order.client_order_id, ",".join(validation_msgs))
             return  # Invalid command
 
         ########################################################################
         # Risk checks
         ########################################################################
         cdef list risk_msgs = self._check_order_risk(instrument, command.order)
-        if self.block_all_orders:
-            # TODO: Should potentially still allow 'reduce_only' orders??
-            risk_msgs.append("all orders blocked")
+        if self.trading_state == TradingState.HALTED:
+            risk_msgs.append("TRADING_HALTED")
+        elif self.trading_state == TradingState.REDUCING:
+            pass  # TODO: Implement
+
         if risk_msgs:
             # Deny order
             self._deny_order(command.order.client_order_id, ",".join(risk_msgs))
@@ -275,10 +287,10 @@ cdef class RiskEngine(Component):
         if instrument is None:
             reason = f"no instrument found for {command.instrument_id}"
             self._log.error(f"Cannot check order: {reason}")
-            self._invalidate_order(entry, reason)
-            self._invalidate_order(stop_loss, reason)
-            self._invalidate_order(take_profit, reason)
-            return  # Invalid command
+            self._deny_order(entry, reason)
+            self._deny_order(stop_loss, reason)
+            self._deny_order(take_profit, reason)
+            return  # Denied
 
         ########################################################################
         # Validation checks
@@ -290,18 +302,20 @@ cdef class RiskEngine(Component):
         if validation_msgs:
             # Invalidate order
             reasons = ",".join(validation_msgs)
-            self._invalidate_order(entry.client_order_id, reasons)
-            self._invalidate_order(stop_loss.client_order_id, reasons)
-            self._invalidate_order(take_profit.client_order_id, reasons)
-            return  # Invalid command
+            self._deny_order(entry.client_order_id, reasons)
+            self._deny_order(stop_loss.client_order_id, reasons)
+            self._deny_order(take_profit.client_order_id, reasons)
+            return  # Denied
 
         ########################################################################
         # Risk checks
         ########################################################################
         cdef list risk_msgs = self._check_bracket_order_risk(instrument, command.bracket_order)
-        if self.block_all_orders:
-            # TODO: Should potentially still allow 'reduce_only' orders??
-            risk_msgs.append("all orders blocked")
+        if self.trading_state == TradingState.HALTED:
+            risk_msgs.append("TRADING_HALTED")
+        elif self.trading_state == TradingState.REDUCING:
+            pass  # TODO: Implement
+
         if risk_msgs:
             # Deny order
             reasons = ",".join(risk_msgs)
@@ -331,13 +345,7 @@ cdef class RiskEngine(Component):
 
         self._exec_engine.execute(command)
 
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
-
-    cdef void _handle_event(self, Event event) except *:
-        self._log.debug(f"{RECV}{EVT} {event}.")
-        self.event_count += 1
-
-# -- VALIDATION ------------------------------------------------------------------------------------
+# -- RISK CHECKS -----------------------------------------------------------------------------------
 
     cdef void _check_duplicate_ids(self, BracketOrder bracket_order):
         cdef ClientOrderId entry_id = bracket_order.entry.client_order_id
@@ -354,7 +362,7 @@ cdef class RiskEngine(Component):
         else:
             # Add to cache to be able to invalidate
             self.cache.add_order(bracket_order.entry, PositionId.null_c())
-            self._invalidate_order(
+            self._deny_order(
                 entry_id,
                 "Duplicate ClientOrderId in bracket.",
             )
@@ -364,7 +372,7 @@ cdef class RiskEngine(Component):
         else:
             # Add to cache to be able to invalidate
             self.cache.add_order(bracket_order.stop_loss, PositionId.null_c())
-            self._invalidate_order(
+            self._deny_order(
                 stop_loss_id,
                 "Duplicate ClientOrderId in bracket.",
             )
@@ -374,7 +382,7 @@ cdef class RiskEngine(Component):
         else:
             # Add to cache to be able to invalidate
             self.cache.add_order(bracket_order.take_profit, PositionId.null_c())
-            self._invalidate_order(
+            self._deny_order(
                 take_profit_id,
                 "Duplicate ClientOrderId in bracket.",
             )
@@ -437,8 +445,6 @@ cdef class RiskEngine(Component):
 
         return msgs
 
-# -- RISK MANAGEMENT -------------------------------------------------------------------------------
-
     cdef list _check_order_risk(self, Instrument instrument, Order order):
         # TODO(cs): Pre-trade risk checks
         return []
@@ -448,22 +454,6 @@ cdef class RiskEngine(Component):
         return []
 
 # -- EVENT GENERATION ------------------------------------------------------------------------------
-
-    cdef void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *:
-        # Generate event
-        cdef OrderInvalid invalid = OrderInvalid(
-            client_order_id=client_order_id,
-            reason=reason,
-            event_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
-        )
-
-        self._exec_engine.process(invalid)
-
-    cdef void _invalidate_bracket_order(self, BracketOrder bracket_order, str reason) except *:
-        self._invalidate_order(bracket_order.entry.client_order_id, reason)
-        self._invalidate_order(bracket_order.stop_loss.client_order_id, reason)
-        self._invalidate_order(bracket_order.take_profit.client_order_id, reason)
 
     cdef void _deny_order(self, ClientOrderId client_order_id, str reason) except *:
         # Generate event
@@ -475,3 +465,9 @@ cdef class RiskEngine(Component):
         )
 
         self._exec_engine.process(denied)
+
+# -- EVENT HANDLERS --------------------------------------------------------------------------------
+
+    cdef void _handle_event(self, Event event) except *:
+        self._log.debug(f"{RECV}{EVT} {event}.")
+        self.event_count += 1

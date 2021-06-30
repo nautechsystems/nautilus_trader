@@ -357,7 +357,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         # Assert
         self.assertEqual(OrderState.REJECTED, order.state)
 
-    def test_submit_order_when_quantity_below_min_then_gets_invalidated(self):
+    def test_submit_order_when_quantity_below_min_then_gets_denied(self):
         # Arrange: Prepare market
         order = self.strategy.order_factory.market(
             USDJPY_SIM.id,
@@ -369,9 +369,9 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        self.assertEqual(OrderState.INVALID, order.state)
+        self.assertEqual(OrderState.DENIED, order.state)
 
-    def test_submit_order_when_quantity_above_max_then_gets_invalidated(self):
+    def test_submit_order_when_quantity_above_max_then_gets_denied(self):
         # Arrange: Prepare market
         order = self.strategy.order_factory.market(
             USDJPY_SIM.id,
@@ -383,7 +383,7 @@ class SimulatedExchangeTests(unittest.TestCase):
         self.strategy.submit_order(order)
 
         # Assert
-        self.assertEqual(OrderState.INVALID, order.state)
+        self.assertEqual(OrderState.DENIED, order.state)
 
     def test_submit_market_order(self):
         # Arrange: Prepare market
