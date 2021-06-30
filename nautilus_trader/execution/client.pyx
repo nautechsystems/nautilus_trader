@@ -152,8 +152,7 @@ cdef class ExecutionClient:
 
         """
         Condition.not_none(account, "account")
-        # Design-time error
-        assert self._account is None, "account should not be registered twice"
+        Condition.none(self._account, "_account")  # Account should not be registered twice
 
         self._account = account
 
@@ -768,7 +767,7 @@ cdef class ExecutionClient:
                 instrument_id=fill.instrument_id,
             )
             if positions_open:
-                # Design-time invariant
+                # Design-time invariant: netting OMS maintains a single position
                 assert len(positions_open) == 1
                 position_id = positions_open[0].id
 
