@@ -52,7 +52,7 @@ class TestBacktestDataProducer:
             "1677-09-21 00:12:43.145226", tz="UTC"
         )
         assert not producer.has_data
-        assert producer.next() is None
+        assert producer.next() is None  # noqa (own method)
 
     def test_with_mix_of_stream_data_produces_correct_stream_of_data(self):
         # Assert
@@ -107,7 +107,7 @@ class TestBacktestDataProducer:
         streamed_data = []
 
         while producer.has_data:
-            streamed_data.append(producer.next())
+            streamed_data.append(producer.next())  # noqa (own method)
 
         # Assert
         timestamps = [x.ts_recv_ns for x in streamed_data]
@@ -140,7 +140,7 @@ class TestBacktestDataProducer:
         producer.setup(producer.min_timestamp_ns, producer.max_timestamp_ns)
 
         # Act
-        next_data = producer.next()
+        next_data = producer.next()  # noqa (own method)
 
         # Assert
         assert next_data.ts_recv_ns == 1359676799800000000
