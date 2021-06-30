@@ -723,7 +723,7 @@ cdef class ExecutionClient:
             venue_order_id=venue_order_id,
             execution_id=execution_id,
             position_id=position_id or PositionId.null_c(),  # If 'NULL' then assigned in engine
-            strategy_id=StrategyId.null_c(),                 # If 'NULL' then assigned in engine
+            strategy_id=StrategyId.null_c(),
             instrument_id=instrument_id,
             order_side=order_side,
             last_qty=last_qty,
