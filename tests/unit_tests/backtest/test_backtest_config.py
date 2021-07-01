@@ -6,18 +6,19 @@ import pickle
 
 import fsspec
 import pandas as pd
+from pydantic import ValidationError
 import pytest
 
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
+from nautilus_trader.backtest.config import Cloneable
 from nautilus_trader.backtest.config import build_graph
 from nautilus_trader.backtest.data_loader import CSVParser
 from nautilus_trader.backtest.data_loader import DataCatalog
 from nautilus_trader.backtest.data_loader import DataLoader
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import BarAggregation
@@ -126,6 +127,57 @@ def backtest_config(catalog):
     )
 
 
+def test_cloneable_partial():
+    class Test(Cloneable):
+        a: int
+        b: int
+
+    test = Test.partial(a=5)
+    assert test.__class__.__name__.startswith("TestPartial")
+    test = test.partial(b=1)
+    assert test.__class__.__name__ == "Test"
+    test = Test(a=5, b=1)
+    assert test.__class__.__name__ == "Test"
+
+
+def test_cloneable_replace():
+    class Test(Cloneable):
+        a: int
+        b: int
+
+    test = Test.partial(a=5)
+    assert test.__class__.__name__.startswith("TestPartial")
+
+    test = test.partial(b=1, a=3)
+    assert test.a == 3
+    assert test.b == 1
+    assert test.__class__.__name__ == "Test"
+
+
+def test_cloneable_is_partial():
+    class Test(Cloneable):
+        a: int
+        b: int
+
+    test = Test.partial(a=5)
+    assert test.is_partial()
+
+
+def test_cloneable_check():
+    class Test(Cloneable):
+        a: int
+        b: int
+        c: str
+
+    test = Test.partial(a=5)
+    assert test._base_class == Test
+    with pytest.raises(ValidationError):
+        test.check()
+    test = test.partial(b=1)
+    with pytest.raises(ValidationError):
+        test.check()
+
+
 def test_backtest_config_pickle(backtest_config):
     pickle.loads(pickle.dumps(backtest_config))  # noqa: S301
 
@@ -149,10 +201,34 @@ def test_backtest_data_config_load(catalog):
     assert result == expected
 
 
-@pytest.mark.skip
-def test_backtest_config_replace(backtest_config):
-    new = backtest_config.replace(path="strategies.AUDUSD.slow_ewma", value=50)
-    assert new.strategies[0].slow_ema == ExponentialMovingAverage(50)
+def test_backtest_config_partial():
+    config = BacktestConfig()
+    config.update(
+        venues=[
+            BacktestVenueConfig(
+                name="SIM",
+                venue_type="ECN",
+                oms_type="HEDGING",
+                account_type="MARGIN",
+                base_currency=USD,
+                starting_balances=[Money(1_000_000, USD)],
+            )
+        ],
+    )
+    assert config.is_partial()
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+    config = config.update(
+        instruments=[instrument],
+        data_config=[
+            BacktestDataConfig(
+                data_type=QuoteTick,
+                instrument_id=instrument.id.value,
+                start_time=1580398089820000,
+                end_time=1580504394501000,
+            )
+        ],
+    )
+    assert config.is_partial()
 
 
 def test_backtest_run(backtest_config):
@@ -162,3 +238,14 @@ def test_backtest_run(backtest_config):
     tasks = build_graph([backtest_config])
     result = tasks[0].compute()
     assert result
+
+
+def test_build_graph_shared_nodes(backtest_config):
+    cls, params = backtest_config.strategies[0]
+    strategies = [
+        (cls, {**params, **{"fast_ema": x, "slow_ema": y}})
+        for x, y in [(10, 20), (20, 30)]
+    ]
+    configs = [backtest_config.replace(strategies=s) for s in strategies]
+    graph = build_graph([configs])
+    assert graph
