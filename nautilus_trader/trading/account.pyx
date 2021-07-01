@@ -706,14 +706,19 @@ cdef class Account:
         cdef Currency quote_currency = instrument.quote_currency
         cdef Currency base_currency = instrument.get_base_currency()
 
+        if instrument.is_inverse:
+            fill_px: Decimal = 1 / fill.last_px.as_decimal()
+        else:
+            fill_px: Decimal = fill.last_px.as_decimal()
+
         if fill.order_side == OrderSide.BUY:
             if base_currency:
                 pnls.append(Money(fill.last_qty, base_currency))
-            pnls.append(Money(-(fill.last_qty * (1 / fill.last_px)), quote_currency))
+            pnls.append(Money(-(fill.last_qty * fill_px), quote_currency))
         else:  # OrderSide.SELL
             if base_currency:
                 pnls.append(Money(-fill.last_qty, base_currency))
-            pnls.append(Money(fill.last_qty * (1 / fill.last_px), quote_currency))
+            pnls.append(Money(fill.last_qty * fill_px, quote_currency))
 
         return pnls
 
