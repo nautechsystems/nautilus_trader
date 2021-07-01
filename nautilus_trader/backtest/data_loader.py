@@ -477,9 +477,7 @@ class DataCatalog:
 
         for cls in tables:
             for ins_id in tables[cls]:
-                name = f"{camel_to_snake_case(cls.__name__)}.parquet"
-                if is_custom_data(cls):
-                    name = f"{GENERIC_DATA_PREFIX}{camel_to_snake_case(cls.__name__)}.parquet"
+                name = f"{class_to_filename(cls)}.parquet"
                 fn = self.root.joinpath(name)
 
                 df = pd.DataFrame(tables[cls][ins_id])
@@ -529,9 +527,9 @@ class DataCatalog:
                         df = df.sort_values(col)
                         break
 
-                clean_partition_cols(df, partition_cols)
-
-                table = pa.Table.from_pandas(df, schema=_schemas.get(cls.__name__))
+                df, mappings = clean_partition_cols(df, partition_cols)
+                schema = _schemas.get(cls.__name__)
+                table = pa.Table.from_pandas(df, schema=schema)
                 metadata_collector = []
                 pq.write_to_dataset(
                     table=table,
@@ -548,6 +546,10 @@ class DataCatalog:
 
                 # Write the ``_metadata`` parquet file with row groups statistics of all files
                 pq.write_metadata(table.schema, fn / "_metadata", version="2.0")
+
+                # Write out any partition columns we had to modify due to filesystem requirements
+                if mappings:
+                    self._write_mappings(fn=fn, mappings=mappings)
 
             # Save any new processed files
         self._save_processed_raw_files(files=processed_raw_files)
@@ -743,9 +745,25 @@ class DataCatalog:
             .to_pandas()
             .drop_duplicates()
         )
+        mappings = self._read_mappings(path=path)
+        for col in mappings:
+            df.loc[:, col] = df[col].map({v: k for k, v in mappings[col].items()})
+
+        # TODO (bm) - This should be stored as a dictionary (category) anyway.
         if "instrument_id" in df.columns:
             df = df.astype({"instrument_id": "category"})
         return df
+
+    def _write_mappings(self, fn, mappings):
+        with self.fs.open(fn / "_partition_mappings.json", "wb") as f:
+            f.write(orjson.dumps(mappings))
+
+    def _read_mappings(self, path):
+        try:
+            with self.fs.open(path + "_partition_mappings.json") as f:
+                return orjson.loads(f.read())
+        except FileNotFoundError:
+            return {}
 
     @staticmethod
     def _make_objects(df, cls):
@@ -777,9 +795,7 @@ class DataCatalog:
             for ins_type, df in zip(instrument_types, dfs):
                 if df is None:
                     continue
-                objects.extend(
-                    self._make_objects(df=df.drop(["type"], axis=1), cls=ins_type)
-                )
+                objects.extend(self._make_objects(df=df, cls=ins_type))
             return objects
 
     def instrument_status_events(
@@ -843,6 +859,20 @@ class DataCatalog:
         if not as_nautilus:
             return df
         return self._make_objects(df=df, cls=OrderBookDelta)
+
+    def query(
+        self, cls, filter_expr=None, instrument_ids=None, as_nautilus=False, **kwargs
+    ):
+        name = class_to_filename(cls)
+        df = self._query(
+            filename=name,
+            filter_expr=filter_expr,
+            instrument_ids=instrument_ids,
+            **kwargs,
+        )
+        if not as_nautilus:
+            return df
+        return self._make_objects(df=df, cls=cls)
 
     def list_data_types(self):
         return [p.stem for p in self.root.glob("*.parquet")]
@@ -913,6 +943,7 @@ INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
 
 
 def clean_partition_cols(df, partition_cols=None):
+    mappings = {}
     for col in partition_cols or []:
         values = list(map(str, df[col].unique()))
         invalid_values = {
@@ -921,13 +952,16 @@ def clean_partition_cols(df, partition_cols=None):
         if invalid_values:
             if col == "instrument_id":
                 # We have control over how instrument_ids are retrieved from the cache, so we can do this replacement
-                df.loc[:, col] = df[col].map({k: clean_key(k) for k in values})
+                val_map = {k: clean_key(k) for k in values}
+                mappings[col] = val_map
+                df.loc[:, col] = df[col].map(val_map)
+
             else:
                 # We would be arbitrarily replacing values here which could break queries, we should not do this.
                 raise ValueError(
                     f"Some values in partition column [{col}] contain invalid characters: {invalid_values}"
                 )
-    return df
+    return df, mappings
 
 
 def clean_key(s):
@@ -935,6 +969,13 @@ def clean_key(s):
         if ch in s:
             s = s.replace(ch, "-")
     return s
+
+
+def class_to_filename(cls):
+    name = f"{camel_to_snake_case(cls.__name__)}"
+    if is_custom_data(cls):
+        name = f"{GENERIC_DATA_PREFIX}{camel_to_snake_case(cls.__name__)}"
+    return name
 
 
 # TODO - https://github.com/leonidessaguisagjr/filehash ?

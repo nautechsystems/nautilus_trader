@@ -76,6 +76,8 @@ from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentS
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackCommandSerializer  # isort:skip
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackEventSerializer  # isort:skip
 
+from nautilus_trader.model.tick import QuoteTick
+
 
 cdef class BacktestEngine:
     """
@@ -281,6 +283,9 @@ cdef class BacktestEngine:
         """
         return self._exec_engine
 
+    cpdef list_venues(self):
+        return list(self._exchanges)
+
     def add_generic_data(self, ClientId client_id, list data) -> None:
         """
         Add the generic data to the container.
@@ -405,6 +410,37 @@ cdef class BacktestEngine:
             "Instrument for given data not found in the data cache. "
             "Please call `add_instrument()` before adding related data.",
         )
+
+        # Check client has been registered
+        self._add_market_data_client_if_not_exists(instrument_id.venue)
+
+        # Add data
+        self._quote_ticks[instrument_id] = data
+        self._quote_ticks = dict(sorted(self._quote_ticks.items()))
+
+        self._log.info(f"Added {len(data)} {instrument_id} QuoteTick data elements.")
+
+    def add_quote_ticks_objects(self, InstrumentId instrument_id, list data) -> None:
+        """
+        Add the built quote tick data to the backtest engine.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument identifier for the trade tick data.
+        data : list[QuoteTick]
+            The quote tick data to add.
+
+        Raises
+        ------
+        ValueError
+            If data is empty.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(data, "data")
+        Condition.not_empty(data, "data")
+        Condition.list_type(data, QuoteTick, "data")
 
         # Check client has been registered
         self._add_market_data_client_if_not_exists(instrument_id.venue)

@@ -16,6 +16,8 @@ from typing import Callable, Optional
 
 import pyarrow as pa
 
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.base import get_from_dict
 from nautilus_trader.serialization.base import get_to_dict
 
@@ -174,3 +176,11 @@ from nautilus_trader.serialization.arrow.implementations.order_book import (
 
 
 order_book_register(func=register_parquet)
+
+# Other defined schemas
+for cls, schema in NAUTILUS_PARQUET_SCHEMA.items():
+    register_parquet(cls, schema=schema)
+
+# Defined partition columns
+for cls in Instrument.__subclasses__():
+    register_parquet(cls, partition_keys=tuple())

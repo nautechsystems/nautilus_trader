@@ -117,12 +117,16 @@ cdef class BettingInstrument(Instrument):
 
     @staticmethod
     cdef BettingInstrument from_dict_c(dict values):
-        return BettingInstrument(**values)
+        data = values.copy()
+        data['event_open_date'] = pd.Timestamp(data['event_open_date'])
+        data['market_start_time'] = pd.Timestamp(data['market_start_time'])
+        return BettingInstrument(**{k: v for k, v in data.items() if k not in ('instrument_id',)})
 
     @staticmethod
     cdef dict to_dict_c(BettingInstrument obj):
         return {
             "type": "BettingInstrument",
+            "instrument_id": obj.id.value,
             "venue_name": obj.id.venue.value,
             "event_type_id": obj.event_type_id,
             "event_type_name": obj.event_type_name,
@@ -131,11 +135,11 @@ cdef class BettingInstrument(Instrument):
             "event_id": obj.event_id,
             "event_name": obj.event_name,
             "event_country_code": obj.event_country_code,
-            "event_open_date": obj.event_open_date,
+            "event_open_date": obj.event_open_date.isoformat(),
             "betting_type": obj.betting_type,
             "market_id": obj.market_id,
             "market_name": obj.market_name,
-            "market_start_time": obj.market_start_time,
+            "market_start_time": obj.market_start_time.isoformat(),
             "market_type": obj.market_type,
             "selection_id": obj.selection_id,
             "selection_name": obj.selection_name,
@@ -160,6 +164,7 @@ cdef class BettingInstrument(Instrument):
         BettingInstrument
 
         """
+
         return BettingInstrument.from_dict_c(values)
 
     @staticmethod

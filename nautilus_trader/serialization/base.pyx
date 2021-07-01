@@ -42,10 +42,12 @@ from nautilus_trader.model.instruments.betting cimport BettingInstrument
 from nautilus_trader.model.instruments.cfd cimport CFDInstrument
 from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
 from nautilus_trader.model.instruments.currency cimport CurrencySpot
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
 
 
 # Default mappings for Nautilus objects
+
 _OBJECT_TO_DICT_MAP = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
     SubmitBracketOrder.__name__: SubmitBracketOrder.to_dict_c,
@@ -105,6 +107,7 @@ _OBJECT_FROM_DICT_MAP = {
     CryptoSwap.__name__: CryptoSwap.from_dict_c,
     CurrencySpot.__name__: CurrencySpot.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,
+    QuoteTick.__name__: QuoteTick.from_dict_c,
     InstrumentStatusEvent.__name__: InstrumentStatusEvent.from_dict_c,
 }
 

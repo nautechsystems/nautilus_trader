@@ -214,9 +214,9 @@ def test_data_catalog_instruments_df(catalog):
 
 
 def test_data_catalog_instruments_no_partition(catalog):
-    assert not pq.ParquetDataset(
-        catalog.root / "betting_instrument.parquet/"
-    ).partitions.levels
+    ds = pq.ParquetDataset(catalog.root / "betting_instrument.parquet/")
+    partitions = ds.partitions
+    assert not partitions.levels
 
 
 def test_data_catalog_instruments_as_nautilus(catalog):
@@ -236,14 +236,12 @@ def test_data_catalog_dataset_types(catalog):
         for n, t in zip(dataset.schema.names, dataset.schema.types)
     }
     expected = {
-        "type": "DictionaryType",
         "price": "DataType",
         "size": "DataType",
         "aggressor_side": "DictionaryType",
         "match_id": "DataType",
         "ts_event_ns": "DataType",
         "ts_recv_ns": "DataType",
-        "__index_level_0__": "DataType",
     }
     assert schema == expected
 
@@ -295,6 +293,26 @@ def test_data_catalog_parquet(catalog_dir):
     assert len(catalog.trade_ticks(instrument_ids=["BTC/USDT.BINANCE"])) == 2001
 
 
+def test_partition_key_correctly_remapped(catalog_dir):
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+    tick = QuoteTick(
+        instrument_id=instrument.id,
+        bid=Price(10, 1),
+        ask=Price(11, 1),
+        bid_size=Quantity(10, 1),
+        ask_size=Quantity(10, 1),
+        ts_recv_ns=0,
+        ts_event_ns=0,
+    )
+    catalog = DataCatalog()
+    catalog._write_chunks(chunk=[instrument, tick])
+    df = catalog.quote_ticks()
+    assert len(df) == 1
+    # Ensure we "unmap" the keys that we write the partition filenames as;
+    # this instrument_id should be AUD/USD not AUD-USD
+    assert df.iloc[0]["instrument_id"] == instrument.id.value
+
+
 def test_data_catalog_filter(catalog):
     assert len(catalog.order_book_deltas()) == 2384
     assert (
@@ -319,7 +337,6 @@ def test_data_catalog_parquet_dtypes(catalog):
         "size": dtype("float64"),
         "ts_event_ns": dtype("int64"),
         "ts_recv_ns": dtype("int64"),
-        "type": CategoricalDtype(categories=["TradeTick"], ordered=False),
     }
     assert result == expected
 
