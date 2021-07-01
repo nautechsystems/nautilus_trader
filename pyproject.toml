@@ -62,7 +62,6 @@ oandapyV20 = { version = "^0.6.3", optional = true }
 dask = "^2021.6.2"
 distributed = "^2021.6.2"
 bokeh = "^2.3.2"
-pydantic = "^1.8.2"
 
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython

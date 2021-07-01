@@ -1,12 +1,8 @@
 import dataclasses
-import re
 from typing import List, Optional, Tuple
 
 from dask import delayed
 import pandas as pd
-from pydantic import BaseModel
-from pydantic import create_model
-from pydantic import validate_model
 
 from nautilus_trader.backtest.data_loader import DataCatalog
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -25,53 +21,41 @@ from nautilus_trader.trading.strategy import TradingStrategy
 PARTIAL_SUFFIX = "Partial-"
 
 
-class Cloneable(BaseModel):
-    class Config:
-        arbitrary_types_allowed = True
+class Partialable:
+    def missing(self):
+        return [x for x in self.__dataclass_fields__ if getattr(self, x) is None]
 
     def is_partial(self):
-        cls_name = self.__class__.__name__
-        return bool(re.findall(r"\w+Partial-\d+", cls_name))
+        return any(self.missing())
 
     def check(self):
-        *_, validation_error = validate_model(self._base_class, self.__dict__)
-        if validation_error:
-            raise validation_error
+        missing = self.missing()
+        if missing:
+            raise AssertionError(f"Missing fields: {missing}")
 
-    def replace(self):
-        pass
+    def update(self, **kwargs):
+        """Update attributes on this instance"""
+        self.__dict__.update(kwargs)
+        return self
 
-    @classmethod
-    def partial(cls, *_, **kwargs) -> "Cloneable":
-        fields = set(cls.__fields__.keys())
-
-        opt = {f: cls.__fields__[f].get_default() for f in fields}
-        opt.update(kwargs)
-
-        base_cls = getattr(cls, "_base_class", cls)
-
-        model = create_model(
-            cls.__name__,
-            __base__=Cloneable,
-            _base_class=base_cls,
-            **{
-                field: (cls.__annotations__[field], opt.get(field, ...))
-                for field in fields
-            },
+    def replace(self, **kwargs):
+        """Return a new instance with some attributes replaces"""
+        return self.__class__(
+            **{**{k: getattr(self, k) for k in self.__dataclass_fields__}, **kwargs}
         )
 
-        *_, validation_error = validate_model(base_cls, opt)
-        if validation_error is None:
-            model.__name__ = model.__name__.rsplit(PARTIAL_SUFFIX, maxsplit=1)[0]
-            return model(**kwargs)
-        model.__name__ += PARTIAL_SUFFIX + str(id(model))
-        return model(**kwargs)
+    def __repr__(self):
+        dataclass_repr_func = dataclasses._repr_fn(
+            fields=list(self.__dataclass_fields__.values()), globals=self.__dict__
+        )
+        r = dataclass_repr_func(self)
+        if self.missing():
+            return "Partial-" + r
+        return r
 
 
-class BacktestDataConfig(BaseModel):
-    class Config:
-        arbitrary_types_allowed = True
-
+@dataclasses.dataclass()
+class BacktestDataConfig:
     data_type: type
     instrument_id: str
     start_time: Optional[int] = None
@@ -89,9 +73,8 @@ class BacktestDataConfig(BaseModel):
         )
 
 
-class BacktestVenueConfig(BaseModel):
-    class Config:
-        arbitrary_types_allowed = True
+@dataclasses.dataclass()
+class BacktestVenueConfig:
 
     name: str
     venue_type: str
@@ -102,8 +85,8 @@ class BacktestVenueConfig(BaseModel):
     modules: Optional[List[SimulationModule]] = None
 
 
-@dataclasses.dataclass()
-class BacktestConfig:
+@dataclasses.dataclass(repr=False)
+class BacktestConfig(Partialable):
     """
     Configuration for one specific backtest run (a single set of data / strategies / parameters)
     """
@@ -116,40 +99,14 @@ class BacktestConfig:
     def create_strategies(self) -> List[TradingStrategy]:
         return [cls(**kw) for cls, kw in self.strategies]
 
-    def missing(self):
-        return [x for x in self.__dataclass_fields__ if getattr(self, x) is None]
 
-    def is_partial(self):
-        return any(self.missing())
-
-    def check(self):
-        missing = self.missing()
-        if missing:
-            raise ValueError(f"Missing fields: {missing}")
-
-    def update(self, **kwargs):
-        """Update attributes on this instance"""
-        self.__dict__.update(kwargs)
-        return self
-
-    def replace(self, **kwargs):
-        """Return a new instance with some attributes replaces"""
-        return self.__class__(**{**self.__dict__, **kwargs})
-
-    def __repr__(self):
-        r = dataclasses._repr_fn()
-        if self.missing():
-            return "Partial" + r
-        return super().__repr__()
-
-
-@delayed
+@delayed(pure=True)
 def load(query):
     catalog = DataCatalog()
     return query["cls"], catalog.query(**query)
 
 
-@delayed
+@delayed(pure=True)
 def create_backtest_engine(venues, instruments, data):
     engine = BacktestEngine(
         bypass_logging=True,
@@ -179,7 +136,7 @@ def create_backtest_engine(venues, instruments, data):
     return engine
 
 
-@delayed
+@delayed(pure=True)
 def run_engine(engine, strategies):
     strategies = [cls(**kw) for cls, kw in strategies]
     engine.run(strategies=strategies)

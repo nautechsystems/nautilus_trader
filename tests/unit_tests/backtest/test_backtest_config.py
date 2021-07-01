@@ -1,18 +1,19 @@
+import dataclasses
 from decimal import Decimal
 from functools import partial
 import os
 import pathlib
 import pickle
+from typing import Optional
 
 import fsspec
 import pandas as pd
-from pydantic import ValidationError
 import pytest
 
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
-from nautilus_trader.backtest.config import Cloneable
+from nautilus_trader.backtest.config import Partialable
 from nautilus_trader.backtest.config import build_graph
 from nautilus_trader.backtest.data_loader import CSVParser
 from nautilus_trader.backtest.data_loader import DataCatalog
@@ -127,54 +128,50 @@ def backtest_config(catalog):
     )
 
 
-def test_cloneable_partial():
-    class Test(Cloneable):
-        a: int
-        b: int
-
-    test = Test.partial(a=5)
-    assert test.__class__.__name__.startswith("TestPartial")
-    test = test.partial(b=1)
-    assert test.__class__.__name__ == "Test"
-    test = Test(a=5, b=1)
-    assert test.__class__.__name__ == "Test"
+@dataclasses.dataclass(repr=False)
+class Test(Partialable):
+    a: Optional[int] = None
+    b: Optional[int] = None
+    c: Optional[str] = None
 
 
-def test_cloneable_replace():
-    class Test(Cloneable):
-        a: int
-        b: int
-
-    test = Test.partial(a=5)
-    assert test.__class__.__name__.startswith("TestPartial")
-
-    test = test.partial(b=1, a=3)
-    assert test.a == 3
-    assert test.b == 1
-    assert test.__class__.__name__ == "Test"
+def test_partialable_partial():
+    test = Test().replace(a=5)
+    assert test.is_partial()
+    test = test.replace(b=1, c="1")
+    assert not test.is_partial()
+    test = Test(a=5, b=1, c="1")
+    assert not test.is_partial()
 
 
-def test_cloneable_is_partial():
-    class Test(Cloneable):
-        a: int
-        b: int
+def test_partialable_repr():
+    test = Test(a=5)
+    assert test.__repr__() == "Partial-Test(a=5, b=None, c=None)"
+    test = Test(a=5, b=1, c="a")
+    assert test.__repr__() == "Test(a=5, b=1, c='a')"
 
-    test = Test.partial(a=5)
+
+def test_partialable_is_partial():
+    test = Test().replace(a=5)
     assert test.is_partial()
 
 
-def test_cloneable_check():
-    class Test(Cloneable):
-        a: int
-        b: int
-        c: str
+def test_partialable_replace():
+    test = Test().replace(a=5)
+    assert test.is_partial()
 
-    test = Test.partial(a=5)
-    assert test._base_class == Test
-    with pytest.raises(ValidationError):
+    test = test.replace(b=1, a=3, c="a")
+    assert test.a == 3
+    assert test.b == 1
+    assert not test.is_partial()
+
+
+def test_partialable_check():
+    test = Test().replace(a=5)
+    with pytest.raises(AssertionError):
         test.check()
-    test = test.partial(b=1)
-    with pytest.raises(ValidationError):
+    test = test.replace(b=1)
+    with pytest.raises(AssertionError):
         test.check()
 
 
@@ -242,10 +239,23 @@ def test_backtest_run(backtest_config):
 
 def test_build_graph_shared_nodes(backtest_config):
     cls, params = backtest_config.strategies[0]
+    # Create two strategies with different params
     strategies = [
         (cls, {**params, **{"fast_ema": x, "slow_ema": y}})
         for x, y in [(10, 20), (20, 30)]
     ]
+    # Create a backtest config for each strategy
     configs = [backtest_config.replace(strategies=s) for s in strategies]
-    graph = build_graph([configs])
-    assert graph
+    graph = build_graph(configs)
+    dsk = graph.dask.to_dict()
+    result = sorted([k.split("-")[0] for k in dsk.keys()])
+    # The strategies share the same input data,
+    expected = [
+        "create_backtest_engine",
+        "create_backtest_engine",
+        "gather",
+        "load",
+        "run_engine",
+        "run_engine",
+    ]
+    assert result == expected
