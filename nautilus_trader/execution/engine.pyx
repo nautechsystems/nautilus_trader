@@ -113,9 +113,6 @@ cdef class ExecutionEngine(Component):
             config = {}
         super().__init__(clock, logger, name="ExecEngine")
 
-        if config:
-            self._log.info(f"Config: {config}.")
-
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
         self._strategies = {}        # type: dict[StrategyId, TradingStrategy]
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]

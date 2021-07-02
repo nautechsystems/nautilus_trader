@@ -112,9 +112,6 @@ cdef class DataEngine(Component):
             config = {}
         super().__init__(clock, logger, name="DataEngine")
 
-        if config:
-            self._log.info(f"Config: {config}.")
-
         self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}                    # type: dict[ClientId, DataClient]
         self._correlation_index = {}          # type: dict[UUID, callable]
