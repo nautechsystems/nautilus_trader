@@ -1,11 +1,14 @@
 import dataclasses
 from typing import List, Optional, Tuple
 
+from dask.base import normalize_token
+from dask.base import tokenize
 from dask import delayed
 import pandas as pd
 
 from nautilus_trader.backtest.data_loader import DataCatalog
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import SimulationModule
 from nautilus_trader.model.c_enums.account_type import AccountTypeParser
 from nautilus_trader.model.c_enums.oms_type import OMSTypeParser
@@ -15,7 +18,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.trading.strategy import TradingStrategy
 
 
 PARTIAL_SUFFIX = "Partial-"
@@ -75,14 +77,26 @@ class BacktestDataConfig:
 
 @dataclasses.dataclass()
 class BacktestVenueConfig:
-
     name: str
     venue_type: str
     oms_type: str
     account_type: str
     base_currency: Currency
     starting_balances: List[Money]
+    fill_model: Optional[FillModel] = None
     modules: Optional[List[SimulationModule]] = None
+
+    def __dask_tokenize__(self):
+        values = [
+            self.name,
+            self.venue_type,
+            self.oms_type,
+            self.account_type,
+            self.base_currency.code,
+            ",".join(sorted([balance.to_str() for balance in self.starting_balances])),
+            self.modules,
+        ]
+        return tuple(values)
 
 
 @dataclasses.dataclass(repr=False)
@@ -95,22 +109,20 @@ class BacktestConfig(Partialable):
     instruments: Optional[List[Instrument]] = None
     data_config: Optional[List[BacktestDataConfig]] = None
     strategies: Optional[List[Tuple[type, dict]]] = None
-
-    def create_strategies(self) -> List[TradingStrategy]:
-        return [cls(**kw) for cls, kw in self.strategies]
+    # data_catalog_path: Optional[str] = None
 
 
 @delayed(pure=True)
 def load(query):
     catalog = DataCatalog()
-    return query["cls"], catalog.query(**query)
+    return {"type": query["cls"], "data": catalog.query(**query)}
 
 
-@delayed(pure=True)
+# @delayed(pure=True)
 def create_backtest_engine(venues, instruments, data):
     engine = BacktestEngine(
         bypass_logging=True,
-        run_analysis=False,
+        run_analysis=True,
     )
 
     # Add Instruments
@@ -118,9 +130,11 @@ def create_backtest_engine(venues, instruments, data):
         engine.add_instrument(instrument)
 
     # Add data
-    for kind, vals in data:
-        if kind == QuoteTick:
-            engine.add_quote_ticks_objects(data=vals, instrument_id=instruments[0].id)
+    for d in data:
+        if d["type"] == QuoteTick:
+            engine.add_quote_ticks_objects(
+                data=d["data"], instrument_id=instruments[0].id
+            )
 
     # Add venues
     for venue in venues:
@@ -136,11 +150,11 @@ def create_backtest_engine(venues, instruments, data):
     return engine
 
 
-@delayed(pure=True)
+# @delayed(pure=True)
 def run_engine(engine, strategies):
     strategies = [cls(**kw) for cls, kw in strategies]
     engine.run(strategies=strategies)
-    return {
+    data = {
         "account": pd.concat(
             [
                 engine.trader.generate_account_report(venue).assign(venue=venue)
@@ -149,25 +163,83 @@ def run_engine(engine, strategies):
         ),
         "fills": engine.trader.generate_order_fills_report(),
         "positions": engine.trader.generate_positions_report(),
-        "engine": engine,
+        # "engine": engine,
     }
+    engine.dispose()
+    return data
+
+
+@delayed
+def run_backtest(venues, instruments, data, strategies):
+    engine = create_backtest_engine(venues=venues, instruments=instruments, data=data)
+    return run_engine(engine=engine, strategies=strategies)
 
 
 @delayed
 def gather(*results):
-    return list(results)
+    return [x for r in results for x in r]
+
+
+def _check_configs(configs):
+    if isinstance(configs, BacktestConfig):
+        configs = [configs]
+
+    for config in configs:
+        if not isinstance(config.strategies, list):
+            config.strategies = [config.strategies]
+        for strategy in config.strategies:
+            err = "strategy argument must be tuple of (TradingStrategy class, kwargs dict)"
+            assert (
+                isinstance(strategy, tuple)
+                and isinstance(strategy[0], type)
+                and isinstance(strategy[1], dict)
+            ), err
+
+    return configs
 
 
 def build_graph(backtest_configs):
-    if isinstance(backtest_configs, BacktestConfig):
-        backtest_configs = [backtest_configs]
+    backtest_configs = _check_configs(backtest_configs)
+
+    _ = (
+        DataCatalog()
+    )  # Ensure we can instantiate a DataCatalog before we try a computation
+
     results = []
     for config in backtest_configs:
+        config.check()  # check all values set
         input_data = []
         for data_config in config.data_config:
-            input_data.append(load(data_config.query))
-        engine = create_backtest_engine(
-            venues=config.venues, instruments=config.instruments, data=input_data
+            input_data.append(
+                load(
+                    data_config.query,
+                    dask_key_name=f"load-{tokenize(data_config.query)}",
+                )
+            )
+        results.append(
+            run_backtest(
+                venues=config.venues,
+                instruments=config.instruments,
+                data=input_data,
+                strategies=config.strategies,
+            )
         )
-        results.append(run_engine(engine=engine, strategies=config.strategies))
+        # engine = create_backtest_engine(
+        #
+        #     dask_key_name=f"create_backtest_engine-{tokenize(config.venues, config.instruments, input_data)}",
+        # )
+        # # Ensure run_engine gets run on the same worker as create engine
+        # with dask.annotate(resources={engine.key: 1}):
+        #     results.append(
+        #         run_engine(
+        #             engine=engine,
+        #             strategies=config.strategies,
+        #             dask_key_name=f"run_engine-{tokenize(engine, config.strategies)}",
+        #         )
+        #     )
     return gather(results)
+
+
+# Register tokenization methods with dask
+for cls in Instrument.__subclasses__():
+    normalize_token.register(cls, func=cls.to_dict)

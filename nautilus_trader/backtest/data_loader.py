@@ -716,6 +716,7 @@ class DataCatalog:
         start=None,
         end=None,
         ts_column="ts_event_ns",
+        raise_on_empty=True,
     ):
         filters = [filter_expr] if filter_expr is not None else []
         if instrument_ids is not None:
@@ -737,7 +738,10 @@ class DataCatalog:
 
         path = f"{self.root}/{filename}.parquet/"
         if not self.fs.exists(path):
-            return
+            if raise_on_empty:
+                raise FileNotFoundError
+            else:
+                return
 
         dataset = ds.dataset(path, partitioning="hive", filesystem=self.fs)
         df = (
@@ -752,6 +756,13 @@ class DataCatalog:
         # TODO (bm) - This should be stored as a dictionary (category) anyway.
         if "instrument_id" in df.columns:
             df = df.astype({"instrument_id": "category"})
+        if df.empty and raise_on_empty:
+            local_vars = dict(locals())
+            kw = [
+                f"{k}={local_vars[k]}"
+                for k in ("filename", "filter_expr", "instrument_ids", "start", "end")
+            ]
+            raise ValueError(f"Data empty for {kw}")
         return df
 
     def _write_mappings(self, fn, mappings):
@@ -784,6 +795,7 @@ class DataCatalog:
                 self._query(
                     camel_to_snake_case(ins_type.__name__),
                     filter_expr=filter_expr,
+                    raise_on_empty=False,
                     **kwargs,
                 )
             )
