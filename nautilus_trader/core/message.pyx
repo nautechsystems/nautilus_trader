@@ -83,7 +83,7 @@ cdef class Message:
     def __init__(
         self,
         MessageType msg_type,
-        UUID identifier not None,
+        UUID message_id not None,
         int64_t timestamp_ns,
     ):
         """
@@ -93,14 +93,14 @@ cdef class Message:
         ----------
         msg_type : MessageType
             The message type.
-        identifier : UUID
-            The message identifier.
+        message_id : UUID
+            The message ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the message initialization.
 
         """
         self.type = msg_type
-        self.id = identifier
+        self.id = message_id
         self.timestamp_ns = timestamp_ns
 
     def __eq__(self, Message other) -> bool:
@@ -120,19 +120,19 @@ cdef class Command(Message):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, UUID identifier not None, int64_t timestamp_ns):
+    def __init__(self, UUID command_id not None, int64_t timestamp_ns):
         """
         Initialize a new instance of the ``Command`` class.
 
         Parameters
         ----------
-        identifier : UUID
-            The command identifier.
+        command_id : UUID
+            The command ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the command initialization.
 
         """
-        super().__init__(MessageType.COMMAND, identifier, timestamp_ns)
+        super().__init__(MessageType.COMMAND, command_id, timestamp_ns)
 
 
 cdef class Document(Message):
@@ -144,7 +144,7 @@ cdef class Document(Message):
 
     def __init__(
         self,
-        UUID identifier not None,
+        UUID document_id not None,
         int64_t timestamp_ns,
     ):
         """
@@ -152,13 +152,13 @@ cdef class Document(Message):
 
         Parameters
         ----------
-        identifier : UUID
-            The document identifier.
+        document_id : UUID
+            The document ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the document initialization.
 
         """
-        super().__init__(MessageType.DOCUMENT, identifier, timestamp_ns)
+        super().__init__(MessageType.DOCUMENT, document_id, timestamp_ns)
 
 
 cdef class Event(Message):
@@ -170,7 +170,7 @@ cdef class Event(Message):
 
     def __init__(
         self,
-        UUID identifier not None,
+        UUID event_id not None,
         int64_t timestamp_ns,
     ):
         """
@@ -178,13 +178,13 @@ cdef class Event(Message):
 
         Parameters
         ----------
-        identifier : UUID
-            The event identifier.
+        event_id : UUID
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
-        super().__init__(MessageType.EVENT, identifier, timestamp_ns)
+        super().__init__(MessageType.EVENT, event_id, timestamp_ns)
 
 
 cdef class Request(Message):
@@ -194,19 +194,19 @@ cdef class Request(Message):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, UUID identifier not None, int64_t timestamp_ns):
+    def __init__(self, UUID request_id not None, int64_t timestamp_ns):
         """
         Initialize a new instance of the ``Request`` class.
 
         Parameters
         ----------
-        identifier : UUID
-            The request identifier.
+        request_id : UUID
+            The request ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the request initialization.
 
         """
-        super().__init__(MessageType.REQUEST, identifier, timestamp_ns)
+        super().__init__(MessageType.REQUEST, request_id, timestamp_ns)
 
 
 cdef class Response(Message):
@@ -219,7 +219,7 @@ cdef class Response(Message):
     def __init__(
         self,
         UUID correlation_id not None,
-        UUID identifier not None,
+        UUID response_id not None,
         int64_t timestamp_ns,
     ):
         """
@@ -228,14 +228,14 @@ cdef class Response(Message):
         Parameters
         ----------
         correlation_id : UUID
-            The correlation identifier.
-        identifier : UUID
-            The response identifier.
+            The correlation ID.
+        response_id : UUID
+            The response ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the response initialization.
 
         """
-        super().__init__(MessageType.RESPONSE, identifier, timestamp_ns)
+        super().__init__(MessageType.RESPONSE, response_id, timestamp_ns)
 
         self.correlation_id = correlation_id
 

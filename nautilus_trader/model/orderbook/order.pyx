@@ -43,7 +43,7 @@ cdef class Order:
         side : OrderSide
             The order side.
         id : str
-            The order identifier.
+            The order ID.
 
         """
         self.price = price
@@ -86,12 +86,12 @@ cdef class Order:
 
     cpdef void update_id(self, str value) except *:
         """
-        Update the orders identifier.
+        Update the orders ID.
 
         Parameters
         ----------
         value : str
-            The updated identifier.
+            The updated ID.
 
         """
         self.id = value

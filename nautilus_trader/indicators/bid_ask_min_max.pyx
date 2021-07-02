@@ -37,7 +37,7 @@ cdef class BidAskMinMax(Indicator):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for inbound ticks.
+            The instrument ID for inbound ticks.
         lookback : timedelta
             The look back duration in time.
 

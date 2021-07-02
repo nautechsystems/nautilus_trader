@@ -107,7 +107,7 @@ class EMACross(TradingStrategy):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the strategy.
+            The instrument ID for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -117,7 +117,7 @@ class EMACross(TradingStrategy):
         slow_ema : int
             The slow EMA period.
         extra_id_tag : str
-            An additional order identifier tag.
+            An additional order ID tag.
 
         """
         if extra_id_tag is None:
@@ -347,11 +347,11 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the strategy.
+            The instrument ID for the strategy.
         trade_size : Decimal
             The position size per trade.
         extra_id_tag : str
-            An additional order identifier tag.
+            An additional order ID tag.
 
         """
         if extra_id_tag is None:

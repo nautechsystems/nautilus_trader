@@ -61,7 +61,7 @@ cdef class Trader(Component):
         Parameters
         ----------
         trader_id : TraderId
-            The identifier for the trader.
+            The ID for the trader.
         strategies : list[TradingStrategy]
             The initial strategies for the trader.
         portfolio : Portfolio
@@ -121,7 +121,7 @@ cdef class Trader(Component):
 
     cpdef list strategy_ids(self):
         """
-        Return the strategy identifiers loaded in the trader.
+        Return the strategy IDs loaded in the trader.
 
         Returns
         -------
@@ -228,7 +228,7 @@ cdef class Trader(Component):
                 strategy_ids.add(strategy.id)
             else:
                 raise ValueError(f"The strategy_id {strategy.id} was not unique, "
-                                 f"duplicate strategy identifiers")
+                                 f"duplicate strategy IDs")
 
             # Wire data engine into strategy
             self._data_engine.register_strategy(strategy)

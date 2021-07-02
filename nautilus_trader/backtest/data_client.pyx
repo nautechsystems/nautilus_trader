@@ -54,7 +54,7 @@ cdef class BacktestDataClient(DataClient):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier.
+            The data client ID.
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
@@ -168,7 +168,7 @@ cdef class BacktestDataClient(DataClient):
         data_type : DataType
             The data type to request.
         correlation_id : UUID
-            The correlation identifier for the response.
+            The correlation ID for the response.
 
         """
         Condition.not_none(data_type, "data_type")
@@ -198,7 +198,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier.
+            The data client ID.
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
@@ -261,7 +261,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `Instrument` data for the given instrument identifier.
+        Subscribe to `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
@@ -285,7 +285,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         dict kwargs=None,
     ) except *:
         """
-        Subscribe to `OrderBook` data for the given instrument identifier.
+        Subscribe to `OrderBook` data for the given instrument ID.
 
         Parameters
         ----------
@@ -314,7 +314,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         dict kwargs=None,
     ) except *:
         """
-        Subscribe to `OrderBook` data for the given instrument identifier.
+        Subscribe to `OrderBook` data for the given instrument ID.
 
         Parameters
         ----------
@@ -336,7 +336,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `QuoteTick` data for the given instrument identifier.
+        Subscribe to `QuoteTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -354,7 +354,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `TradeTick` data for the given instrument identifier.
+        Subscribe to `TradeTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -391,7 +391,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `Instrument` data for the given instrument identifier.
+        Unsubscribe from `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
@@ -409,7 +409,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `OrderBook` data for the given instrument identifier.
+        Unsubscribe from `OrderBook` data for the given instrument ID.
 
         Parameters
         ----------
@@ -427,7 +427,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `QuoteTick` data for the given instrument identifier.
+        Unsubscribe from `QuoteTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -445,7 +445,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `TradeTick` data for the given instrument identifier.
+        Unsubscribe from `TradeTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -486,14 +486,14 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
     cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:
         """
-        Request the instrument for the given instrument identifier.
+        Request the instrument for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the request.
+            The instrument ID for the request.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -518,7 +518,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Parameters
         ----------
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(correlation_id, "correlation_id")
@@ -542,7 +542,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument identifier for the request.
+            The tick instrument ID for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -551,7 +551,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         limit : int
             The limit for the number of returned ticks.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -577,7 +577,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument identifier for the request.
+            The tick instrument ID for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -586,7 +586,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         limit : int
             The limit for the number of returned ticks.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -622,7 +622,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         limit : int
             The limit for the number of returned bars.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(bar_type, "bar_type")

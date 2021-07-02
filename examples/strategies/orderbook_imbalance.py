@@ -60,8 +60,8 @@ class OrderbookImbalance(TradingStrategy):
             The ratio of bid:ask volume required to trigger an order (smaller value / larger value) ie given a
             trigger_imbalance_ratio=0.2, and a bid volume of 100, we will send a buy order if the ask volume is < 20).
         order_id_tag : str
-            The unique order identifier tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader identifier.
+            The unique order ID tag for the strategy. Must be unique
+            amongst all running strategies for a particular trader ID.
 
         """
         assert 0 < trigger_imbalance_ratio < 1

@@ -69,7 +69,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier for the database.
+            The trader ID for the database.
         logger : Logger
             The logger for the database.
         instrument_serializer : InstrumentSerializer
@@ -293,13 +293,13 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id):
         """
-        Load the instrument associated with the given instrument identifier
+        Load the instrument associated with the given instrument ID
         (if found).
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier to load.
+            The instrument ID to load.
 
         Returns
         -------
@@ -317,12 +317,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef Account load_account(self, AccountId account_id):
         """
-        Load the account associated with the given account identifier (if found).
+        Load the account associated with the given account ID (if found).
 
         Parameters
         ----------
         account_id : AccountId
-            The account identifier to load.
+            The account ID to load.
 
         Returns
         -------
@@ -350,12 +350,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef Order load_order(self, ClientOrderId client_order_id):
         """
-        Load the order associated with the given client order identifier (if found).
+        Load the order associated with the given client order ID (if found).
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier to load.
+            The client order ID to load.
 
         Returns
         -------
@@ -385,12 +385,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef Position load_position(self, PositionId position_id):
         """
-        Load the position associated with the given identifier (if found).
+        Load the position associated with the given ID (if found).
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier to load.
+            The position ID to load.
 
         Returns
         -------
@@ -433,7 +433,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Parameters
         ----------
         strategy_id : StrategyId
-            The identifier of the strategy state dictionary to load.
+            The ID of the strategy state dictionary to load.
 
         Returns
         -------
@@ -454,7 +454,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Parameters
         ----------
         strategy_id : StrategyId
-            The identifier of the strategy state dictionary to delete.
+            The ID of the strategy state dictionary to delete.
 
         """
         Condition.not_none(strategy_id, "strategy_id")
@@ -559,7 +559,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void add_position(self, Position position) except *:
         """
-        Add the given position associated with the given strategy identifier.
+        Add the given position associated with the given strategy ID.
 
         Parameters
         ----------

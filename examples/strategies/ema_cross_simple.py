@@ -61,7 +61,7 @@ class EMACross(TradingStrategy):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the strategy.
+            The instrument ID for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -71,8 +71,8 @@ class EMACross(TradingStrategy):
         slow_ema_period : int
             The period for the slow EMA.
         order_id_tag : str
-            The unique order identifier tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader identifier.
+            The unique order ID tag for the strategy. Must be unique
+            amongst all running strategies for a particular trader ID.
 
         """
         super().__init__(order_id_tag=order_id_tag)

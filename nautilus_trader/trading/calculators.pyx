@@ -237,7 +237,7 @@ cdef class RolloverInterestCalculator:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The forex instrument identifier for the calculation.
+            The forex instrument ID for the calculation.
         date : date
             The date for the overnight rate.
 

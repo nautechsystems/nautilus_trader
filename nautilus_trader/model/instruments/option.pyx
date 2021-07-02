@@ -61,7 +61,7 @@ cdef class Option(Instrument):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier.
+            The instrument ID.
         asset_class : AssetClass
             The futures contract asset class.
         currency : Currency

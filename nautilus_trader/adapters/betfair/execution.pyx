@@ -91,7 +91,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         client : betfairlightweight.APIClient
             The Betfair client.
         account_id : AccountId
-            The account identifier for the client.
+            The account ID for the client.
         base_currency : Currency
             The account base currency for the client.
         engine : LiveDataEngine

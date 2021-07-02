@@ -58,7 +58,7 @@ cdef class OrderBook:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the book.
+            The instrument ID for the book.
         level : BookLevel
             The order book level (L1, L2, L3).
         price_precision : int
@@ -704,7 +704,7 @@ cdef class L3OrderBook(OrderBook):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the book.
+            The instrument ID for the book.
         price_precision : int
             The price precision for the book.
         size_precision : int
@@ -745,7 +745,7 @@ cdef class L2OrderBook(OrderBook):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the book.
+            The instrument ID for the book.
         price_precision : int
             The price precision for the book.
         size_precision : int
@@ -857,7 +857,7 @@ cdef class L1OrderBook(OrderBook):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the book.
+            The instrument ID for the book.
         price_precision : int
             The price precision for the book.
         size_precision : int
@@ -1024,7 +1024,7 @@ cdef class OrderBookData(Data):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the book.
+            The instrument ID for the book.
         level : BookLevel
             The order book level (L1, L2, L3).
         ts_event_ns: int64
@@ -1059,7 +1059,7 @@ cdef class OrderBookSnapshot(OrderBookData):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the book.
+            The instrument ID for the book.
         level : BookLevel
             The order book level (L1, L2, L3).
         bids : list
@@ -1163,7 +1163,7 @@ cdef class OrderBookDeltas(OrderBookData):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the book.
+            The instrument ID for the book.
         level : BookLevel
             The order book level (L1, L2, L3).
         deltas : list[OrderBookDelta]
@@ -1262,7 +1262,7 @@ cdef class OrderBookDelta(OrderBookData):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier.
+            The instrument ID.
         level : BookLevel
             The book level for the delta.
         delta_type : DeltaType

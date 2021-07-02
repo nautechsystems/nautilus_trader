@@ -104,7 +104,7 @@ cdef class PerformanceAnalyzer:
         Parameters
         ----------
         position_id : PositionId
-            The position identifier for the trade.
+            The position ID for the trade.
         realized_pnl : Money
             The realized PnL for the trade.
 

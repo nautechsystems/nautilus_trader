@@ -63,9 +63,9 @@ cdef class TradingStrategy(Component):
     cdef dict _indicators_for_bars
 
     cdef readonly TraderId trader_id
-    """The trader identifier associated with the trading strategy.\n\n:returns: `TraderId`"""
+    """The trader ID associated with the trading strategy.\n\n:returns: `TraderId`"""
     cdef readonly StrategyId id
-    """The trading strategies identifier.\n\n:returns: `StrategyId`"""
+    """The trading strategies ID.\n\n:returns: `StrategyId`"""
     cdef readonly Clock clock
     """The trading strategies clock.\n\n:returns: `Clock`"""
     cdef readonly UUIDFactory uuid_factory

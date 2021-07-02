@@ -181,13 +181,13 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
         if not client.has.get("watchTrades", False):
             raise RuntimeError(f"CCXT `watch_trades` not available for {client.name}")
 
-        # Get account identifier env variable or set default
+        # Get account ID env variable or set default
         account_id_env_var = os.getenv(config.get("account_id", ""), "001")
 
         # Set exchange name
         exchange_name = client.name.upper()
 
-        # Set account identifier
+        # Set account ID
         account_id = AccountId(issuer=exchange_name, number=account_id_env_var)
         account_type = AccountType.CASH if account_type_str == "spot" else AccountType.MARGIN
 

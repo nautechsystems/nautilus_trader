@@ -40,13 +40,13 @@ cdef class DataCommand(Command):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier for the command.
+            The data client ID for the command.
         data_type : type
             The data type for the command.
         handler : callable
             The handler for the command.
         command_id : UUID
-            The command identifier.
+            The command ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the command.
 
@@ -87,13 +87,13 @@ cdef class Subscribe(DataCommand):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier for the command.
+            The data client ID for the command.
         data_type : type
             The data type for the subscription.
         handler : callable
             The handler for the subscription.
         command_id : UUID
-            The command identifier.
+            The command ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the command.
 
@@ -126,13 +126,13 @@ cdef class Unsubscribe(DataCommand):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier for the command.
+            The data client ID for the command.
         data_type : type
             The data type to unsubscribe from.
         handler : callable
             The handler for the subscription.
         command_id : UUID
-            The command identifier.
+            The command ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the command.
 
@@ -165,13 +165,13 @@ cdef class DataRequest(Request):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier for the request.
+            The data client ID for the request.
         data_type : type
             The data type for the request.
         callback : callable
             The callback to receive the data.
         request_id : UUID
-            The request identifier.
+            The request ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the request.
 
@@ -216,15 +216,15 @@ cdef class DataResponse(Response):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier of the response.
+            The data client ID of the response.
         data_type : type
             The data type of the response.
         data : object
             The data of the response.
         correlation_id : UUID
-            The correlation identifier.
+            The correlation ID.
         response_id : UUID
-            The response identifier.
+            The response ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the response.
 
