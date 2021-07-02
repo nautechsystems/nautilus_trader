@@ -45,6 +45,7 @@ cdef class OrderUnpacker:
         elif init.order_type == OrderType.STOP_LIMIT:
             return StopLimitOrder.create(init=init)
         else:
+            # Design-time error
             raise RuntimeError("invalid order type")
 
     @staticmethod
