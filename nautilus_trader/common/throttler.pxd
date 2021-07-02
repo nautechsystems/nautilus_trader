@@ -37,10 +37,10 @@ cdef class Throttler:
     """The limit for the throttler rate.\n\n:returns: `int`"""
     cdef readonly timedelta interval
     """The interval for the throttler rate.\n\n:returns: `timedelta`"""
-    cdef readonly bint initialized
-    """If the throttler is initialized.\n\n:returns: `bool`"""
+    cdef readonly bint is_initialized
+    """If the throttler is initialized (sent at least limit messages).\n\n:returns: `bool`"""
     cdef readonly bint is_buffering
-    """If the throttler is currently buffering items.\n\n:returns: `bool`"""
+    """If the throttler is currently buffering messages.\n\n:returns: `bool`"""
 
     cpdef double used(self) except *
     cpdef void send(self, msg) except *

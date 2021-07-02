@@ -25,6 +25,7 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.datetime cimport secs_to_nanos
+from nautilus_trader.core.math cimport max_int64
 
 
 cdef class Throttler:
@@ -98,7 +99,7 @@ cdef class Throttler:
         self.name = name
         self.limit = limit
         self.interval = interval
-        self.initialized = False
+        self.is_initialized = False
         self.is_buffering = False
 
     @property
@@ -120,10 +121,15 @@ cdef class Throttler:
         Returns
         -------
         double
-            [0, 1.0]
+            [0, 1.0].
 
         """
-        return max(0, self._delta_next()) / self._interval_ns
+        if not self.is_initialized:
+            return 0
+
+        cdef int64_t spread = self._clock.timestamp_ns() - self._timestamps[-1]
+        cdef int64_t diff = max_int64(0, self._interval_ns - spread)
+        return <double>diff / <double>self._interval_ns
 
     cpdef void send(self, msg) except *:
         """
@@ -140,6 +146,7 @@ cdef class Throttler:
             self._buffer.put_nowait(msg)
             return
 
+        # Check can send message
         cdef int64_t delta_next = self._delta_next()
         if delta_next <= 0:
             self._send_msg(msg)
@@ -151,11 +158,8 @@ cdef class Throttler:
         self._set_timer(delta_next)
 
     cdef int64_t _delta_next(self) except *:
-        if not self.initialized:
-            if len(self._timestamps) < self.limit:
-                return 0
-            else:
-                self.initialized = True
+        if not self.is_initialized:
+            return 0
 
         cdef int64_t diff = self._timestamps[0] - self._timestamps[-1]
         return self._interval_ns - diff
@@ -186,3 +190,6 @@ cdef class Throttler:
     cdef void _send_msg(self, item) except *:
         self._timestamps.appendleft(self._clock.timestamp_ns())
         self._output(item)
+        if not self.is_initialized:
+            if len(self._timestamps) == self.limit:
+                self.is_initialized = True
