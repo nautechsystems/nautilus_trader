@@ -57,8 +57,10 @@ def catalog_dir():
 
 @pytest.fixture(scope="module")
 def data_loader():
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+
     def parse_csv_tick(df, instrument_id, state=None):
-        yield TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        yield instrument
         for r in df.values:
             ts = secs_to_nanos(pd.Timestamp(r[0]).timestamp())
             tick = QuoteTick(
@@ -73,7 +75,7 @@ def data_loader():
             yield tick
 
     instrument_provider = InstrumentProvider()
-    instrument_provider.add(TestInstrumentProvider.default_fx_ccy("AUD/USD"))
+    instrument_provider.add(instrument)
     loader = DataLoader(
         path=TEST_DATA_DIR,
         parser=CSVParser(

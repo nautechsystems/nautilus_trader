@@ -122,7 +122,7 @@ def load(query):
 def create_backtest_engine(venues, instruments, data):
     engine = BacktestEngine(
         bypass_logging=True,
-        run_analysis=True,
+        run_analysis=False,
     )
 
     # Add Instruments
