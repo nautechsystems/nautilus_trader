@@ -154,7 +154,7 @@ cdef class TradingStrategy(Component):
         if self.trader_id is None:
             # This guards the case where some components are called which
             # have not yet been assigned, resulting in a SIGSEGV at runtime.
-            raise RuntimeError("the strategy has not been registered with a trader")
+            raise RuntimeError("strategy has not been registered with a trader")
 
     @property
     def registered_indicators(self):
@@ -1886,7 +1886,7 @@ cdef class TradingStrategy(Component):
             return  # TODO: Strategy shouldn't receive zero bars
 
         if length > 0 and first.ts_recv_ns > last.ts_recv_ns:
-            raise RuntimeError(f"Cannot handle <Bar[{length}]> data: incorrectly sorted")
+            raise RuntimeError(f"cannot handle <Bar[{length}]> data: incorrectly sorted")
 
         for i in range(length):
             self.handle_bar(bars[i], is_historical=True)
