@@ -343,9 +343,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
         """
         self._log.info(f"Pre-processing data stream...")
 
-        # Calculate data size
-        cdef int64_t total_size = 0
-
         if self._stream:
             # Set data stream start index
             self._stream_index = next(
