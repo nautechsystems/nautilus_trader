@@ -25,23 +25,26 @@ from nautilus_trader.common.timer cimport TimeEvent
 cdef class Throttler:
     cdef Clock _clock
     cdef LoggerAdapter _log
-    cdef int _limit
-    cdef timedelta _interval
     cdef int64_t _interval_ns
     cdef Queue _buffer
-    cdef object _timestamps
     cdef str _timer_name
+    cdef object _timestamps
     cdef object _output
-    cdef bint _initialized
 
     cdef readonly str name
     """The name of the throttler.\n\n:returns: `str`"""
+    cdef readonly int limit
+    """The limit for the throttler rate.\n\n:returns: `int`"""
+    cdef readonly timedelta interval
+    """The interval for the throttler rate.\n\n:returns: `timedelta`"""
+    cdef readonly bint initialized
+    """If the throttler is initialized.\n\n:returns: `bool`"""
     cdef readonly bint is_buffering
     """If the throttler is currently buffering items.\n\n:returns: `bool`"""
 
     cpdef double used(self) except *
-    cpdef void send(self, item) except *
+    cpdef void send(self, msg) except *
     cdef int64_t _delta_next(self) except *
     cpdef void _process(self, TimeEvent event) except *
     cdef void _set_timer(self, int64_t delta_next) except *
-    cdef void _send_item(self, item) except *
+    cdef void _send_msg(self, msg) except *

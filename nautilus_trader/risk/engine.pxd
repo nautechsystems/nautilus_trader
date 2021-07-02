@@ -15,6 +15,7 @@
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.engine cimport ExecutionEngine
@@ -35,6 +36,7 @@ from nautilus_trader.trading.portfolio cimport Portfolio
 cdef class RiskEngine(Component):
     cdef Portfolio _portfolio
     cdef ExecutionEngine _exec_engine
+    cdef Throttler _order_throttler
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the engine.\n\n:returns: `TraderId`"""
@@ -42,15 +44,16 @@ cdef class RiskEngine(Component):
     """The engines cache.\n\n:returns: `CacheFacade`"""
     cdef readonly TradingState trading_state
     """The current trading state for the engine.\n\n:returns: `TradingState`"""
+    cdef readonly bint is_bypassed
+    """If the risk engine is completely bypassed..\n\n:returns: `bool`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef void _on_start(self) except *
-    cpdef void _on_stop(self) except *
+    cpdef tuple max_order_rate(self)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -58,6 +61,11 @@ cdef class RiskEngine(Component):
     cpdef void process(self, Event event) except *
     cpdef void set_trading_state(self, TradingState state) except *
     cdef void _log_state(self) except *
+
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+
+    cpdef void _on_start(self) except *
+    cpdef void _on_stop(self) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
