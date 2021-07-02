@@ -30,8 +30,8 @@ class Partialable:
     def is_partial(self):
         return any(self.missing())
 
-    def check(self):
-        missing = self.missing()
+    def check(self, ignore=None):
+        missing = [m for m in self.missing() if m not in (ignore or {})]
         if missing:
             raise AssertionError(f"Missing fields: {missing}")
 
@@ -109,6 +109,7 @@ class BacktestConfig(Partialable):
     instruments: Optional[List[Instrument]] = None
     data_config: Optional[List[BacktestDataConfig]] = None
     strategies: Optional[List[Tuple[type, dict]]] = None
+    name: Optional[str] = None
     # data_catalog_path: Optional[str] = None
 
 
@@ -163,21 +164,21 @@ def run_engine(engine, strategies):
         ),
         "fills": engine.trader.generate_order_fills_report(),
         "positions": engine.trader.generate_positions_report(),
-        # "engine": engine,
     }
     engine.dispose()
     return data
 
 
 @delayed
-def run_backtest(venues, instruments, data, strategies):
+def run_backtest(venues, instruments, data, strategies, name):
     engine = create_backtest_engine(venues=venues, instruments=instruments, data=data)
-    return run_engine(engine=engine, strategies=strategies)
+    results = run_engine(engine=engine, strategies=strategies)
+    return name, results
 
 
 @delayed
 def gather(*results):
-    return [x for r in results for x in r]
+    return {k: v for r in results for k, v in r}
 
 
 def _check_configs(configs):
@@ -207,7 +208,7 @@ def build_graph(backtest_configs):
 
     results = []
     for config in backtest_configs:
-        config.check()  # check all values set
+        config.check(ignore=("name",))  # check all values set
         input_data = []
         for data_config in config.data_config:
             input_data.append(
@@ -222,6 +223,7 @@ def build_graph(backtest_configs):
                 instruments=config.instruments,
                 data=input_data,
                 strategies=config.strategies,
+                name=config.name or f"backtest-{tokenize(config)}",
             )
         )
         # engine = create_backtest_engine(

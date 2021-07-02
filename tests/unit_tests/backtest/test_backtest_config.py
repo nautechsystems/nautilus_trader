@@ -336,7 +336,8 @@ def test_backtest_against_example(catalog):
     )
 
     tasks = build_graph(config)
-    result = tasks.compute()[0]
+    results = tasks.compute()
+    result = results[list(results)[0]]
     assert len(result["account"]) == 97
     assert result["account"]["balance_USD"].iloc[-2] == Money("997652.94", USD)
     assert len(result["positions"]) == 48
