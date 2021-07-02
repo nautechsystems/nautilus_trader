@@ -311,7 +311,7 @@ cdef class Instrument(Data):
         Instrument
 
         """
-        return Instrument.from_dict_c(values)
+        return Instrument.base_from_dict_c(values)
 
     @staticmethod
     def base_to_dict(Instrument obj):
@@ -323,7 +323,7 @@ cdef class Instrument(Data):
         dict[str, object]
 
         """
-        return Instrument.to_dict_c(obj)
+        return Instrument.base_to_dict_c(obj)
 
     @property
     def symbol(self):
@@ -601,7 +601,7 @@ cdef class Instrument(Data):
         elif liquidity_side == LiquiditySide.TAKER:
             commission: Decimal = notional * self.taker_fee
         else:
-            raise RuntimeError(
+            raise ValueError(
                 f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
             )
 
