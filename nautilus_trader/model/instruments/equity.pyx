@@ -56,7 +56,7 @@ cdef class Equity(Instrument):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier.
+            The instrument ID.
         currency : Currency
             The futures contract currency.
         price_precision : int

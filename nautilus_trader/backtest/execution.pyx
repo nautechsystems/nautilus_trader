@@ -52,7 +52,7 @@ cdef class BacktestExecClient(ExecutionClient):
         exchange : SimulatedExchange
             The simulated exchange for the backtest.
         account_id : AccountId
-            The account identifier for the client.
+            The account ID for the client.
         account_type : AccountType
             The account type for the client.
         base_currency : Currency, optional

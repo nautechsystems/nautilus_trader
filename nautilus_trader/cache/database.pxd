@@ -32,7 +32,7 @@ cdef class CacheDatabase:
     cdef LoggerAdapter _log
 
     cdef readonly TraderId trader_id
-    """The trader identifier associated with the database.\n\n:returns: `TraderId`"""
+    """The trader ID associated with the database.\n\n:returns: `TraderId`"""
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 

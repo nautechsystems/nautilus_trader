@@ -202,9 +202,9 @@ cdef class RiskEngine(Component):
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
-        # Check duplicate identifier
+        # Check duplicate ID
         if self.cache.order_exists(command.order.client_order_id):
-            # Avoids duplicate identifiers in cache / database
+            # Avoids duplicate IDs in cache / database
             self._log.error(
                 f"Cannot submit order: "
                 f"{repr(command.order.client_order_id)} already exists.",
@@ -265,7 +265,7 @@ cdef class RiskEngine(Component):
         cdef StopMarketOrder stop_loss = command.bracket_order.stop_loss
         cdef LimitOrder take_profit = command.bracket_order.take_profit
 
-        # Check identifiers for duplicates
+        # Check IDs for duplicates
         if self.cache.order_exists(entry.client_order_id):
             self._check_duplicate_ids(command.bracket_order)
             return  # Duplicate (do not add to cache)

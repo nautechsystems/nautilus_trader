@@ -65,9 +65,9 @@ cdef class LimitOrder(PassiveOrder):
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         strategy_id : StrategyId
-            The strategy identifier associated with the order.
+            The strategy ID associated with the order.
         instrument_id : InstrumentId
             The order instrument_id.
         order_side : OrderSide
@@ -81,7 +81,7 @@ cdef class LimitOrder(PassiveOrder):
         expire_time : datetime, optional
             The order expiry time.
         init_id : UUID
-            The order initialization event identifier.
+            The order initialization event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the order initialization.
         post_only : bool, optional

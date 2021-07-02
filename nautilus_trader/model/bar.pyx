@@ -185,7 +185,7 @@ cdef class BarSpecification:
 
 cdef class BarType:
     """
-    Represents a bar type being the instrument identifier and bar specification of bar data.
+    Represents a bar type being the instrument ID and bar specification of bar data.
     """
 
     def __init__(
@@ -200,7 +200,7 @@ cdef class BarType:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The bar types instrument identifier.
+            The bar types instrument ID.
         bar_spec : BarSpecification
             The bar types specification.
         internal_aggregation : bool

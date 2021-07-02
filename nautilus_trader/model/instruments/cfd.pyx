@@ -64,7 +64,7 @@ cdef class CFDInstrument(Instrument):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the instrument.
+            The instrument ID for the instrument.
         asset_class : AssetClass
             The instrument asset class.
         quote_currency : Currency

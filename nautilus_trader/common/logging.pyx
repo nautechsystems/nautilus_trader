@@ -118,9 +118,9 @@ cdef class Logger:
         clock : Clock
             The clock for the logger.
         trader_id : TraderId, optional
-            The trader identifier for the logger.
+            The trader ID for the logger.
         system_id : UUID, optional
-            The systems unique instantiation identifier.
+            The systems unique instantiation ID.
         level_stdout : LogLevel
             The minimum log level for logging messages to stdout.
         level_raw : LogLevel
@@ -540,9 +540,9 @@ cdef class LiveLogger(Logger):
         clock : LiveClock
             The clock for the logger.
         trader_id : TraderId, optional
-            The trader identifier for the logger.
+            The trader ID for the logger.
         system_id : UUID, optional
-            The systems unique instantiation identifier.
+            The systems unique instantiation ID.
         level_stdout : LogLevel
             The minimum log level for logging messages to stdout.
         level_raw : LogLevel

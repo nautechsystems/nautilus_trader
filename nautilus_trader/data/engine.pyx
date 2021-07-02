@@ -999,7 +999,7 @@ cdef class DataEngine(Component):
 
         if request.id in self._correlation_index:
             self._log.error(f"Cannot handle request: "
-                            f"duplicate identifier {request.id} found in correlation index.")
+                            f"duplicate ID {request.id} found in correlation index.")
             return  # Do not handle duplicates
 
         self._correlation_index[request.id] = request.callback

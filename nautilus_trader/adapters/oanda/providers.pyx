@@ -51,7 +51,7 @@ cdef class OandaInstrumentProvider(InstrumentProvider):
         client : oandapyV20.API
             The Oanda client.
         account_id : str
-            The Oanda account identifier.
+            The Oanda account ID.
         load_all : bool, optional
             If all instruments should be loaded at instantiation.
 

@@ -21,7 +21,7 @@ from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 
 cdef class Currency:
     cdef readonly str code
-    """The currency identifier code.\n\n:returns: `str`"""
+    """The currency ID code.\n\n:returns: `str`"""
     cdef readonly uint8_t precision
     """The currency decimal precision.\n\n:returns: `uint8`"""
     cdef readonly uint16_t iso4217

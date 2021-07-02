@@ -37,7 +37,7 @@ cdef class DataClient:
     cdef dict _config
 
     cdef readonly ClientId id
-    """The client identifier.\n\n:returns: `ClientId`"""
+    """The client ID.\n\n:returns: `ClientId`"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 

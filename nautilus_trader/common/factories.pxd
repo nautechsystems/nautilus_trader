@@ -39,9 +39,9 @@ cdef class OrderFactory:
     cdef ClientOrderIdGenerator _id_generator
 
     cdef readonly TraderId trader_id
-    """The order factories trader identifier.\n\n:returns: `TraderId`"""
+    """The order factories trader ID.\n\n:returns: `TraderId`"""
     cdef readonly StrategyId strategy_id
-    """The order factories trading strategy identifier.\n\n:returns: `StrategyId`"""
+    """The order factories trading strategy ID.\n\n:returns: `StrategyId`"""
 
     cdef int count_c(self)
 

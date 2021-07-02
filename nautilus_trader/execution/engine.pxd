@@ -49,7 +49,7 @@ cdef class ExecutionEngine(Component):
     cdef RiskEngine _risk_engine
 
     cdef readonly TraderId trader_id
-    """The trader identifier associated with the engine.\n\n:returns: `TraderId`"""
+    """The trader ID associated with the engine.\n\n:returns: `TraderId`"""
     cdef readonly Cache cache
     """The engines cache.\n\n:returns: `Cache`"""
     cdef readonly int command_count

@@ -240,7 +240,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         dict kwargs=None,
     ) except *:
         """
-        Subscribe to `OrderBook` data for the given instrument identifier.
+        Subscribe to `OrderBook` data for the given instrument ID.
 
         Parameters
         ----------
@@ -293,7 +293,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `OrderBook` data for the given instrument identifier.
+        Unsubscribe from `OrderBook` data for the given instrument ID.
 
         Parameters
         ----------
@@ -308,7 +308,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `OrderBook` data for the given instrument identifier.
+        Unsubscribe from `OrderBook` data for the given instrument ID.
 
         Parameters
         ----------

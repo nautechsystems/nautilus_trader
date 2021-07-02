@@ -198,12 +198,12 @@ cdef class SimulatedExchange:
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id):
         """
-        Return the best bid price for the given instrument identifier (if found).
+        Return the best bid price for the given instrument ID (if found).
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the price.
+            The instrument ID for the price.
 
         Returns
         -------
@@ -222,12 +222,12 @@ cdef class SimulatedExchange:
 
     cpdef Price best_ask_price(self, InstrumentId instrument_id):
         """
-        Return the best ask price for the given instrument identifier (if found).
+        Return the best ask price for the given instrument ID (if found).
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the price.
+            The instrument ID for the price.
 
         Returns
         -------
@@ -246,12 +246,12 @@ cdef class SimulatedExchange:
 
     cpdef OrderBook get_book(self, InstrumentId instrument_id):
         """
-        Return the order book for the given instrument identifier.
+        Return the order book for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the price.
+            The instrument ID for the price.
 
         Returns
         -------
@@ -1120,7 +1120,7 @@ cdef class SimulatedExchange:
         if OMSType.HEDGING and position_id.is_null():
             position_id = self.cache.position_id(order.client_order_id)
             if position_id is None:
-                # Generate a position identifier
+                # Generate a position ID
                 position_id = self._generate_position_id(order.instrument_id)
         elif OMSType.NETTING:
             # Check for open positions
@@ -1209,7 +1209,7 @@ cdef class SimulatedExchange:
 
     cdef void _clean_up_child_orders(self, ClientOrderId client_order_id) except *:
         # Clean up any residual child orders from the completed order associated
-        # with the given identifier.
+        # with the given ID.
         self._child_orders.pop(client_order_id, None)
 
     cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *:

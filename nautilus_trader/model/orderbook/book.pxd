@@ -29,7 +29,7 @@ from nautilus_trader.model.tick cimport TradeTick
 
 cdef class OrderBook:
     cdef readonly InstrumentId instrument_id
-    """The order book instrument identifier.\n\n:returns: `InstrumentId`"""
+    """The order book instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly BookLevel level
     """The order book level (L1, L2, L3).\n\n:returns: `BookLevel`"""
     cdef readonly int price_precision
@@ -108,7 +108,7 @@ cdef class L1OrderBook(OrderBook):
 
 cdef class OrderBookData(Data):
     cdef readonly InstrumentId instrument_id
-    """The instrument identifier for the order book.\n\n:returns: `InstrumentId`"""
+    """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
     cdef readonly BookLevel level
     """The order book level (L1, L2, L3).\n\n:returns: `BookLevel`"""
 

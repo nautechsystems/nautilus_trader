@@ -64,7 +64,7 @@ cdef class CurrencySpot(Instrument):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the instrument.
+            The instrument ID for the instrument.
         base_currency : Currency, optional
             The base currency.
         quote_currency : Currency

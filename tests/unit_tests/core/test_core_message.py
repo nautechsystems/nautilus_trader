@@ -31,25 +31,25 @@ class TestMessage:
 
         message1 = Message(
             msg_type=MessageType.COMMAND,
-            identifier=uuid,
+            message_id=uuid,
             timestamp_ns=0,
         )
 
         message2 = Message(
             msg_type=MessageType.COMMAND,
-            identifier=uuid,
+            message_id=uuid,
             timestamp_ns=0,
         )
 
         message3 = Message(
             msg_type=MessageType.DOCUMENT,  # Different message type
-            identifier=uuid,
+            message_id=uuid,
             timestamp_ns=0,
         )
 
         message4 = Message(
             msg_type=MessageType.DOCUMENT,
-            identifier=uuid4(),  # Different UUID
+            message_id=uuid4(),  # Different UUID
             timestamp_ns=0,
         )
 
@@ -63,7 +63,7 @@ class TestMessage:
     def test_message_hash(self):
         # Arrange
         message = Document(
-            identifier=uuid4(),
+            document_id=uuid4(),
             timestamp_ns=0,
         )
 
@@ -75,7 +75,7 @@ class TestMessage:
         # Arrange
         uuid = uuid4()
         message = Document(
-            identifier=uuid,
+            document_id=uuid,
             timestamp_ns=0,
         )
 
@@ -90,7 +90,7 @@ class TestMessage:
         uuid_corr = uuid4()
         message = Response(
             correlation_id=uuid_corr,
-            identifier=uuid_id,
+            response_id=uuid_id,
             timestamp_ns=0,
         )
 

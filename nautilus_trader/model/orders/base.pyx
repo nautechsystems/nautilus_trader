@@ -314,7 +314,7 @@ cdef class Order:
     @property
     def execution_ids(self):
         """
-        The execution identifiers.
+        The execution IDs.
 
         Returns
         -------
@@ -664,11 +664,11 @@ cdef class PassiveOrder(Order):
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         strategy_id : StrategyId
-            The strategy identifier associated with the order.
+            The strategy ID associated with the order.
         instrument_id : InstrumentId
-            The order instrument identifier.
+            The order instrument ID.
         order_side : OrderSide
             The order side (BUY or SELL).
         order_type : OrderType
@@ -682,7 +682,7 @@ cdef class PassiveOrder(Order):
         expire_time : datetime, optional
             The order expiry time - applicable to GTD orders only.
         init_id : UUID
-            The order initialization event identifier.
+            The order initialization event ID.
         timestamp_ns : int64
             The order initialization timestamp.
         options : dict
@@ -754,7 +754,7 @@ cdef class PassiveOrder(Order):
     @property
     def venue_order_ids(self):
         """
-        The venue order identifiers.
+        The venue order IDs.
 
         Returns
         -------

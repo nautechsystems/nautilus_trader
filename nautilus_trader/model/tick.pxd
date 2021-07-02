@@ -23,7 +23,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Tick(Data):
     cdef readonly InstrumentId instrument_id
-    """The tick instrument identifier.\n\n:returns: `InstrumentId`"""
+    """The tick instrument ID.\n\n:returns: `InstrumentId`"""
 
 
 cdef class QuoteTick(Tick):
@@ -53,7 +53,7 @@ cdef class TradeTick(Tick):
     cdef readonly AggressorSide aggressor_side
     """The tick aggressor side.\n\n:returns: `AggressorSide`"""
     cdef readonly str match_id
-    """The tick trade match identifier.\n\n:returns: `str`"""
+    """The tick trade match ID.\n\n:returns: `str`"""
 
     @staticmethod
     cdef TradeTick from_dict_c(dict values)

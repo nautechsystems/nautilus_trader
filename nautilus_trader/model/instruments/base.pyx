@@ -71,7 +71,7 @@ cdef class Instrument(Data):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the instrument.
+            The instrument ID for the instrument.
         asset_class : AssetClass
             The instrument asset class.
         asset_type : AssetType

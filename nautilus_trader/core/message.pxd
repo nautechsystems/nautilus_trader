@@ -35,7 +35,7 @@ cdef class Message:
     cdef readonly MessageType type
     """The generic message type.\n\n:returns: `MessageType`"""
     cdef readonly UUID id
-    """The message identifier.\n\n:returns: `UUID`"""
+    """The message ID.\n\n:returns: `UUID`"""
     cdef readonly int64_t timestamp_ns
     """The UNIX timestamp (nanoseconds) of message initialization.\n\n:returns: `int64`"""
 
@@ -58,4 +58,4 @@ cdef class Request(Message):
 
 cdef class Response(Message):
     cdef readonly UUID correlation_id
-    """The response correlation identifier.\n\n:returns: `UUID`"""
+    """The response correlation ID.\n\n:returns: `UUID`"""

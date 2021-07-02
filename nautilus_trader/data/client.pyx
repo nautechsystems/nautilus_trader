@@ -60,7 +60,7 @@ cdef class DataClient:
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier.
+            The data client ID.
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
@@ -175,7 +175,7 @@ cdef class MarketDataClient(DataClient):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier (normally the venue).
+            The data client ID (normally the venue).
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock

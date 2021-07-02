@@ -53,19 +53,19 @@ cdef class Order:
     cdef OrderState _rollback_state
 
     cdef readonly ClientOrderId client_order_id
-    """The client order identifier.\n\n:returns: `ClientOrderId`"""
+    """The client order ID.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue assigned order identifier.\n\n:returns: `VenueOrderId`"""
+    """The venue assigned order ID.\n\n:returns: `VenueOrderId`"""
     cdef readonly PositionId position_id
-    """The position identifier associated with the order.\n\n:returns: `PositionId`"""
+    """The position ID associated with the order.\n\n:returns: `PositionId`"""
     cdef readonly StrategyId strategy_id
-    """The strategy identifier associated with the order.\n\n:returns: `StrategyId`"""
+    """The strategy ID associated with the order.\n\n:returns: `StrategyId`"""
     cdef readonly AccountId account_id
-    """The account identifier associated with the order.\n\n:returns: `AccountId` or None"""
+    """The account ID associated with the order.\n\n:returns: `AccountId` or None"""
     cdef readonly ExecutionId execution_id
-    """The orders last execution identifier.\n\n:returns: `ExecutionId` or None"""
+    """The orders last execution ID.\n\n:returns: `ExecutionId` or None"""
     cdef readonly InstrumentId instrument_id
-    """The order instrument identifier.\n\n:returns: `InstrumentId`"""
+    """The order instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType type
@@ -85,7 +85,7 @@ cdef class Order:
     cdef readonly object slippage
     """The order total price slippage.\n\n:returns: `Decimal`"""
     cdef readonly UUID init_id
-    """The identifier of the `OrderInitialized` event.\n\n:returns: `UUID`"""
+    """The ID of the `OrderInitialized` event.\n\n:returns: `UUID`"""
 
     cpdef dict to_dict(self)
 
