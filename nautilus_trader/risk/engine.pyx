@@ -13,11 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-The `RiskEngine` is responsible for global strategy and portfolio risk within the platform.
-
-Alternative implementations can be written on top of the generic engine.
-"""
+from cpython.datetime cimport timedelta
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
@@ -27,6 +23,7 @@ from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
+from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
@@ -54,6 +51,19 @@ from nautilus_trader.trading.portfolio cimport Portfolio
 cdef class RiskEngine(Component):
     """
     Provides a high-performance risk engine.
+
+    The `RiskEngine` is responsible for global strategy and portfolio risk
+    within the platform. Alternative implementations can be written on top of
+    the generic engine.
+
+    Configuration
+    -------------
+    The following options are possible in the configuration dictionary.
+
+    - bypass: If True then all risk checks are bypassed (will still check for duplicate IDs).
+    - max_order_rate (int, timedelta).
+    - max_notional { InstrumentId: Decimal }.
+
     """
 
     def __init__(
@@ -97,11 +107,39 @@ cdef class RiskEngine(Component):
         self.trader_id = exec_engine.trader_id
         self.cache = cache
         self.trading_state = TradingState.ACTIVE  # Start active by default
+        self.is_bypassed = config.get("bypass", False)
         self._log_state()
+
+        config_max_order_rate = config.get("max_order_rate")
+        config_max_notional = config.get("max_notional")
+        config_max_notional_rate = config.get("max_notional_rate")
+
+        # Throttlers
+        self._order_throttler = Throttler(
+            name="order_throttler",
+            limit=config_max_order_rate[0] if config_max_order_rate else 100,
+            interval=config_max_order_rate[1] if config_max_order_rate else timedelta(seconds=1),
+            output=self._exec_engine.execute,
+            clock=clock,
+            logger=logger,
+        )
 
         # Counters
         self.command_count = 0
         self.event_count = 0
+
+# -- QUERIES ---------------------------------------------------------------------------------------
+
+    cpdef tuple max_order_rate(self):
+        """
+        Return the current maximum order rate limit setting.
+
+        Returns
+        -------
+        (int, timedelta)
+
+        """
+        return tuple(self._order_throttler.limit, self._order_throttler.interval)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -224,6 +262,11 @@ cdef class RiskEngine(Component):
             )
             return  # Denied
 
+        if self.is_bypassed:
+            # Perform no further risk checks
+            self._exec_engine.execute(command)
+            return
+
         # Get instrument for order
         cdef Instrument instrument = self._exec_engine.cache.instrument(command.order.instrument_id)
         if instrument is None:
@@ -281,6 +324,11 @@ cdef class RiskEngine(Component):
         self.cache.add_order(command.bracket_order.entry, PositionId.null_c())
         self.cache.add_order(command.bracket_order.stop_loss, PositionId.null_c())
         self.cache.add_order(command.bracket_order.take_profit, PositionId.null_c())
+
+        if self.is_bypassed:
+            # Perform no further risk checks
+            self._exec_engine.execute(command)
+            return
 
         # Get instrument for orders
         cdef Instrument instrument = self._exec_engine.cache.instrument(command.instrument_id)
