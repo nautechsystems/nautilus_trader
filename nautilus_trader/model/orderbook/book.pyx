@@ -77,7 +77,7 @@ cdef class OrderBook:
 
         """
         if self.__class__.__name__ == OrderBook.__name__:
-            raise RuntimeError("Cannot instantiate OrderBook directly: use OrderBook.create()")
+            raise RuntimeError("cannot instantiate OrderBook directly: use OrderBook.create()")
         Condition.not_negative_int(price_precision, "price_precision")
         Condition.not_negative_int(size_precision, "size_precision")
 

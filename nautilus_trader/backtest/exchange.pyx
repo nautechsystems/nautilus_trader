@@ -266,7 +266,7 @@ cdef class SimulatedExchange:
             instrument = self.instruments.get(instrument_id)
             if instrument is None:
                 raise RuntimeError(
-                    f"Cannot create OrderBook: no instrument for {instrument_id.value}"
+                    f"cannot create OrderBook: no instrument for {instrument_id.value}"
                 )
             book = OrderBook.create(
                 instrument=instrument,
@@ -594,7 +594,8 @@ cdef class SimulatedExchange:
         elif order.type == OrderType.STOP_LIMIT:
             self._update_stop_limit_order(order, qty, price, trigger)
         else:
-            raise RuntimeError(f"Invalid order type")
+            # Design-time error
+            raise RuntimeError("invalid order type")
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
         cdef dict instrument_orders = self._instrument_orders.get(order.instrument_id)
@@ -761,7 +762,8 @@ cdef class SimulatedExchange:
         elif order.type == OrderType.STOP_LIMIT:
             self._process_stop_limit_order(order)
         else:
-            raise RuntimeError(f"Invalid order type")
+            # Design-time error
+            raise RuntimeError("invalid order type")
 
     cdef void _process_market_order(self, MarketOrder order) except *:
         # Check market exists
@@ -952,6 +954,7 @@ cdef class SimulatedExchange:
         elif order.type == OrderType.STOP_LIMIT:
             self._match_stop_limit_order(order)
         else:
+            # Design-time error
             raise RuntimeError("invalid order type")
 
     cdef void _match_limit_order(self, LimitOrder order) except *:

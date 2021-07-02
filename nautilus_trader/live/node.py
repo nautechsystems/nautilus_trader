@@ -349,7 +349,7 @@ class TradingNode:
         Build the nodes clients.
         """
         if self._is_built:
-            raise RuntimeError("The trading nodes clients are already built.")
+            raise RuntimeError("the trading nodes clients are already built.")
 
         self._builder.build_data_clients(self._config.get("data_clients"))
         self._builder.build_exec_clients(self._config.get("exec_clients"))
@@ -388,6 +388,7 @@ class TradingNode:
                 self._loop.create_task(self._stop())
             else:
                 self._loop.run_until_complete(self._stop())
+
         except RuntimeError as ex:
             self._log.exception(ex)
 
