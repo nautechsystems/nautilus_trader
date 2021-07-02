@@ -168,7 +168,7 @@ cdef class BacktestEngine:
             trader_id=trader_id,
             system_id=self.system_id,
             level_stdout=level_stdout,
-            bypass_logging=bypass_logging,
+            bypass=bypass_logging,
         )
 
         nautilus_header(self._log)

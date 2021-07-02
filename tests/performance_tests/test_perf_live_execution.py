@@ -53,7 +53,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.trader_id = TraderId("TESTER-000")
-        self.logger = Logger(self.clock, bypass_logging=True)
+        self.logger = Logger(self.clock, bypass=True)
 
         self.account_id = AccountId(BINANCE.value, "001")
 

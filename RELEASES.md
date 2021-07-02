@@ -2,10 +2,10 @@
 
 
 ## Breaking Changes
-None
+- Renamed Loggers `bypass_logging` to `bypass`.
 
 ## Enhancements
-- Remove redundant `OrderInvalid` state and associated code.
+- Removed redundant `OrderInvalid` state and associated code.
 
 ## Fixes
 None
