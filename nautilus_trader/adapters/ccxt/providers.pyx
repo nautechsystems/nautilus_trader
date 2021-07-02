@@ -144,7 +144,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             size_increment = Quantity(float(amount_prec) / 10 ** size_precision, size_precision)
         else:
             raise RuntimeError(
-                f"The {self._client.name} exchange is using SIGNIFICANT_DIGITS "
+                f"{self._client.name} exchange is using SIGNIFICANT_DIGITS "
                 f"precision which is not currently supported in this version."
             )
 
