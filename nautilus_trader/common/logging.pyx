@@ -108,7 +108,7 @@ cdef class Logger:
         UUID system_id=None,
         LogLevel level_stdout=LogLevel.INFO,
         LogLevel level_raw=LogLevel.DEBUG,
-        bint bypass_logging=False,
+        bint bypass=False,
     ):
         """
         Initialize a new instance of the ``Logger`` class.
@@ -125,7 +125,7 @@ cdef class Logger:
             The minimum log level for logging messages to stdout.
         level_raw : LogLevel
             The minimum log level for the raw log record sink.
-        bypass_logging : bool
+        bypass : bool
             If the logger should be bypassed.
 
         """
@@ -137,7 +137,7 @@ cdef class Logger:
 
         self.trader_id = trader_id
         self.system_id = system_id
-        self.is_bypassed = bypass_logging
+        self.is_bypassed = bypass
 
     cdef void log_c(self, dict record) except *:
         """
@@ -527,7 +527,7 @@ cdef class LiveLogger(Logger):
         UUID system_id=None,
         LogLevel level_stdout=LogLevel.INFO,
         LogLevel level_raw=LogLevel.DEBUG,
-        bint bypass_logging=False,
+        bint bypass=False,
         int maxsize=10000,
     ):
         """
@@ -547,7 +547,7 @@ cdef class LiveLogger(Logger):
             The minimum log level for logging messages to stdout.
         level_raw : LogLevel
             The minimum log level for the raw log record sink.
-        bypass_logging : bool
+        bypass : bool
             If the logger should be bypassed.
         maxsize : int, optional
             The maximum capacity for the log queue.
@@ -559,7 +559,7 @@ cdef class LiveLogger(Logger):
             system_id=system_id,
             level_stdout=level_stdout,
             level_raw=level_raw,
-            bypass_logging=bypass_logging,
+            bypass=bypass,
         )
 
         self._loop = loop
