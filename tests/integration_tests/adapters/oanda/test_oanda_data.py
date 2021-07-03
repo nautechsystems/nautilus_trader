@@ -130,14 +130,19 @@ class TestOandaDataClient:
         self.loop.run_until_complete(run_test())
 
     def test_disconnect(self):
-        # Arrange
-        self.client.connect()
+        async def run_test():
+            # Arrange
+            self.data_engine.start()  # Also connects client
+            await asyncio.sleep(1)
 
-        # Act
-        self.client.disconnect()
+            # Act
+            self.client.disconnect()
+            await asyncio.sleep(0.5)
 
-        # Assert
-        assert not self.client.is_connected
+            # Assert
+            assert not self.client.is_connected
+
+        self.loop.run_until_complete(run_test())
 
     def test_reset(self):
         # Arrange
