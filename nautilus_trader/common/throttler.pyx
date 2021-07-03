@@ -143,7 +143,7 @@ cdef class Throttler:
             The item to send.
 
         """
-        # Throttling is occurring: place item on buffer
+        # Throttling is occurring: place message on buffer
         if self.is_buffering:
             self._buff_msg(msg)
             return
