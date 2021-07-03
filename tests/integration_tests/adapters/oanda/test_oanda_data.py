@@ -58,10 +58,10 @@ class TestOandaDataClient:
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
+        self.loop.set_debug(True)
         self.executor = concurrent.futures.ThreadPoolExecutor()
         self.loop.set_default_executor(self.executor)
-        self.loop.set_debug(True)
+        asyncio.set_event_loop(self.loop)
 
         # Setup logging
         logger = LiveLogger(

@@ -112,6 +112,7 @@ class TestQueue:
     def test_await_put(self):
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
         async def run_test():
@@ -131,6 +132,7 @@ class TestQueue:
     def test_await_get(self):
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
         async def run_test():
