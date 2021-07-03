@@ -182,7 +182,6 @@ cdef class CFDInstrument(Instrument):
             size_precision=values["size_precision"],
             price_increment=Price.from_str_c(values["price_increment"]),
             size_increment=Quantity.from_str_c(values["size_increment"]),
-            multiplier=Quantity.from_str_c(values["multiplier"]),
             lot_size=Quantity.from_str_c(values["lot_size"]),
             max_quantity=Quantity.from_str_c(max_q) if max_q is not None else None,
             min_quantity=Quantity.from_str_c(min_q) if min_q is not None else None,
