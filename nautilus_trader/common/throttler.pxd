@@ -47,4 +47,5 @@ cdef class Throttler:
     cdef int64_t _delta_next(self) except *
     cpdef void _process(self, TimeEvent event) except *
     cdef void _set_timer(self, int64_t delta_next) except *
+    cdef void _buff_msg(self, msg) except *
     cdef void _send_msg(self, msg) except *

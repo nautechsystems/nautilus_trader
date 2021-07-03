@@ -542,18 +542,22 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Act
         self.risk_engine.execute(submit_bracket)
-        self.risk_engine.execute(submit_bracket)  # Duplicate command
+        self.exec_engine.process(TestStubs.event_order_submitted(entry))
+        self.exec_engine.process(TestStubs.event_order_submitted(stop_loss))
+        self.exec_engine.process(TestStubs.event_order_submitted(take_profit))
+        self.risk_engine.execute(submit_bracket)  # <-- Duplicate command
 
         # Assert
         self.assertEqual(
-            OrderState.INITIALIZED, entry.state
+            OrderState.SUBMITTED, entry.state
         )  # Did not invalidate originals
         self.assertEqual(
-            OrderState.INITIALIZED, stop_loss.state
+            OrderState.SUBMITTED, stop_loss.state
         )  # Did not invalidate originals
         self.assertEqual(
-            OrderState.INITIALIZED, take_profit.state
+            OrderState.SUBMITTED, take_profit.state
         )  # Did not invalidate originals
+        assert self.exec_engine.command_count == 1
 
     def test_submit_bracket_order_with_duplicate_take_profit_client_order_id_logs_does_not_submit(
         self,
