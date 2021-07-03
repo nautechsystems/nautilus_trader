@@ -39,7 +39,7 @@ config = {
     },
     "system": {
         "loop_debug": False,  # If event loop debug mode
-        "timeout_connection": 30.0,  # Timeout for all engines client to connect and initialize
+        "timeout_connection": 30.0,  # Timeout for all clients to connect and initialize
         "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
         "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
         "timeout_disconnection": 30.0,  # Timeout for all engine clients to disconnect
