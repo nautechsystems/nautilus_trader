@@ -23,6 +23,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import ADA
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
@@ -663,7 +664,60 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money(9.99970000, BTC), result3)
         self.assertEqual(Money(20.00000000, ETH), result4)
 
-    def test_calculate_pnls_for_cash_account_btcusdt(self):
+    def test_calculate_pnls_for_single_currency_cash_account(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    USD,
+                    Money(1_000_000.00, USD),
+                    Money(0.00, USD),
+                    Money(1_000_000.00, USD),
+                ),
+            ],
+            info={},  # No default currency set
+            event_id=uuid4(),
+            ts_updated_ns=0,
+            timestamp_ns=0,
+        )
+
+        account = Account(event)
+
+        # Wire up account to portfolio
+        account.register_portfolio(self.portfolio)
+        self.portfolio.register_account(account)
+
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000_000),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("0.80000"),
+        )
+
+        position = Position(AUDUSD_SIM, fill)
+
+        # Act
+        result = account.calculate_pnls(
+            instrument=AUDUSD_SIM,
+            position=position,
+            fill=fill,
+        )
+
+        # Assert
+        assert result == [Money(1000000.00, AUD), Money(-800000.00, USD)]
+
+    def test_calculate_pnls_for_multi_currency_cash_account_btcusdt(self):
         # Arrange
         event = AccountState(
             account_id=AccountId("SIM", "001"),
@@ -722,7 +776,7 @@ class AccountTests(unittest.TestCase):
         # Assert
         assert result == [Money(-0.50000000, BTC), Money(22750.00000000, USDT)]
 
-    def test_calculate_pnls_for_cash_account_adabtc(self):
+    def test_calculate_pnls_for_multi_currency_cash_account_adabtc(self):
         # Arrange
         event = AccountState(
             account_id=AccountId("SIM", "001"),
