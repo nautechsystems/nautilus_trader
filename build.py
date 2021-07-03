@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from distutils.version import LooseVersion
 import itertools
 import os
 from pathlib import Path
@@ -64,25 +63,24 @@ CYTHON_COMPILER_DIRECTIVES = {
 
 
 def _build_extensions() -> List[Extension]:
-    # Build Extensions to feed into cythonize()
-    # Profiling requires special macro directives
-    define_macros = []
-    if PROFILING_MODE or ANNOTATION_MODE:
-        define_macros.append(("CYTHON_TRACE", "1"))
-
-    if LooseVersion("3.0a7") <= LooseVersion(cython_compiler_version):
-        # https://github.com/nautechsystems/nautilus_trader/issues/303
-        define_macros.append(("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"))
-
-    if platform.system() != "Windows":
-        extra_compile_args = ["-O3", "-pipe"]
-    else:
-        extra_compile_args = []
-
     # Regarding the compiler warning: #warning "Using deprecated NumPy API,
     # disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
     # https://stackoverflow.com/questions/52749662/using-deprecated-numpy-api
     # From the Cython docs: "For the time being, it is just a warning that you can ignore."
+    define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
+    if PROFILING_MODE or ANNOTATION_MODE:
+        # Profiling requires special macro directives
+        define_macros.append(("CYTHON_TRACE", "1"))
+
+    extra_compile_args = []
+    if platform.system() != "Windows":
+        extra_compile_args.append("-O3")
+        extra_compile_args.append("-pipe")
+
+    print(f"define_macros={define_macros}")
+    print(f"extra_compile_args={extra_compile_args}")
+
+    # Build Extensions to feed into cythonize()
     return [
         Extension(
             name=str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
