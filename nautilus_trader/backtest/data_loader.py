@@ -27,6 +27,7 @@ import fsspec
 import orjson
 import pandas as pd
 import pyarrow as pa
+from pyarrow import ArrowInvalid
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
@@ -151,7 +152,7 @@ class TextParser(ByteParser):
                     except TypeError as e:
                         if not e.args[0].startswith("cannot unpack non-iterable"):
                             raise e
-                        yield x
+                    yield x
 
     def process_chunk(self, chunk, instrument_provider):
         for line in map(self.line_preprocessor, chunk.split(b"\n")):
@@ -350,7 +351,11 @@ class DataLoader:
                 yield NewFile(fn)
                 data = 1
                 while data:
-                    data = f.read(self.chunk_size)
+                    try:
+                        data = f.read(self.chunk_size)
+                    except OSError as e:
+                        print(f"ERR file: {fn} ({e}), skipping")
+                        break
                     yield data
                     yield None  # this is a chunk
         yield EOStream()
@@ -745,14 +750,11 @@ class DataCatalog:
             if raise_on_empty:
                 raise FileNotFoundError
             else:
-                return
+                return pd.DataFrame()
 
         dataset = ds.dataset(path, partitioning="hive", filesystem=self.fs)
-        df = (
-            dataset.to_table(filter=combine_filters(*filters))
-            .to_pandas()
-            .drop_duplicates()
-        )
+        table = dataset.to_table(filter=combine_filters(*filters))
+        df = table.to_pandas().drop_duplicates()
         mappings = self._read_mappings(path=path)
         for col in mappings:
             df.loc[:, col] = df[col].map({v: k for k, v in mappings[col].items()})
@@ -785,7 +787,12 @@ class DataCatalog:
         return _deserialize(cls=cls, chunk=df.to_dict("records"))
 
     def instruments(
-        self, instrument_type=None, filter_expr=None, as_nautilus=False, **kwargs
+        self,
+        instrument_type=None,
+        instrument_ids=None,
+        filter_expr=None,
+        as_nautilus=False,
+        **kwargs,
     ):
         if instrument_type is not None:
             assert isinstance(instrument_type, type)
@@ -795,14 +802,22 @@ class DataCatalog:
 
         dfs = []
         for ins_type in instrument_types:
-            dfs.append(
-                self._query(
+            try:
+                df = self._query(
                     camel_to_snake_case(ins_type.__name__),
                     filter_expr=filter_expr,
+                    instrument_ids=instrument_ids,
                     raise_on_empty=False,
                     **kwargs,
                 )
-            )
+                dfs.append(df)
+            except ArrowInvalid as e:
+                # If we're using a `filter_expr` here, there's a good chance this error is using a filter that is
+                # specific to one set of instruments and not the others, so we ignore it. If not; raise
+                if filter_expr is not None:
+                    continue
+                else:
+                    raise e
 
         if not as_nautilus:
             return pd.concat([df for df in dfs if df is not None])
