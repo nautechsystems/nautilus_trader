@@ -52,6 +52,14 @@ cdef str _STRATEGIES = 'Strategies'
 cdef class RedisCacheDatabase(CacheDatabase):
     """
     Provides a cache database backed by Redis.
+
+    Warnings
+    --------
+    Redis can only accurately store int64 types to 17 digits of precision.
+    Therefore nanosecond timestamp int64's with 19 digits will lose 2 digits of
+    precision when persisted. If precision to this level is important, then you
+    could additionally persist events in another medium/database which can
+    properly handle int64 types.
     """
 
     def __init__(
