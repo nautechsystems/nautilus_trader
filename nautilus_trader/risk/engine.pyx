@@ -568,25 +568,29 @@ cdef class RiskEngine(Component):
 
     cdef bint _check_order_risk(self, Instrument instrument, Order order):
         max_notional = self._max_notional_per_order.get(order.instrument_id)
-        if max_notional is not None:
-            if order.type == OrderType.MARKET:
-                # Determine entry price
-                last = self.cache.quote_tick(instrument.id)
-                if order.side == OrderSide.BUY:
-                    entry_px = last.ask
-                else:  # order.side == OrderSide.SELL
-                    entry_px = last.bid
+        if max_notional is None:
+            return True   # No check
 
-                notional: Decimal = order.quantity * last.ask * instrument.multiplier
-                if notional > max_notional:
-                    self._deny_order(
-                        order=order,
-                        reason=f"Exceeds MAX_NOTIONAL_PER_ORDER @ {max_notional}",
-                    )
-                    return False  # Denied
+        if order.type == OrderType.MARKET:
+            # Determine entry price
+            last = self.cache.quote_tick(instrument.id)
+            if order.side == OrderSide.BUY:
+                price = last.ask
+            else:  # order.side == OrderSide.SELL
+                price = last.bid
+        else:
+            price = order.price
 
-        # Passed
-        return True
+        notional: Decimal = instrument.notional_value(order.quantity, price).as_decimal()
+        if notional > max_notional:
+            self._deny_order(
+                order=order,
+                reason=f"Exceeds MAX_NOTIONAL_PER_ORDER of {max_notional} @ {notional}",
+            )
+            return False  # Denied
+
+        # TODO(cs): Additional pre-trade risk checks
+        return True  # Passed
 
 # -- EVENT GENERATION ------------------------------------------------------------------------------
 
