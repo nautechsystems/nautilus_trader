@@ -29,6 +29,7 @@ from nautilus_trader.backtest.loaders import TardisQuoteDataLoader
 from nautilus_trader.backtest.loaders import TardisTradeDataLoader
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
@@ -318,6 +319,42 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.35"),
             maker_fee=Decimal("0.0001"),
             taker_fee=Decimal("0.0001"),
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
+
+    @staticmethod
+    def adabtc_binance() -> CurrencySpot:
+        """
+        Return the Binance ADA/BTC instrument for backtesting.
+
+        Returns
+        -------
+        CurrencySpot
+
+        """
+        return CurrencySpot(
+            instrument_id=InstrumentId(
+                symbol=Symbol("ADA/BTC"),
+                venue=Venue("BINANCE"),
+            ),
+            base_currency=ADA,
+            quote_currency=BTC,
+            price_precision=8,
+            size_precision=0,
+            price_increment=Price(1e-08, precision=8),
+            size_increment=Quantity.from_int(1),
+            lot_size=None,
+            max_quantity=Quantity.from_int(90000000),
+            min_quantity=Quantity.from_int(1),
+            max_notional=None,
+            min_notional=Money(0.00010000, BTC),
+            max_price=Price(1000, precision=8),
+            min_price=Price(1e-8, precision=8),
+            margin_init=Decimal("0"),
+            margin_maint=Decimal("0"),
+            maker_fee=Decimal("0.0010"),
+            taker_fee=Decimal("0.0010"),
             ts_event_ns=0,
             ts_recv_ns=0,
         )
