@@ -502,8 +502,11 @@ class DataCatalog:
                     if self.fs.exists(fn) or self.fs.isdir(str(fn)):
                         existing = self._query(
                             filename=camel_to_snake_case(cls.__name__),
-                            instrument_ids=ins_id,
+                            instrument_ids=ins_id
+                            if cls not in Instrument.__subclasses__()
+                            else None,
                             ts_column=ts_col,
+                            raise_on_empty=False,
                         )
                         if not existing.empty:
                             df = df.append(existing).drop_duplicates()
@@ -703,6 +706,7 @@ class DataCatalog:
                     as_nautilus=True,
                     start=start_timestamp,
                     end=end_timestamp,
+                    raise_on_empty=False,
                     **kw,
                 )
 

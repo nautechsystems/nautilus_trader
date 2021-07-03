@@ -124,3 +124,19 @@ cdef class Future(Instrument):
         self.trading_hours = trading_hours
         self.liquid_hours = liquid_hours
         self.last_trade_time = last_trade_time
+
+    @staticmethod
+    def from_dict(dict values) -> Instrument:
+        return Instrument.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(Instrument obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return Instrument.to_dict_c(obj)
