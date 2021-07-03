@@ -345,7 +345,7 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
         self.assertEqual(279, strategy.fast_ema.count)
         self.assertEqual(69806, self.engine.iteration)
         self.assertEqual(
-            Money(999489.72440062, USDT),
+            Money(998462.61716820, USDT),
             self.engine.portfolio.account(self.venue).balance_total(USDT),
         )
 
@@ -397,6 +397,6 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
         self.assertEqual(39, strategy.fast_ema.count)
         self.assertEqual(19998, self.engine.iteration)
         self.assertEqual(
-            Money(999845.13660000, USDT),
+            Money(999843.73560000, USDT),
             self.engine.portfolio.account(self.venue).balance_total(USDT),
         )
