@@ -27,6 +27,8 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments.cfd import CFDInstrument
+from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -40,6 +42,7 @@ XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSDT_BINANCE_INSTRUMENT = TestDataProvider.binance_btcusdt_instrument()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
+XAGUSD_OANDA = TestInstrumentProvider.xagusd_oanda()
 
 
 class TestInstrument:
@@ -146,6 +149,69 @@ class TestInstrument:
 
         # Assert
         assert result == BTCUSDT_BINANCE
+
+    def test_cfd_instrument_to_dict(self):
+        # Arrange, Act
+        result = CFDInstrument.to_dict(XAGUSD_OANDA)
+
+        # Assert
+        assert CFDInstrument.from_dict(result) == XAGUSD_OANDA
+        assert result == {
+            "type": "CFDInstrument",
+            "id": "XAG/USD.OANDA",
+            "asset_class": "METAL",
+            "quote_currency": "USD",
+            "price_precision": 5,
+            "price_increment": "0.00001",
+            "size_precision": 0,
+            "size_increment": "1",
+            "lot_size": "1",
+            "max_quantity": "10000000",
+            "min_quantity": "1",
+            "max_notional": None,
+            "min_notional": None,
+            "max_price": "1000000.00",
+            "min_price": "0.05",
+            "margin_init": "0.02",
+            "margin_maint": "0.007",
+            "maker_fee": "-0.00025",
+            "taker_fee": "0.00075",
+            "ts_event_ns": 0,
+            "ts_recv_ns": 0,
+            "info": None,
+        }
+
+    def test_crypto_swap_instrument_to_dict(self):
+        # Arrange, Act
+        result = CryptoSwap.to_dict(XBTUSD_BITMEX)
+
+        # Assert
+        assert CryptoSwap.from_dict(result) == XBTUSD_BITMEX
+        assert result == {
+            "type": "CryptoSwap",
+            "id": "XBT/USD.BITMEX",
+            "base_currency": "BTC",
+            "quote_currency": "USD",
+            "settlement_currency": "BTC",
+            "is_inverse": True,
+            "price_precision": 1,
+            "price_increment": "0.5",
+            "size_precision": 0,
+            "size_increment": "1",
+            "max_quantity": None,
+            "min_quantity": None,
+            "max_notional": "10_000_000.00 USD",
+            "min_notional": "1.00 USD",
+            "max_price": "1000000.0",
+            "min_price": "0.5",
+            "margin_init": "0.01",
+            "margin_maint": "0.0035",
+            "maker_fee": "-0.00025",
+            "taker_fee": "0.00075",
+            "ts_event_ns": 0,
+            "ts_recv_ns": 0,
+            "info": None,
+        }
 
     @pytest.mark.parametrize(
         "value, expected_str",
