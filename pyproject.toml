@@ -29,7 +29,7 @@ requires = [
     "setuptools",
     "poetry-core>=1.0.3",
     "numpy>=1.21.0",
-    "Cython>=3.0a8",
+    "Cython>=3.0.0a8",
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -39,7 +39,7 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = "^3.7.9"
-cython = "^3.0a8"
+cython = "^3.0.0a8"
 empyrical = "^0.5.5"
 fsspec = "^2021.6.1"
 msgpack = "^1.0.2"
@@ -64,7 +64,7 @@ oandapyV20 = { version = "^0.6.3", optional = true }
 # coverage 5.x is currently broken for Cython
 # https://github.com/cython/cython/issues/3515
 black = "^21.6b0"
-coverage = "4.5.4"  # Pinned at 4.5.4 due Cython 3.0a7
+coverage = "4.5.4"  # Pinned at 4.5.4 due Cython 3.0.0a8
 flake8 = "^3.9.2"
 isort = "^5.9.1"
 mypy = "^0.902"
