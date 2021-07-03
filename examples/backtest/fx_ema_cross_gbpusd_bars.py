@@ -14,6 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import timedelta
 from decimal import Decimal
 import os
 import sys
@@ -49,7 +50,12 @@ if __name__ == "__main__":
         use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
         # exec_db_type="redis",
         # exec_db_flush=False,
-        # bypass_logging=True
+        # bypass_logging=True,
+        config_risk={
+            "bypass": False,  # Example of bypassing pre-trade risk checks for backtests
+            "max_order_rate": (100, timedelta(seconds=1)),
+            "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
+        },
     )
 
     # Setup trading instruments

@@ -89,7 +89,7 @@ cdef class Throttler:
         Condition.callable(output, "output")
 
         self._clock = clock
-        self._log = LoggerAdapter(component=name, logger=logger)
+        self._log = LoggerAdapter(component=f"Throttler-{name}", logger=logger)
         self._interval_ns = secs_to_nanos(interval.total_seconds())
         self._buffer = Queue()
         self._timer_name = f"{name}-DEQUE"
@@ -101,6 +101,8 @@ cdef class Throttler:
         self.interval = interval
         self.is_initialized = False
         self.is_buffering = False
+
+        self._log.info("Initialized.")
 
     @property
     def qsize(self):
@@ -143,7 +145,7 @@ cdef class Throttler:
         """
         # Throttling is occurring: place item on buffer
         if self.is_buffering:
-            self._buffer.put_nowait(msg)
+            self._buff_msg(msg)
             return
 
         # Check can send message
@@ -154,7 +156,7 @@ cdef class Throttler:
 
         # Start throttling
         self.is_buffering = True
-        self._buffer.put_nowait(msg)
+        self._buff_msg(msg)
         self._set_timer(delta_next)
 
     cdef int64_t _delta_next(self) except *:
@@ -187,9 +189,13 @@ cdef class Throttler:
             handler=self._process,
         )
 
-    cdef void _send_msg(self, item) except *:
+    cdef void _buff_msg(self, msg) except *:
+        self._buffer.put_nowait(msg)
+        self._log.warning(f"Buffering {msg}.")
+
+    cdef void _send_msg(self, msg) except *:
         self._timestamps.appendleft(self._clock.timestamp_ns())
-        self._output(item)
+        self._output(msg)
         if not self.is_initialized:
             if len(self._timestamps) == self.limit:
                 self.is_initialized = True

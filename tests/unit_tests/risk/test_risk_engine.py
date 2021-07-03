@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import timedelta
+from decimal import Decimal
+
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import Logger
@@ -45,6 +48,7 @@ from tests.test_kit.stubs import TestStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class TestRiskEngine:
@@ -98,13 +102,40 @@ class TestRiskEngine:
         # Prepare data
         self.exec_engine.cache.add_instrument(AUDUSD_SIM)
 
+    def test_trading_state_after_instantiation_returns_active(self):
+        # Arrange, Act
+        result = self.risk_engine.trading_state
+
+        # Assert
+        assert result == TradingState.ACTIVE
+
     def test_set_trading_state_changes_value(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.risk_engine.set_trading_state(TradingState.HALTED)
 
         # Assert
         assert self.risk_engine.trading_state == TradingState.HALTED
+
+    def test_max_order_rate_when_no_risk_config_returns_100_per_second(self):
+        # Arrange, Act
+        result = self.risk_engine.max_order_rate()
+
+        assert result == (100, timedelta(seconds=1))
+
+    def test_max_notionals_when_no_risk_config_returns_empty_dict(self):
+        # Arrange, Act
+        result = self.risk_engine.max_notionals_per_order()
+
+        assert result == {}
+
+    def test_set_max_notional_changes_setting(self):
+        # Arrange, Act
+        self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
+
+        # Assert
+        assert self.risk_engine.max_notionals_per_order() == {
+            AUDUSD_SIM.id: Decimal("1000000")
+        }
 
     def test_given_random_command_logs_and_continues(self):
         # Arrange
