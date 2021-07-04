@@ -3,12 +3,18 @@
 
 ## Breaking Changes
 - Renamed Loggers `bypass_logging` to `bypass`.
+- Renamed `Position.opened_timestamp_ns` to `ts_opened_ns`.
+- Renamed `Position.closed_timestamp_ns` to `ts_closed_ns`.
+- Renamed `Position.open_duration_ns` to `duration_ns`.
 
 ## Enhancements
+- Add pre-trade risk checks to `RiskEngine` iteration 2.
+- Improve analysis reports.
+- Improve `Throttler` functionality and performance.
 - Removed redundant `OrderInvalid` state and associated code.
 
 ## Fixes
-None
+- PnL calculations for `CASH` account types.
 
 ---
 

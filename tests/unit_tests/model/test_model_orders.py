@@ -275,7 +275,6 @@ class TestOrders:
 
         # Assert
         assert result == {
-            "type": "MarketOrder",
             "client_order_id": "O-19700101-000000-000-001-1",
             "venue_order_id": "NULL",
             "position_id": "NULL",
@@ -283,8 +282,8 @@ class TestOrders:
             "account_id": None,
             "execution_id": None,
             "instrument_id": "AUD/USD.SIM",
-            "order_side": "BUY",
-            "order_type": "MARKET",
+            "type": "MARKET",
+            "side": "BUY",
             "quantity": "100000",
             "timestamp_ns": 0,
             "time_in_force": "GTC",
@@ -292,50 +291,7 @@ class TestOrders:
             "ts_filled_ns": 0,
             "avg_px": None,
             "slippage": "0",
-            "init_id": order.init_id.value,
             "state": "INITIALIZED",
-        }
-
-    def test_limit_order_to_dict(self):
-        # Arrange
-        order = self.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-        )
-
-        # Act
-        result = order.to_dict()
-
-        # Assert
-        assert result == {
-            "type": "LimitOrder",
-            "client_order_id": "O-19700101-000000-000-001-1",
-            "venue_order_id": "NULL",
-            "position_id": "NULL",
-            "strategy_id": "S-001",
-            "account_id": None,
-            "execution_id": None,
-            "instrument_id": "AUD/USD.SIM",
-            "order_side": "BUY",
-            "order_type": "LIMIT",
-            "quantity": "100000",
-            "price": "1.00000",
-            "liquidity_side": "NONE",
-            "expire_time": None,
-            "ts_expire_time": 0,
-            "timestamp_ns": 0,
-            "time_in_force": "GTC",
-            "filled_qty": "0",
-            "ts_filled_ns": 0,
-            "avg_px": None,
-            "slippage": "0",
-            "init_id": order.init_id.value,
-            "state": "INITIALIZED",
-            "is_post_only": False,
-            "is_reduce_only": False,
-            "is_hidden": False,
         }
 
     def test_initialize_limit_order(self):
@@ -363,6 +319,45 @@ class TestOrders:
             repr(order)
             == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
         )
+
+    def test_limit_order_to_dict(self):
+        # Arrange
+        order = self.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        # Act
+        result = order.to_dict()
+
+        # Assert
+        assert result == {
+            "client_order_id": "O-19700101-000000-000-001-1",
+            "venue_order_id": "NULL",
+            "position_id": "NULL",
+            "strategy_id": "S-001",
+            "account_id": None,
+            "execution_id": None,
+            "instrument_id": "AUD/USD.SIM",
+            "type": "LIMIT",
+            "side": "BUY",
+            "quantity": "100000",
+            "price": "1.00000",
+            "liquidity_side": "NONE",
+            "expire_time_ns": 0,
+            "timestamp_ns": 0,
+            "time_in_force": "GTC",
+            "filled_qty": "0",
+            "ts_filled_ns": 0,
+            "avg_px": None,
+            "slippage": "0",
+            "state": "INITIALIZED",
+            "is_post_only": False,
+            "is_reduce_only": False,
+            "is_hidden": False,
+        }
 
     def test_initialize_limit_order_with_expire_time(self):
         # Arrange, Act
@@ -411,6 +406,43 @@ class TestOrders:
             == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
         )
 
+    def test_stop_market_order_to_dict(self):
+        # Arrange
+        order = self.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        # Act
+        result = order.to_dict()
+
+        # Assert
+        assert result == {
+            "client_order_id": "O-19700101-000000-000-001-1",
+            "venue_order_id": "NULL",
+            "position_id": "NULL",
+            "strategy_id": "S-001",
+            "account_id": None,
+            "execution_id": None,
+            "instrument_id": "AUD/USD.SIM",
+            "type": "STOP_MARKET",
+            "side": "BUY",
+            "quantity": "100000",
+            "price": "1.00000",
+            "liquidity_side": "NONE",
+            "expire_time_ns": 0,
+            "timestamp_ns": 0,
+            "time_in_force": "GTC",
+            "filled_qty": "0",
+            "ts_filled_ns": 0,
+            "avg_px": None,
+            "slippage": "0",
+            "state": "INITIALIZED",
+            "is_reduce_only": False,
+        }
+
     def test_initialize_stop_limit_order(self):
         # Arrange, Act
         order = self.order_factory.stop_limit(
@@ -437,6 +469,47 @@ class TestOrders:
             repr(order)
             == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.00000 GTC, trigger=1.10010, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
         )
+
+    def test_stop_limit_order_to_dict(self):
+        # Arrange
+        order = self.order_factory.stop_limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+            Price.from_str("1.10010"),
+        )
+
+        # Act
+        result = order.to_dict()
+
+        # Assert
+        assert result == {
+            "client_order_id": "O-19700101-000000-000-001-1",
+            "venue_order_id": "NULL",
+            "position_id": "NULL",
+            "strategy_id": "S-001",
+            "account_id": None,
+            "execution_id": None,
+            "instrument_id": "AUD/USD.SIM",
+            "type": "STOP_LIMIT",
+            "side": "BUY",
+            "quantity": "100000",
+            "trigger": "1.10010",
+            "price": "1.00000",
+            "liquidity_side": "NONE",
+            "expire_time_ns": 0,
+            "timestamp_ns": 0,
+            "time_in_force": "GTC",
+            "filled_qty": "0",
+            "ts_filled_ns": 0,
+            "avg_px": None,
+            "slippage": "0",
+            "state": "INITIALIZED",
+            "is_post_only": False,
+            "is_reduce_only": False,
+            "is_hidden": False,
+        }
 
     def test_bracket_order_equality(self):
         # Arrange
