@@ -163,8 +163,8 @@ if __name__ == "__main__":
 
     # Work around a Cython problem in Python 3.8.x on macOS
     # https://github.com/cython/cython/issues/3262
-    if platform.system() in ("Darwin", "Windows"):
-        print("Setting multiprocessing method to 'fork'.")
+    if platform.system() == "Darwin":
+        print("macOS: Setting multiprocessing method to 'fork'.")
         try:
             # noinspection PyUnresolvedReferences
             import multiprocessing
