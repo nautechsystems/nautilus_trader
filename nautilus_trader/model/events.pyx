@@ -2190,7 +2190,7 @@ cdef class PositionClosed(PositionEvent):
                 f"position_id={self.position.id}, "
                 f"strategy_id={self.position.strategy_id}, "
                 f"entry={OrderSideParser.to_str(self.position.entry)}, "
-                f"duration={pd.Timedelta(self.position.open_duration_ns, unit='ns')}, "
+                f"duration={pd.Timedelta(self.position.duration_ns, unit='ns')}, "
                 f"avg_px_open={self.position.avg_px_open}, "
                 f"avg_px_close={self.position.avg_px_close}, "
                 f"realized_points={round(self.position.realized_points, 5)}, "

@@ -29,7 +29,8 @@ cdef class Throttler:
     cdef Queue _buffer
     cdef str _timer_name
     cdef object _timestamps
-    cdef object _output
+    cdef object _output_send
+    cdef object _output_drop
 
     cdef readonly str name
     """The name of the throttler.\n\n:returns: `str`"""
@@ -39,13 +40,14 @@ cdef class Throttler:
     """The interval for the throttler rate.\n\n:returns: `timedelta`"""
     cdef readonly bint is_initialized
     """If the throttler is initialized (sent at least limit messages).\n\n:returns: `bool`"""
-    cdef readonly bint is_buffering
-    """If the throttler is currently buffering messages.\n\n:returns: `bool`"""
+    cdef readonly bint is_limiting
+    """If the throttler is currently limiting messages (buffering or dropping).\n\n:returns: `bool`"""
 
     cpdef double used(self) except *
     cpdef void send(self, msg) except *
     cdef int64_t _delta_next(self) except *
     cpdef void _process(self, TimeEvent event) except *
-    cdef void _set_timer(self, int64_t delta_next) except *
-    cdef void _buff_msg(self, msg) except *
+    cpdef void _resume(self, TimeEvent event) except *
+    cdef void _set_timer(self, handler: callable) except *
+    cdef void _limit_msg(self, msg) except *
     cdef void _send_msg(self, msg) except *

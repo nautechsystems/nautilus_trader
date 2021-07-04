@@ -29,15 +29,18 @@ from nautilus_trader.backtest.loaders import TardisQuoteDataLoader
 from nautilus_trader.backtest.loaders import TardisTradeDataLoader
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.cfd import CFDInstrument
 from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.objects import Money
@@ -321,6 +324,42 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
+    def adabtc_binance() -> CurrencySpot:
+        """
+        Return the Binance ADA/BTC instrument for backtesting.
+
+        Returns
+        -------
+        CurrencySpot
+
+        """
+        return CurrencySpot(
+            instrument_id=InstrumentId(
+                symbol=Symbol("ADA/BTC"),
+                venue=Venue("BINANCE"),
+            ),
+            base_currency=ADA,
+            quote_currency=BTC,
+            price_precision=8,
+            size_precision=0,
+            price_increment=Price(1e-08, precision=8),
+            size_increment=Quantity.from_int(1),
+            lot_size=None,
+            max_quantity=Quantity.from_int(90000000),
+            min_quantity=Quantity.from_int(1),
+            max_notional=None,
+            min_notional=Money(0.00010000, BTC),
+            max_price=Price(1000, precision=8),
+            min_price=Price(1e-8, precision=8),
+            margin_init=Decimal("0"),
+            margin_maint=Decimal("0"),
+            maker_fee=Decimal("0.0010"),
+            taker_fee=Decimal("0.0010"),
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
+
+    @staticmethod
     def xbtusd_bitmex() -> CryptoSwap:
         """
         Return the BitMEX XBT/USD perpetual contract for backtesting.
@@ -380,6 +419,42 @@ class TestInstrumentProvider:
             size_precision=0,
             price_increment=Price.from_str("0.05"),
             size_increment=Quantity.from_int(1),
+            max_quantity=Quantity.from_int(10000000),
+            min_quantity=Quantity.from_int(1),
+            max_notional=None,
+            min_notional=None,
+            max_price=Price.from_str("1000000.00"),
+            min_price=Price.from_str("0.05"),
+            margin_init=Decimal("0.02"),
+            margin_maint=Decimal("0.007"),
+            maker_fee=Decimal("-0.00025"),
+            taker_fee=Decimal("0.00075"),
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
+
+    @staticmethod
+    def xagusd_oanda() -> CFDInstrument:
+        """
+        Return the OANDA XAG/USD CFD instrument for backtesting.
+
+        Returns
+        -------
+        CFDInstrument
+
+        """
+        return CFDInstrument(
+            instrument_id=InstrumentId(
+                symbol=Symbol("XAG/USD"),
+                venue=Venue("OANDA"),
+            ),
+            asset_class=AssetClass.METAL,
+            quote_currency=USD,
+            price_precision=5,
+            size_precision=0,
+            price_increment=Price.from_str("0.00001"),
+            size_increment=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1),
             max_quantity=Quantity.from_int(10000000),
             min_quantity=Quantity.from_int(1),
             max_notional=None,

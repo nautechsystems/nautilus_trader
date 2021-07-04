@@ -77,6 +77,7 @@ class TestLiveRiskEngine:
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
         self.exec_engine = LiveExecutionEngine(
@@ -297,6 +298,7 @@ class TestLiveRiskEngine:
 
             # Tear Down
             self.risk_engine.stop()
+            await self.risk_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -332,5 +334,6 @@ class TestLiveRiskEngine:
 
             # Tear Down
             self.risk_engine.stop()
+            await self.risk_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())

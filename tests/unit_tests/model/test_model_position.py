@@ -127,31 +127,25 @@ class PositionTests(unittest.TestCase):
 
         # Assert
         assert result == {
-            "type": "Position",
-            "id": "P-123456",
+            "position_id": "P-123456",
             "account_id": "SIM-000",
             "from_order": "O-19700101-000000-000-001-1",
             "strategy_id": "S-001",
             "instrument_id": "AUD/USD.SIM",
-            "side": "LONG",
+            "side": "BUY",
             "net_qty": "100000",
             "quantity": "100000",
             "peak_qty": "100000",
-            "timestamp_ns": 0,
-            "opened_timestamp_ns": 0,
-            "closed_timestamp_ns": 0,
-            "open_duration_ns": 0,
+            "ts_opened_ns": 0,
+            "ts_closed_ns": 0,
+            "duration_ns": 0,
             "avg_px_open": "1.00001",
             "avg_px_close": "None",
-            "price_precision": 5,
-            "size_precision": 0,
-            "multiplier": "1",
-            "is_inverse": False,
             "quote_currency": "USD",
             "base_currency": "AUD",
             "cost_currency": "USD",
-            "realized_points": "0",
-            "realized_return": "0",
+            "realized_points": Decimal("0"),
+            "realized_return": Decimal("0.00000"),
             "realized_pnl": "-2.00 USD",
             "commissions": "['2.00 USD']",
         }
@@ -189,8 +183,8 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity.from_int(100000), position.peak_qty)
         self.assertEqual(OrderSide.BUY, position.entry)
         self.assertEqual(PositionSide.LONG, position.side)
-        self.assertEqual(0, position.opened_timestamp_ns)
-        self.assertEqual(0, position.open_duration_ns)
+        self.assertEqual(0, position.ts_opened_ns)
+        self.assertEqual(0, position.duration_ns)
         self.assertEqual(Decimal("1.00001"), position.avg_px_open)
         self.assertEqual(1, position.event_count)
         self.assertEqual([order.client_order_id], position.client_order_ids)
@@ -242,7 +236,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity.from_int(100000), position.quantity)
         self.assertEqual(Quantity.from_int(100000), position.peak_qty)
         self.assertEqual(PositionSide.SHORT, position.side)
-        self.assertEqual(0, position.opened_timestamp_ns)
+        self.assertEqual(0, position.ts_opened_ns)
         self.assertEqual(Decimal("1.00001"), position.avg_px_open)
         self.assertEqual(1, position.event_count)
         self.assertEqual(
@@ -292,7 +286,7 @@ class PositionTests(unittest.TestCase):
         self.assertEqual(Quantity.from_int(50000), position.quantity)
         self.assertEqual(Quantity.from_int(50000), position.peak_qty)
         self.assertEqual(PositionSide.LONG, position.side)
-        self.assertEqual(0, position.opened_timestamp_ns)
+        self.assertEqual(0, position.ts_opened_ns)
         self.assertEqual(Decimal("1.00001"), position.avg_px_open)
         self.assertEqual(1, position.event_count)
         self.assertTrue(position.is_long)
@@ -347,7 +341,7 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity.from_int(100000), position.quantity)
         self.assertEqual(PositionSide.SHORT, position.side)
-        self.assertEqual(0, position.opened_timestamp_ns)
+        self.assertEqual(0, position.ts_opened_ns)
         self.assertEqual(Decimal("1.000015"), position.avg_px_open)
         self.assertEqual(2, position.event_count)
         self.assertFalse(position.is_long)
@@ -413,11 +407,11 @@ class PositionTests(unittest.TestCase):
         assert position.is_opposite_side(fill2.order_side)
         self.assertEqual(Quantity.zero(), position.quantity)
         self.assertEqual(PositionSide.FLAT, position.side)
-        self.assertEqual(1_000_000_000, position.opened_timestamp_ns)
-        self.assertEqual(1_000_000_000, position.open_duration_ns)
+        self.assertEqual(1_000_000_000, position.ts_opened_ns)
+        self.assertEqual(1_000_000_000, position.duration_ns)
         self.assertEqual(Decimal("1.00001"), position.avg_px_open)
         self.assertEqual(2, position.event_count)
-        self.assertEqual(2_000_000_000, position.closed_timestamp_ns)
+        self.assertEqual(2_000_000_000, position.ts_closed_ns)
         self.assertEqual(Decimal("1.00011"), position.avg_px_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
@@ -486,13 +480,13 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity.zero(), position.quantity)
         self.assertEqual(PositionSide.FLAT, position.side)
-        self.assertEqual(0, position.opened_timestamp_ns)
+        self.assertEqual(0, position.ts_opened_ns)
         self.assertEqual(Decimal("1.0"), position.avg_px_open)
         self.assertEqual(3, position.event_count)
         self.assertEqual(
             [order1.client_order_id, order2.client_order_id], position.client_order_ids
         )
-        self.assertEqual(0, position.closed_timestamp_ns)
+        self.assertEqual(0, position.ts_closed_ns)
         self.assertEqual(Decimal("1.00002"), position.avg_px_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
@@ -544,7 +538,7 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity.zero(), position.quantity)
         self.assertEqual(PositionSide.FLAT, position.side)
-        self.assertEqual(0, position.opened_timestamp_ns)
+        self.assertEqual(0, position.ts_opened_ns)
         self.assertEqual(Decimal("1.0"), position.avg_px_open)
         self.assertEqual(2, position.event_count)
         self.assertEqual(
@@ -557,7 +551,7 @@ class PositionTests(unittest.TestCase):
             ],
             position.execution_ids,
         )
-        self.assertEqual(0, position.closed_timestamp_ns)
+        self.assertEqual(0, position.ts_closed_ns)
         self.assertEqual(Decimal("1.0"), position.avg_px_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)
@@ -628,14 +622,14 @@ class PositionTests(unittest.TestCase):
         # Assert
         self.assertEqual(Quantity.zero(), position.quantity)
         self.assertEqual(PositionSide.FLAT, position.side)
-        self.assertEqual(0, position.opened_timestamp_ns)
+        self.assertEqual(0, position.ts_opened_ns)
         self.assertEqual(Decimal("1.000005"), position.avg_px_open)
         self.assertEqual(3, position.event_count)
         self.assertEqual(
             [order1.client_order_id, order2.client_order_id, order3.client_order_id],
             position.client_order_ids,
         )
-        self.assertEqual(0, position.closed_timestamp_ns)
+        self.assertEqual(0, position.ts_closed_ns)
         self.assertEqual(Decimal("1.0001"), position.avg_px_close)
         self.assertFalse(position.is_long)
         self.assertFalse(position.is_short)

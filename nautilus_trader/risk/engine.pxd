@@ -30,6 +30,8 @@ from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.trading.portfolio cimport Portfolio
@@ -88,9 +90,15 @@ cdef class RiskEngine(Component):
 
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
 
-    cdef bint _check_duplicate_id(self, Order order)
-    cdef bint _check_order_values(self, Instrument instrument, Order order)
-    cdef bint _check_order_risk(self, Instrument instrument, Order order)
+    cdef bint _check_order_id(self, Order order) except *
+    cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *
+    cdef bint _check_order_price(self, Instrument instrument, Order order) except *
+    cdef bint _check_order_risk(self, Instrument instrument, Order order) except *
+
+# -- VALIDATIONS -----------------------------------------------------------------------------------
+
+    cdef str _check_price(self, Instrument instrument, Price price)
+    cdef str _check_quantity(self, Instrument instrument, Quantity quantity)
 
 # -- EVENT GENERATION ------------------------------------------------------------------------------
 
@@ -99,4 +107,5 @@ cdef class RiskEngine(Component):
 
 # -- EGRESS ----------------------------------------------------------------------------------------
 
+    cpdef _deny_new_order(self, TradingCommand command)
     cpdef _send_command(self, TradingCommand command)

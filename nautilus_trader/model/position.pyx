@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.events cimport OrderFilled
@@ -80,9 +81,9 @@ cdef class Position:
         self.quantity = Quantity.zero_c(precision=instrument.size_precision)
         self.peak_qty = Quantity.zero_c(precision=instrument.size_precision)
         self.timestamp_ns = fill.ts_filled_ns
-        self.opened_timestamp_ns = fill.ts_filled_ns
-        self.closed_timestamp_ns = 0
-        self.open_duration_ns = 0
+        self.ts_opened_ns = fill.ts_filled_ns
+        self.ts_closed_ns = 0
+        self.duration_ns = 0
         self.avg_px_open = fill.last_px.as_decimal()
         self.avg_px_close = None  # Can be None
         self.price_precision = instrument.price_precision
@@ -118,31 +119,25 @@ cdef class Position:
 
         """
         return {
-            "type": type(self).__name__,
-            "id": self.id.value,
+            "position_id": self.id.value,
             "account_id": self.account_id.value,
             "from_order": self.from_order.value,
             "strategy_id": self.strategy_id.value,
             "instrument_id": self.instrument_id.value,
-            "side": PositionSideParser.to_str(self.side),
+            "side": OrderSideParser.to_str(self.entry),
             "net_qty": str(self.net_qty),
             "quantity": str(self.quantity),
             "peak_qty": str(self.peak_qty),
-            "timestamp_ns": self.timestamp_ns,
-            "opened_timestamp_ns": self.opened_timestamp_ns,
-            "closed_timestamp_ns": self.closed_timestamp_ns,
-            "open_duration_ns": self.open_duration_ns,
+            "ts_opened_ns": self.ts_opened_ns,
+            "ts_closed_ns": self.ts_closed_ns,
+            "duration_ns": self.duration_ns,
             "avg_px_open": str(self.avg_px_open),
             "avg_px_close": str(self.avg_px_close),
-            "price_precision": self.price_precision,
-            "size_precision": self.size_precision,
-            "multiplier": str(self.multiplier),
-            "is_inverse": self.is_inverse,
             "quote_currency": self.quote_currency.code,
             "base_currency": self.base_currency.code,
             "cost_currency": self.cost_currency.code,
-            "realized_points": str(self.realized_points),
-            "realized_return": str(self.realized_return),
+            "realized_points": round(float(self.realized_points), self.price_precision),
+            "realized_return": round(self.realized_return, 5),
             "realized_pnl": str(self.realized_pnl.to_str()),
             "commissions": str([c.to_str() for c in self.commissions()]),
         }
@@ -442,8 +437,8 @@ cdef class Position:
             self.side = PositionSide.SHORT
         else:
             self.side = PositionSide.FLAT
-            self.closed_timestamp_ns = fill.ts_filled_ns
-            self.open_duration_ns = self.closed_timestamp_ns - self.opened_timestamp_ns
+            self.ts_closed_ns = fill.ts_filled_ns
+            self.duration_ns = self.ts_closed_ns - self.ts_opened_ns
 
     cpdef Money notional_value(self, Price last):
         """

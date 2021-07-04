@@ -24,7 +24,7 @@ PROFILING_MODE = bool(os.getenv("PROFILING_MODE", ""))
 # If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
 ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 # If PARALLEL build is enabled, uses all CPUs for compile stage of build
-PARALLEL_BUILD = bool(os.getenv("PARALLEL_BUILD", "true"))
+PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else False
 # If SKIP_BUILD_COPY is enabled, prevents copying built *.so files back into the source tree
 SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 
@@ -80,7 +80,6 @@ def _build_extensions() -> List[Extension]:
     print(f"define_macros={define_macros}")
     print(f"extra_compile_args={extra_compile_args}")
 
-    # Build Extensions to feed into cythonize()
     return [
         Extension(
             name=str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
@@ -142,6 +141,7 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
 
 def build(setup_kwargs):
     """Construct the extensions and distribution."""  # noqa
+    # Build C Extensions to feed into cythonize()
     extensions = _build_extensions()
     distribution = _build_distribution(extensions)
 

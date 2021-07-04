@@ -128,7 +128,7 @@ class TestRiskEngine:
 
         assert result == {}
 
-    def test_set_max_notional_changes_setting(self):
+    def test_set_max_notional_per_order_changes_setting(self):
         # Arrange, Act
         self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
 
@@ -369,7 +369,7 @@ class TestRiskEngine:
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2
 
-    def test_submit_bracket_when_block_all_orders_true_then_denies_order(self):
+    def test_submit_bracket_when_trading_halted_then_denies_order(self):
         # Arrange
         self.exec_engine.start()
 
