@@ -521,7 +521,7 @@ def test_data_catalog_backtest_data_filtered(catalog):
 
 def test_data_catalog_backtest_run(catalog):
     instruments = catalog.instruments(as_nautilus=True)
-    engine = BacktestEngine()
+    engine = BacktestEngine(bypass_logging=True)
     engine = catalog.setup_engine(engine=engine, instruments=[instruments[1]])
     engine.add_venue(
         venue=BETFAIR_VENUE,
@@ -537,4 +537,4 @@ def test_data_catalog_backtest_run(catalog):
     )
     engine.run(strategies=[strategy])
     positions = engine.trader.generate_positions_report()
-    assert positions["realized_pnl"].sum() == -0.20
+    assert positions["realized_points"].sum() == -0.00736

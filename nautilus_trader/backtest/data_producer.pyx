@@ -171,7 +171,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
             # Process quote tick data
             # -----------------------
             if instrument_id in quote_ticks or instrument_id in bars_bid:
-                if isinstance(quote_ticks[instrument_id], pd.DataFrame) or \
+                if isinstance(quote_ticks.get(instrument_id), pd.DataFrame) or \
                         (instrument_id in bars_bid and isinstance(bars_bid[instrument_id], pd.DataFrame)):
                     ts = unix_timestamp()  # Time data processing
                     quote_wrangler = QuoteTickDataWrangler(

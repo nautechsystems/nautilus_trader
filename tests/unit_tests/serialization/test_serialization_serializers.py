@@ -879,10 +879,17 @@ class TestParquetSerializer:
         )
 
         serialized = _serialize(delta)
-        deserialized = _deserialize(cls=OrderBookDelta, chunk=serialized)
+        [deserialized] = _deserialize(cls=OrderBookDelta, chunk=serialized)
 
         # Assert
-        assert deserialized == [delta]
+        expected = OrderBookDeltas(
+            instrument_id=TestStubs.audusd_id(),
+            level=BookLevel.L2,
+            deltas=[delta],
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
+        assert deserialized == expected
 
     def test_serialize_and_deserialize_order_book_deltas(self):
 

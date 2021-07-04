@@ -339,9 +339,11 @@ def test_backtest_against_example(catalog):
     results = tasks.compute()
     result = results[list(results)[0]]
     assert len(result["account"]) == 97
-    assert result["account"]["balance_USD"].iloc[-2] == Money("997652.94", USD)
     assert len(result["positions"]) == 48
     assert len(result["fills"]) == 96
+    expected = '[{"type": "AccountBalance", "currency": "USD", "total": "997652.94", "locked": "0.00", "free": "997652.94"}]'
+    account_result = result["account"]["balances"].iloc[-2]
+    assert account_result == expected
 
 
 def test_backtest_run_sync(backtest_configs):
