@@ -20,7 +20,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.throttler import Throttler
 
 
-class TestThrottler:
+class TestBufferingThrottler:
     def setup(self):
         # Fixture setup
         self.clock = TestClock()
@@ -28,22 +28,23 @@ class TestThrottler:
 
         self.handler = []
         self.throttler = Throttler(
-            name="Throttler-1",
+            name="Buffer",
             limit=5,
             interval=timedelta(seconds=1),
-            output=self.handler.append,
+            output_send=self.handler.append,
+            output_drop=None,  # <-- no dropping handler so will buffer
             clock=self.clock,
             logger=self.logger,
         )
 
     def test_throttler_instantiation(self):
         # Arrange, Act, Assert
-        assert self.throttler.name == "Throttler-1"
-        assert not self.throttler.is_buffering
+        assert self.throttler.name == "Buffer"
+        assert not self.throttler.is_limiting
         assert self.throttler.qsize == 0
         assert self.throttler.used() == 0
 
-    def test_send_when_not_active_becomes_active(self):
+    def test_send_sends_message_to_handler(self):
         # Arrange
         item = "MESSAGE"
 
@@ -51,7 +52,7 @@ class TestThrottler:
         self.throttler.send(item)
 
         # Assert
-        assert not self.throttler.is_buffering
+        assert not self.throttler.is_limiting
         assert self.handler == ["MESSAGE"]
 
     def test_send_to_limit_becomes_throttled(self):
@@ -67,8 +68,8 @@ class TestThrottler:
         self.throttler.send(item)
 
         # Assert: Only 5 items are sent
-        assert self.clock.timer_names() == ["Throttler-1-DEQUE"]
-        assert self.throttler.is_buffering
+        assert self.clock.timer_names() == ["Buffer-DEQUE"]
+        assert self.throttler.is_limiting
         assert self.handler == ["MESSAGE"] * 5
         assert self.throttler.qsize == 1
         assert self.throttler.used() == 1
@@ -127,7 +128,88 @@ class TestThrottler:
 
         # Assert: Remaining items sent
         assert self.clock.timer_names() == []  # No longer timing to process
-        assert self.throttler.is_buffering is False
+        assert self.throttler.is_limiting is False
         assert self.handler == ["MESSAGE"] * 6
+        assert self.throttler.qsize == 0
+        assert self.throttler.used() == 0
+
+
+class TestDroppingThrottler:
+    def setup(self):
+        # Fixture setup
+        self.clock = TestClock()
+        self.logger = Logger(self.clock)
+
+        self.handler = []
+        self.dropped = []
+        self.throttler = Throttler(
+            name="Dropper",
+            limit=5,
+            interval=timedelta(seconds=1),
+            output_send=self.handler.append,
+            output_drop=self.dropped.append,  # <-- handler for dropping messages
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+    def test_throttler_instantiation(self):
+        # Arrange, Act, Assert
+        assert self.throttler.name == "Dropper"
+        assert not self.throttler.is_limiting
+        assert self.throttler.qsize == 0
+        assert self.throttler.used() == 0
+
+    def test_send_sends_message_to_handler(self):
+        # Arrange
+        item = "MESSAGE"
+
+        # Act
+        self.throttler.send(item)
+
+        # Assert
+        assert not self.throttler.is_limiting
+        assert self.handler == ["MESSAGE"]
+
+    def test_send_to_limit_drops_message(self):
+        # Arrange
+        item = "MESSAGE"
+
+        # Act: Send 6 items
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+
+        # Assert: Only 5 items are sent
+        assert self.clock.timer_names() == ["Dropper-DEQUE"]
+        assert self.throttler.is_limiting
+        assert self.handler == ["MESSAGE"] * 5
+        assert self.dropped == ["MESSAGE"]
+        assert self.throttler.qsize == 0
+        assert self.throttler.used() == 1
+
+    def test_advance_time_when_at_limit_dropped_message(self):
+        # Arrange
+        item = "MESSAGE"
+
+        # Act: Send 6 items
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+
+        # Act: Trigger refresh token time alert
+        events = self.clock.advance_time(1_000_000_000)
+        events[0].handle_py()
+
+        # Assert: Remaining items sent
+        assert self.clock.timer_names() == []  # No longer timing to process
+        assert self.throttler.is_limiting is False
+        assert self.handler == ["MESSAGE"] * 5
+        assert self.dropped == ["MESSAGE"]
         assert self.throttler.qsize == 0
         assert self.throttler.used() == 0

@@ -107,4 +107,5 @@ cdef class RiskEngine(Component):
 
 # -- EGRESS ----------------------------------------------------------------------------------------
 
+    cpdef _deny_new_order(self, TradingCommand command)
     cpdef _send_command(self, TradingCommand command)
