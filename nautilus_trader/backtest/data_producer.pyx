@@ -190,8 +190,8 @@ cdef class BacktestDataProducer(DataProducerFacade):
                         f"Prepared {len(quote_wrangler.processed_data):,} {instrument_id} quote tick rows in "
                         f"{unix_timestamp() - ts:.3f}s.")
                     del quote_wrangler  # Dump processing artifact
-                elif isinstance(quote_ticks[instrument_id], list):
-                    # We have a list of TradeTick objects
+                elif isinstance(quote_ticks.get(instrument_id), list):
+                    # We have a list of QuoteTick objects
                     self._stream = sorted(
                         self._stream + quote_ticks[instrument_id], key=lambda x: x.ts_recv_ns,
                     )
