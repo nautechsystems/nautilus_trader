@@ -86,4 +86,3 @@ cdef class BacktestEngine:
         datetime stop,
     ) except *
     cpdef list_venues(self)
-    cpdef data_timestamps(self)

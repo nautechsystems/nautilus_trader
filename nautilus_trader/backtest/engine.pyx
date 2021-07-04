@@ -286,9 +286,6 @@ cdef class BacktestEngine:
     cpdef list_venues(self):
         return list(self._exchanges)
 
-    cpdef data_timestamps(self):
-        return self._data_producer.min_timestamp, self._data_producer.max_timestamp
-
     def add_generic_data(self, ClientId client_id, list data) -> None:
         """
         Add the generic data to the container.
