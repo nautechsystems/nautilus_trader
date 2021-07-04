@@ -49,7 +49,8 @@ cdef class Throttler:
         str name,
         int limit,
         timedelta interval not None,
-        output,
+        output_send not None: callable,
+        output_drop: callable,  # Can be None
         Clock clock not None,
         Logger logger not None,
     ):
@@ -64,8 +65,11 @@ cdef class Throttler:
             The limit setting for the throttling.
         interval : timedelta
             The interval setting for the throttling.
-        output : callable
-            The output handler from the throttler.
+        output_send : callable
+            The output handler to send messages from the throttler.
+        output_drop : callable, optional
+            The output handler to drop messages from the throttler.
+            If None then messages will be buffered.
         clock : Clock
             The clock for the throttler.
         logger : Logger
@@ -86,7 +90,7 @@ cdef class Throttler:
         Condition.valid_string(name, "name")
         Condition.positive_int(limit, "limit")
         Condition.positive(interval.total_seconds(), "interval.total_seconds()")
-        Condition.callable(output, "output")
+        Condition.callable(output_send, "output_send")
 
         self._clock = clock
         self._log = LoggerAdapter(component=f"Throttler-{name}", logger=logger)
@@ -94,13 +98,14 @@ cdef class Throttler:
         self._buffer = Queue()
         self._timer_name = f"{name}-DEQUE"
         self._timestamps = deque(maxlen=limit)
-        self._output = output
+        self._output_send = output_send
+        self._output_drop = output_drop
 
         self.name = name
         self.limit = limit
         self.interval = interval
         self.is_initialized = False
-        self.is_buffering = False
+        self.is_limiting = False
 
         self._log.info("Initialized.")
 
@@ -135,29 +140,26 @@ cdef class Throttler:
 
     cpdef void send(self, msg) except *:
         """
-        Send the given item through the throttler.
+        Send the given message through the throttler.
 
         Parameters
         ----------
         msg : object
-            The item to send.
+            The message to send.
 
         """
-        # Throttling is occurring: place message on buffer
-        if self.is_buffering:
-            self._buff_msg(msg)
+        # Throttling is occurring
+        if self.is_limiting:
+            self._limit_msg(msg)
             return
 
         # Check can send message
         cdef int64_t delta_next = self._delta_next()
         if delta_next <= 0:
             self._send_msg(msg)
-            return
-
-        # Start throttling
-        self.is_buffering = True
-        self._buff_msg(msg)
-        self._set_timer(delta_next)
+        else:
+            # Start throttling
+            self._limit_msg(msg)
 
     cdef int64_t _delta_next(self) except *:
         if not self.is_initialized:
@@ -177,25 +179,40 @@ cdef class Throttler:
                 self._send_msg(msg)
                 continue
 
-            self._set_timer(delta_next)
+            self._set_timer(self._process)
             break
 
-        self.is_buffering = False
+        self.is_limiting = False
 
-    cdef void _set_timer(self, int64_t delta_next) except *:
+    cpdef void _resume(self, TimeEvent event) except *:
+        self.is_limiting = False
+
+    cdef void _set_timer(self, handler: callable) except *:
         self._clock.set_time_alert(
             name=self._timer_name,
-            alert_time=nanos_to_unix_dt(self._clock.timestamp_ns() + delta_next),
-            handler=self._process,
+            alert_time=nanos_to_unix_dt(self._clock.timestamp_ns() + self._delta_next()),
+            handler=handler,
         )
 
-    cdef void _buff_msg(self, msg) except *:
-        self._buffer.put_nowait(msg)
-        self._log.warning(f"Buffering {msg}.")
+    cdef void _limit_msg(self, msg) except *:
+        if self._output_drop is not None:
+            # Drop
+            self._output_drop(msg)
+            if not self.is_limiting:
+                self._set_timer(self._resume)
+            self._log.warning(f"Dropped {msg}.")
+        else:
+            # Buffer
+            self._buffer.put_nowait(msg)
+            if not self.is_limiting:
+                self._set_timer(self._process)
+            self._log.warning(f"Buffering {msg}.")
+
+        self.is_limiting = True
 
     cdef void _send_msg(self, msg) except *:
         self._timestamps.appendleft(self._clock.timestamp_ns())
-        self._output(msg)
+        self._output_send(msg)
         if not self.is_initialized:
             if len(self._timestamps) == self.limit:
                 self.is_initialized = True

@@ -126,7 +126,8 @@ cdef class RiskEngine(Component):
             name="ORDER_RATE",
             limit=order_rate_limit,
             interval=order_rate_interval,
-            output=self._send_command,
+            output_send=self._send_command,
+            output_drop=self._deny_new_order,
             clock=clock,
             logger=logger,
         )
@@ -664,6 +665,12 @@ cdef class RiskEngine(Component):
         self.event_count += 1
 
 # -- EGRESS ----------------------------------------------------------------------------------------
+
+    cpdef _deny_new_order(self, TradingCommand command):
+        if isinstance(command, SubmitOrder):
+            self._deny_order(command.order, reason="Exceeded MAX_ORDER_RATE")
+        elif isinstance(command, SubmitBracketOrder):
+            self._deny_bracket_order(command.bracket_order, reason="Exceeded MAX_ORDER_RATE")
 
     cpdef _send_command(self, TradingCommand command):
         self._exec_engine.execute(command)
