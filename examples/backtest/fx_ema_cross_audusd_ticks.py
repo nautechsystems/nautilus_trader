@@ -87,7 +87,7 @@ if __name__ == "__main__":
         base_currency=USD,  # Standard single-currency account
         starting_balances=[Money(1_000_000, USD)],
         fill_model=fill_model,
-        # modules=[fx_rollover_interest],
+        modules=[fx_rollover_interest],
     )
 
     # Instantiate your strategy
