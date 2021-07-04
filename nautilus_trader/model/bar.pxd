@@ -38,7 +38,7 @@ cdef class BarSpecification:
 
 cdef class BarType:
     cdef readonly InstrumentId instrument_id
-    """The bar type instrument identifier.\n\n:returns: `InstrumentId`"""
+    """The bar type instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly BarSpecification spec
     """The bar type specification.\n\n:returns: `BarSpecification`"""
     cdef readonly bint is_internal_aggregation

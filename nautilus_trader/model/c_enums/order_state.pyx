@@ -21,28 +21,26 @@ cdef class OrderStateParser:
         if value == 1:
             return "INITIALIZED"
         elif value == 2:
-            return "INVALID"
-        elif value == 3:
             return "DENIED"
-        elif value == 4:
+        elif value == 3:
             return "SUBMITTED"
-        elif value == 5:
+        elif value == 4:
             return "ACCEPTED"
-        elif value == 6:
+        elif value == 5:
             return "REJECTED"
-        elif value == 7:
+        elif value == 6:
             return "CANCELED"
-        elif value == 8:
+        elif value == 7:
             return "EXPIRED"
-        elif value == 9:
+        elif value == 8:
             return "TRIGGERED"
-        elif value == 10:
+        elif value == 9:
             return "PENDING_UPDATE"
-        elif value == 11:
+        elif value == 10:
             return "PENDING_CANCEL"
-        elif value == 12:
+        elif value == 11:
             return "PARTIALLY_FILLED"
-        elif value == 13:
+        elif value == 12:
             return "FILLED"
         else:
             raise ValueError(f"value was invalid, was {value}")
@@ -51,8 +49,6 @@ cdef class OrderStateParser:
     cdef OrderState from_str(str value) except *:
         if value == "INITIALIZED":
             return OrderState.INITIALIZED
-        elif value == "INVALID":
-            return OrderState.INVALID
         elif value == "DENIED":
             return OrderState.DENIED
         elif value == "SUBMITTED":

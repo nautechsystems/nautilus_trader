@@ -35,7 +35,7 @@ cdef class Account:
     cdef PortfolioFacade _portfolio
 
     cdef readonly AccountId id
-    """The accounts identifier.\n\n:returns: `AccountId`"""
+    """The accounts ID.\n\n:returns: `AccountId`"""
     cdef readonly AccountType type
     """The accounts type.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency

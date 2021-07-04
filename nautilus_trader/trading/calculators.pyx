@@ -237,7 +237,7 @@ cdef class RolloverInterestCalculator:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The forex instrument identifier for the calculation.
+            The forex instrument ID for the calculation.
         date : date
             The date for the overnight rate.
 
@@ -273,6 +273,6 @@ cdef class RolloverInterestCalculator:
             quote_data = self._rate_data[quote_currency].loc[self._rate_data[quote_currency]['TIME'] == time_quarter]
 
         if base_data.empty and quote_data.empty:
-            raise RuntimeError(f"Cannot find rollover interest rate for {instrument_id} on {date}")
+            raise RuntimeError(f"cannot find rollover interest rate for {instrument_id} on {date}")
 
         return Decimal(((<double>base_data['Value'] - <double>quote_data['Value']) / 365) / 100)

@@ -214,7 +214,7 @@ cdef class Position:
     @property
     def client_order_ids(self):
         """
-        The client order identifiers associated with the position.
+        The client order IDs associated with the position.
 
         Returns
         -------
@@ -222,7 +222,7 @@ cdef class Position:
 
         Notes
         -----
-        Guaranteed not to contain duplicate identifiers.
+        Guaranteed not to contain duplicate IDs.
 
         """
         return self.client_order_ids_c()
@@ -230,7 +230,7 @@ cdef class Position:
     @property
     def venue_order_ids(self):
         """
-        The venue order identifiers associated with the position.
+        The venue order IDs associated with the position.
 
         Returns
         -------
@@ -238,7 +238,7 @@ cdef class Position:
 
         Notes
         -----
-        Guaranteed not to contain duplicate identifiers.
+        Guaranteed not to contain duplicate IDs.
 
         """
         return self.venue_order_ids_c()
@@ -246,7 +246,7 @@ cdef class Position:
     @property
     def execution_ids(self):
         """
-        The execution identifiers associated with the position.
+        The execution IDs associated with the position.
 
         Returns
         -------
@@ -282,7 +282,7 @@ cdef class Position:
     @property
     def last_execution_id(self):
         """
-        The last execution identifier for the position.
+        The last execution ID for the position.
 
         Returns
         -------

@@ -113,9 +113,6 @@ cdef class ExecutionEngine(Component):
             config = {}
         super().__init__(clock, logger, name="ExecEngine")
 
-        if config:
-            self._log.info(f"Config: {config}.")
-
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
         self._strategies = {}        # type: dict[StrategyId, TradingStrategy]
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]
@@ -161,7 +158,7 @@ cdef class ExecutionEngine(Component):
     @property
     def registered_strategies(self):
         """
-        The strategy identifiers registered with the engine.
+        The strategy IDs registered with the engine.
 
         Returns
         -------
@@ -172,12 +169,12 @@ cdef class ExecutionEngine(Component):
 
     cpdef int position_id_count(self, StrategyId strategy_id) except *:
         """
-        The position identifier count for the given strategy identifier.
+        The position ID count for the given strategy ID.
 
         Parameters
         ----------
         strategy_id : StrategyId
-            The strategy identifier for the position count.
+            The strategy ID for the position count.
 
         Returns
         -------
@@ -543,7 +540,7 @@ cdef class ExecutionEngine(Component):
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef void _set_position_id_counts(self) except *:
-        # For the internal position identifier generator
+        # For the internal position ID generator
         cdef list positions = self.cache.positions()
 
         # Count positions per instrument_id
@@ -556,7 +553,7 @@ cdef class ExecutionEngine(Component):
             # noinspection PyUnresolvedReferences
             counts[position.strategy_id] = count
 
-        # Reset position identifier generator
+        # Reset position ID generator
         self._pos_id_generator.reset()
 
         # Set counts
@@ -708,15 +705,15 @@ cdef class ExecutionEngine(Component):
             # Already assigned to fill
             return
 
-        # Fetch identifier from cache
+        # Fetch ID from cache
         cdef StrategyId strategy_id = self.cache.strategy_id_for_order(fill.client_order_id)
         if strategy_id is not None:
-            # Assign identifier to fill
+            # Assign ID to fill
             fill.strategy_id = strategy_id
             return
 
         if fill.position_id.not_null():
-            # Check if strategy identifier assigned for position
+            # Check if strategy ID assigned for position
             strategy_id = self.cache.strategy_id_for_position(fill.position_id)
         if strategy_id is None:
             self._log.error(
@@ -730,10 +727,10 @@ cdef class ExecutionEngine(Component):
             # Already assigned to fill
             return
 
-        # Fetch identifier from cache
+        # Fetch ID from cache
         cdef PositionId position_id = self.cache.position_id(fill.client_order_id)
         if position_id is not None:
-            # Assign identifier to fill
+            # Assign ID to fill
             fill.position_id = position_id
             return
 
@@ -743,14 +740,14 @@ cdef class ExecutionEngine(Component):
             instrument_id=fill.instrument_id,
         )
         if not positions_open:
-            # Assign new identifier to fill
+            # Assign new ID to fill
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
             return
 
         # Invariant (design-time)
         assert len(positions_open) == 1, "more than one position for unassigned position_id"
 
-        # Assign existing positions identifier to fill
+        # Assign existing positions ID to fill
         fill.position_id = positions_open[0].id
 
     cdef void _handle_order_command_rejected(self, OrderEvent event) except *:
@@ -840,7 +837,7 @@ cdef class ExecutionEngine(Component):
         # Close original position
         self._update_position(position, fill_split1)
 
-        # Generate position identifier for flipped position
+        # Generate position ID for flipped position
         cdef PositionId position_id_flip = self._pos_id_generator.generate(
             strategy_id=fill.strategy_id,
             flipped=True,
@@ -862,7 +859,7 @@ cdef class ExecutionEngine(Component):
             commission=Money(fill.commission * fill_percent2, fill.commission.currency),
             liquidity_side=fill.liquidity_side,
             ts_filled_ns=fill.ts_filled_ns,
-            event_id=self._uuid_factory.generate(),  # New event identifier
+            event_id=self._uuid_factory.generate(),  # New event ID
             timestamp_ns=fill.timestamp_ns,
         )
 

@@ -41,7 +41,7 @@ from nautilus_trader.model.position cimport Position
 
 cdef class AccountState(Event):
     cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly AccountType account_type
     """The account type for the event.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
@@ -64,16 +64,16 @@ cdef class AccountState(Event):
 
 cdef class OrderEvent(Event):
     cdef readonly ClientOrderId client_order_id
-    """The client order identifier associated with the event.\n\n:returns: `ClientOrderId`"""
+    """The client order ID associated with the event.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue order identifier associated with the event.\n\n:returns: `VenueOrderId`"""
+    """The venue order ID associated with the event.\n\n:returns: `VenueOrderId`"""
 
 
 cdef class OrderInitialized(OrderEvent):
     cdef readonly InstrumentId instrument_id
-    """The order instrument identifier.\n\n:returns: `InstrumentId`"""
+    """The order instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly StrategyId strategy_id
-    """The strategy identifier associated with the event.\n\n:returns: `StrategyId`"""
+    """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType order_type
@@ -92,17 +92,6 @@ cdef class OrderInitialized(OrderEvent):
     cdef dict to_dict_c(OrderInitialized obj)
 
 
-cdef class OrderInvalid(OrderEvent):
-    cdef readonly str reason
-    """The reason the order was invalid.\n\n:returns: `str`"""
-
-    @staticmethod
-    cdef OrderInvalid from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(OrderInvalid obj)
-
-
 cdef class OrderDenied(OrderEvent):
     cdef readonly str reason
     """The reason the order was denied.\n\n:returns: `str`"""
@@ -116,7 +105,7 @@ cdef class OrderDenied(OrderEvent):
 
 cdef class OrderSubmitted(OrderEvent):
     cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t ts_submitted_ns
     """The order submitted time.\n\n:returns: `int64`"""
 
@@ -129,7 +118,7 @@ cdef class OrderSubmitted(OrderEvent):
 
 cdef class OrderRejected(OrderEvent):
     cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly str reason
     """The reason the order was rejected.\n\n:returns: `str`"""
     cdef readonly int64_t ts_rejected_ns
@@ -144,7 +133,7 @@ cdef class OrderRejected(OrderEvent):
 
 cdef class OrderAccepted(OrderEvent):
     cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t ts_accepted_ns
     """The UNIX timestamp (nanoseconds) when the order was accepted.\n\n:returns: `int64`"""
 
@@ -157,7 +146,7 @@ cdef class OrderAccepted(OrderEvent):
 
 cdef class OrderPendingReplace(OrderEvent):
     cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t ts_pending_ns
     """The timestamp from which the replace was pending.\n\n:returns: `int64`"""
 
@@ -170,7 +159,7 @@ cdef class OrderPendingReplace(OrderEvent):
 
 cdef class OrderPendingCancel(OrderEvent):
     cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t ts_pending_ns
     """The timestamp from which the cancel was pending.\n\n:returns: `int64`"""
 
@@ -183,7 +172,7 @@ cdef class OrderPendingCancel(OrderEvent):
 
 cdef class OrderUpdateRejected(OrderEvent):
     cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly str response_to
     """The update rejection response to.\n\n:returns: `str`"""
     cdef readonly str reason
@@ -200,7 +189,7 @@ cdef class OrderUpdateRejected(OrderEvent):
 
 cdef class OrderCancelRejected(OrderEvent):
     cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly str response_to
     """The cancel rejection response to.\n\n:returns: `str`"""
     cdef readonly str reason
@@ -217,7 +206,7 @@ cdef class OrderCancelRejected(OrderEvent):
 
 cdef class OrderUpdated(OrderEvent):
     cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly Quantity quantity
     """The orders current quantity.\n\n:returns: `Quantity`"""
     cdef readonly Price price
@@ -236,7 +225,7 @@ cdef class OrderUpdated(OrderEvent):
 
 cdef class OrderCanceled(OrderEvent):
     cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t ts_canceled_ns
     """The UNIX timestamp (nanoseconds) when the order was canceled.\n\n:returns: `int64`"""
 
@@ -249,7 +238,7 @@ cdef class OrderCanceled(OrderEvent):
 
 cdef class OrderTriggered(OrderEvent):
     cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t ts_triggered_ns
     """The UNIX timestamp (nanoseconds) when the order was triggered.\n\n:returns: `int64`"""
 
@@ -262,7 +251,7 @@ cdef class OrderTriggered(OrderEvent):
 
 cdef class OrderExpired(OrderEvent):
     cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t ts_expired_ns
     """The UNIX timestamp (nanoseconds) when the order expired.\n\n:returns: `int64`"""
 
@@ -275,15 +264,15 @@ cdef class OrderExpired(OrderEvent):
 
 cdef class OrderFilled(OrderEvent):
     cdef readonly AccountId account_id
-    """The account identifier associated with the event.\n\n:returns: `AccountId`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly ExecutionId execution_id
-    """The execution identifier associated with the event.\n\n:returns: `ExecutionId`"""
+    """The execution ID associated with the event.\n\n:returns: `ExecutionId`"""
     cdef readonly PositionId position_id
-    """The position identifier associated with the event.\n\n:returns: `PositionId`"""
+    """The position ID associated with the event.\n\n:returns: `PositionId`"""
     cdef readonly StrategyId strategy_id
-    """The strategy identifier associated with the event.\n\n:returns: `StrategyId`"""
+    """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly InstrumentId instrument_id
-    """The order instrument identifier.\n\n:returns: `InstrumentId`"""
+    """The order instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly Quantity last_qty
@@ -360,7 +349,7 @@ cdef class VenueStatusEvent(StatusEvent):
 
 cdef class InstrumentStatusEvent(StatusEvent):
     cdef readonly InstrumentId instrument_id
-    """The event instrument identifier.\n\n:returns: `InstrumentId`"""
+    """The event instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly InstrumentStatus status
     """The events instrument status.\n\n:returns: `InstrumentStatus`"""
 
@@ -373,7 +362,7 @@ cdef class InstrumentStatusEvent(StatusEvent):
 
 cdef class InstrumentClosePrice(Event):
     cdef readonly InstrumentId instrument_id
-    """The event instrument identifier.\n\n:returns: `InstrumentId`"""
+    """The event instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly Price close_price
     """The events close price.\n\n:returns: `Price`"""
     cdef readonly InstrumentCloseType close_type

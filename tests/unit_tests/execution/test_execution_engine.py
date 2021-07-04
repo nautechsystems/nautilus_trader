@@ -447,7 +447,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_order)
 
         # Assert
-        self.assertEqual(OrderState.INVALID, order.state)
+        self.assertEqual(OrderState.DENIED, order.state)
 
     def test_order_filled_with_unrecognized_strategy_id(self):
         # Arrange
@@ -542,18 +542,22 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Act
         self.risk_engine.execute(submit_bracket)
-        self.risk_engine.execute(submit_bracket)  # Duplicate command
+        self.exec_engine.process(TestStubs.event_order_submitted(entry))
+        self.exec_engine.process(TestStubs.event_order_submitted(stop_loss))
+        self.exec_engine.process(TestStubs.event_order_submitted(take_profit))
+        self.risk_engine.execute(submit_bracket)  # <-- Duplicate command
 
         # Assert
         self.assertEqual(
-            OrderState.INITIALIZED, entry.state
+            OrderState.SUBMITTED, entry.state
         )  # Did not invalidate originals
         self.assertEqual(
-            OrderState.INITIALIZED, stop_loss.state
+            OrderState.SUBMITTED, stop_loss.state
         )  # Did not invalidate originals
         self.assertEqual(
-            OrderState.INITIALIZED, take_profit.state
+            OrderState.SUBMITTED, take_profit.state
         )  # Did not invalidate originals
+        assert self.exec_engine.command_count == 1
 
     def test_submit_bracket_order_with_duplicate_take_profit_client_order_id_logs_does_not_submit(
         self,
@@ -642,7 +646,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_bracket2)  # SL and TP
 
         # Assert
-        self.assertEqual(OrderState.INVALID, entry2.state)
+        self.assertEqual(OrderState.DENIED, entry2.state)
         self.assertEqual(OrderState.ACCEPTED, entry1.state)
         self.assertEqual(OrderState.ACCEPTED, stop_loss1.state)
         self.assertEqual(
@@ -737,7 +741,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_bracket2)  # SL and TP
 
         # Assert
-        self.assertEqual(OrderState.INVALID, entry2.state)
+        self.assertEqual(OrderState.DENIED, entry2.state)
         self.assertEqual(
             OrderState.ACCEPTED, entry1.state
         )  # Did not invalidate original
@@ -747,7 +751,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.assertEqual(
             OrderState.ACCEPTED, take_profit1.state
         )  # Did not invalidate original
-        self.assertEqual(OrderState.INVALID, take_profit2.state)
+        self.assertEqual(OrderState.DENIED, take_profit2.state)
 
     def test_submit_order(self):
         # Arrange

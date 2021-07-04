@@ -73,6 +73,42 @@ class TestThrottler:
         assert self.throttler.qsize == 1
         assert self.throttler.used() == 1
 
+    def test_used_when_sent_to_limit_returns_one(self):
+        # Arrange
+        item = "MESSAGE"
+
+        # Act: Send 6 items
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+
+        # Act
+        used = self.throttler.used()
+
+        # Assert: Remaining items sent
+        assert self.throttler.is_initialized
+        assert used == 1
+
+    def test_used_when_half_interval_from_limit_returns_half(self):
+        # Arrange
+        item = "MESSAGE"
+
+        # Act: Send 6 items
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.clock.advance_time(500_000_000)
+
+        # Act
+        used = self.throttler.used()
+
+        # Assert: Remaining items sent
+        assert used == 0.5
+
     def test_refresh_when_at_limit_sends_remaining_items(self):
         # Arrange
         item = "MESSAGE"

@@ -105,7 +105,7 @@ cdef class BacktestEngine:
         Parameters
         ----------
         trader_id : TraderId, optional
-            The trader identifier.
+            The trader ID.
         config_data : dict[str, object]
             The configuration for the cache.
         config_data : dict[str, object]
@@ -170,7 +170,7 @@ cdef class BacktestEngine:
             trader_id=trader_id,
             system_id=self.system_id,
             level_stdout=level_stdout,
-            bypass_logging=bypass_logging,
+            bypass=bypass_logging,
         )
 
         nautilus_header(self._log)
@@ -296,7 +296,7 @@ cdef class BacktestEngine:
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier to associate with the generic data.
+            The data client ID to associate with the generic data.
         data : list[GenericData]
             The data to add.
 
@@ -392,7 +392,7 @@ cdef class BacktestEngine:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the quote tick data.
+            The instrument ID for the quote tick data.
         data : pd.DataFrame
             The quote tick data to add.
 
@@ -467,7 +467,7 @@ cdef class BacktestEngine:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the trade tick data.
+            The instrument ID for the trade tick data.
         data : pd.DataFrame
             The trade tick data to add.
 
@@ -505,7 +505,7 @@ cdef class BacktestEngine:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the trade tick data.
+            The instrument ID for the trade tick data.
         data : list[TradeTick]
             The trade tick data to add.
 
@@ -542,7 +542,7 @@ cdef class BacktestEngine:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the bar data.
+            The instrument ID for the bar data.
         aggregation : BarAggregation
             The bar aggregation of the data.
         price_type : PriceType
@@ -629,7 +629,7 @@ cdef class BacktestEngine:
         Parameters
         ----------
         venue : Venue
-            The exchange venue identifier.
+            The exchange venue ID.
         venue_type : VenueType
             The type of venue (will determine venue -> client_id mapping).
         oms_type : OMSType

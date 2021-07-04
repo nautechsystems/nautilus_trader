@@ -41,7 +41,7 @@ cdef class CacheDatabase:
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier to associate with the database.
+            The trader ID to associate with the database.
         logger : Logger
             The logger for the database.
 
@@ -152,7 +152,7 @@ cdef class BypassCacheDatabase(CacheDatabase):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier to associate with the database.
+            The trader ID to associate with the database.
         logger : Logger
             The logger for the database.
 

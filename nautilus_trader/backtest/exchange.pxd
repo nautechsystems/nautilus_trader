@@ -59,7 +59,7 @@ cdef class SimulatedExchange:
     cdef LoggerAdapter _log
 
     cdef readonly Venue id
-    """The exchange identifier.\n\n:returns: `Venue`"""
+    """The exchange ID.\n\n:returns: `Venue`"""
     cdef readonly VenueType venue_type
     """The venues type.\n\n:returns: `VenueType`"""
     cdef readonly OMSType oms_type

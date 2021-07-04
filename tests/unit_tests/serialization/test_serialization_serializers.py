@@ -39,7 +39,6 @@ from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
-from nautilus_trader.model.events import OrderInvalid
 from nautilus_trader.model.events import OrderPendingCancel
 from nautilus_trader.model.events import OrderPendingReplace
 from nautilus_trader.model.events import OrderRejected
@@ -579,22 +578,6 @@ class TestMsgPackEventSerializer:
         # Assert
         assert deserialized == event
         assert deserialized.options == options
-
-    def test_serialize_and_deserialize_order_invalid_events(self):
-        # Arrange
-        event = OrderInvalid(
-            ClientOrderId("O-123456"),
-            "VenueOrderId already exists",
-            uuid4(),
-            0,
-        )
-
-        # Act
-        serialized = self.serializer.serialize(event)
-        deserialized = self.serializer.deserialize(serialized)
-
-        # Assert
-        assert deserialized == event
 
     def test_serialize_and_deserialize_order_denied_events(self):
         # Arrange

@@ -13,7 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import timedelta
+from decimal import Decimal
+
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
@@ -26,6 +30,7 @@ from nautilus_trader.model.commands import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
@@ -43,6 +48,7 @@ from tests.test_kit.stubs import TestStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
 class TestRiskEngine:
@@ -50,7 +56,7 @@ class TestRiskEngine:
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(self.clock, level_stdout=LogLevel.DEBUG)
 
         self.trader_id = TraderId("TESTER-000")
         self.account_id = TestStubs.account_id()
@@ -96,13 +102,40 @@ class TestRiskEngine:
         # Prepare data
         self.exec_engine.cache.add_instrument(AUDUSD_SIM)
 
-    def test_set_block_all_orders_changes_flag_value(self):
-        # Arrange
-        # Act
-        self.risk_engine.set_block_all_orders()
+    def test_trading_state_after_instantiation_returns_active(self):
+        # Arrange, Act
+        result = self.risk_engine.trading_state
 
         # Assert
-        assert self.risk_engine.block_all_orders
+        assert result == TradingState.ACTIVE
+
+    def test_set_trading_state_changes_value(self):
+        # Arrange, Act
+        self.risk_engine.set_trading_state(TradingState.HALTED)
+
+        # Assert
+        assert self.risk_engine.trading_state == TradingState.HALTED
+
+    def test_max_order_rate_when_no_risk_config_returns_100_per_second(self):
+        # Arrange, Act
+        result = self.risk_engine.max_order_rate()
+
+        assert result == (100, timedelta(seconds=1))
+
+    def test_max_notionals_when_no_risk_config_returns_empty_dict(self):
+        # Arrange, Act
+        result = self.risk_engine.max_notionals_per_order()
+
+        assert result == {}
+
+    def test_set_max_notional_changes_setting(self):
+        # Arrange, Act
+        self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
+
+        # Assert
+        assert self.risk_engine.max_notionals_per_order() == {
+            AUDUSD_SIM.id: Decimal("1000000")
+        }
 
     def test_given_random_command_logs_and_continues(self):
         # Arrange
@@ -198,7 +231,7 @@ class TestRiskEngine:
         # Assert
         assert self.exec_client.calls == ["connect", "submit_bracket_order"]
 
-    def test_submit_order_when_block_all_orders_true_then_denies_order(self):
+    def test_submit_order_when_trading_halted_then_denies_order(self):
         # Arrange
         self.exec_engine.start()
 
@@ -226,7 +259,8 @@ class TestRiskEngine:
             self.clock.timestamp_ns(),
         )
 
-        self.risk_engine.set_block_all_orders()
+        # Halt trading
+        self.risk_engine.set_trading_state(TradingState.HALTED)
 
         # Act
         self.risk_engine.execute(submit_order)
@@ -368,7 +402,8 @@ class TestRiskEngine:
             self.clock.timestamp_ns(),
         )
 
-        self.risk_engine.set_block_all_orders()
+        # Halt trading
+        self.risk_engine.set_trading_state(TradingState.HALTED)
 
         # Act
         self.risk_engine.execute(submit_bracket)

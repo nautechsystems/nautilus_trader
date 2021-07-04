@@ -25,6 +25,7 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.datetime cimport secs_to_nanos
+from nautilus_trader.core.math cimport max_int64
 
 
 cdef class Throttler:
@@ -32,6 +33,8 @@ cdef class Throttler:
     Provides a generic throttler with an internal queue.
 
     Will throttle messages to the given maximum limit-interval rate.
+    The throttler is considered 'initialized' when it has received at least the
+    `limit` number of messages.
 
     Warnings
     --------
@@ -46,7 +49,7 @@ cdef class Throttler:
         str name,
         int limit,
         timedelta interval not None,
-        output not None: callable,
+        output,
         Clock clock not None,
         Logger logger not None,
     ):
@@ -75,6 +78,8 @@ cdef class Throttler:
         ValueError
             If limit is not positive (> 0).
         ValueError
+            If interval is not positive (> 0).
+        ValueError
             If output is not of type callable.
 
         """
@@ -84,18 +89,20 @@ cdef class Throttler:
         Condition.callable(output, "output")
 
         self._clock = clock
-        self._log = LoggerAdapter(component=name, logger=logger)
-        self._limit = limit
-        self._interval = interval
+        self._log = LoggerAdapter(component=f"Throttler-{name}", logger=logger)
         self._interval_ns = secs_to_nanos(interval.total_seconds())
         self._buffer = Queue()
-        self._timestamps = deque(maxlen=limit)
         self._timer_name = f"{name}-DEQUE"
+        self._timestamps = deque(maxlen=limit)
         self._output = output
-        self._initialized = False
 
         self.name = name
+        self.limit = limit
+        self.interval = interval
+        self.is_initialized = False
         self.is_buffering = False
+
+        self._log.info("Initialized.")
 
     @property
     def qsize(self):
@@ -116,55 +123,58 @@ cdef class Throttler:
         Returns
         -------
         double
-            [0, 1.0]
+            [0, 1.0].
 
         """
-        return max(0, self._delta_next()) / self._interval_ns
+        if not self.is_initialized:
+            return 0
 
-    cpdef void send(self, item) except *:
+        cdef int64_t spread = self._clock.timestamp_ns() - self._timestamps[-1]
+        cdef int64_t diff = max_int64(0, self._interval_ns - spread)
+        return <double>diff / <double>self._interval_ns
+
+    cpdef void send(self, msg) except *:
         """
         Send the given item through the throttler.
 
         Parameters
         ----------
-        item : object
+        msg : object
             The item to send.
 
         """
-        # Throttling is occurring: place item on buffer
+        # Throttling is occurring: place message on buffer
         if self.is_buffering:
-            self._buffer.put_nowait(item)
+            self._buff_msg(msg)
             return
 
+        # Check can send message
         cdef int64_t delta_next = self._delta_next()
         if delta_next <= 0:
-            self._send_item(item)
+            self._send_msg(msg)
             return
 
         # Start throttling
         self.is_buffering = True
-        self._buffer.put_nowait(item)
+        self._buff_msg(msg)
         self._set_timer(delta_next)
 
     cdef int64_t _delta_next(self) except *:
-        if not self._initialized:
-            if len(self._timestamps) < self._limit:
-                return 0
-            else:
-                self._initialized = True
+        if not self.is_initialized:
+            return 0
 
         cdef int64_t diff = self._timestamps[0] - self._timestamps[-1]
         return self._interval_ns - diff
 
     cpdef void _process(self, TimeEvent event) except *:
-        item = self._buffer.get_nowait()
-        self._send_item(item)
+        msg = self._buffer.get_nowait()
+        self._send_msg(msg)
 
         cdef int64_t delta_next
         while not self._buffer.empty():
             delta_next = self._delta_next()
             if delta_next <= 0:
-                self._send_item(item)
+                self._send_msg(msg)
                 continue
 
             self._set_timer(delta_next)
@@ -179,6 +189,13 @@ cdef class Throttler:
             handler=self._process,
         )
 
-    cdef void _send_item(self, item) except *:
+    cdef void _buff_msg(self, msg) except *:
+        self._buffer.put_nowait(msg)
+        self._log.warning(f"Buffering {msg}.")
+
+    cdef void _send_msg(self, msg) except *:
         self._timestamps.appendleft(self._clock.timestamp_ns())
-        self._output(item)
+        self._output(msg)
+        if not self.is_initialized:
+            if len(self._timestamps) == self.limit:
+                self.is_initialized = True

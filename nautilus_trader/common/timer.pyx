@@ -49,7 +49,7 @@ cdef class TimeEvent(Event):
         name : str
             The event label.
         event_id : UUID
-            The event identifier.
+            The event ID.
         event_timestamp : datetime
             The event timestamp (UTC).
         event_timestamp_ns : int64
@@ -177,12 +177,12 @@ cdef class Timer:
 
     cpdef TimeEvent pop_event(self, UUID event_id, int64_t timestamp_ns):
         """
-        Return a generated time event with the given identifier.
+        Return a generated time event with the given ID.
 
         Parameters
         ----------
         event_id : UUID
-            The identifier for the time event.
+            The ID for the time event.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) for time event initialization.
 

@@ -44,7 +44,6 @@ from nautilus_trader.model.events cimport OrderEvent
 from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
-from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderPendingCancel
 from nautilus_trader.model.events cimport OrderPendingReplace
 from nautilus_trader.model.events cimport OrderRejected
@@ -62,7 +61,6 @@ from nautilus_trader.model.objects cimport Quantity
 
 # State being used as trigger
 cdef dict _ORDER_STATE_TABLE = {
-    (OrderState.INITIALIZED, OrderState.INVALID): OrderState.INVALID,
     (OrderState.INITIALIZED, OrderState.DENIED): OrderState.DENIED,
     (OrderState.INITIALIZED, OrderState.SUBMITTED): OrderState.SUBMITTED,
     (OrderState.SUBMITTED, OrderState.REJECTED): OrderState.REJECTED,
@@ -234,8 +232,7 @@ cdef class Order:
 
     cdef bint is_completed_c(self) except *:
         return (
-            self._fsm.state == OrderState.INVALID
-            or self._fsm.state == OrderState.DENIED
+            self._fsm.state == OrderState.DENIED
             or self._fsm.state == OrderState.REJECTED
             or self._fsm.state == OrderState.CANCELED
             or self._fsm.state == OrderState.EXPIRED
@@ -317,7 +314,7 @@ cdef class Order:
     @property
     def execution_ids(self):
         """
-        The execution identifiers.
+        The execution IDs.
 
         Returns
         -------
@@ -547,10 +544,7 @@ cdef class Order:
             Condition.equal(event.venue_order_id, self.venue_order_id, "event.venue_order_id", "self.venue_order_id")
 
         # Handle event (FSM can raise InvalidStateTrigger)
-        if isinstance(event, OrderInvalid):
-            self._fsm.trigger(OrderState.INVALID)
-            self._invalid(event)
-        elif isinstance(event, OrderDenied):
+        if isinstance(event, OrderDenied):
             self._fsm.trigger(OrderState.DENIED)
             self._denied(event)
         elif isinstance(event, OrderSubmitted):
@@ -603,9 +597,6 @@ cdef class Order:
 
         # Update events last as FSM may raise InvalidStateTrigger
         self._events.append(event)
-
-    cdef void _invalid(self, OrderInvalid event) except *:
-        pass  # Do nothing else
 
     cdef void _denied(self, OrderDenied event) except *:
         pass  # Do nothing else
@@ -673,11 +664,11 @@ cdef class PassiveOrder(Order):
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         strategy_id : StrategyId
-            The strategy identifier associated with the order.
+            The strategy ID associated with the order.
         instrument_id : InstrumentId
-            The order instrument identifier.
+            The order instrument ID.
         order_side : OrderSide
             The order side (BUY or SELL).
         order_type : OrderType
@@ -691,7 +682,7 @@ cdef class PassiveOrder(Order):
         expire_time : datetime, optional
             The order expiry time - applicable to GTD orders only.
         init_id : UUID
-            The order initialization event identifier.
+            The order initialization event ID.
         timestamp_ns : int64
             The order initialization timestamp.
         options : dict
@@ -763,7 +754,7 @@ cdef class PassiveOrder(Order):
     @property
     def venue_order_ids(self):
         """
-        The venue order identifiers.
+        The venue order IDs.
 
         Returns
         -------

@@ -281,7 +281,7 @@ class MockMarketDataClient(MarketDataClient):
         Parameters
         ----------
         client_id : ClientId
-            The client identifier.
+            The client ID.
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
@@ -419,7 +419,7 @@ class MockExecutionClient(ExecutionClient):
         Parameters
         ----------
         client_id : ClientId
-            The client identifier.
+            The client ID.
         venue_type : VenueType
             The client venue type.
         account_id : AccountId
@@ -512,7 +512,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         Parameters
         ----------
         client_id : ClientId
-            The client identifier.
+            The client ID.
         venue_type : VenueType
             The client venue type.
         account_id : AccountId
@@ -621,7 +621,7 @@ class MockCacheDatabase(CacheDatabase):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier to associate with the database.
+            The trader ID to associate with the database.
         logger : Logger
             The logger for the database.
 

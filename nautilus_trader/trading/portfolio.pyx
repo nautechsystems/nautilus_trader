@@ -558,7 +558,7 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef Money unrealized_pnl(self, InstrumentId instrument_id):
         """
-        Return the unrealized PnL for the given instrument identifier (if found).
+        Return the unrealized PnL for the given instrument ID (if found).
 
         Parameters
         ----------
@@ -659,7 +659,7 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef object net_position(self, InstrumentId instrument_id):
         """
-        Return the total net position for the given instrument identifier.
+        Return the total net position for the given instrument ID.
         If no positions for instrument_id then will return `Decimal('0')`.
 
         Parameters
@@ -677,7 +677,7 @@ cdef class Portfolio(PortfolioFacade):
     cpdef bint is_net_long(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the portfolio is net long the given
-        instrument identifier.
+        instrument ID.
 
         Parameters
         ----------
@@ -697,7 +697,7 @@ cdef class Portfolio(PortfolioFacade):
     cpdef bint is_net_short(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the portfolio is net short the given
-        instrument identifier.
+        instrument ID.
 
         Parameters
         ----------
@@ -717,7 +717,7 @@ cdef class Portfolio(PortfolioFacade):
     cpdef bint is_flat(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the portfolio is flat for the given
-        instrument identifier.
+        instrument ID.
 
         Parameters
         ----------

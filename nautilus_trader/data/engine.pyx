@@ -112,9 +112,6 @@ cdef class DataEngine(Component):
             config = {}
         super().__init__(clock, logger, name="DataEngine")
 
-        if config:
-            self._log.info(f"Config: {config}.")
-
         self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}                    # type: dict[ClientId, DataClient]
         self._correlation_index = {}          # type: dict[UUID, callable]
@@ -999,7 +996,7 @@ cdef class DataEngine(Component):
 
         if request.id in self._correlation_index:
             self._log.error(f"Cannot handle request: "
-                            f"duplicate identifier {request.id} found in correlation index.")
+                            f"duplicate ID {request.id} found in correlation index.")
             return  # Do not handle duplicates
 
         self._correlation_index[request.id] = request.callback

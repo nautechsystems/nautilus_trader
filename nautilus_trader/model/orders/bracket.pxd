@@ -24,9 +24,9 @@ from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 
 cdef class BracketOrder:
     cdef readonly ClientOrderLinkId id
-    """The client order link identifier.\n\n:returns: `ClientOrderLinkId`"""
+    """The client order link ID.\n\n:returns: `ClientOrderLinkId`"""
     cdef readonly InstrumentId instrument_id
-    """The order instrument identifier.\n\n:returns: `InstrumentId`"""
+    """The order instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly Order entry
     """The entry order.\n\n:returns: `Order`"""
     cdef readonly StopMarketOrder stop_loss

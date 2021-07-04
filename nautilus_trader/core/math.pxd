@@ -13,26 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-cpdef enum OrderState:
-    INITIALIZED = 1,
-    DENIED = 2,
-    SUBMITTED = 3,
-    ACCEPTED = 4,
-    REJECTED = 5,
-    CANCELED = 6,
-    EXPIRED = 7,
-    TRIGGERED = 8,
-    PENDING_UPDATE = 9,
-    PENDING_CANCEL = 10,
-    PARTIALLY_FILLED = 11,
-    FILLED = 12,
+from libc.stdint cimport int64_t
 
 
-cdef class OrderStateParser:
+cdef inline int64_t min_int64(int64_t a, int64_t b):
+    if a < b:
+        return a
+    else:
+        return b
 
-    @staticmethod
-    cdef str to_str(int value)
 
-    @staticmethod
-    cdef OrderState from_str(str value) except *
+cdef inline int64_t max_int64(int64_t a, int64_t b):
+    if a > b:
+        return a
+    else:
+        return b

@@ -45,7 +45,7 @@ cdef class Tick(Data):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The ticks instrument identifier.
+            The ticks instrument ID.
         ts_event_ns: int64
             The UNIX timestamp (nanoseconds) when data event occurred.
         ts_recv_ns : int64
@@ -78,7 +78,7 @@ cdef class QuoteTick(Tick):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The quotes instrument identifier.
+            The quotes instrument ID.
         bid : Price
             The best bid price.
         ask : Price
@@ -239,7 +239,7 @@ cdef class TradeTick(Tick):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The trade instrument identifier.
+            The trade instrument ID.
         price : Price
             The price of the trade.
         size : Quantity
@@ -247,7 +247,7 @@ cdef class TradeTick(Tick):
         aggressor_side : AggressorSide
             The aggressor side of the trade.
         match_id : str
-            The trade match identifier.
+            The trade match ID.
         ts_event_ns: int64
             The UNIX timestamp (nanoseconds) when data event occurred.
         ts_recv_ns: int64

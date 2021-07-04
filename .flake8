@@ -24,25 +24,25 @@ exclude =
    dist
    docs
    noxfile.py
-ignore = B305, C101, E203, E252, E402, D100, D101, D102, S101, W503, S403
+ignore = C101, E203, E252, E402, D100, D101, D102, S101, W503, S403
 accept-encodings = utf-8
 max-complexity = 10
 max-line-length = 150
 statistics = True
 
 per-file-ignores =
-    *.pyx,*.pxd: E225, E227, E999
+    *.pyx,*.pxd: E225, E226, E227, E999
     tests/*:S101
 
 # Cython ignores justification
 # ----------------------------
 # E225 missing whitespace around operator (picks up cython casting)
+# E226 missing whitespace around arithmetic operator (picks up C pointers)
 # E227 missing whitespace around bitwise or shift operator (picks up pointers)
 # E999 SyntaxError: invalid syntax (cimport seen as invalid syntax)
 
 # Ignores justification
 # ---------------------
-# B305 `.next()` is not a thing on Python 3. (incorrectly picking up methods named next)
 # C101 Coding magic comment not found
 # D100 Missing docstring in public module (picks up entire test suite)
 # D101 Missing docstring in public class (picks up entire test suite)

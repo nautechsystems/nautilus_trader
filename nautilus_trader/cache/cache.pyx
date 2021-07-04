@@ -708,7 +708,7 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier to load.
+            The instrument ID to load.
 
         Returns
         -------
@@ -732,7 +732,7 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier to load.
+            The account ID to load.
 
         Returns
         -------
@@ -745,12 +745,12 @@ cdef class Cache(CacheFacade):
 
     cpdef Order load_order(self, ClientOrderId client_order_id):
         """
-        Load the order associated with the given identifier (if found).
+        Load the order associated with the given ID (if found).
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier to load.
+            The client order ID to load.
 
         Returns
         -------
@@ -763,12 +763,12 @@ cdef class Cache(CacheFacade):
 
     cpdef Position load_position(self, PositionId position_id):
         """
-        Load the position associated with the given identifier (if found).
+        Load the position associated with the given ID (if found).
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier to load.
+            The position ID to load.
 
         Returns
         -------
@@ -1041,14 +1041,14 @@ cdef class Cache(CacheFacade):
     cpdef void add_order(self, Order order, PositionId position_id) except *:
         """
         Add the given order to the cache indexed with the given position
-        identifier.
+        ID.
 
         Parameters
         ----------
         order : Order
             The order to add.
         position_id : PositionId
-            The position identifier to index for the order.
+            The position ID to index for the order.
 
         Raises
         ------
@@ -1117,18 +1117,18 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id,
     ) except *:
         """
-        Index the given position identifier with the other given identifiers.
+        Index the given position ID with the other given IDs.
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier to index.
+            The position ID to index.
         venue : Venue
-            The venue identifier to index with the position identifier.
+            The venue ID to index with the position ID.
         client_order_id : ClientOrderId
-            The client order identifier to index with the position identifier.
+            The client order ID to index with the position ID.
         strategy_id : StrategyId
-            The strategy identifier to index with the position identifier.
+            The strategy ID to index with the position ID.
 
         """
         Condition.not_none(position_id, "position_id")
@@ -1327,12 +1327,12 @@ cdef class Cache(CacheFacade):
 
     cpdef list quote_ticks(self, InstrumentId instrument_id):
         """
-        Return the quote ticks for the given instrument identifier.
+        Return the quote ticks for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the ticks to get.
+            The instrument ID for the ticks to get.
 
         Returns
         -------
@@ -1345,12 +1345,12 @@ cdef class Cache(CacheFacade):
 
     cpdef list trade_ticks(self, InstrumentId instrument_id):
         """
-        Return trade ticks for the given instrument identifier.
+        Return trade ticks for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the ticks to get.
+            The instrument ID for the ticks to get.
 
         Returns
         -------
@@ -1381,12 +1381,12 @@ cdef class Cache(CacheFacade):
 
     cpdef Price price(self, InstrumentId instrument_id, PriceType price_type):
         """
-        Return the price for the given instrument identifier and price type.
+        Return the price for the given instrument ID and price type.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the price.
+            The instrument ID for the price.
         price_type : PriceType
             The price type for the query.
 
@@ -1409,7 +1409,7 @@ cdef class Cache(CacheFacade):
 
     cpdef OrderBook order_book(self, InstrumentId instrument_id):
         """
-        Return the order book for the given instrument identifier.
+        Return the order book for the given instrument ID.
 
         Parameters
         ----------
@@ -1424,14 +1424,14 @@ cdef class Cache(CacheFacade):
 
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=0):
         """
-        Return the quote tick for the given instrument identifier at the given index.
+        Return the quote tick for the given instrument ID at the given index.
 
         Last quote tick if no index specified.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the tick to get.
+            The instrument ID for the tick to get.
         index : int, optional
             The index for the tick to get.
 
@@ -1458,14 +1458,14 @@ cdef class Cache(CacheFacade):
 
     cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=0):
         """
-        Return the trade tick for the given instrument identifier at the given index
+        Return the trade tick for the given instrument ID at the given index
 
         Last trade tick if no index specified.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the tick to get.
+            The instrument ID for the tick to get.
         index : int, optional
             The index for the tick to get.
 
@@ -1526,12 +1526,12 @@ cdef class Cache(CacheFacade):
 
     cpdef int quote_tick_count(self, InstrumentId instrument_id) except *:
         """
-        The count of quote ticks for the given instrument identifier.
+        The count of quote ticks for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the ticks.
+            The instrument ID for the ticks.
 
         Returns
         -------
@@ -1544,12 +1544,12 @@ cdef class Cache(CacheFacade):
 
     cpdef int trade_tick_count(self, InstrumentId instrument_id) except *:
         """
-        The count of trade ticks for the given instrument identifier.
+        The count of trade ticks for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the ticks.
+            The instrument ID for the ticks.
 
         Returns
         -------
@@ -1581,12 +1581,12 @@ cdef class Cache(CacheFacade):
     cpdef bint has_order_book(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the data engine has an order book
-        snapshot for the given instrument identifier.
+        snapshot for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the order book snapshot.
+            The instrument ID for the order book snapshot.
 
         Returns
         -------
@@ -1598,12 +1598,12 @@ cdef class Cache(CacheFacade):
     cpdef bint has_quote_ticks(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the data engine has quote ticks for
-        the given instrument identifier.
+        the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the ticks.
+            The instrument ID for the ticks.
 
         Returns
         -------
@@ -1617,12 +1617,12 @@ cdef class Cache(CacheFacade):
     cpdef bint has_trade_ticks(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the data engine has trade ticks for
-        the given instrument identifier.
+        the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the ticks.
+            The instrument ID for the ticks.
 
         Returns
         -------
@@ -1723,12 +1723,12 @@ cdef class Cache(CacheFacade):
 
     cpdef Instrument instrument(self, InstrumentId instrument_id):
         """
-        Return the instrument corresponding to the given instrument identifier.
+        Return the instrument corresponding to the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier of the instrument to return.
+            The instrument ID of the instrument to return.
 
         Returns
         -------
@@ -1741,7 +1741,7 @@ cdef class Cache(CacheFacade):
 
     cpdef list instrument_ids(self, Venue venue=None):
         """
-        Return all instrument identifiers held by the cache.
+        Return all instrument IDs held by the cache.
 
         Parameters
         ----------
@@ -1775,12 +1775,12 @@ cdef class Cache(CacheFacade):
 
     cpdef Account account(self, AccountId account_id):
         """
-        Return the account matching the given identifier (if found).
+        Return the account matching the given ID (if found).
 
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
 
         Returns
         -------
@@ -1793,7 +1793,7 @@ cdef class Cache(CacheFacade):
 
     cpdef Account account_for_venue(self, Venue venue):
         """
-        Return the account matching the given client identifier (if found).
+        Return the account matching the given client ID (if found).
 
         Parameters
         ----------
@@ -1814,12 +1814,12 @@ cdef class Cache(CacheFacade):
 
     cpdef AccountId account_id(self, Venue venue):
         """
-        Return the account identifier for the given venue (if found).
+        Return the account ID for the given venue (if found).
 
         Parameters
         ----------
         venue : Venue
-            The venue for the account identifier.
+            The venue for the account ID.
 
         Returns
         -------
@@ -1898,16 +1898,16 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all client order identifiers with the given query filters.
+        Return all client order IDs with the given query filters.
 
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -1928,17 +1928,17 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all working client order identifiers with the given query
+        Return all working client order IDs with the given query
         filters.
 
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -1959,17 +1959,17 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all completed client order identifiers with the given query
+        Return all completed client order IDs with the given query
         filters.
 
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -1990,16 +1990,16 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all position identifiers with the given query filters.
+        Return all position IDs with the given query filters.
 
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2020,16 +2020,16 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all open position identifiers with the given query filters.
+        Return all open position IDs with the given query filters.
 
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2050,16 +2050,16 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all closed position identifiers with the given query filters.
+        Return all closed position IDs with the given query filters.
 
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2075,7 +2075,7 @@ cdef class Cache(CacheFacade):
 
     cpdef set strategy_ids(self):
         """
-        Return all strategy identifiers.
+        Return all strategy IDs.
 
         Returns
         -------
@@ -2088,7 +2088,7 @@ cdef class Cache(CacheFacade):
 
     cpdef Order order(self, ClientOrderId client_order_id):
         """
-        Return the order matching the given client order identifier (if found).
+        Return the order matching the given client order ID (if found).
 
         Returns
         -------
@@ -2101,13 +2101,13 @@ cdef class Cache(CacheFacade):
 
     cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id):
         """
-        Return the client order identifier matching the given order identifier
+        Return the client order ID matching the given order ID
         (if found).
 
         Parameters
         ----------
         venue_order_id : VenueOrderId
-            The venue assigned order identifier.
+            The venue assigned order ID.
 
         Returns
         -------
@@ -2120,7 +2120,7 @@ cdef class Cache(CacheFacade):
 
     cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id):
         """
-        Return the order identifier matching the given client order identifier
+        Return the order ID matching the given client order ID
         (if found).
 
         Returns
@@ -2147,11 +2147,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2177,11 +2177,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2207,11 +2207,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2229,12 +2229,12 @@ cdef class Cache(CacheFacade):
 
     cpdef Position position(self, PositionId position_id):
         """
-        Return the position associated with the given identifier (if found).
+        Return the position associated with the given ID (if found).
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier.
+            The position ID.
 
         Returns
         -------
@@ -2247,13 +2247,13 @@ cdef class Cache(CacheFacade):
 
     cpdef PositionId position_id(self, ClientOrderId client_order_id):
         """
-        Return the position identifier associated with the given client order
-        identifier (if found).
+        Return the position ID associated with the given client order
+        ID (if found).
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier associated with the position.
+            The client order ID associated with the position.
 
         Returns
         -------
@@ -2276,11 +2276,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2306,11 +2306,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2336,11 +2336,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2356,13 +2356,13 @@ cdef class Cache(CacheFacade):
 
     cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
         """
-        Return a value indicating whether an order with the given identifier
+        Return a value indicating whether an order with the given ID
         exists.
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier to check.
+            The client order ID to check.
 
         Returns
         -------
@@ -2375,13 +2375,13 @@ cdef class Cache(CacheFacade):
 
     cpdef bint is_order_working(self, ClientOrderId client_order_id) except *:
         """
-        Return a value indicating whether an order with the given identifier is
+        Return a value indicating whether an order with the given ID is
         working.
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier to check.
+            The client order ID to check.
 
         Returns
         -------
@@ -2394,13 +2394,13 @@ cdef class Cache(CacheFacade):
 
     cpdef bint is_order_completed(self, ClientOrderId client_order_id) except *:
         """
-        Return a value indicating whether an order with the given identifier is
+        Return a value indicating whether an order with the given ID is
         completed.
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier to check.
+            The client order ID to check.
 
         Returns
         -------
@@ -2423,11 +2423,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2448,11 +2448,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2473,11 +2473,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2488,13 +2488,13 @@ cdef class Cache(CacheFacade):
 
     cpdef bint position_exists(self, PositionId position_id) except *:
         """
-        Return a value indicating whether a position with the given identifier
+        Return a value indicating whether a position with the given ID
         exists.
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier.
+            The position ID.
 
         Returns
         -------
@@ -2507,13 +2507,13 @@ cdef class Cache(CacheFacade):
 
     cpdef bint is_position_open(self, PositionId position_id) except *:
         """
-        Return a value indicating whether a position with the given identifier
+        Return a value indicating whether a position with the given ID
         exists and is open.
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier.
+            The position ID.
 
         Returns
         -------
@@ -2526,13 +2526,13 @@ cdef class Cache(CacheFacade):
 
     cpdef bint is_position_closed(self, PositionId position_id) except *:
         """
-        Return a value indicating whether a position with the given identifier
+        Return a value indicating whether a position with the given ID
         exists and is closed.
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier.
+            The position ID.
 
         Returns
         -------
@@ -2555,11 +2555,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2580,11 +2580,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2605,11 +2605,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2622,13 +2622,13 @@ cdef class Cache(CacheFacade):
 
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId client_order_id):
         """
-        Return the strategy identifier associated with the given identifier
+        Return the strategy ID associated with the given ID
         (if found).
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier associated with the strategy.
+            The client order ID associated with the strategy.
 
         Returns
         -------
@@ -2641,13 +2641,13 @@ cdef class Cache(CacheFacade):
 
     cpdef StrategyId strategy_id_for_position(self, PositionId position_id):
         """
-        Return the strategy identifier associated with the given identifier
+        Return the strategy ID associated with the given ID
         (if found).
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier associated with the strategy.
+            The position ID associated with the strategy.
 
         Returns
         -------

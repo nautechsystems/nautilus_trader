@@ -35,7 +35,7 @@ class MyStrategy(TradingStrategy):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the strategy.
+            The instrument ID for the strategy.
 
         """
         # The order_id_tag should be unique at the 'trader level', here we are

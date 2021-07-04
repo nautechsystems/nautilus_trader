@@ -127,10 +127,10 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
             lightweight=True,
         )
 
-        # Get account identifier env variable or set default
+        # Get account ID env variable or set default
         account_id_env_var = os.getenv(config.get("account_id", ""), "001")
 
-        # Set account identifier
+        # Set account ID
         account_id = AccountId(BETFAIR_VENUE.value, account_id_env_var)
 
         # Create client

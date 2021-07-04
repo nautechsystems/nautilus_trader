@@ -64,8 +64,8 @@ class BetfairTestStrategy(TradingStrategy):
         trade_size : Decimal
             The position size per trade.
         order_id_tag : str
-            The unique order identifier tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader identifier.
+            The unique order ID tag for the strategy. Must be unique
+            amongst all running strategies for a particular trader ID.
 
         """
         super().__init__(order_id_tag=order_id_tag)

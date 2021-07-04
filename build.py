@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from distutils.version import LooseVersion
 import itertools
 import os
 from pathlib import Path
@@ -26,7 +25,7 @@ PROFILING_MODE = bool(os.getenv("PROFILING_MODE", ""))
 ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
 # If PARALLEL build is enabled, uses all CPUs for compile stage of build
 PARALLEL_BUILD = bool(os.getenv("PARALLEL_BUILD", "true"))
-# If PARALLEL tests is enabled, uses pytest-xdist to run tests in parallel
+# If SKIP_BUILD_COPY is enabled, prevents copying built *.so files back into the source tree
 SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 
 print(
@@ -64,20 +63,24 @@ CYTHON_COMPILER_DIRECTIVES = {
 
 
 def _build_extensions() -> List[Extension]:
-    # Build Extensions to feed into cythonize()
-    # Profiling requires special macro directives
-    define_macros = []
-    if PROFILING_MODE or ANNOTATION_MODE:
-        define_macros.append(("CYTHON_TRACE", "1"))
-
-    if LooseVersion("3.0a7") <= LooseVersion(cython_compiler_version):
-        # https://github.com/nautechsystems/nautilus_trader/issues/303
-        define_macros.append(("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"))
-
     # Regarding the compiler warning: #warning "Using deprecated NumPy API,
     # disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
     # https://stackoverflow.com/questions/52749662/using-deprecated-numpy-api
     # From the Cython docs: "For the time being, it is just a warning that you can ignore."
+    define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
+    if PROFILING_MODE or ANNOTATION_MODE:
+        # Profiling requires special macro directives
+        define_macros.append(("CYTHON_TRACE", "1"))
+
+    extra_compile_args = []
+    if platform.system() != "Windows":
+        extra_compile_args.append("-O3")
+        extra_compile_args.append("-pipe")
+
+    print(f"define_macros={define_macros}")
+    print(f"extra_compile_args={extra_compile_args}")
+
+    # Build Extensions to feed into cythonize()
     return [
         Extension(
             name=str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
@@ -85,7 +88,7 @@ def _build_extensions() -> List[Extension]:
             include_dirs=[".", np.get_include()],
             define_macros=define_macros,
             language="c",
-            extra_compile_args=["-O3", "-pipe"],
+            extra_compile_args=extra_compile_args,
         )
         for pyx in itertools.chain(
             Path("examples").rglob("*.pyx"),
@@ -171,7 +174,7 @@ if __name__ == "__main__":
             print("multiprocessing not available")
 
     print("Starting build...")
-    # Note: On Mac OS X (and perhaps other platforms), executable files may be
+    # Note: On macOS (and perhaps other platforms), executable files may be
     # universal files containing multiple architectures. To determine the
     # “64-bitness” of the current interpreter, it is more reliable to query the
     # sys.maxsize attribute:

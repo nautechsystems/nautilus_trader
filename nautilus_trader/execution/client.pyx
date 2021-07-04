@@ -37,7 +37,6 @@ from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderCanceled
 from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderPendingCancel
 from nautilus_trader.model.events cimport OrderPendingReplace
 from nautilus_trader.model.events cimport OrderRejected
@@ -87,11 +86,11 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_id : ClientId
-            The client identifier.
+            The client ID.
         venue_type : VenueType
             The venue type for the client (determines venue -> client_id mapping).
         account_id : AccountId
-            The account identifier for the client.
+            The account ID for the client.
         account_type : AccountType
             The account type for the client.
         base_currency : Currency, optional
@@ -252,32 +251,6 @@ cdef class ExecutionClient:
 
         self._handle_event(account_state)
 
-    cpdef void generate_order_invalid(
-        self,
-        ClientOrderId client_order_id,
-        str reason,
-    ) except *:
-        """
-        Generate an `OrderInvalid` event and send it to the `ExecutionEngine`.
-
-        Parameters
-        ----------
-        client_order_id : ClientOrderId
-            The client order identifier.
-        reason : str
-            The order invalid reason.
-
-        """
-        # Generate event
-        cdef OrderInvalid invalid = OrderInvalid(
-            client_order_id=client_order_id,
-            reason=reason,
-            event_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
-        )
-
-        self._handle_event(invalid)
-
     cpdef void generate_order_submitted(
         self, ClientOrderId client_order_id,
         int64_t ts_submitted_ns,
@@ -288,7 +261,7 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         ts_submitted_ns : int64
             The UNIX timestamp (nanoseconds) when the order was submitted.
 
@@ -316,7 +289,7 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         reason : datetime
             The order rejected reason.
         ts_rejected_ns : int64
@@ -347,9 +320,9 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         ts_accepted_ns : int64
             The UNIX timestamp (nanoseconds) when the order was accepted.
 
@@ -378,9 +351,9 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         ts_pending_ns : datetime
             The UNIX timestamp (nanoseconds) when the replace was pending.
 
@@ -409,9 +382,9 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         ts_pending_ns : datetime
             The UNIX timestamp (nanoseconds) when the cancel was pending.
 
@@ -441,7 +414,7 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         response_to : str
             The order update rejected response.
         reason : str
@@ -484,7 +457,7 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         response_to : str
             The order cancel rejected response.
         reason : str
@@ -530,9 +503,9 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         quantity : Quantity
             The orders current quantity.
         price : Price
@@ -542,7 +515,7 @@ cdef class ExecutionClient:
         ts_updated_ns : int64
             The UNIX timestamp (nanoseconds) when the order was updated.
         venue_order_id_modified : bool
-            If the identifier was modified for this event.
+            If the ID was modified for this event.
 
         """
         # Check venue_order_id against cache, only allow modification when `venue_order_id_modified=True`
@@ -577,9 +550,9 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         ts_canceled_ns : int64
             The UNIX timestamp (nanoseconds) when order was canceled.
 
@@ -608,9 +581,9 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         ts_triggered_ns : int64
             The UNIX timestamp (nanoseconds) when the order was triggered.
 
@@ -639,9 +612,9 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         ts_expired_ns : int64
             The UNIX timestamp (nanoseconds) when the order expired.
 
@@ -679,15 +652,15 @@ cdef class ExecutionClient:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         execution_id : ExecutionId
-            The execution identifier.
+            The execution ID.
         position_id : PositionId
-            The position identifier associated with the order.
+            The position ID associated with the order.
         instrument_id : InstrumentId
-            The instrument identifier.
+            The instrument ID.
         order_side : OrderSide
             The execution order side.
         last_qty : Quantity

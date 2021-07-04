@@ -198,12 +198,12 @@ cdef class SimulatedExchange:
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id):
         """
-        Return the best bid price for the given instrument identifier (if found).
+        Return the best bid price for the given instrument ID (if found).
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the price.
+            The instrument ID for the price.
 
         Returns
         -------
@@ -222,12 +222,12 @@ cdef class SimulatedExchange:
 
     cpdef Price best_ask_price(self, InstrumentId instrument_id):
         """
-        Return the best ask price for the given instrument identifier (if found).
+        Return the best ask price for the given instrument ID (if found).
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the price.
+            The instrument ID for the price.
 
         Returns
         -------
@@ -246,12 +246,12 @@ cdef class SimulatedExchange:
 
     cpdef OrderBook get_book(self, InstrumentId instrument_id):
         """
-        Return the order book for the given instrument identifier.
+        Return the order book for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the price.
+            The instrument ID for the price.
 
         Returns
         -------
@@ -266,7 +266,7 @@ cdef class SimulatedExchange:
             instrument = self.instruments.get(instrument_id)
             if instrument is None:
                 raise RuntimeError(
-                    f"Cannot create OrderBook: no instrument for {instrument_id.value}"
+                    f"cannot create OrderBook: no instrument for {instrument_id.value}"
                 )
             book = OrderBook.create(
                 instrument=instrument,
@@ -594,7 +594,8 @@ cdef class SimulatedExchange:
         elif order.type == OrderType.STOP_LIMIT:
             self._update_stop_limit_order(order, qty, price, trigger)
         else:
-            raise RuntimeError(f"Invalid order type")
+            # Design-time error
+            raise RuntimeError("invalid order type")
 
     cdef void _cancel_order(self, PassiveOrder order) except *:
         cdef dict instrument_orders = self._instrument_orders.get(order.instrument_id)
@@ -761,7 +762,8 @@ cdef class SimulatedExchange:
         elif order.type == OrderType.STOP_LIMIT:
             self._process_stop_limit_order(order)
         else:
-            raise RuntimeError(f"Invalid order type")
+            # Design-time error
+            raise RuntimeError("invalid order type")
 
     cdef void _process_market_order(self, MarketOrder order) except *:
         # Check market exists
@@ -952,6 +954,7 @@ cdef class SimulatedExchange:
         elif order.type == OrderType.STOP_LIMIT:
             self._match_stop_limit_order(order)
         else:
+            # Design-time error
             raise RuntimeError("invalid order type")
 
     cdef void _match_limit_order(self, LimitOrder order) except *:
@@ -1120,7 +1123,7 @@ cdef class SimulatedExchange:
         if OMSType.HEDGING and position_id.is_null():
             position_id = self.cache.position_id(order.client_order_id)
             if position_id is None:
-                # Generate a position identifier
+                # Generate a position ID
                 position_id = self._generate_position_id(order.instrument_id)
         elif OMSType.NETTING:
             # Check for open positions
@@ -1209,7 +1212,7 @@ cdef class SimulatedExchange:
 
     cdef void _clean_up_child_orders(self, ClientOrderId client_order_id) except *:
         # Clean up any residual child orders from the completed order associated
-        # with the given identifier.
+        # with the given ID.
         self._child_orders.pop(client_order_id, None)
 
     cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *:

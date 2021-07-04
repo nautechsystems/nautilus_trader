@@ -78,7 +78,7 @@ cdef class AccountState(Event):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
         account_type : AccountId
             The account type for the event.
         base_currency : Currency, optional
@@ -90,7 +90,7 @@ cdef class AccountState(Event):
         info : dict [str, object]
             The additional implementation specific account information.
         event_id : UUID
-            The event identifier.
+            The event ID.
         ts_updated_ns : int64
             The UNIX timestamp (nanoseconds) when the account was updated.
         timestamp_ns : int64
@@ -196,11 +196,11 @@ cdef class OrderEvent(Event):
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -240,11 +240,11 @@ cdef class OrderInitialized(OrderEvent):
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         strategy_id : StrategyId
-            The strategy identifier associated with the order.
+            The strategy ID associated with the order.
         instrument_id : InstrumentId
-            The order instrument identifier.
+            The order instrument ID.
         order_side : OrderSide
             The order side.
         order_type : OrderType
@@ -254,7 +254,7 @@ cdef class OrderInitialized(OrderEvent):
         time_in_force : TimeInForce
             The order time-in-force.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) when the order was initialized.
         options : dict[str, str]
@@ -345,108 +345,6 @@ cdef class OrderInitialized(OrderEvent):
         return OrderInitialized.to_dict_c(obj)
 
 
-cdef class OrderInvalid(OrderEvent):
-    """
-    Represents an event where an order has been invalidated by the Nautilus
-    system.
-
-    This could be due to a duplicated identifier, invalid combination of
-    parameters, or for any other reason that the order is considered to be
-    invalid.
-    """
-
-    def __init__(
-        self,
-        ClientOrderId client_order_id not None,
-        str reason not None,
-        UUID event_id not None,
-        int64_t timestamp_ns,
-    ):
-        """
-        Initialize a new instance of the ``OrderInvalid`` class.
-
-        Parameters
-        ----------
-        client_order_id : ClientOrderId
-            The client order identifier.
-        reason : str
-            The order invalid reason.
-        event_id : UUID
-            The event identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the event initialization.
-
-        Raises
-        ------
-        ValueError
-            If invalid_reason is not a valid_string.
-
-        """
-        Condition.valid_string(reason, "invalid_reason")
-        super().__init__(
-            client_order_id,
-            VenueOrderId.null_c(),  # Never assigned
-            event_id,
-            timestamp_ns,
-        )
-
-        self.reason = reason
-
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"client_order_id={self.client_order_id}, "
-                f"reason={self.reason}, "
-                f"event_id={self.id})")
-
-    @staticmethod
-    cdef OrderInvalid from_dict_c(dict values):
-        return OrderInvalid(
-            client_order_id=ClientOrderId(values["client_order_id"]),
-            reason=values["reason"],
-            event_id=UUID.from_str_c(values["event_id"]),
-            timestamp_ns=values["timestamp_ns"],
-        )
-
-    @staticmethod
-    cdef dict to_dict_c(OrderInvalid obj):
-        return {
-            "type": "OrderInvalid",
-            "client_order_id": obj.client_order_id.value,
-            "reason": obj.reason,
-            "event_id": obj.id.value,
-            "timestamp_ns": obj.timestamp_ns,
-        }
-
-    @staticmethod
-    def from_dict(dict values):
-        """
-        Return an order invalid event from the given dict values.
-
-        Parameters
-        ----------
-        values : dict[str, object]
-            The values for initialization.
-
-        Returns
-        -------
-        OrderInvalid
-
-        """
-        return OrderInvalid.from_dict_c(values)
-
-    @staticmethod
-    def to_dict(OrderInvalid obj):
-        """
-        Return a dictionary representation of this object.
-
-        Returns
-        -------
-        dict[str, object]
-
-        """
-        return OrderInvalid.to_dict_c(obj)
-
-
 cdef class OrderDenied(OrderEvent):
     """
     Represents an event where an order has been denied by the Nautilus system.
@@ -468,11 +366,11 @@ cdef class OrderDenied(OrderEvent):
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         reason : str
             The order denied reason.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -567,13 +465,13 @@ cdef class OrderSubmitted(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         ts_submitted_ns : int64
             The UNIX timestamp (nanoseconds) when the order was submitted.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -665,15 +563,15 @@ cdef class OrderRejected(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         reason : datetime
             The order rejected reason.
         ts_rejected_ns : int64
             The UNIX timestamp (nanoseconds) when the order was rejected.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -782,15 +680,15 @@ cdef class OrderAccepted(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         ts_accepted_ns : int64
             The UNIX timestamp (nanoseconds) when the order was accepted.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -892,15 +790,15 @@ cdef class OrderPendingReplace(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         ts_pending_ns : datetime
             The UNIX timestamp (nanoseconds) when the replace was pending.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -1003,15 +901,15 @@ cdef class OrderPendingCancel(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         ts_pending_ns : datetime
             The UNIX timestamp (nanoseconds) when the cancel was pending.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -1115,11 +1013,11 @@ cdef class OrderUpdateRejected(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         response_to : str
             The order update rejected response.
         reason : str
@@ -1127,7 +1025,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         ts_rejected_ns : datetime
             The UNIX timestamp (nanoseconds) when the order update was rejected.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -1241,11 +1139,11 @@ cdef class OrderCancelRejected(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         response_to : str
             The order cancel rejected response.
         reason : str
@@ -1253,7 +1151,7 @@ cdef class OrderCancelRejected(OrderEvent):
         ts_rejected_ns : datetime
             The UNIX timestamp (nanoseconds) when the order cancel was rejected.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -1367,11 +1265,11 @@ cdef class OrderUpdated(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         quantity : Quantity
             The orders current quantity.
         price : Price
@@ -1381,7 +1279,7 @@ cdef class OrderUpdated(OrderEvent):
         ts_updated_ns : int64
             The UNIX timestamp (nanoseconds) when the order was updated.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -1495,15 +1393,15 @@ cdef class OrderCanceled(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         ts_canceled_ns : int64
             The UNIX timestamp (nanoseconds) when order was canceled.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -1604,15 +1502,15 @@ cdef class OrderTriggered(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         ts_triggered_ns : int64
             The UNIX timestamp (nanoseconds) when the order was triggered.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -1713,15 +1611,15 @@ cdef class OrderExpired(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         ts_expired_ns : int64
             The UNIX timestamp (nanoseconds) when the order expired.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -1833,19 +1731,19 @@ cdef class OrderFilled(OrderEvent):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         execution_id : ExecutionId
-            The execution identifier.
+            The execution ID.
         position_id : PositionId
-            The position identifier associated with the order.
+            The position ID associated with the order.
         strategy_id : StrategyId
-            The strategy identifier associated with the order.
+            The strategy ID associated with the order.
         instrument_id : InstrumentId
-            The instrument identifier.
+            The instrument ID.
         order_side : OrderSide
             The execution order side.
         last_qty : Quantity
@@ -1861,7 +1759,7 @@ cdef class OrderFilled(OrderEvent):
         ts_filled_ns : int64
             The UNIX timestamp (nanoseconds) when the order was filled.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
         info : dict[str, object], optional
@@ -2046,7 +1944,7 @@ cdef class PositionEvent(Event):
         order_fill : OrderFilled
             The order fill event which triggered the event.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -2079,7 +1977,7 @@ cdef class PositionOpened(PositionEvent):
         order_fill : OrderFilled
             The order fill event which triggered the event.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -2174,7 +2072,7 @@ cdef class PositionChanged(PositionEvent):
         order_fill : OrderFilled
             The order fill event which triggered the event.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -2272,7 +2170,7 @@ cdef class PositionClosed(PositionEvent):
         order_fill : OrderEvent
             The order fill event which triggered the event.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -2366,7 +2264,7 @@ cdef class StatusEvent(Event):
         Parameters
         ----------
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -2393,7 +2291,7 @@ cdef class VenueStatusEvent(StatusEvent):
         status : VenueStatus
             The venue status.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -2476,7 +2374,7 @@ cdef class InstrumentStatusEvent(StatusEvent):
         status : InstrumentStatus
             The instrument status.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 
@@ -2563,7 +2461,7 @@ cdef class InstrumentClosePrice(Event):
         close_type : InstrumentCloseType
             The type of closing price.
         event_id : UUID
-            The event identifier.
+            The event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the event initialization.
 

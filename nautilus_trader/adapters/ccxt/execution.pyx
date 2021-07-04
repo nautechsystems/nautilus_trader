@@ -93,7 +93,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         client : ccxt.Exchange
             The unified CCXT client.
         account_id : AccountId
-            The account identifier for the client.
+            The account ID for the client.
         account_type : AccountType
             The account type for the client.
         base_currency : Currency, optional
@@ -271,7 +271,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         Parameters
         ----------
         venue_order_id : VenueOrderId
-            The venue order identifier for the trades.
+            The venue order ID for the trades.
         symbol : Symbol
             The symbol for the trades.
         since : datetime, optional
@@ -763,7 +763,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
         client : ccxt.Exchange
             The unified CCXT client.
         account_id : AccountId
-            The account identifier for the client.
+            The account ID for the client.
         account_type : AccountType
             The account type for the client.
         engine : LiveDataEngine
@@ -871,7 +871,7 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
         client : ccxt.Exchange
             The unified CCXT client.
         account_id : AccountId
-            The account identifier for the client.
+            The account ID for the client.
         engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock

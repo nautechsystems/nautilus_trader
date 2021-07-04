@@ -14,25 +14,34 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum OrderState:
-    INITIALIZED = 1,
-    DENIED = 2,
-    SUBMITTED = 3,
-    ACCEPTED = 4,
-    REJECTED = 5,
-    CANCELED = 6,
-    EXPIRED = 7,
-    TRIGGERED = 8,
-    PENDING_UPDATE = 9,
-    PENDING_CANCEL = 10,
-    PARTIALLY_FILLED = 11,
-    FILLED = 12,
-
-
-cdef class OrderStateParser:
+cdef class TradingStateParser:
 
     @staticmethod
-    cdef str to_str(int value)
+    cdef str to_str(int value):
+        if value == 1:
+            return "ACTIVE"
+        elif value == 2:
+            return "HALTED"
+        elif value == 3:
+            return "REDUCING"
+        else:
+            raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef OrderState from_str(str value) except *
+    cdef TradingState from_str(str value) except *:
+        if value == "ACTIVE":
+            return TradingState.ACTIVE
+        elif value == "HALTED":
+            return TradingState.HALTED
+        elif value == "REDUCING":
+            return TradingState.REDUCING
+        else:
+            raise ValueError(f"value was invalid, was {value}")
+
+    @staticmethod
+    def to_str_py(int value):
+        return TradingStateParser.to_str(value)
+
+    @staticmethod
+    def from_str_py(str value):
+        return TradingStateParser.from_str(value)

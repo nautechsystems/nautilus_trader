@@ -14,6 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import timedelta
 from decimal import Decimal
 import os
 import sys
@@ -44,7 +45,7 @@ config = {
     },
     "system": {
         "loop_debug": False,  # If event loop debug mode
-        "timeout_connection": 10.0,  # Timeout for all engines client to connect and initialize
+        "timeout_connection": 10.0,  # Timeout for all clients to connect and initialize
         "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
         "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
         "timeout_disconnection": 5.0,  # Timeout for all engine clients to disconnect
@@ -59,7 +60,10 @@ config = {
         "port": 6379,
     },
     "data_engine": {},
-    "risk_engine": {},
+    "risk_engine": {
+        "max_order_rate": (5, timedelta(seconds=1)),
+        "max_notional_per_order": {"BTC/USD.BITMEX": 10000},
+    },
     "exec_engine": {},
     "strategy": {
         "load_state": True,  # Strategy state is loaded from the database on start

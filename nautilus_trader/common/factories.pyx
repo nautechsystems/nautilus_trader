@@ -38,7 +38,7 @@ cdef class OrderFactory:
     A factory class which provides different order types.
 
     The `TraderId` tag and `StrategyId` tag will be inserted into all
-    identifiers generated.
+    IDs generated.
     """
 
     def __init__(
@@ -54,9 +54,9 @@ cdef class OrderFactory:
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier (only numerical tag sent to venue).
+            The trader ID (only numerical tag sent to venue).
         strategy_id : StrategyId
-            The strategy identifier (only numerical tag sent to venue).
+            The strategy ID (only numerical tag sent to venue).
         clock : Clock
             The clock for the component.
         initial_count : int, optional
@@ -90,7 +90,7 @@ cdef class OrderFactory:
     @property
     def count(self):
         """
-        The count of identifiers generated.
+        The count of IDs generated.
 
         Returns
         -------
@@ -101,7 +101,7 @@ cdef class OrderFactory:
 
     cpdef void set_count(self, int count) except *:
         """
-        System Method: Set the internal order identifier generator count to the
+        System Method: Set the internal order ID generator count to the
         given count.
 
         Parameters
@@ -133,7 +133,7 @@ cdef class OrderFactory:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The orders instrument identifier.
+            The orders instrument ID.
         order_side : OrderSide
             The orders side.
         quantity : Quantity
@@ -184,7 +184,7 @@ cdef class OrderFactory:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The orders instrument identifier.
+            The orders instrument ID.
         order_side : OrderSide
             The orders side.
         quantity : Quantity
@@ -252,7 +252,7 @@ cdef class OrderFactory:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The orders instrument identifier.
+            The orders instrument ID.
         order_side : OrderSide
             The orders side.
         quantity : Quantity
@@ -313,7 +313,7 @@ cdef class OrderFactory:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The orders instrument identifier.
+            The orders instrument ID.
         order_side : OrderSide
             The orders side.
         quantity : Quantity

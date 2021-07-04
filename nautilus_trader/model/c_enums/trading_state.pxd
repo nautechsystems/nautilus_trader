@@ -14,25 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum OrderState:
-    INITIALIZED = 1,
-    DENIED = 2,
-    SUBMITTED = 3,
-    ACCEPTED = 4,
-    REJECTED = 5,
-    CANCELED = 6,
-    EXPIRED = 7,
-    TRIGGERED = 8,
-    PENDING_UPDATE = 9,
-    PENDING_CANCEL = 10,
-    PARTIALLY_FILLED = 11,
-    FILLED = 12,
+cpdef enum TradingState:
+    ACTIVE = 1,
+    HALTED = 2,
+    REDUCING = 3,
 
 
-cdef class OrderStateParser:
+cdef class TradingStateParser:
 
     @staticmethod
     cdef str to_str(int value)
 
     @staticmethod
-    cdef OrderState from_str(str value) except *
+    cdef TradingState from_str(str value) except *

@@ -210,10 +210,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=timeout_secs)
         cdef OrderStatusReport report
         while True:
-            if self._clock.utc_now() >= timeout:
-                return False
-
-            resolved = True
+            reconciled = True
             for order in active_orders.values():
                 client = self._routing_map.get(order.instrument_id.venue)
                 if client is None:
@@ -229,12 +226,14 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 if report is None:
                     return False  # Will never reconcile
                 if order.state_c() != report.order_state:
-                    resolved = False  # Incorrect state on this loop
+                    reconciled = False  # Incorrect state on this loop
                 if report.order_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
                     if order.filled_qty != report.filled_qty:
-                        resolved = False  # Incorrect filled quantity on this loop
-            if resolved:
+                        reconciled = False  # Incorrect filled quantity on this loop
+            if reconciled:
                 break
+            if self._clock.utc_now() >= timeout:
+                return False
             await asyncio.sleep(0)  # Sleep for one event loop cycle
 
         return True  # Execution states reconciled
