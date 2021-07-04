@@ -95,9 +95,6 @@ def deserialize(data: List[Dict]):
             ts_recv_ns=data[1]["ts_recv_ns"],
         )
 
-    def _build_order_book_delta(values):
-        return OrderBookDelta.from_dict(values[0])
-
     def _build_order_book_deltas(values):
         return OrderBookDeltas(
             instrument_id=InstrumentId.from_str(values[0]["instrument_id"]),
@@ -115,10 +112,8 @@ def deserialize(data: List[Dict]):
         chunk = list(chunk)
         if _is_orderbook_snapshot(values=chunk):
             results.append(_build_order_book_snapshot(values=chunk))
-        elif len(chunk) > 1:
+        elif len(chunk) >= 1:
             results.append(_build_order_book_deltas(values=chunk))
-        else:
-            results.append(_build_order_book_delta(values=chunk))
     return results
 
 
@@ -137,8 +132,3 @@ def timestamp_key(x):
         return x["timestamp_ns"]
     else:
         raise KeyError("Can't find timestamp attribute or key")
-
-
-def order_book_register(func):
-    for cls in OrderBookData.__subclasses__():
-        func(cls, serializer=serialize, deserializer=deserialize, chunk=True)

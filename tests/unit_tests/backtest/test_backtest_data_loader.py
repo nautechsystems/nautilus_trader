@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 
+from betfairlightweight import APIClient
 import fsspec
 from numpy import dtype
 import orjson
@@ -24,6 +25,7 @@ from nautilus_trader.backtest.data_loader import DataCatalog
 from nautilus_trader.backtest.data_loader import DataLoader
 from nautilus_trader.backtest.data_loader import ParquetParser
 from nautilus_trader.backtest.data_loader import TextParser
+from nautilus_trader.backtest.data_loader import is_custom_data
 from nautilus_trader.backtest.data_loader import parse_timestamp
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.providers import InstrumentProvider
@@ -33,6 +35,7 @@ from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model import currencies
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data import Data
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
@@ -45,7 +48,9 @@ from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.book import OrderBookData
 from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.serialization.arrow.core import register_parquet
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
@@ -91,6 +96,12 @@ def catalog(catalog_dir, data_loader):
     catalog = DataCatalog()
     catalog.import_from_data_loader(loader=data_loader)
     return catalog
+
+
+def test_is_custom_data():
+    assert not is_custom_data(OrderBookData)
+    assert not is_custom_data(TradeTick)
+    assert is_custom_data(APIClient)
 
 
 @pytest.mark.parametrize(
@@ -408,10 +419,12 @@ def test_data_loader_generic_data(catalog_dir):
     )
     catalog = DataCatalog()
     catalog.import_from_data_loader(loader=loader)
-    df = catalog.generic_data(
-        name="news_event", filter_expr=ds.field("currency") == "USD"
-    )
+    df = catalog.generic_data(cls=NewsEvent, filter_expr=ds.field("currency") == "USD")
     assert len(df) == 22925
+    data = catalog.generic_data(
+        cls=NewsEvent, filter_expr=ds.field("currency") == "USD", as_nautilus=True
+    )
+    assert len(data) == 22925 and isinstance(data[0], GenericData)
 
 
 def test_data_catalog_append(catalog_dir):
@@ -523,3 +536,5 @@ def test_data_catalog_backtest_run(catalog):
         instrument=instruments[1], max_trade_size=Decimal("50"), order_id_tag="OI"
     )
     engine.run(strategies=[strategy])
+    positions = engine.trader.generate_positions_report()
+    assert positions["realized_pnl"].sum() == -0.20

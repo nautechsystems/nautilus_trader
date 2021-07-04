@@ -32,6 +32,8 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
 from nautilus_trader.model.data import Data
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
 
 
 try:
@@ -810,6 +812,9 @@ class DataCatalog:
                     raise_on_empty=False,
                     **kwargs,
                 )
+                df = df.drop_duplicates(
+                    [c for c in df.columns if c not in NAUTILUS_TS_COLUMNS], keep="last"
+                )
                 dfs.append(df)
             except ArrowInvalid as e:
                 # If we're using a `filter_expr` here, there's a good chance this error is using a filter that is
@@ -879,22 +884,34 @@ class DataCatalog:
         )
         if not as_nautilus:
             return df
-        return self._make_objects(df=df, cls=OrderBookDelta)
+        return self._make_objects(df=df, cls=OrderBookDeltas)
 
-    def generic_data(self, name, filter_expr=None, as_nautilus=False, **kwargs):
+    def generic_data(self, cls, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
-            f"{GENERIC_DATA_PREFIX}{name}",
+            filename=class_to_filename(cls),
             filter_expr=filter_expr,
             **kwargs,
         )
         if not as_nautilus:
             return df
-        return self._make_objects(df=df, cls=OrderBookDelta)
+        return [
+            GenericData(data_type=DataType(cls), data=d)
+            for d in self._make_objects(df=df, cls=cls)
+        ]
 
     def query(
         self, cls, filter_expr=None, instrument_ids=None, as_nautilus=False, **kwargs
     ):
         name = class_to_filename(cls)
+        if name.startswith(GENERIC_DATA_PREFIX):
+            # Special handling for generic data
+            return self.generic_data(
+                cls=cls,
+                filter_expr=filter_expr,
+                instrument_ids=instrument_ids,
+                as_nautilus=as_nautilus,
+                **kwargs,
+            )
         df = self._query(
             filename=name,
             filter_expr=filter_expr,
@@ -960,10 +977,11 @@ def is_custom_data(cls):
         # This object is defined outside of nautilus, definitely custom
         return True
     else:
-        nautilus_builtins = ("nautilus_trader.models",)
-        return cls in Data.__subclasses__() and not any(
-            (cls.__name__.startswith(p) for p in nautilus_builtins)
+        is_data_subclass = issubclass(cls, Data)
+        is_nautilus_builtin = any(
+            (cls.__module__.startswith(p) for p in ("nautilus_trader.model",))
         )
+        return is_data_subclass and not is_nautilus_builtin
 
 
 def identity(x):

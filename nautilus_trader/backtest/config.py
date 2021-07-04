@@ -1,4 +1,5 @@
 import dataclasses
+from functools import partial
 from typing import List, Optional, Tuple
 
 from dask.base import normalize_token
@@ -10,6 +11,7 @@ from nautilus_trader.backtest.data_loader import DataCatalog
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import SimulationModule
+from nautilus_trader.core.message import Event
 from nautilus_trader.model.c_enums.account_type import AccountTypeParser
 from nautilus_trader.model.c_enums.oms_type import OMSTypeParser
 from nautilus_trader.model.c_enums.venue_type import VenueTypeParser
@@ -17,7 +19,9 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.model.tick import TradeTick
 
 
 PARTIAL_SUFFIX = "Partial-"
@@ -35,8 +39,13 @@ class Partialable:
         if missing:
             raise AssertionError(f"Missing fields: {missing}")
 
+    def _check_kwargs(self, kw):
+        for k in kw:
+            assert k in self.__dataclass_fields__, f"Unknown kwarg: {k}"
+
     def update(self, **kwargs):
         """Update attributes on this instance"""
+        self._check_kwargs(kwargs)
         self.__dict__.update(kwargs)
         return self
 
@@ -59,16 +68,17 @@ class Partialable:
 @dataclasses.dataclass()
 class BacktestDataConfig:
     data_type: type
-    instrument_id: str
+    instrument_id: Optional[str] = None
     start_time: Optional[int] = None
     end_time: Optional[int] = None
     filters: Optional[dict] = None
+    client_id: Optional[str] = None
 
     @property
     def query(self):
         return dict(
             cls=self.data_type,
-            instrument_ids=[self.instrument_id],
+            instrument_ids=[self.instrument_id] if self.instrument_id else None,
             start=self.start_time,
             end=self.end_time,
             as_nautilus=True,
@@ -113,10 +123,19 @@ class BacktestConfig(Partialable):
     # data_catalog_path: Optional[str] = None
 
 
-@delayed(pure=True)
-def load(query):
+def _load(config: BacktestDataConfig):
     catalog = DataCatalog()
-    return {"type": query["cls"], "data": catalog.query(**query)}
+    query = config.query
+    return {
+        "type": query["cls"],
+        "data": catalog.query(**query),
+        "client_id": config.client_id,
+    }
+
+
+@delayed(pure=True)
+def load(config: BacktestDataConfig):
+    return _load(config=config)
 
 
 # @delayed(pure=True)
@@ -136,6 +155,16 @@ def create_backtest_engine(venues, instruments, data):
             engine.add_quote_ticks_objects(
                 data=d["data"], instrument_id=instruments[0].id
             )
+        elif d["type"] == TradeTick:
+            engine.add_trade_tick_objects(
+                data=d["data"], instrument_id=instruments[0].id
+            )
+        elif d["type"] == OrderBookDelta:
+            engine.add_order_book_data(data=d["data"])
+        elif isinstance(d["data"][0], Event):
+            engine.add_events(client_id=d["client_id"], data=d["data"])
+        else:
+            engine.add_generic_data(client_id=d["client_id"], data=d["data"])
 
     # Add venues
     for venue in venues:
@@ -169,16 +198,24 @@ def run_engine(engine, strategies):
     return data
 
 
-@delayed
-def run_backtest(venues, instruments, data, strategies, name):
+def _run_backtest(venues, instruments, data, strategies, name):
     engine = create_backtest_engine(venues=venues, instruments=instruments, data=data)
     results = run_engine(engine=engine, strategies=strategies)
     return name, results
 
 
 @delayed
-def gather(*results):
+def run_backtest(venues, instruments, data, strategies, name):
+    return _run_backtest(venues, instruments, data, strategies, name)
+
+
+def _gather(*results):
     return {k: v for r in results for k, v in r}
+
+
+@delayed
+def gather(*results):
+    return _gather(*results)
 
 
 def _check_configs(configs):
@@ -199,7 +236,7 @@ def _check_configs(configs):
     return configs
 
 
-def build_graph(backtest_configs):
+def build_graph(backtest_configs, sync=False):
     backtest_configs = _check_configs(backtest_configs)
 
     _ = (
@@ -211,14 +248,19 @@ def build_graph(backtest_configs):
         config.check(ignore=("name",))  # check all values set
         input_data = []
         for data_config in config.data_config:
+            load_func = (
+                _load
+                if sync
+                else partial(load, dask_key_name=f"load-{tokenize(data_config.query)}")
+            )
             input_data.append(
-                load(
-                    data_config.query,
-                    dask_key_name=f"load-{tokenize(data_config.query)}",
+                load_func(
+                    data_config,
                 )
             )
+        run_backtest_func = _run_backtest if sync else run_backtest
         results.append(
-            run_backtest(
+            run_backtest_func(
                 venues=config.venues,
                 instruments=config.instruments,
                 data=input_data,
@@ -226,20 +268,8 @@ def build_graph(backtest_configs):
                 name=config.name or f"backtest-{tokenize(config)}",
             )
         )
-        # engine = create_backtest_engine(
-        #
-        #     dask_key_name=f"create_backtest_engine-{tokenize(config.venues, config.instruments, input_data)}",
-        # )
-        # # Ensure run_engine gets run on the same worker as create engine
-        # with dask.annotate(resources={engine.key: 1}):
-        #     results.append(
-        #         run_engine(
-        #             engine=engine,
-        #             strategies=config.strategies,
-        #             dask_key_name=f"run_engine-{tokenize(engine, config.strategies)}",
-        #         )
-        #     )
-    return gather(results)
+    gather_func = _gather if sync else gather
+    return gather_func(results)
 
 
 # Register tokenization methods with dask
