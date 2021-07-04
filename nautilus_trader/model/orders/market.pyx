@@ -16,6 +16,7 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -119,7 +120,6 @@ cdef class MarketOrder(Order):
 
         """
         return {
-            "type": type(self).__name__,
             "client_order_id": self.client_order_id.value,
             "venue_order_id": self.venue_order_id.value,
             "position_id": self.position_id.value,
@@ -127,8 +127,8 @@ cdef class MarketOrder(Order):
             "account_id": self.account_id.value if self.account_id else None,
             "execution_id": self.execution_id.value if self.execution_id else None,
             "instrument_id": self.instrument_id.value,
-            "order_side": OrderSideParser.to_str(self.side),
-            "order_type": OrderTypeParser.to_str(self.type),
+            "type": OrderTypeParser.to_str(self.type),
+            "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "timestamp_ns": self.timestamp_ns,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
@@ -136,7 +136,6 @@ cdef class MarketOrder(Order):
             "ts_filled_ns": self.ts_filled_ns,
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "slippage": str(self.slippage),
-            "init_id": str(self.init_id),
             "state": self._fsm.state_string_c(),
         }
 

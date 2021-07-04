@@ -19,9 +19,13 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport maybe_nanos_to_unix_dt
 from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -110,6 +114,39 @@ cdef class StopMarketOrder(PassiveOrder):
         )
 
         self.is_reduce_only = reduce_only
+
+    cpdef dict to_dict(self):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return {
+            "client_order_id": self.client_order_id.value,
+            "venue_order_id": self.venue_order_id.value,
+            "position_id": self.position_id.value,
+            "strategy_id": self.strategy_id.value,
+            "account_id": self.account_id.value if self.account_id else None,
+            "execution_id": self.execution_id.value if self.execution_id else None,
+            "instrument_id": self.instrument_id.value,
+            "type": OrderTypeParser.to_str(self.type),
+            "side": OrderSideParser.to_str(self.side),
+            "quantity": str(self.quantity),
+            "price": str(self.price),
+            "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
+            "expire_time_ns": self.expire_time_ns,
+            "timestamp_ns": self.timestamp_ns,
+            "time_in_force": TimeInForceParser.to_str(self.time_in_force),
+            "filled_qty": str(self.filled_qty),
+            "ts_filled_ns": self.ts_filled_ns,
+            "avg_px": str(self.avg_px) if self.avg_px else None,
+            "slippage": str(self.slippage),
+            "state": self._fsm.state_string_c(),
+            "is_reduce_only": self.is_reduce_only,
+        }
 
     @staticmethod
     cdef StopMarketOrder create(OrderInitialized init):
