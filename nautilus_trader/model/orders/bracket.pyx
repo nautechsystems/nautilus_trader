@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport ClientOrderLinkId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
@@ -33,6 +34,7 @@ cdef class BracketOrder:
     `StopMarketOrder` and take-profit `LimitOrder` automatically become
     working on the exchange.
     """
+
     def __init__(
         self,
         Order entry not None,
@@ -51,7 +53,17 @@ cdef class BracketOrder:
         take_profit : Limit
             The take-profit (TP) 'child' order.
 
+        Raises
+        ------
+        ValueError
+            If entry.quantity != stop_loss.quantity.
+        ValueError
+            If entry.quantity != take_profit.quantity.
+
         """
+        Condition.equal(entry.quantity, stop_loss.quantity, "entry.quantity", "stop_loss.quantity")
+        Condition.equal(entry.quantity, take_profit.quantity, "entry.quantity", "take_profit.quantity")
+
         self.id = ClientOrderLinkId(f"B{entry.client_order_id.value}")
         self.instrument_id = entry.instrument_id
         self.entry = entry
