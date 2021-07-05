@@ -49,6 +49,7 @@ cdef class BacktestEngine:
 
     cdef dict _exchanges
     cdef list _generic_data
+    cdef list _data
     cdef list _order_book_data
     cdef dict _quote_ticks
     cdef dict _trade_ticks
@@ -85,3 +86,4 @@ cdef class BacktestEngine:
         datetime start,
         datetime stop,
     ) except *
+    cpdef list_venues(self)

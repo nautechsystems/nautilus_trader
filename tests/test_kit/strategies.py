@@ -21,12 +21,15 @@ from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.venue import InstrumentClosePrice
+from nautilus_trader.model.venue import InstrumentStatusUpdate
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -362,6 +365,8 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         self.instrument_id = instrument_id
         self.instrument = None  # Initialized in on_start
         self.trade_size = trade_size
+        self.instrument_status = None
+        self.close_price = None
 
     def on_start(self):
         """Actions to be performed on strategy start."""
@@ -373,6 +378,8 @@ class OrderBookImbalanceStrategy(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_order_book(self.instrument_id)
+        self.subscribe_instrument_status_updates(self.instrument_id)
+        self.subscribe_instrument_close_prices(self.instrument_id)
 
     def on_order_book(self, order_book: OrderBook):
         """
@@ -428,6 +435,13 @@ class OrderBookImbalanceStrategy(TradingStrategy):
 
         """
         pass
+
+    def on_instrument_status_update(self, data: InstrumentStatusUpdate):
+        if data.status == InstrumentStatus.CLOSED:
+            self.instrument_status = data.status
+
+    def on_instrument_close_price(self, data: InstrumentClosePrice):
+        self.close_price = data.close_price
 
     def on_stop(self):
         """
