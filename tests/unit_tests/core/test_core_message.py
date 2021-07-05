@@ -96,12 +96,8 @@ class TestMessage:
 
         # Act
         # Assert
-        assert str(message) == (
-            f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=0)"
-        )
-        assert str(message) == (
-            f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=0)"
-        )
+        assert str(message) == (f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=0)")
+        assert str(message) == (f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=0)")
 
     @pytest.mark.parametrize(
         "msg_type, expected",

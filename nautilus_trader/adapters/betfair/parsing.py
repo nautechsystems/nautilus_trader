@@ -122,9 +122,7 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                 ),
                 limit_order=limit_order(
                     size=float(order.quantity),
-                    price=float(
-                        probability_to_price(probability=price, side=order.side)
-                    ),
+                    price=float(probability_to_price(probability=price, side=order.side)),
                     persistence_type="PERSIST",
                     time_in_force=N2B_TIME_IN_FORCE[order.time_in_force],
                     min_fill_size=0,
@@ -155,9 +153,7 @@ def order_update_to_betfair(
         "instructions": [
             replace_instruction(
                 bet_id=venue_order_id.value,
-                new_price=float(
-                    probability_to_price(probability=command.price, side=side)
-                ),
+                new_price=float(probability_to_price(probability=command.price, side=side)),
             )
         ],
     }
@@ -291,9 +287,7 @@ def _handle_book_updates(runner, instrument, ts_event_ns, ts_recv_ns):
                     level=BookLevel.L2,
                     delta_type=DeltaType.DELETE if volume == 0 else DeltaType.UPDATE,
                     order=Order(
-                        price=price_to_probability(
-                            price, side=B2N_MARKET_STREAM_SIDE[side]
-                        ),
+                        price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
                         size=Quantity(volume, precision=8),
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
@@ -463,15 +457,11 @@ def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
 
 def build_market_update_messages(
     instrument_provider, raw
-) -> List[
-    Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]
-]:
+) -> List[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]]:
     updates = []
     book_updates = []
     ts_event_ns = millis_to_nanos(raw["pt"])
-    ts_recv_ns = millis_to_nanos(
-        raw["pt"]
-    )  # TODO(bm): Could call self._clock.ts_recv_ns()
+    ts_recv_ns = millis_to_nanos(raw["pt"])  # TODO(bm): Could call self._clock.ts_recv_ns()
     for market in raw.get("mc", []):
         updates.extend(
             _handle_market_runners_status(
@@ -557,9 +547,7 @@ async def generate_trades_list(
             last_qty=Quantity.from_str(
                 str(fill["sizeSettled"])
             ),  # TODO: Possibly incorrect precision
-            last_px=Price.from_str(
-                str(fill["priceMatched"])
-            ),  # TODO: Possibly incorrect precision
+            last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Possibly incorrect precision
             commission=None,  # Can be None
             liquidity_side=LiquiditySide.NONE,
             ts_filled_ns=timestamp_ns,

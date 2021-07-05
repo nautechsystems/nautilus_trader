@@ -36,9 +36,7 @@ def fix_mocks(mocker):
 
 @pytest.fixture()
 def market_metadata(betfair_client):
-    markets = load_markets(
-        betfair_client, market_filter={"event_type_name": "Basketball"}
-    )
+    markets = load_markets(betfair_client, market_filter={"event_type_name": "Basketball"})
     return load_markets_metadata(client=betfair_client, markets=markets)
 
 
@@ -46,9 +44,7 @@ def test_load_markets(provider, betfair_client):
     markets = load_markets(betfair_client, market_filter={})
     assert len(markets) == 13227
 
-    markets = load_markets(
-        betfair_client, market_filter={"event_type_name": "Basketball"}
-    )
+    markets = load_markets(betfair_client, market_filter={"event_type_name": "Basketball"})
     assert len(markets) == 302
 
     markets = load_markets(betfair_client, market_filter={"market_id": "1.177125728"})
@@ -56,9 +52,7 @@ def test_load_markets(provider, betfair_client):
 
 
 def test_load_markets_metadata(betfair_client):
-    markets = load_markets(
-        betfair_client, market_filter={"event_type_name": "Basketball"}
-    )
+    markets = load_markets(betfair_client, market_filter={"event_type_name": "Basketball"})
     market_metadata = load_markets_metadata(client=betfair_client, markets=markets)
     assert isinstance(market_metadata, dict)
     assert len(market_metadata) == 12035

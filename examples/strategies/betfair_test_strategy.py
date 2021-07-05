@@ -80,9 +80,7 @@ class BetfairTestStrategy(TradingStrategy):
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        self.request_data(
-            "BETFAIR", DataType(InstrumentSearch, metadata=self.instrument_filter)
-        )
+        self.request_data("BETFAIR", DataType(InstrumentSearch, metadata=self.instrument_filter))
 
     def on_event(self, event: Event):
         self.log.info(f"on_event: {event}")
@@ -152,9 +150,7 @@ class BetfairTestStrategy(TradingStrategy):
             for client_order_id in self.cache.client_order_ids_working():
                 order = self.cache.order(client_order_id)
                 new_price = (
-                    order.price * 0.90
-                    if order.side == OrderSide.BUY
-                    else order.price * 1.10
+                    order.price * 0.90 if order.side == OrderSide.BUY else order.price * 1.10
                 )
                 self._in_flight.add(order.client_order_id)
                 self.update_order(order=order, price=Price(new_price, precision=5))
@@ -176,14 +172,9 @@ class BetfairTestStrategy(TradingStrategy):
         Check if midpoint has moved more than threshold, if so , update quotes.
         """
 
-        midpoint = Decimal(
-            order_book.best_ask_price() + order_book.best_bid_price()
-        ) / Decimal(2.0)
+        midpoint = Decimal(order_book.best_ask_price() + order_book.best_bid_price()) / Decimal(2.0)
         self.log.info(f"midpoint: {midpoint}, prev: {self.midpoint}")
-        if (
-            abs(midpoint - (self.midpoint or Decimal(-1e15)))
-            > self.theo_change_threshold
-        ):
+        if abs(midpoint - (self.midpoint or Decimal(-1e15))) > self.theo_change_threshold:
             self.log.info("Theo updating", LogColor.BLUE)
             self.midpoint = midpoint
 

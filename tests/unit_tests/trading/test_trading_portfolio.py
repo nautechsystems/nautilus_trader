@@ -100,9 +100,7 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError, portfolio.unrealized_pnl, BTCUSDT_BINANCE.id
-        )
+        self.assertRaises(NotImplementedError, portfolio.unrealized_pnl, BTCUSDT_BINANCE.id)
 
     def test_market_value_raises_not_implemented_error(self):
         # Arrange

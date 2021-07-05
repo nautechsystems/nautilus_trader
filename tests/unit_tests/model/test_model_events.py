@@ -144,12 +144,12 @@ class TestEvents:
 
         # Act, Assert
         assert OrderSubmitted.from_dict(OrderSubmitted.to_dict(event)) == event
-        assert f"OrderSubmitted(account_id=SIM-000, client_order_id=O-2020872378423, event_id={uuid})", (
-            str(event)
-        )
-        assert f"OrderSubmitted(account_id=SIM-000, client_order_id=O-2020872378423, event_id={uuid})", (
-            repr(event)
-        )
+        assert (
+            f"OrderSubmitted(account_id=SIM-000, client_order_id=O-2020872378423, event_id={uuid})"
+        ), str(event)
+        assert (
+            f"OrderSubmitted(account_id=SIM-000, client_order_id=O-2020872378423, event_id={uuid})"
+        ), repr(event)
 
     def test_order_rejected(self):
         # Arrange
@@ -211,9 +211,7 @@ class TestEvents:
         )
 
         # Act, Assert
-        assert (
-            OrderUpdateRejected.from_dict(OrderUpdateRejected.to_dict(event)) == event
-        )
+        assert OrderUpdateRejected.from_dict(OrderUpdateRejected.to_dict(event)) == event
         assert (
             f"OrderUpdateRejected(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
@@ -240,9 +238,7 @@ class TestEvents:
         )
 
         # Act, Assert
-        assert (
-            OrderCancelRejected.from_dict(OrderCancelRejected.to_dict(event)) == event
-        )
+        assert OrderCancelRejected.from_dict(OrderCancelRejected.to_dict(event)) == event
         assert (
             f"OrderCancelRejected(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "

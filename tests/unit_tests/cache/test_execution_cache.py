@@ -282,9 +282,7 @@ class CacheTests(unittest.TestCase):
             ),
         )
         self.assertIn(order, self.cache.orders())
-        self.assertEqual(
-            VenueOrderId.null(), self.cache.venue_order_id(order.client_order_id)
-        )
+        self.assertEqual(VenueOrderId.null(), self.cache.venue_order_id(order.client_order_id))
         self.assertIsNone(self.cache.client_order_id(order.venue_order_id))
 
     def test_load_order(self):
@@ -332,9 +330,7 @@ class CacheTests(unittest.TestCase):
         self.assertIn(position.id, self.cache.position_ids())
         self.assertIn(position, self.cache.positions())
         self.assertIn(position, self.cache.positions_open())
-        self.assertIn(
-            position, self.cache.positions_open(instrument_id=position.instrument_id)
-        )
+        self.assertIn(position, self.cache.positions_open(instrument_id=position.instrument_id))
         self.assertIn(position, self.cache.positions_open(strategy_id=self.strategy.id))
         self.assertIn(
             position,
@@ -347,9 +343,7 @@ class CacheTests(unittest.TestCase):
         self.assertNotIn(
             position, self.cache.positions_closed(instrument_id=position.instrument_id)
         )
-        self.assertNotIn(
-            position, self.cache.positions_closed(strategy_id=self.strategy.id)
-        )
+        self.assertNotIn(position, self.cache.positions_closed(strategy_id=self.strategy.id))
         self.assertNotIn(
             position,
             self.cache.positions_closed(
@@ -409,9 +403,7 @@ class CacheTests(unittest.TestCase):
         self.assertIn(order.client_order_id, self.cache.client_order_ids())
         self.assertIn(order, self.cache.orders())
         self.assertIn(order, self.cache.orders_working())
-        self.assertIn(
-            order, self.cache.orders_working(instrument_id=order.instrument_id)
-        )
+        self.assertIn(order, self.cache.orders_working(instrument_id=order.instrument_id))
         self.assertIn(order, self.cache.orders_working(strategy_id=self.strategy.id))
         self.assertIn(
             order,
@@ -420,12 +412,8 @@ class CacheTests(unittest.TestCase):
             ),
         )
         self.assertNotIn(order, self.cache.orders_completed())
-        self.assertNotIn(
-            order, self.cache.orders_completed(instrument_id=order.instrument_id)
-        )
-        self.assertNotIn(
-            order, self.cache.orders_completed(strategy_id=self.strategy.id)
-        )
+        self.assertNotIn(order, self.cache.orders_completed(instrument_id=order.instrument_id))
+        self.assertNotIn(order, self.cache.orders_completed(strategy_id=self.strategy.id))
         self.assertNotIn(
             order,
             self.cache.orders_completed(
@@ -466,9 +454,7 @@ class CacheTests(unittest.TestCase):
         self.assertIn(order.client_order_id, self.cache.client_order_ids())
         self.assertIn(order, self.cache.orders())
         self.assertIn(order, self.cache.orders_completed())
-        self.assertIn(
-            order, self.cache.orders_completed(instrument_id=order.instrument_id)
-        )
+        self.assertIn(order, self.cache.orders_completed(instrument_id=order.instrument_id))
         self.assertIn(order, self.cache.orders_completed(strategy_id=self.strategy.id))
         self.assertIn(
             order,
@@ -477,9 +463,7 @@ class CacheTests(unittest.TestCase):
             ),
         )
         self.assertNotIn(order, self.cache.orders_working())
-        self.assertNotIn(
-            order, self.cache.orders_working(instrument_id=order.instrument_id)
-        )
+        self.assertNotIn(order, self.cache.orders_working(instrument_id=order.instrument_id))
         self.assertNotIn(order, self.cache.orders_working(strategy_id=self.strategy.id))
         self.assertNotIn(
             order,
@@ -487,9 +471,7 @@ class CacheTests(unittest.TestCase):
                 instrument_id=order.instrument_id, strategy_id=self.strategy.id
             ),
         )
-        self.assertEqual(
-            order.venue_order_id, self.cache.venue_order_id(order.client_order_id)
-        )
+        self.assertEqual(order.venue_order_id, self.cache.venue_order_id(order.client_order_id))
         self.assertEqual(0, self.cache.orders_working_count())
         self.assertEqual(1, self.cache.orders_completed_count())
         self.assertEqual(1, self.cache.orders_total_count())
@@ -526,9 +508,7 @@ class CacheTests(unittest.TestCase):
         self.assertIn(position.id, self.cache.position_ids())
         self.assertIn(position, self.cache.positions())
         self.assertIn(position, self.cache.positions_open())
-        self.assertIn(
-            position, self.cache.positions_open(instrument_id=position.instrument_id)
-        )
+        self.assertIn(position, self.cache.positions_open(instrument_id=position.instrument_id))
         self.assertIn(position, self.cache.positions_open(strategy_id=self.strategy.id))
         self.assertIn(
             position,
@@ -540,9 +520,7 @@ class CacheTests(unittest.TestCase):
         self.assertNotIn(
             position, self.cache.positions_closed(instrument_id=position.instrument_id)
         )
-        self.assertNotIn(
-            position, self.cache.positions_closed(strategy_id=self.strategy.id)
-        )
+        self.assertNotIn(position, self.cache.positions_closed(strategy_id=self.strategy.id))
         self.assertNotIn(
             position,
             self.cache.positions_closed(
@@ -623,12 +601,8 @@ class CacheTests(unittest.TestCase):
             ),
         )
         self.assertNotIn(position, self.cache.positions_open())
-        self.assertNotIn(
-            position, self.cache.positions_open(instrument_id=position.instrument_id)
-        )
-        self.assertNotIn(
-            position, self.cache.positions_open(strategy_id=self.strategy.id)
-        )
+        self.assertNotIn(position, self.cache.positions_open(instrument_id=position.instrument_id))
+        self.assertNotIn(position, self.cache.positions_open(strategy_id=self.strategy.id))
         self.assertNotIn(
             position,
             self.cache.positions_open(
@@ -695,12 +669,12 @@ class CacheTests(unittest.TestCase):
         assert position2.is_open
         assert position1 in self.cache.positions()
         assert position2 in self.cache.positions()
-        assert self.cache.positions(
-            venue=AUDUSD_SIM.venue, instrument_id=AUDUSD_SIM.id
-        ) == [position1]
-        assert self.cache.positions(
-            venue=GBPUSD_SIM.venue, instrument_id=GBPUSD_SIM.id
-        ) == [position2]
+        assert self.cache.positions(venue=AUDUSD_SIM.venue, instrument_id=AUDUSD_SIM.id) == [
+            position1
+        ]
+        assert self.cache.positions(venue=GBPUSD_SIM.venue, instrument_id=GBPUSD_SIM.id) == [
+            position2
+        ]
         assert self.cache.positions(instrument_id=GBPUSD_SIM.id) == [position2]
         assert self.cache.positions(instrument_id=AUDUSD_SIM.id) == [position1]
         assert self.cache.positions(instrument_id=GBPUSD_SIM.id) == [position2]

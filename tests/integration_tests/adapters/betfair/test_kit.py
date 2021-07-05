@@ -54,9 +54,7 @@ from tests.test_kit.mocks import MockLiveRiskEngine
 from tests.test_kit.stubs import TestStubs
 
 
-TEST_PATH = pathlib.Path(
-    TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/"
-)
+TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/")
 DATA_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/test_kit/data/betfair")
 
 
@@ -107,9 +105,7 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def uuid():
-        return UUID(
-            value=b"\x03\x89\x90\xc6\x19\xd2\xb5\xc87\xa6\xfe\x91\xf9\xb7\xb9\xed"
-        )
+        return UUID(value=b"\x03\x89\x90\xc6\x19\xd2\xb5\xc87\xa6\xfe\x91\xf9\xb7\xb9\xed")
 
     @staticmethod
     def account_id() -> AccountId:
@@ -290,9 +286,7 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def account_funds_with_exposure():
-        return orjson.loads(
-            (TEST_PATH / "account_funds_with_exposure.json").read_bytes()
-        )
+        return orjson.loads((TEST_PATH / "account_funds_with_exposure.json").read_bytes())
 
     @staticmethod
     def list_cleared_orders(order_id=None):
@@ -385,15 +379,11 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def streaming_market_updates():
-        return (
-            (TEST_PATH / "streaming_market_updates.log").read_text().strip().split("\n")
-        )
+        return (TEST_PATH / "streaming_market_updates.log").read_text().strip().split("\n")
 
     @staticmethod
     def place_orders_success():
-        return orjson.loads(
-            (TEST_PATH / "betting_place_order_success.json").read_bytes()
-        )
+        return orjson.loads((TEST_PATH / "betting_place_order_success.json").read_bytes())
 
     @staticmethod
     def place_orders_error():
@@ -401,21 +391,15 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def replace_orders_success():
-        return orjson.loads(
-            (TEST_PATH / "betting_replace_orders_success.json").read_bytes()
-        )
+        return orjson.loads((TEST_PATH / "betting_replace_orders_success.json").read_bytes())
 
     @staticmethod
     def replace_orders_resp_success():
-        return orjson.loads(
-            (TEST_PATH / "betting_post_replace_order_success.json").read_bytes()
-        )
+        return orjson.loads((TEST_PATH / "betting_post_replace_order_success.json").read_bytes())
 
     @staticmethod
     def cancel_orders_success():
-        return orjson.loads(
-            (TEST_PATH / "betting_cancel_orders_success.json").read_bytes()
-        )
+        return orjson.loads((TEST_PATH / "betting_cancel_orders_success.json").read_bytes())
 
     @staticmethod
     def raw_market_updates(market="1.166811431", runner1="60424", runner2="237478"):
@@ -448,9 +432,7 @@ class BetfairTestStubs(TestStubs):
         for raw in BetfairTestStubs.raw_market_updates(
             market=market, runner1=runner1, runner2=runner2
         ):
-            for message in on_market_update(
-                instrument_provider=instrument_provider, update=raw
-            ):
+            for message in on_market_update(instrument_provider=instrument_provider, update=raw):
                 updates.append(message)
         return updates
 
@@ -505,8 +487,7 @@ class BetfairTestStubs(TestStubs):
             trader_id=BetfairTestStubs.trader_id(),
             strategy_id=BetfairTestStubs.strategy_id(),
             instrument_id=instrument_id,
-            client_order_id=client_order_id
-            or ClientOrderId("O-20210410-022422-001-001-1"),
+            client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=VenueOrderId("001"),
             quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),

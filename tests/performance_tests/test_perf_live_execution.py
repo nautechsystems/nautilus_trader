@@ -182,8 +182,6 @@ class TestLiveExecutionPerformance(PerformanceHarness):
                 self.strategy.submit_order(order)
 
         stats_file = "perf_live_execution.prof"
-        cProfile.runctx(
-            "self.loop.run_until_complete(run_test())", globals(), locals(), stats_file
-        )
+        cProfile.runctx("self.loop.run_until_complete(run_test())", globals(), locals(), stats_file)
         s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()

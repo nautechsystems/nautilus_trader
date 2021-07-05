@@ -558,9 +558,7 @@ class TestOrders:
         assert bracket_order.stop_loss.instrument_id == AUDUSD_SIM.id
         assert bracket_order.take_profit is not None
         assert bracket_order.take_profit.instrument_id == AUDUSD_SIM.id
-        assert bracket_order.entry.client_order_id == ClientOrderId(
-            "O-19700101-000000-000-001-1"
-        )
+        assert bracket_order.entry.client_order_id == ClientOrderId("O-19700101-000000-000-001-1")
         assert bracket_order.stop_loss.client_order_id == ClientOrderId(
             "O-19700101-000000-000-001-2"
         )

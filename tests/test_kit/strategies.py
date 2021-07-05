@@ -125,9 +125,7 @@ class EMACross(TradingStrategy):
         """
         if extra_id_tag is None:
             extra_id_tag = ""
-        super().__init__(
-            order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag
-        )
+        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag)
 
         # Custom strategy variables
         self.instrument_id = instrument_id
@@ -208,8 +206,7 @@ class EMACross(TradingStrategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up "
-                f"[{self.cache.bar_count(self.bar_type)}]...",
+                f"Waiting for indicators to warm up " f"[{self.cache.bar_count(self.bar_type)}]...",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
@@ -359,9 +356,7 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         """
         if extra_id_tag is None:
             extra_id_tag = ""
-        super().__init__(
-            order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag
-        )
+        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag)
         self.instrument_id = instrument_id
         self.instrument = None  # Initialized in on_start
         self.trade_size = trade_size

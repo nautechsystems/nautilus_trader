@@ -169,9 +169,7 @@ class TestLiveLogger:
             clock=LiveClock(),
         )
 
-        self.logger_adapter = LoggerAdapter(
-            component="LIVER_LOGGER", logger=self.logger
-        )
+        self.logger_adapter = LoggerAdapter(component="LIVER_LOGGER", logger=self.logger)
 
     def test_log_when_not_running_on_event_loop_successfully_logs(self):
         # Arrange

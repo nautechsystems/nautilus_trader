@@ -633,9 +633,7 @@ class TestRiskEngine:
         )
 
         self.risk_engine.execute(submit_order1)
-        self.risk_engine.set_trading_state(
-            TradingState.REDUCING
-        )  # <-- allow reducing orders only
+        self.risk_engine.set_trading_state(TradingState.REDUCING)  # <-- allow reducing orders only
 
         order2 = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -698,9 +696,7 @@ class TestRiskEngine:
         )
 
         self.risk_engine.execute(submit_order1)
-        self.risk_engine.set_trading_state(
-            TradingState.REDUCING
-        )  # <-- allow reducing orders only
+        self.risk_engine.set_trading_state(TradingState.REDUCING)  # <-- allow reducing orders only
 
         order2 = strategy.order_factory.market(
             AUDUSD_SIM.id,

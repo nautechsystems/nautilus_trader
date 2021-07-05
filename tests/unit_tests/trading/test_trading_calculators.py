@@ -194,12 +194,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertAlmostEqual(
-            Decimal("0.01135331516802906448683015441"), result1
-        )  # JPYAUD
-        self.assertAlmostEqual(
-            Decimal("88.11501299999999999999999997"), result2
-        )  # AUDJPY
+        self.assertAlmostEqual(Decimal("0.01135331516802906448683015441"), result1)  # JPYAUD
+        self.assertAlmostEqual(Decimal("88.11501299999999999999999997"), result2)  # AUDJPY
 
     def test_calculate_exchange_rate_for_mid_price_type(self):
         # Arrange
@@ -241,9 +237,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 class RolloverInterestCalculatorTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
-        self.data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
-        )
+        self.data = pd.read_csv(os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"))
 
     def test_rate_dataframe_returns_correct_dataframe(self):
         # Arrange

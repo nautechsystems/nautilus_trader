@@ -117,9 +117,7 @@ class TextParser(ByteParser):
     def on_new_file(self, new_file):
         pass
 
-    def read(  # noqa: C901
-        self, stream: Generator, instrument_provider=None
-    ) -> Generator:
+    def read(self, stream: Generator, instrument_provider=None) -> Generator:  # noqa: C901
         raw = b""
         fn = None
         for chunk in stream:
@@ -143,9 +141,7 @@ class TextParser(ByteParser):
             raw += chunk
             process, raw = raw.rsplit(b"\n", maxsplit=1)
             if process:
-                for x in self.process_chunk(
-                    chunk=process, instrument_provider=instrument_provider
-                ):
+                for x in self.process_chunk(chunk=process, instrument_provider=instrument_provider):
                     try:
                         self.state, x = x
                     except TypeError as e:
@@ -262,9 +258,7 @@ class ParquetParser(ByteParser):
                             df=df,
                             filename=self.filename,
                         )
-                    yield from self.parser(
-                        data_type=self.data_type, df=df, filename=self.filename
-                    )
+                    yield from self.parser(data_type=self.data_type, df=df, filename=self.filename)
             else:
                 raise TypeError
 
@@ -334,9 +328,7 @@ class DataLoader:
             path += "/"
         if self.fs.isdir(path):
             files = self.fs.glob(f"{path}{self.glob_pattern}")
-            assert (
-                files
-            ), f"Found no files with path={str(path)}, glob={self.glob_pattern}"
+            assert files, f"Found no files with path={str(path)}, glob={self.glob_pattern}"
             return [f for f in files if self.fs.isfile(f)]
         else:
             raise ValueError("path argument must be str and a valid directory or file")
@@ -344,9 +336,7 @@ class DataLoader:
     def stream_bytes(self, progress=False):
         path = self.path if not progress else tqdm(self.path)
         for fn in path:
-            with fsspec.open(
-                f"{self.fs_protocol}://{fn}", compression=self.compression
-            ) as f:
+            with fsspec.open(f"{self.fs_protocol}://{fn}", compression=self.compression) as f:
                 yield NewFile(fn)
                 data = 1
                 while data:
@@ -491,13 +481,9 @@ class DataCatalog:
                 for c in NAUTILUS_TS_COLUMNS:
                     if c in df.columns:
                         ts_col = c
-                assert (
-                    ts_col is not None
-                ), f"Could not find timestamp column for type: {cls}"
+                assert ts_col is not None, f"Could not find timestamp column for type: {cls}"
 
-                partition_cols = self._determine_partition_cols(
-                    cls=cls, instrument_id=ins_id
-                )
+                partition_cols = self._determine_partition_cols(cls=cls, instrument_id=ins_id)
 
                 # Load any existing data, drop dupes
                 if not append_only:
@@ -521,9 +507,7 @@ class DataCatalog:
                                 self.fs.rm(str(fn), recursive=True)
 
                 df = df.sort_values(ts_col)
-                df = df.astype(
-                    {k: "category" for k in category_attributes.get(cls.__name__, [])}
-                )
+                df = df.astype({k: "category" for k in category_attributes.get(cls.__name__, [])})
                 for col in NAUTILUS_TS_COLUMNS:
                     if col in df.columns:
                         df = df.sort_values(col)
@@ -601,9 +585,7 @@ class DataCatalog:
             engine.add_instrument(instrument)
             for name in data:
                 if name == "trade_ticks":
-                    engine.add_trade_tick_objects(
-                        instrument_id=instrument.id, data=data[name]
-                    )
+                    engine.add_trade_tick_objects(instrument_id=instrument.id, data=data[name])
                 elif name == "quote_ticks":
                     engine.add_quote_ticks(instrument_id=instrument.id, data=data[name])
                 elif name == "order_book_deltas":
@@ -720,29 +702,19 @@ class DataCatalog:
             if not isinstance(instrument_ids, list):
                 instrument_ids = [instrument_ids]
             filters.append(
-                ds.field("instrument_id").isin(
-                    list(set(map(clean_key, instrument_ids)))
-                )
+                ds.field("instrument_id").isin(list(set(map(clean_key, instrument_ids))))
             )
         if start is not None:
-            filters.append(
-                ds.field(ts_column) >= int(pd.Timestamp(start).to_datetime64())
-            )
+            filters.append(ds.field(ts_column) >= int(pd.Timestamp(start).to_datetime64()))
         if end is not None:
-            filters.append(
-                ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64())
-            )
+            filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
 
         path = f"{self.root}/{filename}.parquet/"
         if not self.fs.exists(path):
             return
 
         dataset = ds.dataset(path, partitioning="hive", filesystem=self.fs)
-        df = (
-            dataset.to_table(filter=combine_filters(*filters))
-            .to_pandas()
-            .drop_duplicates()
-        )
+        df = dataset.to_table(filter=combine_filters(*filters)).to_pandas().drop_duplicates()
         if "instrument_id" in df.columns:
             df = df.astype({"instrument_id": "category"})
         return df
@@ -753,9 +725,7 @@ class DataCatalog:
             return []
         return _deserialize(cls=cls, chunk=df.to_dict("records"))
 
-    def instruments(
-        self, instrument_type=None, filter_expr=None, as_nautilus=False, **kwargs
-    ):
+    def instruments(self, instrument_type=None, filter_expr=None, as_nautilus=False, **kwargs):
         if instrument_type is not None:
             assert isinstance(instrument_type, type)
             instrument_types = (instrument_type,)
@@ -779,9 +749,7 @@ class DataCatalog:
             for ins_type, df in zip(instrument_types, dfs):
                 if df is None:
                     continue
-                objects.extend(
-                    self._make_objects(df=df.drop(["type"], axis=1), cls=ins_type)
-                )
+                objects.extend(self._make_objects(df=df.drop(["type"], axis=1), cls=ins_type))
             return objects
 
     def instrument_status_events(
@@ -797,9 +765,7 @@ class DataCatalog:
             return df
         return self._make_objects(df=df, cls=InstrumentStatusUpdate)
 
-    def trade_ticks(
-        self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
-    ):
+    def trade_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
             "trade_tick",
             instrument_ids=instrument_ids,
@@ -810,9 +776,7 @@ class DataCatalog:
             return df.astype({"price": float, "size": float})
         return self._make_objects(df=df, cls=TradeTick)
 
-    def quote_ticks(
-        self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
-    ):
+    def quote_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
             "quote_tick",
             instrument_ids=instrument_ids,
@@ -823,9 +787,7 @@ class DataCatalog:
             return df
         return self._make_objects(df=df, cls=QuoteTick)
 
-    def order_book_deltas(
-        self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
-    ):
+    def order_book_deltas(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
             "order_book_delta",
             instrument_ids=instrument_ids,
@@ -917,9 +879,7 @@ INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
 def clean_partition_cols(df, partition_cols=None):
     for col in partition_cols or []:
         values = list(map(str, df[col].unique()))
-        invalid_values = {
-            val for val in values if any(x in val for x in INVALID_WINDOWS_CHARS)
-        }
+        invalid_values = {val for val in values if any(x in val for x in INVALID_WINDOWS_CHARS)}
         if invalid_values:
             if col == "instrument_id":
                 # We have control over how instrument_ids are retrieved from the cache, so we can do this replacement
