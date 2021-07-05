@@ -494,7 +494,7 @@ cdef class Money(BaseDecimal):
 
     @staticmethod
     cdef Money from_str_c(str value):
-        cdef tuple pieces = value.partition(' ')
+        cdef list pieces = value.split(' ', maxsplit=1)
 
         if len(pieces) != 3:
             raise ValueError(f"The `Money` string value was malformed, was {value}")
