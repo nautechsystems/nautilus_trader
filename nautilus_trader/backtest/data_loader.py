@@ -829,7 +829,7 @@ class DataCatalog:
         else:
             objects = []
             for ins_type, df in zip(instrument_types, dfs):
-                if df is None:
+                if df is None or (isinstance(df, pd.DataFrame) and df.empty):
                     continue
                 objects.extend(self._make_objects(df=df, cls=ins_type))
             return objects
