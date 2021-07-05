@@ -47,6 +47,9 @@ def catalog_dir():
     # Ensure we have a catalog directory, and its cleaned up after use
     fs = fsspec.filesystem("file")
     catalog = str(pathlib.Path(CATALOG_DIR))
+    if "RUNNER_TEMP" in os.environ:
+        catalog = os.environ["RUNNER_TEMP"]
+        print("Setting catalog:", catalog)
     os.environ.update({"NAUTILUS_BACKTEST_DIR": str(catalog)})
     if fs.exists(catalog):
         fs.rm(catalog, recursive=True)
