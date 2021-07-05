@@ -457,7 +457,7 @@ def test_catalog_invalid_partition_key(catalog_dir):
 
 def test_data_catalog_backtest_data_no_filter(catalog):
     data = catalog.load_backtest_data()
-    assert len(sum(data.values(), list())) == 2323
+    assert len(sum(data.values(), [])) == 2323
 
 
 def test_data_catalog_backtest_data_filtered(catalog):
