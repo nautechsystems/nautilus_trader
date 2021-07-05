@@ -37,7 +37,7 @@ repos:
       hooks:
         - id: codespell
           description: Checks for common misspellings.
-          types_or: [python, rst, markdown]  # TODO: Add Cython
+          types_or: [python, cython, rst, markdown]
 
   - repo: https://gitlab.com/PyCQA/flake8
     rev: 3.9.2
