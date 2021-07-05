@@ -59,16 +59,22 @@ cdef class RiskEngine(Component):
     Provides a high-performance risk engine.
 
     The `RiskEngine` is responsible for global strategy and portfolio risk
-    within the platform. Alternative implementations can be written on top of
-    the generic engine.
+    within the platform. This includes both pre-trade risk checks and post-trade
+    risk monitoring.
 
     Configuration
     -------------
-    The following options are possible in the configuration dictionary.
+    The following configuration options are possible.
 
     - bypass: If True then all risk checks are bypassed (will still check for duplicate IDs).
-    - max_order_rate: int. Default=10.
+    - max_order_rate: tuple(int, timedelta). Default=(10, timedelta(seconds=1)).
     - max_notional_per_order: { str: Decimal }. Default = {}.
+
+    TradingStates
+    -------------
+    - ACTIVE (trading is enabled).
+    - REDUCING (only new orders or updates which reduce an open position are allowed).
+    - HALTED (all trading commands except cancels are denied).
 
     """
 
@@ -211,8 +217,6 @@ cdef class RiskEngine(Component):
                 color=LogColor.RED,
             )
 
-# -- RISK SETTINGS ---------------------------------------------------------------------------------
-
     cpdef void set_max_notional_per_order(self, InstrumentId instrument_id, new_value) except *:
         """
         Set the maximum notional value per order for the given instrument ID.
@@ -249,6 +253,8 @@ cdef class RiskEngine(Component):
             color=LogColor.BLUE,
         )
 
+# -- RISK SETTINGS ---------------------------------------------------------------------------------
+
     cpdef tuple max_order_rate(self):
         """
         Return the current maximum order rate limit setting.
@@ -274,6 +280,17 @@ cdef class RiskEngine(Component):
 
         """
         return self._max_notional_per_order.copy()
+
+    cpdef object max_notional_per_order(self, InstrumentId instrument_id):
+        """
+        Return the current maximum notional per order for the given instrument ID.
+
+        Returns
+        -------
+        Decimal or None
+
+        """
+        return self._max_notional_per_order.get(instrument_id)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -307,10 +324,6 @@ cdef class RiskEngine(Component):
         self._log.debug(f"{RECV}{CMD} {command}.")
         self.command_count += 1
 
-        if isinstance(command, TradingCommand):
-            self._handle_trading_command(command)
-
-    cdef void _handle_trading_command(self, TradingCommand command) except *:
         if isinstance(command, SubmitOrder):
             self._handle_submit_order(command)
         elif isinstance(command, SubmitBracketOrder):
@@ -367,27 +380,29 @@ cdef class RiskEngine(Component):
         ########################################################################
         # Risk checks
         ########################################################################
+        # Check pre-trade risk
         if not self._check_order_risk(instrument, command.order):
             return  # Denied
 
+        # Check TradingState
         if self.trading_state == TradingState.HALTED:
             self._deny_order(order=command.order, reason="TRADING_HALTED")
             return  # Denied
         elif self.trading_state == TradingState.REDUCING:
-            if command.order.is_buy_c():
-                if self._portfolio.is_net_long(instrument.id):
-                    self._deny_order(
-                        order=command.order,
-                        reason=f"BUY when TradingState.REDUCING and LONG {instrument.id}",
-                    )
-            elif command.order.is_sell_c():
-                if self._portfolio.is_net_short(instrument.id):
-                    self._deny_order(
-                        order=command.order,
-                        reason=f"SELL when TradingState.REDUCING and SHORT {instrument.id}",
-                    )
+            if command.order.is_buy_c() and self._portfolio.is_net_long(instrument.id):
+                self._deny_order(
+                    order=command.order,
+                    reason=f"BUY when TradingState.REDUCING and LONG {instrument.id}",
+                )
+                return  # Denied
+            elif command.order.is_sell_c() and self._portfolio.is_net_short(instrument.id):
+                self._deny_order(
+                    order=command.order,
+                    reason=f"SELL when TradingState.REDUCING and SHORT {instrument.id}",
+                )
+                return  # Denied
 
-        # All checks passed
+        # All checks passed: send to ORDER_RATE throttler
         self._order_throttler.send(command)
 
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
@@ -453,6 +468,7 @@ cdef class RiskEngine(Component):
         if not self._check_order_risk(instrument, command.bracket_order.entry):
             return  # Denied
 
+        # Check TradingState
         if self.trading_state == TradingState.HALTED:
             self._deny_bracket_order(
                 bracket_order=command.bracket_order,
@@ -460,20 +476,20 @@ cdef class RiskEngine(Component):
             )
             return  # Denied
         elif self.trading_state == TradingState.REDUCING:
-            if entry.is_buy_c():
-                if self._portfolio.is_net_long(instrument.id):
-                    self._deny_bracket_order(
-                        bracket_order=command.bracket_order,
-                        reason=f"BUY when TradingState.REDUCING and LONG {instrument.id}",
-                    )
-            elif entry.is_sell_c():
-                if self._portfolio.is_net_short(instrument.id):
-                    self._deny_bracket_order(
-                        bracket_order=command.bracket_order,
-                        reason=f"SELL when TradingState.REDUCING and SHORT {instrument.id}",
-                    )
+            if entry.is_buy_c() and self._portfolio.is_net_long(instrument.id):
+                self._deny_bracket_order(
+                    bracket_order=command.bracket_order,
+                    reason=f"BUY when TradingState.REDUCING and LONG {instrument.id}",
+                )
+                return  # Denied
+            elif entry.is_sell_c() and self._portfolio.is_net_short(instrument.id):
+                self._deny_bracket_order(
+                    bracket_order=command.bracket_order,
+                    reason=f"SELL when TradingState.REDUCING and SHORT {instrument.id}",
+                )
+                return  # Denied
 
-        # All checks passed
+        # All checks passed: send to ORDER_RATE throttler
         self._order_throttler.send(command)
 
     cdef void _handle_update_order(self, UpdateOrder command) except *:
@@ -482,7 +498,7 @@ cdef class RiskEngine(Component):
         ########################################################################
         if self.cache.is_order_completed(command.client_order_id):
             self._log.warning(
-                f"Cannot update order: {repr(command.client_order_id)} already completed.",
+                f"UpdateOrder DENIED: {repr(command.client_order_id)} already completed.",
             )
             return  # Invalid command
 
@@ -490,33 +506,60 @@ cdef class RiskEngine(Component):
         cdef Instrument instrument = self._exec_engine.cache.instrument(command.instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot update order: no instrument found for {command.instrument_id}.",
+                f"UpdateOrder DENIED: no instrument found for {command.instrument_id}.",
             )
             return  # Invalid command
 
         cdef str risk_msg = None
-        # ----------------------------------------------------------------------
+
         # Check price
-        # ----------------------------------------------------------------------
         risk_msg = self._check_price(instrument, command.price)
         if risk_msg:
-            self._log.error(f"Cannot update order: {risk_msg}.")
-            return  # Invalid command
-        # ----------------------------------------------------------------------
-        # Check trigger
-        # ----------------------------------------------------------------------
-        risk_msg = self._check_price(instrument, command.trigger)
-        if risk_msg:
-            self._log.error(f"Cannot update order: {risk_msg}.")
-            return  # Invalid command
-        # ----------------------------------------------------------------------
-        # Check quantity
-        # ----------------------------------------------------------------------
-        risk_msg = self._check_quantity(instrument, command.quantity)
-        if risk_msg:
-            self._log.error(f"Cannot update order: {risk_msg}.")
+            self._log.error(f"UpdateOrder DENIED: {risk_msg}.")
             return  # Invalid command
 
+        # Check trigger
+        risk_msg = self._check_price(instrument, command.trigger)
+        if risk_msg:
+            self._log.error(f"UpdateOrder DENIED: {risk_msg}.")
+            return  # Invalid command
+
+        # Check quantity
+        risk_msg = self._check_quantity(instrument, command.quantity)
+        if risk_msg:
+            self._log.error(f"UpdateOrder DENIED: {risk_msg}.")
+            return  # Invalid command
+
+        # Get order relating to update
+        cdef Order order = self.cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(
+                f"UpdateOrder DENIED: {command.client_order_id} not found in cache."
+            )
+            return  # Invalid command
+
+        # Check TradingState
+        if self.trading_state == TradingState.HALTED:
+            self._log.error(
+                "UpdateOrder DENIED: TradingState is HALTED."
+            )
+            return  # Denied
+        elif self.trading_state == TradingState.REDUCING:
+            if command.quantity and command.quantity > order.quantity:
+                if order.is_buy_c() and self._portfolio.is_net_long(instrument.id):
+                    self._log.error(
+                        "UpdateOrder DENIED: "
+                        "TradingState is REDUCING and update will increase exposure."
+                    )
+                    return  # Denied
+                elif order.is_sell_c() and self._portfolio.is_net_short(instrument.id):
+                    self._log.error(
+                        "UpdateOrder DENIED: "
+                        "TradingState is REDUCING and update will increase exposure."
+                    )
+                    return  # Denied
+
+        # All checks passed: send for execution
         self._exec_engine.execute(command)
 
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
@@ -525,21 +568,48 @@ cdef class RiskEngine(Component):
         ########################################################################
         if self.cache.is_order_completed(command.client_order_id):
             self._log.warning(
-                f"Cannot cancel order: {repr(command.client_order_id)} already completed.",
+                f"CancelOrder DENIED: {repr(command.client_order_id)} already completed.",
             )
             return  # Invalid command
 
+        # All checks passed: send for execution
         self._exec_engine.execute(command)
+
+# -- VALIDATIONS -----------------------------------------------------------------------------------
+
+    cdef str _check_price(self, Instrument instrument, Price price):
+        if price is None:
+            # Nothing to check
+            return None
+        if price.precision > instrument.price_precision:
+            # Check failed
+            return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
+        if instrument.asset_type != AssetType.OPTION:
+            if price.as_decimal() <= 0:
+                # Check failed
+                return f"price {price} invalid (not positive)"
+
+    cdef str _check_quantity(self, Instrument instrument, Quantity quantity):
+        if quantity is None:
+            # Nothing to check
+            return None
+        if quantity.precision > instrument.size_precision:
+            # Check failed
+            return f"quantity {quantity.to_str()} invalid (precision {quantity.precision} > {instrument.size_precision})"
+        if instrument.max_quantity and quantity > instrument.max_quantity:
+            # Check failed
+            return f"quantity {quantity.to_str()} invalid (> maximum trade size of {instrument.max_quantity})"
+        if instrument.min_quantity and quantity < instrument.min_quantity:
+            # Check failed
+            return f"quantity {quantity.to_str()} invalid (< minimum trade size of {instrument.min_quantity})"
 
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
 
     cdef bint _check_order_id(self, Order order) except *:
         if order is None or not self.cache.order_exists(order.client_order_id):
-            # Check passed
-            return True
+            return True  # Check passed
         else:
-            # Check failed (duplicate ID)
-            return False
+            return False  # Check failed (duplicate ID)
 
     cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *:
         cdef str risk_msg = self._check_quantity(instrument, order.quantity)
@@ -583,6 +653,12 @@ cdef class RiskEngine(Component):
         if order.type == OrderType.MARKET:
             # Determine entry price
             last = self.cache.quote_tick(instrument.id)
+            if last is None:
+                self._deny_order(
+                    order=order,
+                    reason=f"No market to check MAX_NOTIONAL_PER_ORDER",
+                )
+                return False  # Denied
             if order.side == OrderSide.BUY:
                 price = last.ask
             else:  # order.side == OrderSide.SELL
@@ -594,44 +670,18 @@ cdef class RiskEngine(Component):
         if notional > max_notional:
             self._deny_order(
                 order=order,
-                reason=f"Exceeds MAX_NOTIONAL_PER_ORDER of {max_notional} @ {notional}",
+                reason=f"Exceeds MAX_NOTIONAL_PER_ORDER of {max_notional:,} @ {notional:,}",
             )
             return False  # Denied
 
         # TODO(cs): Additional pre-trade risk checks
         return True  # Passed
 
-# -- VALIDATIONS -----------------------------------------------------------------------------------
-
-    cdef str _check_price(self, Instrument instrument, Price price):
-        if price is None:
-            # Nothing to check
-            return None
-        if price.precision > instrument.price_precision:
-            # Check failed
-            return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
-        if instrument.asset_type != AssetType.OPTION:
-            if price.as_decimal() <= 0:
-                # Check failed
-                return f"price {price} invalid (not positive)"
-
-    cdef str _check_quantity(self, Instrument instrument, Quantity quantity):
-        if quantity is None:
-            # Nothing to check
-            return None
-        if quantity.precision > instrument.size_precision:
-            # Check failed
-            return f"quantity {quantity} invalid (precision {quantity.precision} > {instrument.size_precision})"
-        if instrument.max_quantity and quantity > instrument.max_quantity:
-            # Check failed
-            return f"quantity {quantity} invalid (> maximum trade size of {instrument.max_quantity})"
-        if instrument.min_quantity and quantity < instrument.min_quantity:
-            # Check failed
-            return f"quantity {quantity} invalid (< minimum trade size of {instrument.min_quantity})"
-
 # -- EVENT GENERATION ------------------------------------------------------------------------------
 
     cdef void _deny_order(self, Order order, str reason) except *:
+        self._log.error(f"SubmitOrder DENIED: {reason}.")
+
         if order is None:
             # Nothing to deny
             return

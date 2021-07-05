@@ -61,14 +61,14 @@ cdef class RiskEngine(Component):
     cpdef void execute(self, Command command) except *
     cpdef void process(self, Event event) except *
     cpdef void set_trading_state(self, TradingState state) except *
+    cpdef void set_max_notional_per_order(self, InstrumentId instrument_id, new_value: Decimal) except *
     cdef void _log_state(self) except *
 
 # -- RISK SETTINGS ---------------------------------------------------------------------------------
 
-    cpdef void set_max_notional_per_order(self, InstrumentId instrument_id, new_value: Decimal) except *
-
     cpdef tuple max_order_rate(self)
     cpdef dict max_notionals_per_order(self)
+    cpdef object max_notional_per_order(self, InstrumentId instrument_id)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -78,15 +78,15 @@ cdef class RiskEngine(Component):
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef void _execute_command(self, Command command) except *
-    cdef void _handle_trading_command(self, TradingCommand command) except *
     cdef void _handle_submit_order(self, SubmitOrder command) except *
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
     cdef void _handle_update_order(self, UpdateOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
 
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
+# -- VALIDATIONS -----------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, Event event) except *
+    cdef str _check_price(self, Instrument instrument, Price price)
+    cdef str _check_quantity(self, Instrument instrument, Quantity quantity)
 
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
 
@@ -95,15 +95,14 @@ cdef class RiskEngine(Component):
     cdef bint _check_order_price(self, Instrument instrument, Order order) except *
     cdef bint _check_order_risk(self, Instrument instrument, Order order) except *
 
-# -- VALIDATIONS -----------------------------------------------------------------------------------
-
-    cdef str _check_price(self, Instrument instrument, Price price)
-    cdef str _check_quantity(self, Instrument instrument, Quantity quantity)
-
 # -- EVENT GENERATION ------------------------------------------------------------------------------
 
     cdef void _deny_order(self, Order order, str reason) except *
     cdef void _deny_bracket_order(self, BracketOrder bracket_order, str reason) except *
+
+# -- EVENT HANDLERS --------------------------------------------------------------------------------
+
+    cdef void _handle_event(self, Event event) except *
 
 # -- EGRESS ----------------------------------------------------------------------------------------
 
