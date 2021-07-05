@@ -479,7 +479,7 @@ def test_data_catalog_backtest_data_filtered(catalog):
     )
     engine.run()
     # Total events 1045
-    assert engine.iteration == 530
+    assert engine.iteration == 600
 
 
 def test_data_catalog_backtest_run(catalog):
