@@ -17,6 +17,7 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.objects import BaseDecimal
@@ -883,3 +884,21 @@ class TestMoney:
         # Act, Assert
         with pytest.raises(ValueError):
             Money.from_str(value)
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ["1.00 USD", Money(1.00, USD)],
+            ["1.001 AUD", Money(1.00, AUD)],
+        ],
+    )
+    def test_from_str_given_valid_strings_returns_expected_result(
+        self,
+        value,
+        expected,
+    ):
+        # Arrange, Act
+        result = Money.from_str(value)
+
+        # Assert
+        assert result == expected
