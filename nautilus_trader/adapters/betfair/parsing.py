@@ -55,8 +55,6 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.events import AccountState
-from nautilus_trader.model.events import InstrumentClosePrice
-from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -74,6 +72,8 @@ from nautilus_trader.model.orderbook.order import Order
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.venue import InstrumentClosePrice
+from nautilus_trader.model.venue import InstrumentStatusUpdate
 
 
 uuid_factory = UUIDFactory()
@@ -320,16 +320,16 @@ def _handle_market_close(runner, instrument, timestamp_ns):
             instrument_id=instrument.id,
             close_price=Price(0.0, precision=4),
             close_type=InstrumentCloseType.EXPIRED,
-            event_id=uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
         )
     elif runner["status"] == "WINNER":
         close_price = InstrumentClosePrice(
             instrument_id=instrument.id,
             close_price=Price(1.0, precision=4),
             close_type=InstrumentCloseType.EXPIRED,
-            event_id=uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
         )
     else:
         raise ValueError(f"Unknown runner close status: {runner['status']}")
@@ -341,32 +341,32 @@ def _handle_instrument_status(market, instrument, timestamp_ns):
     if "status" not in market_def:
         return []
     if market_def["status"] == "OPEN" and not market_def["inPlay"]:
-        status = InstrumentStatusEvent(
+        status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.PRE_OPEN,
-            event_id=uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
         )
     elif market_def["status"] == "OPEN" and market_def["inPlay"]:
-        status = InstrumentStatusEvent(
+        status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.OPEN,
-            event_id=uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
         )
     elif market_def["status"] == "SUSPENDED":
-        status = InstrumentStatusEvent(
+        status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.PAUSE,
-            event_id=uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
         )
     elif market_def["status"] == "CLOSED":
-        status = InstrumentStatusEvent(
+        status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.CLOSED,
-            event_id=uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
         )
     else:
         raise ValueError("Unknown market status")
@@ -401,7 +401,7 @@ def _handle_market_runners_status(instrument_provider, market, timestamp_ns):
 
 def build_market_snapshot_messages(
     instrument_provider, raw
-) -> List[Union[OrderBookSnapshot, InstrumentStatusEvent]]:
+) -> List[Union[OrderBookSnapshot, InstrumentStatusUpdate]]:
     updates = []
     ts_event_ns = millis_to_nanos(raw["pt"])
     timestamp_ns = millis_to_nanos(raw["pt"])  # TODO(bm): Could call clock.ts_recv_ns()
@@ -464,7 +464,7 @@ def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
 def build_market_update_messages(
     instrument_provider, raw
 ) -> List[
-    Union[OrderBookDelta, TradeTick, InstrumentStatusEvent, InstrumentClosePrice]
+    Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]
 ]:
     updates = []
     book_updates = []
