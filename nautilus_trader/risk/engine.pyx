@@ -370,40 +370,12 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         ########################################################################
-        # Validation checks
+        # Pre-trade order checks
         ########################################################################
-        if not self._check_order_price(instrument, command.order):
-            return  # Denied
-        if not self._check_order_quantity(instrument, command.order):
+        if not self._check_order(instrument, command.order):
             return  # Denied
 
-        ########################################################################
-        # Risk checks
-        ########################################################################
-        # Check pre-trade risk
-        if not self._check_order_risk(instrument, command.order):
-            return  # Denied
-
-        # Check TradingState
-        if self.trading_state == TradingState.HALTED:
-            self._deny_order(order=command.order, reason="TRADING_HALTED")
-            return  # Denied
-        elif self.trading_state == TradingState.REDUCING:
-            if command.order.is_buy_c() and self._portfolio.is_net_long(instrument.id):
-                self._deny_order(
-                    order=command.order,
-                    reason=f"BUY when TradingState.REDUCING and LONG {instrument.id}",
-                )
-                return  # Denied
-            elif command.order.is_sell_c() and self._portfolio.is_net_short(instrument.id):
-                self._deny_order(
-                    order=command.order,
-                    reason=f"SELL when TradingState.REDUCING and SHORT {instrument.id}",
-                )
-                return  # Denied
-
-        # All checks passed: send to ORDER_RATE throttler
-        self._order_throttler.send(command)
+        self._execution_gateway(instrument, command, order=command.order)
 
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
         cdef Order entry = command.bracket_order.entry
@@ -447,57 +419,23 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         ########################################################################
-        # Validation checks
+        # Pre-trade order(s) checks
         ########################################################################
-        if not self._check_order_price(instrument, entry):
+        if not self._check_order(instrument, entry):
             return  # Denied
-        if not self._check_order_price(instrument, stop_loss):
+        if not self._check_order(instrument, stop_loss):
             return  # Denied
-        if not self._check_order_price(instrument, take_profit):
-            return  # Denied
-        if not self._check_order_quantity(instrument, entry):
-            return  # Denied
-        if not self._check_order_quantity(instrument, stop_loss):
-            return  # Denied
-        if not self._check_order_quantity(instrument, take_profit):
+        if not self._check_order(instrument, take_profit):
             return  # Denied
 
-        ########################################################################
-        # Risk checks
-        ########################################################################
-        if not self._check_order_risk(instrument, command.bracket_order.entry):
-            return  # Denied
-
-        # Check TradingState
-        if self.trading_state == TradingState.HALTED:
-            self._deny_bracket_order(
-                bracket_order=command.bracket_order,
-                reason="TradingState.HALTED",
-            )
-            return  # Denied
-        elif self.trading_state == TradingState.REDUCING:
-            if entry.is_buy_c() and self._portfolio.is_net_long(instrument.id):
-                self._deny_bracket_order(
-                    bracket_order=command.bracket_order,
-                    reason=f"BUY when TradingState.REDUCING and LONG {instrument.id}",
-                )
-                return  # Denied
-            elif entry.is_sell_c() and self._portfolio.is_net_short(instrument.id):
-                self._deny_bracket_order(
-                    bracket_order=command.bracket_order,
-                    reason=f"SELL when TradingState.REDUCING and SHORT {instrument.id}",
-                )
-                return  # Denied
-
-        # All checks passed: send to ORDER_RATE throttler
-        self._order_throttler.send(command)
+        self._execution_gateway(instrument, command, order=entry)
 
     cdef void _handle_update_order(self, UpdateOrder command) except *:
         ########################################################################
         # Validate command
         ########################################################################
         if self.cache.is_order_completed(command.client_order_id):
-            self._log.warning(
+            self._log.error(
                 f"UpdateOrder DENIED: {repr(command.client_order_id)} already completed.",
             )
             return  # Invalid command
@@ -567,7 +505,7 @@ cdef class RiskEngine(Component):
         # Validate command
         ########################################################################
         if self.cache.is_order_completed(command.client_order_id):
-            self._log.warning(
+            self._log.error(
                 f"CancelOrder DENIED: {repr(command.client_order_id)} already completed.",
             )
             return  # Invalid command
@@ -575,35 +513,24 @@ cdef class RiskEngine(Component):
         # All checks passed: send for execution
         self._exec_engine.execute(command)
 
-# -- VALIDATIONS -----------------------------------------------------------------------------------
-
-    cdef str _check_price(self, Instrument instrument, Price price):
-        if price is None:
-            # Nothing to check
-            return None
-        if price.precision > instrument.price_precision:
-            # Check failed
-            return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
-        if instrument.asset_type != AssetType.OPTION:
-            if price.as_decimal() <= 0:
-                # Check failed
-                return f"price {price} invalid (not positive)"
-
-    cdef str _check_quantity(self, Instrument instrument, Quantity quantity):
-        if quantity is None:
-            # Nothing to check
-            return None
-        if quantity.precision > instrument.size_precision:
-            # Check failed
-            return f"quantity {quantity.to_str()} invalid (precision {quantity.precision} > {instrument.size_precision})"
-        if instrument.max_quantity and quantity > instrument.max_quantity:
-            # Check failed
-            return f"quantity {quantity.to_str()} invalid (> maximum trade size of {instrument.max_quantity})"
-        if instrument.min_quantity and quantity < instrument.min_quantity:
-            # Check failed
-            return f"quantity {quantity.to_str()} invalid (< minimum trade size of {instrument.min_quantity})"
-
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
+
+    cdef bint _check_order(self, Instrument instrument, Order order) except *:
+        ########################################################################
+        # Validation checks
+        ########################################################################
+        if not self._check_order_price(instrument, order):
+            return False  # Denied
+        if not self._check_order_quantity(instrument, order):
+            return False  # Denied
+
+        ########################################################################
+        # Risk checks
+        ########################################################################
+        if not self._check_order_risk(instrument, order):
+            return False  # Denied
+
+        return True  # Check passed
 
     cdef bint _check_order_id(self, Order order) except *:
         if order is None or not self.cache.order_exists(order.client_order_id):
@@ -677,7 +604,49 @@ cdef class RiskEngine(Component):
         # TODO(cs): Additional pre-trade risk checks
         return True  # Passed
 
-# -- EVENT GENERATION ------------------------------------------------------------------------------
+    cdef str _check_price(self, Instrument instrument, Price price):
+        if price is None:
+            # Nothing to check
+            return None
+        if price.precision > instrument.price_precision:
+            # Check failed
+            return f"price {price} invalid (precision {price.precision} > {instrument.price_precision})"
+        if instrument.asset_type != AssetType.OPTION:
+            if price.as_decimal() <= 0:
+                # Check failed
+                return f"price {price} invalid (not positive)"
+
+    cdef str _check_quantity(self, Instrument instrument, Quantity quantity):
+        if quantity is None:
+            # Nothing to check
+            return None
+        if quantity.precision > instrument.size_precision:
+            # Check failed
+            return f"quantity {quantity.to_str()} invalid (precision {quantity.precision} > {instrument.size_precision})"
+        if instrument.max_quantity and quantity > instrument.max_quantity:
+            # Check failed
+            return f"quantity {quantity.to_str()} invalid (> maximum trade size of {instrument.max_quantity})"
+        if instrument.min_quantity and quantity < instrument.min_quantity:
+            # Check failed
+            return f"quantity {quantity.to_str()} invalid (< minimum trade size of {instrument.min_quantity})"
+
+# -- DENIALS ---------------------------------------------------------------------------------------
+
+    cdef void _deny_command(self, TradingCommand command, str reason) except *:
+        if isinstance(command, SubmitOrder):
+            self._deny_order(command.order, reason=reason)
+        elif isinstance(command, SubmitBracketOrder):
+            self._deny_bracket_order(command.bracket_order, reason=reason)
+        elif isinstance(command, UpdateOrder):
+            self._log.error(f"UpdateOrder DENIED: {reason}")
+        elif isinstance(command, CancelOrder):
+            self._log.error(f"CancelOrder DENIED: {reason}")
+
+    cpdef _deny_new_order(self, TradingCommand command):
+        if isinstance(command, SubmitOrder):
+            self._deny_order(command.order, reason="Exceeded MAX_ORDER_RATE")
+        elif isinstance(command, SubmitBracketOrder):
+            self._deny_bracket_order(command.bracket_order, reason="Exceeded MAX_ORDER_RATE")
 
     cdef void _deny_order(self, Order order, str reason) except *:
         self._log.error(f"SubmitOrder DENIED: {reason}.")
@@ -708,19 +677,38 @@ cdef class RiskEngine(Component):
         self._deny_order(order=bracket_order.stop_loss, reason=reason)
         self._deny_order(order=bracket_order.take_profit, reason=reason)
 
+# -- EGRESS ----------------------------------------------------------------------------------------
+
+    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order):
+        # Check TradingState
+        if self.trading_state == TradingState.HALTED:
+            self._deny_bracket_order(
+                bracket_order=command.bracket_order,
+                reason="TradingState.HALTED",
+            )
+            return  # Denied
+        elif self.trading_state == TradingState.REDUCING:
+            if order.is_buy_c() and self._portfolio.is_net_long(instrument.id):
+                self._deny_command(
+                    command=command,
+                    reason=f"BUY when TradingState.REDUCING and LONG {instrument.id}",
+                )
+                return  # Denied
+            elif order.is_sell_c() and self._portfolio.is_net_short(instrument.id):
+                self._deny_command(
+                    command=command,
+                    reason=f"SELL when TradingState.REDUCING and SHORT {instrument.id}",
+                )
+                return  # Denied
+
+        # All checks passed: send to ORDER_RATE throttler
+        self._order_throttler.send(command)
+
+    cpdef _send_command(self, TradingCommand command):
+        self._exec_engine.execute(command)
+
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_event(self, Event event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
         self.event_count += 1
-
-# -- EGRESS ----------------------------------------------------------------------------------------
-
-    cpdef _deny_new_order(self, TradingCommand command):
-        if isinstance(command, SubmitOrder):
-            self._deny_order(command.order, reason="Exceeded MAX_ORDER_RATE")
-        elif isinstance(command, SubmitBracketOrder):
-            self._deny_bracket_order(command.bracket_order, reason="Exceeded MAX_ORDER_RATE")
-
-    cpdef _send_command(self, TradingCommand command):
-        self._exec_engine.execute(command)

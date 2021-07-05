@@ -83,28 +83,28 @@ cdef class RiskEngine(Component):
     cdef void _handle_update_order(self, UpdateOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
 
-# -- VALIDATIONS -----------------------------------------------------------------------------------
-
-    cdef str _check_price(self, Instrument instrument, Price price)
-    cdef str _check_quantity(self, Instrument instrument, Quantity quantity)
-
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
 
+    cdef bint _check_order(self, Instrument instrument, Order order) except *
     cdef bint _check_order_id(self, Order order) except *
     cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *
     cdef bint _check_order_price(self, Instrument instrument, Order order) except *
     cdef bint _check_order_risk(self, Instrument instrument, Order order) except *
+    cdef str _check_price(self, Instrument instrument, Price price)
+    cdef str _check_quantity(self, Instrument instrument, Quantity quantity)
 
-# -- EVENT GENERATION ------------------------------------------------------------------------------
+# -- DENIALS ---------------------------------------------------------------------------------------
 
+    cdef void _deny_command(self, TradingCommand command, str reason) except *
+    cpdef _deny_new_order(self, TradingCommand command)
     cdef void _deny_order(self, Order order, str reason) except *
     cdef void _deny_bracket_order(self, BracketOrder bracket_order, str reason) except *
+
+# -- EGRESS ----------------------------------------------------------------------------------------
+
+    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order)
+    cpdef _send_command(self, TradingCommand command)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_event(self, Event event) except *
-
-# -- EGRESS ----------------------------------------------------------------------------------------
-
-    cpdef _deny_new_order(self, TradingCommand command)
-    cpdef _send_command(self, TradingCommand command)
