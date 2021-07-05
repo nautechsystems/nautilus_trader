@@ -496,10 +496,10 @@ cdef class Money(BaseDecimal):
     cdef Money from_str_c(str value):
         cdef list pieces = value.split(' ', maxsplit=1)
 
-        if len(pieces) != 3:
+        if len(pieces) != 2:
             raise ValueError(f"The `Money` string value was malformed, was {value}")
 
-        return Money(pieces[0], Currency.from_str_c(pieces[2]))
+        return Money(pieces[0], Currency.from_str_c(pieces[1]))
 
     @staticmethod
     def from_str(str value) -> Money:
