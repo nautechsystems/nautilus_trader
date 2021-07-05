@@ -825,7 +825,7 @@ class TestMoney:
         assert expected3 == result3
         assert expected4 == result4
 
-    def test_from_str_with_no_decimal(self):
+    def test_as_double_returns_expected_result(self):
         # Arrange
         # Act
         money = Money(1, USD)
@@ -875,3 +875,11 @@ class TestMoney:
 
         # Assert
         assert "Money('1.00', USD)" == result
+
+    def test_from_str_when_malformed_raises_value_error(self):
+        # Arrange
+        value = "@"
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            Money.from_str(value)
