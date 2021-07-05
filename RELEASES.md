@@ -1,17 +1,20 @@
 # NautilusTrader 1.124.0 Beta - Release Notes
 
+This release sees the expansion of pre-trade risk check options (see 
+`RiskEngine` class documentation). There has also been extensive 'under the 
+hood' code cleanup and consolidation.
 
 ## Breaking Changes
-- Renamed Loggers `bypass_logging` to `bypass`.
 - Renamed `Position.opened_timestamp_ns` to `ts_opened_ns`.
 - Renamed `Position.closed_timestamp_ns` to `ts_closed_ns`.
 - Renamed `Position.open_duration_ns` to `duration_ns`.
+- Renamed Loggers `bypass_logging` to `bypass`.
 
 ## Enhancements
 - Add pre-trade risk checks to `RiskEngine` iteration 2.
-- Improve analysis reports.
 - Improve `Throttler` functionality and performance.
 - Removed redundant `OrderInvalid` state and associated code.
+- Improve analysis reports.
 
 ## Fixes
 - PnL calculations for `CASH` account types.
