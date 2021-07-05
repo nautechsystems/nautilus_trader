@@ -113,7 +113,7 @@ def test_is_custom_data():
         ("**.csv", 11),
     ],
 )
-def test_data_loader_paths(glob, num_files):
+def test_data_loader_paths(glob, num_files, catalog_dir):
     d = DataLoader(path=TEST_DATA_DIR, parser=TextParser(parser=len), glob_pattern=glob)
     assert len(d.path) == num_files
 

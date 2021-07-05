@@ -170,31 +170,27 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
             # Process quote tick data
             # -----------------------
-            if instrument_id in quote_ticks or instrument_id in bars_bid:
-                if isinstance(quote_ticks.get(instrument_id), pd.DataFrame) or \
-                        (instrument_id in bars_bid and isinstance(bars_bid[instrument_id], pd.DataFrame)):
-                    ts = unix_timestamp()  # Time data processing
-                    quote_wrangler = QuoteTickDataWrangler(
-                        instrument=instrument,
-                        data_quotes=quote_ticks.get(instrument_id),
-                        data_bars_bid=bars_bid.get(instrument_id),
-                        data_bars_ask=bars_ask.get(instrument_id),
-                    )
+            if instrument_id in quote_ticks and isinstance(quote_ticks[instrument_id], list):
+                self._stream = sorted(self._stream + quote_ticks[instrument_id], key=lambda x: x.ts_recv_ns)
 
-                    # noinspection PyUnresolvedReferences
-                    quote_wrangler.pre_process(instrument_counter)
-                    quote_tick_frames.append(quote_wrangler.processed_data)
+            elif instrument_id in quote_ticks or instrument_id in bars_bid:
+                ts = unix_timestamp()  # Time data processing
+                quote_wrangler = QuoteTickDataWrangler(
+                    instrument=instrument,
+                    data_quotes=quote_ticks.get(instrument_id),
+                    data_bars_bid=bars_bid.get(instrument_id),
+                    data_bars_ask=bars_ask.get(instrument_id),
+                )
 
-                    execution_resolution = BarAggregationParser.to_str(quote_wrangler.resolution)
-                    self._log.info(
-                        f"Prepared {len(quote_wrangler.processed_data):,} {instrument_id} quote tick rows in "
-                        f"{unix_timestamp() - ts:.3f}s.")
-                    del quote_wrangler  # Dump processing artifact
-                elif isinstance(quote_ticks.get(instrument_id), list):
-                    # We have a list of QuoteTick objects
-                    self._stream = sorted(
-                        self._stream + quote_ticks[instrument_id], key=lambda x: x.ts_recv_ns,
-                    )
+                # noinspection PyUnresolvedReferences
+                quote_wrangler.pre_process(instrument_counter)
+                quote_tick_frames.append(quote_wrangler.processed_data)
+
+                execution_resolution = BarAggregationParser.to_str(quote_wrangler.resolution)
+                self._log.info(
+                    f"Prepared {len(quote_wrangler.processed_data):,} {instrument_id} quote tick rows in "
+                    f"{unix_timestamp() - ts:.3f}s.")
+                del quote_wrangler  # Dump processing artifact
             # Process trade tick data
             # -----------------------
             if instrument_id in trade_ticks:
