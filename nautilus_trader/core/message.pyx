@@ -19,7 +19,7 @@ from nautilus_trader.core.uuid cimport UUID
 
 cpdef str message_type_to_str(int value):
     """
-    Covert a C Enum int to a message type string.
+    Convert a C Enum int to a message type string.
 
     Parameters
     ----------
