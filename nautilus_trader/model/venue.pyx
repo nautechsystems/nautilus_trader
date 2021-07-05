@@ -15,7 +15,6 @@
 
 from libc.stdint cimport int64_t
 
-from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatusParser
 from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
@@ -86,6 +85,12 @@ cdef class VenueStatusUpdate(StatusUpdate):
         self.venue = venue
         self.status = status
 
+    def __eq__(self, VenueStatusUpdate other) -> bool:
+        return VenueStatusUpdate.to_dict_c(self) == VenueStatusUpdate.to_dict_c(other)
+
+    def __hash__(self) -> int:
+        return hash(frozenset(VenueStatusUpdate.to_dict_c(self)))
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"venue={self.venue}, "
@@ -96,7 +101,6 @@ cdef class VenueStatusUpdate(StatusUpdate):
         return VenueStatusUpdate(
             venue=Venue(values["venue"]),
             status=VenueStatusParser.from_str(values["status"]),
-            event_id=UUID.from_str_c(values["event_id"]),
             ts_event_ns=values["ts_event_ns"],
             ts_recv_ns=values["ts_recv_ns"],
         )
@@ -107,7 +111,6 @@ cdef class VenueStatusUpdate(StatusUpdate):
             "type": "VenueStatusUpdate",
             "venue": obj.venue.value,
             "status": VenueStatusParser.to_str(obj.status),
-            "event_id": obj.id.value,
             "ts_event_ns": obj.ts_event_ns,
             "ts_recv_ns": obj.ts_recv_ns,
         }
@@ -170,6 +173,12 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         super().__init__(ts_event_ns, ts_recv_ns,)
         self.instrument_id = instrument_id
         self.status = status
+
+    def __eq__(self, InstrumentStatusUpdate other) -> bool:
+        return InstrumentStatusUpdate.to_dict_c(self) == InstrumentStatusUpdate.to_dict_c(other)
+
+    def __hash__(self) -> int:
+        return hash(frozenset(InstrumentStatusUpdate.to_dict_c(self)))
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -257,6 +266,12 @@ cdef class InstrumentClosePrice(Data):
         self.instrument_id = instrument_id
         self.close_price = close_price
         self.close_type = close_type
+
+    def __eq__(self, InstrumentClosePrice other) -> bool:
+        return InstrumentClosePrice.to_dict_c(self) == InstrumentClosePrice.to_dict_c(other)
+
+    def __hash__(self) -> int:
+        return hash(frozenset(InstrumentClosePrice.to_dict_c(self)))
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
