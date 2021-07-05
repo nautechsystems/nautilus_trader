@@ -56,6 +56,8 @@ cdef class RiskEngine(Component):
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
 
+    cdef void _initialize_risk_checks(self, dict config) except *
+
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void execute(self, Command command) except *
@@ -85,8 +87,8 @@ cdef class RiskEngine(Component):
 
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
 
-    cdef bint _check_order(self, Instrument instrument, Order order) except *
     cdef bint _check_order_id(self, Order order) except *
+    cdef bint _check_order(self, Instrument instrument, Order order) except *
     cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *
     cdef bint _check_order_price(self, Instrument instrument, Order order) except *
     cdef bint _check_order_risk(self, Instrument instrument, Order order) except *

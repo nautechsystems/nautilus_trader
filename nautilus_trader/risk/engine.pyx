@@ -119,6 +119,10 @@ cdef class RiskEngine(Component):
         self.is_bypassed = config.get("bypass", False)
         self._log_state()
 
+        # Counters
+        self.command_count = 0
+        self.event_count = 0
+
         # Throttlers
         config_max_order_rate = config.get("max_order_rate")
         if config_max_order_rate is None:
@@ -146,14 +150,11 @@ cdef class RiskEngine(Component):
         # Risk settings
         self._max_notional_per_order = {}
 
-        # Counters
-        self.command_count = 0
-        self.event_count = 0
+        # Configure
+        self._initialize_risk_checks(config)
 
-        ########################################################################
-        # Configure pre-trade risk checks
-        ########################################################################
-        max_notional_config = config.get("max_notional_per_order", {})
+    cdef void _initialize_risk_checks(self, dict config) except *:
+        cdef dict max_notional_config = config.get("max_notional_per_order", {})
         for instrument_id, value in max_notional_config.items():
             self.set_max_notional_per_order(InstrumentId.from_str_c(instrument_id), value)
 
@@ -338,19 +339,18 @@ cdef class RiskEngine(Component):
     cdef void _handle_submit_order(self, SubmitOrder command) except *:
         # Check IDs for duplicate
         if not self._check_order_id(command.order):
-            self._deny_order(
-                order=command.order,
+            self._deny_command(
+                command=command,
                 reason=f"Duplicate {repr(command.order.client_order_id)}")
             return  # Denied
 
         # Cache order
-        # *** Do not complete additional risk checks before here ***
         self.cache.add_order(command.order, command.position_id)
 
         # Check position exists
         if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
-            self._deny_order(
-                order=command.order,
+            self._deny_command(
+                command=command,
                 reason=f"{repr(command.position_id)} does not exist",
             )
             return  # Denied
@@ -363,8 +363,8 @@ cdef class RiskEngine(Component):
         # Get instrument for order
         cdef Instrument instrument = self._exec_engine.cache.instrument(command.order.instrument_id)
         if instrument is None:
-            self._deny_order(
-                order=command.order,
+            self._deny_command(
+                command=command,
                 reason=f"no instrument found for {command.instrument_id}",
             )
             return  # Denied
@@ -384,19 +384,19 @@ cdef class RiskEngine(Component):
 
         # Check IDs for duplicates
         if not self._check_order_id(entry):
-            self._deny_bracket_order(
-                command.bracket_order,
-                f"Duplicate {repr(entry.client_order_id)}")
+            self._deny_command(
+                command=command,
+                reason=f"Duplicate {repr(entry.client_order_id)}")
             return  # Denied
         if not self._check_order_id(stop_loss):
-            self._deny_bracket_order(
-                command.bracket_order,
-                f"Duplicate {repr(stop_loss.client_order_id)}")
+            self._deny_command(
+                command=command,
+                reason=f"Duplicate {repr(stop_loss.client_order_id)}")
             return  # Denied
         if not self._check_order_id(take_profit):
-            self._deny_bracket_order(
-                command.bracket_order,
-                f"Duplicate {repr(take_profit.client_order_id)}")
+            self._deny_command(
+                command=command,
+                reason=f"Duplicate {repr(take_profit.client_order_id)}")
             return  # Denied
 
         # Cache all orders
@@ -412,8 +412,8 @@ cdef class RiskEngine(Component):
         # Get instrument for orders
         cdef Instrument instrument = self._exec_engine.cache.instrument(command.instrument_id)
         if instrument is None:
-            self._deny_bracket_order(
-                bracket_order=command.bracket_order,
+            self._deny_command(
+                command=command,
                 reason=f"no instrument found for {command.instrument_id}",
             )
             return  # Denied
@@ -435,65 +435,69 @@ cdef class RiskEngine(Component):
         # Validate command
         ########################################################################
         if self.cache.is_order_completed(command.client_order_id):
-            self._log.error(
-                f"UpdateOrder DENIED: {repr(command.client_order_id)} already completed.",
+            self._deny_command(
+                command=command,
+                reason=f"{repr(command.client_order_id)} already completed",
             )
-            return  # Invalid command
+            return  # Denied
 
         # Get instrument for orders
         cdef Instrument instrument = self._exec_engine.cache.instrument(command.instrument_id)
         if instrument is None:
-            self._log.error(
-                f"UpdateOrder DENIED: no instrument found for {command.instrument_id}.",
+            self._deny_command(
+                command=command,
+                reason=f"no instrument found for {command.instrument_id}",
             )
-            return  # Invalid command
+            return  # Denied
 
         cdef str risk_msg = None
 
         # Check price
         risk_msg = self._check_price(instrument, command.price)
         if risk_msg:
-            self._log.error(f"UpdateOrder DENIED: {risk_msg}.")
-            return  # Invalid command
+            self._deny_command(command=command, reason=risk_msg)
+            return  # Denied
 
         # Check trigger
         risk_msg = self._check_price(instrument, command.trigger)
         if risk_msg:
-            self._log.error(f"UpdateOrder DENIED: {risk_msg}.")
-            return  # Invalid command
+            self._deny_command(command=command, reason=risk_msg)
+            return  # Denied
 
         # Check quantity
         risk_msg = self._check_quantity(instrument, command.quantity)
         if risk_msg:
-            self._log.error(f"UpdateOrder DENIED: {risk_msg}.")
-            return  # Invalid command
+            self._deny_command(command=command, reason=risk_msg)
+            return  # Denied
 
         # Get order relating to update
         cdef Order order = self.cache.order(command.client_order_id)
         if order is None:
-            self._log.error(
-                f"UpdateOrder DENIED: {command.client_order_id} not found in cache."
+            self._deny_command(
+                command=command,
+                reason=f"{command.client_order_id} not found in cache",
             )
-            return  # Invalid command
+            return  # Denied
 
         # Check TradingState
         if self.trading_state == TradingState.HALTED:
-            self._log.error(
-                "UpdateOrder DENIED: TradingState is HALTED."
+            self._deny_command(
+                command=command,
+                reason="TradingState is HALTED",
             )
             return  # Denied
         elif self.trading_state == TradingState.REDUCING:
             if command.quantity and command.quantity > order.quantity:
                 if order.is_buy_c() and self._portfolio.is_net_long(instrument.id):
-                    self._log.error(
-                        "UpdateOrder DENIED: "
-                        "TradingState is REDUCING and update will increase exposure."
+                    self._deny_command(
+                        command=command,
+                        reason="TradingState is REDUCING and update will increase exposure",
                     )
                     return  # Denied
                 elif order.is_sell_c() and self._portfolio.is_net_short(instrument.id):
-                    self._log.error(
-                        "UpdateOrder DENIED: "
-                        "TradingState is REDUCING and update will increase exposure."
+                    self._deny_command(
+                        command=command,
+                        reason="TradingState is REDUCING and update will increase exposure",
                     )
                     return  # Denied
 
@@ -505,15 +509,22 @@ cdef class RiskEngine(Component):
         # Validate command
         ########################################################################
         if self.cache.is_order_completed(command.client_order_id):
-            self._log.error(
-                f"CancelOrder DENIED: {repr(command.client_order_id)} already completed.",
+            self._deny_command(
+                command=command,
+                reason=f"{repr(command.client_order_id)} already completed",
             )
-            return  # Invalid command
+            return  # Denied
 
         # All checks passed: send for execution
         self._exec_engine.execute(command)
 
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
+
+    cdef bint _check_order_id(self, Order order) except *:
+        if order is None or not self.cache.order_exists(order.client_order_id):
+            return True  # Check passed
+        else:
+            return False  # Check failed (duplicate ID)
 
     cdef bint _check_order(self, Instrument instrument, Order order) except *:
         ########################################################################
@@ -531,12 +542,6 @@ cdef class RiskEngine(Component):
             return False  # Denied
 
         return True  # Check passed
-
-    cdef bint _check_order_id(self, Order order) except *:
-        if order is None or not self.cache.order_exists(order.client_order_id):
-            return True  # Check passed
-        else:
-            return False  # Check failed (duplicate ID)
 
     cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *:
         cdef str risk_msg = self._check_quantity(instrument, order.quantity)
@@ -638,9 +643,9 @@ cdef class RiskEngine(Component):
         elif isinstance(command, SubmitBracketOrder):
             self._deny_bracket_order(command.bracket_order, reason=reason)
         elif isinstance(command, UpdateOrder):
-            self._log.error(f"UpdateOrder DENIED: {reason}")
+            self._log.error(f"UpdateOrder DENIED: {reason}.")
         elif isinstance(command, CancelOrder):
-            self._log.error(f"CancelOrder DENIED: {reason}")
+            self._log.error(f"CancelOrder DENIED: {reason}.")
 
     cpdef _deny_new_order(self, TradingCommand command):
         if isinstance(command, SubmitOrder):
@@ -656,7 +661,7 @@ cdef class RiskEngine(Component):
             return
 
         if order.state_c() != OrderState.INITIALIZED:
-            # Already denied or duplicated
+            # Already denied or duplicated (INITIALIZED -> DENIED only valid state transition)
             return
 
         if not self.cache.order_exists(order.client_order_id):
