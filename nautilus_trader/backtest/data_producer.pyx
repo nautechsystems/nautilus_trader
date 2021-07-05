@@ -268,10 +268,10 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 max_timestamp = max(self._quote_tick_data.index.max(), self._trade_tick_data.index.max())
 
         if min_timestamp is None:
-            min_timestamp = as_utc_timestamp(pd.Timestamp.max)
+            min_timestamp = as_utc_timestamp(pd.Timestamp.max - timedelta(days=1))
 
         if max_timestamp is None:
-            max_timestamp = as_utc_timestamp(pd.Timestamp.min)
+            max_timestamp = as_utc_timestamp(pd.Timestamp.min + timedelta(days=1))
 
         self.min_timestamp_ns = dt_to_unix_nanos(min_timestamp)
         self.max_timestamp_ns = dt_to_unix_nanos(max_timestamp)
