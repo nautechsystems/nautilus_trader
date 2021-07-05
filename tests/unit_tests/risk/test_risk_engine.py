@@ -39,6 +39,7 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders.bracket import BracketOrder
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -167,6 +168,8 @@ class TestRiskEngine:
         )
 
         self.exec_engine.process(random)
+
+    # -- SUBMIT ORDER TESTS ----------------------------------------------------------------------------
 
     def test_submit_order_with_default_settings_then_sends_to_client(self):
         # Arrange
@@ -725,6 +728,45 @@ class TestRiskEngine:
         assert self.portfolio.is_net_short(AUDUSD_SIM.id)
         assert self.exec_engine.command_count == 1  # <-- command never reaches engine
 
+    def test_submit_order_when_trading_halted_then_denies_order(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER-000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        submit_order = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Halt trading
+        self.risk_engine.set_trading_state(TradingState.HALTED)
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert self.risk_engine.command_count == 1  # <-- command never reaches engine
+
+    # -- SUBMIT BRACKET ORDER TESTS --------------------------------------------------------------------
+
     def test_submit_bracket_with_default_settings_sends_to_client(self):
         # Arrange
         self.exec_engine.start()
@@ -765,7 +807,7 @@ class TestRiskEngine:
         assert self.exec_engine.command_count == 1
         assert self.exec_client.calls == ["connect", "submit_bracket_order"]
 
-    def test_submit_order_when_trading_halted_then_denies_order(self):
+    def test_submit_bracket_order_with_duplicate_entry_id_then_denies(self):
         # Arrange
         self.exec_engine.start()
 
@@ -778,29 +820,238 @@ class TestRiskEngine:
 
         self.exec_engine.register_strategy(strategy)
 
-        order = strategy.order_factory.market(
+        entry = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
         )
 
-        submit_order = SubmitOrder(
+        bracket = strategy.order_factory.bracket(
+            entry_order=entry,
+            stop_loss=Price.from_str("1.00000"),
+            take_profit=Price.from_str("1.00010"),
+        )
+
+        submit_bracket = SubmitBracketOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
-            order,
+            bracket,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
 
-        # Halt trading
-        self.risk_engine.set_trading_state(TradingState.HALTED)
+        self.risk_engine.execute(submit_bracket)
 
         # Act
-        self.risk_engine.execute(submit_order)
+        self.risk_engine.execute(submit_bracket)
 
         # Assert
-        assert self.risk_engine.command_count == 1  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 1  # <-- command never reaches engine
+
+    def test_submit_bracket_order_with_duplicate_stop_loss_id_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER-000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        entry1 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        stop_loss = strategy.order_factory.stop_market(  # <-- duplicate
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        take_profit1 = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.10000"),
+        )
+
+        entry2 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        take_profit2 = strategy.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.10000"),
+        )
+
+        bracket1 = BracketOrder(
+            entry=entry1,
+            stop_loss=stop_loss,
+            take_profit=take_profit1,
+        )
+
+        bracket2 = BracketOrder(
+            entry=entry2,
+            stop_loss=stop_loss,
+            take_profit=take_profit2,
+        )
+
+        submit_bracket1 = SubmitBracketOrder(
+            self.trader_id,
+            strategy.id,
+            bracket1,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        submit_bracket2 = SubmitBracketOrder(
+            self.trader_id,
+            strategy.id,
+            bracket2,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_bracket1)
+
+        # Act
+        self.risk_engine.execute(submit_bracket2)
+
+        # Assert
+        assert self.exec_engine.command_count == 1  # <-- command never reaches engine
+
+    def test_submit_bracket_order_with_duplicate_take_profit_id_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER-000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        entry1 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        stop_loss1 = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        take_profit = strategy.order_factory.limit(  # <-- duplicate
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.10000"),
+        )
+
+        entry2 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        stop_loss2 = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        bracket1 = BracketOrder(
+            entry=entry1,
+            stop_loss=stop_loss1,
+            take_profit=take_profit,
+        )
+
+        bracket2 = BracketOrder(
+            entry=entry2,
+            stop_loss=stop_loss2,
+            take_profit=take_profit,
+        )
+
+        submit_bracket1 = SubmitBracketOrder(
+            self.trader_id,
+            strategy.id,
+            bracket1,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        submit_bracket2 = SubmitBracketOrder(
+            self.trader_id,
+            strategy.id,
+            bracket2,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_bracket1)
+
+        # Act
+        self.risk_engine.execute(submit_bracket2)
+
+        # Assert
+        assert self.exec_engine.command_count == 1  # <-- command never reaches engine
+
+    def test_submit_bracket_order_when_instrument_not_in_cache_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register_trader(
+            TraderId("TESTER-000"),
+            self.clock,
+            self.logger,
+        )
+
+        self.exec_engine.register_strategy(strategy)
+
+        entry = strategy.order_factory.market(
+            GBPUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        bracket = strategy.order_factory.bracket(
+            entry_order=entry,
+            stop_loss=Price.from_str("1.00000"),
+            take_profit=Price.from_str("1.00010"),
+        )
+
+        submit_bracket = SubmitBracketOrder(
+            self.trader_id,
+            strategy.id,
+            bracket,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_bracket)
+
+        # Assert
+        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+
+    # -- UPDATE ORDER TESTS ----------------------------------------------------------------------------
 
     def test_update_order_with_default_settings_then_sends_to_client(self):
         # Arrange
@@ -854,6 +1105,8 @@ class TestRiskEngine:
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2
 
+    # -- CANCEL ORDER TESTS ----------------------------------------------------------------------------
+
     def test_cancel_order_with_default_settings_then_sends_to_client(self):
         # Arrange
         self.exec_engine.start()
@@ -901,47 +1154,3 @@ class TestRiskEngine:
         assert self.exec_client.calls == ["connect", "submit_order", "cancel_order"]
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2
-
-    def test_submit_bracket_when_trading_halted_then_denies(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
-        )
-
-        self.exec_engine.register_strategy(strategy)
-
-        entry = strategy.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        bracket = strategy.order_factory.bracket(
-            entry_order=entry,
-            stop_loss=Price.from_str("1.00000"),
-            take_profit=Price.from_str("1.00010"),
-        )
-
-        submit_bracket = SubmitBracketOrder(
-            self.trader_id,
-            strategy.id,
-            bracket,
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
-        )
-
-        # Halt trading
-        self.risk_engine.set_trading_state(TradingState.HALTED)
-
-        # Act
-        self.risk_engine.execute(submit_bracket)
-
-        # Assert
-        assert self.exec_client.calls == ["connect"]
-        assert self.risk_engine.command_count == 1
-        assert self.exec_engine.event_count == 3
