@@ -781,9 +781,6 @@ cdef class TradingStrategy(Component):
             self.log.exception(ex)
             raise
 
-    cpdef void send_data(self, GenericData data):
-        self._send_data(data=data)
-
     # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_data(self, ClientId client_id, DataType data_type) except *:
@@ -2146,11 +2143,6 @@ cdef class TradingStrategy(Component):
                 raise
 
     # -- INTERNAL --------------------------------------------------------------------------------------
-    cdef inline void _send_data(self, GenericData data) except *:
-        if not self.log.is_bypassed:
-            self.log.info(f"[DATA]{SENT} {data}.")
-        self._data_engine.process(data)
-
     cdef void _send_data_cmd(self, DataCommand command) except *:
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
