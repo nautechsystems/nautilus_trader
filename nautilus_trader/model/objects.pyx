@@ -544,7 +544,6 @@ cdef class Money(BaseDecimal):
         str
 
         """
-        # TODO(cs): Refactor - replace with faster formatting
         return f"{self._value:,} {self.currency}".replace(",", "_")
 
 
