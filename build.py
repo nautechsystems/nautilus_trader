@@ -42,8 +42,9 @@ print(
 # https://cython.readthedocs.io/en/latest/src/userguide/source_files_and_compilation.html
 
 Options.docstrings = True  # Include docstrings in modules
+Options.fast_fail = True  # Abort the compilation on the first error occurred
 Options.emit_code_comments = True
-Options.annotate = ANNOTATION_MODE  # Create annotated html files for each .pyx
+Options.annotate = ANNOTATION_MODE  # Create annotated HTML files for each .pyx
 if ANNOTATION_MODE:
     Options.annotate_coverage_xml = "coverage.xml"
 Options.fast_fail = True  # Abort compilation on first error
