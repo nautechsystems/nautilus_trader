@@ -63,9 +63,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(BarAggregation.TICK, self.tick_builder.resolution)
         self.assertEqual(1000, len(ticks))
-        self.assertEqual(
-            Timestamp("2013-01-01 22:02:35.907000", tz="UTC"), ticks.iloc[1].name
-        )
+        self.assertEqual(Timestamp("2013-01-01 22:02:35.907000", tz="UTC"), ticks.iloc[1].name)
 
     def test_pre_process_with_bar_data(self):
         # Arrange
@@ -97,9 +95,7 @@ class QuoteTickDataWranglerTests(unittest.TestCase):
             Timestamp("2013-01-31 23:59:59.900000+0000", tz="UTC"),
             tick_data.iloc[2].name,
         )
-        self.assertEqual(
-            Timestamp("2013-02-01 00:00:00+0000", tz="UTC"), tick_data.iloc[3].name
-        )
+        self.assertEqual(Timestamp("2013-02-01 00:00:00+0000", tz="UTC"), tick_data.iloc[3].name)
         self.assertEqual(0, tick_data.iloc[0]["instrument_id"])
         self.assertEqual("1000000", tick_data.iloc[0]["bid_size"])
         self.assertEqual("1000000", tick_data.iloc[0]["ask_size"])
@@ -184,9 +180,7 @@ class TradeTickDataWranglerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(69806, len(ticks))
-        self.assertEqual(
-            Timestamp("2020-08-14 10:00:00.223000+0000", tz="UTC"), ticks.iloc[0].name
-        )
+        self.assertEqual(Timestamp("2020-08-14 10:00:00.223000+0000", tz="UTC"), ticks.iloc[0].name)
 
     def test_build_ticks(self):
         # Arrange
@@ -292,9 +286,7 @@ class TardisQuoteDataWranglerTests(unittest.TestCase):
         # Assert
         self.assertEqual(BarAggregation.TICK, self.tick_builder.resolution)
         self.assertEqual(9999, len(ticks))
-        self.assertEqual(
-            Timestamp("2020-02-22 00:00:03.522418+0000", tz="UTC"), ticks.iloc[1].name
-        )
+        self.assertEqual(Timestamp("2020-02-22 00:00:03.522418+0000", tz="UTC"), ticks.iloc[1].name)
         self.assertEqual("0.670000", ticks.bid_size[0])
         self.assertEqual("0.840000", ticks.ask_size[0])
         self.assertEqual("9681.92", ticks.bid[0])
@@ -332,9 +324,7 @@ class TardisTradeDataWranglerTests(unittest.TestCase):
 
         # Assert
         self.assertEqual(9999, len(ticks))
-        self.assertEqual(
-            Timestamp("2020-02-22 00:00:02.418379+0000", tz="UTC"), ticks.iloc[0].name
-        )
+        self.assertEqual(Timestamp("2020-02-22 00:00:02.418379+0000", tz="UTC"), ticks.iloc[0].name)
 
     def test_build_ticks(self):
         # Arrange

@@ -184,9 +184,7 @@ def test_data_loader_csv(catalog_dir):
 
     loader = DataLoader(
         path=TEST_DATA_DIR,
-        parser=CSVParser(
-            parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id())
-        ),
+        parser=CSVParser(parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id())),
         chunk_size=100 ** 2,
         glob_pattern="truefx-usd*.csv",
     )
@@ -214,9 +212,7 @@ def test_data_catalog_instruments_df(catalog):
 
 
 def test_data_catalog_instruments_no_partition(catalog):
-    assert not pq.ParquetDataset(
-        catalog.root / "betting_instrument.parquet/"
-    ).partitions.levels
+    assert not pq.ParquetDataset(catalog.root / "betting_instrument.parquet/").partitions.levels
 
 
 def test_data_catalog_instruments_as_nautilus(catalog):
@@ -231,10 +227,7 @@ def test_data_catalog_metadata(catalog):
 
 def test_data_catalog_dataset_types(catalog):
     dataset = ds.dataset(catalog.root / "trade_tick.parquet")
-    schema = {
-        n: t.__class__.__name__
-        for n, t in zip(dataset.schema.names, dataset.schema.types)
-    }
+    schema = {n: t.__class__.__name__ for n, t in zip(dataset.schema.names, dataset.schema.types)}
     expected = {
         "type": "DictionaryType",
         "price": "DataType",
@@ -297,10 +290,7 @@ def test_data_catalog_parquet(catalog_dir):
 
 def test_data_catalog_filter(catalog):
     assert len(catalog.order_book_deltas()) == 2384
-    assert (
-        len(catalog.order_book_deltas(filter_expr=ds.field("delta_type") == "DELETE"))
-        == 351
-    )
+    assert len(catalog.order_book_deltas(filter_expr=ds.field("delta_type") == "DELETE")) == 351
 
 
 def test_data_catalog_parquet_dtypes(catalog):
@@ -384,17 +374,13 @@ def test_data_loader_generic_data(catalog_dir):
     )
     catalog = DataCatalog()
     catalog.import_from_data_loader(loader=loader)
-    df = catalog.generic_data(
-        name="news_event", filter_expr=ds.field("currency") == "USD"
-    )
+    df = catalog.generic_data(name="news_event", filter_expr=ds.field("currency") == "USD")
     assert len(df) == 22925
 
 
 def test_data_catalog_append(catalog_dir):
     catalog = DataCatalog()
-    instrument_data = json.loads(
-        open(TEST_DATA_DIR + "/crypto_instruments.json").read()
-    )
+    instrument_data = json.loads(open(TEST_DATA_DIR + "/crypto_instruments.json").read())
 
     objects = []
     for data in instrument_data:

@@ -40,9 +40,7 @@ def test_betfair_orderbook(betfair_data_client, provider):
                     book.apply_deltas(message)
                 elif isinstance(message, OrderBookDelta):
                     book.apply_delta(message)
-                elif isinstance(
-                    message, (TradeTick, InstrumentStatusUpdate, InstrumentClosePrice)
-                ):
+                elif isinstance(message, (TradeTick, InstrumentStatusUpdate, InstrumentClosePrice)):
                     pass
                 else:
                     raise NotImplementedError(str(type(message)))

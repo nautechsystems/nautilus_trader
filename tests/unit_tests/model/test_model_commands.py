@@ -105,9 +105,7 @@ class TestCommands:
         )
 
         # Act, Assert
-        assert (
-            SubmitBracketOrder.from_dict(SubmitBracketOrder.to_dict(command)) == command
-        )
+        assert SubmitBracketOrder.from_dict(SubmitBracketOrder.to_dict(command)) == command
         assert (
             f"SubmitBracketOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_link_id=BO-19700101-000000-000-001-1, command_id={uuid})"  # noqa
             == str(command)

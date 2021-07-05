@@ -173,9 +173,7 @@ class TestStubs:
 
     @staticmethod
     def bartype_btcusdt_binance_100tick_last() -> BarType:
-        return BarType(
-            TestStubs.btcusdt_binance_id(), TestStubs.bar_spec_100tick_last()
-        )
+        return BarType(TestStubs.btcusdt_binance_id(), TestStubs.bar_spec_100tick_last())
 
     @staticmethod
     def bar_5decimal() -> Bar:
@@ -208,9 +206,7 @@ class TestStubs:
         instrument_id=None, bid=None, ask=None, bid_volume=None, ask_volume=None
     ) -> QuoteTick:
         return QuoteTick(
-            instrument_id=instrument_id
-            if instrument_id is not None
-            else TestStubs.usdjpy_id(),
+            instrument_id=instrument_id if instrument_id is not None else TestStubs.usdjpy_id(),
             bid=bid or Price.from_str("90.002"),
             ask=ask or Price.from_str("90.005"),
             bid_size=bid_volume or Quantity.from_int(1_000_000),
@@ -222,9 +218,7 @@ class TestStubs:
     @staticmethod
     def quote_tick_5decimal(instrument_id=None, bid=None, ask=None) -> QuoteTick:
         return QuoteTick(
-            instrument_id=instrument_id
-            if instrument_id is not None
-            else TestStubs.audusd_id(),
+            instrument_id=instrument_id if instrument_id is not None else TestStubs.audusd_id(),
             bid=bid or Price.from_str("1.00001"),
             ask=ask or Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1_000_000),
@@ -303,14 +297,8 @@ class TestStubs:
         return OrderBookSnapshot(
             instrument_id=instrument_id or TestStubs.audusd_id(),
             level=level,
-            bids=[
-                (float(bid_price - i), float(bid_volume * (1 + i)))
-                for i in range(bid_levels)
-            ],
-            asks=[
-                (float(ask_price + i), float(ask_volume * (1 + i)))
-                for i in range(ask_levels)
-            ],
+            bids=[(float(bid_price - i), float(bid_volume * (1 + i))) for i in range(bid_levels)],
+            asks=[(float(ask_price + i), float(ask_volume * (1 + i))) for i in range(ask_levels)],
             ts_event_ns=0,
             ts_recv_ns=0,
         )

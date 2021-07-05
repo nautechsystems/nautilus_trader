@@ -513,6 +513,4 @@ def test_get_quote_volume_for_price(sample_book, is_buy, price, expected):
     ],
 )
 def test_get_vwap_for_volume(sample_book, is_buy, volume, expected):
-    assert sample_book.get_vwap_for_volume(is_buy, volume) == pytest.approx(
-        expected, 0.01
-    )
+    assert sample_book.get_vwap_for_volume(is_buy, volume) == pytest.approx(expected, 0.01)

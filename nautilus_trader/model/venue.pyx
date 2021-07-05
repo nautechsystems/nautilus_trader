@@ -15,6 +15,8 @@
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType
+from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseTypeParser
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatusParser
 from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
@@ -23,11 +25,6 @@ from nautilus_trader.model.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
-
-
-# These imports are currently being skipped from sorting as isort 5.9.1 was breaking on them
-from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType  # isort:skip
-from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseTypeParser  # isort:skip
 
 
 cdef class StatusUpdate(Data):

@@ -195,9 +195,7 @@ def betfair_account_state(betfair_client, uuid):
 
 @pytest.fixture()
 def betfair_order_socket(betfair_client, live_logger):
-    return BetfairOrderStreamClient(
-        client=betfair_client, logger=live_logger, message_handler=None
-    )
+    return BetfairOrderStreamClient(client=betfair_client, logger=live_logger, message_handler=None)
 
 
 @pytest.fixture()

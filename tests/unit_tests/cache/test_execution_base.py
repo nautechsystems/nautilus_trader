@@ -45,9 +45,7 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
         )
 
     def test_account_when_not_implemented_raises_exception(self):
-        self.assertRaises(
-            NotImplementedError, self.facade.account, AccountId("SIM", "000")
-        )
+        self.assertRaises(NotImplementedError, self.facade.account, AccountId("SIM", "000"))
 
     def test_account_for_venue_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.account_for_venue, SIM)
@@ -80,14 +78,10 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
         self.assertRaises(NotImplementedError, self.facade.strategy_ids)
 
     def test_order_when_not_implemented_raises_exception(self):
-        self.assertRaises(
-            NotImplementedError, self.facade.order, ClientOrderId("O-123456")
-        )
+        self.assertRaises(NotImplementedError, self.facade.order, ClientOrderId("O-123456"))
 
     def test_cld_ord_id_when_not_implemented_raises_exception(self):
-        self.assertRaises(
-            NotImplementedError, self.facade.client_order_id, VenueOrderId("1")
-        )
+        self.assertRaises(NotImplementedError, self.facade.client_order_id, VenueOrderId("1"))
 
     def test_order_id_when_not_implemented_raises_exception(self):
         self.assertRaises(
@@ -104,9 +98,7 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
         self.assertRaises(NotImplementedError, self.facade.orders_completed)
 
     def test_order_exists_when_not_implemented_raises_exception(self):
-        self.assertRaises(
-            NotImplementedError, self.facade.order_exists, ClientOrderId("O-123456")
-        )
+        self.assertRaises(NotImplementedError, self.facade.order_exists, ClientOrderId("O-123456"))
 
     def test_is_order_working_when_not_implemented_raises_exception(self):
         self.assertRaises(
@@ -130,14 +122,10 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
         self.assertRaises(NotImplementedError, self.facade.orders_completed_count)
 
     def test_position_when_not_implemented_raises_exception(self):
-        self.assertRaises(
-            NotImplementedError, self.facade.position, PositionId("P-123456")
-        )
+        self.assertRaises(NotImplementedError, self.facade.position, PositionId("P-123456"))
 
     def test_position_id_when_not_implemented_raises_exception(self):
-        self.assertRaises(
-            NotImplementedError, self.facade.position_id, ClientOrderId("O-123456")
-        )
+        self.assertRaises(NotImplementedError, self.facade.position_id, ClientOrderId("O-123456"))
 
     def test_positions_when_not_implemented_raises_exception(self):
         self.assertRaises(NotImplementedError, self.facade.positions)
@@ -149,14 +137,10 @@ class ExecutionCacheFacadeTests(unittest.TestCase):
         self.assertRaises(NotImplementedError, self.facade.positions_closed)
 
     def test_position_exists_when_not_implemented_raises_exception(self):
-        self.assertRaises(
-            NotImplementedError, self.facade.position_exists, PositionId("P-123456")
-        )
+        self.assertRaises(NotImplementedError, self.facade.position_exists, PositionId("P-123456"))
 
     def test_is_position_open_when_not_implemented_raises_exception(self):
-        self.assertRaises(
-            NotImplementedError, self.facade.is_position_open, PositionId("P-123456")
-        )
+        self.assertRaises(NotImplementedError, self.facade.is_position_open, PositionId("P-123456"))
 
     def test_is_position_closed_when_not_implemented_raises_exception(self):
         self.assertRaises(

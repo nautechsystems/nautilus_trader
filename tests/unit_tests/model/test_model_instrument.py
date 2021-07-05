@@ -393,9 +393,7 @@ class TestInstrument:
             [True, Money(-25.00, USD)],  # Negative commission = credit
         ],
     )
-    def test_calculate_commission_for_inverse_maker_crypto(
-        self, inverse_as_quote, expected
-    ):
+    def test_calculate_commission_for_inverse_maker_crypto(self, inverse_as_quote, expected):
         # Arrange
         instrument = TestInstrumentProvider.xbtusd_bitmex()
 

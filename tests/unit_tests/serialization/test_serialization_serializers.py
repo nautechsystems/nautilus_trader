@@ -419,11 +419,7 @@ class TestMsgPackEventSerializer:
             account_type=AccountType.MARGIN,
             base_currency=USD,
             reported=True,
-            balances=[
-                AccountBalance(
-                    USD, Money(1525000, USD), Money(0, USD), Money(1525000, USD)
-                )
-            ],
+            balances=[AccountBalance(USD, Money(1525000, USD), Money(0, USD), Money(1525000, USD))],
             info={},
             event_id=uuid4(),
             ts_updated_ns=0,

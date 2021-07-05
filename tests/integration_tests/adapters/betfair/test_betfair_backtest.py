@@ -53,28 +53,21 @@ def create_engine(instruments, data):
         engine.add_instrument(instrument)
 
         ob_data = [
-            d
-            for d in data
-            if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
+            d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
         ]
         engine.add_order_book_data(ob_data)
 
         trade_data = [
-            d
-            for d in data
-            if isinstance(d, TradeTick) and d.instrument_id == instrument.id
+            d for d in data if isinstance(d, TradeTick) and d.instrument_id == instrument.id
         ]
         engine.add_trade_tick_objects(instrument_id=instrument.id, data=trade_data)
 
         instrument_status_updates = [
             d
             for d in data
-            if isinstance(d, InstrumentStatusUpdate)
-            and d.instrument_id == instrument.id
+            if isinstance(d, InstrumentStatusUpdate) and d.instrument_id == instrument.id
         ]
-        engine.add_data(
-            client_id=ClientId(BETFAIR_VENUE.value), data=instrument_status_updates
-        )
+        engine.add_data(client_id=ClientId(BETFAIR_VENUE.value), data=instrument_status_updates)
 
         closing_prices = [
             d
@@ -104,9 +97,7 @@ def test_betfair_backtest(instrument_provider):
     all_data = BetfairTestStubs.parsed_market_updates(instrument_provider)
 
     # Create strategy
-    strategy = OrderBookImbalanceStrategy(
-        instrument_id=instruments[0].id, trade_size=20
-    )
+    strategy = OrderBookImbalanceStrategy(instrument_id=instruments[0].id, trade_size=20)
 
     engine = create_engine(instruments=instruments, data=all_data)
     engine.run(strategies=[strategy])

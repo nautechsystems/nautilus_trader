@@ -53,13 +53,9 @@ class TestVenue:
         )
 
         # Act, Assert
-        assert (
-            InstrumentStatusUpdate.from_dict(InstrumentStatusUpdate.to_dict(update))
-            == update
-        )
-        assert (
-            "InstrumentStatusUpdate(instrument_id=BTC/USDT.BINANCE, status=PAUSE)"
-            == repr(update)
+        assert InstrumentStatusUpdate.from_dict(InstrumentStatusUpdate.to_dict(update)) == update
+        assert "InstrumentStatusUpdate(instrument_id=BTC/USDT.BINANCE, status=PAUSE)" == repr(
+            update
         )
 
     def test_instrument_close_price(self):
@@ -73,10 +69,7 @@ class TestVenue:
         )
 
         # Act, Assert
-        assert (
-            InstrumentClosePrice.from_dict(InstrumentClosePrice.to_dict(update))
-            == update
-        )
+        assert InstrumentClosePrice.from_dict(InstrumentClosePrice.to_dict(update)) == update
         assert (
             "InstrumentClosePrice(instrument_id=BTC/USDT.BINANCE, close_price=100, close_type=EXPIRED)"
             == repr(update)

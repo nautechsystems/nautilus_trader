@@ -117,9 +117,7 @@ class TestDataProvider:
     def l1_feed():
         updates = []
         for _, row in TestDataProvider.usdjpy_ticks().iterrows():
-            for side, order_side in zip(
-                ("bid", "ask"), (OrderSide.BUY, OrderSide.SELL)
-            ):
+            for side, order_side in zip(("bid", "ask"), (OrderSide.BUY, OrderSide.SELL)):
                 updates.append(
                     {
                         "op": "update",
@@ -239,11 +237,7 @@ class TestDataProvider:
 
     @staticmethod
     def betfair_trade_ticks():
-        return [
-            msg["trade"]
-            for msg in TestDataProvider.l2_feed()
-            if msg.get("op") == "trade"
-        ]
+        return [msg["trade"] for msg in TestDataProvider.l2_feed() if msg.get("op") == "trade"]
 
 
 class TestInstrumentProvider:

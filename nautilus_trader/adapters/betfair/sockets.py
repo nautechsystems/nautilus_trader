@@ -112,9 +112,7 @@ class BetfairOrderStreamClient(BetfairStreamClient):
 
 
 class BetfairMarketStreamClient(BetfairStreamClient):
-    def __init__(
-        self, client: APIClient, logger: Logger, message_handler: callable, **kwargs
-    ):
+    def __init__(self, client: APIClient, logger: Logger, message_handler: callable, **kwargs):
         self.subscription_message = None
         super().__init__(
             client=client,

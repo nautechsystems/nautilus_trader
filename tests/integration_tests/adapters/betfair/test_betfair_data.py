@@ -105,9 +105,7 @@ def test_market_sub_image_market_def(betfair_data_client, data_engine):
 
 
 def test_market_sub_image_no_market_def(betfair_data_client, data_engine):
-    betfair_data_client._on_market_update(
-        BetfairTestStubs.streaming_mcm_SUB_IMAGE_no_market_def()
-    )
+    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_SUB_IMAGE_no_market_def())
     result = Counter([type(event).__name__ for event in data_engine.events])
     expected = Counter(
         {
@@ -160,10 +158,7 @@ def test_market_update_live_image(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_IMAGE())
     result = [type(event).__name__ for event in data_engine.events]
     expected = (
-        ["OrderBookSnapshot"]
-        + ["TradeTick"] * 13
-        + ["OrderBookSnapshot"]
-        + ["TradeTick"] * 17
+        ["OrderBookSnapshot"] + ["TradeTick"] * 13 + ["OrderBookSnapshot"] + ["TradeTick"] * 17
     )
     assert result == expected
 
@@ -292,10 +287,7 @@ def test_instrument_closing_events(data_engine, betfair_data_client):
         isinstance(messages[0], InstrumentStatusUpdate)
         and messages[0].status == InstrumentStatus.CLOSED
     )
-    assert (
-        isinstance(messages[1], InstrumentClosePrice)
-        and messages[1].close_price == 1.0000
-    )
+    assert isinstance(messages[1], InstrumentClosePrice) and messages[1].close_price == 1.0000
     assert (
         isinstance(messages[1], InstrumentClosePrice)
         and messages[1].close_type == InstrumentCloseType.EXPIRED
@@ -304,9 +296,7 @@ def test_instrument_closing_events(data_engine, betfair_data_client):
         isinstance(messages[2], InstrumentStatusUpdate)
         and messages[2].status == InstrumentStatus.CLOSED
     )
-    assert (
-        isinstance(messages[3], InstrumentClosePrice) and messages[3].close_price == 0.0
-    )
+    assert isinstance(messages[3], InstrumentClosePrice) and messages[3].close_price == 0.0
     assert (
         isinstance(messages[3], InstrumentClosePrice)
         and messages[3].close_type == InstrumentCloseType.EXPIRED

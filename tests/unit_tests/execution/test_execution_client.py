@@ -165,9 +165,7 @@ class ExecutionClientTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.assertRaises(
-            NotImplementedError, self.client.submit_bracket_order, command
-        )
+        self.assertRaises(NotImplementedError, self.client.submit_bracket_order, command)
 
     def test_update_order_raises_not_implemented_error(self):
         # Arrange

@@ -122,23 +122,17 @@ def test_repr(asks):
 
 
 def test_simulate_order_fills_no_trade(asks):
-    fills = asks.simulate_order_fills(
-        order=Order(price=10, size=10, side=OrderSide.BUY, id="1")
-    )
+    fills = asks.simulate_order_fills(order=Order(price=10, size=10, side=OrderSide.BUY, id="1"))
     assert fills == []
 
 
 def test_simulate_order_fills_single(asks):
-    fills = asks.simulate_order_fills(
-        order=Order(price=15, size=10, side=OrderSide.BUY, id="1")
-    )
+    fills = asks.simulate_order_fills(order=Order(price=15, size=10, side=OrderSide.BUY, id="1"))
     assert fills == [(Price.from_str("15.0000"), Quantity.from_str("10.0000"))]
 
 
 def test_simulate_order_fills_multiple_levels(asks):
-    fills = asks.simulate_order_fills(
-        order=Order(price=20, size=20, side=OrderSide.BUY, id="1")
-    )
+    fills = asks.simulate_order_fills(order=Order(price=20, size=20, side=OrderSide.BUY, id="1"))
     expected = [
         (Price.from_str("15.0000"), Quantity.from_str("10.0000")),
         (Price.from_str("16.0000"), Quantity.from_str("10.0000")),
@@ -147,9 +141,7 @@ def test_simulate_order_fills_multiple_levels(asks):
 
 
 def test_simulate_order_fills_whole_ladder(asks):
-    fills = asks.simulate_order_fills(
-        order=Order(price=100, size=1000, side=OrderSide.BUY, id="1")
-    )
+    fills = asks.simulate_order_fills(order=Order(price=100, size=1000, side=OrderSide.BUY, id="1"))
     expected = [
         (Price.from_str("15.0000"), Quantity.from_str("10.0000")),
         (Price.from_str("16.0000"), Quantity.from_str("20.0000")),
@@ -169,9 +161,7 @@ def test_simulate_order_fills_l3():
     for order in orders:
         ladder.add(order)
 
-    fills = ladder.simulate_order_fills(
-        order=Order(price=16.5, size=4, side=OrderSide.BUY, id="1")
-    )
+    fills = ladder.simulate_order_fills(order=Order(price=16.5, size=4, side=OrderSide.BUY, id="1"))
     expected = [
         (Price.from_str("15.0000"), Quantity.from_str("1.0000")),
         (Price.from_str("16.0000"), Quantity.from_str("2.0000")),
