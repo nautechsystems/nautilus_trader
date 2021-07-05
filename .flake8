@@ -38,7 +38,7 @@ per-file-ignores =
 # ----------------------------
 # E225 missing whitespace around operator (picks up cython casting)
 # E226 missing whitespace around arithmetic operator (picks up C pointers)
-# E227 missing whitespace around bitwise or shift operator (picks up pointers)
+# E227 missing whitespace around bitwise or shift operator (picks up C pointers)
 # E999 SyntaxError: invalid syntax (cimport seen as invalid syntax)
 
 # Ignores justification
