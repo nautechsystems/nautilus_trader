@@ -389,6 +389,42 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._log.error(f"Cannot subscribe to externally aggregated bars "
                         f"(backtesting only supports internal aggregation at this stage).")
 
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to `InstrumentStatusUpdates` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to subscribe to.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot subscribe to trade ticks for {instrument_id} (not connected).")
+            return
+
+        # Do nothing else for backtest
+
+    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to `InstrumentClosePrice` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to subscribe to.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot subscribe to trade ticks for {instrument_id} (not connected).")
+            return
+
+        # Do nothing else for backtest
+
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
         """
         Unsubscribe from `Instrument` data for the given instrument ID.
@@ -482,6 +518,41 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         # Do nothing else for backtest
 
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `InstrumentStatusUpdates` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to unsubscribe from.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot unsubscribe from trade ticks for {instrument_id} (not connected).")
+            return
+
+        # Do nothing else for backtest
+
+    cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `InstrumentClosePrice` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to unsubscribe from.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(f"Cannot unsubscribe from trade ticks for {instrument_id} (not connected).")
+            return
+
+        # Do nothing else for backtest
 # -- REQUESTS --------------------------------------------------------------------------------------
 
     cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:

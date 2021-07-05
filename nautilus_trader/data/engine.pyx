@@ -73,6 +73,9 @@ from nautilus_trader.model.orderbook.book cimport OrderBookDeltas
 from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.venue cimport InstrumentClosePrice
+from nautilus_trader.model.venue cimport InstrumentStatusUpdate
+from nautilus_trader.model.venue cimport StatusUpdate
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -124,6 +127,8 @@ cdef class DataEngine(Component):
         self._trade_tick_handlers = {}        # type: dict[InstrumentId, list[callable]]
         self._bar_handlers = {}               # type: dict[BarType, list[callable]]
         self._data_handlers = {}              # type: dict[DataType, list[callable]]
+        self._status_update_handlers = {}     # type: dict[DataType, list[callable]]
+        self._close_price_handlers = {}       # type: dict[DataType, list[callable]]
 
         # Aggregators
         self._bar_aggregators = {}            # type: dict[BarType, BarAggregator]
@@ -502,6 +507,18 @@ cdef class DataEngine(Component):
                 command.data_type.metadata.get("bar_type"),
                 command.handler,
             )
+        elif command.data_type.type == InstrumentStatusUpdate:
+            self._handle_subscribe_instrument_status_updates(
+                client,
+                command.data_type.metadata.get("instrument_id"),
+                command.handler,
+            )
+        elif command.data_type.type == InstrumentClosePrice:
+            self._handle_subscribe_instrument_close_prices(
+                client,
+                command.data_type.metadata.get("instrument_id"),
+                command.handler,
+            )
         else:
             self._handle_subscribe_data(
                 client,
@@ -790,6 +807,52 @@ cdef class DataEngine(Component):
         else:
             self._log.warning(f"Handler {handler} already subscribed to {data_type} data.")
 
+    cdef void _handle_subscribe_instrument_status_updates(
+        self,
+        MarketDataClient client,
+        InstrumentId instrument_id,
+        handler: callable,
+    ) except *:
+        Condition.not_none(client, "client")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.callable(handler, "handler")
+
+        if instrument_id not in self._status_update_handlers:
+            # Setup handlers
+            self._status_update_handlers[instrument_id] = []  # type: list[callable]
+            client.subscribe_instrument_status_updates(instrument_id)
+            self._log.info(f"Subscribed to {instrument_id} <InstrumentStatusUpdate> data.")
+
+        # Add handler for subscriber
+        if handler not in self._status_update_handlers[instrument_id]:
+            self._status_update_handlers[instrument_id].append(handler)
+            self._log.debug(f"Added {handler} for {instrument_id} <InstrumentStatusUpdate> data.")
+        else:
+            self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <InstrumentStatusUpdate> data.")
+
+    cdef void _handle_subscribe_instrument_close_prices(
+        self,
+        MarketDataClient client,
+        InstrumentId instrument_id,
+        handler: callable,
+    ) except *:
+        Condition.not_none(client, "client")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.callable(handler, "handler")
+
+        if instrument_id not in self._close_price_handlers:
+            # Setup handlers
+            self._close_price_handlers[instrument_id] = []  # type: list[callable]
+            client.subscribe_instrument_status_updates(instrument_id)
+            self._log.info(f"Subscribed to {instrument_id} <InstrumentClosePrice> data.")
+
+        # Add handler for subscriber
+        if handler not in self._close_price_handlers[instrument_id]:
+            self._close_price_handlers[instrument_id].append(handler)
+            self._log.debug(f"Added {handler} for {instrument_id} <InstrumentClosePrice> data.")
+        else:
+            self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <InstrumentClosePrice> data.")
+
     cdef void _handle_unsubscribe_instrument(
         self,
         MarketDataClient client,
@@ -1060,6 +1123,10 @@ cdef class DataEngine(Component):
             self._handle_instrument(data)
         elif isinstance(data, GenericData):
             self._handle_generic_data(data)
+        elif isinstance(data, StatusUpdate):
+            self._handle_status_update(data)
+        elif isinstance(data, InstrumentClosePrice):
+            self._handle_close_price(data)
         else:
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}.")
 
@@ -1141,6 +1208,18 @@ cdef class DataEngine(Component):
         # Send to all registered data handlers for that data type
         cdef list handlers = self._data_handlers.get(data.data_type, [])
         for handler in handlers:
+            handler(data)
+
+    cdef void _handle_status_update(self, StatusUpdate data) except *:
+        # Send to all registered data handlers for that data type
+        cdef list status_handlers = self._status_update_handlers.get(data.instrument_id, [])
+        for handler in status_handlers:
+            handler(data)
+
+    cdef void _handle_close_price(self, InstrumentClosePrice data) except *:
+        # Send to all registered data handlers for that data type
+        cdef list close_price_handler = self._close_price_handlers.get(data.instrument_id, [])
+        for handler in close_price_handler:
             handler(data)
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------

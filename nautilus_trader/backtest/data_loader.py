@@ -39,13 +39,13 @@ except ImportError:
     pass
 
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.venue import InstrumentStatusUpdate
 from nautilus_trader.serialization.arrow.core import _deserialize
 from nautilus_trader.serialization.arrow.core import _partition_keys
 from nautilus_trader.serialization.arrow.core import _schemas
@@ -372,7 +372,7 @@ class DataLoader:
                 instruments = [
                     self.instrument_provider.find(s.instrument_id)
                     for s in chunk
-                    if isinstance(s, InstrumentStatusEvent)
+                    if isinstance(s, InstrumentStatusUpdate)
                 ]
                 chunk = instruments + chunk
             yield chunk
@@ -682,7 +682,7 @@ class DataCatalog:
                 "instrument_status_events",
                 instrument_status_events,
                 self.instrument_status_events,
-                {"ts_column": "timestamp_ns"},
+                {},
             ),
             ("quote_ticks", quote_ticks, self.quote_ticks, {}),
         ]
@@ -749,6 +749,8 @@ class DataCatalog:
 
     @staticmethod
     def _make_objects(df, cls):
+        if df is None:
+            return []
         return _deserialize(cls=cls, chunk=df.to_dict("records"))
 
     def instruments(
@@ -786,14 +788,14 @@ class DataCatalog:
         self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
     ):
         df = self._query(
-            "instrument_status_event",
+            "instrument_status_update",
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
             **kwargs,
         )
         if not as_nautilus:
             return df
-        return self._make_objects(df=df, cls=InstrumentStatusEvent)
+        return self._make_objects(df=df, cls=InstrumentStatusUpdate)
 
     def trade_ticks(
         self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
