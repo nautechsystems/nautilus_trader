@@ -31,35 +31,53 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 class TestVenue:
     def test_venue_status(self):
-        event = VenueStatusUpdate(
+        # Arrange
+        update = VenueStatusUpdate(
             venue=Venue("BINANCE"),
             status=VenueStatus.OPEN,
             ts_event_ns=0,
             ts_recv_ns=0,
         )
-        assert "VenueStatusUpdate(venue=BINANCE, status=OPEN)" == repr(event)
+
+        # Act, Assert
+        assert VenueStatusUpdate.from_dict(VenueStatusUpdate.to_dict(update)) == update
+        assert "VenueStatusUpdate(venue=BINANCE, status=OPEN)" == repr(update)
 
     def test_instrument_status(self):
-        event = InstrumentStatusUpdate(
+        # Arrange
+        update = InstrumentStatusUpdate(
             instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
             status=InstrumentStatus.PAUSE,
             ts_event_ns=0,
             ts_recv_ns=0,
         )
+
+        # Act, Assert
+        assert (
+            InstrumentStatusUpdate.from_dict(InstrumentStatusUpdate.to_dict(update))
+            == update
+        )
         assert (
             "InstrumentStatusUpdate(instrument_id=BTC/USDT.BINANCE, status=PAUSE)"
-            == repr(event)
+            == repr(update)
         )
 
     def test_instrument_close_price(self):
-        event = InstrumentClosePrice(
+        # Arrange
+        update = InstrumentClosePrice(
             instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
             close_price=Price(100.0, precision=0),
             close_type=InstrumentCloseType.EXPIRED,
             ts_event_ns=0,
             ts_recv_ns=0,
         )
+
+        # Act, Assert
+        assert (
+            InstrumentClosePrice.from_dict(InstrumentClosePrice.to_dict(update))
+            == update
+        )
         assert (
             "InstrumentClosePrice(instrument_id=BTC/USDT.BINANCE, close_price=100, close_type=EXPIRED)"
-            == repr(event)
+            == repr(update)
         )
