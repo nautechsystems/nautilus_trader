@@ -483,7 +483,7 @@ class TradingNode:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
         self._log.debug(f"Event loop {signals} handling setup.")
 
-    def _loop_sig_handler(self, sig: signal.signal) -> None:
+    def _loop_sig_handler(self, sig) -> None:
         self._loop.remove_signal_handler(signal.SIGTERM)
         self._loop.add_signal_handler(signal.SIGINT, lambda: None)
 
