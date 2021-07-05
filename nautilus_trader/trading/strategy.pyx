@@ -79,13 +79,10 @@ from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.risk.engine cimport RiskEngine
-
-from nautilus_trader.model.identifiers import Venue
-
 from nautilus_trader.model.venue cimport InstrumentClosePrice
 from nautilus_trader.model.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.venue cimport VenueStatusUpdate
+from nautilus_trader.risk.engine cimport RiskEngine
 
 
 # Events for WRN log level
@@ -402,14 +399,15 @@ cdef class TradingStrategy(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_venue_status_update(self, VenueStatusUpdate data) except *:
+    cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *:
         """
-        Actions to be performed when the strategy is running and receives generic data.
+        Actions to be performed when the strategy is running and receives a venue
+        status update.
 
         Parameters
         ----------
-        data : Data
-            The data received.
+        update : VenueStatusUpdate
+            The update received.
 
         Warnings
         --------
@@ -418,14 +416,15 @@ cdef class TradingStrategy(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate data) except *:
+    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update) except *:
         """
-        Actions to be performed when the strategy is running and receives generic data.
+        Actions to be performed when the strategy is running and receives an
+        instrument status update.
 
         Parameters
         ----------
-        data : Data
-            The data received.
+        update : InstrumentStatusUpdate
+            The update received.
 
         Warnings
         --------
@@ -434,14 +433,15 @@ cdef class TradingStrategy(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_instrument_close_price(self, InstrumentClosePrice data) except *:
+    cpdef void on_instrument_close_price(self, InstrumentClosePrice update) except *:
         """
-        Actions to be performed when the strategy is running and receives generic data.
+        Actions to be performed when the strategy is running and receives an
+        instrument close price update.
 
         Parameters
         ----------
-        data : Data
-            The data received.
+        update : InstrumentClosePrice
+            The update received.
 
         Warnings
         --------
@@ -2012,7 +2012,7 @@ cdef class TradingStrategy(Component):
         for i in range(length):
             self.handle_bar(bars[i], is_historical=True)
 
-    cpdef void handle_venue_status_update(self, VenueStatusUpdate data) except *:
+    cpdef void handle_venue_status_update(self, VenueStatusUpdate update) except *:
         """
         Handle the given venue status update.
 
@@ -2020,69 +2020,69 @@ cdef class TradingStrategy(Component):
 
         Parameters
         ----------
-        data : Data
-            The received data.
+        update : VenueStatusUpdate
+            The received update.
 
         Warnings
         --------
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(data, "data")
+        Condition.not_none(update, "update")
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
-                self.on_venue_status_update(data)
+                self.on_venue_status_update(update)
             except Exception as ex:
                 self.log.exception(ex)
                 raise
 
-    cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate data) except *:
+    cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update) except *:
         """
-        Handle the given venue status update.
+        Handle the given instrument status update.
 
-        Calls `on_venue_status_update` if `strategy.state` is `RUNNING`.
+        Calls `on_instrument_status_update` if `strategy.state` is `RUNNING`.
 
         Parameters
         ----------
-        data : Data
-            The received data.
+        update : InstrumentStatusUpdate
+            The received update.
 
         Warnings
         --------
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(data, "data")
+        Condition.not_none(update, "update")
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
-                self.on_instrument_status_update(data)
+                self.on_instrument_status_update(update)
             except Exception as ex:
                 self.log.exception(ex)
                 raise
 
-    cpdef void handle_instrument_close_price(self, InstrumentClosePrice data) except *:
+    cpdef void handle_instrument_close_price(self, InstrumentClosePrice update) except *:
         """
-        Handle the given venue status update.
+        Handle the given instrument close price update.
 
-        Calls `on_venue_status_update` if `strategy.state` is `RUNNING`.
+        Calls `on_instrument_close_price` if `strategy.state` is `RUNNING`.
 
         Parameters
         ----------
-        data : Data
-            The received data.
+        update : InstrumentClosePrice
+            The received update.
 
         Warnings
         --------
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(data, "data")
+        Condition.not_none(update, "update")
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
-                self.on_instrument_close_price(data)
+                self.on_instrument_close_price(update)
             except Exception as ex:
                 self.log.exception(ex)
                 raise

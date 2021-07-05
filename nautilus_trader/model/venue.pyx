@@ -1,3 +1,17 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
 
 from libc.stdint cimport int64_t
 
@@ -23,20 +37,22 @@ cdef class StatusUpdate(Data):
 
     This class should not be used directly, but through a concrete subclass.
     """
+
     def __init__(
         self,
         int64_t ts_event_ns,
         int64_t ts_recv_ns,
     ):
         """
-        Initialize a new instance of the ``StatusUpdate` base class.
+        Initialize a new instance of the ``StatusUpdate`` base class.
 
         Parameters
         ----------
         ts_event_ns : int64
             The UNIX timestamp (nanoseconds) when data event occurred.
         ts_recv_ns : int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+
         """
         super().__init__(ts_event_ns, ts_recv_ns)
 
@@ -45,6 +61,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
     """
     Represents an update that indicates a change in a Venue status.
     """
+
     def __init__(
         self,
         Venue venue,
@@ -53,7 +70,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
         int64_t ts_recv_ns,
     ):
         """
-        Initialize a new instance of the ``VenueStatusUpdate` base class.
+        Initialize a new instance of the ``VenueStatusUpdate`` class.
 
         Parameters
         ----------
@@ -62,7 +79,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
         ts_event_ns : int64
             The UNIX timestamp (nanoseconds) when data event occurred.
         ts_recv_ns : int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
 
         """
         super().__init__(ts_event_ns, ts_recv_ns)
@@ -129,6 +146,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
     """
     Represents an event that indicates a change in an instrument status.
     """
+
     def __init__(
         self,
         InstrumentId instrument_id,
@@ -137,7 +155,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         int64_t ts_recv_ns,
     ):
         """
-        Initialize a new instance of the ``InstrumentStatusUpdate` base class.
+        Initialize a new instance of the ``InstrumentStatusUpdate`` class.
 
         Parameters
         ----------
@@ -146,7 +164,8 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         ts_event_ns : int64
             The UNIX timestamp (nanoseconds) when data event occurred.
         ts_recv_ns : int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+
         """
         super().__init__(ts_event_ns, ts_recv_ns,)
         self.instrument_id = instrument_id
@@ -179,7 +198,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
     @staticmethod
     def from_dict(dict values):
         """
-        Return a instrument status event from the given dict values.
+        Return an instrument status event from the given dict values.
 
         Parameters
         ----------
@@ -208,7 +227,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
 
 cdef class InstrumentClosePrice(Data):
     """
-    Represents an event that indicates a change in an instrument status.
+    Represents an instruments closing price at a venue.
     """
 
     def __init__(
@@ -220,7 +239,7 @@ cdef class InstrumentClosePrice(Data):
         int64_t ts_recv_ns,
     ):
         """
-        Initialize a new instance of the ``InstrumentClosePrice` base class.
+        Initialize a new instance of the ``InstrumentClosePrice`` class.
 
         Parameters
         ----------
@@ -231,7 +250,8 @@ cdef class InstrumentClosePrice(Data):
         ts_event_ns : int64
             The UNIX timestamp (nanoseconds) when data event occurred.
         ts_recv_ns : int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system
+            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+
         """
         super().__init__(ts_event_ns, ts_recv_ns,)
         self.instrument_id = instrument_id
