@@ -38,6 +38,8 @@ from nautilus_trader.model.orderbook.book cimport OrderBookDeltas
 from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.venue cimport InstrumentClosePrice
+from nautilus_trader.model.venue cimport StatusUpdate
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -53,6 +55,8 @@ cdef class DataEngine(Component):
     cdef dict _trade_tick_handlers
     cdef dict _bar_handlers
     cdef dict _data_handlers
+    cdef dict _status_update_handlers
+    cdef dict _close_price_handlers
     cdef dict _bar_aggregators
     cdef dict _order_book_intervals
 
@@ -102,6 +106,8 @@ cdef class DataEngine(Component):
     cdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
     cdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type, handler: callable) except *
     cdef void _handle_subscribe_data(self, DataClient client, DataType data_type, handler: callable) except *
+    cdef void _handle_subscribe_instrument_status_updates(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
+    cdef void _handle_subscribe_instrument_close_prices(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
     cdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
     cdef void _handle_unsubscribe_order_book(self, MarketDataClient client, InstrumentId instrument_id, dict metadata, handler: callable) except *  # noqa
     cdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id, handler: callable) except *
@@ -120,6 +126,8 @@ cdef class DataEngine(Component):
     cdef void _handle_trade_tick(self, TradeTick tick) except *
     cdef void _handle_bar(self, Bar bar) except *
     cdef void _handle_generic_data(self, GenericData data) except *
+    cdef void _handle_status_update(self, StatusUpdate data) except *
+    cdef void _handle_close_price(self, InstrumentClosePrice data) except *
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 

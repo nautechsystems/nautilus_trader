@@ -17,13 +17,10 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType
-from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -31,7 +28,6 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -328,48 +324,3 @@ cdef class PositionClosed(PositionEvent):
 
     @staticmethod
     cdef dict to_dict_c(PositionClosed obj)
-
-
-cdef class StatusEvent(Event):
-    pass
-
-
-cdef class VenueStatusEvent(StatusEvent):
-    cdef readonly Venue venue
-    """The event venue.\n\n:returns: `Venue`"""
-    cdef readonly VenueStatus status
-    """The events venue status.\n\n:returns: `VenueStatus`"""
-
-    @staticmethod
-    cdef VenueStatusEvent from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(VenueStatusEvent obj)
-
-
-cdef class InstrumentStatusEvent(StatusEvent):
-    cdef readonly InstrumentId instrument_id
-    """The event instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly InstrumentStatus status
-    """The events instrument status.\n\n:returns: `InstrumentStatus`"""
-
-    @staticmethod
-    cdef InstrumentStatusEvent from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(InstrumentStatusEvent obj)
-
-
-cdef class InstrumentClosePrice(Event):
-    cdef readonly InstrumentId instrument_id
-    """The event instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly Price close_price
-    """The events close price.\n\n:returns: `Price`"""
-    cdef readonly InstrumentCloseType close_type
-    """The events close type.\n\n:returns: `InstrumentCloseType`"""
-
-    @staticmethod
-    cdef InstrumentClosePrice from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(InstrumentClosePrice obj)
