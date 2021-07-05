@@ -102,9 +102,9 @@ cdef class TradingStrategy(Component):
     cpdef void on_trade_tick(self, TradeTick tick) except *
     cpdef void on_bar(self, Bar bar) except *
     cpdef void on_data(self, Data data) except *
-    cpdef void on_venue_status_update(self, VenueStatusUpdate data) except *
-    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate data) except *
-    cpdef void on_instrument_close_price(self, InstrumentClosePrice data) except *
+    cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *
+    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update) except *
+    cpdef void on_instrument_close_price(self, InstrumentClosePrice update) except *
     cpdef void on_event(self, Event event) except *
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
@@ -210,9 +210,9 @@ cdef class TradingStrategy(Component):
     cpdef void handle_bar(self, Bar bar, bint is_historical=*) except *
     cpdef void handle_bars(self, list bars) except *
     cpdef void handle_data(self, Data data) except *
-    cpdef void handle_venue_status_update(self, VenueStatusUpdate data) except *
-    cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate data) except *
-    cpdef void handle_instrument_close_price(self, InstrumentClosePrice data) except *
+    cpdef void handle_venue_status_update(self, VenueStatusUpdate update) except *
+    cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update) except *
+    cpdef void handle_instrument_close_price(self, InstrumentClosePrice update) except *
     cpdef void handle_event(self, Event event) except *
 
 # -- INTERNAL --------------------------------------------------------------------------------------
