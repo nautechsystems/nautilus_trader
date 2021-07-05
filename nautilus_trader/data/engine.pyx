@@ -1130,9 +1130,6 @@ cdef class DataEngine(Component):
         else:
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}.")
 
-        if self.persistence is not None:
-            self.persistence.update(data)
-
     cdef void _handle_instrument(self, Instrument instrument) except *:
         self.cache.add_instrument(instrument)
 
