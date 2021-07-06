@@ -42,8 +42,7 @@ from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
 from nautilus_trader.model.instruments.currency cimport CurrencySpot
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
-
-from nautilus_trader.model.venue import InstrumentClosePrice
+from nautilus_trader.model.venue cimport InstrumentClosePrice
 from nautilus_trader.model.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.venue cimport VenueStatusUpdate
 

@@ -40,7 +40,7 @@ from tests.test_kit.stubs import TestStubs
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture()
 def catalog_dir(tmp_path):
     # Ensure we have a catalog directory, and its cleaned up after use
     os.environ.update({"NAUTILUS_BACKTEST_DIR": str(tmp_path)})
@@ -77,7 +77,7 @@ def data_loader():
     return loader
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture()
 def catalog(catalog_dir, data_loader):
     catalog = DataCatalog()
     catalog.import_from_data_loader(loader=data_loader)

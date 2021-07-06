@@ -6,7 +6,6 @@ import os
 import pathlib
 
 from betfairlightweight import APIClient
-import fsspec
 from numpy import dtype
 import orjson
 import pandas as pd
@@ -61,17 +60,11 @@ TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 catalog_DIR = TEST_DATA_DIR + "/catalog"
 
 
-@pytest.fixture(scope="function")
-def catalog_dir():
+@pytest.fixture()
+def catalog_dir(tmp_path):
     # Ensure we have a catalog directory, and its cleaned up after use
-    fs = fsspec.filesystem("file")
-    catalog = str(pathlib.Path(catalog_DIR))
-    os.environ.update({"NAUTILUS_BACKTEST_DIR": str(catalog)})
-    if fs.exists(catalog):
-        fs.rm(catalog, recursive=True)
-    fs.mkdir(catalog)
+    os.environ.update({"NAUTILUS_BACKTEST_DIR": str(tmp_path)})
     yield
-    fs.rm(catalog, recursive=True)
 
 
 @pytest.fixture(scope="function")
