@@ -121,9 +121,9 @@ cdef class TradingStrategy(Component):
         cdef StrategyId strategy_id = StrategyId(f"{type(self).__name__}-{order_id_tag}")
         cdef Clock clock = LiveClock()
         super().__init__(
+            name=strategy_id.value,
             clock=clock,
             logger=Logger(clock=clock),
-            name=strategy_id.value,
             log_initialized=False,
         )
 

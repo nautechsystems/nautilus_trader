@@ -89,9 +89,9 @@ cdef class Component:
 
     def __init__(
         self,
+        str name=None,
         Clock clock not None,
         Logger logger not None,
-        str name=None,
         bint log_initialized=True,
     ):
         """
@@ -99,13 +99,13 @@ cdef class Component:
 
         Parameters
         ----------
+        name : str, optional
+            The customized name for the component. If None is passed then the
+            name will be taken from `type(self).__name__`.
         clock : Clock
             The clock for the component.
         logger : Logger
             The logger for the component.
-        name : str, optional
-            The customized name for the component. If None is passed then the
-            name will be taken from `type(self).__name__`.
         log_initialized : bool
             If the initial state should be logged.
 

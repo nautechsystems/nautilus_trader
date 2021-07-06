@@ -111,7 +111,11 @@ cdef class ExecutionEngine(Component):
         """
         if config is None:
             config = {}
-        super().__init__(clock, logger, name="ExecEngine")
+        super().__init__(
+            name="ExecEngine",
+            clocl=clock,
+            logger=logger,
+        )
 
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
         self._strategies = {}        # type: dict[StrategyId, TradingStrategy]

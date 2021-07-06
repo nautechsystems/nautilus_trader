@@ -113,7 +113,11 @@ cdef class DataEngine(Component):
         """
         if config is None:
             config = {}
-        super().__init__(clock, logger, name="DataEngine")
+        super().__init__(
+            name="DataEngine",
+            clocl=clock,
+            logger=logger,
+        )
 
         self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}                    # type: dict[ClientId, DataClient]
