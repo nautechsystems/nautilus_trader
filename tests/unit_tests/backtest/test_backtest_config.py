@@ -353,7 +353,7 @@ def test_backtest_run_multiprocessing(backtest_configs):
 def test_backtest_run_distributed(backtest_configs):
     from distributed import Client
 
-    _ = Client()
+    _ = Client(processes=False)
     tasks = build_graph(backtest_configs)
     result = tasks.compute()
     assert result
