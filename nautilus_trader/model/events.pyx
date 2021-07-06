@@ -42,7 +42,6 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.position cimport Position
 
 
 cdef class AccountState(Event):
