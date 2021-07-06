@@ -114,7 +114,7 @@ cdef class DataEngine(Component):
         if config is None:
             config = {}
         super().__init__(
-            clocl=clock,
+            clock=clock,
             logger=logger,
             name="DataEngine",
         )
