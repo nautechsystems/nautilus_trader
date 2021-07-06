@@ -282,9 +282,7 @@ class LiveDataEngineTests(unittest.TestCase):
                 data_type=DataType(
                     QuoteTick,
                     metadata={
-                        "instrument_id": InstrumentId(
-                            Symbol("SOMETHING"), Venue("RANDOM")
-                        ),
+                        "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
                         "from_datetime": None,
                         "to_datetime": None,
                         "limit": 1000,

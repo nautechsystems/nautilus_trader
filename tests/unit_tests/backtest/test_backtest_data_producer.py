@@ -43,14 +43,10 @@ class TestBacktestDataProducer:
 
         # Act
         # Assert
-        assert producer.min_timestamp_ns == 9223372036854774784
-        assert producer.max_timestamp_ns == -9223372036854774784
-        assert producer.min_timestamp == pd.Timestamp(
-            "2262-04-11 23:47:16.854774+0000", tz="UTC"
-        )
-        assert producer.max_timestamp == pd.Timestamp(
-            "1677-09-21 00:12:43.145226", tz="UTC"
-        )
+        assert producer.min_timestamp_ns == 9223285636854774784
+        assert producer.max_timestamp_ns == -9223285636854776832
+        assert producer.min_timestamp == pd.Timestamp("2262-04-10 23:47:16.854774+0000", tz="UTC")
+        assert producer.max_timestamp == pd.Timestamp("1677-09-22 00:12:43.145224", tz="UTC")
         assert not producer.has_data
         assert producer.next() is None  # noqa (own method)
 
@@ -114,12 +110,8 @@ class TestBacktestDataProducer:
         assert timestamps == [0, 0, 500000, 1000000, 1000000, 2000000]
         assert producer.min_timestamp_ns == 0
         assert producer.max_timestamp_ns == 2_000_000
-        assert producer.min_timestamp == pd.Timestamp(
-            "1970-01-01 00:00:00.000000+0000", tz="UTC"
-        )
-        assert producer.max_timestamp == pd.Timestamp(
-            "1970-01-01 00:00:00.002000+0000", tz="UTC"
-        )
+        assert producer.min_timestamp == pd.Timestamp("1970-01-01 00:00:00.000000+0000", tz="UTC")
+        assert producer.max_timestamp == pd.Timestamp("1970-01-01 00:00:00.002000+0000", tz="UTC")
 
     def test_with_bars_produces_correct_stream_of_data(self):
         # Arrange
@@ -127,14 +119,10 @@ class TestBacktestDataProducer:
             logger=self.logger,
             instruments=[USDJPY_SIM],
             bars_bid={
-                USDJPY_SIM.id: {
-                    BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()[:2000]
-                }
+                USDJPY_SIM.id: {BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()[:2000]}
             },
             bars_ask={
-                USDJPY_SIM.id: {
-                    BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()[:2000]
-                }
+                USDJPY_SIM.id: {BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()[:2000]}
             },
         )
         producer.setup(producer.min_timestamp_ns, producer.max_timestamp_ns)

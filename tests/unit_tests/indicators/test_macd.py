@@ -39,12 +39,8 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(
-            "MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)", str(self.macd)
-        )
-        self.assertEqual(
-            "MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)", repr(self.macd)
-        )
+        self.assertEqual("MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)", str(self.macd))
+        self.assertEqual("MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)", repr(self.macd))
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange

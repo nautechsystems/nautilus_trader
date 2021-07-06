@@ -155,9 +155,7 @@ class DataClientTests(unittest.TestCase):
         )
 
         # Act
-        self.client._handle_data_response_py(
-            data_type, data, self.uuid_factory.generate()
-        )
+        self.client._handle_data_response_py(data_type, data, self.uuid_factory.generate())
 
         # Assert
         self.assertEqual(1, self.data_engine.response_count)
@@ -222,9 +220,7 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError, self.client.subscribe_instrument, AUDUSD_SIM.id
-        )
+        self.assertRaises(NotImplementedError, self.client.subscribe_instrument, AUDUSD_SIM.id)
 
     def test_subscribe_order_book_when_not_implemented_raises_exception(self):
         # Arrange
@@ -238,17 +234,13 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError, self.client.subscribe_quote_ticks, AUDUSD_SIM.id
-        )
+        self.assertRaises(NotImplementedError, self.client.subscribe_quote_ticks, AUDUSD_SIM.id)
 
     def test_subscribe_trade_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError, self.client.subscribe_trade_ticks, AUDUSD_SIM.id
-        )
+        self.assertRaises(NotImplementedError, self.client.subscribe_trade_ticks, AUDUSD_SIM.id)
 
     def test_subscribe_bars_when_not_implemented_raises_exception(self):
         # Arrange
@@ -264,33 +256,25 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError, self.client.unsubscribe_instrument, AUDUSD_SIM.id
-        )
+        self.assertRaises(NotImplementedError, self.client.unsubscribe_instrument, AUDUSD_SIM.id)
 
     def test_unsubscribe_order_book_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError, self.client.unsubscribe_order_book, AUDUSD_SIM.id
-        )
+        self.assertRaises(NotImplementedError, self.client.unsubscribe_order_book, AUDUSD_SIM.id)
 
     def test_unsubscribe_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError, self.client.unsubscribe_quote_ticks, AUDUSD_SIM.id
-        )
+        self.assertRaises(NotImplementedError, self.client.unsubscribe_quote_ticks, AUDUSD_SIM.id)
 
     def test_unsubscribe_trade_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError, self.client.unsubscribe_trade_ticks, AUDUSD_SIM.id
-        )
+        self.assertRaises(NotImplementedError, self.client.unsubscribe_trade_ticks, AUDUSD_SIM.id)
 
     def test_unsubscribe_bars_when_not_implemented_raises_exception(self):
         # Arrange
@@ -306,9 +290,7 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError, self.client.request_instrument, None, None
-        )
+        self.assertRaises(NotImplementedError, self.client.request_instrument, None, None)
 
     def test_request_instruments_when_not_implemented_raises_exception(self):
         # Arrange
@@ -348,9 +330,7 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError, self.client.request_bars, None, None, None, 0, None
-        )
+        self.assertRaises(NotImplementedError, self.client.request_bars, None, None, None, 0, None)
 
     def test_unavailable_methods_when_none_given_returns_empty_list(self):
         # Arrange
@@ -469,9 +449,7 @@ class MarketDataClientTests(unittest.TestCase):
     def test_handle_quote_ticks_sends_to_data_engine(self):
         # Arrange
         # Act
-        self.client._handle_quote_ticks_py(
-            AUDUSD_SIM.id, [], self.uuid_factory.generate()
-        )
+        self.client._handle_quote_ticks_py(AUDUSD_SIM.id, [], self.uuid_factory.generate())
 
         # Assert
         self.assertEqual(1, self.data_engine.response_count)
@@ -479,9 +457,7 @@ class MarketDataClientTests(unittest.TestCase):
     def test_handle_trade_ticks_sends_to_data_engine(self):
         # Arrange
         # Act
-        self.client._handle_trade_ticks_py(
-            AUDUSD_SIM.id, [], self.uuid_factory.generate()
-        )
+        self.client._handle_trade_ticks_py(AUDUSD_SIM.id, [], self.uuid_factory.generate())
 
         # Assert
         self.assertEqual(1, self.data_engine.response_count)

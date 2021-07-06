@@ -65,17 +65,15 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.orderbook.book cimport OrderBookData
+from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.risk.engine cimport RiskEngine
+from nautilus_trader.serialization.msgpack.serializer cimport MsgPackCommandSerializer
+from nautilus_trader.serialization.msgpack.serializer cimport MsgPackEventSerializer
+from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentSerializer
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
-
-
-from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentSerializer  # isort:skip
-from nautilus_trader.serialization.msgpack.serializer cimport MsgPackCommandSerializer  # isort:skip
-from nautilus_trader.serialization.msgpack.serializer cimport MsgPackEventSerializer  # isort:skip
-
 from nautilus_trader.model.tick import QuoteTick
 
 
@@ -139,6 +137,7 @@ cdef class BacktestEngine:
 
         # Data
         self._generic_data = []     # type: list[GenericData]
+        self._data = []             # type: list[Data]
         self._order_book_data = []  # type: list[OrderBookData]
         self._quote_ticks = {}      # type: dict[InstrumentId, pd.DataFrame]
         self._trade_ticks = {}      # type: dict[InstrumentId, pd.DataFrame]
@@ -220,6 +219,7 @@ cdef class BacktestEngine:
         if config_data is None:
             config_data = {}
         config_data["use_previous_close"] = False  # Ensures bars match historical data
+
         self._data_engine = DataEngine(
             portfolio=self.portfolio,
             cache=cache,
@@ -319,6 +319,39 @@ cdef class BacktestEngine:
 
         self._log.info(f"Added {len(data)} GenericData points.")
 
+    def add_data(self, ClientId client_id, list data) -> None:
+        """
+        Add the generic data to the container.
+
+        Parameters
+        ----------
+        client_id : ClientId
+            The data client ID to associate with the generic data.
+        data : list[GenericData]
+            The data to add.
+
+        Raises
+        ------
+        ValueError
+            If data is empty.
+
+        """
+        Condition.not_none(client_id, "client_id")
+        Condition.not_none(data, "data")
+        Condition.not_empty(data, "data")
+        Condition.list_type(data, Data, "data")
+
+        # Check client has been registered
+        self._add_data_client_if_not_exists(client_id)
+
+        # Add data
+        self._data = sorted(
+            self._data + data,
+            key=lambda x: x.ts_recv_ns,
+        )
+
+        self._log.info(f"Added {len(data)} Data.")
+
     def add_instrument(self, Instrument instrument) -> None:
         """
         Add the instrument to the backtest engine.
@@ -375,7 +408,7 @@ cdef class BacktestEngine:
             key=lambda x: x.ts_recv_ns,
         )
 
-        self._log.info(f"Added {len(data)} {instrument_id} OrderBookData elements.")
+        self._log.info(f"Added {len(data)} {instrument_id} OrderBookData elements (total: {len(self._order_book_data)}).")
 
     def add_quote_ticks(self, InstrumentId instrument_id, data: pd.DataFrame) -> None:
         """
@@ -783,11 +816,11 @@ cdef class BacktestEngine:
         Parameters
         ----------
         start : datetime, optional
-            The start datetime (UTC) for the backtest run. If None engine will
-            run from the start of the data.
+            The start datetime (UTC) for the backtest run. If None engine runs
+            from the start of the data.
         stop : datetime, optional
-            The stop datetime (UTC) for the backtest run. If None engine will
-            run to the end of the data.
+            The stop datetime (UTC) for the backtest run. If None engine runs
+            to the end of the data.
         strategies : list, optional
             The strategies for the backtest run (if None will use previous).
 
@@ -807,6 +840,7 @@ cdef class BacktestEngine:
                 trade_ticks=self._trade_ticks,
                 bars_bid=self._bars_bid,
                 bars_ask=self._bars_ask,
+                data=self._data,
             )
 
             if self._use_data_cache:

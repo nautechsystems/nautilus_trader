@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from collections import Counter
 import os
 
 import betfairlightweight
@@ -28,14 +29,14 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
-from nautilus_trader.model.events import InstrumentClosePrice
-from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.venue import InstrumentClosePrice
+from nautilus_trader.model.venue import InstrumentStatusUpdate
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
@@ -75,12 +76,13 @@ def test_market_heartbeat(betfair_data_client, data_engine):
 def test_market_sub_image_market_def(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_SUB_IMAGE())
     result = [type(event).__name__ for event in data_engine.events]
-    expected = ["OrderBookSnapshot"] * 7
+    expected = ["InstrumentStatusUpdate"] * 7 + ["OrderBookSnapshot"] * 7
     assert result == expected
     # Check prices are probabilities
     result = set(
         float(order[0])
         for ob_snap in data_engine.events
+        if isinstance(ob_snap, OrderBookSnapshot)
         for order in ob_snap.bids + ob_snap.asks
     )
     expected = set(
@@ -103,18 +105,22 @@ def test_market_sub_image_market_def(betfair_data_client, data_engine):
 
 
 def test_market_sub_image_no_market_def(betfair_data_client, data_engine):
-    betfair_data_client._on_market_update(
-        BetfairTestStubs.streaming_mcm_SUB_IMAGE_no_market_def()
+    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_SUB_IMAGE_no_market_def())
+    result = Counter([type(event).__name__ for event in data_engine.events])
+    expected = Counter(
+        {
+            "InstrumentStatusUpdate": 270,
+            "OrderBookSnapshot": 270,
+            "InstrumentClosePrice": 22,
+        }
     )
-    result = [type(event).__name__ for event in data_engine.events]
-    expected = ["OrderBookSnapshot"] * 270
     assert result == expected
 
 
 def test_market_resub_delta(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_RESUB_DELTA())
     result = [type(event).__name__ for event in data_engine.events]
-    expected = ["OrderBookDeltas"] * 269
+    expected = ["InstrumentStatusUpdate"] * 12 + ["OrderBookDeltas"] * 269
     assert result == expected
 
 
@@ -136,7 +142,7 @@ def test_market_update(betfair_data_client, data_engine):
 def test_market_update_md(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_UPDATE_md())
     result = [type(event).__name__ for event in data_engine.events]
-    expected = ["InstrumentStatusEvent"] * 7
+    expected = ["InstrumentStatusUpdate"] * 7
     assert result == expected
 
 
@@ -152,10 +158,7 @@ def test_market_update_live_image(betfair_data_client, data_engine):
     betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_IMAGE())
     result = [type(event).__name__ for event in data_engine.events]
     expected = (
-        ["OrderBookSnapshot"]
-        + ["TradeTick"] * 13
-        + ["OrderBookSnapshot"]
-        + ["TradeTick"] * 17
+        ["OrderBookSnapshot"] + ["TradeTick"] * 13 + ["OrderBookSnapshot"] + ["TradeTick"] * 17
     )
     assert result == expected
 
@@ -234,11 +237,11 @@ def test_instrument_opening_events(betfair_data_client, data_engine):
     )
     assert len(messages) == 2
     assert (
-        isinstance(messages[0], InstrumentStatusEvent)
+        isinstance(messages[0], InstrumentStatusUpdate)
         and messages[0].status == InstrumentStatus.PRE_OPEN
     )
     assert (
-        isinstance(messages[1], InstrumentStatusEvent)
+        isinstance(messages[1], InstrumentStatusUpdate)
         and messages[0].status == InstrumentStatus.PRE_OPEN
     )
 
@@ -250,7 +253,7 @@ def test_instrument_in_play_events(betfair_data_client, data_engine):
         for msg in on_market_update(
             instrument_provider=betfair_data_client.instrument_provider(), update=update
         )
-        if isinstance(msg, InstrumentStatusEvent)
+        if isinstance(msg, InstrumentStatusUpdate)
     ]
     assert len(events) == 14
     result = [ev.status for ev in events]
@@ -281,24 +284,19 @@ def test_instrument_closing_events(data_engine, betfair_data_client):
     )
     assert len(messages) == 4
     assert (
-        isinstance(messages[0], InstrumentStatusEvent)
+        isinstance(messages[0], InstrumentStatusUpdate)
         and messages[0].status == InstrumentStatus.CLOSED
     )
-    assert (
-        isinstance(messages[1], InstrumentClosePrice)
-        and messages[1].close_price == 1.0000
-    )
+    assert isinstance(messages[1], InstrumentClosePrice) and messages[1].close_price == 1.0000
     assert (
         isinstance(messages[1], InstrumentClosePrice)
         and messages[1].close_type == InstrumentCloseType.EXPIRED
     )
     assert (
-        isinstance(messages[2], InstrumentStatusEvent)
+        isinstance(messages[2], InstrumentStatusUpdate)
         and messages[2].status == InstrumentStatus.CLOSED
     )
-    assert (
-        isinstance(messages[3], InstrumentClosePrice) and messages[3].close_price == 0.0
-    )
+    assert isinstance(messages[3], InstrumentClosePrice) and messages[3].close_price == 0.0
     assert (
         isinstance(messages[3], InstrumentClosePrice)
         and messages[3].close_type == InstrumentCloseType.EXPIRED

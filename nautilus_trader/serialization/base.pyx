@@ -21,7 +21,6 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.events cimport InstrumentStatusEvent
 from nautilus_trader.model.events cimport OrderAccepted
 from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderCanceled
@@ -43,6 +42,10 @@ from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
 from nautilus_trader.model.instruments.currency cimport CurrencySpot
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
+
+from nautilus_trader.model.venue import InstrumentClosePrice
+from nautilus_trader.model.venue cimport InstrumentStatusUpdate
+from nautilus_trader.model.venue cimport VenueStatusUpdate
 
 
 # Default mappings for Nautilus objects
@@ -73,7 +76,9 @@ _OBJECT_TO_DICT_MAP = {
     CryptoSwap.__name__: CryptoSwap.to_dict_c,
     CurrencySpot.__name__: CurrencySpot.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
-    InstrumentStatusEvent.__name__: InstrumentStatusEvent.to_dict_c,
+    InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.to_dict_c,
+    VenueStatusUpdate.__name__: VenueStatusUpdate.to_dict_c,
+    InstrumentClosePrice.__name__: InstrumentClosePrice.to_dict_c,
 }
 
 
@@ -105,7 +110,9 @@ _OBJECT_FROM_DICT_MAP = {
     CurrencySpot.__name__: CurrencySpot.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,
     QuoteTick.__name__: QuoteTick.from_dict_c,
-    InstrumentStatusEvent.__name__: InstrumentStatusEvent.from_dict_c,
+    InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.from_dict_c,
+    VenueStatusUpdate.__name__: VenueStatusUpdate.from_dict_c,
+    InstrumentClosePrice.__name__: InstrumentClosePrice.from_dict_c,
 }
 
 

@@ -248,9 +248,7 @@ class TradingNode:
 
         self._log.info("state=INITIALIZED.")
         self.time_to_initialize = self._clock.delta(self.created_time)
-        self._log.info(
-            f"Initialized in {self.time_to_initialize.total_seconds():.3f}s."
-        )
+        self._log.info(f"Initialized in {self.time_to_initialize.total_seconds():.3f}s.")
 
         self._is_built = False
 
@@ -400,9 +398,7 @@ class TradingNode:
 
         """
         try:
-            timeout = self._clock.utc_now() + timedelta(
-                seconds=self._timeout_disconnection
-            )
+            timeout = self._clock.utc_now() + timedelta(seconds=self._timeout_disconnection)
             while self._is_running:
                 time.sleep(0.1)
                 if self._clock.utc_now() >= timeout:
@@ -463,14 +459,10 @@ class TradingNode:
     def _log_header(self) -> None:
         nautilus_header(self._log)
         self._log.info(f"redis {redis.__version__}")
-        self._log.info(
-            f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}"
-        )
+        self._log.info(f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
         if uvloop_version:
             self._log.info(f"uvloop {uvloop_version}")
-        self._log.info(
-            "================================================================="
-        )
+        self._log.info("=================================================================")
 
     def _setup_loop(self) -> None:
         if self._loop.is_closed():
@@ -483,7 +475,7 @@ class TradingNode:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
         self._log.debug(f"Event loop {signals} handling setup.")
 
-    def _loop_sig_handler(self, sig: signal.signal) -> None:
+    def _loop_sig_handler(self, sig) -> None:
         self._loop.remove_signal_handler(signal.SIGTERM)
         self._loop.add_signal_handler(signal.SIGINT, lambda: None)
 
@@ -536,8 +528,7 @@ class TradingNode:
 
             # Await portfolio initialization
             self._log.info(
-                "Waiting for portfolio to initialize "
-                f"({self._timeout_portfolio}s timeout)...",
+                "Waiting for portfolio to initialize " f"({self._timeout_portfolio}s timeout)...",
                 color=LogColor.BLUE,
             )
             if not await self._await_portfolio_initialized():
@@ -626,8 +617,7 @@ class TradingNode:
             self._risk_engine.stop()
 
         self._log.info(
-            f"Waiting for engines to disconnect "
-            f"({self._timeout_disconnection}s timeout)...",
+            f"Waiting for engines to disconnect " f"({self._timeout_disconnection}s timeout)...",
             color=LogColor.BLUE,
         )
         if not await self._await_engines_disconnected():

@@ -35,9 +35,9 @@ repos:
   -   repo: https://github.com/codespell-project/codespell
       rev: v2.1.0
       hooks:
-        -   id: codespell
-            description: Checks for common misspellings.
-            types_or: [python, rst, markdown]  # TODO: Add Cython
+        - id: codespell
+          description: Checks for common misspellings.
+          types_or: [python, cython, rst, markdown]
 
   - repo: https://gitlab.com/PyCQA/flake8
     rev: 3.9.2

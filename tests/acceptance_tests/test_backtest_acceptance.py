@@ -361,12 +361,8 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
         self.instrument = TestInstrumentProvider.btcusdt_binance()
 
         self.engine.add_instrument(self.instrument)
-        self.engine.add_trade_ticks(
-            self.instrument.id, TestDataProvider.tardis_trades()
-        )
-        self.engine.add_quote_ticks(
-            self.instrument.id, TestDataProvider.tardis_quotes()
-        )
+        self.engine.add_trade_ticks(self.instrument.id, TestDataProvider.tardis_trades())
+        self.engine.add_quote_ticks(self.instrument.id, TestDataProvider.tardis_quotes())
         self.engine.add_venue(
             venue=self.venue,
             venue_type=VenueType.EXCHANGE,

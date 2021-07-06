@@ -60,9 +60,7 @@ class ForexSessionFilterTests(unittest.TestCase):
             [ForexSession.NEW_YORK, datetime(1970, 1, 1, 13, 0, tzinfo=pytz.utc)],
         ]
     )
-    def test_next_start_given_various_sessions_returns_expected_datetime(
-        self, session, expected
-    ):
+    def test_next_start_given_various_sessions_returns_expected_datetime(self, session, expected):
         # Arrange
         # Act
         result = self.session_filter.next_start(session, UNIX_EPOCH)
@@ -96,9 +94,7 @@ class ForexSessionFilterTests(unittest.TestCase):
             [ForexSession.NEW_YORK, datetime(1969, 12, 31, 13, 0, tzinfo=pytz.utc)],
         ]
     )
-    def test_prev_start_given_various_sessions_returns_expected_datetime(
-        self, session, expected
-    ):
+    def test_prev_start_given_various_sessions_returns_expected_datetime(self, session, expected):
         # Arrange
         # Act
         result = self.session_filter.prev_start(session, UNIX_EPOCH)
@@ -114,9 +110,7 @@ class ForexSessionFilterTests(unittest.TestCase):
             [ForexSession.NEW_YORK, datetime(1970, 1, 1, 22, 0, tzinfo=pytz.utc)],
         ]
     )
-    def test_next_end_given_various_sessions_returns_expected_datetime(
-        self, session, expected
-    ):
+    def test_next_end_given_various_sessions_returns_expected_datetime(self, session, expected):
         # Arrange
         # Act
         result = self.session_filter.next_end(session, UNIX_EPOCH)
@@ -132,9 +126,7 @@ class ForexSessionFilterTests(unittest.TestCase):
             [ForexSession.NEW_YORK, datetime(1969, 12, 31, 22, 0, tzinfo=pytz.utc)],
         ]
     )
-    def test_prev_end_given_various_sessions_returns_expected_datetime(
-        self, session, expected
-    ):
+    def test_prev_end_given_various_sessions_returns_expected_datetime(self, session, expected):
         # Arrange
         # Act
         result = self.session_filter.prev_end(session, UNIX_EPOCH)
@@ -147,9 +139,7 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
         news_csv_path = os.path.join(PACKAGE_ROOT, "data", "news_events.csv")
-        self.news_data = as_utc_index(
-            pd.read_csv(news_csv_path, parse_dates=True, index_col=0)
-        )
+        self.news_data = as_utc_index(pd.read_csv(news_csv_path, parse_dates=True, index_col=0))
 
     def test_initialize_filter(self):
         # Arrange
@@ -185,12 +175,8 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
         )
 
         # Act
-        event_next = news_filter.next_event(
-            datetime(2012, 3, 15, 12, 0, tzinfo=pytz.utc)
-        )
-        event_prev = news_filter.next_event(
-            datetime(2012, 3, 15, 12, 0, tzinfo=pytz.utc)
-        )
+        event_next = news_filter.next_event(datetime(2012, 3, 15, 12, 0, tzinfo=pytz.utc))
+        event_prev = news_filter.next_event(datetime(2012, 3, 15, 12, 0, tzinfo=pytz.utc))
 
         # Assert
         self.assertIsNone(event_next)

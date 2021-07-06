@@ -54,15 +54,11 @@ def register_parquet(
     assert isinstance(
         cls_type, type
     ), f"`name` should be <str> (i.e. Class.__name__) not {type(cls_type)}: {cls_type}"
-    assert serializer is None or isinstance(
-        serializer, Callable
-    ), "Serializer must be callable"
+    assert serializer is None or isinstance(serializer, Callable), "Serializer must be callable"
     assert deserializer is None or isinstance(
         deserializer, Callable
     ), "Deserializer must be callable"
-    assert schema is None or isinstance(
-        schema, pa.Schema
-    ), "partition_keys must be tuple"
+    assert schema is None or isinstance(schema, pa.Schema), "partition_keys must be tuple"
     assert partition_keys is None or isinstance(
         partition_keys, tuple
     ), "partition_keys must be tuple"
@@ -174,15 +170,11 @@ def _deserialize(cls, chunk):
 from nautilus_trader.serialization.arrow.implementations.order_book import (
     deserialize as ob_deserialize,
 )
-from nautilus_trader.serialization.arrow.implementations.order_book import (
-    serialize as ob_serialize,
-)
+from nautilus_trader.serialization.arrow.implementations.order_book import serialize as ob_serialize
 
 
 for cls in OrderBookData.__subclasses__():
-    register_parquet(
-        cls, serializer=ob_serialize, deserializer=ob_deserialize, chunk=True
-    )
+    register_parquet(cls, serializer=ob_serialize, deserializer=ob_deserialize, chunk=True)
 
 
 for cls in Instrument.__subclasses__():

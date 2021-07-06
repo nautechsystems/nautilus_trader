@@ -263,9 +263,7 @@ async def test_order_stream_sub_image(mocker, execution_client, exec_engine):
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
-    assert (
-        len(exec_engine.events) == 0
-    )  # We don't do anything with matched bets at this stage
+    assert len(exec_engine.events) == 0  # We don't do anything with matched bets at this stage
 
 
 @pytest.mark.asyncio
@@ -405,11 +403,5 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine):
     assert isinstance(events[2], OrderFilled)
     assert isinstance(events[3], OrderCanceled)
     # Second order example, partial fill followed by remainder filled
-    assert (
-        isinstance(events[4], OrderFilled)
-        and events[4].execution_id.value == "1618712776000"
-    )
-    assert (
-        isinstance(events[5], OrderFilled)
-        and events[5].execution_id.value == "1618712777000"
-    )
+    assert isinstance(events[4], OrderFilled) and events[4].execution_id.value == "1618712776000"
+    assert isinstance(events[5], OrderFilled) and events[5].execution_id.value == "1618712777000"

@@ -49,6 +49,9 @@ from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.venue cimport InstrumentClosePrice
+from nautilus_trader.model.venue cimport InstrumentStatusUpdate
+from nautilus_trader.model.venue cimport VenueStatusUpdate
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.portfolio cimport PortfolioFacade
@@ -99,6 +102,9 @@ cdef class TradingStrategy(Component):
     cpdef void on_trade_tick(self, TradeTick tick) except *
     cpdef void on_bar(self, Bar bar) except *
     cpdef void on_data(self, Data data) except *
+    cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *
+    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update) except *
+    cpdef void on_instrument_close_price(self, InstrumentClosePrice update) except *
     cpdef void on_event(self, Event event) except *
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
@@ -143,6 +149,9 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
+    cpdef void subscribe_venue_status_updates(self, str venue) except *
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
+    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_data(self, ClientId client_id, DataType data_type) except *
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id, int interval=*) except *
@@ -201,10 +210,12 @@ cdef class TradingStrategy(Component):
     cpdef void handle_bar(self, Bar bar, bint is_historical=*) except *
     cpdef void handle_bars(self, list bars) except *
     cpdef void handle_data(self, Data data) except *
+    cpdef void handle_venue_status_update(self, VenueStatusUpdate update) except *
+    cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update) except *
+    cpdef void handle_instrument_close_price(self, InstrumentClosePrice update) except *
     cpdef void handle_event(self, Event event) except *
 
 # -- INTERNAL --------------------------------------------------------------------------------------
-
     cdef void _send_data_cmd(self, DataCommand command) except *
     cdef void _send_data_req(self, DataRequest request) except *
     cdef void _send_exec_cmd(self, TradingCommand command) except *

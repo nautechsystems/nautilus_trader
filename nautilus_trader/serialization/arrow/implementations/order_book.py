@@ -104,9 +104,7 @@ def deserialize(data: List[Dict]):
             ts_recv_ns=data[0]["ts_recv_ns"],
         )
 
-    assert not set([d["order_side"] for d in data]).difference(
-        (None, "BUY", "SELL")
-    ), "Wrong sides"
+    assert not set([d["order_side"] for d in data]).difference((None, "BUY", "SELL")), "Wrong sides"
     results = []
     for _, chunk in itertools.groupby(data, key=timestamp_key):
         chunk = list(chunk)

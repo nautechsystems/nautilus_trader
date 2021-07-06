@@ -109,9 +109,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
 
         mock_client.request.return_value = instruments
 
-        provider = OandaInstrumentProvider(
-            client=mock_client, account_id="001", load_all=True
-        )
+        provider = OandaInstrumentProvider(client=mock_client, account_id="001", load_all=True)
 
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("OANDA"))
 

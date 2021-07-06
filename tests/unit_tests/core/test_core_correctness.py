@@ -180,9 +180,7 @@ class TestCondition:
         "value, type",
         [[["a", "b", "c"], str], [[], None]],
     )
-    def test_list_type_when_contains_correct_types_or_none_does_nothing(
-        self, value, type
-    ):
+    def test_list_type_when_contains_correct_types_or_none_does_nothing(self, value, type):
         # Arrange
         # Act
         # Assert: ValueError not raised
@@ -388,9 +386,7 @@ class TestCondition:
         "value, start, end",
         [[-1, 0, 1], [2, 0, 1]],
     )
-    def test_in_range_int_when_arg_out_of_range_raises_value_error(
-        self, value, start, end
-    ):
+    def test_in_range_int_when_arg_out_of_range_raises_value_error(self, value, start, end):
         # Arrange
         # Act
         # Assert
@@ -418,9 +414,7 @@ class TestCondition:
         "value",
         ["", " ", "  ", "   "],
     )
-    def test_valid_string_with_various_invalid_strings_raises_correct_exception(
-        self, value
-    ):
+    def test_valid_string_with_various_invalid_strings_raises_correct_exception(self, value):
         # Arrange
         # Act
         # Assert

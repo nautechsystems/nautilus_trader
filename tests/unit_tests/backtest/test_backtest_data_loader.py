@@ -195,9 +195,7 @@ def test_data_loader_csv(catalog_dir):
 
     loader = DataLoader(
         path=TEST_DATA_DIR,
-        parser=CSVParser(
-            parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id())
-        ),
+        parser=CSVParser(parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id())),
         chunk_size=100 ** 2,
         glob_pattern="truefx-usd*.csv",
     )
@@ -225,7 +223,9 @@ def test_data_catalog_instruments_df(catalog):
 
 
 def test_data_catalog_instruments_filtered_df(catalog):
-    instrument_id = "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,237491,.BETFAIR"
+    instrument_id = (
+        "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,237491,.BETFAIR"
+    )
     instruments = catalog.instruments(instrument_ids=[instrument_id])
     assert len(instruments) == 1
     assert instruments["instrument_id"].iloc[0] == instrument_id
@@ -249,10 +249,7 @@ def test_data_catalog_metadata(catalog):
 
 def test_data_catalog_dataset_types(catalog):
     dataset = ds.dataset(catalog.root / "trade_tick.parquet")
-    schema = {
-        n: t.__class__.__name__
-        for n, t in zip(dataset.schema.names, dataset.schema.types)
-    }
+    schema = {n: t.__class__.__name__ for n, t in zip(dataset.schema.names, dataset.schema.types)}
     expected = {
         "price": "DataType",
         "size": "DataType",
@@ -333,10 +330,7 @@ def test_partition_key_correctly_remapped(catalog_dir):
 
 def test_data_catalog_filter(catalog):
     assert len(catalog.order_book_deltas()) == 2384
-    assert (
-        len(catalog.order_book_deltas(filter_expr=ds.field("delta_type") == "DELETE"))
-        == 351
-    )
+    assert len(catalog.order_book_deltas(filter_expr=ds.field("delta_type") == "DELETE")) == 351
 
 
 def test_data_catalog_parquet_dtypes(catalog):
@@ -429,9 +423,7 @@ def test_data_loader_generic_data(catalog_dir):
 
 def test_data_catalog_append(catalog_dir):
     catalog = DataCatalog()
-    instrument_data = json.loads(
-        open(TEST_DATA_DIR + "/crypto_instruments.json").read()
-    )
+    instrument_data = json.loads(open(TEST_DATA_DIR + "/crypto_instruments.json").read())
 
     objects = []
     for data in instrument_data:
@@ -494,7 +486,7 @@ def test_catalog_invalid_partition_key(catalog_dir):
 
 def test_data_catalog_backtest_data_no_filter(catalog):
     data = catalog.load_backtest_data()
-    assert len(sum(data.values(), list())) == 2323
+    assert len(sum(data.values(), [])) == 2323
 
 
 def test_data_catalog_backtest_data_filtered(catalog):
@@ -516,7 +508,7 @@ def test_data_catalog_backtest_data_filtered(catalog):
     )
     engine.run()
     # Total events 1045
-    assert engine.iteration == 530
+    assert engine.iteration == 600
 
 
 def test_data_catalog_backtest_run(catalog):

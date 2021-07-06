@@ -17,6 +17,7 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.objects import BaseDecimal
@@ -76,9 +77,7 @@ class TestBaseDecimal:
             [BaseDecimal(2.255, precision=3), 2, Decimal("2.26")],
         ],
     )
-    def test_round_with_various_digits_returns_expected_decimal(
-        self, value, precision, expected
-    ):
+    def test_round_with_various_digits_returns_expected_decimal(self, value, precision, expected):
         # Arrange
         # Act
         result = round(value, precision)
@@ -151,9 +150,7 @@ class TestBaseDecimal:
             [BaseDecimal(-1.1, precision=1), BaseDecimal(-1.1, precision=1)],
         ],
     )
-    def test_instantiate_with_various_valid_inputs_returns_expected_decimal(
-        self, value, expected
-    ):
+    def test_instantiate_with_various_valid_inputs_returns_expected_decimal(self, value, expected):
         # Arrange
         # Act
         decimal_object = BaseDecimal(value, 2)
@@ -200,9 +197,7 @@ class TestBaseDecimal:
             [-1.12, -1.1, False],
         ],
     )
-    def test_equality_with_various_values_returns_expected_result(
-        self, value1, value2, expected
-    ):
+    def test_equality_with_various_values_returns_expected_result(self, value1, value2, expected):
         # Arrange
         # Act
         result = BaseDecimal(value1, 2) == BaseDecimal(value2, 2)
@@ -223,9 +218,7 @@ class TestBaseDecimal:
             [1, 2, False],
         ],
     )
-    def test_equality_with_various_int_returns_expected_result(
-        self, value1, value2, expected
-    ):
+    def test_equality_with_various_int_returns_expected_result(self, value1, value2, expected):
         # Arrange
         # Act
         result1 = BaseDecimal(value1, 0) == value2
@@ -243,9 +236,7 @@ class TestBaseDecimal:
             [BaseDecimal(1, precision=0), Decimal(), False],
         ],
     )
-    def test_equality_with_various_decimals_returns_expected_result(
-        self, value1, value2, expected
-    ):
+    def test_equality_with_various_decimals_returns_expected_result(self, value1, value2, expected):
         # Arrange, Act
         result = value1 == value2
 
@@ -270,18 +261,10 @@ class TestBaseDecimal:
         expected4,
     ):
         # Arrange, Act, Assert
-        assert (
-            BaseDecimal(value1, precision=0) > BaseDecimal(value2, precision=0)
-        ) == expected1
-        assert (
-            BaseDecimal(value1, precision=0) >= BaseDecimal(value2, precision=0)
-        ) == expected2
-        assert (
-            BaseDecimal(value1, precision=0) <= BaseDecimal(value2, precision=0)
-        ) == expected3
-        assert (
-            BaseDecimal(value1, precision=0) < BaseDecimal(value2, precision=0)
-        ) == expected4
+        assert (BaseDecimal(value1, precision=0) > BaseDecimal(value2, precision=0)) == expected1
+        assert (BaseDecimal(value1, precision=0) >= BaseDecimal(value2, precision=0)) == expected2
+        assert (BaseDecimal(value1, precision=0) <= BaseDecimal(value2, precision=0)) == expected3
+        assert (BaseDecimal(value1, precision=0) < BaseDecimal(value2, precision=0)) == expected4
 
     @pytest.mark.parametrize(
         "value1, value2, expected_type, expected_value",
@@ -617,9 +600,7 @@ class TestBaseDecimal:
         "value, expected",
         [[0, 0], [-0, 0], [-1, -1], [1, 1], [1.1, 1.1], [-1.1, -1.1]],
     )
-    def test_as_double_with_various_values_returns_expected_value(
-        self, value, expected
-    ):
+    def test_as_double_with_various_values_returns_expected_value(self, value, expected):
         # Arrange
         # Act
         result = BaseDecimal(value, 1).as_double()
@@ -765,9 +746,7 @@ class TestMoney:
             [BaseDecimal(-1.1, 1), Money(-1.1, USD)],
         ],
     )
-    def test_instantiate_with_various_valid_inputs_returns_expected_money(
-        self, value, expected
-    ):
+    def test_instantiate_with_various_valid_inputs_returns_expected_money(self, value, expected):
         # Arrange
         # Act
         money = Money(value, USD)
@@ -825,7 +804,7 @@ class TestMoney:
         assert expected3 == result3
         assert expected4 == result4
 
-    def test_from_str_with_no_decimal(self):
+    def test_as_double_returns_expected_result(self):
         # Arrange
         # Act
         money = Money(1, USD)
@@ -875,3 +854,29 @@ class TestMoney:
 
         # Assert
         assert "Money('1.00', USD)" == result
+
+    def test_from_str_when_malformed_raises_value_error(self):
+        # Arrange
+        value = "@"
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            Money.from_str(value)
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ["1.00 USD", Money(1.00, USD)],
+            ["1.001 AUD", Money(1.00, AUD)],
+        ],
+    )
+    def test_from_str_given_valid_strings_returns_expected_result(
+        self,
+        value,
+        expected,
+    ):
+        # Arrange, Act
+        result = Money.from_str(value)
+
+        # Assert
+        assert result == expected

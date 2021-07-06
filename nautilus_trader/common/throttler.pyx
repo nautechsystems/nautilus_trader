@@ -84,13 +84,16 @@ cdef class Throttler:
         ValueError
             If interval is not positive (> 0).
         ValueError
-            If output is not of type callable.
+            If output_send is not of type callable.
+        ValueError
+            If output_drop is not of type callable or None.
 
         """
         Condition.valid_string(name, "name")
         Condition.positive_int(limit, "limit")
         Condition.positive(interval.total_seconds(), "interval.total_seconds()")
         Condition.callable(output_send, "output_send")
+        Condition.callable_or_none(output_drop, "output_drop")
 
         self._clock = clock
         self._log = LoggerAdapter(component=f"Throttler-{name}", logger=logger)
