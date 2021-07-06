@@ -25,7 +25,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
-from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.messages cimport ExecutionMassStatus
 from nautilus_trader.execution.messages cimport OrderStatusReport
@@ -334,9 +334,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 message = await self._queue.get()
                 if message is None:  # Sentinel message (fast C-level check)
                     continue         # Returns to the top to check `self.is_running`
-                if message.type == MessageType.EVENT:
+                if message.category == MessageCategory.EVENT:
                     self._handle_event(message)
-                elif message.type == MessageType.COMMAND:
+                elif message.category == MessageCategory.COMMAND:
                     self._execute_command(message)
                 else:
                     self._log.error(f"Cannot handle message: unrecognized {message}.")

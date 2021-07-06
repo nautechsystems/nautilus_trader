@@ -18,7 +18,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.uuid cimport UUID
 
 
-cpdef enum MessageType:
+cpdef enum MessageCategory:
     STRING = 1,
     COMMAND = 2,
     DOCUMENT = 3,
@@ -27,13 +27,13 @@ cpdef enum MessageType:
     RESPONSE = 6,
 
 
-cpdef str message_type_to_str(int value)
-cpdef MessageType message_type_from_str(str value)
+cpdef str message_category_to_str(int value)
+cpdef MessageCategory message_category_from_str(str value)
 
 
 cdef class Message:
-    cdef readonly MessageType type
-    """The generic message type.\n\n:returns: `MessageType`"""
+    cdef readonly MessageCategory category
+    """The message category.\n\n:returns: `MessageCategory`"""
     cdef readonly UUID id
     """The message ID.\n\n:returns: `UUID`"""
     cdef readonly int64_t timestamp_ns
