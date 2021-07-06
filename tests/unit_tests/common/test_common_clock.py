@@ -98,9 +98,9 @@ class TestTestClock:
         # Arrange
         # Act
         # Assert
-        assert type(self.clock.utc_now()) == datetime
+        assert isinstance(self.clock.utc_now(), datetime)
         assert self.clock.utc_now().tzinfo == pytz.utc
-        assert type(self.clock.timestamp_ns()) == int
+        assert isinstance(self.clock.timestamp_ns(), int)
 
     def test_local_now(self):
         # Arrange
@@ -108,7 +108,7 @@ class TestTestClock:
         result = self.clock.local_now(pytz.timezone("Australia/Sydney"))
 
         # Assert
-        assert type(result) == datetime
+        assert isinstance(result, datetime)
         assert result == UNIX_EPOCH.astimezone(tz=pytz.timezone("Australia/Sydney"))
         assert str(result) == "1970-01-01 10:00:00+10:00"
 
@@ -122,7 +122,7 @@ class TestTestClock:
 
         # Assert
         assert result > timedelta(0)
-        assert type(result) == timedelta
+        assert isinstance(result, timedelta)
 
     def test_delta2(self):
         # Arrange
@@ -145,7 +145,7 @@ class TestTestClock:
         # Assert
         assert self.clock.timer_names() == []
         assert len(events) == 1
-        assert type(events[0]) == TimeEventHandler
+        assert isinstance(events[0], TimeEventHandler)
 
     def test_cancel_time_alert(self):
         # Arrange
@@ -627,7 +627,7 @@ class TestLiveClockWithThreadTimer:
         result = self.clock.utc_now()
 
         # Assert
-        assert type(result) == datetime
+        assert isinstance(result, datetime)
         assert result.tzinfo == pytz.utc
 
     def test_local_now(self):
@@ -636,7 +636,7 @@ class TestLiveClockWithThreadTimer:
         result = self.clock.local_now(pytz.timezone("Australia/Sydney"))
 
         # Assert
-        assert type(result) == datetime
+        assert isinstance(result, datetime)
         assert str(result).endswith("+11:00") or str(result).endswith("+10:00")
 
     def test_delta(self):
@@ -649,7 +649,7 @@ class TestLiveClockWithThreadTimer:
 
         # Assert
         assert result > timedelta(0)
-        assert type(result) == timedelta
+        assert isinstance(result, timedelta)
 
     def test_set_time_alert(self):
         # Arrange
@@ -864,7 +864,7 @@ class TestLiveClockWithLoopTimer:
         result = self.clock.timestamp()
 
         # Assert
-        assert type(result) == float
+        assert isinstance(result, float)
         assert result > 0
 
     def test_unix_timestamp_ns(self):
@@ -873,7 +873,7 @@ class TestLiveClockWithLoopTimer:
         result = self.clock.timestamp_ns()
 
         # Assert
-        assert type(result) == int
+        assert isinstance(result, int)
         assert result > 0
 
     def test_set_time_alert(self):

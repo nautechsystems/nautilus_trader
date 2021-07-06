@@ -99,7 +99,7 @@ class TestCCXTDataClientFactory:
         )
 
         # Assert
-        assert type(data_client) == CCXTDataClient
+        assert isinstance(data_client, CCXTDataClient)
         assert data_client.id == ClientId("BINANCE")
 
 
@@ -171,5 +171,5 @@ class TestCCXTExecClientFactory:
         )
 
         # Assert
-        assert type(client) == BinanceCCXTExecutionClient
+        assert isinstance(client, BinanceCCXTExecutionClient)
         assert client.id == ClientId("BINANCE")

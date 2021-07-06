@@ -164,7 +164,7 @@ Installation from source requires Cython to compile the Python C extensions.
 
         pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
-    **Or** clone the source with `git`, and install from the projects root directory:
+   **Or** clone the source with `git`, and install from the projects root directory:
 
         git clone https://github.com/nautechsystems/nautilus_trader
         cd nautilus_trader

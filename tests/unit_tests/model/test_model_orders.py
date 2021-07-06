@@ -209,7 +209,7 @@ class TestOrders:
         assert order.is_aggressive
         assert order.ts_filled_ns == 0
         assert order.last_event.timestamp_ns == 0
-        assert type(order.init_event) == OrderInitialized
+        assert isinstance(order.init_event, OrderInitialized)
 
     def test_initialize_sell_market_order(self):
         # Arrange, Act
@@ -230,7 +230,7 @@ class TestOrders:
         assert not order.is_buy
         assert order.is_sell
         assert order.ts_filled_ns == 0
-        assert type(order.init_event) == OrderInitialized
+        assert isinstance(order.init_event, OrderInitialized)
 
     def test_order_equality(self):
         # Arrange, Act
@@ -310,7 +310,7 @@ class TestOrders:
         assert order.is_passive
         assert not order.is_aggressive
         assert not order.is_completed
-        assert type(order.init_event) == OrderInitialized
+        assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
             == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
@@ -378,7 +378,7 @@ class TestOrders:
         assert order.time_in_force == TimeInForce.GTD
         assert order.expire_time == UNIX_EPOCH
         assert not order.is_completed
-        assert type(order.init_event) == OrderInitialized
+        assert isinstance(order.init_event, OrderInitialized)
 
     def test_initialize_stop_market_order(self):
         # Arrange, Act
@@ -396,7 +396,7 @@ class TestOrders:
         assert order.is_passive
         assert not order.is_aggressive
         assert not order.is_completed
-        assert type(order.init_event) == OrderInitialized
+        assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
             == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
@@ -460,7 +460,7 @@ class TestOrders:
         assert order.is_passive
         assert not order.is_aggressive
         assert not order.is_completed
-        assert type(order.init_event) == OrderInitialized
+        assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
             == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.00000 GTC, trigger=1.10010, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa

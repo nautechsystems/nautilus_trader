@@ -76,4 +76,4 @@ class TestOandaDataClientFactory:
         )
 
         # Assert
-        assert type(client) == OandaDataClient
+        assert isinstance(client, OandaDataClient)

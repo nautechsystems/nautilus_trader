@@ -347,7 +347,7 @@ class TestBaseDecimal:
         result = value1 - value2
 
         # Assert
-        assert type(result) == expected_type
+        assert isinstance(result, expected_type)
         assert result == expected_value
 
     @pytest.mark.parametrize(
@@ -375,7 +375,7 @@ class TestBaseDecimal:
         result = value1 * value2
 
         # Assert
-        assert type(result) == expected_type
+        assert isinstance(result, expected_type)
         assert result == expected_value
 
     @pytest.mark.parametrize(
