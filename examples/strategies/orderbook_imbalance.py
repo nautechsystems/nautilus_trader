@@ -53,15 +53,17 @@ class OrderbookImbalance(TradingStrategy):
         instrument : Instrument
             The instrument to trade
         max_trade_size : Decimal
-            The max position size per trade (volume on the level can be less)
-        trigger_min_size : float
-            The minimum size on the larger side to trigger an order
-        trigger_imbalance_ratio : float
-            The ratio of bid:ask volume required to trigger an order (smaller value / larger value) ie given a
-            trigger_imbalance_ratio=0.2, and a bid volume of 100, we will send a buy order if the ask volume is < 20).
+            The max position size per trade (volume on the level can be less).
         order_id_tag : str
             The unique order ID tag for the strategy. Must be unique
             amongst all running strategies for a particular trader ID.
+        trigger_min_size : float
+            The minimum size on the larger side to trigger an order.
+        trigger_imbalance_ratio : float
+            The ratio of bid:ask volume required to trigger an order (smaller
+            value / larger value) ie given a trigger_imbalance_ratio=0.2, and a
+            bid volume of 100, we will send a buy order if the ask volume is <
+            20).
 
         """
         assert 0 < trigger_imbalance_ratio < 1
