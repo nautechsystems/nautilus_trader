@@ -114,9 +114,9 @@ cdef class DataEngine(Component):
         if config is None:
             config = {}
         super().__init__(
-            name="DataEngine",
             clocl=clock,
             logger=logger,
+            name="DataEngine",
         )
 
         self._use_previous_close = config.get("use_previous_close", True)
