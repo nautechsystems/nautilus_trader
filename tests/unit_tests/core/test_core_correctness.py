@@ -177,14 +177,14 @@ class TestCondition:
             PyCondition.list_type(["a", "b", 3], str, "param")
 
     @pytest.mark.parametrize(
-        "value, type",
+        "value, list_type",
         [[["a", "b", "c"], str], [[], None]],
     )
-    def test_list_type_when_contains_correct_types_or_none_does_nothing(self, value, type):
+    def test_list_type_when_contains_correct_types_or_none_does_nothing(self, value, list_type):
         # Arrange
         # Act
         # Assert: ValueError not raised
-        PyCondition.list_type(value, type, "param")
+        PyCondition.list_type(value, list_type, "param")
 
     @pytest.mark.parametrize(
         "value",

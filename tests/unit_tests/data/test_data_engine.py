@@ -928,7 +928,7 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         assert self.data_engine.subscribed_order_books == [ETHUSDT_BINANCE.id]
         assert handler[0].instrument_id == ETHUSDT_BINANCE.id
-        assert type(handler[0]) == L2OrderBook
+        assert isinstance(handler[0], L2OrderBook)
 
     def test_process_order_book_ops_then_sends_to_registered_handler(self):
         # Arrange
@@ -970,7 +970,7 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         assert self.data_engine.subscribed_order_books == [ETHUSDT_BINANCE.id]
         assert handler[0].instrument_id == ETHUSDT_BINANCE.id
-        assert type(handler[0]) == L2OrderBook
+        assert isinstance(handler[0], L2OrderBook)
 
     def test_process_order_book_when_multiple_subscribers_then_sends_to_registered_handlers(
         self,
@@ -1033,7 +1033,7 @@ class DataEngineTests(unittest.TestCase):
         # Assert
         cached_book = self.data_engine.cache.order_book(ETHUSDT_BINANCE.id)
         assert self.data_engine.subscribed_order_books == [ETHUSDT_BINANCE.id]
-        assert type(cached_book) == L2OrderBook
+        assert isinstance(cached_book, L2OrderBook)
         assert cached_book.instrument_id == ETHUSDT_BINANCE.id
         assert handler1[0] == cached_book
         assert handler2[0] == cached_book
