@@ -112,9 +112,9 @@ cdef class ExecutionEngine(Component):
         if config is None:
             config = {}
         super().__init__(
-            name="ExecEngine",
             clocl=clock,
             logger=logger,
+            name="ExecEngine",
         )
 
         self._clients = {}           # type: dict[ClientId, ExecutionClient]

@@ -109,9 +109,9 @@ cdef class RiskEngine(Component):
         if config is None:
             config = {}
         super().__init__(
-            name="RiskEngine",
             clocl=clock,
             logger=logger,
+            name="RiskEngine",
         )
 
         self._portfolio = portfolio
