@@ -22,7 +22,7 @@ from nautilus_trader.model.identifiers cimport ClientId
 
 cdef class DataCommand(Command):
     cdef readonly ClientId client_id
-    """The data client identifier for the command.\n\n:returns: `ClientId`"""
+    """The data client ID for the command.\n\n:returns: `ClientId`"""
     cdef readonly DataType data_type
     """The command data type.\n\n:returns: `type`"""
     cdef readonly object handler
@@ -39,7 +39,7 @@ cdef class Unsubscribe(DataCommand):
 
 cdef class DataRequest(Request):
     cdef readonly ClientId client_id
-    """The data client identifier for the request.\n\n:returns: `ClientId`"""
+    """The data client ID for the request.\n\n:returns: `ClientId`"""
     cdef readonly DataType data_type
     """The request data type.\n\n:returns: `type`"""
     cdef readonly object callback
@@ -48,7 +48,7 @@ cdef class DataRequest(Request):
 
 cdef class DataResponse(Response):
     cdef readonly ClientId client_id
-    """The data client identifier for the response.\n\n:returns: `ClientId`"""
+    """The data client ID for the response.\n\n:returns: `ClientId`"""
     cdef readonly DataType data_type
     """The response data type.\n\n:returns: `type`"""
     cdef readonly object data

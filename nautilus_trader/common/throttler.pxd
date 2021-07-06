@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport timedelta
+from libc.stdint cimport int64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -24,21 +25,29 @@ from nautilus_trader.common.timer cimport TimeEvent
 cdef class Throttler:
     cdef Clock _clock
     cdef LoggerAdapter _log
-    cdef Queue _queue
-    cdef int _limit
-    cdef int _vouchers
-    cdef str _token
-    cdef timedelta _interval
-    cdef object _output
+    cdef int64_t _interval_ns
+    cdef Queue _buffer
+    cdef str _timer_name
+    cdef object _timestamps
+    cdef object _output_send
+    cdef object _output_drop
 
     cdef readonly str name
     """The name of the throttler.\n\n:returns: `str`"""
-    cdef readonly bint is_active
-    """If the throttler is actively timing.\n\n:returns: `bool`"""
-    cdef readonly bint is_throttling
-    """If the throttler is currently throttling items.\n\n:returns: `bool`"""
+    cdef readonly int limit
+    """The limit for the throttler rate.\n\n:returns: `int`"""
+    cdef readonly timedelta interval
+    """The interval for the throttler rate.\n\n:returns: `timedelta`"""
+    cdef readonly bint is_initialized
+    """If the throttler is initialized (sent at least limit messages).\n\n:returns: `bool`"""
+    cdef readonly bint is_limiting
+    """If the throttler is currently limiting messages (buffering or dropping).\n\n:returns: `bool`"""
 
-    cpdef void send(self, item) except *
-    cpdef void _process_queue(self) except *
-    cpdef void _refresh_vouchers(self, TimeEvent event) except *
-    cdef void _run_timer(self) except *
+    cpdef double used(self) except *
+    cpdef void send(self, msg) except *
+    cdef int64_t _delta_next(self) except *
+    cpdef void _process(self, TimeEvent event) except *
+    cpdef void _resume(self, TimeEvent event) except *
+    cdef void _set_timer(self, handler: callable) except *
+    cdef void _limit_msg(self, msg) except *
+    cdef void _send_msg(self, msg) except *

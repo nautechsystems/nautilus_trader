@@ -73,7 +73,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         client : oandapyV20.API
             The Oanda client.
         account_id : str
-            The Oanda account identifier.
+            The Oanda account ID.
         engine : LiveDataEngine
             The live data engine for the client.
         clock : LiveClock
@@ -152,10 +152,11 @@ cdef class OandaDataClient(LiveMarketDataClient):
         # Schedule subscribed instruments update
         self._load_instruments()
 
-        self._update_instruments_handle: asyncio.Handle = self._loop.call_later(
-            delay=_SECONDS_IN_HOUR,  # Every hour
-            callback=self._subscribed_instruments_update,
-        )
+        # TODO(cs): Investigate a better way of doing this (coro hangs)
+        # self._update_instruments_handle: asyncio.Handle = self._loop.call_later(
+        #     delay=_SECONDS_IN_HOUR,  # Every hour
+        #     callback=self._subscribed_instruments_update,
+        # )
 
         self.is_connected = True
 
@@ -205,7 +206,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `Instrument` data for the given instrument identifier.
+        Subscribe to `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
@@ -219,7 +220,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `QuoteTick` data for the given instrument identifier.
+        Subscribe to `QuoteTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -238,7 +239,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `TradeTick` data for the given instrument identifier.
+        Subscribe to `TradeTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -267,7 +268,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `Instrument` data for the given instrument identifier.
+        Unsubscribe from `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
@@ -281,7 +282,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `QuoteTick` data for the given instrument identifier.
+        Unsubscribe from `QuoteTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -300,7 +301,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `TradeTick` data for the given instrument identifier.
+        Unsubscribe from `TradeTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -331,14 +332,14 @@ cdef class OandaDataClient(LiveMarketDataClient):
 
     cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:
         """
-        Request the instrument for the given instrument identifier.
+        Request the instrument for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the request.
+            The instrument ID for the request.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -353,7 +354,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         Parameters
         ----------
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(correlation_id, "correlation_id")
@@ -374,7 +375,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument identifier for the request.
+            The tick instrument ID for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -383,7 +384,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         limit : int
             The limit for the number of returned ticks.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -405,7 +406,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument identifier for the request.
+            The tick instrument ID for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -414,7 +415,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         limit : int
             The limit for the number of returned ticks.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -446,7 +447,7 @@ cdef class OandaDataClient(LiveMarketDataClient):
         limit : int
             The limit for the number of returned bars.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(bar_type, "bar_type")

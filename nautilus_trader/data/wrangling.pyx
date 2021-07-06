@@ -99,7 +99,7 @@ cdef class QuoteTickDataWrangler:
         Parameters
         ----------
         instrument_indexer : int
-            The instrument identifier indexer for the built ticks.
+            The instrument ID indexer for the built ticks.
         random_seed : int, optional
             The random seed for shuffling order of high and low ticks from bar
             data. If random_seed is None then won't shuffle.
@@ -304,7 +304,7 @@ cdef class TradeTickDataWrangler:
         Parameters
         ----------
         instrument_indexer : int
-            The instrument identifier indexer for the built ticks.
+            The instrument ID indexer for the built ticks.
 
         """
         processed_trades = pd.DataFrame(index=self._data_trades.index)

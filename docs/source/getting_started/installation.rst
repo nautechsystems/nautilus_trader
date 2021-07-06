@@ -2,22 +2,15 @@ Installation
 ============
 
 The ``master`` branch will always reflect the code of the latest release version.
-Also, the documentation is always current for the latest version.
 
-The package is tested against Python 3.7 - 3.9 on both Linux and MacOS.
-We recommend running the platform with the latest stable version of Python.
+The package is tested against Python 3.7 - 3.9 on 64-bit Windows, macOS and Linux.
+We recommend running the platform with the latest stable version of Python, and
+in a virtual environment to isolate the dependencies.
 
-Unfortunately Windows installations are not currently supported. Attempts have
-been made to get the project more compatible with Windows, however there are some
-low level implementation details currently preventing this from being possible.
+For UNIX machines, [pyenv](https://github.com/pyenv/pyenv) is the recommended tool for handling system wide
+Python installations and virtual environments.
 
-It is a goal for the project to keep dependencies focused, however there are
-still a large number of dependencies as found in the ``pyproject.toml`` file.
-Therefore we recommend you create a new virtual environment for NautilusTrader
-to isolate the dependencies.
-
-`pyenv` is the recommended tool for handling system wide Python installations
-and virtual environments.
+Installation can be achieved through _one_ of the following options;
 
 > https://github.com/pyenv/pyenv
 
@@ -49,7 +42,7 @@ Installation from source requires Cython to compile the Python C extensions.
 
 1. To install Cython, run::
 
-        pip install -U Cython==3.0a6
+        pip install -U Cython==3.0.0a8
 
 2. Then to install NautilusTrader using ``pip``, run::
 
@@ -60,3 +53,17 @@ Installation from source requires Cython to compile the Python C extensions.
         git clone https://github.com/nautechsystems/nautilus_trader
         cd nautilus_trader
         pip install .
+
+Extras
+------
+
+Also, the following optional dependency 'extras' are separately available for installation.
+- `betfair` for the Betfair adapter.
+- `ccxt` for the CCXT Pro adapter.
+- `docs` for building the documentation.
+- `ib` for the Interactive Brokers adapter.
+- `oanda` for the OANDA adapter.
+
+For example, to install including the `ccxt` extra using pip:
+
+    pip install nautilus_trader[ccxt]

@@ -53,13 +53,13 @@ cdef class ExecutionClient:
     cdef dict _config
 
     cdef readonly ClientId id
-    """The clients identifier.\n\n:returns: `ClientId`"""
+    """The clients ID.\n\n:returns: `ClientId`"""
     cdef readonly Venue venue
-    """The clients venue identifier (if not multi-venue brokerage).\n\n:returns: `Venue` or None"""
+    """The clients venue ID (if not multi-venue brokerage).\n\n:returns: `Venue` or None"""
     cdef readonly VenueType venue_type
     """The clients venue type.\n\n:returns: `VenueType`"""
     cdef readonly AccountId account_id
-    """The clients account identifier.\n\n:returns: `AccountId`"""
+    """The clients account ID.\n\n:returns: `AccountId`"""
     cdef readonly AccountType account_type
     """The clients account type.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
@@ -88,7 +88,6 @@ cdef class ExecutionClient:
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cpdef void generate_account_state(self, list balances, bint reported, int64_t ts_updated_ns, dict info=*) except *
-    cpdef void generate_order_invalid(self, ClientOrderId client_order_id, str reason) except *
     cpdef void generate_order_submitted(self, ClientOrderId client_order_id, int64_t ts_submitted_ns) except *
     cpdef void generate_order_rejected(self, ClientOrderId client_order_id, str reason, int64_t ts_rejected_ns) except *
     cpdef void generate_order_accepted(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t ts_accepted_ns) except *

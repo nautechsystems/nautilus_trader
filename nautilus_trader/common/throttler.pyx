@@ -14,19 +14,27 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport timedelta
+from libc.stdint cimport int64_t
+
+from collections import deque
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport nanos_to_unix_dt
+from nautilus_trader.core.datetime cimport secs_to_nanos
+from nautilus_trader.core.math cimport max_int64
 
 
 cdef class Throttler:
     """
     Provides a generic throttler with an internal queue.
 
-    Will throttle messages to the given limit-interval combination.
+    Will throttle messages to the given maximum limit-interval rate.
+    The throttler is considered 'initialized' when it has received at least the
+    `limit` number of messages.
 
     Warnings
     --------
@@ -34,7 +42,6 @@ cdef class Throttler:
     the event loop.
 
     The internal queue is unbounded and so a bounded queue should be upstream.
-
     """
 
     def __init__(
@@ -42,7 +49,8 @@ cdef class Throttler:
         str name,
         int limit,
         timedelta interval not None,
-        output not None: callable,
+        output_send not None: callable,
+        output_drop: callable,  # Can be None
         Clock clock not None,
         Logger logger not None,
     ):
@@ -57,8 +65,11 @@ cdef class Throttler:
             The limit setting for the throttling.
         interval : timedelta
             The interval setting for the throttling.
-        output : callable
-            The output handler from the throttler.
+        output_send : callable
+            The output handler to send messages from the throttler.
+        output_drop : callable, optional
+            The output handler to drop messages from the throttler.
+            If None then messages will be buffered.
         clock : Clock
             The clock for the throttler.
         logger : Logger
@@ -71,90 +82,140 @@ cdef class Throttler:
         ValueError
             If limit is not positive (> 0).
         ValueError
-            If output is not of type callable.
+            If interval is not positive (> 0).
+        ValueError
+            If output_send is not of type callable.
+        ValueError
+            If output_drop is not of type callable or None.
 
         """
         Condition.valid_string(name, "name")
         Condition.positive_int(limit, "limit")
-        Condition.callable(output, "output")
+        Condition.positive(interval.total_seconds(), "interval.total_seconds()")
+        Condition.callable(output_send, "output_send")
+        Condition.callable_or_none(output_drop, "output_drop")
 
         self._clock = clock
-        self._log = LoggerAdapter(component=name, logger=logger)
-        self._queue = Queue()
-        self._limit = limit
-        self._vouchers = limit
-        self._token = name + "-REFRESH-TOKEN"
-        self._interval = interval
-        self._output = output
+        self._log = LoggerAdapter(component=f"Throttler-{name}", logger=logger)
+        self._interval_ns = secs_to_nanos(interval.total_seconds())
+        self._buffer = Queue()
+        self._timer_name = f"{name}-DEQUE"
+        self._timestamps = deque(maxlen=limit)
+        self._output_send = output_send
+        self._output_drop = output_drop
 
         self.name = name
-        self.is_active = False
-        self.is_throttling = False
+        self.limit = limit
+        self.interval = interval
+        self.is_initialized = False
+        self.is_limiting = False
+
+        self._log.info("Initialized.")
 
     @property
     def qsize(self):
         """
-        The qsize of the internal queue.
+        The qsize of the internal buffer.
 
         Returns
         -------
         int
 
         """
-        return self._queue.qsize()
+        return self._buffer.qsize()
 
-    cpdef void send(self, item) except *:
+    cpdef double used(self) except *:
         """
-        Send the given item on the throttler.
+        Return the percentage of maximum rate currently used.
 
-        If currently idle then internal refresh token timer will start running.
-        If currently throttling then item will be placed on the internal queue
-        to be sent when vouchers are refreshed.
+        Returns
+        -------
+        double
+            [0, 1.0].
+
+        """
+        if not self.is_initialized:
+            return 0
+
+        cdef int64_t spread = self._clock.timestamp_ns() - self._timestamps[-1]
+        cdef int64_t diff = max_int64(0, self._interval_ns - spread)
+        return <double>diff / <double>self._interval_ns
+
+    cpdef void send(self, msg) except *:
+        """
+        Send the given message through the throttler.
 
         Parameters
         ----------
-        item : object
-            The item to send on the throttler.
-
-        Notes
-        -----
-        Test system specs: x86_64 @ 4000 MHz Linux-4.15.0-136-lowlatency-x86_64-with-glibc2.27
-        Performance overhead ~0.3μs.
+        msg : object
+            The message to send.
 
         """
-        if not self.is_active:
-            self._run_timer()
-        self._queue.put_nowait(item)
-        self._process_queue()
+        # Throttling is occurring
+        if self.is_limiting:
+            self._limit_msg(msg)
+            return
 
-    cpdef void _process_queue(self) except *:
-        while self._vouchers > 0 and not self._queue.empty():
-            item = self._queue.get_nowait()
-            self._output(item)
-            self._vouchers -= 1
-
-        if self._vouchers == 0 and not self._queue.empty():
-            self.is_throttling = True
-            self._log.debug("At limit.")
+        # Check can send message
+        cdef int64_t delta_next = self._delta_next()
+        if delta_next <= 0:
+            self._send_msg(msg)
         else:
-            self.is_throttling = False
+            # Start throttling
+            self._limit_msg(msg)
 
-    cpdef void _refresh_vouchers(self, TimeEvent event) except *:
-        self._vouchers = self._limit
+    cdef int64_t _delta_next(self) except *:
+        if not self.is_initialized:
+            return 0
 
-        if self._queue.empty():
-            self.is_active = False
-            self.is_throttling = False
-            self._log.debug("Idle.")
-        else:
-            self._run_timer()
-            self._process_queue()
+        cdef int64_t diff = self._timestamps[0] - self._timestamps[-1]
+        return self._interval_ns - diff
 
-    cdef void _run_timer(self) except *:
-        self.is_active = True
-        self._log.debug("Active.")
+    cpdef void _process(self, TimeEvent event) except *:
+        msg = self._buffer.get_nowait()
+        self._send_msg(msg)
+
+        cdef int64_t delta_next
+        while not self._buffer.empty():
+            delta_next = self._delta_next()
+            if delta_next <= 0:
+                self._send_msg(msg)
+                continue
+
+            self._set_timer(self._process)
+            break
+
+        self.is_limiting = False
+
+    cpdef void _resume(self, TimeEvent event) except *:
+        self.is_limiting = False
+
+    cdef void _set_timer(self, handler: callable) except *:
         self._clock.set_time_alert(
-            name=self._token,
-            alert_time=self._clock.utc_now() + self._interval,
-            handler=self._refresh_vouchers,
+            name=self._timer_name,
+            alert_time=nanos_to_unix_dt(self._clock.timestamp_ns() + self._delta_next()),
+            handler=handler,
         )
+
+    cdef void _limit_msg(self, msg) except *:
+        if self._output_drop is not None:
+            # Drop
+            self._output_drop(msg)
+            if not self.is_limiting:
+                self._set_timer(self._resume)
+            self._log.warning(f"Dropped {msg}.")
+        else:
+            # Buffer
+            self._buffer.put_nowait(msg)
+            if not self.is_limiting:
+                self._set_timer(self._process)
+            self._log.warning(f"Buffering {msg}.")
+
+        self.is_limiting = True
+
+    cdef void _send_msg(self, msg) except *:
+        self._timestamps.appendleft(self._clock.timestamp_ns())
+        self._output_send(msg)
+        if not self.is_initialized:
+            if len(self._timestamps) == self.limit:
+                self.is_initialized = True

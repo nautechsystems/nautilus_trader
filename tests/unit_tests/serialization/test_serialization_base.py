@@ -52,9 +52,7 @@ class TestSerializationBase:
     def test_register_serializable_object(self):
         # Arrange
         # Act, Assert
-        register_serializable_object(
-            TestObject, TestObject.to_dict, TestObject.from_dict
-        )
+        register_serializable_object(TestObject, TestObject.to_dict, TestObject.from_dict)
 
         # Does not raise exception
 

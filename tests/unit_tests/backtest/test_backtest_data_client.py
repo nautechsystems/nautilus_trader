@@ -215,13 +215,9 @@ class TestBacktestDataClient:
     def test_request_bars(self):
         # Arrange
         # Act
-        self.client.request_bars(
-            TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4()
-        )
+        self.client.request_bars(TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4())
         self.client.connect()
-        self.client.request_bars(
-            TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4()
-        )
+        self.client.request_bars(TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4())
 
         # Assert
         assert True  # No exceptions raised

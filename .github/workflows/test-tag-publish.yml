@@ -15,6 +15,8 @@ jobs:
         python-version: [ 3.7, 3.8, 3.9 ]
     name: test - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      PARALLEL_BUILD: false
 
     steps:
       - uses: actions/checkout@v2
@@ -75,6 +77,8 @@ jobs:
         python-version: [ 3.9 ]
     name: test-tag-publish - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      PARALLEL_BUILD: false
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
 
@@ -150,6 +154,9 @@ jobs:
         python-version: [ 3.9 ]
     name: publish_sdist - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      PARALLEL_BUILD: false
+      SKIP_BUILD_COPY: true
 
     steps:
       - uses: actions/checkout@v2
@@ -181,7 +188,6 @@ jobs:
       # Install / Build (No need to copy built *.so files back into the source tree)
       - name: Install / Build
         run: |
-          export SKIP_BUILD_COPY=true
           poetry install
           poetry build --format sdist
 
@@ -224,6 +230,8 @@ jobs:
         python-version: [ 3.7, 3.8, 3.9 ]
     name: publish_wheels - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      PARALLEL_BUILD: false
 
     steps:
       - uses: actions/checkout@v2

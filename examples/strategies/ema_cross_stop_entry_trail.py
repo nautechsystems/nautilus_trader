@@ -70,7 +70,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the strategy.
+            The instrument ID for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -84,8 +84,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         trail_atr_multiple : float
             The ATR multiple for the trailing stop.
         order_id_tag : str
-            The unique order identifier tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader identifier.
+            The unique order ID tag for the strategy. Must be unique
+            amongst all running strategies for a particular trader ID.
 
         """
         super().__init__(order_id_tag=order_id_tag)
@@ -192,8 +192,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up "
-                f"[{self.cache.bar_count(self.bar_type)}]...",
+                f"Waiting for indicators to warm up " f"[{self.cache.bar_count(self.bar_type)}]...",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
@@ -254,9 +253,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         """
         # Round price to nearest 0.5 (for XBT/USD)
-        price = (
-            round((last_bar.high + (self.atr.value * self.trail_atr_multiple)) * 2) / 2
-        )
+        price = round((last_bar.high + (self.atr.value * self.trail_atr_multiple)) * 2) / 2
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
@@ -273,9 +270,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
         Users simple trailing stop SELL for (LONG positions).
         """
         # Round price to nearest 0.5 (for XBT/USD)
-        price = (
-            round((last_bar.low - (self.atr.value * self.trail_atr_multiple)) * 2) / 2
-        )
+        price = round((last_bar.low - (self.atr.value * self.trail_atr_multiple)) * 2) / 2
         order: StopMarketOrder = self.order_factory.stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
@@ -305,8 +300,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         if self.trailing_stop.is_sell:
             new_trailing_price = (
-                round((last_bar.low - (self.atr.value * self.trail_atr_multiple)) * 2)
-                / 2
+                round((last_bar.low - (self.atr.value * self.trail_atr_multiple)) * 2) / 2
             )
             if new_trailing_price > self.trailing_stop.price:
                 self.log.info(f"Moving SELL trailing stop to {new_trailing_price}.")
@@ -314,8 +308,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
                 self.trailing_stop_sell(last_bar)
         else:  # trailing_stop.is_buy
             new_trailing_price = (
-                round((last_bar.high + (self.atr.value * self.trail_atr_multiple)) * 2)
-                / 2
+                round((last_bar.high + (self.atr.value * self.trail_atr_multiple)) * 2) / 2
             )
             if new_trailing_price < self.trailing_stop.price:
                 self.log.info(f"Moving BUY trailing stop to {new_trailing_price}.")

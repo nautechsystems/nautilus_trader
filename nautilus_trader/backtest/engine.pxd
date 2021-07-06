@@ -49,6 +49,7 @@ cdef class BacktestEngine:
 
     cdef dict _exchanges
     cdef list _generic_data
+    cdef list _data
     cdef list _order_book_data
     cdef dict _quote_ticks
     cdef dict _trade_ticks
@@ -58,7 +59,7 @@ cdef class BacktestEngine:
     cdef readonly Trader trader
     """The trader for the backtest.\n\n:returns: `Trader`"""
     cdef readonly UUID system_id
-    """The backtest engine system identifier.\n\n:returns: `UUID`"""
+    """The backtest engine system ID.\n\n:returns: `UUID`"""
     cdef readonly datetime created_time
     """The backtest engine created time.\n\n:returns: `datetime`"""
     cdef readonly timedelta time_to_initialize
@@ -85,3 +86,4 @@ cdef class BacktestEngine:
         datetime start,
         datetime stop,
     ) except *
+    cpdef list_venues(self)

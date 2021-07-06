@@ -55,7 +55,7 @@ cdef class LimitOrder(PassiveOrder):
         datetime expire_time,  # Can be None
         UUID init_id not None,
         int64_t timestamp_ns,
-        bint post_only=True,
+        bint post_only=False,
         bint reduce_only=False,
         bint hidden=False,
     ):
@@ -65,9 +65,9 @@ cdef class LimitOrder(PassiveOrder):
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         strategy_id : StrategyId
-            The strategy identifier associated with the order.
+            The strategy ID associated with the order.
         instrument_id : InstrumentId
             The order instrument_id.
         order_side : OrderSide
@@ -81,7 +81,7 @@ cdef class LimitOrder(PassiveOrder):
         expire_time : datetime, optional
             The order expiry time.
         init_id : UUID
-            The order initialization event identifier.
+            The order initialization event ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the order initialization.
         post_only : bool, optional
@@ -99,14 +99,10 @@ cdef class LimitOrder(PassiveOrder):
             If time_in_force is GTD and expire_time is None.
         ValueError
             If post_only and hidden.
-        ValueError
-            If hidden and post_only.
 
         """
         if post_only:
-            Condition.false(hidden, "A post-only order is not hidden")
-        if hidden:
-            Condition.false(post_only, "A hidden order is not post-only")
+            Condition.false(hidden, "A post-only order cannot be hidden")
         super().__init__(
             client_order_id=client_order_id,
             strategy_id=strategy_id,
@@ -140,7 +136,6 @@ cdef class LimitOrder(PassiveOrder):
 
         """
         return {
-            "type": type(self).__name__,
             "client_order_id": self.client_order_id.value,
             "venue_order_id": self.venue_order_id.value,
             "position_id": self.position_id.value,
@@ -148,20 +143,18 @@ cdef class LimitOrder(PassiveOrder):
             "account_id": self.account_id.value if self.account_id else None,
             "execution_id": self.execution_id.value if self.execution_id else None,
             "instrument_id": self.instrument_id.value,
-            "order_side": OrderSideParser.to_str(self.side),
-            "order_type": OrderTypeParser.to_str(self.type),
+            "type": OrderTypeParser.to_str(self.type),
+            "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "price": str(self.price),
             "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
-            "expire_time": self.expire_time,
-            "ts_expire_time": self.expire_time_ns,
+            "expire_time_ns": self.expire_time_ns,
             "timestamp_ns": self.timestamp_ns,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
             "ts_filled_ns": self.ts_filled_ns,
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "slippage": str(self.slippage),
-            "init_id": str(self.init_id),
             "state": self._fsm.state_string_c(),
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,

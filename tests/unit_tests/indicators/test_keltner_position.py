@@ -38,12 +38,8 @@ class KeltnerPositionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(
-            "KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", str(self.kp)
-        )
-        self.assertEqual(
-            "KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", repr(self.kp)
-        )
+        self.assertEqual("KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", str(self.kp))
+        self.assertEqual("KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", repr(self.kp))
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange

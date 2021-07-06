@@ -80,6 +80,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         dict trade_ticks=None,
         dict bars_bid=None,
         dict bars_ask=None,
+        list data=None
     ):
         """
         Initialize a new instance of the ``BacktestDataProducer`` class.
@@ -118,6 +119,8 @@ cdef class BacktestDataProducer(DataProducerFacade):
             bars_bid = {}
         if bars_ask is None:
             bars_ask = {}
+        if data is None:
+            data = []
 
         self._log = LoggerAdapter(
             component=type(self).__name__,
@@ -129,9 +132,14 @@ cdef class BacktestDataProducer(DataProducerFacade):
         cdef int instrument_counter = 0
         self._instrument_index = {}
 
+        # Find TradeTick objects
+        ticks = [
+            tick for instrument in self._instruments for tick in trade_ticks.get(instrument.id, [])
+            if isinstance(trade_ticks.get(instrument.id), list) and isinstance(trade_ticks.get(instrument.id)[0], TradeTick)
+        ]
         # Merge data stream
         self._stream = sorted(
-            generic_data + order_book_data,
+            generic_data + order_book_data + ticks + data,
             key=lambda x: x.ts_recv_ns,
         )
 
@@ -170,7 +178,10 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
             # Process quote tick data
             # -----------------------
-            if instrument_id in quote_ticks or instrument_id in bars_bid:
+            if instrument_id in quote_ticks and isinstance(quote_ticks[instrument_id], list):
+                self._stream = sorted(self._stream + quote_ticks[instrument_id], key=lambda x: x.ts_recv_ns)
+
+            elif instrument_id in quote_ticks or instrument_id in bars_bid:
                 ts = unix_timestamp()  # Time data processing
                 quote_wrangler = QuoteTickDataWrangler(
                     instrument=instrument,
@@ -188,7 +199,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
                     f"Prepared {len(quote_wrangler.processed_data):,} {instrument_id} quote tick rows in "
                     f"{unix_timestamp() - ts:.3f}s.")
                 del quote_wrangler  # Dump processing artifact
-
             # Process trade tick data
             # -----------------------
             if instrument_id in trade_ticks:
@@ -258,10 +268,10 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 max_timestamp = max(self._quote_tick_data.index.max(), self._trade_tick_data.index.max())
 
         if min_timestamp is None:
-            min_timestamp = as_utc_timestamp(pd.Timestamp.max)
+            min_timestamp = as_utc_timestamp(pd.Timestamp.max - timedelta(days=1))
 
         if max_timestamp is None:
-            max_timestamp = as_utc_timestamp(pd.Timestamp.min)
+            max_timestamp = as_utc_timestamp(pd.Timestamp.min + timedelta(days=1))
 
         self.min_timestamp_ns = dt_to_unix_nanos(min_timestamp)
         self.max_timestamp_ns = dt_to_unix_nanos(max_timestamp)
@@ -342,9 +352,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         """
         self._log.info(f"Pre-processing data stream...")
-
-        # Calculate data size
-        cdef int64_t total_size = 0
 
         if self._stream:
             # Set data stream start index

@@ -14,13 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.betfair.data import on_market_update
-from nautilus_trader.model.events import InstrumentClosePrice
-from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.venue import InstrumentClosePrice
+from nautilus_trader.model.venue import InstrumentStatusUpdate
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
@@ -40,9 +40,7 @@ def test_betfair_orderbook(betfair_data_client, provider):
                     book.apply_deltas(message)
                 elif isinstance(message, OrderBookDelta):
                     book.apply_delta(message)
-                elif isinstance(
-                    message, (TradeTick, InstrumentStatusEvent, InstrumentClosePrice)
-                ):
+                elif isinstance(message, (TradeTick, InstrumentStatusUpdate, InstrumentClosePrice)):
                     pass
                 else:
                     raise NotImplementedError(str(type(message)))

@@ -36,7 +36,7 @@ cdef class SpreadAnalyzer(Indicator):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the tick updates.
+            The instrument ID for the tick updates.
         capacity : int
             The max length for the internal `QuoteTick` deque (determines averages).
 

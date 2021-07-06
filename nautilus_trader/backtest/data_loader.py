@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 from collections import defaultdict
 from collections import namedtuple
 from io import BytesIO
@@ -24,29 +39,27 @@ except ImportError:
     pass
 
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.model.events import InstrumentStatusEvent
-from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.venue import InstrumentStatusUpdate
 from nautilus_trader.serialization.arrow.core import _deserialize
+from nautilus_trader.serialization.arrow.core import _partition_keys
+from nautilus_trader.serialization.arrow.core import _schemas
 from nautilus_trader.serialization.arrow.core import _serialize
 
 
 NewFile = namedtuple("NewFile", "name")
 EOStream = namedtuple("EOStream", "")
 GENERIC_DATA_PREFIX = "genericdata_"
-# TODO (bm) - Line preprocessor not called / used - implement a simple log example
-# TODO (bm) - Implement chunking in CSVParser
-# TODO (bm) - Implement chunking in ParquetParser
-
-
 category_attributes = {
     "TradeTick": ["instrument_id", "type", "aggressor_side"],
     "OrderBookDelta": ["instrument_id", "type", "level", "delta_type", "order_size"],
 }
+NAUTILUS_TS_COLUMNS = ("ts_event_ns", "ts_recv_ns", "timestamp_ns")
 
 
 class ByteParser:
@@ -104,9 +117,7 @@ class TextParser(ByteParser):
     def on_new_file(self, new_file):
         pass
 
-    def read(  # noqa: C901
-        self, stream: Generator, instrument_provider=None
-    ) -> Generator:
+    def read(self, stream: Generator, instrument_provider=None) -> Generator:  # noqa: C901
         raw = b""
         fn = None
         for chunk in stream:
@@ -118,8 +129,8 @@ class TextParser(ByteParser):
                 self.on_new_file(chunk)
                 yield chunk
                 continue
-            elif chunk is EOStream:
-                yield EOStream
+            elif isinstance(chunk, EOStream):
+                yield chunk
                 return
             elif chunk is None:
                 yield
@@ -130,9 +141,7 @@ class TextParser(ByteParser):
             raw += chunk
             process, raw = raw.rsplit(b"\n", maxsplit=1)
             if process:
-                for x in self.process_chunk(
-                    chunk=process, instrument_provider=instrument_provider
-                ):
+                for x in self.process_chunk(chunk=process, instrument_provider=instrument_provider):
                     try:
                         self.state, x = x
                     except TypeError as e:
@@ -143,7 +152,12 @@ class TextParser(ByteParser):
     def process_chunk(self, chunk, instrument_provider):
         for line in map(self.line_preprocessor, chunk.split(b"\n")):
             if self.instrument_provider_update is not None:
-                self.instrument_provider_update(instrument_provider, line)
+                # Check the user hasn't accidentally used a generator here also
+                r = self.instrument_provider_update(instrument_provider, line)
+                if isinstance(r, Generator):
+                    raise Exception(
+                        f"{self.instrument_provider_update} func should not be generator"
+                    )
             yield from self.parser(line, state=self.state)
 
 
@@ -166,9 +180,9 @@ class CSVParser(TextParser):
         parser : callable
             The handler which takes byte strings and yields Nautilus objects.
         line_preprocessor : callable
-            TBC.
+            Optional handler to clean log lines prior to processing by `parser`
         instrument_provider_update
-            TBC.
+            Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
 
         """
         super().__init__(
@@ -186,6 +200,8 @@ class CSVParser(TextParser):
             header, chunk = chunk.split(b"\n", maxsplit=1)
             self.header = header.decode().split(",")
         df = pd.read_csv(BytesIO(chunk), names=self.header)
+        if self.instrument_provider_update is not None:
+            self.instrument_provider_update(instrument_provider, df)
         yield from self.parser(df, state=self.state)
 
 
@@ -194,12 +210,41 @@ class ParquetParser(ByteParser):
     Provides parsing of parquet specification bytes to Nautilus objects.
     """
 
-    # Implicit initialization of base class
+    def __init__(
+        self,
+        data_type: str,
+        parser: callable = None,
+        instrument_provider_update=None,
+    ):
+        """
+        Initialize a new instance of the ``ParquetParser`` class.
+
+        Parameters
+        ----------
+        data_type : One of `quote_ticks`, `trade_ticks`
+            The wrangler which takes pandas dataframes (from parquet) and yields Nautilus objects.
+        instrument_provider_update
+            Optional hook to call before `parser` for the purpose of loading instruments into the InstrumentProvider
+
+        """
+        data_types = ("quote_ticks", "trade_ticks")
+        assert data_type in data_types, f"data_type must be one of {data_types}"
+        super().__init__(
+            instrument_provider_update=instrument_provider_update,
+        )
+        self.parser = parser
+        self.filename = None
+        self.data_type = data_type
+
     def read(self, stream: Generator, instrument_provider=None) -> Generator:
         for chunk in stream:
             if isinstance(chunk, NewFile):
+                self.filename = chunk.name
+                if self.instrument_provider_update is not None:
+                    self.instrument_provider_update(instrument_provider, chunk)
                 yield chunk
-            elif chunk == EOStream:
+            elif isinstance(chunk, EOStream):
+                self.filename = None
                 yield chunk
                 return
             elif chunk is None:
@@ -207,7 +252,13 @@ class ParquetParser(ByteParser):
             elif isinstance(chunk, bytes):
                 if len(chunk):
                     df = pd.read_parquet(BytesIO(chunk))
-                    yield df
+                    if self.instrument_provider_update is not None:
+                        self.instrument_provider_update(
+                            instrument_provider=instrument_provider,
+                            df=df,
+                            filename=self.filename,
+                        )
+                    yield from self.parser(data_type=self.data_type, df=df, filename=self.filename)
             else:
                 raise TypeError
 
@@ -277,9 +328,7 @@ class DataLoader:
             path += "/"
         if self.fs.isdir(path):
             files = self.fs.glob(f"{path}{self.glob_pattern}")
-            assert (
-                files
-            ), f"Found no files with path={str(path)}, glob={self.glob_pattern}"
+            assert files, f"Found no files with path={str(path)}, glob={self.glob_pattern}"
             return [f for f in files if self.fs.isfile(f)]
         else:
             raise ValueError("path argument must be str and a valid directory or file")
@@ -287,14 +336,14 @@ class DataLoader:
     def stream_bytes(self, progress=False):
         path = self.path if not progress else tqdm(self.path)
         for fn in path:
-            with fsspec.open(fn, compression=self.compression) as f:
+            with fsspec.open(f"{self.fs_protocol}://{fn}", compression=self.compression) as f:
                 yield NewFile(fn)
                 data = 1
                 while data:
                     data = f.read(self.chunk_size)
                     yield data
                     yield None  # this is a chunk
-        yield EOStream
+        yield EOStream()
 
     def run(self, progress=False):
         stream = self.parser.read(
@@ -303,7 +352,7 @@ class DataLoader:
         )
         while 1:
             chunk = list(takewhile(lambda x: x is not None, stream))
-            if chunk == [EOStream]:
+            if chunk and isinstance(chunk[-1], EOStream):
                 break
             if not chunk:
                 continue
@@ -313,7 +362,7 @@ class DataLoader:
                 instruments = [
                     self.instrument_provider.find(s.instrument_id)
                     for s in chunk
-                    if isinstance(s, InstrumentStatusEvent)
+                    if isinstance(s, InstrumentStatusUpdate)
                 ]
                 chunk = instruments + chunk
             yield chunk
@@ -344,7 +393,9 @@ class DataCatalog:
 
     # ---- Loading data ---------------------------------------------------------------------------------------- #
 
-    def import_from_data_loader(self, loader: DataLoader, append_only=False, **kwargs):
+    def import_from_data_loader(
+        self, loader: DataLoader, append_only=False, progress=False, **kwargs
+    ):
         """
         Load data from a DataLoader instance into the backtest catalogue.
 
@@ -359,7 +410,7 @@ class DataCatalog:
             The kwargs passed through to `ParquetWriter`.
 
         """
-        for chunk in loader.run(progress=kwargs.pop("progress", False)):
+        for chunk in loader.run(progress=progress):
             self._write_chunks(chunk=chunk, append_only=append_only, **kwargs)
 
     def _save_processed_raw_files(self, files):
@@ -376,6 +427,14 @@ class DataCatalog:
                 return orjson.loads(f.read())
         else:
             return []
+
+    @staticmethod
+    def _determine_partition_cols(cls, instrument_id):
+        if _partition_keys.get(cls.__name__) is not None:
+            return list(_partition_keys[cls.__name__])
+        elif instrument_id is not None:
+            return ["instrument_id"]
+        return
 
     def _write_chunks(self, chunk, append_only=False, **kwargs):  # noqa: C901
         processed_raw_files = self._load_processed_raw_files()
@@ -418,33 +477,51 @@ class DataCatalog:
                 if df.empty:
                     continue
 
+                ts_col = None
+                for c in NAUTILUS_TS_COLUMNS:
+                    if c in df.columns:
+                        ts_col = c
+                assert ts_col is not None, f"Could not find timestamp column for type: {cls}"
+
+                partition_cols = self._determine_partition_cols(cls=cls, instrument_id=ins_id)
+
                 # Load any existing data, drop dupes
                 if not append_only:
-                    if self.fs.exists(fn):
-                        existing = pd.read_parquet(
-                            str(fn),
-                            fs=self.fs,
-                            filters=[("instrument_id", "=", ins_id)],
+                    if self.fs.exists(fn) or self.fs.isdir(str(fn)):
+                        existing = self._query(
+                            filename=camel_to_snake_case(cls.__name__),
+                            instrument_ids=ins_id,
+                            ts_column=ts_col,
                         )
-                        df = df.append(existing).drop_duplicates()
-                        # Remove file, will be written again
-                        self.fs.rm(fn, recursive=True)
+                        if not existing.empty:
+                            df = df.append(existing).drop_duplicates()
+                            # Remove this file/partition, will be written again
+                            if partition_cols:
+                                assert partition_cols == [
+                                    "instrument_id"
+                                ], "Only support appending to instrument_id partitions"
+                                # We only want to remove this partition
+                                partition_path = f"/instrument_id={clean_key(ins_id)}"
+                                self.fs.rm(str(fn) + partition_path, recursive=True)
+                            else:
+                                self.fs.rm(str(fn), recursive=True)
 
-                df = df.astype(
-                    {k: "category" for k in category_attributes.get(cls.__name__, [])}
-                )
-                for col in ("ts_event_ns", "ts_recv_ns", "timestamp_ns"):
+                df = df.sort_values(ts_col)
+                df = df.astype({k: "category" for k in category_attributes.get(cls.__name__, [])})
+                for col in NAUTILUS_TS_COLUMNS:
                     if col in df.columns:
                         df = df.sort_values(col)
                         break
-                table = pa.Table.from_pandas(df)
 
+                clean_partition_cols(df, partition_cols)
+
+                table = pa.Table.from_pandas(df, schema=_schemas.get(cls.__name__))
                 metadata_collector = []
                 pq.write_to_dataset(
                     table=table,
                     root_path=str(fn),
                     filesystem=self.fs,
-                    partition_cols=["instrument_id"] if ins_id is not None else None,
+                    partition_cols=partition_cols,
                     # use_legacy_dataset=True,
                     version="2.0",
                     metadata_collector=metadata_collector,
@@ -508,9 +585,7 @@ class DataCatalog:
             engine.add_instrument(instrument)
             for name in data:
                 if name == "trade_ticks":
-                    engine.add_trade_tick_objects(
-                        instrument_id=instrument.id, data=data[name]
-                    )
+                    engine.add_trade_tick_objects(instrument_id=instrument.id, data=data[name])
                 elif name == "quote_ticks":
                     engine.add_quote_ticks(instrument_id=instrument.id, data=data[name])
                 elif name == "order_book_deltas":
@@ -589,7 +664,7 @@ class DataCatalog:
                 "instrument_status_events",
                 instrument_status_events,
                 self.instrument_status_events,
-                {"ts_column": "timestamp_ns"},
+                {},
             ),
             ("quote_ticks", quote_ticks, self.quote_ticks, {}),
         ]
@@ -626,52 +701,71 @@ class DataCatalog:
         if instrument_ids is not None:
             if not isinstance(instrument_ids, list):
                 instrument_ids = [instrument_ids]
-            filters.append(ds.field("instrument_id").isin(list(set(instrument_ids))))
+            filters.append(
+                ds.field("instrument_id").isin(list(set(map(clean_key, instrument_ids))))
+            )
         if start is not None:
-            filters.append(ds.field(ts_column) >= start)
+            filters.append(ds.field(ts_column) >= int(pd.Timestamp(start).to_datetime64()))
         if end is not None:
-            filters.append(ds.field(ts_column) <= end)
+            filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
 
-        dataset = ds.dataset(
-            f"{self.root}/{filename}.parquet/",
-            partitioning="hive",
-            filesystem=self.fs,
-        )
-        df = (
-            dataset.to_table(filter=combine_filters(*filters))
-            .to_pandas()
-            .drop_duplicates()
-        )
+        path = f"{self.root}/{filename}.parquet/"
+        if not self.fs.exists(path):
+            return
+
+        dataset = ds.dataset(path, partitioning="hive", filesystem=self.fs)
+        df = dataset.to_table(filter=combine_filters(*filters)).to_pandas().drop_duplicates()
         if "instrument_id" in df.columns:
             df = df.astype({"instrument_id": "category"})
         return df
 
     @staticmethod
     def _make_objects(df, cls):
-        return _deserialize(name=cls, chunk=df.to_dict("records"))
+        if df is None:
+            return []
+        return _deserialize(cls=cls, chunk=df.to_dict("records"))
 
-    def instruments(self, filter_expr=None, as_nautilus=False, **kwargs):
-        df = self._query("betting_instrument", filter_expr=filter_expr, **kwargs)
+    def instruments(self, instrument_type=None, filter_expr=None, as_nautilus=False, **kwargs):
+        if instrument_type is not None:
+            assert isinstance(instrument_type, type)
+            instrument_types = (instrument_type,)
+        else:
+            instrument_types = Instrument.__subclasses__()
+
+        dfs = []
+        for ins_type in instrument_types:
+            dfs.append(
+                self._query(
+                    camel_to_snake_case(ins_type.__name__),
+                    filter_expr=filter_expr,
+                    **kwargs,
+                )
+            )
+
         if not as_nautilus:
-            return df
-        return self._make_objects(df=df.drop(["type"], axis=1), cls=BettingInstrument)
+            return pd.concat([df for df in dfs if df is not None])
+        else:
+            objects = []
+            for ins_type, df in zip(instrument_types, dfs):
+                if df is None:
+                    continue
+                objects.extend(self._make_objects(df=df.drop(["type"], axis=1), cls=ins_type))
+            return objects
 
     def instrument_status_events(
         self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
     ):
         df = self._query(
-            "instrument_status_event",
+            "instrument_status_update",
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
             **kwargs,
         )
         if not as_nautilus:
             return df
-        return self._make_objects(df=df, cls=InstrumentStatusEvent)
+        return self._make_objects(df=df, cls=InstrumentStatusUpdate)
 
-    def trade_ticks(
-        self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
-    ):
+    def trade_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
             "trade_tick",
             instrument_ids=instrument_ids,
@@ -682,9 +776,7 @@ class DataCatalog:
             return df.astype({"price": float, "size": float})
         return self._make_objects(df=df, cls=TradeTick)
 
-    def quote_ticks(
-        self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
-    ):
+    def quote_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
             "quote_tick",
             instrument_ids=instrument_ids,
@@ -695,9 +787,7 @@ class DataCatalog:
             return df
         return self._make_objects(df=df, cls=QuoteTick)
 
-    def order_book_deltas(
-        self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
-    ):
+    def order_book_deltas(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
             "order_book_delta",
             instrument_ids=instrument_ids,
@@ -717,6 +807,27 @@ class DataCatalog:
         if not as_nautilus:
             return df
         return self._make_objects(df=df, cls=OrderBookDelta)
+
+    def list_data_types(self):
+        return [p.stem for p in self.root.glob("*.parquet")]
+
+    def list_generic_data_types(self):
+        data_types = self.list_data_types()
+        return [
+            n.replace(GENERIC_DATA_PREFIX, "")
+            for n in data_types
+            if n.startswith(GENERIC_DATA_PREFIX)
+        ]
+
+    def list_partitions(self, cls_type):
+        assert isinstance(cls_type, type), "`cls_type` should be type, ie TradeTick"
+        prefix = GENERIC_DATA_PREFIX if is_custom_data(cls_type) else ""
+        name = prefix + camel_to_snake_case(cls_type.__name__)
+        dataset = pq.ParquetDataset(self.root / f"{name}.parquet")
+        partitions = {}
+        for level in dataset.partitions.levels:
+            partitions[level.name] = level.keys
+        return partitions
 
 
 def camel_to_snake_case(s):
@@ -747,14 +858,45 @@ def combine_filters(*filters):
 
 
 def is_custom_data(cls):
-    builtin_paths = ("nautilus_trader.models",)
-    return cls in Data.__subclasses__() and not any(
-        (cls.__name__.startswith(p) for p in builtin_paths)
-    )
+    is_nautilus_paths = cls.__module__.startswith("nautilus_trader.")
+    if not is_nautilus_paths:
+        # This object is defined outside of nautilus, definitely custom
+        return True
+    else:
+        nautilus_builtins = ("nautilus_trader.models",)
+        return cls in Data.__subclasses__() and not any(
+            (cls.__name__.startswith(p) for p in nautilus_builtins)
+        )
 
 
 def identity(x):
     return x
+
+
+INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
+
+
+def clean_partition_cols(df, partition_cols=None):
+    for col in partition_cols or []:
+        values = list(map(str, df[col].unique()))
+        invalid_values = {val for val in values if any(x in val for x in INVALID_WINDOWS_CHARS)}
+        if invalid_values:
+            if col == "instrument_id":
+                # We have control over how instrument_ids are retrieved from the cache, so we can do this replacement
+                df.loc[:, col] = df[col].map({k: clean_key(k) for k in values})
+            else:
+                # We would be arbitrarily replacing values here which could break queries, we should not do this.
+                raise ValueError(
+                    f"Some values in partition column [{col}] contain invalid characters: {invalid_values}"
+                )
+    return df
+
+
+def clean_key(s):
+    for ch in INVALID_WINDOWS_CHARS:
+        if ch in s:
+            s = s.replace(ch, "-")
+    return s
 
 
 # TODO - https://github.com/leonidessaguisagjr/filehash ?

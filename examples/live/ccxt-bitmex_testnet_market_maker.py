@@ -44,7 +44,7 @@ config = {
     },
     "system": {
         "loop_debug": False,  # If event loop debug mode
-        "timeout_connection": 10.0,  # Timeout for all engines client to connect and initialize
+        "timeout_connection": 10.0,  # Timeout for all clients to connect and initialize
         "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
         "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
         "timeout_disconnection": 5.0,  # Timeout for all engine clients to disconnect
@@ -53,7 +53,7 @@ config = {
     "logging": {
         "level_stdout": "INF",
     },
-    "cache_database": {
+    "database": {
         "type": "redis",
         "host": "localhost",
         "port": 6379,
@@ -96,7 +96,7 @@ instrument_id = InstrumentId(
 strategy = VolatilityMarketMaker(
     instrument_id=instrument_id,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
-    trade_size=Decimal("10"),
+    trade_size=Decimal("100"),
     atr_period=20,
     atr_multiple=1.5,
     order_id_tag="091",

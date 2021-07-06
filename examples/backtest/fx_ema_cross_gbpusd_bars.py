@@ -49,7 +49,11 @@ if __name__ == "__main__":
         use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
         # exec_db_type="redis",
         # exec_db_flush=False,
-        # bypass_logging=True
+        # bypass_logging=True,
+        config_risk={
+            "bypass": True,  # Example of bypassing pre-trade risk checks for backtests
+            "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
+        },
     )
 
     # Setup trading instruments
@@ -81,9 +85,7 @@ if __name__ == "__main__":
 
     # Optional plug in module to simulate rollover interest,
     # the data is coming from packaged test data.
-    interest_rate_data = pd.read_csv(
-        os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
-    )
+    interest_rate_data = pd.read_csv(os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"))
     fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
     # Add an exchange (multiple exchanges possible)

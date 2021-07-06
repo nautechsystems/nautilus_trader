@@ -66,8 +66,6 @@ cdef class LiveDataEngine(DataEngine):
         """
         if config is None:
             config = {}
-        if "qsize" not in config:
-            config["qsize"] = 10000
         super().__init__(
             portfolio=portfolio,
             cache=cache,
@@ -77,8 +75,8 @@ cdef class LiveDataEngine(DataEngine):
         )
 
         self._loop = loop
-        self._data_queue = Queue(maxsize=config.get("qsize"))
-        self._message_queue = Queue(maxsize=config.get("qsize"))
+        self._data_queue = Queue(maxsize=config.get("qsize", 10000))
+        self._message_queue = Queue(maxsize=config.get("qsize", 10000))
 
         self._run_queues_task = None
         self.is_running = False
@@ -163,8 +161,10 @@ cdef class LiveDataEngine(DataEngine):
         try:
             self._message_queue.put_nowait(command)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
-                              f"{self._message_queue.qsize()} items.")
+            self._log.warning(
+                f"Blocking on `_message_queue.put` as message_queue full at "
+                f"{self._message_queue.qsize()} items.",
+            )
             self._loop.create_task(self._message_queue.put(command))  # Blocking until qsize reduces
 
     cpdef void process(self, Data data) except *:
@@ -191,8 +191,10 @@ cdef class LiveDataEngine(DataEngine):
         try:
             self._data_queue.put_nowait(data)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `_data_queue.put` as data_queue full at "
-                              f"{self._data_queue.qsize()} items.")
+            self._log.warning(
+                f"Blocking on `_data_queue.put` as data_queue full at "
+                f"{self._data_queue.qsize()} items.",
+            )
             self._loop.create_task(self._data_queue.put(data))  # Blocking until qsize reduces
 
     cpdef void send(self, DataRequest request) except *:
@@ -219,8 +221,10 @@ cdef class LiveDataEngine(DataEngine):
         try:
             self._message_queue.put_nowait(request)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
-                              f"{self._message_queue.qsize()} items.")
+            self._log.warning(
+                f"Blocking on `_message_queue.put` as message_queue full at "
+                f"{self._message_queue.qsize()} items.",
+            )
             self._loop.create_task(self._message_queue.put(request))  # Blocking until qsize reduces
 
     cpdef void receive(self, DataResponse response) except *:
@@ -247,8 +251,10 @@ cdef class LiveDataEngine(DataEngine):
         try:
             self._message_queue.put_nowait(response)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `_message_queue.put` as message_queue full at "
-                              f"{self._message_queue.qsize()} items.")
+            self._log.warning(
+                f"Blocking on `_message_queue.put` as message_queue full at "
+                f"{self._message_queue.qsize()} items.",
+            )
             self._loop.create_task(self._message_queue.put(response))  # Blocking until qsize reduces
 
     cpdef void _on_start(self) except *:
@@ -281,13 +287,18 @@ cdef class LiveDataEngine(DataEngine):
                 self._handle_data(data)
         except asyncio.CancelledError:
             if not self._data_queue.empty():
-                self._log.warning(f"Running canceled "
-                                  f"with {self.data_qsize()} data item(s) on queue.")
+                self._log.warning(
+                    f"Running canceled with {self.data_qsize()} data item(s) on queue.",
+                )
             else:
-                self._log.debug(f"Data queue processing stopped (qsize={self.data_qsize()}).")
+                self._log.debug(
+                    f"Data queue processing stopped (qsize={self.data_qsize()}).",
+                )
 
     async def _run_message_queue(self):
-        self._log.debug(f"Message queue processing starting (qsize={self.message_qsize()})...")
+        self._log.debug(
+            f"Message queue processing starting (qsize={self.message_qsize()})...",
+        )
         cdef Message message
         try:
             while self.is_running:
@@ -304,10 +315,13 @@ cdef class LiveDataEngine(DataEngine):
                     self._log.error(f"Cannot handle message: unrecognized {message}.")
         except asyncio.CancelledError:
             if not self._message_queue.empty():
-                self._log.warning(f"Running canceled "
-                                  f"with {self.message_qsize()} message(s) on queue.")
+                self._log.warning(
+                    f"Running canceled with {self.message_qsize()} message(s) on queue.",
+                )
             else:
-                self._log.debug(f"Message queue processing stopped (qsize={self.message_qsize()}).")
+                self._log.debug(
+                    f"Message queue processing stopped (qsize={self.message_qsize()}).",
+                )
 
     cdef void _enqueue_sentinels(self):
         self._data_queue.put_nowait(self._sentinel)

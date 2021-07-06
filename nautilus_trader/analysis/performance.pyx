@@ -95,7 +95,7 @@ cdef class PerformanceAnalyzer:
         cdef Position position
         for position in positions:
             self.add_trade(position.id, position.realized_pnl)
-            self.add_return(nanos_to_unix_dt(position.closed_timestamp_ns), position.realized_return)
+            self.add_return(nanos_to_unix_dt(position.ts_closed_ns), position.realized_return)
 
     cpdef void add_trade(self, PositionId position_id, Money realized_pnl) except *:
         """
@@ -104,7 +104,7 @@ cdef class PerformanceAnalyzer:
         Parameters
         ----------
         position_id : PositionId
-            The position identifier for the trade.
+            The position ID for the trade.
         realized_pnl : Money
             The realized PnL for the trade.
 

@@ -86,7 +86,9 @@ def _setup_poetry(session: Session, *args, **kwargs) -> None:
 
     # No need to copy built *.so files back into the source tree
     env = kwargs.get("env", {})
-    # Skip the build copy when using Nox.
+    # Ensure deterministic builds by disabling parallelism
+    env["PARALLEL_BUILD"] = ""  # false
+    # Skip the build copy when using Nox
     env["SKIP_BUILD_COPY"] = "true"
     kwargs["env"] = env
 
@@ -95,7 +97,7 @@ def _setup_poetry(session: Session, *args, **kwargs) -> None:
     session.run("poetry", "install", *args, **kwargs)
 
 
-def _run_pytest(session: Session, *args, parallel: bool = True) -> None:
+def _run_pytest(session: Session, *args, parallel: bool = False) -> None:
     pytest_args = [
         "poetry",
         "run",

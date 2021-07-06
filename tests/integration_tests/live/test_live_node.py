@@ -34,7 +34,7 @@ class TradingNodeConfigurationTests(unittest.TestCase):
             "logging": {
                 "log_level_console": "INF",
             },
-            "cache_database": {
+            "database": {
                 "type": "in-memory",
             },
             "strategy": {
@@ -74,7 +74,7 @@ class TradingNodeConfigurationTests(unittest.TestCase):
             "logging": {
                 "log_level_console": "INF",
             },
-            "cache_database": {
+            "database": {
                 "type": "redis",
                 "host": "localhost",
                 "port": 6379,
@@ -110,8 +110,10 @@ class TradingNodeConfigurationTests(unittest.TestCase):
 class TradingNodeOperationTests(unittest.TestCase):
     def setUp(self):
         # Fixture Setup
+
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
         config = {
@@ -122,7 +124,7 @@ class TradingNodeOperationTests(unittest.TestCase):
             "logging": {
                 "log_level_console": "INF",
             },
-            "cache_database": {
+            "database": {
                 "type": "in-memory",
             },
             "strategy": {

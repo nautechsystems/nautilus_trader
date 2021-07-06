@@ -41,7 +41,7 @@ cdef class CacheDatabase:
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier to associate with the database.
+            The trader ID to associate with the database.
         logger : Logger
             The logger for the database.
 
@@ -143,7 +143,6 @@ cdef class CacheDatabase:
 cdef class BypassCacheDatabase(CacheDatabase):
     """
     Provides a bypass cache database which does nothing.
-
     """
 
     def __init__(self, TraderId trader_id not None, Logger logger not None):
@@ -153,7 +152,7 @@ cdef class BypassCacheDatabase(CacheDatabase):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier to associate with the database.
+            The trader ID to associate with the database.
         logger : Logger
             The logger for the database.
 

@@ -61,7 +61,6 @@ from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderDenied
-from nautilus_trader.model.events cimport OrderInvalid
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderUpdateRejected
 from nautilus_trader.model.identifiers cimport ClientId
@@ -80,18 +79,19 @@ from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.model.tick cimport QuoteTick
 from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.venue cimport InstrumentClosePrice
+from nautilus_trader.model.venue cimport InstrumentStatusUpdate
+from nautilus_trader.model.venue cimport VenueStatusUpdate
 from nautilus_trader.risk.engine cimport RiskEngine
 
 
 # Events for WRN log level
 cdef tuple _WARNING_EVENTS = (
-    OrderInvalid,
     OrderDenied,
     OrderRejected,
     OrderCancelRejected,
     OrderUpdateRejected,
 )
-
 
 cdef class TradingStrategy(Component):
     """
@@ -107,8 +107,8 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         order_id_tag : str
-            The unique order identifier tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader identifier.
+            The unique order ID tag for the strategy. Must be unique
+            amongst all running strategies for a particular trader ID.
 
         Raises
         ------
@@ -131,22 +131,22 @@ cdef class TradingStrategy(Component):
         self._risk_engine = None  # Initialized when registered with the execution engine
 
         # Identifiers
-        self.trader_id = None     # Initialized when registered with a trader
+        self.trader_id = None  # Initialized when registered with a trader
         self.id = strategy_id
 
         # Indicators
-        self._indicators = []              # type: list[Indicator]
-        self._indicators_for_quotes = {}   # type: dict[InstrumentId, list[Indicator]]
-        self._indicators_for_trades = {}   # type: dict[InstrumentId, list[Indicator]]
-        self._indicators_for_bars = {}     # type: dict[BarType, list[Indicator]]
+        self._indicators = []  # type: list[Indicator]
+        self._indicators_for_quotes = {}  # type: dict[InstrumentId, list[Indicator]]
+        self._indicators_for_trades = {}  # type: dict[InstrumentId, list[Indicator]]
+        self._indicators_for_bars = {}  # type: dict[BarType, list[Indicator]]
 
         # Public components
         self.clock = self._clock
         self.uuid_factory = self._uuid_factory
         self.log = self._log
 
-        self.cache = None          # Initialized when registered with the risk engine
-        self.portfolio = None      # Initialized when registered with the risk engine
+        self.cache = None  # Initialized when registered with the risk engine
+        self.portfolio = None  # Initialized when registered with the risk engine
         self.order_factory = None  # Initialized when registered with a trader
 
     def __eq__(self, TradingStrategy other) -> bool:
@@ -156,7 +156,7 @@ cdef class TradingStrategy(Component):
         if self.trader_id is None:
             # This guards the case where some components are called which
             # have not yet been assigned, resulting in a SIGSEGV at runtime.
-            raise RuntimeError("the strategy has not been registered with a trader")
+            raise RuntimeError("strategy has not been registered with a trader")
 
     @property
     def registered_indicators(self):
@@ -189,7 +189,7 @@ cdef class TradingStrategy(Component):
                 return False
         return True
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+    # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void on_start(self) except *:
         """
@@ -399,6 +399,57 @@ cdef class TradingStrategy(Component):
         """
         pass  # Optionally override in subclass
 
+    cpdef void on_venue_status_update(self, VenueStatusUpdate update) except *:
+        """
+        Actions to be performed when the strategy is running and receives a venue
+        status update.
+
+        Parameters
+        ----------
+        update : VenueStatusUpdate
+            The update received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        pass  # Optionally override in subclass
+
+    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update) except *:
+        """
+        Actions to be performed when the strategy is running and receives an
+        instrument status update.
+
+        Parameters
+        ----------
+        update : InstrumentStatusUpdate
+            The update received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        pass  # Optionally override in subclass
+
+    cpdef void on_instrument_close_price(self, InstrumentClosePrice update) except *:
+        """
+        Actions to be performed when the strategy is running and receives an
+        instrument close price update.
+
+        Parameters
+        ----------
+        update : InstrumentClosePrice
+            The update received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        pass  # Optionally override in subclass
+
     cpdef void on_data(self, Data data) except *:
         """
         Actions to be performed when the strategy is running and receives generic data.
@@ -431,14 +482,14 @@ cdef class TradingStrategy(Component):
         """
         pass  # Optionally override in subclass
 
-# -- REGISTRATION ----------------------------------------------------------------------------------
+    # -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_trader(
-        self,
-        TraderId trader_id,
-        Clock clock,
-        Logger logger,
-        int order_id_count=0,
+            self,
+            TraderId trader_id,
+            Clock clock,
+            Logger logger,
+            int order_id_count=0,
     ) except *:
         """
         Register the strategy with a trader.
@@ -446,13 +497,13 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier for the strategy.
+            The trader ID for the strategy.
         clock : Clock
             The clock for the strategy.
         logger : Logger
             The logger for the strategy.
         order_id_count : int, optional
-            The running order identifier count for the strategy.
+            The running order ID count for the strategy.
 
         Warnings
         --------
@@ -540,12 +591,12 @@ cdef class TradingStrategy(Component):
     cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator) except *:
         """
         Register the given indicator with the strategy to receive quote tick
-        data for the given instrument identifier.
+        data for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for tick updates.
+            The instrument ID for tick updates.
         indicator : Indicator
             The indicator to register.
 
@@ -568,12 +619,12 @@ cdef class TradingStrategy(Component):
     cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator) except *:
         """
         Register the given indicator with the strategy to receive trade tick
-        data for the given instrument identifier.
+        data for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for tick updates.
+            The instrument ID for tick updates.
         indicator : indicator
             The indicator to register.
 
@@ -621,7 +672,7 @@ cdef class TradingStrategy(Component):
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
-# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+    # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
     cpdef void _start(self) except *:
         self._check_trader_registered()
@@ -661,7 +712,7 @@ cdef class TradingStrategy(Component):
         self._check_trader_registered()
         self.on_dispose()
 
-# -- STRATEGY COMMANDS -----------------------------------------------------------------------------
+    # -- STRATEGY COMMANDS -----------------------------------------------------------------------------
 
     cpdef dict save(self):
         """
@@ -730,7 +781,7 @@ cdef class TradingStrategy(Component):
             self.log.exception(ex)
             raise
 
-# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+    # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_data(self, ClientId client_id, DataType data_type) except *:
         """
@@ -739,7 +790,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier.
+            The data client ID.
         data_type : DataType
             The data type to subscribe to.
 
@@ -759,12 +810,12 @@ cdef class TradingStrategy(Component):
 
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to update `Instrument` data for the given instrument identifier.
+        Subscribe to update `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier to subscribe to.
+            The instrument ID to subscribe to.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -781,15 +832,15 @@ cdef class TradingStrategy(Component):
         self._send_data_cmd(command)
 
     cpdef void subscribe_order_book(
-        self,
-        InstrumentId instrument_id,
-        BookLevel level=BookLevel.L2,
-        int depth=0,
-        int interval=0,
-        dict kwargs=None,
+            self,
+            InstrumentId instrument_id,
+            BookLevel level=BookLevel.L2,
+            int depth=0,
+            int interval=0,
+            dict kwargs=None,
     ) except *:
         """
-        Subscribe to streaming `OrderBook` for the given instrument identifier.
+        Subscribe to streaming `OrderBook` for the given instrument ID.
 
         The `DataEngine` will only maintain one order book stream for each
         instrument. Because of this the level, depth and kwargs for the stream will
@@ -802,7 +853,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The order book instrument identifier to subscribe to.
+            The order book instrument ID to subscribe to.
         level : BookLevel
             The order book level (L1, L2, L3).
         depth : int, optional
@@ -841,19 +892,19 @@ cdef class TradingStrategy(Component):
         self._send_data_cmd(command)
 
     cpdef void subscribe_order_book_deltas(
-        self,
-        InstrumentId instrument_id,
-        BookLevel level=BookLevel.L2,
-        dict kwargs=None,
+            self,
+            InstrumentId instrument_id,
+            BookLevel level=BookLevel.L2,
+            dict kwargs=None,
     ) except *:
         """
         Subscribe to streaming `OrderBook` snapshot then deltas data for the
-        given instrument identifier.
+        given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The order book instrument identifier to subscribe to.
+            The order book instrument ID to subscribe to.
         level : BookLevel
             The order book level (L1, L2, L3).
         kwargs : dict, optional
@@ -886,7 +937,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to streaming `QuoteTick` data for the given instrument identifier.
+        Subscribe to streaming `QuoteTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -909,7 +960,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to streaming `TradeTick` data for the given instrument identifier.
+        Subscribe to streaming `TradeTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -953,6 +1004,74 @@ cdef class TradingStrategy(Component):
 
         self._send_data_cmd(command)
 
+    cpdef void subscribe_venue_status_updates(self, str venue_name) except *:
+        """
+        Subscribe to status updates of the given venue.
+
+        Parameters
+        ----------
+        venue_name : str
+            The name of the Venue to subscribe to.
+
+        """
+
+        Condition.not_none(self._data_engine, "self._data_engine")
+
+        cdef Subscribe command = Subscribe(
+            client_id=ClientId(venue_name),
+            data_type=DataType(VenueStatusUpdate, metadata={"name": venue_name}),
+            handler=self.handle_venue_status_update,
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to status updates of the given instrument id.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to status updates for.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(self._data_engine, "self._data_engine")
+
+        cdef Subscribe command = Subscribe(
+            client_id=ClientId(instrument_id.venue.value),
+            data_type=DataType(InstrumentStatusUpdate, metadata={"instrument_id": instrument_id}),
+            handler=self.handle_instrument_status_update,
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+
+    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to closing prices for the given instrument id.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument to subscribe to status updates for.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(self._data_engine, "self._data_engine")
+
+        cdef Subscribe command = Subscribe(
+            client_id=ClientId(instrument_id.venue.value),
+            data_type=DataType(InstrumentClosePrice, metadata={"instrument_id": instrument_id}),
+            handler=self.handle_instrument_close_price,
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
     cpdef void unsubscribe_data(self, ClientId client_id, DataType data_type) except *:
         """
         Unsubscribe from data of the given data type.
@@ -960,7 +1079,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier.
+            The data client ID.
         data_type : DataType
             The data type to unsubscribe from.
 
@@ -980,7 +1099,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from update `Instrument` data for the given instrument identifier.
+        Unsubscribe from update `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
@@ -1003,7 +1122,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id, int interval=0) except *:
         """
-        Unsubscribe from `OrderBook` data for the given instrument identifier.
+        Unsubscribe from `OrderBook` data for the given instrument ID.
 
         The interval must match the previously defined interval if unsubscribing
         from snapshots.
@@ -1034,7 +1153,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `OrderBook` data for the given instrument identifier.
+        Unsubscribe from `OrderBook` data for the given instrument ID.
 
         The interval must match the previously defined interval if unsubscribing
         from snapshots.
@@ -1062,7 +1181,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from streaming `QuoteTick` data for the given instrument identifier.
+        Unsubscribe from streaming `QuoteTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -1085,12 +1204,12 @@ cdef class TradingStrategy(Component):
 
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from streaming `TradeTick` data for the given instrument identifier.
+        Unsubscribe from streaming `TradeTick` data for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument identifier to unsubscribe from.
+            The tick instrument ID to unsubscribe from.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -1129,7 +1248,7 @@ cdef class TradingStrategy(Component):
 
         self._send_data_cmd(command)
 
-# -- REQUESTS --------------------------------------------------------------------------------------
+    # -- REQUESTS --------------------------------------------------------------------------------------
 
     cpdef void request_data(self, ClientId client_id, DataType data_type) except *:
         """
@@ -1138,7 +1257,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier.
+            The data client ID.
         data_type : DataType
             The data type for the request.
 
@@ -1157,10 +1276,10 @@ cdef class TradingStrategy(Component):
         self._send_data_req(request)
 
     cpdef void request_quote_ticks(
-        self,
-        InstrumentId instrument_id,
-        datetime from_datetime=None,
-        datetime to_datetime=None,
+            self,
+            InstrumentId instrument_id,
+            datetime from_datetime=None,
+            datetime to_datetime=None,
     ) except *:
         """
         Request historical quote ticks for the given parameters.
@@ -1170,7 +1289,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument identifier for the request.
+            The tick instrument ID for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -1203,10 +1322,10 @@ cdef class TradingStrategy(Component):
         self._send_data_req(request)
 
     cpdef void request_trade_ticks(
-        self,
-        InstrumentId instrument_id,
-        datetime from_datetime=None,
-        datetime to_datetime=None,
+            self,
+            InstrumentId instrument_id,
+            datetime from_datetime=None,
+            datetime to_datetime=None,
     ) except *:
         """
         Request historical trade ticks for the given parameters.
@@ -1216,7 +1335,7 @@ cdef class TradingStrategy(Component):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument identifier for the request.
+            The tick instrument ID for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -1249,10 +1368,10 @@ cdef class TradingStrategy(Component):
         self._send_data_req(request)
 
     cpdef void request_bars(
-        self,
-        BarType bar_type,
-        datetime from_datetime=None,
-        datetime to_datetime=None,
+            self,
+            BarType bar_type,
+            datetime from_datetime=None,
+            datetime to_datetime=None,
     ) except *:
         """
         Request historical bars for the given parameters.
@@ -1294,15 +1413,15 @@ cdef class TradingStrategy(Component):
 
         self._send_data_req(request)
 
-# -- TRADING COMMANDS ------------------------------------------------------------------------------
+    # -- TRADING COMMANDS ------------------------------------------------------------------------------
 
     cpdef void submit_order(
-        self,
-        Order order,
-        PositionId position_id=None,
+            self,
+            Order order,
+            PositionId position_id=None,
     ) except *:
         """
-        Submit the given order with optional position identifier and routing instructions.
+        Submit the given order with optional position ID and routing instructions.
 
         A `SubmitOrder` command will be created and then sent to the
         `ExecutionEngine`.
@@ -1312,7 +1431,7 @@ cdef class TradingStrategy(Component):
         order : Order
             The order to submit.
         position_id : PositionId, optional
-            The position identifier to submit the order against.
+            The position ID to submit the order against.
 
         """
         Condition.not_none(order, "order")
@@ -1358,11 +1477,11 @@ cdef class TradingStrategy(Component):
         self._send_exec_cmd(command)
 
     cpdef void update_order(
-        self,
-        PassiveOrder order,
-        Quantity quantity=None,
-        Price price=None,
-        Price trigger=None,
+            self,
+            PassiveOrder order,
+            Quantity quantity=None,
+            Price price=None,
+            Price trigger=None,
     ) except *:
         """
         Update the given order with optional parameters and routing instructions.
@@ -1432,9 +1551,9 @@ cdef class TradingStrategy(Component):
             return  # Cannot send command
 
         if (
-            order.is_completed_c()
-            or order.is_pending_update_c()
-            or order.is_pending_cancel_c()
+                order.is_completed_c()
+                or order.is_pending_update_c()
+                or order.is_pending_cancel_c()
         ):
             self.log.warning(
                 f"Cannot update order: state is {order.state_string_c()}, {order}.",
@@ -1501,7 +1620,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void cancel_all_orders(self, InstrumentId instrument_id) except *:
         """
-        Cancel all orders for this strategy for the given instrument identifier.
+        Cancel all orders for this strategy for the given instrument ID.
 
         All working orders in turn will have a `CancelOrder` command created and
         then sent to the `ExecutionEngine`.
@@ -1580,7 +1699,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void flatten_all_positions(self, InstrumentId instrument_id) except *:
         """
-        Flatten all positions for the given instrument identifier for this strategy.
+        Flatten all positions for the given instrument ID for this strategy.
 
         All open positions in turn will have a closing `MarketOrder` created and
         then sent to the `ExecutionEngine` via `SubmitOrder` commands.
@@ -1611,7 +1730,7 @@ cdef class TradingStrategy(Component):
         for position in positions_open:
             self.flatten_position(position)
 
-# -- HANDLERS --------------------------------------------------------------------------------------
+    # -- HANDLERS --------------------------------------------------------------------------------------
 
     cpdef void handle_instrument(self, Instrument instrument) except *:
         """
@@ -1888,10 +2007,85 @@ cdef class TradingStrategy(Component):
             return  # TODO: Strategy shouldn't receive zero bars
 
         if length > 0 and first.ts_recv_ns > last.ts_recv_ns:
-            raise RuntimeError(f"Cannot handle <Bar[{length}]> data: incorrectly sorted")
+            raise RuntimeError(f"cannot handle <Bar[{length}]> data: incorrectly sorted")
 
         for i in range(length):
             self.handle_bar(bars[i], is_historical=True)
+
+    cpdef void handle_venue_status_update(self, VenueStatusUpdate update) except *:
+        """
+        Handle the given venue status update.
+
+        Calls `on_venue_status_update` if `strategy.state` is `RUNNING`.
+
+        Parameters
+        ----------
+        update : VenueStatusUpdate
+            The received update.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(update, "update")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_venue_status_update(update)
+            except Exception as ex:
+                self.log.exception(ex)
+                raise
+
+    cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update) except *:
+        """
+        Handle the given instrument status update.
+
+        Calls `on_instrument_status_update` if `strategy.state` is `RUNNING`.
+
+        Parameters
+        ----------
+        update : InstrumentStatusUpdate
+            The received update.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(update, "update")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_instrument_status_update(update)
+            except Exception as ex:
+                self.log.exception(ex)
+                raise
+
+    cpdef void handle_instrument_close_price(self, InstrumentClosePrice update) except *:
+        """
+        Handle the given instrument close price update.
+
+        Calls `on_instrument_close_price` if `strategy.state` is `RUNNING`.
+
+        Parameters
+        ----------
+        update : InstrumentClosePrice
+            The received update.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(update, "update")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_instrument_close_price(update)
+            except Exception as ex:
+                self.log.exception(ex)
+                raise
 
     cpdef void handle_data(self, Data data) except *:
         """
@@ -1948,8 +2142,7 @@ cdef class TradingStrategy(Component):
                 self.log.exception(ex)
                 raise
 
-# -- INTERNAL --------------------------------------------------------------------------------------
-
+    # -- INTERNAL --------------------------------------------------------------------------------------
     cdef void _send_data_cmd(self, DataCommand command) except *:
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")

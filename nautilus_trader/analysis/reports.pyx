@@ -18,13 +18,8 @@ import pandas as pd
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_timedelta
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_state cimport OrderState
-from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.objects cimport AccountBalance
-from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
 
 
@@ -57,7 +52,7 @@ cdef class ReportProvider:
         if not orders:
             return pd.DataFrame()
 
-        cdef list orders_all = [self._order_to_dict(o) for o in orders]
+        cdef list orders_all = [o.to_dict() for o in orders]
 
         return pd.DataFrame(data=orders_all).set_index("client_order_id").sort_index()
 
@@ -80,14 +75,22 @@ cdef class ReportProvider:
         if not orders:
             return pd.DataFrame()
 
-        cdef list filled_orders = [
-            self._order_to_dict(o) for o in orders if o.state == OrderState.FILLED
-        ]
-
+        cdef list filled_orders = [o.to_dict() for o in orders if o.state == OrderState.FILLED]
         if not filled_orders:
             return pd.DataFrame()
 
-        return pd.DataFrame(data=filled_orders).set_index("client_order_id").sort_index()
+        report = pd.DataFrame(data=filled_orders).set_index("client_order_id").sort_index()
+        report["timestamp_ns"] = [nanos_to_unix_dt(row) for row in report["timestamp_ns"]]
+        report["ts_filled_ns"] = [nanos_to_unix_dt(row) for row in report["ts_filled_ns"]]
+        report.rename(
+            columns={
+                "timestamp_ns": "timestamp",
+                "ts_filled_ns": "ts_filled",
+            },
+            inplace=True,
+        )
+
+        return report
 
     cpdef object generate_positions_report(self, list positions):
         """
@@ -108,14 +111,30 @@ cdef class ReportProvider:
         if not positions:
             return pd.DataFrame()
 
-        cdef list trades = [self._position_to_dict(p) for p in positions if p.is_closed]
-
+        cdef list trades = [p.to_dict() for p in positions if p.is_closed]
         if not trades:
             return pd.DataFrame()
 
-        return pd.DataFrame(data=trades).set_index("position_id").sort_values(
-            ['opened_time', 'closed_time', 'position_id'],
+        sort = ["ts_opened_ns", "ts_closed_ns", "position_id"]
+        report = pd.DataFrame(data=trades).set_index("position_id").sort_values(sort)
+        del report["net_qty"]
+        del report["quantity"]
+        del report["quote_currency"]
+        del report["base_currency"]
+        del report["cost_currency"]
+        report["ts_opened_ns"] = [nanos_to_unix_dt(row) for row in report["ts_opened_ns"]]
+        report["ts_closed_ns"] = [nanos_to_unix_dt(row) for row in report["ts_closed_ns"]]
+        report["duration_ns"] = [nanos_to_timedelta(row) for row in report["duration_ns"]]
+        report.rename(
+            columns={
+                "ts_opened_ns": "ts_opened",
+                "ts_closed_ns": "ts_closed",
+                "duration_ns": "duration",
+            },
+            inplace=True,
         )
+
+        return report
 
     cpdef object generate_account_report(self, Account account):
         """
@@ -133,53 +152,21 @@ cdef class ReportProvider:
         """
         Condition.not_none(account, "account")
 
-        cdef list events = account.events_c()
+        cdef list states = account.events_c()
 
-        if not events:
+        if not states:
             return pd.DataFrame()
 
-        cdef list account_events = [self._account_state_to_dict(e) for e in events]
+        cdef list account_states = [AccountState.to_dict_c(s) for s in states]
 
-        if not account_events:
+        if not account_states:
             return pd.DataFrame()
 
-        return pd.DataFrame(data=account_events).set_index("timestamp").sort_index()
+        report = pd.DataFrame(data=account_states).set_index("ts_updated_ns").sort_index()
+        report.index = [nanos_to_unix_dt(row) for row in report.index]
+        report.index.rename("timestamp", inplace=True)
+        del report["timestamp_ns"]
+        del report["type"]
+        del report["event_id"]
 
-    cdef dict _order_to_dict(self, Order order):
-        return {
-            "client_order_id": order.client_order_id.value,
-            "venue_order_id": order.venue_order_id.value,
-            "instrument_id": order.instrument_id.value,
-            "side": OrderSideParser.to_str(order.side),
-            "type": OrderTypeParser.to_str(order.type),
-            "qty": order.quantity,
-            "avg_px": "None" if order.avg_px is None else float(order.avg_px),
-            "slippage": float(order.slippage),
-            "timestamp": nanos_to_unix_dt(order.last_event_c().timestamp_ns),
-        }
-
-    cdef dict _position_to_dict(self, Position position):
-        return {
-            "position_id": position.id.value,
-            "instrument_id": position.instrument_id.value,
-            "strategy_id": position.strategy_id.value,
-            "entry": OrderSideParser.to_str(position.entry),
-            "peak_qty": position.peak_qty,
-            "opened_time": nanos_to_unix_dt(position.opened_timestamp_ns),
-            "closed_time": nanos_to_unix_dt(position.closed_timestamp_ns),
-            "duration": nanos_to_timedelta(position.open_duration_ns),
-            "avg_px_open": float(position.avg_px_open),
-            "avg_px_close": float(position.avg_px_close),
-            "realized_points": float(position.realized_points),
-            "realized_return": float(position.realized_return),
-            "realized_pnl": float(position.realized_pnl),
-            "currency": str(position.quote_currency),
-        }
-
-    cdef dict _account_state_to_dict(self, AccountState event):
-        cdef dict data = {"timestamp": nanos_to_unix_dt(event.timestamp_ns)}
-        cdef AccountBalance balance
-        for balance in event.balances:
-            data[f"balance_{balance.currency}"] = balance.total
-
-        return data
+        return report

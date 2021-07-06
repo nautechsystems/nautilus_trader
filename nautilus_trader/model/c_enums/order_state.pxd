@@ -16,18 +16,17 @@
 
 cpdef enum OrderState:
     INITIALIZED = 1,
-    INVALID = 2,
-    DENIED = 3,
-    SUBMITTED = 4,
-    ACCEPTED = 5,
-    REJECTED = 6,
-    CANCELED = 7,
-    EXPIRED = 8,
-    TRIGGERED = 9,
-    PENDING_UPDATE = 10,
-    PENDING_CANCEL = 11,
-    PARTIALLY_FILLED = 12,
-    FILLED = 13,
+    DENIED = 2,
+    SUBMITTED = 3,
+    ACCEPTED = 4,
+    REJECTED = 5,
+    CANCELED = 6,
+    EXPIRED = 7,
+    TRIGGERED = 8,
+    PENDING_UPDATE = 9,
+    PENDING_CANCEL = 10,
+    PARTIALLY_FILLED = 11,
+    FILLED = 12,
 
 
 cdef class OrderStateParser:

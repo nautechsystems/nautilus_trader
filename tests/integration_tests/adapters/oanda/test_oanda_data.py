@@ -58,10 +58,10 @@ class TestOandaDataClient:
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
+        self.loop.set_debug(True)
         self.executor = concurrent.futures.ThreadPoolExecutor()
         self.loop.set_default_executor(self.executor)
-        self.loop.set_debug(True)
+        asyncio.set_event_loop(self.loop)
 
         # Setup logging
         logger = LiveLogger(
@@ -114,32 +114,35 @@ class TestOandaDataClient:
         self.loop.stop()
         self.loop.close()
 
-    # TODO: WIP - why is this failing??
-    # def test_connect(self):
-    #     async def run_test():
-    #         # Arrange
-    #         # Act
-    #         self.data_engine.start()  # Also connects client
-    #         self.client.connect()
-    #         await asyncio.sleep(1)
-    #
-    #         # Assert
-    #         assert self.client.is_connected
-    #
-    #         # Tear Down
-    #         self.data_engine.stop()
-    #
-    #     self.loop.run_until_complete(run_test())
+    def test_connect(self):
+        async def run_test():
+            # Arrange, Act
+            self.data_engine.start()  # Also connects client
+            await asyncio.sleep(1)
+
+            # Assert
+            assert self.client.is_connected
+
+            # Tear Down
+            self.data_engine.stop()
+            await self.data_engine.get_run_queue_task()
+
+        self.loop.run_until_complete(run_test())
 
     def test_disconnect(self):
-        # Arrange
-        self.client.connect()
+        async def run_test():
+            # Arrange
+            self.data_engine.start()  # Also connects client
+            await asyncio.sleep(1)
 
-        # Act
-        self.client.disconnect()
+            # Act
+            self.client.disconnect()
+            await asyncio.sleep(0.5)
 
-        # Assert
-        assert not self.client.is_connected
+            # Assert
+            assert not self.client.is_connected
+
+        self.loop.run_until_complete(run_test())
 
     def test_reset(self):
         # Arrange
@@ -182,6 +185,7 @@ class TestOandaDataClient:
 
             # Tear Down
             self.data_engine.stop()
+            await self.data_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -224,6 +228,7 @@ class TestOandaDataClient:
 
             # Tear Down
             self.data_engine.stop()
+            await self.data_engine.get_run_queue_task()
 
         self.loop.run_until_complete(run_test())
 
@@ -326,6 +331,7 @@ class TestOandaDataClient:
 
             # Tear Down
             self.data_engine.stop()
+            await self.data_engine.get_run_queue_task()
             self.data_engine.dispose()
 
         self.loop.run_until_complete(run_test())

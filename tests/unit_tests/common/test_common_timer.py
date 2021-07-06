@@ -45,12 +45,10 @@ class TestTimeEvent:
         # Act
         # Assert
         assert str(event) == (
-            f"TimeEvent(name=EVENT, id={uuid}, "
-            f"event_timestamp=1970-01-01T00:00:00.000Z)"
+            f"TimeEvent(name=EVENT, id={uuid}, " f"event_timestamp=1970-01-01T00:00:00.000Z)"
         )
         assert repr(event) == (
-            f"TimeEvent(name=EVENT, id={uuid}, "
-            f"event_timestamp=1970-01-01T00:00:00.000Z)"
+            f"TimeEvent(name=EVENT, id={uuid}, " f"event_timestamp=1970-01-01T00:00:00.000Z)"
         )
 
 
@@ -58,9 +56,7 @@ class TestTimeEventHandler:
     def test_comparisons(self):
         # Arrange
         receiver = []
-        event1 = TimeEventHandler(
-            TimeEvent("123", uuid4(), UNIX_EPOCH, 0, 0), receiver.append
-        )
+        event1 = TimeEventHandler(TimeEvent("123", uuid4(), UNIX_EPOCH, 0, 0), receiver.append)
         event2 = TimeEventHandler(
             TimeEvent(
                 "123",
@@ -85,9 +81,7 @@ class TestTimeEventHandler:
         # Arrange
         receiver = []
         uuid = uuid4()
-        handler = TimeEventHandler(
-            TimeEvent("123", uuid, UNIX_EPOCH, 0, 0), receiver.append
-        )
+        handler = TimeEventHandler(TimeEvent("123", uuid, UNIX_EPOCH, 0, 0), receiver.append)
 
         print(str(handler))
         # Act
@@ -104,12 +98,8 @@ class TestTimeEventHandler:
     def test_sort(self):
         # Arrange
         receiver = []
-        event1 = TimeEventHandler(
-            TimeEvent("123", uuid4(), UNIX_EPOCH, 0, 0), receiver.append
-        )
-        event2 = TimeEventHandler(
-            TimeEvent("123", uuid4(), UNIX_EPOCH, 0, 0), receiver.append
-        )
+        event1 = TimeEventHandler(TimeEvent("123", uuid4(), UNIX_EPOCH, 0, 0), receiver.append)
+        event2 = TimeEventHandler(TimeEvent("123", uuid4(), UNIX_EPOCH, 0, 0), receiver.append)
         event3 = TimeEventHandler(
             TimeEvent("123", uuid4(), UNIX_EPOCH + timedelta(1), 0, 0), receiver.append
         )

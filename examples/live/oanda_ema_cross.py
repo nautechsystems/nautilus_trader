@@ -46,7 +46,7 @@ config = {
     },
     "system": {
         "loop_debug": False,  # If event loop debug mode
-        "timeout_connection": 10.0,  # Timeout for all engines client to connect and initialize
+        "timeout_connection": 10.0,  # Timeout for all clients to connect and initialize
         "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
         "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
         "timeout_disconnection": 5.0,  # Timeout for all engine clients to disconnect
@@ -55,7 +55,7 @@ config = {
     "logging": {
         "level_stdout": "INF",
     },
-    "cache_database": {
+    "database": {
         "type": "redis",
         "host": "localhost",
         "port": 6379,

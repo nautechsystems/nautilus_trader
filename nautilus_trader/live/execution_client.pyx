@@ -109,11 +109,11 @@ cdef class LiveExecutionClient(ExecutionClient):
         Parameters
         ----------
         client_id : ClientId
-            The client identifier.
+            The client ID.
         venue_type : VenueType
             The client venue type.
         account_id : AccountId
-            The account identifier for the client.
+            The account ID for the client.
         account_type : AccountType
             The account type for the client.
         base_currency : Currency, optional
@@ -205,7 +205,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         Parameters
         ----------
         venue_order_id : VenueOrderId
-            The venue order identifier for the trades.
+            The venue order ID for the trades.
         symbol : Symbol
             The symbol for the trades.
         since : datetime, optional
@@ -335,7 +335,6 @@ cdef class LiveExecutionClient(ExecutionClient):
                 self._log.info("Generating OrderAccepted event...", color=LogColor.BLUE)
                 self.generate_order_accepted(report.client_order_id, report.venue_order_id, report.timestamp_ns)
             return True
-            # TODO: Consider other scenarios
 
         # OrderState.PARTIALLY_FILLED or FILLED
         if exec_reports is None:

@@ -53,8 +53,10 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 class TestLiveExecutionClient:
     def setup(self):
         # Fixture Setup
+
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
         self.clock = LiveClock()
@@ -79,6 +81,7 @@ class TestLiveExecutionClient:
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
         self.exec_engine = LiveExecutionEngine(

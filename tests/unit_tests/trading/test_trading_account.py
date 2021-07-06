@@ -22,23 +22,33 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.model.currencies import ADA
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
+from tests.test_kit.stubs import TestStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+ADABTC_BINANCE = TestInstrumentProvider.adabtc_binance()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
@@ -653,3 +663,174 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(Money(9.99990000, BTC), result2)
         self.assertEqual(Money(9.99970000, BTC), result3)
         self.assertEqual(Money(20.00000000, ETH), result4)
+
+    def test_calculate_pnls_for_single_currency_cash_account(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    USD,
+                    Money(1_000_000.00, USD),
+                    Money(0.00, USD),
+                    Money(1_000_000.00, USD),
+                ),
+            ],
+            info={},  # No default currency set
+            event_id=uuid4(),
+            ts_updated_ns=0,
+            timestamp_ns=0,
+        )
+
+        account = Account(event)
+
+        # Wire up account to portfolio
+        account.register_portfolio(self.portfolio)
+        self.portfolio.register_account(account)
+
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_000_000),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("0.80000"),
+        )
+
+        position = Position(AUDUSD_SIM, fill)
+
+        # Act
+        result = account.calculate_pnls(
+            instrument=AUDUSD_SIM,
+            position=position,
+            fill=fill,
+        )
+
+        # Assert
+        assert result == [Money(1000000.00, AUD), Money(-800000.00, USD)]
+
+    def test_calculate_pnls_for_multi_currency_cash_account_btcusdt(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency
+            reported=True,
+            balances=[
+                AccountBalance(
+                    BTC,
+                    Money(10.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(10.00000000, BTC),
+                ),
+                AccountBalance(
+                    ETH,
+                    Money(20.00000000, ETH),
+                    Money(0.00000000, ETH),
+                    Money(20.00000000, ETH),
+                ),
+            ],
+            info={},  # No default currency set
+            event_id=uuid4(),
+            ts_updated_ns=0,
+            timestamp_ns=0,
+        )
+
+        account = Account(event)
+
+        # Wire up account to portfolio
+        account.register_portfolio(self.portfolio)
+        self.portfolio.register_account(account)
+
+        order = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.SELL,
+            Quantity.from_str("0.50000000"),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("45500.00"),
+        )
+
+        position = Position(BTCUSDT_BINANCE, fill)
+
+        # Act
+        result = account.calculate_pnls(
+            instrument=BTCUSDT_BINANCE,
+            position=position,
+            fill=fill,
+        )
+
+        # Assert
+        assert result == [Money(-0.50000000, BTC), Money(22750.00000000, USDT)]
+
+    def test_calculate_pnls_for_multi_currency_cash_account_adabtc(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency
+            reported=True,
+            balances=[
+                AccountBalance(
+                    BTC,
+                    Money(1.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(1.00000000, BTC),
+                ),
+                AccountBalance(
+                    ADA,
+                    Money(1000.00000000, ADA),
+                    Money(0.00000000, ADA),
+                    Money(1000.00000000, ADA),
+                ),
+            ],
+            info={},  # No default currency set
+            event_id=uuid4(),
+            ts_updated_ns=0,
+            timestamp_ns=0,
+        )
+
+        account = Account(event)
+
+        # Wire up account to portfolio
+        account.register_portfolio(self.portfolio)
+        self.portfolio.register_account(account)
+
+        order = self.order_factory.market(
+            ADABTC_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_int(100),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order,
+            instrument=ADABTC_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("0.00004100"),
+        )
+
+        position = Position(ADABTC_BINANCE, fill)
+
+        # Act
+        result = account.calculate_pnls(
+            instrument=ADABTC_BINANCE,
+            position=position,
+            fill=fill,
+        )
+
+        # Assert
+        assert result == [Money(100.000000, ADA), Money(-0.00410000, BTC)]

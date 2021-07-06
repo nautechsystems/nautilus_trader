@@ -148,9 +148,7 @@ class TestBypassCacheDatabase:
             clock=TestClock(),
         )
 
-        self.database = BypassCacheDatabase(
-            trader_id=self.trader_id, logger=self.logger
-        )
+        self.database = BypassCacheDatabase(trader_id=self.trader_id, logger=self.logger)
 
     def teardown(self):
         self.database.flush()

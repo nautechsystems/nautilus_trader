@@ -19,7 +19,6 @@ from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
-from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
@@ -31,10 +30,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.limit cimport LimitOrder
-from nautilus_trader.model.orders.market cimport MarketOrder
-from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
-from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
+from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
@@ -55,8 +51,15 @@ cdef str _STRATEGIES = 'Strategies'
 
 cdef class RedisCacheDatabase(CacheDatabase):
     """
-    Provides an cache database backed by Redis.
+    Provides a cache database backed by Redis.
 
+    Warnings
+    --------
+    Redis can only accurately store int64 types to 17 digits of precision.
+    Therefore nanosecond timestamp int64's with 19 digits will lose 2 digits of
+    precision when persisted. If precision to this level is important, then you
+    could additionally persist events in another medium/database which can
+    properly handle int64 types.
     """
 
     def __init__(
@@ -74,7 +77,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier for the database.
+            The trader ID for the database.
         logger : Logger
             The logger for the database.
         instrument_serializer : InstrumentSerializer
@@ -128,7 +131,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef dict load_currencies(self):
         """
-        Load all currencies from the execution database.
+        Load all currencies from the database.
 
         Returns
         -------
@@ -155,7 +158,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef dict load_instruments(self):
         """
-        Load all instruments from the execution database.
+        Load all instruments from the database.
 
         Returns
         -------
@@ -169,10 +172,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
             return instruments
 
         cdef bytes key_bytes
+        cdef str key_str
         cdef InstrumentId instrument_id
         cdef Instrument instrument
         for key_bytes in instrument_keys:
-            instrument_id = InstrumentId.from_str_c(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
+            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
+            instrument_id = InstrumentId.from_str_c(key_str)
             instrument = self.load_instrument(instrument_id)
 
             if instrument is not None:
@@ -182,7 +187,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef dict load_accounts(self):
         """
-        Load all accounts from the execution database.
+        Load all accounts from the database.
 
         Returns
         -------
@@ -196,10 +201,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
             return accounts
 
         cdef bytes key_bytes
+        cdef str account_str
         cdef AccountId account_id
         cdef Account account
         for key_bytes in account_keys:
-            account_id = AccountId.from_str_c(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
+            account_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
+            account_id = AccountId.from_str_c(account_str)
             account = self.load_account(account_id)
 
             if account is not None:
@@ -209,7 +216,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef dict load_orders(self):
         """
-        Load all orders from the execution database.
+        Load all orders from the database.
 
         Returns
         -------
@@ -223,10 +230,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
             return orders
 
         cdef bytes key_bytes
+        cdef str key_str
         cdef ClientOrderId client_order_id
         cdef Order order
         for key_bytes in order_keys:
-            client_order_id = ClientOrderId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
+            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
+            client_order_id = ClientOrderId(key_str)
             order = self.load_order(client_order_id)
 
             if order is not None:
@@ -236,7 +245,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef dict load_positions(self):
         """
-        Load all positions from the execution database.
+        Load all positions from the database.
 
         Returns
         -------
@@ -250,10 +259,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
             return positions
 
         cdef bytes key_bytes
+        cdef str key_str
         cdef PositionId position_id
         cdef Position position
         for key_bytes in position_keys:
-            position_id = PositionId(key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1])
+            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
+            position_id = PositionId(key_str)
             position = self.load_position(position_id)
 
             if position is not None:
@@ -284,19 +295,19 @@ cdef class RedisCacheDatabase(CacheDatabase):
             code=code,
             precision=int(c_map["precision"]),
             iso4217=int(c_map["iso4217"]),
-            name=c_map["name"].decode("utf-8"),
+            name=c_map["name"].decode(_UTF8),
             currency_type=CurrencyTypeParser.from_str(c_map["currency_type"].decode("utf-8")),
         )
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id):
         """
-        Load the instrument associated with the given instrument identifier
+        Load the instrument associated with the given instrument ID
         (if found).
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier to load.
+            The instrument ID to load.
 
         Returns
         -------
@@ -314,12 +325,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef Account load_account(self, AccountId account_id):
         """
-        Load the account associated with the given account_id (if found).
+        Load the account associated with the given account ID (if found).
 
         Parameters
         ----------
         account_id : AccountId
-            The account identifier to load.
+            The account ID to load.
 
         Returns
         -------
@@ -328,7 +339,13 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(account_id, "account_id")
 
-        cdef list events = self._redis.lrange(name=self._key_accounts + account_id.value, start=0, end=-1)
+        cdef list events = self._redis.lrange(
+            name=self._key_accounts + account_id.value,
+            start=0,
+            end=-1,
+        )
+
+        # Check there is at least one event to pop
         if not events:
             return None
 
@@ -341,12 +358,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef Order load_order(self, ClientOrderId client_order_id):
         """
-        Load the order associated with the given identifier (if found).
+        Load the order associated with the given client order ID (if found).
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier to load.
+            The client order ID to load.
 
         Returns
         -------
@@ -355,25 +372,18 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        cdef list events = self._redis.lrange(name=self._key_orders + client_order_id.value, start=0, end=-1)
+        cdef list events = self._redis.lrange(
+            name=self._key_orders + client_order_id.value,
+            start=0,
+            end=-1,
+        )
 
         # Check there is at least one event to pop
         if not events:
             return None
 
         cdef OrderInitialized init = self._event_serializer.deserialize(events.pop(0))
-
-        cdef Order order
-        if init.order_type == OrderType.MARKET:
-            order = MarketOrder.create(init=init)
-        elif init.order_type == OrderType.LIMIT:
-            order = LimitOrder.create(init=init)
-        elif init.order_type == OrderType.STOP_MARKET:
-            order = StopMarketOrder.create(init=init)
-        elif init.order_type == OrderType.STOP_LIMIT:
-            order = StopLimitOrder.create(init=init)
-        else:
-            raise RuntimeError("Invalid order type")
+        cdef Order order = OrderUnpacker.from_init_c(init)
 
         cdef bytes event_bytes
         for event_bytes in events:
@@ -383,12 +393,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef Position load_position(self, PositionId position_id):
         """
-        Load the position associated with the given identifier (if found).
+        Load the position associated with the given ID (if found).
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier to load.
+            The position ID to load.
 
         Returns
         -------
@@ -397,7 +407,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(position_id, "position_id")
 
-        cdef list events = self._redis.lrange(name=self._key_positions + position_id.value, start=0, end=-1)
+        cdef list events = self._redis.lrange(
+            name=self._key_positions + position_id.value,
+            start=0,
+            end=-1,
+        )
 
         # Check there is at least one event to pop
         if not events:
@@ -427,7 +441,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Parameters
         ----------
         strategy_id : StrategyId
-            The identifier of the strategy state dictionary to load.
+            The ID of the strategy state dictionary to load.
 
         Returns
         -------
@@ -436,19 +450,19 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        cdef dict user_state = self._redis.hgetall(name=self._key_strategies + strategy_id.value + ":State")
+        cdef dict user_state = self._redis.hgetall(
+            name=self._key_strategies + strategy_id.value + ":State",
+        )
         return {k.decode('utf-8'): v for k, v in user_state.items()}
 
     cpdef void delete_strategy(self, StrategyId strategy_id) except *:
         """
-        Delete the given strategy from the execution database.
-
-        Logs error if strategy not found in the database.
+        Delete the given strategy from the database.
 
         Parameters
         ----------
         strategy_id : StrategyId
-            The identifier of the strategy state dictionary to delete.
+            The ID of the strategy state dictionary to delete.
 
         """
         Condition.not_none(strategy_id, "strategy_id")
@@ -459,7 +473,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void add_currency(self, Currency currency) except *:
         """
-        Add the given currency to the execution database.
+        Add the given currency to the database.
 
         Parameters
         ----------
@@ -486,7 +500,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void add_instrument(self, Instrument instrument) except *:
         """
-        Add the given instrument to the execution database.
+        Add the given instrument to the database.
 
         Parameters
         ----------
@@ -503,7 +517,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void add_account(self, Account account) except *:
         """
-        Add the given account to the execution database.
+        Add the given account to the database.
 
         Parameters
         ----------
@@ -520,13 +534,16 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         # Check data integrity of reply
         if len(reply) > 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The {account.id} already existed in the accounts and was appended to.")
+            self._log.error(
+                f"The {repr(account.id)} already existed "
+                f"in the accounts and was appended to.",
+            )
 
-        self._log.debug(f"Added Account(id={account.id.value}).")
+        self._log.debug(f"Added {account}).")
 
     cpdef void add_order(self, Order order) except *:
         """
-        Add the given order to the execution database.
+        Add the given order to the database.
 
         Parameters
         ----------
@@ -541,11 +558,16 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         # Check data integrity of reply
         if reply > 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The {order.client_order_id} already existed in the orders and was appended to.")
+            self._log.error(
+                f"The {repr(order.client_order_id)} already existed "
+                f"in the orders and was appended to.",
+            )
+
+        self._log.debug(f"Added Order(id={order.client_order_id.value}).")
 
     cpdef void add_position(self, Position position) except *:
         """
-        Add the given position associated with the given strategy identifier.
+        Add the given position associated with the given strategy ID.
 
         Parameters
         ----------
@@ -560,13 +582,16 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         # Check data integrity of reply
         if reply > 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The {position.id} already existed in the index_broker_position and was overwritten.")
+            self._log.error(
+                f"The {repr(position.id)} already existed "
+                f"in the positions and was overwritten.",
+            )
 
         self._log.debug(f"Added Position(id={position.id.value}).")
 
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
         """
-        Update the given strategy state in the execution database.
+        Update the given strategy state in the database.
 
         Parameters
         ----------
@@ -581,7 +606,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
         # Command pipeline
         pipe = self._redis.pipeline()
         for key, value in state.items():
-            pipe.hset(name=self._key_strategies + strategy.id.value + ":State", key=key, value=value)
+            pipe.hset(
+                name=self._key_strategies + strategy.id.value + ":State",
+                key=key,
+                value=value,
+            )
             self._log.debug(f"Saving {strategy.id} state {{ {key}: {value} }}")
         pipe.execute()
 
@@ -589,7 +618,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void update_account(self, Account account) except *:
         """
-        Update the given account in the execution database.
+        Update the given account in the database.
 
         Parameters
         ----------
@@ -601,11 +630,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
         cdef bytes serialized_event = self._event_serializer.serialize(account.last_event_c())
         self._redis.rpush(self._key_accounts + account.id.value, serialized_event)
 
-        self._log.debug(f"Updated Account(id={account.id}).")
+        self._log.debug(f"Updated {account}.")
 
     cpdef void update_order(self, Order order) except *:
         """
-        Update the given order in the execution database.
+        Update the given order in the database.
 
         Parameters
         ----------
@@ -622,11 +651,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
         if reply == 1:  # Reply = The length of the list after the push operation
             self._log.error(f"The updated Order(id={order.client_order_id.value}) did not already exist.")
 
-        self._log.debug(f"Updated Order(id={order.client_order_id.value}).")
+        self._log.debug(f"Updated {order}.")
 
     cpdef void update_position(self, Position position) except *:
         """
-        Update the given position in the execution database.
+        Update the given position in the database.
 
         Parameters
         ----------
@@ -643,4 +672,4 @@ cdef class RedisCacheDatabase(CacheDatabase):
         if reply == 1:  # Reply = The length of the list after the push operation
             self._log.error(f"The updated Position(id={position.id.value}) did not already exist.")
 
-        self._log.debug(f"Updated Position(id={position.id.value}).")
+        self._log.debug(f"Updated {position}.")
