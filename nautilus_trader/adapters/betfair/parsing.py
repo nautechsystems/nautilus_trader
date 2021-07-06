@@ -55,8 +55,6 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.events import AccountState
-from nautilus_trader.model.events import InstrumentClosePrice
-from nautilus_trader.model.events import InstrumentStatusEvent
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -74,6 +72,8 @@ from nautilus_trader.model.orderbook.order import Order
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.venue import InstrumentClosePrice
+from nautilus_trader.model.venue import InstrumentStatusUpdate
 
 
 uuid_factory = UUIDFactory()
@@ -122,9 +122,7 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                 ),
                 limit_order=limit_order(
                     size=float(order.quantity),
-                    price=float(
-                        probability_to_price(probability=price, side=order.side)
-                    ),
+                    price=float(probability_to_price(probability=price, side=order.side)),
                     persistence_type="PERSIST",
                     time_in_force=N2B_TIME_IN_FORCE[order.time_in_force],
                     min_fill_size=0,
@@ -155,9 +153,7 @@ def order_update_to_betfair(
         "instructions": [
             replace_instruction(
                 bet_id=venue_order_id.value,
-                new_price=float(
-                    probability_to_price(probability=command.price, side=side)
-                ),
+                new_price=float(probability_to_price(probability=command.price, side=side)),
             )
         ],
     }
@@ -291,9 +287,7 @@ def _handle_book_updates(runner, instrument, ts_event_ns, ts_recv_ns):
                     level=BookLevel.L2,
                     delta_type=DeltaType.DELETE if volume == 0 else DeltaType.UPDATE,
                     order=Order(
-                        price=price_to_probability(
-                            price, side=B2N_MARKET_STREAM_SIDE[side]
-                        ),
+                        price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
                         size=Quantity(volume, precision=8),
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
@@ -320,16 +314,16 @@ def _handle_market_close(runner, instrument, timestamp_ns):
             instrument_id=instrument.id,
             close_price=Price(0.0, precision=4),
             close_type=InstrumentCloseType.EXPIRED,
-            event_id=uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
         )
     elif runner["status"] == "WINNER":
         close_price = InstrumentClosePrice(
             instrument_id=instrument.id,
             close_price=Price(1.0, precision=4),
             close_type=InstrumentCloseType.EXPIRED,
-            event_id=uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
         )
     else:
         raise ValueError(f"Unknown runner close status: {runner['status']}")
@@ -341,32 +335,32 @@ def _handle_instrument_status(market, instrument, timestamp_ns):
     if "status" not in market_def:
         return []
     if market_def["status"] == "OPEN" and not market_def["inPlay"]:
-        status = InstrumentStatusEvent(
+        status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.PRE_OPEN,
-            event_id=uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
         )
     elif market_def["status"] == "OPEN" and market_def["inPlay"]:
-        status = InstrumentStatusEvent(
+        status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.OPEN,
-            event_id=uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
         )
     elif market_def["status"] == "SUSPENDED":
-        status = InstrumentStatusEvent(
+        status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.PAUSE,
-            event_id=uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
         )
     elif market_def["status"] == "CLOSED":
-        status = InstrumentStatusEvent(
+        status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.CLOSED,
-            event_id=uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
         )
     else:
         raise ValueError("Unknown market status")
@@ -401,7 +395,7 @@ def _handle_market_runners_status(instrument_provider, market, timestamp_ns):
 
 def build_market_snapshot_messages(
     instrument_provider, raw
-) -> List[Union[OrderBookSnapshot, InstrumentStatusEvent]]:
+) -> List[Union[OrderBookSnapshot, InstrumentStatusUpdate]]:
     updates = []
     ts_event_ns = millis_to_nanos(raw["pt"])
     timestamp_ns = millis_to_nanos(raw["pt"])  # TODO(bm): Could call clock.ts_recv_ns()
@@ -463,15 +457,11 @@ def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
 
 def build_market_update_messages(
     instrument_provider, raw
-) -> List[
-    Union[OrderBookDelta, TradeTick, InstrumentStatusEvent, InstrumentClosePrice]
-]:
+) -> List[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]]:
     updates = []
     book_updates = []
     ts_event_ns = millis_to_nanos(raw["pt"])
-    ts_recv_ns = millis_to_nanos(
-        raw["pt"]
-    )  # TODO(bm): Could call self._clock.ts_recv_ns()
+    ts_recv_ns = millis_to_nanos(raw["pt"])  # TODO(bm): Could call self._clock.ts_recv_ns()
     for market in raw.get("mc", []):
         updates.extend(
             _handle_market_runners_status(
@@ -557,9 +547,7 @@ async def generate_trades_list(
             last_qty=Quantity.from_str(
                 str(fill["sizeSettled"])
             ),  # TODO: Possibly incorrect precision
-            last_px=Price.from_str(
-                str(fill["priceMatched"])
-            ),  # TODO: Possibly incorrect precision
+            last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Possibly incorrect precision
             commission=None,  # Can be None
             liquidity_side=LiquiditySide.NONE,
             ts_filled_ns=timestamp_ns,

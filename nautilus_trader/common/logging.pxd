@@ -62,9 +62,9 @@ cdef class Logger:
     cdef LogLevel _log_level_raw
 
     cdef readonly TraderId trader_id
-    """The loggers trader identifier.\n\n:returns: `TraderId`"""
+    """The loggers trader ID.\n\n:returns: `TraderId`"""
     cdef readonly UUID system_id
-    """The loggers system identifier.\n\n:returns: `UUID`"""
+    """The loggers system ID.\n\n:returns: `UUID`"""
     cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 

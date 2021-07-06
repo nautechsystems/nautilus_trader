@@ -1,3 +1,28 @@
+# NautilusTrader 1.124.0 Beta - Release Notes
+
+This release sees the expansion of pre-trade risk check options (see 
+`RiskEngine` class documentation). There has also been extensive 'under the 
+hood' code cleanup and consolidation.
+
+## Breaking Changes
+- Renamed `Position.opened_timestamp_ns` to `ts_opened_ns`.
+- Renamed `Position.closed_timestamp_ns` to `ts_closed_ns`.
+- Renamed `Position.open_duration_ns` to `duration_ns`.
+- Renamed Loggers `bypass_logging` to `bypass`.
+- Refactored `PositionEvent` types.
+
+## Enhancements
+- Add pre-trade risk checks to `RiskEngine` iteration 2.
+- Improve `Throttler` functionality and performance.
+- Removed redundant `OrderInvalid` state and associated code.
+- Improve analysis reports.
+
+## Fixes
+- PnL calculations for `CASH` account types.
+- Various event serializations.
+
+---
+
 # NautilusTrader 1.123.0 Beta - Release Notes
 
 A major feature of this release is a complete re-design of serialization for the
@@ -28,22 +53,23 @@ Initial scaffolding for new backtest data tooling has been added.
 - Renamed `Order.volume` to `Order.size`.
 
 ## Enhancements
-- Adapters dependencies are now optional extras at installation.
+- Adapter dependencies are now optional extras at installation.
 - Added arrow/parquet serialization.
 - Added object `to_dict()` and `from_dict()` methods.
 - Added `Order.is_pending_update`.
 - Added `Order.is_pending_cancel`.
+- Added `run_analysis` config option for `BacktestEngine`.
 - Removed `TradeMatchId` in favour of bare string.
 - Removed redundant conversion to `pd.Timestamp` when checking timestamps.
 - Removed redundant data `to_serializable_str` methods.
 - Removed redundant data `from_serializable_str` methods.
 - Removed redundant `__ne__` implementations.
-- Removed redundant MsgPackSerializer cruft.
+- Removed redundant `MsgPackSerializer` cruft.
 - Removed redundant `ObjectCache` and `IdentifierCache`.
 - Removed redundant string constants.
 
 ## Fixes
-- Fixed millis to nanos in CCXT execution.
+- Fixed millis to nanos in `CCXTExecutionClient`.
 - Added missing trigger to `UpdateOrder` handling.
 - Removed all `import *`.
 
@@ -217,7 +243,7 @@ for `OrderFill` events, as well as additional order states and events.
 - Re-engineered `BacktestEngine` to take data directly.
 - Added `OrderState.PENDING_CANCEL`.
 - Added `OrderState.PENDING_REPLACE`.
-- Added `OrderPendingReplace` event.
+- Added `OrderPendingUpdate` event.
 - Added `OrderPendingCancel` event.
 - Added `OrderFilled.is_buy` property (with corresponding `is_buy_c()` fast method).
 - Added `OrderFilled.is_sell` property (with corresponding `is_sell_c()` fast method).

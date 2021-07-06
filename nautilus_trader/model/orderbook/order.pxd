@@ -24,7 +24,7 @@ cdef class Order:
     cdef readonly OrderSide side
     """The orders side.\n\n:returns: `OrderSide`"""
     cdef readonly str id
-    """The orders identifier.\n\n:returns: `str`"""
+    """The orders ID.\n\n:returns: `str`"""
 
     cpdef void update_price(self, double price) except *
     cpdef void update_size(self, double size) except *

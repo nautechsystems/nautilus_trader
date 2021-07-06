@@ -281,7 +281,7 @@ class MockMarketDataClient(MarketDataClient):
         Parameters
         ----------
         client_id : ClientId
-            The client identifier.
+            The client ID.
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
@@ -356,9 +356,7 @@ class MockMarketDataClient(MarketDataClient):
     def request(self, datatype: DataType, correlation_id: UUID) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def request_instrument(
-        self, instrument_id: InstrumentId, correlation_id: UUID
-    ) -> None:
+    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     def request_instruments(self, correlation_id: UUID) -> None:
@@ -419,7 +417,7 @@ class MockExecutionClient(ExecutionClient):
         Parameters
         ----------
         client_id : ClientId
-            The client identifier.
+            The client ID.
         venue_type : VenueType
             The client venue type.
         account_id : AccountId
@@ -512,7 +510,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         Parameters
         ----------
         client_id : ClientId
-            The client identifier.
+            The client ID.
         venue_type : VenueType
             The client venue type.
         account_id : AccountId
@@ -552,9 +550,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
     def add_order_status_report(self, report: OrderStatusReport) -> None:
         self._order_status_reports[report.venue_order_id] = report
 
-    def add_trades_list(
-        self, venue_order_id: VenueOrderId, trades: List[ExecutionReport]
-    ) -> None:
+    def add_trades_list(self, venue_order_id: VenueOrderId, trades: List[ExecutionReport]) -> None:
         self._trades_lists[venue_order_id] = trades
 
     def connect(self) -> None:
@@ -593,9 +589,7 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    async def generate_order_status_report(
-        self, order: Order
-    ) -> Optional[OrderStatusReport]:
+    async def generate_order_status_report(self, order: Order) -> Optional[OrderStatusReport]:
         self.calls.append(inspect.currentframe().f_code.co_name)
         return self._order_status_reports[order.venue_order_id]
 
@@ -612,7 +606,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
 class MockCacheDatabase(CacheDatabase):
     """
     Provides a mock cache database for testing.
-
     """
 
     def __init__(self, trader_id: TraderId, logger: Logger):
@@ -622,7 +615,7 @@ class MockCacheDatabase(CacheDatabase):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier to associate with the database.
+            The trader ID to associate with the database.
         logger : Logger
             The logger for the database.
 

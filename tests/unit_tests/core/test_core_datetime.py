@@ -261,9 +261,7 @@ class TestDatetimeFunctions:
             ],
         ],
     )
-    def test_dt_to_unix_millis_with_various_values_returns_expected_long(
-        self, value, expected
-    ):
+    def test_dt_to_unix_millis_with_various_values_returns_expected_long(self, value, expected):
         # Arrange
         # Act
         result = dt_to_unix_millis(value)
@@ -470,9 +468,7 @@ class TestDatetimeFunctions:
 
     def test_with_utc_index_given_tz_aware_different_timezone_dataframe(self):
         # Arrange
-        data1 = pd.DataFrame(
-            {"timestamp": ["2019-05-21 12:00:00", "2019-05-21 12:15:00"]}
-        )
+        data1 = pd.DataFrame({"timestamp": ["2019-05-21 12:00:00", "2019-05-21 12:15:00"]})
         data1.set_index("timestamp")
         data1.index = pd.to_datetime(data1.index)
 
@@ -502,16 +498,12 @@ class TestDatetimeFunctions:
             [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc).isoformat(), 0],
             [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc).isoformat(), 1357002000000],
             [
-                datetime(
-                    2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc
-                ).isoformat(),
+                datetime(2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc).isoformat(),
                 1577934120001,
             ],
         ],
     )
-    def test_iso8601_to_unix_millis_given_iso8601_datetime_string(
-        self, value, expected
-    ):
+    def test_iso8601_to_unix_millis_given_iso8601_datetime_string(self, value, expected):
         # Arrange
         # Act
         result = iso8601_to_unix_millis(value)
@@ -526,16 +518,12 @@ class TestDatetimeFunctions:
             [datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc).isoformat(), 0],
             [datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc).isoformat(), 1357002000000000],
             [
-                datetime(
-                    2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc
-                ).isoformat(),
+                datetime(2020, 1, 2, 3, 2, microsecond=1000, tzinfo=pytz.utc).isoformat(),
                 1577934120001000,
             ],
         ],
     )
-    def test_iso8601_to_unix_micros_given_iso8601_datetime_string(
-        self, value, expected
-    ):
+    def test_iso8601_to_unix_micros_given_iso8601_datetime_string(self, value, expected):
         # Arrange
         # Act
         result = iso8601_to_unix_micros(value)
@@ -556,9 +544,7 @@ class TestDatetimeFunctions:
                 1357002000000000000,
             ],
             [
-                datetime(
-                    2020, 1, 2, 3, 2, microsecond=333, tzinfo=pytz.utc
-                ).isoformat(),
+                datetime(2020, 1, 2, 3, 2, microsecond=333, tzinfo=pytz.utc).isoformat(),
                 1577934120003330000,
             ],
         ],

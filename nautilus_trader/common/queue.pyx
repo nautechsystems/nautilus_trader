@@ -35,7 +35,6 @@ cdef class Queue:
     --------
     This queue is not thread-safe and must be called from the same thread as the
     event loop.
-
     """
 
     def __init__(self, int maxsize=0):
@@ -48,7 +47,6 @@ cdef class Queue:
             The maximum capacity of the queue before blocking.
 
         """
-
         self.maxsize = maxsize
         self.count = 0
 
@@ -156,7 +154,20 @@ cdef class Queue:
         """
         return self._get_nowait()
 
-    cpdef object peek(self):
+    cpdef object peek_back(self):
+        """
+        Return the item at the back of the queue without popping (if not empty).
+
+        Returns
+        -------
+        object or None
+
+        """
+        if self.count == 0:
+            return None
+        return self._queue[0]
+
+    cpdef object peek_front(self):
         """
         Return the item at the front of the queue without popping (if not empty).
 
@@ -167,7 +178,23 @@ cdef class Queue:
         """
         if self.count == 0:
             return None
-        return self._queue[0]
+        return self._queue[-1]
+
+    cpdef object peek_index(self, int index):
+        """
+        Return the item at the given index without popping (if in range).
+
+        Returns
+        -------
+        object
+
+        Raises
+        ------
+        IndexError
+            If index is out of range.
+
+        """
+        return self._queue[index]
 
     cpdef list to_list(self):
         """
@@ -199,12 +226,12 @@ cdef class Queue:
     cdef void _put_nowait(self, item) except *:
         if self._full():
             raise asyncio.QueueFull()
-        self._queue.append(item)
+        self._queue.appendleft(item)
         self.count += 1
 
     cdef object _get_nowait(self):
-        if self.empty():
+        if self._empty():
             raise asyncio.QueueEmpty()
-        item = self._queue.popleft()
+        item = self._queue.pop()
         self.count -= 1
         return item

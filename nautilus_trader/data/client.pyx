@@ -60,7 +60,7 @@ cdef class DataClient:
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier.
+            The data client ID.
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
@@ -175,7 +175,7 @@ cdef class MarketDataClient(DataClient):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier (normally the venue).
+            The data client ID (normally the venue).
         engine : DataEngine
             The data engine to connect to the client.
         clock : Clock
@@ -252,6 +252,18 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef void subscribe_venue_status_update(self, InstrumentId instrument_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void subscribe_bars(self, BarType bar_type) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -277,6 +289,18 @@ cdef class MarketDataClient(DataClient):
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void unsubscribe_venue_status_update(self, InstrumentId instrument_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

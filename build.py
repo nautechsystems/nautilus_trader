@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from distutils.version import LooseVersion
 import itertools
 import os
 from pathlib import Path
@@ -22,15 +21,19 @@ from setuptools import Extension
 DEBUG_MODE = bool(os.getenv("DEBUG_MODE", ""))
 # If PROFILING mode is enabled, include traces necessary for coverage and profiling
 PROFILING_MODE = bool(os.getenv("PROFILING_MODE", ""))
-# Annotation lets Cython compile in a coverage.xml database
+# If ANNOTATION mode is enabled, generate an annotated HTML version of the input source files
 ANNOTATION_MODE = bool(os.getenv("ANNOTATION_MODE", ""))
-# Skipping the build copy prevents copying built *.so files back into the source tree
+# If PARALLEL build is enabled, uses all CPUs for compile stage of build
+PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else False
+# If SKIP_BUILD_COPY is enabled, prevents copying built *.so files back into the source tree
 SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 
 print(
-    f"DEBUG_MODE={DEBUG_MODE}, "
-    f"PROFILING_MODE={PROFILING_MODE}, "
-    f"ANNOTATION_MODE={ANNOTATION_MODE}, "
+    f"DEBUG_MODE={DEBUG_MODE}\n"
+    f"PROFILING_MODE={PROFILING_MODE}\n"
+    f"ANNOTATION_MODE={ANNOTATION_MODE}\n"
+    f"PARALLEL_BUILD={PARALLEL_BUILD}\n"
+    f"SKIP_BUILD_COPY={SKIP_BUILD_COPY}"
 )
 
 ##########################
@@ -39,8 +42,9 @@ print(
 # https://cython.readthedocs.io/en/latest/src/userguide/source_files_and_compilation.html
 
 Options.docstrings = True  # Include docstrings in modules
+Options.fast_fail = True  # Abort the compilation on the first error occurred
 Options.emit_code_comments = True
-Options.annotate = ANNOTATION_MODE  # Create annotated html files for each .pyx
+Options.annotate = ANNOTATION_MODE  # Create annotated HTML files for each .pyx
 if ANNOTATION_MODE:
     Options.annotate_coverage_xml = "coverage.xml"
 Options.fast_fail = True  # Abort compilation on first error
@@ -54,26 +58,29 @@ CYTHON_COMPILER_DIRECTIVES = {
     "profile": PROFILING_MODE,  # If we're profiling, turn on line tracing
     "linetrace": PROFILING_MODE,
     "warn.maybe_uninitialized": True,
-    # "warn.unused_result": True,  # TODO(cs): Picks up legitimate unused
-    # "warn.unused": True,  # TODO(cs): Unused entry 'genexpr'
+    # "warn.unused_result": True,  # TODO(cs): Picks up legitimate unused variables
+    # "warn.unused": True,  # TODO(cs): Fails on unused entry 'genexpr'
 }
 
 
 def _build_extensions() -> List[Extension]:
-    # Build Extensions to feed into cythonize()
-    # Profiling requires special macro directives
-    define_macros = []
-    if PROFILING_MODE or ANNOTATION_MODE:
-        define_macros.append(("CYTHON_TRACE", "1"))
-
-    if LooseVersion("3.0a7") <= LooseVersion(cython_compiler_version):
-        # https://github.com/nautechsystems/nautilus_trader/issues/303
-        define_macros.append(("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION"))
-
     # Regarding the compiler warning: #warning "Using deprecated NumPy API,
     # disable it with " "#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION"
     # https://stackoverflow.com/questions/52749662/using-deprecated-numpy-api
     # From the Cython docs: "For the time being, it is just a warning that you can ignore."
+    define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
+    if PROFILING_MODE or ANNOTATION_MODE:
+        # Profiling requires special macro directives
+        define_macros.append(("CYTHON_TRACE", "1"))
+
+    extra_compile_args = []
+    if platform.system() != "Windows":
+        extra_compile_args.append("-O3")
+        extra_compile_args.append("-pipe")
+
+    print(f"define_macros={define_macros}")
+    print(f"extra_compile_args={extra_compile_args}")
+
     return [
         Extension(
             name=str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
@@ -81,6 +88,7 @@ def _build_extensions() -> List[Extension]:
             include_dirs=[".", np.get_include()],
             define_macros=define_macros,
             language="c",
+            extra_compile_args=extra_compile_args,
         )
         for pyx in itertools.chain(
             Path("examples").rglob("*.pyx"),
@@ -134,12 +142,14 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
 
 def build(setup_kwargs):
     """Construct the extensions and distribution."""  # noqa
+    # Build C Extensions to feed into cythonize()
     extensions = _build_extensions()
     distribution = _build_distribution(extensions)
 
     # Build and run the command
     cmd: build_ext = build_ext(distribution)
-    cmd.parallel = os.cpu_count()
+    if PARALLEL_BUILD:
+        cmd.parallel = os.cpu_count()
     cmd.ensure_finalized()
     cmd.run()
 
@@ -152,10 +162,10 @@ def build(setup_kwargs):
 if __name__ == "__main__":
     print("")
 
-    # Work around a Cython problem in Python 3.8.x on MacOS
+    # Work around a Cython problem in Python 3.8.x on macOS
     # https://github.com/cython/cython/issues/3262
     if platform.system() == "Darwin":
-        print("MacOS: Setting multiprocessing method to 'fork'.")
+        print("macOS: Setting multiprocessing method to 'fork'.")
         try:
             # noinspection PyUnresolvedReferences
             import multiprocessing
@@ -165,7 +175,7 @@ if __name__ == "__main__":
             print("multiprocessing not available")
 
     print("Starting build...")
-    # Note: On Mac OS X (and perhaps other platforms), executable files may be
+    # Note: On macOS (and perhaps other platforms), executable files may be
     # universal files containing multiple architectures. To determine the
     # “64-bitness” of the current interpreter, it is more reliable to query the
     # sys.maxsize attribute:

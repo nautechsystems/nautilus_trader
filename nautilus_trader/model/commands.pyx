@@ -50,13 +50,13 @@ cdef class TradingCommand(Command):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier for the command.
+            The trader ID for the command.
         strategy_id : StrategyId
-            The strategy identifier for the command.
+            The strategy ID for the command.
         instrument_id : InstrumentId
-            The instrument identifier for the command.
+            The instrument ID for the command.
         command_id : UUID
-            The commands identifier.
+            The commands ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the command.
 
@@ -75,7 +75,6 @@ cdef class SubmitOrder(TradingCommand):
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_D_68.html
-
     """
 
     def __init__(
@@ -93,15 +92,15 @@ cdef class SubmitOrder(TradingCommand):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier for the command.
+            The trader ID for the command.
         strategy_id : StrategyId
-            The strategy identifier for the command.
+            The strategy ID for the command.
         position_id : PositionId
-            The position identifier for the command (can be NULL).
+            The position ID for the command (can be NULL).
         order : Order
             The order to submit.
         command_id : UUID
-            The commands identifier.
+            The commands ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the command.
 
@@ -191,7 +190,6 @@ cdef class SubmitBracketOrder(TradingCommand):
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_E_69.html
-
     """
 
     def __init__(
@@ -208,13 +206,13 @@ cdef class SubmitBracketOrder(TradingCommand):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier for the command.
+            The trader ID for the command.
         strategy_id : StrategyId
-            The strategy identifier for the command.
+            The strategy ID for the command.
         bracket_order : BracketOrder
             The bracket order to submit.
         command_id : UUID
-            The command identifier.
+            The command ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the command.
 
@@ -302,7 +300,6 @@ cdef class UpdateOrder(TradingCommand):
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
-
     """
 
     def __init__(
@@ -324,15 +321,15 @@ cdef class UpdateOrder(TradingCommand):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier for the command.
+            The trader ID for the command.
         strategy_id : StrategyId
-            The strategy identifier for the command.
+            The strategy ID for the command.
         instrument_id : InstrumentId
-            The instrument identifier for the command.
+            The instrument ID for the command.
         client_order_id : VenueOrderId
-            The client order identifier to update.
+            The client order ID to update.
         venue_order_id : VenueOrderId
-            The venue order identifier to update.
+            The venue order ID to update.
         quantity : Quantity, optional
             The quantity for the order update.
         price : Price, optional
@@ -340,7 +337,7 @@ cdef class UpdateOrder(TradingCommand):
         trigger : Price, optional
             The trigger price for the order update.
         command_id : UUID
-            The command identifier.
+            The command ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the command.
 
@@ -442,7 +439,6 @@ cdef class CancelOrder(TradingCommand):
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_F_70.html
-
     """
 
     def __init__(
@@ -461,17 +457,17 @@ cdef class CancelOrder(TradingCommand):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier for the command.
+            The trader ID for the command.
         strategy_id : StrategyId
-            The strategy identifier for the command.
+            The strategy ID for the command.
         instrument_id : InstrumentId
-            The instrument identifier for the command.
+            The instrument ID for the command.
         client_order_id : ClientOrderId
-            The client order identifier to cancel.
+            The client order ID to cancel.
         venue_order_id : VenueOrderId
-            The venue order identifier to cancel.
+            The venue order ID to cancel.
         command_id : UUID
-            The command identifier.
+            The command ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the command.
 

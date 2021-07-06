@@ -54,6 +54,7 @@ class LiveDataClientTests(unittest.TestCase):
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
         self.engine = LiveDataEngine(
@@ -95,6 +96,7 @@ class LiveMarketDataClientTests(unittest.TestCase):
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
         self.engine = LiveDataEngine(

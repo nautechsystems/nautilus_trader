@@ -56,7 +56,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 # - A Redis instance listening on the default port 6379
 
 
-class TestRedisExecutionDatabase:
+class TestRedisCacheDatabase:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()

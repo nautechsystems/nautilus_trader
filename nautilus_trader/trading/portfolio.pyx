@@ -316,26 +316,24 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(event, "event")
         Condition.not_none(self._cache, "self._cache")
 
-        cdef InstrumentId instrument_id = event.position.instrument_id
-
         cdef list positions_open = self._cache.positions_open(
             venue=None,  # Faster query filtering
-            instrument_id=instrument_id,
+            instrument_id=event.instrument_id,
         )
         self._update_net_position(
-            instrument_id=instrument_id,
+            instrument_id=event.instrument_id,
             positions_open=positions_open
         )
         self._update_maint_margin(
-            venue=instrument_id.venue,
+            venue=event.instrument_id.venue,
             positions_open=positions_open,
         )
 
-        self._unrealized_pnls[instrument_id] = self._calculate_unrealized_pnl(
-            instrument_id=instrument_id,
+        self._unrealized_pnls[event.instrument_id] = self._calculate_unrealized_pnl(
+            instrument_id=event.instrument_id,
         )
 
-        self._log.debug(f"Updated {event.position}.")
+        self._log.debug(f"Updated {event.position_status}.")
 
     cpdef void reset(self) except *:
         """
@@ -558,7 +556,7 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef Money unrealized_pnl(self, InstrumentId instrument_id):
         """
-        Return the unrealized PnL for the given instrument identifier (if found).
+        Return the unrealized PnL for the given instrument ID (if found).
 
         Parameters
         ----------
@@ -659,7 +657,7 @@ cdef class Portfolio(PortfolioFacade):
 
     cpdef object net_position(self, InstrumentId instrument_id):
         """
-        Return the total net position for the given instrument identifier.
+        Return the total net position for the given instrument ID.
         If no positions for instrument_id then will return `Decimal('0')`.
 
         Parameters
@@ -677,7 +675,7 @@ cdef class Portfolio(PortfolioFacade):
     cpdef bint is_net_long(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the portfolio is net long the given
-        instrument identifier.
+        instrument ID.
 
         Parameters
         ----------
@@ -697,7 +695,7 @@ cdef class Portfolio(PortfolioFacade):
     cpdef bint is_net_short(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the portfolio is net short the given
-        instrument identifier.
+        instrument ID.
 
         Parameters
         ----------
@@ -717,7 +715,7 @@ cdef class Portfolio(PortfolioFacade):
     cpdef bint is_flat(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the portfolio is flat for the given
-        instrument identifier.
+        instrument ID.
 
         Parameters
         ----------

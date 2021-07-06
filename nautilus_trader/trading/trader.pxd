@@ -33,7 +33,7 @@ cdef class Trader(Component):
     cdef ReportProvider _report_provider
 
     cdef readonly TraderId id
-    """The trader identifier.\n\n:returns: `TraderId`"""
+    """The trader ID.\n\n:returns: `TraderId`"""
     cdef readonly PerformanceAnalyzer analyzer
     """The traders performance analyzer.\n\n:returns: `PerformanceAnalyzer`"""
 

@@ -75,8 +75,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         if config is None:
             config = {}
-        if "qsize" not in config:
-            config["qsize"] = 10000
         super().__init__(
             portfolio=portfolio,
             cache=cache,
@@ -86,7 +84,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         )
 
         self._loop = loop
-        self._queue = Queue(maxsize=config.get("qsize"))
+        self._queue = Queue(maxsize=config.get("qsize", 10000))
 
         self._run_queue_task = None
         self.is_running = False
@@ -212,10 +210,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=timeout_secs)
         cdef OrderStatusReport report
         while True:
-            if self._clock.utc_now() >= timeout:
-                return False
-
-            resolved = True
+            reconciled = True
             for order in active_orders.values():
                 client = self._routing_map.get(order.instrument_id.venue)
                 if client is None:
@@ -231,12 +226,14 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 if report is None:
                     return False  # Will never reconcile
                 if order.state_c() != report.order_state:
-                    resolved = False  # Incorrect state on this loop
+                    reconciled = False  # Incorrect state on this loop
                 if report.order_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
                     if order.filled_qty != report.filled_qty:
-                        resolved = False  # Incorrect filled quantity on this loop
-            if resolved:
+                        reconciled = False  # Incorrect filled quantity on this loop
+            if reconciled:
                 break
+            if self._clock.utc_now() >= timeout:
+                return False
             await asyncio.sleep(0)  # Sleep for one event loop cycle
 
         return True  # Execution states reconciled
@@ -277,7 +274,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         try:
             self._queue.put_nowait(command)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
+            self._log.warning(
+                f"Blocking on `_queue.put` as queue full "
+                f"at {self._queue.qsize()} items.",
+            )
             self._loop.create_task(self._queue.put(command))  # Blocking until qsize reduces
 
     cpdef void process(self, Event event) except *:
@@ -304,7 +304,10 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         try:
             self._queue.put_nowait(event)
         except asyncio.QueueFull:
-            self._log.warning(f"Blocking on `_queue.put` as queue full at {self._queue.qsize()} items.")
+            self._log.warning(
+                f"Blocking on `_queue.put` as queue full "
+                f"at {self._queue.qsize()} items.",
+            )
             self._loop.create_task(self._queue.put(event))  # Blocking until qsize reduces
 
     cpdef void _on_start(self) except *:
@@ -322,7 +325,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             self._enqueue_sentinel()
 
     async def _run(self):
-        self._log.debug(f"Message queue processing starting (qsize={self.qsize()})...")
+        self._log.debug(
+            f"Message queue processing starting (qsize={self.qsize()})...",
+        )
         cdef Message message
         try:
             while self.is_running:
@@ -337,10 +342,13 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                     self._log.error(f"Cannot handle message: unrecognized {message}.")
         except asyncio.CancelledError:
             if not self._queue.empty():
-                self._log.warning(f"Running canceled "
-                                  f"with {self.qsize()} message(s) on queue.")
+                self._log.warning(
+                    f"Running canceled with {self.qsize()} message(s) on queue.",
+                )
             else:
-                self._log.debug(f"Message queue processing stopped (qsize={self.qsize()}).")
+                self._log.debug(
+                    f"Message queue processing stopped (qsize={self.qsize()}).",
+                )
 
     cdef void _enqueue_sentinel(self):
         self._queue.put_nowait(self._sentinel)

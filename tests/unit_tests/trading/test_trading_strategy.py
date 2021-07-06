@@ -90,9 +90,7 @@ class TradingStrategyTests(unittest.TestCase):
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={
-                "use_previous_close": False
-            },  # To correctly reproduce historical data bars
+            config={"use_previous_close": False},  # To correctly reproduce historical data bars
         )
 
         account_id = TestStubs.account_id()
@@ -161,9 +159,7 @@ class TradingStrategyTests(unittest.TestCase):
         self.cache.add_instrument(GBPUSD_SIM)
         self.cache.add_instrument(USDJPY_SIM)
 
-        self.exchange.process_tick(
-            TestStubs.quote_tick_3decimal(USDJPY_SIM.id)
-        )  # Prepare market
+        self.exchange.process_tick(TestStubs.quote_tick_3decimal(USDJPY_SIM.id))  # Prepare market
 
         self.data_engine.start()
         self.exec_engine.start()

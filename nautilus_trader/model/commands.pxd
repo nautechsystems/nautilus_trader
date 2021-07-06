@@ -28,16 +28,16 @@ from nautilus_trader.model.orders.bracket cimport BracketOrder
 
 cdef class TradingCommand(Command):
     cdef readonly TraderId trader_id
-    """The trader identifier associated with the command.\n\n:returns: `TraderId`"""
+    """The trader ID associated with the command.\n\n:returns: `TraderId`"""
     cdef readonly StrategyId strategy_id
-    """The strategy identifier associated with the command.\n\n:returns: `StrategyId`"""
+    """The strategy ID associated with the command.\n\n:returns: `StrategyId`"""
     cdef readonly InstrumentId instrument_id
-    """The instrument identifier associated with the command.\n\n:returns: `InstrumentId`"""
+    """The instrument ID associated with the command.\n\n:returns: `InstrumentId`"""
 
 
 cdef class SubmitOrder(TradingCommand):
     cdef readonly PositionId position_id
-    """The position identifier associated with the command.\n\n:returns: `PositionId`"""
+    """The position ID associated with the command.\n\n:returns: `PositionId`"""
     cdef readonly Order order
     """The order for the command.\n\n:returns: `Order`"""
 
@@ -61,9 +61,9 @@ cdef class SubmitBracketOrder(TradingCommand):
 
 cdef class UpdateOrder(TradingCommand):
     cdef readonly ClientOrderId client_order_id
-    """The client order identifier associated with the command.\n\n:returns: `ClientOrderId`"""
+    """The client order ID associated with the command.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue order identifier associated with the command.\n\n:returns: `VenueOrderId`"""
+    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId`"""
     cdef readonly Quantity quantity
     """The updated quantity for the command.\n\n:returns: `Quantity` or None"""
     cdef readonly Price price
@@ -80,9 +80,9 @@ cdef class UpdateOrder(TradingCommand):
 
 cdef class CancelOrder(TradingCommand):
     cdef readonly ClientOrderId client_order_id
-    """The client order identifier associated with the command.\n\n:returns: `ClientOrderId`"""
+    """The client order ID associated with the command.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue order identifier associated with the command.\n\n:returns: `VenueOrderId`"""
+    """The venue order ID associated with the command.\n\n:returns: `VenueOrderId`"""
 
     @staticmethod
     cdef CancelOrder from_dict_c(dict values)

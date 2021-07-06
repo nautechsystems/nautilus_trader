@@ -105,11 +105,7 @@ def test_account_statement(betfair_client, uuid, clock):
         account_type=AccountType.CASH,
         base_currency=AUD,
         reported=True,  # reported
-        balances=[
-            AccountBalance(
-                AUD, Money(1000.0, AUD), Money(0.00, AUD), Money(1000.0, AUD)
-            )
-        ],
+        balances=[AccountBalance(AUD, Money(1000.0, AUD), Money(0.00, AUD), Money(1000.0, AUD))],
         info={"funds": funds, "detail": detail},
         event_id=uuid,
         ts_updated_ns=result.timestamp_ns,

@@ -85,7 +85,7 @@ cdef class LiveDataClient(DataClient):
         Parameters
         ----------
         client_id : ClientId
-            The client identifier.
+            The client ID.
         engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock
@@ -128,7 +128,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
         Parameters
         ----------
         client_id : ClientId
-            The client identifier.
+            The client ID.
         engine : LiveDataEngine
             The data engine for the client.
         clock : LiveClock

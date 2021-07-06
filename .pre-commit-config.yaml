@@ -1,12 +1,12 @@
 repos:
 
   - repo: https://github.com/PyCQA/isort
-    rev: 5.8.0
+    rev: 5.9.1
     hooks:
       - id: isort
 
   - repo: https://github.com/psf/black
-    rev: 20.8b1
+    rev: 21.6b0
     hooks:
       - id: black
 
@@ -33,14 +33,14 @@ repos:
       - id: check-yaml
 
   -   repo: https://github.com/codespell-project/codespell
-      rev: v2.0.0
+      rev: v2.1.0
       hooks:
-        -   id: codespell
-            description: Checks for common misspellings.
-            types_or: [python, rst, markdown]  # TODO: Add Cython
+        - id: codespell
+          description: Checks for common misspellings.
+          types_or: [python, cython, rst, markdown]
 
   - repo: https://gitlab.com/PyCQA/flake8
-    rev: 3.9.0
+    rev: 3.9.2
     hooks:
       - id: flake8
         name: flake8 (python)

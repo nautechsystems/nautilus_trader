@@ -31,9 +31,9 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class OrderStatusReport:
     cdef readonly ClientOrderId client_order_id
-    """The client order identifier for the report.\n\n:returns: `ClientOrderId`"""
+    """The client order ID for the report.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The reported venue order identifier.\n\n:returns: `VenueOrderId`"""
+    """The reported venue order ID.\n\n:returns: `VenueOrderId`"""
     cdef readonly OrderState order_state
     """The reported order state at the exchange.\n\n:returns: `OrderState`"""
     cdef readonly Quantity filled_qty
@@ -44,7 +44,7 @@ cdef class OrderStatusReport:
 
 cdef class PositionStatusReport:
     cdef readonly InstrumentId instrument_id
-    """The reported instrument identifier.\n\n:returns: `InstrumentId`"""
+    """The reported instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly PositionSide side
     """The reported position side at the exchange.\n\n:returns: `PositionSide`"""
     cdef readonly Quantity qty
@@ -55,11 +55,11 @@ cdef class PositionStatusReport:
 
 cdef class ExecutionReport:
     cdef readonly ClientOrderId client_order_id
-    """The client order identifier for the report.\n\n:returns: `ClientOrderId`"""
+    """The client order ID for the report.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The reported venue order identifier.\n\n:returns: `VenueOrderId`"""
+    """The reported venue order ID.\n\n:returns: `VenueOrderId`"""
     cdef readonly ExecutionId id
-    """The reported execution identifier.\n\n:returns: `ExecutionId`"""
+    """The reported execution ID.\n\n:returns: `ExecutionId`"""
     cdef readonly Quantity last_qty
     """The reported quantity of the last fill.\n\n:returns: `Quantity`"""
     cdef readonly Price last_px
@@ -80,9 +80,9 @@ cdef class ExecutionMassStatus:
     cdef dict _position_reports
 
     cdef readonly ClientId client_id
-    """The client identifier for the report.\n\n:returns: `ClientId`"""
+    """The client ID for the report.\n\n:returns: `ClientId`"""
     cdef readonly AccountId account_id
-    """The account identifier for the report.\n\n:returns: `AccountId`"""
+    """The account ID for the report.\n\n:returns: `AccountId`"""
     cdef readonly int64_t timestamp_ns
     """The UNIX timestamp (nanoseconds) of the report.\n\n:returns: `int64`"""
 

@@ -42,7 +42,7 @@ from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderPendingCancel
-from nautilus_trader.model.events import OrderPendingReplace
+from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
@@ -173,9 +173,7 @@ class TestStubs:
 
     @staticmethod
     def bartype_btcusdt_binance_100tick_last() -> BarType:
-        return BarType(
-            TestStubs.btcusdt_binance_id(), TestStubs.bar_spec_100tick_last()
-        )
+        return BarType(TestStubs.btcusdt_binance_id(), TestStubs.bar_spec_100tick_last())
 
     @staticmethod
     def bar_5decimal() -> Bar:
@@ -208,9 +206,7 @@ class TestStubs:
         instrument_id=None, bid=None, ask=None, bid_volume=None, ask_volume=None
     ) -> QuoteTick:
         return QuoteTick(
-            instrument_id=instrument_id
-            if instrument_id is not None
-            else TestStubs.usdjpy_id(),
+            instrument_id=instrument_id if instrument_id is not None else TestStubs.usdjpy_id(),
             bid=bid or Price.from_str("90.002"),
             ask=ask or Price.from_str("90.005"),
             bid_size=bid_volume or Quantity.from_int(1_000_000),
@@ -222,9 +218,7 @@ class TestStubs:
     @staticmethod
     def quote_tick_5decimal(instrument_id=None, bid=None, ask=None) -> QuoteTick:
         return QuoteTick(
-            instrument_id=instrument_id
-            if instrument_id is not None
-            else TestStubs.audusd_id(),
+            instrument_id=instrument_id if instrument_id is not None else TestStubs.audusd_id(),
             bid=bid or Price.from_str("1.00001"),
             ask=ask or Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1_000_000),
@@ -303,14 +297,8 @@ class TestStubs:
         return OrderBookSnapshot(
             instrument_id=instrument_id or TestStubs.audusd_id(),
             level=level,
-            bids=[
-                (float(bid_price - i), float(bid_volume * (1 + i)))
-                for i in range(bid_levels)
-            ],
-            asks=[
-                (float(ask_price + i), float(ask_volume * (1 + i)))
-                for i in range(ask_levels)
-            ],
+            bids=[(float(bid_price - i), float(bid_volume * (1 + i))) for i in range(bid_levels)],
+            asks=[(float(ask_price + i), float(ask_volume * (1 + i))) for i in range(ask_levels)],
             ts_event_ns=0,
             ts_recv_ns=0,
         )
@@ -386,8 +374,8 @@ class TestStubs:
         )
 
     @staticmethod
-    def event_order_pending_update(order) -> OrderPendingReplace:
-        return OrderPendingReplace(
+    def event_order_pending_update(order) -> OrderPendingUpdate:
+        return OrderPendingUpdate(
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
@@ -494,7 +482,10 @@ class TestStubs:
     @staticmethod
     def event_position_opened(position) -> PositionOpened:
         return PositionOpened(
-            position=position,
+            position_id=position.id,
+            strategy_id=position.strategy_id,
+            instrument_id=position.instrument_id,
+            position_status=position.to_dict(),
             order_fill=position.last_event,
             event_id=uuid4(),
             timestamp_ns=0,
@@ -503,7 +494,10 @@ class TestStubs:
     @staticmethod
     def event_position_changed(position) -> PositionChanged:
         return PositionChanged(
-            position=position,
+            position_id=position.id,
+            strategy_id=position.strategy_id,
+            instrument_id=position.instrument_id,
+            position_status=position.to_dict(),
             order_fill=position.last_event,
             event_id=uuid4(),
             timestamp_ns=0,
@@ -512,7 +506,10 @@ class TestStubs:
     @staticmethod
     def event_position_closed(position) -> PositionClosed:
         return PositionClosed(
-            position=position,
+            position_id=position.id,
+            strategy_id=position.strategy_id,
+            instrument_id=position.instrument_id,
+            position_status=position.to_dict(),
             order_fill=position.last_event,
             event_id=uuid4(),
             timestamp_ns=0,

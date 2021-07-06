@@ -53,7 +53,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.trader_id = TraderId("TESTER-000")
-        self.logger = Logger(self.clock, bypass_logging=True)
+        self.logger = Logger(self.clock, bypass=True)
 
         self.account_id = AccountId(BINANCE.value, "001")
 
@@ -67,6 +67,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
         self.exec_engine = LiveExecutionEngine(
@@ -181,8 +182,6 @@ class TestLiveExecutionPerformance(PerformanceHarness):
                 self.strategy.submit_order(order)
 
         stats_file = "perf_live_execution.prof"
-        cProfile.runctx(
-            "self.loop.run_until_complete(run_test())", globals(), locals(), stats_file
-        )
+        cProfile.runctx("self.loop.run_until_complete(run_test())", globals(), locals(), stats_file)
         s = pstats.Stats(stats_file)
         s.strip_dirs().sort_stats("time").print_stats()

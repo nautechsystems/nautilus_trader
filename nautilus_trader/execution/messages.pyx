@@ -48,9 +48,9 @@ cdef class OrderStatusReport:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The reported client order identifier.
+            The reported client order ID.
         venue_order_id : VenueOrderId
-            The reported order identifier.
+            The reported order ID.
         order_state : OrderState
             The reported order state at the exchange.
         filled_qty : Quantity
@@ -91,7 +91,7 @@ cdef class PositionStatusReport:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The reported instrument identifier.
+            The reported instrument ID.
         position_side : PositionSide
             The reported position side at the exchange.
         qty : Quantity
@@ -115,7 +115,7 @@ cdef class PositionStatusReport:
 
 cdef class ExecutionReport:
     """
-    Represents a report of execution state by order identifier.
+    Represents a report of execution state by order ID.
     """
 
     def __init__(
@@ -136,11 +136,11 @@ cdef class ExecutionReport:
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier.
+            The client order ID.
         venue_order_id : VenueOrderId
-            The venue order identifier.
+            The venue order ID.
         execution_id : ExecutionId
-            The execution identifier for the trade.
+            The execution ID for the trade.
         last_qty : Quantity
             The quantity of the last fill.
         last_px : Price
@@ -193,9 +193,9 @@ cdef class ExecutionMassStatus:
         Parameters
         ----------
         client_id : ClientId
-            The client identifier for the report.
+            The client ID for the report.
         account_id : AccountId
-            The account identifier for the report.
+            The account ID for the report.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the report.
 
@@ -271,12 +271,12 @@ cdef class ExecutionMassStatus:
 
     cpdef void add_exec_reports(self, VenueOrderId venue_order_id, list reports) except *:
         """
-        Add the list of trades for the given order identifier.
+        Add the list of trades for the given order ID.
 
         Parameters
         ----------
         venue_order_id : VenueOrderId
-            The venue order identifier for the reports.
+            The venue order ID for the reports.
         reports : list[ExecutionReport]
             The list of execution reports to add.
 

@@ -35,6 +35,7 @@ class TestOandaDataClientFactory:
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
         self.logger = LiveLogger(
@@ -75,4 +76,4 @@ class TestOandaDataClientFactory:
         )
 
         # Assert
-        assert type(client) == OandaDataClient
+        assert isinstance(client, OandaDataClient)

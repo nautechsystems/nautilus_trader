@@ -16,7 +16,7 @@
 
 cdef class Identifier:
     cdef readonly str value
-    """The identifier value.\n\n:returns: `str`"""
+    """The ID value.\n\n:returns: `str`"""
 
     cdef bint is_null(self) except *
     cdef bint not_null(self) except *

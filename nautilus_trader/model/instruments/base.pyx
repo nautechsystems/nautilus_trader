@@ -71,7 +71,7 @@ cdef class Instrument(Data):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the instrument.
+            The instrument ID for the instrument.
         asset_class : AssetClass
             The instrument asset class.
         asset_type : AssetType
@@ -230,7 +230,7 @@ cdef class Instrument(Data):
                 f"info={self.info})")
 
     @staticmethod
-    cdef Instrument from_dict_c(dict values):
+    cdef Instrument base_from_dict_c(dict values):
         cdef str lot_s = values["lot_size"]
         cdef str max_q = values["max_quantity"]
         cdef str min_q = values["min_quantity"]
@@ -267,7 +267,7 @@ cdef class Instrument(Data):
         )
 
     @staticmethod
-    cdef dict to_dict_c(Instrument obj):
+    cdef dict base_to_dict_c(Instrument obj):
         return {
             "type": "Instrument",
             "id": obj.id.value,
@@ -297,7 +297,7 @@ cdef class Instrument(Data):
         }
 
     @staticmethod
-    def from_dict(dict values) -> Instrument:
+    def base_from_dict(dict values) -> Instrument:
         """
         Return an instrument from the given initialization values.
 
@@ -311,10 +311,10 @@ cdef class Instrument(Data):
         Instrument
 
         """
-        return Instrument.from_dict_c(values)
+        return Instrument.base_from_dict_c(values)
 
     @staticmethod
-    def to_dict(Instrument obj):
+    def base_to_dict(Instrument obj):
         """
         Return a dictionary representation of this object.
 
@@ -323,7 +323,7 @@ cdef class Instrument(Data):
         dict[str, object]
 
         """
-        return Instrument.to_dict_c(obj)
+        return Instrument.base_to_dict_c(obj)
 
     @property
     def symbol(self):
@@ -415,7 +415,7 @@ cdef class Instrument(Data):
     cpdef Money notional_value(
         self,
         Quantity quantity,
-        close_price: Decimal,
+        price: Decimal,
         bint inverse_as_quote=False,
     ):
         """
@@ -428,8 +428,8 @@ cdef class Instrument(Data):
         ----------
         quantity : Quantity
             The total quantity.
-        close_price : Decimal or Price
-            The closing price.
+        price : Decimal or Price
+            The price for the calculation.
         inverse_as_quote : bool
             If inverse instrument calculations use quote currency (instead of base).
 
@@ -439,16 +439,16 @@ cdef class Instrument(Data):
 
         """
         Condition.not_none(quantity, "quantity")
-        Condition.type(close_price, (Decimal, Price), "close_price")
+        Condition.type(price, (Decimal, Price), "price")
 
         if self.is_inverse:
             if inverse_as_quote:
                 # Quantity is notional
                 return Money(quantity, self.quote_currency)
-            notional_value: Decimal = quantity * self.multiplier * (1 / close_price)
+            notional_value: Decimal = quantity * self.multiplier * (1 / price)
             return Money(notional_value, self.base_currency)
         else:
-            notional_value: Decimal = quantity * self.multiplier * close_price
+            notional_value: Decimal = quantity * self.multiplier * price
             return Money(notional_value, self.quote_currency)
 
     cpdef Money calculate_initial_margin(
@@ -601,7 +601,7 @@ cdef class Instrument(Data):
         elif liquidity_side == LiquiditySide.TAKER:
             commission: Decimal = notional * self.taker_fee
         else:
-            raise RuntimeError(
+            raise ValueError(
                 f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
             )
 

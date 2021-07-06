@@ -161,6 +161,7 @@ class TestLiveLogger:
     def setup(self):
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
         self.logger = LiveLogger(
@@ -168,9 +169,7 @@ class TestLiveLogger:
             clock=LiveClock(),
         )
 
-        self.logger_adapter = LoggerAdapter(
-            component="LIVER_LOGGER", logger=self.logger
-        )
+        self.logger_adapter = LoggerAdapter(component="LIVER_LOGGER", logger=self.logger)
 
     def test_log_when_not_running_on_event_loop_successfully_logs(self):
         # Arrange

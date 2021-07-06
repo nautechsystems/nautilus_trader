@@ -167,10 +167,7 @@ class TestBarType:
         # Assert
         assert isinstance(hash(bar_type), int)
         assert str(bar_type) == "AUD/USD.SIM-1-MINUTE-BID"
-        assert (
-            repr(bar_type)
-            == "BarType(AUD/USD.SIM-1-MINUTE-BID, internal_aggregation=True)"
-        )
+        assert repr(bar_type) == "BarType(AUD/USD.SIM-1-MINUTE-BID, internal_aggregation=True)"
 
     @pytest.mark.parametrize(
         "value",
@@ -324,14 +321,8 @@ class TestBar:
         # Act
         # Assert
         assert isinstance(hash(bar), int)
-        assert (
-            str(bar)
-            == "AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0"
-        )
-        assert (
-            repr(bar)
-            == "Bar(AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0)"
-        )
+        assert str(bar) == "AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0"
+        assert repr(bar) == "Bar(AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0)"
 
     def test_to_dict(self):
         # Arrange
