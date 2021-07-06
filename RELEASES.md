@@ -1,3 +1,17 @@
+# NautilusTrader 1.125.0 Beta - Release Notes
+
+
+## Breaking Changes
+None
+
+## Enhancements
+None
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.124.0 Beta - Release Notes
 
 This release sees the expansion of pre-trade risk check options (see 
