@@ -1922,7 +1922,10 @@ cdef class PositionEvent(Event):
 
     def __init__(
         self,
-        Position position not None,
+        PositionId position_id not None,
+        StrategyId strategy_id not None,
+        InstrumentId instrument_id not None,
+        dict position_status not None,
         OrderFilled order_fill not None,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -1932,8 +1935,14 @@ cdef class PositionEvent(Event):
 
         Parameters
         ----------
-        position : Position
-            The position.
+        position_id : PositionId
+            The position ID associated with the event.
+        strategy_id : StrategyId
+            The strategy ID associated with the event.
+        instrument_id : InstrumentId
+            The position instrument ID.
+        position_status : dict[str, object]
+            The position status.
         order_fill : OrderFilled
             The order fill event which triggered the event.
         event_id : UUID
@@ -1944,8 +1953,19 @@ cdef class PositionEvent(Event):
         """
         super().__init__(event_id, timestamp_ns)
 
-        self.position = position
+        self.position_id = position_id
+        self.strategy_id = strategy_id
+        self.instrument_id = instrument_id
+        self.position_status = position_status
         self.order_fill = order_fill
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"position_id={self.position_id}, "
+                f"strategy_id={self.strategy_id}, "
+                f"instrument_id={self.instrument_id}, "
+                f"position_status={self.position_status}, "
+                f"event_id={self.id})")
 
 
 cdef class PositionOpened(PositionEvent):
@@ -1955,7 +1975,10 @@ cdef class PositionOpened(PositionEvent):
 
     def __init__(
         self,
-        Position position not None,
+        PositionId position_id not None,
+        StrategyId strategy_id not None,
+        InstrumentId instrument_id not None,
+        dict position_status not None,
         OrderFilled order_fill not None,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -1965,8 +1988,14 @@ cdef class PositionOpened(PositionEvent):
 
         Parameters
         ----------
-        position : Position
-            The position.
+        position_id : PositionId
+            The position ID associated with the event.
+        strategy_id : StrategyId
+            The strategy ID associated with the event.
+        instrument_id : InstrumentId
+            The position instrument ID.
+        position_status : dict[str, object]
+            The position status.
         order_fill : OrderFilled
             The order fill event which triggered the event.
         event_id : UUID
@@ -1975,30 +2004,25 @@ cdef class PositionOpened(PositionEvent):
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
-        assert position.is_open_c()  # Design-time check: position status matched event
+        assert position_status["side"] != "FLAT"  # Design-time check: position status matched event
         super().__init__(
-            position,
+            position_id,
+            strategy_id,
+            instrument_id,
+            position_status,
             order_fill,
             event_id,
             timestamp_ns,
         )
 
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"{self.position.status_string_c()}, "
-                f"account_id={self.position.account_id}, "
-                f"position_id={self.position.id}, "
-                f"strategy_id={self.position.strategy_id}, "
-                f"entry={OrderSideParser.to_str(self.position.entry)}, "
-                f"avg_px_open={round(self.position.avg_px_open, 5)}, "
-                f"{self.position.status_string_c()}, "
-                f"event_id={self.id})")
-
     @staticmethod
     cdef PositionOpened from_dict_c(dict values):
         return PositionOpened(
-            position=json.loads(values["position"]),
-            order_fill=OrderFilled.from_dict_c(values["order_fill"]),
+            position_id=PositionId(values["position_id"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            position_status=json.loads(values["position_status"]),
+            order_fill=OrderFilled.from_dict_c(json.loads(values["order_fill"])),
             event_id=UUID.from_str_c(values["event_id"]),
             timestamp_ns=values["timestamp_ns"],
         )
@@ -2007,7 +2031,10 @@ cdef class PositionOpened(PositionEvent):
     cdef dict to_dict_c(PositionOpened obj):
         return {
             "type": "PositionOpened",
-            "position": json.dumps(obj.position.to_dict()),
+            "position_id": obj.position_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "position_status": json.dumps(obj.position_status),
             "order_fill": json.dumps(OrderFilled.to_dict_c(obj.order_fill)),
             "event_id": obj.id.value,
             "timestamp_ns": obj.timestamp_ns,
@@ -2050,7 +2077,10 @@ cdef class PositionChanged(PositionEvent):
 
     def __init__(
         self,
-        Position position not None,
+        PositionId position_id not None,
+        StrategyId strategy_id not None,
+        InstrumentId instrument_id not None,
+        dict position_status not None,
         OrderFilled order_fill not None,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -2060,8 +2090,14 @@ cdef class PositionChanged(PositionEvent):
 
         Parameters
         ----------
-        position : Position
-            The position.
+        position_id : PositionId
+            The position ID associated with the event.
+        strategy_id : StrategyId
+            The strategy ID associated with the event.
+        instrument_id : InstrumentId
+            The position instrument ID.
+        position_status : dict[str, object]
+            The position status.
         order_fill : OrderFilled
             The order fill event which triggered the event.
         event_id : UUID
@@ -2070,33 +2106,25 @@ cdef class PositionChanged(PositionEvent):
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
-        assert position.is_open_c()  # Design-time check: position status matched event
+        assert position_status["side"] != "FLAT"  # Design-time check: position status matched event
         super().__init__(
-            position,
+            position_id,
+            strategy_id,
+            instrument_id,
+            position_status,
             order_fill,
             event_id,
             timestamp_ns,
         )
 
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"{self.position.status_string_c()}, "
-                f"account_id={self.position.account_id}, "
-                f"position_id={self.position.id}, "
-                f"strategy_id={self.position.strategy_id}, "
-                f"entry={OrderSideParser.to_str(self.position.entry)}, "
-                f"avg_px_open={self.position.avg_px_open}, "
-                f"realized_points={self.position.realized_points}, "
-                f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl.to_str()}, "
-                f"{self.position.status_string_c()}, "
-                f"event_id={self.id})")
-
     @staticmethod
     cdef PositionChanged from_dict_c(dict values):
         return PositionChanged(
-            position=json.loads(values["position"]),
-            order_fill=OrderFilled.from_dict_c(values["order_fill"]),
+            position_id=PositionId(values["position_id"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            position_status=json.loads(values["position_status"]),
+            order_fill=OrderFilled.from_dict_c(json.loads(values["order_fill"])),
             event_id=UUID.from_str_c(values["event_id"]),
             timestamp_ns=values["timestamp_ns"],
         )
@@ -2105,7 +2133,10 @@ cdef class PositionChanged(PositionEvent):
     cdef dict to_dict_c(PositionChanged obj):
         return {
             "type": "PositionChanged",
-            "position": json.dumps(obj.position.to_dict()),
+            "position_id": obj.position_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "position_status": json.dumps(obj.position_status),
             "order_fill": json.dumps(OrderFilled.to_dict_c(obj.order_fill)),
             "event_id": obj.id.value,
             "timestamp_ns": obj.timestamp_ns,
@@ -2148,7 +2179,10 @@ cdef class PositionClosed(PositionEvent):
 
     def __init__(
         self,
-        Position position not None,
+        PositionId position_id not None,
+        StrategyId strategy_id not None,
+        InstrumentId instrument_id not None,
+        dict position_status not None,
         OrderEvent order_fill not None,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -2158,8 +2192,14 @@ cdef class PositionClosed(PositionEvent):
 
         Parameters
         ----------
-        position : Position
-            The position.
+        position_id : PositionId
+            The position ID associated with the event.
+        strategy_id : StrategyId
+            The strategy ID associated with the event.
+        instrument_id : InstrumentId
+            The position instrument ID.
+        position_status : dict[str, object]
+            The position status.
         order_fill : OrderEvent
             The order fill event which triggered the event.
         event_id : UUID
@@ -2168,34 +2208,25 @@ cdef class PositionClosed(PositionEvent):
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
-        assert position.is_closed_c()  # Design-time check: position status matched event
+        assert position_status["side"] == "FLAT"  # Design-time check: position status matched event
         super().__init__(
-            position,
+            position_id,
+            strategy_id,
+            instrument_id,
+            position_status,
             order_fill,
             event_id,
             timestamp_ns,
         )
 
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"{self.position.status_string_c()}, "
-                f"account_id={self.position.account_id}, "
-                f"position_id={self.position.id}, "
-                f"strategy_id={self.position.strategy_id}, "
-                f"entry={OrderSideParser.to_str(self.position.entry)}, "
-                f"duration={pd.Timedelta(self.position.duration_ns, unit='ns')}, "
-                f"avg_px_open={self.position.avg_px_open}, "
-                f"avg_px_close={self.position.avg_px_close}, "
-                f"realized_points={round(self.position.realized_points, 5)}, "
-                f"realized_return={round(self.position.realized_return * 100, 3)}%, "
-                f"realized_pnl={self.position.realized_pnl.to_str()}, "
-                f"event_id={self.id})")
-
     @staticmethod
     cdef PositionClosed from_dict_c(dict values):
         return PositionClosed(
-            position=json.loads(values["position"]),
-            order_fill=OrderFilled.from_dict_c(values["order_fill"]),
+            position_id=PositionId(values["position_id"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            position_status=json.loads(values["position_status"]),
+            order_fill=OrderFilled.from_dict_c(json.loads(values["order_fill"])),
             event_id=UUID.from_str_c(values["event_id"]),
             timestamp_ns=values["timestamp_ns"],
         )
@@ -2204,7 +2235,10 @@ cdef class PositionClosed(PositionEvent):
     cdef dict to_dict_c(PositionClosed obj):
         return {
             "type": "PositionClosed",
-            "position": json.dumps(obj.position.to_dict()),
+            "position_id": obj.position_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "position_status": json.dumps(obj.position_status),
             "order_fill": json.dumps(OrderFilled.to_dict_c(obj.order_fill)),
             "event_id": obj.id.value,
             "timestamp_ns": obj.timestamp_ns,

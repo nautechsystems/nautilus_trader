@@ -316,26 +316,24 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(event, "event")
         Condition.not_none(self._cache, "self._cache")
 
-        cdef InstrumentId instrument_id = event.position.instrument_id
-
         cdef list positions_open = self._cache.positions_open(
             venue=None,  # Faster query filtering
-            instrument_id=instrument_id,
+            instrument_id=event.instrument_id,
         )
         self._update_net_position(
-            instrument_id=instrument_id,
+            instrument_id=event.instrument_id,
             positions_open=positions_open
         )
         self._update_maint_margin(
-            venue=instrument_id.venue,
+            venue=event.instrument_id.venue,
             positions_open=positions_open,
         )
 
-        self._unrealized_pnls[instrument_id] = self._calculate_unrealized_pnl(
-            instrument_id=instrument_id,
+        self._unrealized_pnls[event.instrument_id] = self._calculate_unrealized_pnl(
+            instrument_id=event.instrument_id,
         )
 
-        self._log.debug(f"Updated {event.position}.")
+        self._log.debug(f"Updated {event.position_status}.")
 
     cpdef void reset(self) except *:
         """

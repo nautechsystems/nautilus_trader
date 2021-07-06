@@ -9,6 +9,7 @@ hood' code cleanup and consolidation.
 - Renamed `Position.closed_timestamp_ns` to `ts_closed_ns`.
 - Renamed `Position.open_duration_ns` to `duration_ns`.
 - Renamed Loggers `bypass_logging` to `bypass`.
+- Refactored `PositionEvent` types.
 
 ## Enhancements
 - Add pre-trade risk checks to `RiskEngine` iteration 2.
@@ -18,6 +19,7 @@ hood' code cleanup and consolidation.
 
 ## Fixes
 - PnL calculations for `CASH` account types.
+- Various event serializations.
 
 ---
 

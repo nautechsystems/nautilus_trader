@@ -482,7 +482,10 @@ class TestStubs:
     @staticmethod
     def event_position_opened(position) -> PositionOpened:
         return PositionOpened(
-            position=position,
+            position_id=position.id,
+            strategy_id=position.strategy_id,
+            instrument_id=position.instrument_id,
+            position_status=position.to_dict(),
             order_fill=position.last_event,
             event_id=uuid4(),
             timestamp_ns=0,
@@ -491,7 +494,10 @@ class TestStubs:
     @staticmethod
     def event_position_changed(position) -> PositionChanged:
         return PositionChanged(
-            position=position,
+            position_id=position.id,
+            strategy_id=position.strategy_id,
+            instrument_id=position.instrument_id,
+            position_status=position.to_dict(),
             order_fill=position.last_event,
             event_id=uuid4(),
             timestamp_ns=0,
@@ -500,7 +506,10 @@ class TestStubs:
     @staticmethod
     def event_position_closed(position) -> PositionClosed:
         return PositionClosed(
-            position=position,
+            position_id=position.id,
+            strategy_id=position.strategy_id,
+            instrument_id=position.instrument_id,
+            position_status=position.to_dict(),
             order_fill=position.last_event,
             event_id=uuid4(),
             timestamp_ns=0,

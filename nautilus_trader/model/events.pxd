@@ -296,8 +296,14 @@ cdef class OrderFilled(OrderEvent):
 
 
 cdef class PositionEvent(Event):
-    cdef readonly Position position
-    """The position associated with the event.\n\n:returns: `Position`"""
+    cdef readonly PositionId position_id
+    """The position ID associated with the event.\n\n:returns: `PositionId`"""
+    cdef readonly StrategyId strategy_id
+    """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
+    cdef readonly InstrumentId instrument_id
+    """The position instrument ID.\n\n:returns: `InstrumentId`"""
+    cdef readonly dict position_status
+    """The position status for the event.\n\n:returns: `dict[str, object]`"""
     cdef readonly OrderFilled order_fill
     """The order fill associated with the event.\n\n:returns: `OrderFilled`"""
 
