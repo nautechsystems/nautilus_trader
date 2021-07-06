@@ -241,7 +241,7 @@ for `OrderFill` events, as well as additional order states and events.
 - Re-engineered `BacktestEngine` to take data directly.
 - Added `OrderState.PENDING_CANCEL`.
 - Added `OrderState.PENDING_REPLACE`.
-- Added `OrderPendingReplace` event.
+- Added `OrderPendingUpdate` event.
 - Added `OrderPendingCancel` event.
 - Added `OrderFilled.is_buy` property (with corresponding `is_buy_c()` fast method).
 - Added `OrderFilled.is_sell` property (with corresponding `is_sell_c()` fast method).

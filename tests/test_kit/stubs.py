@@ -42,7 +42,7 @@ from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderPendingCancel
-from nautilus_trader.model.events import OrderPendingReplace
+from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
@@ -374,8 +374,8 @@ class TestStubs:
         )
 
     @staticmethod
-    def event_order_pending_update(order) -> OrderPendingReplace:
-        return OrderPendingReplace(
+    def event_order_pending_update(order) -> OrderPendingUpdate:
+        return OrderPendingUpdate(
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
