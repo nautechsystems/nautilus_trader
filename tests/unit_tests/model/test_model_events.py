@@ -29,8 +29,11 @@ from nautilus_trader.model.events import OrderDenied
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderPendingCancel
+from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdateRejected
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
@@ -77,12 +80,12 @@ class TestEvents:
         # Act, Assert
         assert AccountState.from_dict(AccountState.to_dict(event)) == event
         assert (
-            f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
-            == str(event)
+            str(event)
+            == f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
         )
         assert (
-            f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
-            == repr(event)
+            repr(event)
+            == f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
         )
 
     def test_order_initialized(self):
@@ -104,12 +107,12 @@ class TestEvents:
         # Act, Assert
         assert OrderInitialized.from_dict(OrderInitialized.to_dict(event)) == event
         assert (
-            f"OrderInitialized(client_order_id=O-2020872378423, strategy_id=SCALPER-001, event_id={uuid})"
-            == str(event)
+            str(event)
+            == f"OrderInitialized(client_order_id=O-2020872378423, strategy_id=SCALPER-001, event_id={uuid})"
         )
         assert (
-            f"OrderInitialized(client_order_id=O-2020872378423, strategy_id=SCALPER-001, event_id={uuid})"
-            == repr(event)
+            repr(event)
+            == f"OrderInitialized(client_order_id=O-2020872378423, strategy_id=SCALPER-001, event_id={uuid})"
         )
 
     def test_order_denied(self):
@@ -124,11 +127,13 @@ class TestEvents:
 
         # Act, Assert
         assert OrderDenied.from_dict(OrderDenied.to_dict(event)) == event
-        assert f"OrderDenied(client_order_id=O-2020872378423, reason=Exceeded MAX_ORDER_RATE, event_id={uuid})", (
+        assert (
             str(event)
+            == f"OrderDenied(client_order_id=O-2020872378423, reason=Exceeded MAX_ORDER_RATE, event_id={uuid})"
         )
-        assert f"OrderDenied(client_order_id=O-2020872378423, reason=Exceeded MAX_ORDER_RATE, event_id={uuid})", (
+        assert (
             repr(event)
+            == f"OrderDenied(client_order_id=O-2020872378423, reason=Exceeded MAX_ORDER_RATE, event_id={uuid})"
         )
 
     def test_order_submitted(self):
@@ -145,32 +150,13 @@ class TestEvents:
         # Act, Assert
         assert OrderSubmitted.from_dict(OrderSubmitted.to_dict(event)) == event
         assert (
-            f"OrderSubmitted(account_id=SIM-000, client_order_id=O-2020872378423, event_id={uuid})"
-        ), str(event)
-        assert (
-            f"OrderSubmitted(account_id=SIM-000, client_order_id=O-2020872378423, event_id={uuid})"
-        ), repr(event)
-
-    def test_order_rejected(self):
-        # Arrange
-        uuid = uuid4()
-        event = OrderRejected(
-            account_id=AccountId("SIM", "000"),
-            client_order_id=ClientOrderId("O-2020872378423"),
-            reason="INSUFFICIENT_MARGIN",
-            ts_rejected_ns=0,
-            event_id=uuid,
-            timestamp_ns=0,
+            str(event)
+            == f"OrderSubmitted(account_id=SIM-000, client_order_id=O-2020872378423, event_id={uuid})"
         )
-
-        # Act, Assert
-        assert OrderRejected.from_dict(OrderRejected.to_dict(event)) == event
-        assert f"OrderRejected(account_id=SIM-000, client_order_id=O-2020872378423, reason='INSUFFICIENT_MARGIN', event_id={uuid})", str(
-            event
-        )  # noqa
-        assert f"OrderRejected(account_id=SIM-000, client_order_id=O-2020872378423, reason='INSUFFICIENT_MARGIN', event_id={uuid})", repr(
-            event
-        )  # noqa
+        assert (
+            repr(event)
+            == f"OrderSubmitted(account_id=SIM-000, client_order_id=O-2020872378423, event_id={uuid})"
+        )
 
     def test_order_accepted(self, venue_order_id=None):
         if venue_order_id is None:
@@ -189,12 +175,156 @@ class TestEvents:
 
         # Act, Assert
         assert OrderAccepted.from_dict(OrderAccepted.to_dict(event)) == event
-        assert f"OrderAccepted(account_id=SIM-000, client_order_id=O-2020872378423, venue_order_id={123456}, event_id={uuid})", str(
-            event
-        )  # noqa
-        assert f"OrderAccepted(account_id=SIM-000, client_order_id=O-2020872378423, venue_order_id={123456}, event_id={uuid})", repr(
-            event
-        )  # noqa
+        assert (
+            str(event)
+            == f"OrderAccepted(account_id=SIM-000, client_order_id=O-2020872378423, venue_order_id={123456}, event_id={uuid})"
+        )
+        assert (
+            repr(event)
+            == f"OrderAccepted(account_id=SIM-000, client_order_id=O-2020872378423, venue_order_id={123456}, event_id={uuid})"
+        )
+
+    def test_order_rejected(self):
+        # Arrange
+        uuid = uuid4()
+        event = OrderRejected(
+            account_id=AccountId("SIM", "000"),
+            client_order_id=ClientOrderId("O-2020872378423"),
+            reason="INSUFFICIENT_MARGIN",
+            ts_rejected_ns=0,
+            event_id=uuid,
+            timestamp_ns=0,
+        )
+
+        # Act, Assert
+        assert OrderRejected.from_dict(OrderRejected.to_dict(event)) == event
+        assert (
+            str(event)
+            == f"OrderRejected(account_id=SIM-000, client_order_id=O-2020872378423, reason='INSUFFICIENT_MARGIN', event_id={uuid})"
+        )
+        assert (
+            repr(event)
+            == f"OrderRejected(account_id=SIM-000, client_order_id=O-2020872378423, reason='INSUFFICIENT_MARGIN', event_id={uuid})"
+        )
+
+    def test_order_canceled(self):
+        # Arrange
+        uuid = uuid4()
+        event = OrderCanceled(
+            account_id=AccountId("SIM", "000"),
+            client_order_id=ClientOrderId("O-2020872378423"),
+            venue_order_id=VenueOrderId("123456"),
+            ts_canceled_ns=0,
+            event_id=uuid,
+            timestamp_ns=0,
+        )
+
+        # Act, Assert
+        assert OrderCanceled.from_dict(OrderCanceled.to_dict(event)) == event
+        assert (
+            str(event) == f"OrderCanceled(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"venue_order_id=123456, event_id={uuid})"
+        )
+        assert (
+            repr(event) == f"OrderCanceled(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"venue_order_id=123456, event_id={uuid})"
+        )
+
+    def test_order_expired(self):
+        # Arrange
+        uuid = uuid4()
+        event = OrderExpired(
+            account_id=AccountId("SIM", "000"),
+            client_order_id=ClientOrderId("O-2020872378423"),
+            venue_order_id=VenueOrderId("123456"),
+            ts_expired_ns=0,
+            event_id=uuid,
+            timestamp_ns=0,
+        )
+
+        # Act, Assert
+        assert OrderExpired.from_dict(OrderExpired.to_dict(event)) == event
+        assert (
+            str(event)
+            == f"OrderExpired(account_id=SIM-000, client_order_id=O-2020872378423, venue_order_id=123456, event_id={uuid})"
+        )
+        assert (
+            repr(event)
+            == f"OrderExpired(account_id=SIM-000, client_order_id=O-2020872378423, venue_order_id=123456, event_id={uuid})"
+        )
+
+    def test_order_triggered(self):
+        # Arrange
+        uuid = uuid4()
+        event = OrderTriggered(
+            account_id=AccountId("SIM", "000"),
+            client_order_id=ClientOrderId("O-2020872378423"),
+            venue_order_id=VenueOrderId("123456"),
+            ts_triggered_ns=0,
+            event_id=uuid,
+            timestamp_ns=0,
+        )
+
+        # Act, Assert
+        assert OrderTriggered.from_dict(OrderTriggered.to_dict(event)) == event
+        assert (
+            str(event) == f"OrderTriggered(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"venue_order_id=123456, event_id={uuid})"
+        )
+        assert (
+            repr(event) == f"OrderTriggered(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"venue_order_id=123456, event_id={uuid})"
+        )
+
+    def test_order_pending_update(self):
+        # Arrange
+        uuid = uuid4()
+        event = OrderPendingUpdate(
+            account_id=AccountId("SIM", "000"),
+            client_order_id=ClientOrderId("O-2020872378423"),
+            venue_order_id=VenueOrderId("123456"),
+            ts_pending_ns=0,
+            event_id=uuid,
+            timestamp_ns=0,
+        )
+
+        # Act, Assert
+        assert OrderPendingUpdate.from_dict(OrderPendingUpdate.to_dict(event)) == event
+        assert (
+            str(event)
+            == f"OrderPendingUpdate(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"venue_order_id=123456, ts_pending_ns=0, event_id={uuid})"
+        )
+        assert (
+            repr(event)
+            == f"OrderPendingUpdate(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"venue_order_id=123456, ts_pending_ns=0, event_id={uuid})"
+        )
+
+    def test_order_pending_cancel(self):
+        # Arrange
+        uuid = uuid4()
+        event = OrderPendingCancel(
+            account_id=AccountId("SIM", "000"),
+            client_order_id=ClientOrderId("O-2020872378423"),
+            venue_order_id=VenueOrderId("123456"),
+            ts_pending_ns=0,
+            event_id=uuid,
+            timestamp_ns=0,
+        )
+
+        # Act, Assert
+        assert OrderPendingCancel.from_dict(OrderPendingCancel.to_dict(event)) == event
+        assert (
+            str(event)
+            == f"OrderPendingCancel(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"venue_order_id=123456, ts_pending_ns=0, event_id={uuid})"
+        )
+        assert (
+            repr(event)
+            == f"OrderPendingCancel(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"venue_order_id=123456, ts_pending_ns=0, event_id={uuid})"
+        )
 
     def test_order_update_rejected(self):
         # Arrange
@@ -213,14 +343,16 @@ class TestEvents:
         # Act, Assert
         assert OrderUpdateRejected.from_dict(OrderUpdateRejected.to_dict(event)) == event
         assert (
-            f"OrderUpdateRejected(account_id=SIM-000, client_order_id=O-2020872378423, "
-            f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
-            f"event_id={uuid})" == str(event)
+            str(event)
+            == f"OrderUpdateRejected(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"venue_order_id=123456, response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
+            f"event_id={uuid})"
         )
         assert (
-            f"OrderUpdateRejected(account_id=SIM-000, client_order_id=O-2020872378423, "
-            f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
-            f"event_id={uuid})" == repr(event)
+            repr(event)
+            == f"OrderUpdateRejected(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"venue_order_id=123456, response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
+            f"event_id={uuid})"
         )
 
     def test_order_cancel_rejected(self):
@@ -240,37 +372,16 @@ class TestEvents:
         # Act, Assert
         assert OrderCancelRejected.from_dict(OrderCancelRejected.to_dict(event)) == event
         assert (
-            f"OrderCancelRejected(account_id=SIM-000, client_order_id=O-2020872378423, "
-            f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
-            f"event_id={uuid})" == str(event)
+            str(event)
+            == f"OrderCancelRejected(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"venue_order_id=123456, response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
+            f"event_id={uuid})"
         )
         assert (
-            f"OrderCancelRejected(account_id=SIM-000, client_order_id=O-2020872378423, "
-            f"response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
-            f"event_id={uuid})" == repr(event)
-        )
-
-    def test_order_canceled(self):
-        # Arrange
-        uuid = uuid4()
-        event = OrderCanceled(
-            account_id=AccountId("SIM", "000"),
-            client_order_id=ClientOrderId("O-2020872378423"),
-            venue_order_id=VenueOrderId("123456"),
-            ts_canceled_ns=0,
-            event_id=uuid,
-            timestamp_ns=0,
-        )
-
-        # Act, Assert
-        assert OrderCanceled.from_dict(OrderCanceled.to_dict(event)) == event
-        assert (
-            f"OrderCanceled(account_id=SIM-000, client_order_id=O-2020872378423, "
-            f"venue_order_id=123456, event_id={uuid})" == str(event)
-        )
-        assert (
-            f"OrderCanceled(account_id=SIM-000, client_order_id=O-2020872378423, "
-            f"venue_order_id=123456, event_id={uuid})" == repr(event)
+            repr(event)
+            == f"OrderCancelRejected(account_id=SIM-000, client_order_id=O-2020872378423, "
+            f"venue_order_id=123456, response_to=O-2020872378423, reason='ORDER_DOES_NOT_EXIST', "
+            f"event_id={uuid})"
         )
 
     def test_order_updated(self):
@@ -291,37 +402,12 @@ class TestEvents:
         # Act, Assert
         assert OrderUpdated.from_dict(OrderUpdated.to_dict(event)) == event
         assert (
-            f"OrderUpdated(account_id=SIM-000, cl_order_id=O-2020872378423, "
+            str(event) == f"OrderUpdated(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"venue_order_id=123456, qty=500_000, price=1.95000, trigger=None, event_id={uuid})"
-            == str(event)
         )
         assert (
-            f"OrderUpdated(account_id=SIM-000, cl_order_id=O-2020872378423, "
+            repr(event) == f"OrderUpdated(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"venue_order_id=123456, qty=500_000, price=1.95000, trigger=None, event_id={uuid})"
-            == repr(event)
-        )
-
-    def test_order_expired(self):
-        # Arrange
-        uuid = uuid4()
-        event = OrderExpired(
-            account_id=AccountId("SIM", "000"),
-            client_order_id=ClientOrderId("O-2020872378423"),
-            venue_order_id=VenueOrderId("123456"),
-            ts_expired_ns=0,
-            event_id=uuid,
-            timestamp_ns=0,
-        )
-
-        # Act, Assert
-        assert OrderExpired.from_dict(OrderExpired.to_dict(event)) == event
-        assert (
-            f"OrderExpired(account_id=SIM-000, client_order_id=O-2020872378423, venue_order_id=123456, event_id={uuid})"
-            == str(event)
-        )
-        assert (
-            f"OrderExpired(account_id=SIM-000, client_order_id=O-2020872378423, venue_order_id=123456, event_id={uuid})"
-            == repr(event)
         )
 
     def test_order_filled(self):
@@ -347,18 +433,20 @@ class TestEvents:
         )
 
         # Act, Assert
+        assert event.is_buy
+        assert not event.is_sell
         assert OrderFilled.from_dict(OrderFilled.to_dict(event)) == event
         assert (
-            f"OrderFilled(account_id=SIM-000, client_order_id=O-2020872378423, "
+            str(event) == f"OrderFilled(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"venue_order_id=123456, position_id=2, strategy_id=SCALPER-001, "
             f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, last_qty=0.561000, "
             f"last_px=15600.12445 USDT, "
-            f"commission=12.20000000 USDT, event_id={uuid})" == str(event)
+            f"commission=12.20000000 USDT, event_id={uuid})"
         )
         assert (
-            f"OrderFilled(account_id=SIM-000, client_order_id=O-2020872378423, "
+            repr(event) == f"OrderFilled(account_id=SIM-000, client_order_id=O-2020872378423, "
             f"venue_order_id=123456, position_id=2, strategy_id=SCALPER-001, "
             f"instrument_id=BTC/USDT.BINANCE, side=BUY-MAKER, last_qty=0.561000, "
             f"last_px=15600.12445 USDT, "
-            f"commission=12.20000000 USDT, event_id={uuid})" == repr(event)
+            f"commission=12.20000000 USDT, event_id={uuid})"
         )

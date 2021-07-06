@@ -112,6 +112,19 @@ cdef class OrderSubmitted(OrderEvent):
     cdef dict to_dict_c(OrderSubmitted obj)
 
 
+cdef class OrderAccepted(OrderEvent):
+    cdef readonly AccountId account_id
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
+    cdef readonly int64_t ts_accepted_ns
+    """The UNIX timestamp (nanoseconds) when the order was accepted.\n\n:returns: `int64`"""
+
+    @staticmethod
+    cdef OrderAccepted from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderAccepted obj)
+
+
 cdef class OrderRejected(OrderEvent):
     cdef readonly AccountId account_id
     """The account ID associated with the event.\n\n:returns: `AccountId`"""
@@ -127,30 +140,56 @@ cdef class OrderRejected(OrderEvent):
     cdef dict to_dict_c(OrderRejected obj)
 
 
-cdef class OrderAccepted(OrderEvent):
+cdef class OrderCanceled(OrderEvent):
     cdef readonly AccountId account_id
     """The account ID associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t ts_accepted_ns
-    """The UNIX timestamp (nanoseconds) when the order was accepted.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_canceled_ns
+    """The UNIX timestamp (nanoseconds) when the order was canceled.\n\n:returns: `int64`"""
 
     @staticmethod
-    cdef OrderAccepted from_dict_c(dict values)
+    cdef OrderCanceled from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(OrderAccepted obj)
+    cdef dict to_dict_c(OrderCanceled obj)
 
 
-cdef class OrderPendingReplace(OrderEvent):
+cdef class OrderExpired(OrderEvent):
+    cdef readonly AccountId account_id
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
+    cdef readonly int64_t ts_expired_ns
+    """The UNIX timestamp (nanoseconds) when the order expired.\n\n:returns: `int64`"""
+
+    @staticmethod
+    cdef OrderExpired from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderExpired obj)
+
+
+cdef class OrderTriggered(OrderEvent):
+    cdef readonly AccountId account_id
+    """The account ID associated with the event.\n\n:returns: `AccountId`"""
+    cdef readonly int64_t ts_triggered_ns
+    """The UNIX timestamp (nanoseconds) when the order was triggered.\n\n:returns: `int64`"""
+
+    @staticmethod
+    cdef OrderTriggered from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderTriggered obj)
+
+
+cdef class OrderPendingUpdate(OrderEvent):
     cdef readonly AccountId account_id
     """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly int64_t ts_pending_ns
     """The timestamp from which the replace was pending.\n\n:returns: `int64`"""
 
     @staticmethod
-    cdef OrderPendingReplace from_dict_c(dict values)
+    cdef OrderPendingUpdate from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(OrderPendingReplace obj)
+    cdef dict to_dict_c(OrderPendingUpdate obj)
 
 
 cdef class OrderPendingCancel(OrderEvent):
@@ -217,45 +256,6 @@ cdef class OrderUpdated(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderUpdated obj)
-
-
-cdef class OrderCanceled(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t ts_canceled_ns
-    """The UNIX timestamp (nanoseconds) when the order was canceled.\n\n:returns: `int64`"""
-
-    @staticmethod
-    cdef OrderCanceled from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(OrderCanceled obj)
-
-
-cdef class OrderTriggered(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t ts_triggered_ns
-    """The UNIX timestamp (nanoseconds) when the order was triggered.\n\n:returns: `int64`"""
-
-    @staticmethod
-    cdef OrderTriggered from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(OrderTriggered obj)
-
-
-cdef class OrderExpired(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t ts_expired_ns
-    """The UNIX timestamp (nanoseconds) when the order expired.\n\n:returns: `int64`"""
-
-    @staticmethod
-    cdef OrderExpired from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(OrderExpired obj)
 
 
 cdef class OrderFilled(OrderEvent):
