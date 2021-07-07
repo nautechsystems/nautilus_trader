@@ -31,8 +31,8 @@ from pyarrow import ArrowInvalid
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
+from nautilus_trader.core.type import DataType
 from nautilus_trader.model.data import Data
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 
 

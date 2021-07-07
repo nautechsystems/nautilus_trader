@@ -542,4 +542,4 @@ def test_data_catalog_backtest_run(loaded_catalog):
     )
     engine.run(strategies=[strategy])
     positions = engine.trader.generate_positions_report()
-    assert positions["realized_points"].sum() == -0.00736
+    assert positions["realized_points"].astype(float).sum() == -0.00736
