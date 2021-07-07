@@ -554,7 +554,6 @@ cdef class ExecutionEngine(Component):
         for position in positions:
             count = counts.get(position.strategy_id, 0)
             count += 1
-            # noinspection PyUnresolvedReferences
             counts[position.strategy_id] = count
 
         # Reset position ID generator

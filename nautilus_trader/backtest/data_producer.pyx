@@ -190,7 +190,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
                     data_bars_ask=bars_ask.get(instrument_id),
                 )
 
-                # noinspection PyUnresolvedReferences
                 quote_wrangler.pre_process(instrument_counter)
                 quote_tick_frames.append(quote_wrangler.processed_data)
 
@@ -209,7 +208,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
                         data=trade_ticks.get(instrument_id),
                     )
 
-                    # noinspection PyUnresolvedReferences
                     trade_wrangler.pre_process(instrument_counter)
                     trade_tick_frames.append(trade_wrangler.processed_data)
 
