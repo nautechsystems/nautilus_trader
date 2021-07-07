@@ -43,7 +43,7 @@ def performance_tests(session: Session) -> None:
     _run_pytest(
         session,
         "tests/performance_tests/",
-        "--benchmark-json=PERF.JSON",
+        "--benchmark-json=output.json",
         parallel=False,
     )
 
