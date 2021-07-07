@@ -14,7 +14,7 @@ nox.options.error_on_external_run = True
 @nox.session
 def tests(session: Session) -> None:
     """Run the test suite."""
-    _setup_poetry(session)
+    _setup_poetry(session, "--extras", ALL_EXTRAS)
     _run_pytest(
         session,
         "--ignore=tests/integration_tests/",
