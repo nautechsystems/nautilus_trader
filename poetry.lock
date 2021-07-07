@@ -141,7 +141,7 @@ uvloop = ["uvloop (>=0.15.2)"]
 
 [[package]]
 name = "ccxt"
-version = "1.52.50"
+version = "1.52.59"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = true
@@ -344,6 +344,14 @@ importlib-metadata = {version = "*", markers = "python_version < \"3.8\""}
 mccabe = ">=0.6.0,<0.7.0"
 pycodestyle = ">=2.7.0,<2.8.0"
 pyflakes = ">=2.3.0,<2.4.0"
+
+[[package]]
+name = "frozendict"
+version = "2.0.3"
+description = "A simple immutable dictionary"
+category = "main"
+optional = false
+python-versions = ">=3.6"
 
 [[package]]
 name = "fsspec"
@@ -1241,7 +1249,7 @@ oanda = ["oandapyV20"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "836c14620d9e4bdb736ea49695a49c912e23dc57dee500ec189ced0d940b81cf"
+content-hash = "97913a4e9bb3ec6f5cccfe900f230d1a4feba4116e646007f7676ff3687c1448"
 
 [metadata.files]
 aiodns = [
@@ -1324,8 +1332,8 @@ black = [
     {file = "black-21.6b0.tar.gz", hash = "sha256:dc132348a88d103016726fe360cb9ede02cecf99b76e3660ce6c596be132ce04"},
 ]
 ccxt = [
-    {file = "ccxt-1.52.50-py2.py3-none-any.whl", hash = "sha256:b208cd7f312df492f7edf1fad7d6ca43f96010accd256ec1d5e56b4ca66b1e91"},
-    {file = "ccxt-1.52.50.tar.gz", hash = "sha256:840b21f38d45c3ea8561662ddd6b772dccb7c76605aa8165d378829eb7704046"},
+    {file = "ccxt-1.52.59-py2.py3-none-any.whl", hash = "sha256:bf6a3ac18623d02292d8c2c7c33963e3ab0f0f3c289fa0e6bda8d8d3437e79b1"},
+    {file = "ccxt-1.52.59.tar.gz", hash = "sha256:c4cc28ede461ed53e7aa6e70675014e37d322c78dbc62c4bb02746c28c67339b"},
 ]
 certifi = [
     {file = "certifi-2021.5.30-py2.py3-none-any.whl", hash = "sha256:50b1e4f8446b06f41be7dd6338db18e0990601dce795c2b1686458aa7e8fa7d8"},
@@ -1499,6 +1507,10 @@ filelock = [
 flake8 = [
     {file = "flake8-3.9.2-py2.py3-none-any.whl", hash = "sha256:bf8fd333346d844f616e8d47905ef3a3384edae6b4e9beb0c5101e25e3110907"},
     {file = "flake8-3.9.2.tar.gz", hash = "sha256:07528381786f2a6237b061f6e96610a4167b226cb926e2aa2b6b1d78057c576b"},
+]
+frozendict = [
+    {file = "frozendict-2.0.3-py3-none-any.whl", hash = "sha256:58143e2d3d11699bc295d9e7e05f10dde99a727e2295d7f43542ecdc42c5ec70"},
+    {file = "frozendict-2.0.3.tar.gz", hash = "sha256:163c616188beb97fdc8ef6e73ec2ebd70a844d4cf19d2e383aa94d1b8376653d"},
 ]
 fsspec = [
     {file = "fsspec-2021.6.1-py3-none-any.whl", hash = "sha256:0ca23992f425c1ba61bf11d3cb3af8ad5363be8612e26732b520090556f173f2"},
