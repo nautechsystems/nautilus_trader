@@ -15,9 +15,9 @@
 
 from frozendict import frozendict
 
-from nautilus_trader.core.type import TypeKey
 from nautilus_trader.core.type import DataType
 from nautilus_trader.core.type import MessageType
+from nautilus_trader.core.type import TypeKey
 
 
 class TestKeyType:
@@ -61,7 +61,7 @@ class TestKeyType:
         spec["category"] = 2  # <-- attempt to modify category
 
         # Assert
-        assert key.key == frozenset({('category', 1)})  # <-- category immutable
+        assert key.key == frozenset({("category", 1)})  # <-- category immutable
 
     def test_hash(self):
         # Arrange
@@ -76,14 +76,14 @@ class TestMessageType:
         msg_type = MessageType(type=str, header={"category": 1, "code": 0})
 
         # Act, Assert
-        assert msg_type.key == frozenset({('code', 0), ('category', 1)})
+        assert msg_type.key == frozenset({("code", 0), ("category", 1)})
 
     def test_header(self):
         # Arrange
         msg_type = MessageType(type=str, header={"category": 1, "code": 0})
 
         # Act, Assert
-        assert msg_type.header == frozendict({'category': 1, 'code': 0})
+        assert msg_type.header == frozendict({"category": 1, "code": 0})
 
     def test_key_is_immutable(self):
         # Arrange
@@ -93,11 +93,11 @@ class TestMessageType:
         spec["category"] = 2  # <-- attempt to modify category
 
         # Assert
-        assert msg_type.key == frozenset({('category', 1), ('code', 0)})  # <-- category immutable
+        assert msg_type.key == frozenset({("category", 1), ("code", 0)})  # <-- category immutable
 
     def test_hash_str_repr(self):
         # Arrange
-        msg_type = MessageType(type=str, header={'category': 1, 'code': 0})
+        msg_type = MessageType(type=str, header={"category": 1, "code": 0})
 
         assert isinstance(hash(msg_type), int)
         assert str(msg_type) == "<str> {'category': 1, 'code': 0}"
@@ -110,14 +110,14 @@ class TestDataType:
         data_type = DataType(type=str, metadata={"category": 1, "code": 0})
 
         # Act, Assert
-        assert data_type.key == frozenset({('code', 0), ('category', 1)})
+        assert data_type.key == frozenset({("code", 0), ("category", 1)})
 
     def test_metadata(self):
         # Arrange
         data_type = DataType(type=str, metadata={"category": 1, "code": 0})
 
         # Act, Assert
-        assert data_type.metadata == frozendict({'category': 1, 'code': 0})
+        assert data_type.metadata == frozendict({"category": 1, "code": 0})
 
     def test_key_is_immutable(self):
         # Arrange
@@ -127,11 +127,11 @@ class TestDataType:
         spec["category"] = 2  # <-- attempt to modify category
 
         # Assert
-        assert data_type.key == frozenset({('category', 1), ('code', 0)})  # <-- category immutable
+        assert data_type.key == frozenset({("category", 1), ("code", 0)})  # <-- category immutable
 
     def test_hash_str_repr(self):
         # Arrange
-        data_type = DataType(type=str, metadata={'category': 1, 'code': 0})
+        data_type = DataType(type=str, metadata={"category": 1, "code": 0})
 
         assert isinstance(hash(data_type), int)
         assert str(data_type) == "<str> {'category': 1, 'code': 0}"
