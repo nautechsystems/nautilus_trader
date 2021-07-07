@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.124.0"
+version = "1.125.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -41,6 +41,7 @@ generate-setup-file = false
 python = "^3.7.9"
 cython = "^3.0.0a8"
 empyrical = "^0.5.5"
+frozendict = "^2.0.3"
 fsspec = "^2021.6.1"
 msgpack = "^1.0.2"
 numpy = "^1.21.0"
@@ -52,10 +53,10 @@ pytz = "^2021.1"
 redis = "^3.5.3"
 scipy = "1.6.1"  # Pinned at 1.6.1 due Python 3.7.9
 tabulate = "^0.8.9"
-tqdm = "^4.61.1"
+tqdm = "^4.61.2"
 uvloop = { version = "^0.15.2", markers = "sys_platform != 'win32'" }
 betfairlightweight = {extras = ["speed"], version = "^2.12.1", optional = true}
-ccxt = { version = "^1.52.41", optional = true }
+ccxt = { version = "^1.52.50", optional = true }
 ib_insync = { version = "^0.9.66", optional = true }
 numpydoc = { version = "^1.1.0", optional = true }
 oandapyV20 = { version = "^0.6.3", optional = true }

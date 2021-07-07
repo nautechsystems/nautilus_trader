@@ -50,7 +50,7 @@ class TestCommands:
             clock=TestClock(),
         )
 
-    def test_submit_order(self):
+    def test_submit_order_command_to_from_dict_and_str_repr(self):
         # Arrange
         uuid = self.uuid_factory.generate()
 
@@ -72,15 +72,15 @@ class TestCommands:
         # Act, Assert
         assert SubmitOrder.from_dict(SubmitOrder.to_dict(command)) == command
         assert (
-            f"SubmitOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, strategy_id=S-001, command_id={uuid})"  # noqa
-            == str(command)
+            str(command)
+            == f"SubmitOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, strategy_id=S-001, command_id={uuid})"  # noqa
         )
         assert (
-            f"SubmitOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, strategy_id=S-001, command_id={uuid})"  # noqa
-            == repr(command)
+            repr(command)
+            == f"SubmitOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, strategy_id=S-001, command_id={uuid})"  # noqa
         )
 
-    def test_submit_bracket_order(self):
+    def test_submit_bracket_order_command_to_from_dict_and_str_repr(self):
         # Arrange
         uuid = self.uuid_factory.generate()
 
@@ -107,15 +107,15 @@ class TestCommands:
         # Act, Assert
         assert SubmitBracketOrder.from_dict(SubmitBracketOrder.to_dict(command)) == command
         assert (
-            f"SubmitBracketOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_link_id=BO-19700101-000000-000-001-1, command_id={uuid})"  # noqa
-            == str(command)
+            str(command)
+            == f"SubmitBracketOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_link_id=BO-19700101-000000-000-001-1, command_id={uuid})"  # noqa
         )
         assert (
-            f"SubmitBracketOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_link_id=BO-19700101-000000-000-001-1, command_id={uuid})"  # noqa
-            == repr(command)
+            repr(command)
+            == f"SubmitBracketOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_link_id=BO-19700101-000000-000-001-1, command_id={uuid})"  # noqa
         )
 
-    def test_update_order(self):
+    def test_update_order_command_to_from_dict_and_str_repr(self):
         # Arrange
         uuid = self.uuid_factory.generate()
 
@@ -135,15 +135,15 @@ class TestCommands:
         # Act, Assert
         assert UpdateOrder.from_dict(UpdateOrder.to_dict(command)) == command
         assert (
-            f"UpdateOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010, command_id={uuid})"  # noqa
-            == str(command)
+            str(command)
+            == f"UpdateOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010, command_id={uuid})"  # noqa
         )
         assert (
-            f"UpdateOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010, command_id={uuid})"  # noqa
-            == repr(command)
+            repr(command)
+            == f"UpdateOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010, command_id={uuid})"  # noqa
         )
 
-    def test_cancel_order(self):
+    def test_cancel_order_command_to_from_dict_and_str_repr(self):
         # Arrange
         uuid = self.uuid_factory.generate()
 
@@ -160,10 +160,10 @@ class TestCommands:
         # Act, Assert
         assert CancelOrder.from_dict(CancelOrder.to_dict(command)) == command
         assert (
-            f"CancelOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, command_id={uuid})"  # noqa
-            == str(command)
+            str(command)
+            == f"CancelOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, command_id={uuid})"  # noqa
         )
         assert (
-            f"CancelOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, command_id={uuid})"  # noqa
-            == repr(command)
+            repr(command)
+            == f"CancelOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, command_id={uuid})"  # noqa
         )

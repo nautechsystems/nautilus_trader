@@ -40,7 +40,7 @@ from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
 from nautilus_trader.model.events import OrderPendingCancel
-from nautilus_trader.model.events import OrderPendingReplace
+from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
@@ -664,7 +664,7 @@ class TestMsgPackEventSerializer:
 
     def test_serialize_and_deserialize_order_pending_replace_events(self):
         # Arrange
-        event = OrderPendingReplace(
+        event = OrderPendingUpdate(
             self.account_id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),

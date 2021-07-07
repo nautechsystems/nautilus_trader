@@ -42,7 +42,7 @@ from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderPendingCancel
-from nautilus_trader.model.events import OrderPendingReplace
+from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
@@ -374,8 +374,8 @@ class TestStubs:
         )
 
     @staticmethod
-    def event_order_pending_update(order) -> OrderPendingReplace:
-        return OrderPendingReplace(
+    def event_order_pending_update(order) -> OrderPendingUpdate:
+        return OrderPendingUpdate(
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
@@ -482,7 +482,10 @@ class TestStubs:
     @staticmethod
     def event_position_opened(position) -> PositionOpened:
         return PositionOpened(
-            position=position,
+            position_id=position.id,
+            strategy_id=position.strategy_id,
+            instrument_id=position.instrument_id,
+            position_status=position.to_dict(),
             order_fill=position.last_event,
             event_id=uuid4(),
             timestamp_ns=0,
@@ -491,7 +494,10 @@ class TestStubs:
     @staticmethod
     def event_position_changed(position) -> PositionChanged:
         return PositionChanged(
-            position=position,
+            position_id=position.id,
+            strategy_id=position.strategy_id,
+            instrument_id=position.instrument_id,
+            position_status=position.to_dict(),
             order_fill=position.last_event,
             event_id=uuid4(),
             timestamp_ns=0,
@@ -500,7 +506,10 @@ class TestStubs:
     @staticmethod
     def event_position_closed(position) -> PositionClosed:
         return PositionClosed(
-            position=position,
+            position_id=position.id,
+            strategy_id=position.strategy_id,
+            instrument_id=position.instrument_id,
+            position_status=position.to_dict(),
             order_fill=position.last_event,
             event_id=uuid4(),
             timestamp_ns=0,

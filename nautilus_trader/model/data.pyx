@@ -15,6 +15,8 @@
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.core.type cimport DataType
+
 
 cdef class Data:
     """
@@ -44,54 +46,6 @@ cdef class Data:
         return (f"{type(self).__name__}("
                 f"ts_event_ns={self.ts_event_ns}, "
                 f"ts_recv_ns{self.ts_recv_ns})")
-
-
-cdef class DataType:
-    """
-    Represents a data type including its metadata.
-    """
-
-    def __init__(self, type data_type not None, dict metadata=None):
-        """
-        Initialize a new instance of the ``DataType`` class.
-
-        Parameters
-        ----------
-        data_type : type
-            The ``Data`` type of the data.
-        metadata : dict
-            The data types metadata.
-
-        Raises
-        ------
-        TypeError
-            If metadata contains a key or value which is not hashable.
-
-        Warnings
-        --------
-        This class may be used as a key in hash maps throughout the system, thus
-        the key and value contents of metadata must themselves be hashable.
-
-        """
-        if metadata is None:
-            metadata = {}
-
-        self._key = frozenset(metadata.items())
-        self._hash = hash(self._key)  # Assign hash for improved time complexity
-        self.type = data_type
-        self.metadata = metadata
-
-    def __eq__(self, DataType other) -> bool:
-        return self.type == other.type and self.metadata == other.metadata
-
-    def __hash__(self) -> int:
-        return self._hash
-
-    def __str__(self) -> str:
-        return f"<{self.type.__name__}> {self.metadata}"
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}(type={self.type.__name__}, metadata={self.metadata})"
 
 
 cdef class GenericData(Data):

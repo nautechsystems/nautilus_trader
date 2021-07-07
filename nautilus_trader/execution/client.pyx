@@ -38,7 +38,7 @@ from nautilus_trader.model.events cimport OrderCanceled
 from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderPendingCancel
-from nautilus_trader.model.events cimport OrderPendingReplace
+from nautilus_trader.model.events cimport OrderPendingUpdate
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderTriggered
@@ -346,7 +346,7 @@ cdef class ExecutionClient:
         int64_t ts_pending_ns,
     ) except *:
         """
-        Generate an `OrderPendingReplace` event and send it to the `ExecutionEngine`.
+        Generate an `OrderPendingUpdate` event and send it to the `ExecutionEngine`.
 
         Parameters
         ----------
@@ -359,7 +359,7 @@ cdef class ExecutionClient:
 
         """
         # Generate event
-        cdef OrderPendingReplace pending_replace = OrderPendingReplace(
+        cdef OrderPendingUpdate pending_replace = OrderPendingUpdate(
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,

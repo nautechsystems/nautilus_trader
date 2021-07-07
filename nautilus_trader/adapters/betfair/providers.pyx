@@ -20,8 +20,7 @@ from betfairlightweight import APIClient
 from betfairlightweight.filters import market_filter
 import pandas as pd
 
-from nautilus_trader.common.clock import LiveClock
-
+from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.providers cimport InstrumentProvider
@@ -87,7 +86,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         """
         self._load_instruments()
 
-    cdef void _load_instruments(self, market_filter=None) except *:
+    cdef void _load_instruments(self, dict market_filter=None) except *:
         market_filter = market_filter or self.market_filter
         markets = load_markets(self._client, market_filter=market_filter)
         self._log.info(f"Found {len(markets)} markets with filter: {market_filter}")

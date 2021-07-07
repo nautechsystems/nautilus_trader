@@ -46,15 +46,16 @@ cdef class LiveDataClientFactory:
         name : str
             The client name.
         config : dict[str, object]
-            The clients configuration.
+            The configuration for the client.
         engine : LiveDataEngine
-            The clients engine.
+            The engine for the client.
         clock : LiveClock
-            The clients clock.
+            The clock for the client.
         logger : LiveLogger
-            The clients logger.
+            The logger for the client.
         client_cls : class, optional
-            The internal client constructor.
+            The internal client constructor. This allows external library and
+            testing dependency injection.
 
         Returns
         -------

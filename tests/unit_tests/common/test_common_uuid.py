@@ -27,6 +27,6 @@ class TestUUIDFactory:
         result2 = factory.generate()
         result3 = factory.generate()
 
-        assert type(result1) == UUID
+        assert isinstance(result1, UUID)
         assert result1 != result2
         assert result2 != result3

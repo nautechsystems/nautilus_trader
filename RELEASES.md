@@ -1,3 +1,18 @@
+# NautilusTrader 1.125.0 Beta - Release Notes
+
+
+## Breaking Changes
+- Renamed `MessageType` enum to `MessageCategory`.
+
+## Enhancements
+- Added `MessageBus` class.
+- Added `MessageType` class.
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.124.0 Beta - Release Notes
 
 This release sees the expansion of pre-trade risk check options (see 
@@ -9,6 +24,7 @@ hood' code cleanup and consolidation.
 - Renamed `Position.closed_timestamp_ns` to `ts_closed_ns`.
 - Renamed `Position.open_duration_ns` to `duration_ns`.
 - Renamed Loggers `bypass_logging` to `bypass`.
+- Refactored `PositionEvent` types.
 
 ## Enhancements
 - Add pre-trade risk checks to `RiskEngine` iteration 2.
@@ -18,6 +34,7 @@ hood' code cleanup and consolidation.
 
 ## Fixes
 - PnL calculations for `CASH` account types.
+- Various event serializations.
 
 ---
 
@@ -241,7 +258,7 @@ for `OrderFill` events, as well as additional order states and events.
 - Re-engineered `BacktestEngine` to take data directly.
 - Added `OrderState.PENDING_CANCEL`.
 - Added `OrderState.PENDING_REPLACE`.
-- Added `OrderPendingReplace` event.
+- Added `OrderPendingUpdate` event.
 - Added `OrderPendingCancel` event.
 - Added `OrderFilled.is_buy` property (with corresponding `is_buy_c()` fast method).
 - Added `OrderFilled.is_sell` property (with corresponding `is_sell_c()` fast method).

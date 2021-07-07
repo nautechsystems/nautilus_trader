@@ -164,7 +164,7 @@ Installation from source requires Cython to compile the Python C extensions.
 
         pip install -U git+https://github.com/nautechsystems/nautilus_trader
 
-    **Or** clone the source with `git`, and install from the projects root directory:
+   **Or** clone the source with `git`, and install from the projects root directory:
 
         git clone https://github.com/nautechsystems/nautilus_trader
         cd nautilus_trader
@@ -309,10 +309,6 @@ Refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/ov
 Involvement from the trading community is a goal for this project. All help is welcome!
 Developers can open issues on GitHub to discuss proposed enhancements/changes, or
 to make bug reports.
-
-Even as some issues are marked with the `help wanted` label - this does not imply
-that help is _only_ wanted on those issues. The label indicates where 'extra attention'
-is needed.
 
 Please make all pull requests to the `develop` branch.
 

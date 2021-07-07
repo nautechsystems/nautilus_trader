@@ -14,13 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message import Message
-from nautilus_trader.core.message import MessageType
+from nautilus_trader.core.message import MessageCategory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands import SubmitOrder
 from tests.test_kit.performance import PerformanceHarness
 
 
-MESSAGE = Message(MessageType.COMMAND, uuid4(), 0)
+MESSAGE = Message(MessageCategory.COMMAND, uuid4(), 0)
 
 
 class Experiments:
@@ -67,7 +67,7 @@ class TestPerformanceExperiments(PerformanceHarness):
     @staticmethod
     def test_is_message_type(benchmark):
         benchmark.pedantic(
-            target=MESSAGE.type.__eq__,
+            target=MESSAGE.category.__eq__,
             args=(0,),
             iterations=100_000,
             rounds=1,

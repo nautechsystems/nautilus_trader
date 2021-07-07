@@ -16,8 +16,8 @@
 import unittest
 
 from nautilus_trader.cache.base import CacheFacade
+from nautilus_trader.core.type import DataType
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue

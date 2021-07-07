@@ -42,6 +42,7 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport RES
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.type cimport DataType
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport BulkTickBarBuilder
@@ -63,7 +64,6 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data cimport Data
-from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -113,7 +113,11 @@ cdef class DataEngine(Component):
         """
         if config is None:
             config = {}
-        super().__init__(clock, logger, name="DataEngine")
+        super().__init__(
+            clock=clock,
+            logger=logger,
+            name="DataEngine",
+        )
 
         self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}                    # type: dict[ClientId, DataClient]
@@ -1410,8 +1414,6 @@ cdef class DataEngine(Component):
             "to_datetime": None,
         }
 
-        # noinspection bulk_updater.receive
-        # noinspection PyUnresolvedReferences
         request = DataRequest(
             client_id=ClientId(bar_type.instrument_id.venue.value),
             data_type=DataType(data_type, metadata),
@@ -1460,8 +1462,6 @@ cdef class DataEngine(Component):
             callback,
         )
 
-        # noinspection bar_builder.receive
-        # noinspection PyUnresolvedReferences
         self._handle_request_quote_ticks(
             bar_type.instrument_id,
             from_datetime,

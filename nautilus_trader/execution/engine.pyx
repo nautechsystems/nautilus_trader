@@ -111,7 +111,11 @@ cdef class ExecutionEngine(Component):
         """
         if config is None:
             config = {}
-        super().__init__(clock, logger, name="ExecEngine")
+        super().__init__(
+            clock=clock,
+            logger=logger,
+            name="ExecEngine",
+        )
 
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
         self._strategies = {}        # type: dict[StrategyId, TradingStrategy]
@@ -550,7 +554,6 @@ cdef class ExecutionEngine(Component):
         for position in positions:
             count = counts.get(position.strategy_id, 0)
             count += 1
-            # noinspection PyUnresolvedReferences
             counts[position.strategy_id] = count
 
         # Reset position ID generator
@@ -634,7 +637,7 @@ cdef class ExecutionEngine(Component):
     cdef void _handle_position_event(self, PositionEvent event) except *:
         self._portfolio.update_position(event)
         self._risk_engine.process(event)
-        self._send_to_strategy(event, event.position.strategy_id)
+        self._send_to_strategy(event, event.strategy_id)
 
     cdef void _handle_order_event(self, OrderEvent event) except *:
         # Fetch Order from cache
@@ -868,26 +871,35 @@ cdef class ExecutionEngine(Component):
 
     cdef PositionOpened _pos_opened_event(self, Position position, OrderFilled fill):
         return PositionOpened(
-            position,
-            fill,
-            self._uuid_factory.generate(),
-            fill.timestamp_ns,
+            position_id=position.id,
+            strategy_id=position.strategy_id,
+            instrument_id=position.instrument_id,
+            position_status=position.to_dict(),
+            order_fill=fill,
+            event_id=self._uuid_factory.generate(),
+            timestamp_ns=fill.timestamp_ns,
         )
 
     cdef PositionChanged _pos_changed_event(self, Position position, OrderFilled fill):
         return PositionChanged(
-            position,
-            fill,
-            self._uuid_factory.generate(),
-            fill.timestamp_ns,
+            position_id=position.id,
+            strategy_id=position.strategy_id,
+            instrument_id=position.instrument_id,
+            position_status=position.to_dict(),
+            order_fill=fill,
+            event_id=self._uuid_factory.generate(),
+            timestamp_ns=fill.timestamp_ns,
         )
 
     cdef PositionClosed _pos_closed_event(self, Position position, OrderFilled fill):
         return PositionClosed(
-            position,
-            fill,
-            self._uuid_factory.generate(),
-            fill.timestamp_ns,
+            position_id=position.id,
+            strategy_id=position.strategy_id,
+            instrument_id=position.instrument_id,
+            position_status=position.to_dict(),
+            order_fill=fill,
+            event_id=self._uuid_factory.generate(),
+            timestamp_ns=fill.timestamp_ns,
         )
 
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:

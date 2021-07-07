@@ -13,20 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
 
-from nautilus_trader.core.type cimport DataType
+cdef class TypeKey:
+    cdef int _hash
 
-
-cdef class Data:
-    cdef readonly int64_t ts_event_ns
-    """The UNIX timestamp (nanoseconds) when data event occurred.\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_recv_ns
-    """The UNIX timestamp (nanoseconds) when received by the Nautilus system.\n\n:returns: `int64`"""
+    cdef readonly type type
+    """The keys type.\n\n:returns: `type`"""
+    cdef readonly frozenset key
+    """The types key.\n\n:returns: `frozenset[tuple]`"""
 
 
-cdef class GenericData(Data):
-    cdef readonly DataType data_type
-    """The data type.\n\n:returns: `DataType`"""
-    cdef readonly Data data
-    """The data.\n\n:returns: `Data`"""
+cdef class MessageType(TypeKey):
+    cdef readonly dict header
+    """The message header.\n\n:returns: `frozendict[str, object]`"""
+
+
+cdef class DataType(TypeKey):
+    cdef readonly dict metadata
+    """The data types metadata.\n\n:returns: `frozendict[str, object]`"""

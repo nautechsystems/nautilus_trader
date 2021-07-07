@@ -29,7 +29,7 @@ from nautilus_trader.model.events cimport OrderExpired
 from nautilus_trader.model.events cimport OrderFilled
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.events cimport OrderPendingCancel
-from nautilus_trader.model.events cimport OrderPendingReplace
+from nautilus_trader.model.events cimport OrderPendingUpdate
 from nautilus_trader.model.events cimport OrderRejected
 from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderTriggered
@@ -63,7 +63,7 @@ _OBJECT_TO_DICT_MAP = {
     OrderFilled.__name__: OrderFilled.to_dict_c,
     OrderInitialized.__name__: OrderInitialized.to_dict_c,
     OrderPendingCancel.__name__: OrderPendingCancel.to_dict_c,
-    OrderPendingReplace.__name__: OrderPendingReplace.to_dict_c,
+    OrderPendingUpdate.__name__: OrderPendingUpdate.to_dict_c,
     OrderRejected.__name__: OrderRejected.to_dict_c,
     OrderSubmitted.__name__: OrderSubmitted.to_dict_c,
     OrderTriggered.__name__: OrderTriggered.to_dict_c,
@@ -96,7 +96,7 @@ _OBJECT_FROM_DICT_MAP = {
     OrderFilled.__name__: OrderFilled.from_dict_c,
     OrderInitialized.__name__: OrderInitialized.from_dict_c,
     OrderPendingCancel.__name__: OrderPendingCancel.from_dict_c,
-    OrderPendingReplace.__name__: OrderPendingReplace.from_dict_c,
+    OrderPendingUpdate.__name__: OrderPendingUpdate.from_dict_c,
     OrderRejected.__name__: OrderRejected.from_dict_c,
     OrderSubmitted.__name__: OrderSubmitted.from_dict_c,
     OrderTriggered.__name__: OrderTriggered.from_dict_c,
