@@ -59,3 +59,12 @@ cdef class Request(Message):
 cdef class Response(Message):
     cdef readonly UUID correlation_id
     """The response correlation ID.\n\n:returns: `UUID`"""
+
+
+cdef class MessageType:
+    cdef int _hash
+
+    cdef readonly type type
+    """The message type.\n\n:returns: `type`"""
+    cdef readonly object header
+    """The message header.\n\n:returns: `frozendict[str, object]`"""
