@@ -1414,8 +1414,6 @@ cdef class DataEngine(Component):
             "to_datetime": None,
         }
 
-        # noinspection bulk_updater.receive
-        # noinspection PyUnresolvedReferences
         request = DataRequest(
             client_id=ClientId(bar_type.instrument_id.venue.value),
             data_type=DataType(data_type, metadata),
@@ -1464,8 +1462,6 @@ cdef class DataEngine(Component):
             callback,
         )
 
-        # noinspection bar_builder.receive
-        # noinspection PyUnresolvedReferences
         self._handle_request_quote_ticks(
             bar_type.instrument_id,
             from_datetime,

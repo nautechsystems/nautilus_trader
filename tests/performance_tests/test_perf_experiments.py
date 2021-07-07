@@ -67,7 +67,7 @@ class TestPerformanceExperiments(PerformanceHarness):
     @staticmethod
     def test_is_message_type(benchmark):
         benchmark.pedantic(
-            target=MESSAGE.type.__eq__,
+            target=MESSAGE.category.__eq__,
             args=(0,),
             iterations=100_000,
             rounds=1,

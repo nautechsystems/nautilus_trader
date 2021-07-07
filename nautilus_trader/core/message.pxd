@@ -66,5 +66,5 @@ cdef class MessageType:
 
     cdef readonly type type
     """The message type.\n\n:returns: `type`"""
-    cdef readonly object header
+    cdef readonly dict header
     """The message header.\n\n:returns: `frozendict[str, object]`"""

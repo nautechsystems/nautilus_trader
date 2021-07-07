@@ -2,10 +2,11 @@
 
 
 ## Breaking Changes
-None
+- Renamed `MessageType` enum to `MessageCategory`.
 
 ## Enhancements
-None
+- Added `MessageBus` class.
+- Added `MessageType` class.
 
 ## Fixes
 None
