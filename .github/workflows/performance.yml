@@ -58,10 +58,9 @@ jobs:
           name: Benchmark with pytest-benchmark
           tool: "pytest"
           output-file-path: output.json
-          external-data-json-path: ./cache/benchmark-data.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auto-push: true
           # Show alert with commit comment on detecting possible performance regression
           alert-threshold: '200%'
-          comment-on-alert: true
+          comment-always: true
           fail-on-alert: true
