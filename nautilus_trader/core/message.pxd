@@ -15,6 +15,7 @@
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.core.type cimport TypeKey
 from nautilus_trader.core.uuid cimport UUID
 
 
@@ -61,10 +62,6 @@ cdef class Response(Message):
     """The response correlation ID.\n\n:returns: `UUID`"""
 
 
-cdef class MessageType:
-    cdef int _hash
-
-    cdef readonly type type
-    """The message type.\n\n:returns: `type`"""
+cdef class MessageType(TypeKey):
     cdef readonly dict header
     """The message header.\n\n:returns: `frozendict[str, object]`"""
