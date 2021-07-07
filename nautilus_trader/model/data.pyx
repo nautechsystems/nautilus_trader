@@ -71,7 +71,7 @@ cdef class DataType:
             metadata = {}
 
         self.type = data_type
-        self.metadata = frozendict(copy.deepcopy(metadata))
+        self.metadata = <dict>frozendict(copy.deepcopy(metadata))
         self._hash = hash((self.type, self.metadata))  # Assign hash for improved time complexity
 
     def __eq__(self, DataType other) -> bool:
@@ -81,10 +81,10 @@ cdef class DataType:
         return self._hash
 
     def __str__(self) -> str:
-        return f"<{self.type.__name__}> {self.metadata}"
+        return f"<{self.type.__name__}> {str(self.metadata)[11:-1]}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(type={self.type.__name__}, metadata={self.metadata})"
+        return f"{type(self).__name__}(type={self.type.__name__}, metadata={str(self.metadata)[11:-1]})"
 
 
 cdef class GenericData(Data):

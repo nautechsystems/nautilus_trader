@@ -28,7 +28,7 @@ cdef class DataType:
 
     cdef readonly type type
     """The `Data` type of the data.\n\n:returns: `type`"""
-    cdef readonly object metadata
+    cdef readonly dict metadata
     """The data types metadata.\n\n:returns: `frozendict[str, object]`"""
 
 

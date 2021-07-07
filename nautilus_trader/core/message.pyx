@@ -275,7 +275,7 @@ cdef class MessageType:
             header = {}
 
         self.type = type
-        self.header = frozendict(copy.deepcopy(header))
+        self.header = <dict>frozendict(copy.deepcopy(header))
         self._hash = hash((self.type, self.header))  # Assign hash for improved time complexity
 
     def __eq__(self, MessageType other) -> bool:
@@ -285,7 +285,7 @@ cdef class MessageType:
         return self._hash
 
     def __str__(self) -> str:
-        return f"<{self.type.__name__}> {self.header}"
+        return f"<{self.type.__name__}> {str(self.header)[11:-1]}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(type={self.type.__name__}, header={self.header})"
+        return f"{type(self).__name__}(type={self.type.__name__}, header={str(self.header)[11:-1]})"
