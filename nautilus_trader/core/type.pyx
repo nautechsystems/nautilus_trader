@@ -15,13 +15,17 @@
 
 import copy
 
+from frozendict import frozendict
+
 
 cdef class TypeKey:
     """
-    Represents a generic type key.
+    Represents a generic immutable type key.
+
+    The base class for all type keys. A type key is a type with a specification.
     """
 
-    def __init__(self, type type not None, dict definitions=None):  # noqa (shadows built-in type)
+    def __init__(self, type type not None, dict spec=None):  # noqa (shadows built-in type)
         """
         Initialize a new instance of the ``TypeKey`` class.
 
@@ -29,15 +33,15 @@ cdef class TypeKey:
         ----------
         type : type
             The type of message.
-        definitions : dict
-            The type keys definitions.
+        spec : dict
+            The type keys specification.
 
         """
-        if definitions is None:
-            definitions = {}
+        if spec is None:
+            spec = {}
 
         self.type = type
-        self.key = frozenset(copy.deepcopy(definitions).items())
+        self.key = frozenset(copy.deepcopy(spec).items())
         self._hash = hash((self.type, self.key))  # Assign hash for improved time complexity
 
     def __eq__(self, TypeKey other) -> bool:
@@ -46,8 +50,62 @@ cdef class TypeKey:
     def __hash__(self) -> int:
         return self._hash
 
+
+cdef class MessageType(TypeKey):
+    """
+    Represents an immutable message type including a header.
+    """
+
+    def __init__(self, type type not None, dict header=None):  # noqa (shadows built-in type)
+        """
+        Initialize a new instance of the ``MessageType`` class.
+
+        Parameters
+        ----------
+        type : type
+            The type of message.
+        header : dict
+            The message header.
+
+        """
+        if header is None:
+            header = {}
+        super().__init__(type=type, spec=header)
+
+        self.header = <dict>frozendict(copy.deepcopy(header))
+
     def __str__(self) -> str:
-        return f"<{self.type.__name__}> {str(self.key)[10:-1]}"
+        return f"<{self.type.__name__}> {str(self.header)[11:-1]}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(type={self.type.__name__}, key={str(self.key)[10:-1]})"
+        return f"{type(self).__name__}(type={self.type.__name__}, header={str(self.header)[11:-1]})"
+
+
+cdef class DataType(TypeKey):
+    """
+    Represents an immutable data type including metadata.
+    """
+
+    def __init__(self, type type not None, dict metadata=None):  # noqa (shadows built-in type)
+        """
+        Initialize a new instance of the ``DataType`` class.
+
+        Parameters
+        ----------
+        type : type
+            The ``Data`` type of the data.
+        metadata : dict
+            The data types metadata.
+
+        """
+        if metadata is None:
+            metadata = {}
+        super().__init__(type=type, spec=metadata)
+
+        self.metadata = <dict>frozendict(copy.deepcopy(metadata))
+
+    def __str__(self) -> str:
+        return f"<{self.type.__name__}> {str(self.metadata)[11:-1]}"
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(type={self.type.__name__}, metadata={str(self.metadata)[11:-1]})"

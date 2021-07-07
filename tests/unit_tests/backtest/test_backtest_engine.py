@@ -17,8 +17,8 @@ import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.core.type import DataType
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation

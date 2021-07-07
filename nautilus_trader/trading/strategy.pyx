@@ -43,6 +43,7 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.type cimport DataType
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport Subscribe
@@ -57,7 +58,6 @@ from nautilus_trader.model.commands cimport SubmitBracketOrder
 from nautilus_trader.model.commands cimport SubmitOrder
 from nautilus_trader.model.commands cimport UpdateOrder
 from nautilus_trader.model.data cimport Data
-from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.events cimport OrderCancelRejected
 from nautilus_trader.model.events cimport OrderDenied

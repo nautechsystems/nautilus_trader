@@ -19,7 +19,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.core.type cimport MessageType
 
 
 cdef class Subscription:
@@ -264,7 +264,7 @@ cdef class MessageBus:
 
         cdef Subscription sub
         for sub in subscriptions:
-            if not sub.msg_type.header or sub.msg_type.key.issubset(msg_type.key):
+            if sub.msg_type.key.issubset(msg_type.key):
                 sub.handler(message)
 
         self.processed_count += 1

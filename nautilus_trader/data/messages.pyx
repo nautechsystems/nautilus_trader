@@ -15,8 +15,8 @@
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.core.type cimport DataType
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.data cimport DataType
 
 
 cdef class DataCommand(Command):

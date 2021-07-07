@@ -18,6 +18,7 @@ from cpython.datetime cimport datetime
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.timer cimport TimeEvent
+from nautilus_trader.core.type cimport DataType
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.client cimport DataClient
@@ -30,7 +31,6 @@ from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.bar cimport Bar
 from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.data cimport Data
-from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport GenericData
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
