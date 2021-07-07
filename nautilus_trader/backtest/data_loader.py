@@ -383,7 +383,7 @@ class DataCatalog:
     Provides a searchable data catalogue.
     """
 
-    def __init__(self, path=None, fs_protocol=None):
+    def __init__(self, path, fs_protocol="file"):
         """
         Initialize a new instance of the ``DataCatalog`` class.
 
@@ -395,11 +395,18 @@ class DataCatalog:
             The file system protocol to use.
 
         """
-        self.fs = fsspec.filesystem(
-            fs_protocol or os.environ.get("NAUTILUS_BACKTEST_FS_PROTOCOL", "file")
-        )
-        self.root = pathlib.Path(path or os.environ["NAUTILUS_BACKTEST_DIR"])
-        self._processed_files_fn = f"{self.root}/.processed_raw_files.json"
+        self.fs = fsspec.filesystem(fs_protocol)
+        self.path = pathlib.Path(path)
+        self._processed_files_fn = f"{self.path}/.processed_raw_files.json"
+
+    @classmethod
+    def from_env(cls):
+        return cls.from_uri(uri=os.environ["NAUTILUS_CATALOG"])
+
+    @classmethod
+    def from_uri(cls, uri):
+        protocol, path = uri.split("://")
+        return cls(path=path, fs_protocol=protocol)
 
     # ---- Loading data ---------------------------------------------------------------------------------------- #
 
@@ -478,7 +485,7 @@ class DataCatalog:
         for cls in tables:
             for ins_id in tables[cls]:
                 name = f"{class_to_filename(cls)}.parquet"
-                fn = self.root.joinpath(name)
+                fn = self.path.joinpath(name)
 
                 df = pd.DataFrame(tables[cls][ins_id])
 
@@ -495,7 +502,7 @@ class DataCatalog:
 
                 # Load any existing data, drop dupes
                 if not append_only:
-                    if self.fs.exists(fn) or self.fs.isdir(str(fn)):
+                    if self.fs.exists(str(fn)) or self.fs.isdir(str(fn)):
                         existing = self._query(
                             filename=camel_to_snake_case(cls.__name__),
                             instrument_ids=ins_id
@@ -539,10 +546,14 @@ class DataCatalog:
                     **kwargs,
                 )
                 # Write the ``_common_metadata`` parquet file without row groups statistics
-                pq.write_metadata(table.schema, fn / "_common_metadata", version="2.0")
+                pq.write_metadata(
+                    table.schema, str(fn / "_common_metadata"), version="2.0", filesystem=self.fs
+                )
 
                 # Write the ``_metadata`` parquet file with row groups statistics of all files
-                pq.write_metadata(table.schema, fn / "_metadata", version="2.0")
+                pq.write_metadata(
+                    table.schema, str(fn / "_metadata"), version="2.0", filesystem=self.fs
+                )
 
                 # Write out any partition columns we had to modify due to filesystem requirements
                 if mappings:
@@ -558,7 +569,7 @@ class DataCatalog:
                 "Are you sure you want to clear the WHOLE BACKTEST CACHE?, if so, call clear_cache(FORCE=True)"
             )
         else:
-            self.fs.rm(self.root, recursive=True)
+            self.fs.rm(self.path, recursive=True)
 
     # ---- BACKTEST ---------------------------------------------------------------------------------------- #
 
@@ -726,14 +737,14 @@ class DataCatalog:
         if end is not None:
             filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
 
-        path = f"{self.root}/{filename}.parquet/"
-        if not self.fs.exists(path):
+        path = self.path.joinpath(f"{filename}.parquet")
+        if not (self.fs.exists(str(path)) or self.fs.isdir(str(path))):
             if raise_on_empty:
                 raise FileNotFoundError
             else:
                 return pd.DataFrame()
 
-        dataset = ds.dataset(path, partitioning="hive", filesystem=self.fs)
+        dataset = ds.dataset(str(path), partitioning="hive", filesystem=self.fs)
         table = dataset.to_table(filter=combine_filters(*filters))
         df = table.to_pandas().drop_duplicates()
         mappings = self._read_mappings(path=path)
@@ -753,12 +764,12 @@ class DataCatalog:
         return df
 
     def _write_mappings(self, fn, mappings):
-        with self.fs.open(fn / "_partition_mappings.json", "wb") as f:
+        with self.fs.open(str(fn / "_partition_mappings.json"), "wb") as f:
             f.write(orjson.dumps(mappings))
 
     def _read_mappings(self, path):
         try:
-            with self.fs.open(path + "_partition_mappings.json") as f:
+            with self.fs.open(str(path.joinpath("_partition_mappings.json"))) as f:
                 return orjson.loads(f.read())
         except FileNotFoundError:
             return {}
@@ -895,7 +906,7 @@ class DataCatalog:
         return self._make_objects(df=df, cls=cls)
 
     def list_data_types(self):
-        return [p.stem for p in self.root.glob("*.parquet")]
+        return [p.stem for p in self.path.glob("*.parquet")]
 
     def list_generic_data_types(self):
         data_types = self.list_data_types()
@@ -909,7 +920,7 @@ class DataCatalog:
         assert isinstance(cls_type, type), "`cls_type` should be type, ie TradeTick"
         prefix = GENERIC_DATA_PREFIX if is_custom_data(cls_type) else ""
         name = prefix + camel_to_snake_case(cls_type.__name__)
-        dataset = pq.ParquetDataset(self.root / f"{name}.parquet")
+        dataset = pq.ParquetDataset(self.path / f"{name}.parquet", filesystem=self.fs)
         partitions = {}
         for level in dataset.partitions.levels:
             partitions[level.name] = level.keys

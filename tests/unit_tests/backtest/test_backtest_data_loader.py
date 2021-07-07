@@ -6,6 +6,7 @@ import os
 import pathlib
 
 from betfairlightweight import APIClient
+import fsspec.implementations.memory
 from numpy import dtype
 import orjson
 import pandas as pd
@@ -57,14 +58,6 @@ from tests.test_kit.stubs import TestStubs
 
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
-catalog_DIR = TEST_DATA_DIR + "/catalog"
-
-
-@pytest.fixture()
-def catalog_dir(tmp_path):
-    # Ensure we have a catalog directory, and its cleaned up after use
-    os.environ.update({"NAUTILUS_BACKTEST_DIR": str(tmp_path)})
-    yield
 
 
 @pytest.fixture(scope="function")
@@ -85,9 +78,18 @@ def data_loader():
 
 
 @pytest.fixture(scope="function")
-def catalog(catalog_dir, data_loader):
-    catalog = DataCatalog()
-    catalog.import_from_data_loader(loader=data_loader)
+def catalog(data_loader):
+    catalog = DataCatalog(path="/", fs_protocol="memory")
+    catalog.fs.rm(
+        "/",
+        recursive=True,
+    )
+    return catalog
+
+
+@pytest.fixture(scope="function")
+def loaded_catalog(catalog, data_loader):
+    catalog.import_from_data_loader(data_loader)
     return catalog
 
 
@@ -106,7 +108,7 @@ def test_is_custom_data():
         ("**.csv", 11),
     ],
 )
-def test_data_loader_paths(glob, num_files, catalog_dir):
+def test_data_loader_paths(glob, num_files):
     d = DataLoader(path=TEST_DATA_DIR, parser=TextParser(parser=len), glob_pattern=glob)
     assert len(d.path) == num_files
 
@@ -138,7 +140,7 @@ def test_data_loader_json_betting_parser():
     assert len(data) == 30829
 
 
-def test_data_loader_parquet(catalog_dir):
+def test_data_loader_parquet():
     def filename_to_instrument(fn):
         if "btcusd" in fn:
             return TestInstrumentProvider.btcusdt_binance()
@@ -171,7 +173,7 @@ def test_data_loader_parquet(catalog_dir):
     assert len(values) == 451
 
 
-def test_data_loader_csv(catalog_dir):
+def test_data_loader_csv(catalog):
     def parse_csv_tick(df, instrument_id, state=None):
         for _, r in df.iterrows():
             ts = millis_to_nanos(pd.Timestamp(r["timestamp"]).timestamp())
@@ -197,7 +199,6 @@ def test_data_loader_csv(catalog_dir):
     assert len(values) == 1000
 
     # Write to parquet
-    catalog = DataCatalog()
     catalog.import_from_data_loader(loader=loader)
     data = catalog.quote_ticks()
     assert len(data) == 1000
@@ -210,38 +211,59 @@ def test_parse_timestamp():
     assert parse_timestamp("2020-01-31") == 1580428800000000000
 
 
-def test_data_catalog_instruments_df(catalog):
-    instruments = catalog.instruments()
+def test_data_catalog_from_env():
+    os.environ["NAUTILUS_CATALOG"] = "memory:///"
+    c = DataCatalog.from_env()
+    assert isinstance(c.fs, fsspec.implementations.memory.MemoryFileSystem)
+    assert str(c.path) == "/"
+
+    os.environ["NAUTILUS_CATALOG"] = "file:///data"
+    c = DataCatalog.from_env()
+    assert isinstance(c.fs, fsspec.implementations.local.LocalFileSystem)
+    assert str(c.path) == "/data"
+
+
+def test_data_catalog_instruments_df(loaded_catalog):
+    instruments = loaded_catalog.instruments()
     assert len(instruments) == 2
 
 
-def test_data_catalog_instruments_filtered_df(catalog):
+def test_data_catalog_instruments_filtered_df(loaded_catalog):
     instrument_id = (
         "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,237491,.BETFAIR"
     )
-    instruments = catalog.instruments(instrument_ids=[instrument_id])
+    instruments = loaded_catalog.instruments(instrument_ids=[instrument_id])
     assert len(instruments) == 1
     assert instruments["instrument_id"].iloc[0] == instrument_id
 
 
-def test_data_catalog_instruments_no_partition(catalog):
-    ds = pq.ParquetDataset(catalog.root / "betting_instrument.parquet/")
+def test_data_catalog_instruments_no_partition(loaded_catalog):
+    ds = pq.ParquetDataset(
+        path_or_paths=str(loaded_catalog.path / "betting_instrument.parquet/"),
+        filesystem=loaded_catalog.fs,
+    )
     partitions = ds.partitions
     assert not partitions.levels
 
 
-def test_data_catalog_instruments_as_nautilus(catalog):
-    instruments = catalog.instruments(as_nautilus=True)
+def test_data_catalog_instruments_as_nautilus(loaded_catalog):
+    instruments = loaded_catalog.instruments(as_nautilus=True)
     assert all(isinstance(ins, BettingInstrument) for ins in instruments)
 
 
-def test_data_catalog_metadata(catalog):
-    assert ds.parquet_dataset(f"{catalog.root}/trade_tick.parquet/_metadata")
-    assert ds.parquet_dataset(f"{catalog.root}/trade_tick.parquet/_common_metadata")
+def test_data_catalog_metadata(loaded_catalog):
+    assert ds.parquet_dataset(
+        f"{loaded_catalog.path}/trade_tick.parquet/_metadata", filesystem=loaded_catalog.fs
+    )
+    assert ds.parquet_dataset(
+        f"{loaded_catalog.path}/trade_tick.parquet/_common_metadata", filesystem=loaded_catalog.fs
+    )
 
 
-def test_data_catalog_dataset_types(catalog):
-    dataset = ds.dataset(catalog.root / "trade_tick.parquet")
+def test_data_catalog_dataset_types(loaded_catalog):
+    dataset = ds.dataset(
+        str(loaded_catalog.path / "trade_tick.parquet"), filesystem=loaded_catalog.fs
+    )
     schema = {n: t.__class__.__name__ for n, t in zip(dataset.schema.names, dataset.schema.types)}
     expected = {
         "price": "DataType",
@@ -254,7 +276,7 @@ def test_data_catalog_dataset_types(catalog):
     assert schema == expected
 
 
-def test_data_catalog_parquet(catalog_dir):
+def test_data_catalog_parquet():
     def filename_to_instrument(fn):
         if "btcusd" in fn:
             return TestInstrumentProvider.btcusdt_binance()
@@ -294,14 +316,14 @@ def test_data_catalog_parquet(catalog_dir):
     )
 
     # Write to parquet
-    catalog = DataCatalog()
+    catalog = DataCatalog.from_uri("memory:///")
     catalog.import_from_data_loader(loader=quote_loader)
     catalog.import_from_data_loader(loader=trade_loader)
     assert len(catalog.quote_ticks(instrument_ids=["BTC/USDT.BINANCE"])) == 451
     assert len(catalog.trade_ticks(instrument_ids=["BTC/USDT.BINANCE"])) == 2001
 
 
-def test_partition_key_correctly_remapped(catalog_dir):
+def test_partition_key_correctly_remapped(catalog):
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
     tick = QuoteTick(
         instrument_id=instrument.id,
@@ -312,7 +334,6 @@ def test_partition_key_correctly_remapped(catalog_dir):
         ts_recv_ns=0,
         ts_event_ns=0,
     )
-    catalog = DataCatalog()
     catalog._write_chunks(chunk=[instrument, tick])
     df = catalog.quote_ticks()
     assert len(df) == 1
@@ -321,13 +342,15 @@ def test_partition_key_correctly_remapped(catalog_dir):
     assert df.iloc[0]["instrument_id"] == instrument.id.value
 
 
-def test_data_catalog_filter(catalog):
-    assert len(catalog.order_book_deltas()) == 2384
-    assert len(catalog.order_book_deltas(filter_expr=ds.field("delta_type") == "DELETE")) == 351
+def test_data_catalog_filter(loaded_catalog):
+    assert len(loaded_catalog.order_book_deltas()) == 2384
+    assert (
+        len(loaded_catalog.order_book_deltas(filter_expr=ds.field("delta_type") == "DELETE")) == 351
+    )
 
 
-def test_data_catalog_parquet_dtypes(catalog):
-    result = catalog.trade_ticks().dtypes.to_dict()
+def test_data_catalog_parquet_dtypes(loaded_catalog):
+    result = loaded_catalog.trade_ticks().dtypes.to_dict()
     expected = {
         "aggressor_side": CategoricalDtype(categories=["UNKNOWN"], ordered=False),
         "instrument_id": CategoricalDtype(
@@ -346,17 +369,17 @@ def test_data_catalog_parquet_dtypes(catalog):
     assert result == expected
 
 
-def test_data_catalog_query_filtered(catalog):
-    ticks = catalog.trade_ticks()
+def test_data_catalog_query_filtered(loaded_catalog):
+    ticks = loaded_catalog.trade_ticks()
     assert len(ticks) == 312
 
-    ticks = catalog.trade_ticks(start="2019-12-20 20:56:18")
+    ticks = loaded_catalog.trade_ticks(start="2019-12-20 20:56:18")
     assert len(ticks) == 123
 
-    ticks = catalog.trade_ticks(start=1576875378384999936)
+    ticks = loaded_catalog.trade_ticks(start=1576875378384999936)
     assert len(ticks) == 123
 
-    ticks = catalog.trade_ticks(start=datetime.datetime(2019, 12, 20, 20, 56, 18))
+    ticks = loaded_catalog.trade_ticks(start=datetime.datetime(2019, 12, 20, 20, 56, 18))
     assert len(ticks) == 123
 
 
@@ -381,7 +404,7 @@ class NewsEvent(Data):
         self.currency = currency
 
 
-def test_data_loader_generic_data(catalog_dir):
+def test_data_loader_generic_data(catalog):
     register_parquet(
         NewsEvent,
         _news_event_to_dict,
@@ -404,7 +427,6 @@ def test_data_loader_generic_data(catalog_dir):
         parser=CSVParser(parser=make_news_event),
         glob_pattern="news_events.csv",
     )
-    catalog = DataCatalog()
     catalog.import_from_data_loader(loader=loader)
     df = catalog.generic_data(cls=NewsEvent, filter_expr=ds.field("currency") == "USD")
     assert len(df) == 22925
@@ -414,8 +436,7 @@ def test_data_loader_generic_data(catalog_dir):
     assert len(data) == 22925 and isinstance(data[0], GenericData)
 
 
-def test_data_catalog_append(catalog_dir):
-    catalog = DataCatalog()
+def test_data_catalog_append(catalog):
     instrument_data = json.loads(open(TEST_DATA_DIR + "/crypto_instruments.json").read())
 
     objects = []
@@ -449,7 +470,7 @@ def test_data_catalog_append(catalog_dir):
     assert len(catalog.instruments()) == 6
 
 
-def test_catalog_invalid_partition_key(catalog_dir):
+def test_catalog_invalid_partition_key(catalog):
     register_parquet(
         NewsEvent,
         _news_event_to_dict,
@@ -472,20 +493,19 @@ def test_catalog_invalid_partition_key(catalog_dir):
         parser=CSVParser(parser=make_news_event),
         glob_pattern="news_events.csv",
     )
-    catalog = DataCatalog()
     with pytest.raises(ValueError):
         catalog.import_from_data_loader(loader=loader)
 
 
-def test_data_catalog_backtest_data_no_filter(catalog):
-    data = catalog.load_backtest_data()
+def test_data_catalog_backtest_data_no_filter(loaded_catalog):
+    data = loaded_catalog.load_backtest_data()
     assert len(sum(data.values(), [])) == 2323
 
 
-def test_data_catalog_backtest_data_filtered(catalog):
-    instruments = catalog.instruments(as_nautilus=True)
+def test_data_catalog_backtest_data_filtered(loaded_catalog):
+    instruments = loaded_catalog.instruments(as_nautilus=True)
     engine = BacktestEngine(bypass_logging=True)
-    engine = catalog.setup_engine(
+    engine = loaded_catalog.setup_engine(
         engine=engine,
         instruments=[instruments[1]],
         start_timestamp=1576869877788000000,
@@ -504,10 +524,10 @@ def test_data_catalog_backtest_data_filtered(catalog):
     assert engine.iteration == 600
 
 
-def test_data_catalog_backtest_run(catalog):
-    instruments = catalog.instruments(as_nautilus=True)
+def test_data_catalog_backtest_run(loaded_catalog):
+    instruments = loaded_catalog.instruments(as_nautilus=True)
     engine = BacktestEngine(bypass_logging=True)
-    engine = catalog.setup_engine(engine=engine, instruments=[instruments[1]])
+    engine = loaded_catalog.setup_engine(engine=engine, instruments=[instruments[1]])
     engine.add_venue(
         venue=BETFAIR_VENUE,
         venue_type=VenueType.EXCHANGE,

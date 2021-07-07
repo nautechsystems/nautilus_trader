@@ -2,7 +2,6 @@ import copy
 import dataclasses
 from decimal import Decimal
 from functools import partial
-import os
 import pathlib
 import pickle
 from typing import Optional
@@ -40,13 +39,6 @@ from tests.test_kit.stubs import TestStubs
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 
 
-@pytest.fixture()
-def catalog_dir(tmp_path):
-    # Ensure we have a catalog directory, and its cleaned up after use
-    os.environ.update({"NAUTILUS_BACKTEST_DIR": str(tmp_path)})
-    yield
-
-
 @pytest.fixture(scope="module")
 def data_loader():
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
@@ -78,8 +70,12 @@ def data_loader():
 
 
 @pytest.fixture()
-def catalog(catalog_dir, data_loader):
-    catalog = DataCatalog()
+def catalog(data_loader):
+    catalog = DataCatalog(path="/", fs_protocol="memory")
+    catalog.fs.rm(
+        "/",
+        recursive=True,
+    )
     catalog.import_from_data_loader(loader=data_loader)
     assert len(catalog.instruments()) == 1
     assert len(catalog.quote_ticks()) == 100000
@@ -111,6 +107,8 @@ def backtest_config(catalog):
         instruments=[instrument],
         data_config=[
             BacktestDataConfig(
+                catalog_path="/",
+                catalog_fs_protocol="memory",
                 data_type=QuoteTick,
                 instrument_id=instrument.id.value,
                 start_time=1580398089820000000,
@@ -219,6 +217,8 @@ def test_tokenization(backtest_config):
 def test_backtest_data_config_load(catalog):
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
     c = BacktestDataConfig(
+        catalog_path="/",
+        catalog_fs_protocol="memory",
         data_type=QuoteTick,
         instrument_id=instrument.id.value,
         start_time=1580398089820000000,
@@ -255,6 +255,8 @@ def test_backtest_config_partial():
         instruments=[instrument],
         data_config=[
             BacktestDataConfig(
+                catalog_path="/",
+                catalog_fs_protocol="memory",
                 data_type=QuoteTick,
                 instrument_id=instrument.id.value,
                 start_time=1580398089820000,
@@ -303,6 +305,8 @@ def test_backtest_against_example(catalog):
         ],
         data_config=[
             BacktestDataConfig(
+                catalog_path="/",
+                catalog_fs_protocol="memory",
                 data_type=QuoteTick,
                 instrument_id=AUDUSD.id.value,
                 start_time=1580398089820000000,

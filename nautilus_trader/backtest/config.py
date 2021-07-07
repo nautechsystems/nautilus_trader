@@ -66,8 +66,10 @@ class Partialable:
 
 
 @dataclasses.dataclass()
-class BacktestDataConfig:
+class BacktestDataConfig(Partialable):
+    catalog_path: str
     data_type: type
+    catalog_fs_protocol: str = None
     instrument_id: Optional[str] = None
     start_time: Optional[int] = None
     end_time: Optional[int] = None
@@ -124,7 +126,7 @@ class BacktestConfig(Partialable):
 
 
 def _load(config: BacktestDataConfig):
-    catalog = DataCatalog()
+    catalog = DataCatalog(path=config.catalog_path, fs_protocol=config.catalog_fs_protocol)
     query = config.query
     return {
         "type": query["cls"],
@@ -152,13 +154,9 @@ def create_backtest_engine(venues, instruments, data):
     # Add data
     for d in data:
         if d["type"] == QuoteTick:
-            engine.add_quote_ticks_objects(
-                data=d["data"], instrument_id=instruments[0].id
-            )
+            engine.add_quote_ticks_objects(data=d["data"], instrument_id=instruments[0].id)
         elif d["type"] == TradeTick:
-            engine.add_trade_tick_objects(
-                data=d["data"], instrument_id=instruments[0].id
-            )
+            engine.add_trade_tick_objects(data=d["data"], instrument_id=instruments[0].id)
         elif d["type"] == OrderBookDelta:
             engine.add_order_book_data(data=d["data"])
         elif isinstance(d["data"][0], Event):
@@ -238,10 +236,6 @@ def _check_configs(configs):
 
 def build_graph(backtest_configs, sync=False):
     backtest_configs = _check_configs(backtest_configs)
-
-    _ = (
-        DataCatalog()
-    )  # Ensure we can instantiate a DataCatalog before we try a computation
 
     results = []
     for config in backtest_configs:
