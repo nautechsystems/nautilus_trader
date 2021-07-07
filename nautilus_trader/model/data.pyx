@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import copy
+
+from frozendict import frozendict
+
 from libc.stdint cimport int64_t
 
 
@@ -62,24 +66,13 @@ cdef class DataType:
         metadata : dict
             The data types metadata.
 
-        Raises
-        ------
-        TypeError
-            If metadata contains a key or value which is not hashable.
-
-        Warnings
-        --------
-        This class may be used as a key in hash maps throughout the system, thus
-        the key and value contents of metadata must themselves be hashable.
-
         """
         if metadata is None:
             metadata = {}
 
-        self._key = frozenset(metadata.items())
-        self._hash = hash(self._key)  # Assign hash for improved time complexity
         self.type = data_type
-        self.metadata = metadata
+        self.metadata = frozendict(copy.deepcopy(metadata))
+        self._hash = hash((self.type, self.metadata))  # Assign hash for improved time complexity
 
     def __eq__(self, DataType other) -> bool:
         return self.type == other.type and self.metadata == other.metadata
