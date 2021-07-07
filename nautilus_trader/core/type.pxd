@@ -21,3 +21,13 @@ cdef class TypeKey:
     """The keys type.\n\n:returns: `type`"""
     cdef readonly frozenset key
     """The types key.\n\n:returns: `frozenset[tuple]`"""
+
+
+cdef class MessageType(TypeKey):
+    cdef readonly dict header
+    """The message header.\n\n:returns: `frozendict[str, object]`"""
+
+
+cdef class DataType(TypeKey):
+    cdef readonly dict metadata
+    """The data types metadata.\n\n:returns: `frozendict[str, object]`"""

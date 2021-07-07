@@ -13,12 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import copy
-
-from frozendict import frozendict
-
 from nautilus_trader.core.message cimport MessageCategory
-from nautilus_trader.core.type cimport TypeKey
 from nautilus_trader.core.uuid cimport UUID
 
 
@@ -253,33 +248,3 @@ cdef class Response(Message):
                 f"correlation_id={self.correlation_id}, "
                 f"id={self.id}, "
                 f"timestamp={self.timestamp_ns})")
-
-
-cdef class MessageType(TypeKey):
-    """
-    Represents a message type including a header.
-    """
-
-    def __init__(self, type type not None, dict header=None):  # noqa
-        """
-        Initialize a new instance of the ``MessageType`` class.
-
-        Parameters
-        ----------
-        type : type
-            The type of message.
-        header : dict
-            The message header.
-
-        """
-        if header is None:
-            header = {}
-        super().__init__(type=type, definitions=header)
-
-        self.header = <dict>frozendict(copy.deepcopy(header))
-
-    def __str__(self) -> str:
-        return f"<{self.type.__name__}> {str(self.header)[11:-1]}"
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}(type={self.type.__name__}, header={str(self.header)[11:-1]})"

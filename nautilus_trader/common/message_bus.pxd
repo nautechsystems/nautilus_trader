@@ -18,7 +18,7 @@ from typing import Callable
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.core.type cimport MessageType
 
 
 cdef class Subscription:

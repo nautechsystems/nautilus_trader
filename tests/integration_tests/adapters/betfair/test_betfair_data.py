@@ -25,7 +25,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data import on_market_update
-from nautilus_trader.model.data import DataType
+from nautilus_trader.core.type import DataType
 from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
@@ -173,7 +173,7 @@ def test_market_update_live_update(betfair_data_client, data_engine):
 @pytest.mark.asyncio
 async def test_request_search_instruments(betfair_data_client, data_engine, uuid):
     req = DataType(
-        data_type=InstrumentSearch,
+        type=InstrumentSearch,
         metadata={"event_type_id": "7"},
     )
     betfair_data_client.request(req, uuid)

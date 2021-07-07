@@ -18,7 +18,7 @@ import pandas as pd
 from nautilus_trader.backtest.data_producer import BacktestDataProducer
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.model.data import DataType
+from nautilus_trader.core.type import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookLevel

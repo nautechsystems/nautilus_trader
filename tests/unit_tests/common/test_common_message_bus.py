@@ -16,7 +16,7 @@
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.message_bus import MessageBus
-from nautilus_trader.core.message import MessageType
+from nautilus_trader.core.type import MessageType
 
 
 class TestMessageBus:
@@ -75,7 +75,7 @@ class TestMessageBus:
         assert len(result) == 1
         assert result[0].handler == handler
 
-    def test_process_with_no_subscribers_does_nothing(self):
+    def test_publish_with_no_subscribers_does_nothing(self):
         # Arrange
         string_msg = MessageType(type=str)
 
@@ -85,7 +85,7 @@ class TestMessageBus:
         # Assert
         assert True  # No exceptions raised
 
-    def test_process_with_subscriber_sends_to_handler(self):
+    def test_publish_with_subscriber_sends_to_handler(self):
         # Arrange
         subscriber = []
         string_msg = MessageType(type=str)
@@ -98,7 +98,26 @@ class TestMessageBus:
         # Assert
         assert "hello world" in subscriber
 
-    def test_process_with_sub_and_header_sends_to_handler(self):
+    def test_publish_with_multiple_subscribers_sends_to_handlers(self):
+        # Arrange
+        subscriber1 = []
+        subscriber2 = []
+        subscriber3 = []
+        string_msg = MessageType(type=str)
+
+        self.msg_bus.subscribe(msg_type=string_msg, handler=subscriber1.append)
+        self.msg_bus.subscribe(msg_type=string_msg, handler=subscriber2.append)
+        self.msg_bus.subscribe(msg_type=string_msg, handler=subscriber3.append)
+
+        # Act
+        self.msg_bus.publish(string_msg, "hello world")
+
+        # Assert
+        assert "hello world" in subscriber1
+        assert "hello world" in subscriber2
+        assert "hello world" in subscriber3
+
+    def test_publish_with_header_sends_to_handler(self):
         # Arrange
         subscriber = []
         status_msgs = MessageType(type=str, header={"topic": "status"})
@@ -111,7 +130,7 @@ class TestMessageBus:
         # Assert
         assert "OK!" in subscriber
 
-    def test_process_with_sub_and_header_then_filters_from_sending_to_handler(self):
+    def test_publish_with_none_matching_header_then_filters_from_subscriber(self):
         # Arrange
         subscriber = []
         string_msgs = MessageType(type=str)
@@ -127,3 +146,20 @@ class TestMessageBus:
 
         # Assert
         assert "OK!" not in subscriber
+
+    def test_publish_with_matching_subset_header_then_sends_to_subscriber(self):
+        # Arrange
+        subscriber = []
+        status_msgs1 = MessageType(type=str, header={"topic": "status"})
+        status_msgs2 = MessageType(type=str, header={"topic": "status", "extra": 0})
+
+        self.msg_bus.subscribe(
+            msg_type=status_msgs1,
+            handler=subscriber.append,
+        )
+
+        # Act
+        self.msg_bus.publish(status_msgs2, "OK!")
+
+        # Assert
+        assert "OK!" in subscriber
