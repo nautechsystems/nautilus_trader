@@ -18,6 +18,7 @@ import copy
 from frozendict import frozendict
 
 from nautilus_trader.core.message cimport MessageCategory
+from nautilus_trader.core.type cimport TypeKey
 from nautilus_trader.core.uuid cimport UUID
 
 
@@ -254,7 +255,7 @@ cdef class Response(Message):
                 f"timestamp={self.timestamp_ns})")
 
 
-cdef class MessageType:
+cdef class MessageType(TypeKey):
     """
     Represents a message type including a header.
     """
@@ -273,16 +274,9 @@ cdef class MessageType:
         """
         if header is None:
             header = {}
+        super().__init__(type=type, definitions=header)
 
-        self.type = type
         self.header = <dict>frozendict(copy.deepcopy(header))
-        self._hash = hash((self.type, self.header))  # Assign hash for improved time complexity
-
-    def __eq__(self, MessageType other) -> bool:
-        return self.type == other.type and self.header == other.header
-
-    def __hash__(self) -> int:
-        return self._hash
 
     def __str__(self) -> str:
         return f"<{self.type.__name__}> {str(self.header)[11:-1]}"

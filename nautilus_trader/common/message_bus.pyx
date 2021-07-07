@@ -91,7 +91,10 @@ cdef class Subscription:
 
 cdef class MessageBus:
     """
-    Provides a generic message bus for producers to publish to subscribing consumers.
+    Provides a generic message bus to facilitate consumers subscribing to
+    publishing producers.
+
+    The bus provides both a producer and consumer API.
     """
 
     def __init__(
@@ -261,7 +264,7 @@ cdef class MessageBus:
 
         cdef Subscription sub
         for sub in subscriptions:
-            if not sub.msg_type.header or sub.msg_type.header == msg_type.header:
+            if not sub.msg_type.header or sub.msg_type.key.issubset(msg_type.key):
                 sub.handler(message)
 
         self.processed_count += 1
