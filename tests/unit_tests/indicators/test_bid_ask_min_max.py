@@ -12,7 +12,6 @@
 
 from datetime import datetime
 from datetime import timedelta
-import unittest
 
 import pytz
 
@@ -26,7 +25,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.tick import QuoteTick
 
 
-class BidAskMinMaxTests(unittest.TestCase):
+class TestBidAskMinMax:
     instrument_id = InstrumentId(Symbol("SPY"), Venue("NYSE"))
 
     def test_instantiate(self):
@@ -35,11 +34,11 @@ class BidAskMinMaxTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(None, indicator.bids.min_price)
-        self.assertEqual(None, indicator.bids.max_price)
-        self.assertEqual(None, indicator.asks.min_price)
-        self.assertEqual(None, indicator.asks.max_price)
-        self.assertEqual(False, indicator.initialized)
+        assert indicator.bids.min_price is None
+        assert indicator.bids.max_price is None
+        assert indicator.asks.min_price is None
+        assert indicator.asks.max_price is None
+        assert indicator.initialized is False
 
     def test_handle_quote_tick(self):
         # Arrange
@@ -71,10 +70,10 @@ class BidAskMinMaxTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Price.from_str("0.9"), indicator.bids.min_price)
-        self.assertEqual(Price.from_str("1.0"), indicator.bids.max_price)
-        self.assertEqual(Price.from_str("2.1"), indicator.asks.min_price)
-        self.assertEqual(Price.from_str("2.1"), indicator.asks.max_price)
+        assert indicator.bids.min_price == Price.from_str("0.9")
+        assert indicator.bids.max_price == Price.from_str("1.0")
+        assert indicator.asks.min_price == Price.from_str("2.1")
+        assert indicator.asks.max_price == Price.from_str("2.1")
 
     def test_reset(self):
         # Arrange
@@ -96,19 +95,19 @@ class BidAskMinMaxTests(unittest.TestCase):
         indicator.reset()
 
         # Assert
-        self.assertIsNone(indicator.bids.min_price)
-        self.assertIsNone(indicator.asks.min_price)
+        assert indicator.bids.min_price is None
+        assert indicator.asks.min_price is None
 
 
-class WindowedMinMaxPricesTests(unittest.TestCase):
+class TestWindowedMinMaxPrices:
     def test_instantiate(self):
         # Arrange
         instance = WindowedMinMaxPrices(timedelta(minutes=5))
 
         # Act
         # Assert
-        self.assertEqual(None, instance.min_price)
-        self.assertEqual(None, instance.max_price)
+        assert instance.min_price is None
+        assert instance.max_price is None
 
     def test_add_price(self):
         # Arrange
@@ -120,8 +119,8 @@ class WindowedMinMaxPricesTests(unittest.TestCase):
             Price.from_str("1.0"),
         )
         # Assert
-        self.assertEqual(Price.from_str("1.0"), instance.min_price)
-        self.assertEqual(Price.from_str("1.0"), instance.max_price)
+        assert instance.min_price == Price.from_str("1.0")
+        assert instance.max_price == Price.from_str("1.0")
 
     def test_add_multiple_prices(self):
         # Arrange
@@ -139,8 +138,8 @@ class WindowedMinMaxPricesTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Price.from_str("0.9"), instance.min_price)
-        self.assertEqual(Price.from_str("1.0"), instance.max_price)
+        assert instance.min_price == Price.from_str("0.9")
+        assert instance.max_price == Price.from_str("1.0")
 
     def test_expire_items(self):
         # Arrange
@@ -164,8 +163,8 @@ class WindowedMinMaxPricesTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Price.from_str("0.95"), instance.min_price)
-        self.assertEqual(Price.from_str("0.95"), instance.max_price)
+        assert instance.min_price == Price.from_str("0.95")
+        assert instance.max_price == Price.from_str("0.95")
 
     def test_reset(self):
         # Arrange
@@ -179,5 +178,5 @@ class WindowedMinMaxPricesTests(unittest.TestCase):
         instance.reset()
 
         # Assert
-        self.assertEqual(None, instance.min_price)
-        self.assertEqual(None, instance.max_price)
+        assert instance.min_price is None
+        assert instance.max_price is None
