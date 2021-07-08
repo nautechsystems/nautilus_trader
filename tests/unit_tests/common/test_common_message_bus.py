@@ -317,3 +317,26 @@ class TestMessageBus:
 
         # Assert
         assert "OK!" in subscriber
+
+    def test_publish_with_both_channel_and_all_sub_sends_to_subscribers(self):
+        # Arrange
+        subscriber1 = []
+        subscriber2 = []
+        status_msgs = MessageType(type=str, header={"topic": "status"})
+
+        self.msg_bus.subscribe(
+            msg_type=status_msgs,
+            handler=subscriber1.append,
+        )
+
+        self.msg_bus.subscribe(
+            msg_type=None,  # <-- subscribe ALL
+            handler=subscriber2.append,
+        )
+
+        # Act
+        self.msg_bus.publish(status_msgs, "OK!")
+
+        # Assert
+        assert "OK!" in subscriber1
+        assert "OK!" in subscriber2
