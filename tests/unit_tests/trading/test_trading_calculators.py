@@ -240,7 +240,7 @@ class TestRolloverInterestCalculator:
         rate_data = calculator.get_rate_data()
 
         # Assert
-        assert type(rate_data) == dict
+        assert isinstance(rate_data, dict)
 
     def test_calc_overnight_fx_rate_with_audusd_on_unix_epoch_returns_correct_rate(
         self,
