@@ -31,6 +31,7 @@ cdef class Throttler:
     cdef object _timestamps
     cdef object _output_send
     cdef object _output_drop
+    cdef bint _warm
 
     cdef readonly str name
     """The name of the throttler.\n\n:returns: `str`"""
@@ -38,10 +39,12 @@ cdef class Throttler:
     """The limit for the throttler rate.\n\n:returns: `int`"""
     cdef readonly timedelta interval
     """The interval for the throttler rate.\n\n:returns: `timedelta`"""
-    cdef readonly bint is_initialized
-    """If the throttler is initialized (sent at least limit messages).\n\n:returns: `bool`"""
     cdef readonly bint is_limiting
     """If the throttler is currently limiting messages (buffering or dropping).\n\n:returns: `bool`"""
+    cdef readonly int recv_count
+    """If count of messages received by the throttler.\n\n:returns: `int`"""
+    cdef readonly int sent_count
+    """If count of messages sent from the throttler.\n\n:returns: `int`"""
 
     cpdef double used(self) except *
     cpdef void send(self, msg) except *
