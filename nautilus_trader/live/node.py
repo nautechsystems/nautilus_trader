@@ -431,7 +431,6 @@ class TradingNode:
 
             self._log.info("Stopping event loop...")
             self._cancel_all_tasks()
-            self._logger.stop()
             self._loop.stop()
         except RuntimeError as ex:
             self._log.exception(ex)
@@ -637,6 +636,7 @@ class TradingNode:
             self._log.info(f"Cancelled Timer(name={name}).")
 
         self._log.info("state=STOPPED.")
+        self._logger.stop()
         self._is_running = False
 
     async def _await_engines_disconnected(self) -> bool:
