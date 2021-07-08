@@ -21,6 +21,30 @@ from nautilus_trader.core.type import MessageType
 
 
 class TestSubscription:
+    def test_comparisons_returns_expected(self):
+        # Arrange
+        subscriber = []
+        string_msg = MessageType(type=str)
+
+        subscription1 = Subscription(
+            msg_type=string_msg,
+            handler=subscriber.append,
+            priority=0,
+        )
+
+        subscription2 = Subscription(
+            msg_type=string_msg,
+            handler=subscriber.append,
+            priority=1,
+        )
+
+        # Act, Assert
+        assert subscription1 == subscription2
+        assert subscription1 < subscription2
+        assert subscription1 <= subscription2
+        assert subscription2 > subscription1
+        assert subscription2 >= subscription1
+
     def test_equality_when_equal_returns_true(self):
         # Arrange
         subscriber = []
@@ -190,6 +214,21 @@ class TestMessageBus:
         # Assert
         assert result == [str]
 
+    def test_subscribe_when_handler_already_subscribed_does_not_add_subscription(self):
+        # Arrange
+        all_strings = MessageType(type=str)
+        handler = [].append
+
+        self.msg_bus.subscribe(msg_type=all_strings, handler=handler)
+
+        # Act
+        self.msg_bus.subscribe(msg_type=all_strings, handler=handler)
+
+        result = self.msg_bus.channels()
+
+        # Assert
+        assert result == [str]
+
     def test_subscribe_to_all_returns_channels_list_including_none(self):
         # Arrange
         handler = [].append
@@ -228,6 +267,75 @@ class TestMessageBus:
         # Assert
         assert len(result) == 1
         assert result[0].handler == handler
+
+    def test_subscribe_all_when_handler_already_subscribed_does_not_add_subscription(self):
+        # Arrange
+        handler = [].append
+
+        self.msg_bus.subscribe(msg_type=None, handler=handler)
+
+        # Act
+        self.msg_bus.subscribe(msg_type=None, handler=handler)
+
+        result = self.msg_bus.subscriptions()
+
+        # Assert
+        assert len(result) == 1
+        assert result[0].handler == handler
+
+    def test_unsubscribe_from_msg_type_returns_subscriptions_list_without_handler(self):
+        # Arrange
+        all_strings = MessageType(type=str)
+        handler = [].append
+
+        self.msg_bus.subscribe(msg_type=all_strings, handler=handler)
+
+        # Act
+        self.msg_bus.unsubscribe(msg_type=all_strings, handler=handler)
+
+        result = self.msg_bus.subscriptions(all_strings)
+
+        # Assert
+        assert result == []
+
+    def test_unsubscribe_from_msg_type_when_no_subscription_does_nothing(self):
+        # Arrange
+        all_strings = MessageType(type=str)
+        handler = [].append
+
+        # Act
+        self.msg_bus.unsubscribe(msg_type=all_strings, handler=handler)
+
+        result = self.msg_bus.subscriptions(all_strings)
+
+        # Assert
+        assert result == []
+
+    def test_unsubscribe_from_all_returns_subscriptions_list_without_handler(self):
+        # Arrange
+        handler = [].append
+
+        self.msg_bus.subscribe(msg_type=None, handler=handler)
+
+        # Act
+        self.msg_bus.unsubscribe(msg_type=None, handler=handler)
+
+        result = self.msg_bus.subscriptions()
+
+        # Assert
+        assert result == []
+
+    def test_unsubscribe_from_all_when_no_subscription_does_nothing(self):
+        # Arrange
+        handler = [].append
+
+        # Act
+        self.msg_bus.unsubscribe(msg_type=None, handler=handler)
+
+        result = self.msg_bus.subscriptions()
+
+        # Assert
+        assert result == []
 
     def test_publish_with_no_subscribers_does_nothing(self):
         # Arrange
