@@ -58,6 +58,7 @@ class TestKeyType:
         spec = {"category": 1}
         key = TypeKey(type=str, spec=spec)
 
+        # Act
         spec["category"] = 2  # <-- attempt to modify category
 
         # Assert
@@ -67,6 +68,7 @@ class TestKeyType:
         # Arrange
         key = TypeKey(type=str, spec={"category": 1})
 
+        # Act, Assert
         assert isinstance(hash(key), int)
 
 
@@ -90,6 +92,7 @@ class TestMessageType:
         spec = {"category": 1, "code": 0}
         msg_type = MessageType(type=str, header=spec)
 
+        # Act
         spec["category"] = 2  # <-- attempt to modify category
 
         # Assert
@@ -99,6 +102,7 @@ class TestMessageType:
         # Arrange
         msg_type = MessageType(type=str, header={"category": 1, "code": 0})
 
+        # Act, Assert
         assert isinstance(hash(msg_type), int)
         assert str(msg_type) == "<str> {'category': 1, 'code': 0}"
         assert repr(msg_type) == "MessageType(type=str, header={'category': 1, 'code': 0})"
@@ -124,6 +128,7 @@ class TestDataType:
         spec = {"category": 1, "code": 0}
         data_type = DataType(type=str, metadata=spec)
 
+        # Act
         spec["category"] = 2  # <-- attempt to modify category
 
         # Assert
@@ -133,6 +138,7 @@ class TestDataType:
         # Arrange
         data_type = DataType(type=str, metadata={"category": 1, "code": 0})
 
+        # Act, Assert
         assert isinstance(hash(data_type), int)
         assert str(data_type) == "<str> {'category': 1, 'code': 0}"
         assert repr(data_type) == "DataType(type=str, metadata={'category': 1, 'code': 0})"

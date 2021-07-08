@@ -35,12 +35,13 @@ cdef class MessageBus:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef dict _channels
+    cdef list _channel_all
 
     cdef readonly int processed_count
     """The count of messages process by the bus.\n\n:returns: `int32`"""
 
     cpdef list channels(self)
-    cpdef list subscriptions(self, MessageType msg_type)
+    cpdef list subscriptions(self, MessageType msg_type=*)
 
     cpdef void subscribe(self, MessageType msg_type, handler: Callable, int priority=*) except *
     cpdef void unsubscribe(self, MessageType msg_type, handler: Callable) except *
