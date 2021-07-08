@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.analysis.reports import ReportProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -44,8 +42,8 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
-class ReportProviderTests(unittest.TestCase):
-    def setUp(self):
+class TestReportProvider:
+    def setup(self):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
@@ -83,7 +81,7 @@ class ReportProviderTests(unittest.TestCase):
         report = report_provider.generate_account_report(account)
 
         # Assert
-        self.assertEqual(1, len(report))
+        assert len(report) == 1
 
     def test_generate_orders_report_with_no_order_returns_emtpy_dataframe(self):
         # Arrange
@@ -93,7 +91,7 @@ class ReportProviderTests(unittest.TestCase):
         report = report_provider.generate_orders_report([])
 
         # Assert
-        self.assertTrue(report.empty)
+        assert report.empty
 
     def test_generate_orders_fills_report_with_no_order_returns_emtpy_dataframe(self):
         # Arrange
@@ -103,7 +101,7 @@ class ReportProviderTests(unittest.TestCase):
         report = report_provider.generate_order_fills_report([])
 
         # Assert
-        self.assertTrue(report.empty)
+        assert report.empty
 
     def test_generate_positions_report_with_no_positions_returns_emtpy_dataframe(self):
         # Arrange
@@ -113,7 +111,7 @@ class ReportProviderTests(unittest.TestCase):
         report = report_provider.generate_positions_report([])
 
         # Assert
-        self.assertTrue(report.empty)
+        assert report.empty
 
     def test_generate_orders_report(self):
         # Arrange
@@ -154,16 +152,16 @@ class ReportProviderTests(unittest.TestCase):
         report = report_provider.generate_orders_report(orders)
 
         # Assert
-        self.assertEqual(2, len(report))
-        self.assertEqual("client_order_id", report.index.name)
-        self.assertEqual(order1.client_order_id.value, report.index[0])
-        self.assertEqual("AUD/USD.SIM", report.iloc[0]["instrument_id"])
-        self.assertEqual("BUY", report.iloc[0]["side"])
-        self.assertEqual("LIMIT", report.iloc[0]["type"])
-        self.assertEqual("1500000", report.iloc[0]["quantity"])
-        self.assertEqual("0.80011", report.iloc[0]["avg_px"])
-        self.assertEqual("0.00001", report.iloc[0]["slippage"])
-        self.assertEqual(None, report.iloc[1]["avg_px"])
+        assert len(report) == 2
+        assert report.index.name == "client_order_id"
+        assert report.index[0] == order1.client_order_id.value
+        assert report.iloc[0]["instrument_id"] == "AUD/USD.SIM"
+        assert report.iloc[0]["side"] == "BUY"
+        assert report.iloc[0]["type"] == "LIMIT"
+        assert report.iloc[0]["quantity"] == "1500000"
+        assert report.iloc[0]["avg_px"] == "0.80011"
+        assert report.iloc[0]["slippage"] == "0.00001"
+        assert report.iloc[1]["avg_px"] is None
 
     def test_generate_order_fills_report(self):
         # Arrange
@@ -205,15 +203,15 @@ class ReportProviderTests(unittest.TestCase):
         report = report_provider.generate_order_fills_report(orders)
 
         # Assert
-        self.assertEqual(1, len(report))
-        self.assertEqual("client_order_id", report.index.name)
-        self.assertEqual(order1.client_order_id.value, report.index[0])
-        self.assertEqual("AUD/USD.SIM", report.iloc[0]["instrument_id"])
-        self.assertEqual("BUY", report.iloc[0]["side"])
-        self.assertEqual("LIMIT", report.iloc[0]["type"])
-        self.assertEqual("1500000", report.iloc[0]["quantity"])
-        self.assertEqual("0.80011", report.iloc[0]["avg_px"])
-        self.assertEqual("0.00001", report.iloc[0]["slippage"])
+        assert len(report) == 1
+        assert report.index.name == "client_order_id"
+        assert report.index[0] == order1.client_order_id.value
+        assert report.iloc[0]["instrument_id"] == "AUD/USD.SIM"
+        assert report.iloc[0]["side"] == "BUY"
+        assert report.iloc[0]["type"] == "LIMIT"
+        assert report.iloc[0]["quantity"] == "1500000"
+        assert report.iloc[0]["avg_px"] == "0.80011"
+        assert report.iloc[0]["slippage"] == "0.00001"
 
     def test_generate_positions_report(self):
         # Arrange
@@ -259,16 +257,16 @@ class ReportProviderTests(unittest.TestCase):
         report = report_provider.generate_positions_report(positions)
 
         # Assert
-        self.assertEqual(2, len(report))
-        self.assertEqual("position_id", report.index.name)
-        self.assertEqual(position1.id.value, report.index[0])
-        self.assertEqual("AUD/USD.SIM", report.iloc[0]["instrument_id"])
-        self.assertEqual("BUY", report.iloc[0]["entry"])
-        self.assertEqual("FLAT", report.iloc[0]["side"])
-        self.assertEqual("100000", report.iloc[0]["peak_qty"])
-        self.assertEqual("1.00010", report.iloc[0]["avg_px_open"])
-        self.assertEqual("1.00010", report.iloc[0]["avg_px_close"])
-        self.assertEqual(UNIX_EPOCH, report.iloc[0]["ts_opened"])
-        self.assertEqual(UNIX_EPOCH, report.iloc[0]["ts_closed"])
-        self.assertEqual("0.00000", report.iloc[0]["realized_points"])
-        self.assertEqual("0.00000", report.iloc[0]["realized_return"])
+        assert len(report) == 2
+        assert report.index.name == "position_id"
+        assert report.index[0] == position1.id.value
+        assert report.iloc[0]["instrument_id"] == "AUD/USD.SIM"
+        assert report.iloc[0]["entry"] == "BUY"
+        assert report.iloc[0]["side"] == "FLAT"
+        assert report.iloc[0]["peak_qty"] == "100000"
+        assert report.iloc[0]["avg_px_open"] == "1.00010"
+        assert report.iloc[0]["avg_px_close"] == "1.00010"
+        assert report.iloc[0]["ts_opened"] == UNIX_EPOCH
+        assert report.iloc[0]["ts_closed"] == UNIX_EPOCH
+        assert report.iloc[0]["realized_points"] == "0.00000"
+        assert report.iloc[0]["realized_return"] == "0.00000"
