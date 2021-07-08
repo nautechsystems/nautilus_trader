@@ -297,7 +297,6 @@ cdef class MessageBus:
         if self._channel_all:
             # Send to ANY subscriptions
             for sub in self._channel_all:
-                if sub.msg_type.key.issubset(msg_type.key):
-                    sub.handler(message)
+                sub.handler(message)
 
         self.processed_count += 1
