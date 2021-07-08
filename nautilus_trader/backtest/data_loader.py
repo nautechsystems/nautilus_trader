@@ -383,7 +383,7 @@ class DataCatalog:
     Provides a searchable data catalogue.
     """
 
-    def __init__(self, path, fs_protocol="file"):
+    def __init__(self, path: str, fs_protocol: str = "file"):
         """
         Initialize a new instance of the ``DataCatalog`` class.
 
@@ -397,7 +397,7 @@ class DataCatalog:
         """
         self.fs = fsspec.filesystem(fs_protocol)
         self.path = pathlib.Path(path)
-        self._processed_files_fn = f"{self.path}/.processed_raw_files.json"
+        self._processed_files_fn = str(self.path / ".processed_raw_files.json")
 
     @classmethod
     def from_env(cls):
@@ -519,8 +519,8 @@ class DataCatalog:
                                     "instrument_id"
                                 ], "Only support appending to instrument_id partitions"
                                 # We only want to remove this partition
-                                partition_path = f"/instrument_id={clean_key(ins_id)}"
-                                self.fs.rm(str(fn) + partition_path, recursive=True)
+                                partition_path = f"instrument_id={clean_key(ins_id)}"
+                                self.fs.rm(str(fn / partition_path), recursive=True)
                             else:
                                 self.fs.rm(str(fn), recursive=True)
 
@@ -769,7 +769,7 @@ class DataCatalog:
 
     def _read_mappings(self, path):
         try:
-            with self.fs.open(str(path.joinpath("_partition_mappings.json"))) as f:
+            with self.fs.open(str(path / "_partition_mappings.json")) as f:
                 return orjson.loads(f.read())
         except FileNotFoundError:
             return {}

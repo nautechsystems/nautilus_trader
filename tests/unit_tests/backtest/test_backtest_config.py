@@ -348,14 +348,7 @@ def test_backtest_run_sync(backtest_configs):
     assert len(result) == 2
 
 
-@pytest.mark.skip
-def test_backtest_run_multiprocessing(backtest_configs):
-    # TODO (bm) not working; TypeError: no default __reduce__ due to non-trivial __cinit__
-    tasks = build_graph(backtest_configs)
-    result = tasks.compute(scheduler="processes")
-    assert result
-
-
+@pytest.mark.local
 def test_backtest_run_distributed(backtest_configs):
     from distributed import Client
 
