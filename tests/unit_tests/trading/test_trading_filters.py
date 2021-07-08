@@ -15,10 +15,10 @@
 
 from datetime import datetime
 import os
-import unittest
 
 import pandas as pd
 from parameterized import parameterized
+import pytest
 import pytz
 
 from nautilus_trader.core.datetime import as_utc_index
@@ -29,8 +29,8 @@ from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
-class ForexSessionFilterTests(unittest.TestCase):
-    def setUp(self):
+class TestForexSessionFilter:
+    def setup(self):
         # Fixture Setup
         self.session_filter = ForexSessionFilter()
 
@@ -50,7 +50,7 @@ class ForexSessionFilterTests(unittest.TestCase):
         result = self.session_filter.local_from_utc(session, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(expected, str(result))
+        assert str(result) == expected
 
     @parameterized.expand(
         [
@@ -66,7 +66,7 @@ class ForexSessionFilterTests(unittest.TestCase):
         result = self.session_filter.next_start(session, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(expected, result)
+        assert result == expected
 
     def test_next_start_on_weekend_returns_expected_datetime_monday(self):
         # Arrange
@@ -75,7 +75,7 @@ class ForexSessionFilterTests(unittest.TestCase):
         result = self.session_filter.next_start(ForexSession.TOKYO, time_now)
 
         # Assert
-        self.assertEqual(datetime(2020, 7, 13, 0, 0, tzinfo=pytz.utc), result)
+        assert result == datetime(2020, 7, 13, 0, 0, tzinfo=pytz.utc)
 
     def test_next_in_session_returns_expected_datetime_next_day(self):
         # Arrange
@@ -84,7 +84,7 @@ class ForexSessionFilterTests(unittest.TestCase):
         result = self.session_filter.next_start(ForexSession.TOKYO, time_now)
 
         # Assert
-        self.assertEqual(datetime(2020, 7, 14, 0, 0, tzinfo=pytz.utc), result)
+        assert result == datetime(2020, 7, 14, 0, 0, tzinfo=pytz.utc)
 
     @parameterized.expand(
         [
@@ -100,7 +100,7 @@ class ForexSessionFilterTests(unittest.TestCase):
         result = self.session_filter.prev_start(session, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(expected, result)
+        assert result == expected
 
     @parameterized.expand(
         [
@@ -116,7 +116,7 @@ class ForexSessionFilterTests(unittest.TestCase):
         result = self.session_filter.next_end(session, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(expected, result)
+        assert result == expected
 
     @parameterized.expand(
         [
@@ -132,11 +132,11 @@ class ForexSessionFilterTests(unittest.TestCase):
         result = self.session_filter.prev_end(session, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(expected, result)
+        assert result == expected
 
 
-class EconomicNewsEventFilterTests(unittest.TestCase):
-    def setUp(self):
+class TestEconomicNewsEventFilter:
+    def setup(self):
         # Fixture Setup
         news_csv_path = os.path.join(PACKAGE_ROOT, "data", "news_events.csv")
         self.news_data = as_utc_index(pd.read_csv(news_csv_path, parse_dates=True, index_col=0))
@@ -153,16 +153,12 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(
-            pd.Timestamp("2008-01-01 10:00:00+0000", tz="UTC"),
-            news_filter.unfiltered_data_start,
+        assert (
+            pd.Timestamp("2008-01-01 10:00:00+0000", tz="UTC") == news_filter.unfiltered_data_start
         )
-        self.assertEqual(
-            pd.Timestamp("2020-12-31 23:00:00+0000", tz="UTC"),
-            news_filter.unfiltered_data_end,
-        )
-        self.assertEqual(currencies, news_filter.currencies)
-        self.assertEqual(impacts, news_filter.impacts)
+        assert pd.Timestamp("2020-12-31 23:00:00+0000", tz="UTC") == news_filter.unfiltered_data_end
+        assert news_filter.currencies == currencies
+        assert news_filter.impacts == impacts
 
     def test_initialize_filter_with_no_currencies_or_impacts_returns_none(self):
         # Arrange
@@ -179,8 +175,8 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
         event_prev = news_filter.next_event(datetime(2012, 3, 15, 12, 0, tzinfo=pytz.utc))
 
         # Assert
-        self.assertIsNone(event_next)
-        self.assertIsNone(event_prev)
+        assert event_next is None
+        assert event_prev is None
 
     def test_next_event_given_time_now_before_data_raises_value_error(self):
         # Arrange
@@ -192,7 +188,8 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, news_filter.next_event, UNIX_EPOCH)
+        with pytest.raises(ValueError):
+            news_filter.next_event(UNIX_EPOCH)
 
     def test_next_event_given_time_now_after_data_raises_value_error(self):
         # Arrange
@@ -204,11 +201,8 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(
-            ValueError,
-            news_filter.next_event,
-            datetime(2050, 1, 1, 1, 1, tzinfo=pytz.utc),
-        )
+        with pytest.raises(ValueError):
+            news_filter.next_event(datetime(2050, 1, 1, 1, 1, tzinfo=pytz.utc))
 
     def test_prev_event_given_time_now_before_data_raises_value_error(self):
         # Arrange
@@ -220,7 +214,8 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(ValueError, news_filter.prev_event, UNIX_EPOCH)
+        with pytest.raises(ValueError):
+            news_filter.prev_event(UNIX_EPOCH)
 
     def test_prev_event_given_time_now_after_data_raises_value_error(self):
         # Arrange
@@ -232,11 +227,8 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(
-            ValueError,
-            news_filter.prev_event,
-            datetime(2050, 1, 1, 1, 1, tzinfo=pytz.utc),
-        )
+        with pytest.raises(ValueError):
+            news_filter.prev_event(datetime(2050, 1, 1, 1, 1, tzinfo=pytz.utc))
 
     def test_next_event_given_valid_date_returns_expected_news_event(self):
         # Arrange
@@ -248,7 +240,7 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
         # Act
         event = news_filter.prev_event(datetime(2015, 5, 10, 12, 0, tzinfo=pytz.utc))
-        self.assertEqual(1431088200000000000, event.ts_event_ns)
+        assert event.ts_event_ns == 1431088200000000000
 
     def test_prev_event_given_valid_date_returns_expected_news_event(self):
         # Arrange
@@ -260,4 +252,4 @@ class EconomicNewsEventFilterTests(unittest.TestCase):
 
         # Act
         event = news_filter.prev_event(datetime(2017, 8, 10, 15, 0, tzinfo=pytz.utc))
-        self.assertEqual(1501849800000000000, event.ts_event_ns)
+        assert event.ts_event_ns == 1501849800000000000
