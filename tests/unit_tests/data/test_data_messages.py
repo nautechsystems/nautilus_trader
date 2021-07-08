@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.type import DataType
@@ -32,8 +30,8 @@ BINANCE = Venue("BINANCE")
 IDEALPRO = Venue("IDEALPRO")
 
 
-class DataMessageTests(unittest.TestCase):
-    def setUp(self):
+class TestDataMessage:
+    def setup(self):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
@@ -53,15 +51,14 @@ class DataMessageTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual("Subscribe(<str> {'type': 'newswire'})", str(command))
-        self.assertEqual(
+        assert str(command) == "Subscribe(<str> {'type': 'newswire'})"
+        assert (
             f"Subscribe("
             f"client_id=BINANCE, "
             f"data_type=<str> {{'type': 'newswire'}}, "
             f"handler={repr(handler)}, "
-            f"id={command_id})",
-            repr(command),
-        )
+            f"id={command_id})"
+        ) == repr(command)
 
     def test_data_request_message_str_and_repr(self):
         # Arrange
@@ -86,13 +83,12 @@ class DataMessageTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(
+        assert (
             "DataRequest("
             "<str> {'instrument_id': InstrumentId('SOMETHING.RANDOM'), "
-            "'from_datetime': None, 'to_datetime': None, 'limit': 1000})",
-            str(request),
-        )
-        self.assertEqual(
+            "'from_datetime': None, 'to_datetime': None, 'limit': 1000})"
+        ) == str(request)
+        assert (
             f"DataRequest("
             f"client_id=BINANCE, "
             f"data_type=<str> {{'instrument_id': InstrumentId('SOMETHING.RANDOM'), "
@@ -100,9 +96,8 @@ class DataMessageTests(unittest.TestCase):
             f"'to_datetime': None, "
             f"'limit': 1000}}, "
             f"callback={repr(handler)}, "
-            f"id={request_id})",
-            repr(request),
-        )
+            f"id={request_id})"
+        ) == repr(request)
 
     def test_data_response_message_str_and_repr(self):
         # Arrange
@@ -121,15 +116,14 @@ class DataMessageTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(
-            "DataResponse(<QuoteTick> {'instrument_id': InstrumentId('AUD/USD.IDEALPRO')})",
-            str(response),
+        assert (
+            "DataResponse(<QuoteTick> {'instrument_id': InstrumentId('AUD/USD.IDEALPRO')})"
+            == str(response)
         )
-        self.assertEqual(
+        assert (
             f"DataResponse("
             f"client_id=BINANCE, "
             f"data_type=<QuoteTick> {{'instrument_id': InstrumentId('AUD/USD.IDEALPRO')}}, "
             f"correlation_id={correlation_id}, "
-            f"id={response_id})",
-            repr(response),
-        )
+            f"id={response_id})"
+        ) == repr(response)
