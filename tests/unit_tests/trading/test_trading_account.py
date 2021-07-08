@@ -213,18 +213,18 @@ class TestAccount:
         assert account.balance_free(ETH) == Money(20.00000000, ETH)
         assert account.balance_locked(BTC) == Money(0.00000000, BTC)
         assert account.balance_locked(ETH) == Money(0.00000000, ETH)
-        assert {
+        assert account.balances_total() == {
             BTC: Money(10.00000000, BTC),
             ETH: Money(20.00000000, ETH),
-        } == account.balances_total()
-        assert {
+        }
+        assert account.balances_free() == {
             BTC: Money(10.00000000, BTC),
             ETH: Money(20.00000000, ETH),
-        } == account.balances_free()
-        assert {
+        }
+        assert account.balances_locked() == {
             BTC: Money(0.00000000, BTC),
             ETH: Money(0.00000000, ETH),
-        } == account.balances_locked()
+        }
         assert account.unrealized_pnl(BTC) == Money(0.00000000, BTC)
         assert account.unrealized_pnl(ETH) == Money(0.00000000, ETH)
         assert account.equity(BTC) == Money(10.00000000, BTC)
