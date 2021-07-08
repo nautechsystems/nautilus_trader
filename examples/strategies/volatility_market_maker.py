@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Union
+from typing import Optional, Union
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
@@ -80,7 +80,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
-        self.instrument = None  # Initialize in on_start
+        self.instrument: Optional[Instrument] = None  # Initialize in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.atr_multiple = atr_multiple

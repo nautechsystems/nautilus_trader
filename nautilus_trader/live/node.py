@@ -98,7 +98,7 @@ class TradingNode:
 
         # Extract configs
         config_trader = config.get("trader", {})
-        config_system = config.get("system", {})
+        config_system: Dict[str, object] = config.get("system", {})
         config_log = config.get("logging", {})
         config_db = config.get("database", {})
         config_cache = config.get("cache", {})

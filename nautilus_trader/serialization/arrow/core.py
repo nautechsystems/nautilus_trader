@@ -12,7 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from typing import Callable, Optional
+
+from typing import Callable, Dict, Optional
 
 import pyarrow as pa
 
@@ -20,8 +21,8 @@ from nautilus_trader.serialization.base import get_from_dict
 from nautilus_trader.serialization.base import get_to_dict
 
 
-_PARQUET_OBJECT_TO_DICT_MAP = {}
-_PARQUET_OBJECT_FROM_DICT_MAP = {}
+_PARQUET_OBJECT_TO_DICT_MAP: Dict[str, object] = {}
+_PARQUET_OBJECT_FROM_DICT_MAP: Dict[str, object] = {}
 _chunk = {}
 _partition_keys = {}
 _schemas = {}
