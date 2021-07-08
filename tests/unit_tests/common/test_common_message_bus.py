@@ -125,7 +125,7 @@ class TestSubscription:
             f"Subscription(msg_type=*, handler={handler_str}, priority=0)"
         )
 
-    def test_hash_str_repr(self):
+    def test_str_repr(self):
         # Arrange
         subscriber = []
         string_msg = MessageType(type=str, header={"topic": "status"})
@@ -138,7 +138,6 @@ class TestSubscription:
         )
 
         # Assert
-        assert isinstance(hash(subscription), int)
         assert (
             str(subscription)
             == f"Subscription(msg_type=<str> {{'topic': 'status'}}, handler={handler_str}, priority=0)"
