@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import TestClock
@@ -52,8 +50,8 @@ ADABTC_BINANCE = TestInstrumentProvider.adabtc_binance()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
-class AccountTests(unittest.TestCase):
-    def setUp(self):
+class TestAccount:
+    def setup(self):
         # Fixture Setup
         clock = TestClock()
         logger = Logger(clock)
@@ -116,12 +114,12 @@ class AccountTests(unittest.TestCase):
         self.portfolio.register_account(account)
 
         # Assert
-        self.assertEqual(AccountId("SIM", "001"), account.id)
-        self.assertEqual("Account(id=SIM-001)", str(account))
-        self.assertEqual("Account(id=SIM-001)", repr(account))
-        self.assertEqual(int, type(hash(account)))
-        self.assertTrue(account == account)
-        self.assertFalse(account != account)
+        assert account.id == AccountId("SIM", "001")
+        assert str(account) == "Account(id=SIM-001)"
+        assert repr(account) == "Account(id=SIM-001)"
+        assert type(hash(account)) == int
+        assert account == account
+        assert not account != account
 
     def test_instantiate_single_asset_account(self):
         # Arrange
@@ -152,22 +150,22 @@ class AccountTests(unittest.TestCase):
         self.portfolio.register_account(account)
 
         # Assert
-        self.assertEqual(USD, account.base_currency)
-        self.assertEqual(event, account.last_event)
-        self.assertEqual([event], account.events)
-        self.assertEqual(1, account.event_count)
-        self.assertEqual(Money(1_000_000, USD), account.balance_total())
-        self.assertEqual(Money(1_000_000, USD), account.balance_free())
-        self.assertEqual(Money(0, USD), account.balance_locked())
-        self.assertEqual({USD: Money(1_000_000, USD)}, account.balances_total())
-        self.assertEqual({USD: Money(1_000_000, USD)}, account.balances_free())
-        self.assertEqual({USD: Money(0, USD)}, account.balances_locked())
-        self.assertEqual(Money(0, USD), account.unrealized_pnl())
-        self.assertEqual(Money(1_000_000, USD), account.equity())
-        self.assertEqual({}, account.initial_margins())
-        self.assertEqual({}, account.maint_margins())
-        self.assertEqual(None, account.initial_margin())
-        self.assertEqual(None, account.maint_margin())
+        assert account.base_currency == USD
+        assert account.last_event == event
+        assert account.events == [event]
+        assert account.event_count == 1
+        assert account.balance_total() == Money(1_000_000, USD)
+        assert account.balance_free() == Money(1_000_000, USD)
+        assert account.balance_locked() == Money(0, USD)
+        assert account.balances_total() == {USD: Money(1_000_000, USD)}
+        assert account.balances_free() == {USD: Money(1_000_000, USD)}
+        assert account.balances_locked() == {USD: Money(0, USD)}
+        assert account.unrealized_pnl() == Money(0, USD)
+        assert account.equity() == Money(1_000_000, USD)
+        assert account.initial_margins() == {}
+        assert account.maint_margins() == {}
+        assert account.initial_margin() is None
+        assert account.maint_margin() is None
 
     def test_instantiate_multi_asset_account(self):
         # Arrange
@@ -204,39 +202,39 @@ class AccountTests(unittest.TestCase):
         self.portfolio.register_account(account)
 
         # Assert
-        self.assertEqual(AccountId("SIM", "001"), account.id)
-        self.assertEqual(None, account.base_currency)
-        self.assertEqual(event, account.last_event)
-        self.assertEqual([event], account.events)
-        self.assertEqual(1, account.event_count)
-        self.assertEqual(Money(10.00000000, BTC), account.balance_total(BTC))
-        self.assertEqual(Money(20.00000000, ETH), account.balance_total(ETH))
-        self.assertEqual(Money(10.00000000, BTC), account.balance_free(BTC))
-        self.assertEqual(Money(20.00000000, ETH), account.balance_free(ETH))
-        self.assertEqual(Money(0.00000000, BTC), account.balance_locked(BTC))
-        self.assertEqual(Money(0.00000000, ETH), account.balance_locked(ETH))
-        self.assertEqual(
-            {BTC: Money(10.00000000, BTC), ETH: Money(20.00000000, ETH)},
-            account.balances_total(),
-        )
-        self.assertEqual(
-            {BTC: Money(10.00000000, BTC), ETH: Money(20.00000000, ETH)},
-            account.balances_free(),
-        )
-        self.assertEqual(
-            {BTC: Money(0.00000000, BTC), ETH: Money(0.00000000, ETH)},
-            account.balances_locked(),
-        )
-        self.assertEqual(Money(0.00000000, BTC), account.unrealized_pnl(BTC))
-        self.assertEqual(Money(0.00000000, ETH), account.unrealized_pnl(ETH))
-        self.assertEqual(Money(10.00000000, BTC), account.equity(BTC))
-        self.assertEqual(Money(20.00000000, ETH), account.equity(ETH))
-        self.assertEqual({}, account.initial_margins())
-        self.assertEqual({}, account.maint_margins())
-        self.assertEqual(None, account.initial_margin(BTC))
-        self.assertEqual(None, account.initial_margin(ETH))
-        self.assertEqual(None, account.maint_margin(BTC))
-        self.assertEqual(None, account.maint_margin(ETH))
+        assert account.id == AccountId("SIM", "001")
+        assert account.base_currency is None
+        assert account.last_event == event
+        assert account.events == [event]
+        assert account.event_count == 1
+        assert account.balance_total(BTC) == Money(10.00000000, BTC)
+        assert account.balance_total(ETH) == Money(20.00000000, ETH)
+        assert account.balance_free(BTC) == Money(10.00000000, BTC)
+        assert account.balance_free(ETH) == Money(20.00000000, ETH)
+        assert account.balance_locked(BTC) == Money(0.00000000, BTC)
+        assert account.balance_locked(ETH) == Money(0.00000000, ETH)
+        assert {
+            BTC: Money(10.00000000, BTC),
+            ETH: Money(20.00000000, ETH),
+        } == account.balances_total()
+        assert {
+            BTC: Money(10.00000000, BTC),
+            ETH: Money(20.00000000, ETH),
+        } == account.balances_free()
+        assert {
+            BTC: Money(0.00000000, BTC),
+            ETH: Money(0.00000000, ETH),
+        } == account.balances_locked()
+        assert account.unrealized_pnl(BTC) == Money(0.00000000, BTC)
+        assert account.unrealized_pnl(ETH) == Money(0.00000000, ETH)
+        assert account.equity(BTC) == Money(10.00000000, BTC)
+        assert account.equity(ETH) == Money(20.00000000, ETH)
+        assert account.initial_margins() == {}
+        assert account.maint_margins() == {}
+        assert account.initial_margin(BTC) is None
+        assert account.initial_margin(ETH) is None
+        assert account.maint_margin(BTC) is None
+        assert account.maint_margin(ETH) is None
 
     def test_apply_given_new_state_event_updates_correctly(self):
         # Arrange
@@ -301,15 +299,15 @@ class AccountTests(unittest.TestCase):
         account.apply(event=event2)
 
         # Assert
-        self.assertEqual(event2, account.last_event)
-        self.assertEqual([event1, event2], account.events)
-        self.assertEqual(2, account.event_count)
-        self.assertEqual(Money(9.00000000, BTC), account.balance_total(BTC))
-        self.assertEqual(Money(8.50000000, BTC), account.balance_free(BTC))
-        self.assertEqual(Money(0.50000000, BTC), account.balance_locked(BTC))
-        self.assertEqual(Money(20.00000000, ETH), account.balance_total(ETH))
-        self.assertEqual(Money(20.00000000, ETH), account.balance_free(ETH))
-        self.assertEqual(Money(0.00000000, ETH), account.balance_locked(ETH))
+        assert account.last_event == event2
+        assert account.events == [event1, event2]
+        assert account.event_count == 2
+        assert account.balance_total(BTC) == Money(9.00000000, BTC)
+        assert account.balance_free(BTC) == Money(8.50000000, BTC)
+        assert account.balance_locked(BTC) == Money(0.50000000, BTC)
+        assert account.balance_total(ETH) == Money(20.00000000, ETH)
+        assert account.balance_free(ETH) == Money(20.00000000, ETH)
+        assert account.balance_locked(ETH) == Money(0.00000000, ETH)
 
     def test_update_initial_margin(self):
         # Arrange
@@ -351,8 +349,8 @@ class AccountTests(unittest.TestCase):
         account.update_initial_margin(margin)
 
         # Assert
-        self.assertEqual(margin, account.initial_margin(BTC))
-        self.assertEqual({BTC: margin}, account.initial_margins())
+        assert account.initial_margin(BTC) == margin
+        assert account.initial_margins() == {BTC: margin}
 
     def test_update_maint_margin(self):
         # Arrange
@@ -394,8 +392,8 @@ class AccountTests(unittest.TestCase):
         account.update_maint_margin(margin)
 
         # Assert
-        self.assertEqual(margin, account.maint_margin(BTC))
-        self.assertEqual({BTC: margin}, account.maint_margins())
+        assert account.maint_margin(BTC) == margin
+        assert account.maint_margins() == {BTC: margin}
 
     def test_unrealized_pnl_with_single_asset_account_when_no_open_positions_returns_zero(
         self,
@@ -430,7 +428,7 @@ class AccountTests(unittest.TestCase):
         result = account.unrealized_pnl()
 
         # Assert
-        self.assertEqual(Money(0, USD), result)
+        assert result == Money(0, USD)
 
     def test_unrealized_pnl_with_multi_asset_account_when_no_open_positions_returns_zero(
         self,
@@ -471,7 +469,7 @@ class AccountTests(unittest.TestCase):
         result = account.unrealized_pnl(BTC)
 
         # Assert
-        self.assertEqual(Money(0.00000000, BTC), result)
+        assert result == Money(0.00000000, BTC)
 
     def test_equity_with_single_asset_account_no_default_returns_none(self):
         # Arrange
@@ -504,7 +502,7 @@ class AccountTests(unittest.TestCase):
         result = account.equity(BTC)
 
         # Assert
-        self.assertIsNone(result)
+        assert result is None
 
     def test_equity_with_single_asset_account_returns_expected_money(self):
         # Arrange
@@ -537,7 +535,7 @@ class AccountTests(unittest.TestCase):
         result = account.equity()
 
         # Assert
-        self.assertEqual(Money(100000.00, USD), result)
+        assert result == Money(100000.00, USD)
 
     def test_equity_with_multi_asset_account_returns_expected_money(self):
         # Arrange
@@ -576,7 +574,7 @@ class AccountTests(unittest.TestCase):
         result = account.equity(BTC)
 
         # Assert
-        self.assertEqual(Money(10.00000000, BTC), result)
+        assert result == Money(10.00000000, BTC)
 
     def test_margin_available_for_single_asset_account(self):
         # Arrange
@@ -613,9 +611,9 @@ class AccountTests(unittest.TestCase):
         result3 = account.margin_available()
 
         # Assert
-        self.assertEqual(Money(100000.00, USD), result1)
-        self.assertEqual(Money(99500.00, USD), result2)
-        self.assertEqual(Money(98500.00, USD), result3)
+        assert result1 == Money(100000.00, USD)
+        assert result2 == Money(99500.00, USD)
+        assert result3 == Money(98500.00, USD)
 
     def test_margin_available_for_multi_asset_account(self):
         # Arrange
@@ -659,10 +657,10 @@ class AccountTests(unittest.TestCase):
         result4 = account.margin_available(ETH)
 
         # Assert
-        self.assertEqual(Money(10.00000000, BTC), result1)
-        self.assertEqual(Money(9.99990000, BTC), result2)
-        self.assertEqual(Money(9.99970000, BTC), result3)
-        self.assertEqual(Money(20.00000000, ETH), result4)
+        assert result1 == Money(10.00000000, BTC)
+        assert result2 == Money(9.99990000, BTC)
+        assert result3 == Money(9.99970000, BTC)
+        assert result4 == Money(20.00000000, ETH)
 
     def test_calculate_pnls_for_single_currency_cash_account(self):
         # Arrange
