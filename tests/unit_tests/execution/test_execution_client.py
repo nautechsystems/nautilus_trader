@@ -201,26 +201,3 @@ class ExecutionClientTests(unittest.TestCase):
 
         # Assert
         self.assertRaises(NotImplementedError, self.client.cancel_order, command)
-
-    # TODO: WIP
-    # def test_handle_event_sends_to_execution_engine(self):
-    #     # Arrange
-    #     order = self.order_factory.market(
-    #         AUDUSD_SIM.id,
-    #         OrderSide.BUY,
-    #         Quantity.from_int(100000),
-    #     )
-    #
-    #     fill = TestStubs.event_order_filled(
-    #         order,
-    #         AUDUSD_SIM,
-    #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S-001"),
-    #         last_px=Price.from_str("1.00001"),
-    #     )
-    #
-    #     # Act
-    #     self.client._handle_event_py(fill)  # Accessing protected method
-    #
-    #     # Assert
-    #     self.assertEqual(1, self.exec_engine.event_count)
