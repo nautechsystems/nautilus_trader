@@ -54,7 +54,7 @@ class TickTock(TradingStrategy):
 
         self.instrument = instrument
         self.bar_type = bar_type
-        self.store = []
+        self.store = []  # type: list[object]
         self.timer_running = False
         self.time_alert_counter = 0
 

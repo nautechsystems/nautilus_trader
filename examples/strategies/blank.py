@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from typing import Dict
 
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.bar import Bar
@@ -146,7 +147,7 @@ class MyStrategy(TradingStrategy):
         """
         pass
 
-    def on_save(self) -> {}:
+    def on_save(self) -> Dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -160,7 +161,7 @@ class MyStrategy(TradingStrategy):
         """
         return {}
 
-    def on_load(self, state: {}):
+    def on_load(self, state: Dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 
