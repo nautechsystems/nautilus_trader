@@ -13,9 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from cpython.datetime cimport timedelta
 
 import asyncio
+from asyncio import Task
 from collections import defaultdict
 import platform
 from platform import python_version
@@ -518,6 +521,7 @@ cdef class LiveLogger(Logger):
     """
     Provides a high-performance logger which runs on the event loop.
     """
+    _sentinel = None
 
     def __init__(
         self,
@@ -564,11 +568,22 @@ cdef class LiveLogger(Logger):
 
         self._loop = loop
         self._queue = Queue(maxsize=maxsize)
-        self._run_task = None
+        self._run_task: Optional[Task] = None
         self._blocked_log_interval = timedelta(seconds=1)
 
         self.is_running = False
-        self.last_blocked = None
+        self.last_blocked: Optional[datetime] = None
+
+    def get_run_task(self) -> asyncio.Task:
+        """
+        Return the internal run queue task for the engine.
+
+        Returns
+        -------
+        asyncio.Task
+
+        """
+        return self._run_task
 
     cdef void log_c(self, dict record) except *:
         """
@@ -649,16 +664,25 @@ cdef class LiveLogger(Logger):
 
         """
         if self._run_task:
-            self._run_task.cancel()
-        self.is_running = False
+            self.is_running = False
+            self._enqueue_sentinel()
 
     async def _consume_messages(self):
+        cdef dict record
         try:
-            while True:
-                self._log(await self._queue.get())
+            while self.is_running:
+                record = await self._queue.get()
+                if record is None:  # Sentinel message (fast C-level check)
+                    continue        # Returns to the top to check `self.is_running`
+                self._log(record)
         except asyncio.CancelledError:
             pass
         finally:
             # Pass remaining messages directly to the base class
             while not self._queue.empty():
-                self._log(self._queue.get_nowait())
+                record = self._queue.get_nowait()
+                if record:
+                    self._log(record)
+
+    cdef void _enqueue_sentinel(self) except *:
+        self._queue.put_nowait(self._sentinel)

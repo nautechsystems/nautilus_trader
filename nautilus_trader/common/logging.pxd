@@ -109,3 +109,4 @@ cdef class LiveLogger(Logger):
 
     cpdef void start(self) except *
     cpdef void stop(self) except *
+    cdef void _enqueue_sentinel(self) except *
