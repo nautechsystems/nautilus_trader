@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-from parameterized import parameterized
+import pytest
 
 from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.currencies import AUD
@@ -462,12 +462,13 @@ class TestCache:
         # Assert
         assert result == Price.from_str("1.00000")
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "price_type,expected",
         [
             [PriceType.BID, Price.from_str("1.00000")],
             [PriceType.ASK, Price.from_str("1.00001")],
             [PriceType.MID, Price.from_str("1.000005")],
-        ]
+        ],
     )
     def test_price_given_various_quote_price_types_when_quote_tick_returns_expected_price(
         self, price_type, expected
