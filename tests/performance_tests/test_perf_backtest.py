@@ -13,11 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import cProfile
 from datetime import datetime
 from decimal import Decimal
 import os
-import pstats
 
 import pandas as pd
 import pytz
@@ -47,48 +45,43 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
-    def test_run_with_empty_strategy():
-        # Arrange
-        engine = BacktestEngine(bypass_logging=True)
+    def test_run_with_empty_strategy(benchmark):
+        def setup():
+            # Arrange
+            engine = BacktestEngine(bypass_logging=True)
 
-        engine.add_instrument(USDJPY_SIM)
-        engine.add_bars(
-            USDJPY_SIM.id,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-            TestDataProvider.usdjpy_1min_bid(),
-        )
-        engine.add_bars(
-            USDJPY_SIM.id,
-            BarAggregation.MINUTE,
-            PriceType.ASK,
-            TestDataProvider.usdjpy_1min_ask(),
-        )
+            engine.add_instrument(USDJPY_SIM)
+            engine.add_bars(
+                USDJPY_SIM.id,
+                BarAggregation.MINUTE,
+                PriceType.BID,
+                TestDataProvider.usdjpy_1min_bid(),
+            )
+            engine.add_bars(
+                USDJPY_SIM.id,
+                BarAggregation.MINUTE,
+                PriceType.ASK,
+                TestDataProvider.usdjpy_1min_ask(),
+            )
 
-        engine.add_venue(
-            venue=Venue("SIM"),
-            venue_type=VenueType.BROKERAGE,
-            oms_type=OMSType.HEDGING,
-            account_type=AccountType.MARGIN,
-            base_currency=USD,
-            starting_balances=[Money(1_000_000, USD)],
-            fill_model=FillModel(),
-        )
+            engine.add_venue(
+                venue=Venue("SIM"),
+                venue_type=VenueType.BROKERAGE,
+                oms_type=OMSType.HEDGING,
+                account_type=AccountType.MARGIN,
+                base_currency=USD,
+                starting_balances=[Money(1_000_000, USD)],
+                fill_model=FillModel(),
+            )
+            strategies = [TradingStrategy("001")]
+            start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
+            stop = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
+            return (engine, start, stop, strategies), {}
 
-        strategies = [TradingStrategy("001")]
+        def run(engine, start, stop, strategies):
+            engine.run(start=start, stop=stop, strategies=strategies)
 
-        start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
-        stop = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
-
-        stats_file = "perf_stats_backtest_run_empty.prof"
-        cProfile.runctx(
-            "engine.run(start, stop, strategies=strategies)",
-            globals(),
-            locals(),
-            stats_file,
-        )
-        s = pstats.Stats(stats_file)
-        s.strip_dirs().sort_stats("time").print_stats()
+        benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=5)
 
         # to datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
         #          3490226 function calls in 0.623 seconds
@@ -106,108 +99,102 @@ class TestBacktestEnginePerformance(PerformanceHarness):
         # 10/02/20   713938 function calls (713572 primitive calls) in 2.670 seconds (something changed)
 
     @staticmethod
-    def test_run_for_tick_processing():
-        # Arrange
-        engine = BacktestEngine(bypass_logging=True)
+    def test_run_for_tick_processing(benchmark):
+        def setup():
+            engine = BacktestEngine(bypass_logging=True)
 
-        engine.add_instrument(USDJPY_SIM)
-        engine.add_bars(
-            USDJPY_SIM.id,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-            TestDataProvider.usdjpy_1min_bid(),
-        )
-        engine.add_bars(
-            USDJPY_SIM.id,
-            BarAggregation.MINUTE,
-            PriceType.ASK,
-            TestDataProvider.usdjpy_1min_ask(),
-        )
+            engine.add_instrument(USDJPY_SIM)
+            engine.add_bars(
+                USDJPY_SIM.id,
+                BarAggregation.MINUTE,
+                PriceType.BID,
+                TestDataProvider.usdjpy_1min_bid(),
+            )
+            engine.add_bars(
+                USDJPY_SIM.id,
+                BarAggregation.MINUTE,
+                PriceType.ASK,
+                TestDataProvider.usdjpy_1min_ask(),
+            )
 
-        engine.add_venue(
-            venue=Venue("SIM"),
-            venue_type=VenueType.BROKERAGE,
-            oms_type=OMSType.HEDGING,
-            account_type=AccountType.MARGIN,
-            base_currency=USD,
-            starting_balances=[Money(1_000_000, USD)],
-        )
+            engine.add_venue(
+                venue=Venue("SIM"),
+                venue_type=VenueType.BROKERAGE,
+                oms_type=OMSType.HEDGING,
+                account_type=AccountType.MARGIN,
+                base_currency=USD,
+                starting_balances=[Money(1_000_000, USD)],
+            )
 
-        strategy = EMACross(
-            instrument_id=USDJPY_SIM.id,
-            bar_spec=TestStubs.bar_spec_1min_bid(),
-            trade_size=Decimal(1_000_000),
-            fast_ema=10,
-            slow_ema=20,
-        )
+            strategy = EMACross(
+                instrument_id=USDJPY_SIM.id,
+                bar_spec=TestStubs.bar_spec_1min_bid(),
+                trade_size=Decimal(1_000_000),
+                fast_ema=10,
+                slow_ema=20,
+            )
 
-        start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
-        stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
+            start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+            stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-        stats_file = "perf_stats_tick_processing.prof"
-        cProfile.runctx(
-            "engine.run(start, stop, strategies=[strategy])",
-            globals(),
-            locals(),
-            stats_file,
-        )
-        s = pstats.Stats(stats_file)
-        s.strip_dirs().sort_stats("time").print_stats()
+            return (engine, start, stop, strategy), {}
+
+        def run(engine, start, stop, strategy):
+            engine.run(start=start, stop=stop, strategies=[strategy])
+
+        benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=5)
 
     @staticmethod
-    def test_run_with_ema_cross_strategy():
-        # Arrange
-        engine = BacktestEngine(bypass_logging=True)
+    def test_run_with_ema_cross_strategy(benchmark):
+        def setup():
+            engine = BacktestEngine(bypass_logging=True)
 
-        engine.add_instrument(USDJPY_SIM)
-        engine.add_bars(
-            USDJPY_SIM.id,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-            TestDataProvider.usdjpy_1min_bid(),
-        )
-        engine.add_bars(
-            USDJPY_SIM.id,
-            BarAggregation.MINUTE,
-            PriceType.ASK,
-            TestDataProvider.usdjpy_1min_ask(),
-        )
+            engine.add_instrument(USDJPY_SIM)
+            engine.add_bars(
+                USDJPY_SIM.id,
+                BarAggregation.MINUTE,
+                PriceType.BID,
+                TestDataProvider.usdjpy_1min_bid(),
+            )
+            engine.add_bars(
+                USDJPY_SIM.id,
+                BarAggregation.MINUTE,
+                PriceType.ASK,
+                TestDataProvider.usdjpy_1min_ask(),
+            )
 
-        interest_rate_data = pd.read_csv(
-            os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
-        )
-        fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
+            interest_rate_data = pd.read_csv(
+                os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
+            )
+            fx_rollover_interest = FXRolloverInterestModule(rate_data=interest_rate_data)
 
-        engine.add_venue(
-            venue=Venue("SIM"),
-            venue_type=VenueType.BROKERAGE,
-            oms_type=OMSType.HEDGING,
-            account_type=AccountType.MARGIN,
-            base_currency=USD,
-            starting_balances=[Money(1_000_000, USD)],
-            modules=[fx_rollover_interest],
-        )
+            engine.add_venue(
+                venue=Venue("SIM"),
+                venue_type=VenueType.BROKERAGE,
+                oms_type=OMSType.HEDGING,
+                account_type=AccountType.MARGIN,
+                base_currency=USD,
+                starting_balances=[Money(1_000_000, USD)],
+                modules=[fx_rollover_interest],
+            )
 
-        strategy = EMACross(
-            instrument_id=USDJPY_SIM.id,
-            bar_spec=TestStubs.bar_spec_1min_bid(),
-            trade_size=Decimal(1_000_000),
-            fast_ema=10,
-            slow_ema=20,
-        )
+            strategy = EMACross(
+                instrument_id=USDJPY_SIM.id,
+                bar_spec=TestStubs.bar_spec_1min_bid(),
+                trade_size=Decimal(1_000_000),
+                fast_ema=10,
+                slow_ema=20,
+            )
 
-        start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
-        stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+            start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+            stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-        stats_file = "perf_stats_backtest_run_ema.prof"
-        cProfile.runctx(
-            "engine.run(start, stop, strategies=[strategy])",
-            globals(),
-            locals(),
-            stats_file,
-        )
-        s = pstats.Stats(stats_file)
-        s.strip_dirs().sort_stats("time").print_stats()
+            return (engine, start, stop, strategy), {}
+
+        def run(engine, start, stop, strategies):
+            engine.run(start=start, stop=stop, strategies=strategies)
+
+        benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=5)
 
         # 05/10/20 Change to simple EMA Cross - 1 month.
         # start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
