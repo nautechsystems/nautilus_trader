@@ -26,11 +26,8 @@ cdef class LiveDataEngine(DataEngine):
 
     cdef readonly bint is_running
 
-    cpdef object get_event_loop(self)
-    cpdef object get_run_queue_task(self)
     cpdef int data_qsize(self) except *
     cpdef int message_qsize(self) except *
 
     cpdef void kill(self) except *
-
-    cdef void _enqueue_sentinels(self)
+    cdef void _enqueue_sentinels(self) except *

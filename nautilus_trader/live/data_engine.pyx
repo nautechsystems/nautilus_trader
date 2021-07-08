@@ -81,7 +81,7 @@ cdef class LiveDataEngine(DataEngine):
         self._run_queues_task = None
         self.is_running = False
 
-    cpdef object get_event_loop(self):
+    def get_event_loop(self) -> asyncio.AbstractEventLoop:
         """
         Return the internal event loop for the engine.
 
@@ -92,7 +92,7 @@ cdef class LiveDataEngine(DataEngine):
         """
         return self._loop
 
-    cpdef object get_run_queue_task(self):
+    def get_run_queue_task(self) -> asyncio.Task:
         """
         Return the internal run queue task for the engine.
 
@@ -323,7 +323,7 @@ cdef class LiveDataEngine(DataEngine):
                     f"Message queue processing stopped (qsize={self.message_qsize()}).",
                 )
 
-    cdef void _enqueue_sentinels(self):
+    cdef void _enqueue_sentinels(self) except *:
         self._data_queue.put_nowait(self._sentinel)
         self._message_queue.put_nowait(self._sentinel)
         self._log.debug(f"Sentinel message placed on data queue.")
