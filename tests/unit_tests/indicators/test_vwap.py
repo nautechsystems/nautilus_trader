@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import timedelta
-import unittest
 
 from nautilus_trader.indicators.vwap import VolumeWeightedAveragePrice
 from tests.test_kit.providers import TestInstrumentProvider
@@ -25,26 +24,26 @@ from tests.test_kit.stubs import UNIX_EPOCH
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class VolumeWeightedAveragePriceTests(unittest.TestCase):
-    def setUp(self):
+class TestVolumeWeightedAveragePrice:
+    def setup(self):
         # Fixture Setup
         self.vwap = VolumeWeightedAveragePrice()
 
     def test_name_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual("VolumeWeightedAveragePrice", self.vwap.name)
+        assert self.vwap.name == "VolumeWeightedAveragePrice"
 
     def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual("VolumeWeightedAveragePrice()", str(self.vwap))
-        self.assertEqual("VolumeWeightedAveragePrice()", repr(self.vwap))
+        assert str(self.vwap) == "VolumeWeightedAveragePrice()"
+        assert repr(self.vwap) == "VolumeWeightedAveragePrice()"
 
     def test_initialized_without_inputs_returns_false(self):
         # Act
         # Assert
-        self.assertEqual(False, self.vwap.initialized)
+        assert self.vwap.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -52,7 +51,7 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
         self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(True, self.vwap.initialized)
+        assert self.vwap.initialized is True
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -64,8 +63,8 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00003, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00003
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -73,7 +72,7 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.00000, self.vwap.value)
+        assert self.vwap.value == 1.00000
 
     def test_values_with_higher_inputs_returns_expected_value(self):
         # Arrange
@@ -90,7 +89,7 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
         self.vwap.update_raw(1.00090, 19000, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(1.0005076923076923, self.vwap.value)
+        assert self.vwap.value == 1.0005076923076923
 
     def test_values_with_all_lower_inputs_returns_expected_value(self):
         # Arrange
@@ -107,7 +106,7 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
         self.vwap.update_raw(1.00010, 11000, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(1.0006032258064514, self.vwap.value)
+        assert self.vwap.value == 1.0006032258064514
 
     def test_new_day_resets_values(self):
         # Arrange
@@ -125,7 +124,7 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
         self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH + timedelta(1))
 
         # Assert
-        self.assertEqual(1.00000, self.vwap.value)
+        assert self.vwap.value == 1.00000
 
     def test_new_day_with_first_volume_zero_returns_price_as_value(self):
         # Arrange
@@ -134,7 +133,7 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
         self.vwap.update_raw(1.00000, 0, UNIX_EPOCH + timedelta(1))
 
         # Assert
-        self.assertEqual(1.00000, self.vwap.value)
+        assert self.vwap.value == 1.00000
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -145,5 +144,5 @@ class VolumeWeightedAveragePriceTests(unittest.TestCase):
         self.vwap.reset()
 
         # Assert
-        self.assertFalse(self.vwap.initialized)
-        self.assertEqual(0, self.vwap.value)
+        assert not self.vwap.initialized
+        assert self.vwap.value == 0

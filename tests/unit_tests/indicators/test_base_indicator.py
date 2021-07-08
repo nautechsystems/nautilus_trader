@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.indicators.base.indicator import Indicator
 from tests.test_kit.providers import TestInstrumentProvider
@@ -23,7 +23,7 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class IndicatorTests(unittest.TestCase):
+class TestIndicator:
     def test_handle_quote_tick_raises_not_implemented_error(self):
         # Arrange
         indicator = Indicator([])
@@ -32,7 +32,8 @@ class IndicatorTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, indicator.handle_quote_tick, tick)
+        with pytest.raises(NotImplementedError):
+            indicator.handle_quote_tick(tick)
 
     def test_handle_trade_tick_raises_not_implemented_error(self):
         # Arrange
@@ -42,7 +43,8 @@ class IndicatorTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, indicator.handle_trade_tick, tick)
+        with pytest.raises(NotImplementedError):
+            indicator.handle_trade_tick(tick)
 
     def test_handle_bar_raises_not_implemented_error(self):
         # Arrange
@@ -52,7 +54,8 @@ class IndicatorTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, indicator.handle_bar, bar)
+        with pytest.raises(NotImplementedError):
+            indicator.handle_bar(bar)
 
     def test_reset_raises_not_implemented_error(self):
         # Arrange
@@ -60,4 +63,5 @@ class IndicatorTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, indicator.reset)
+        with pytest.raises(NotImplementedError):
+            indicator.reset()

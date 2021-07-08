@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.bollinger_bands import BollingerBands
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -23,14 +21,14 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class BollingerBandsTests(unittest.TestCase):
+class TestBollingerBands:
     def test_name_returns_expected_name(self):
         # Arrange
         indicator = BollingerBands(20, 2.0)
 
         # Act
         # Assert
-        self.assertEqual("BollingerBands", indicator.name)
+        assert indicator.name == "BollingerBands"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
@@ -38,8 +36,8 @@ class BollingerBandsTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual("BollingerBands(20, 2.0, SIMPLE)", str(indicator))
-        self.assertEqual("BollingerBands(20, 2.0, SIMPLE)", repr(indicator))
+        assert str(indicator) == "BollingerBands(20, 2.0, SIMPLE)"
+        assert repr(indicator) == "BollingerBands(20, 2.0, SIMPLE)"
 
     def test_properties_after_instantiation(self):
         # Arrange
@@ -47,11 +45,11 @@ class BollingerBandsTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(20, indicator.period)
-        self.assertEqual(2.0, indicator.k)
-        self.assertEqual(0, indicator.upper)
-        self.assertEqual(0, indicator.lower)
-        self.assertEqual(0, indicator.middle)
+        assert indicator.period == 20
+        assert indicator.k == 2.0
+        assert indicator.upper == 0
+        assert indicator.lower == 0
+        assert indicator.middle == 0
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -65,7 +63,7 @@ class BollingerBandsTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(True, indicator.initialized)
+        assert indicator.initialized is True
 
     def test_handle_quote_tick_updates_indicator(self):
         # Arrange
@@ -77,8 +75,8 @@ class BollingerBandsTests(unittest.TestCase):
         indicator.handle_quote_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.1666916666666667, indicator.middle)
+        assert indicator.has_inputs
+        assert indicator.middle == 1.1666916666666667
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
@@ -90,8 +88,8 @@ class BollingerBandsTests(unittest.TestCase):
         indicator.handle_trade_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00001, indicator.middle)
+        assert indicator.has_inputs
+        assert indicator.middle == 1.00001
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -103,8 +101,8 @@ class BollingerBandsTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.0000266666666666, indicator.middle)
+        assert indicator.has_inputs
+        assert indicator.middle == 1.0000266666666666
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -114,9 +112,9 @@ class BollingerBandsTests(unittest.TestCase):
         indicator.update_raw(1.00020, 1.00000, 1.00010)
 
         # Assert
-        self.assertEqual(1.00010, indicator.upper)
-        self.assertEqual(1.00010, indicator.middle)
-        self.assertEqual(1.00010, indicator.lower)
+        assert indicator.upper == 1.00010
+        assert indicator.middle == 1.00010
+        assert indicator.lower == 1.00010
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
@@ -128,9 +126,9 @@ class BollingerBandsTests(unittest.TestCase):
         indicator.update_raw(1.00040, 1.00020, 1.00021)
 
         # Assert
-        self.assertEqual(1.0003155506390384, indicator.upper)
-        self.assertEqual(1.0001900000000001, indicator.middle)
-        self.assertEqual(1.0000644493609618, indicator.lower)
+        assert indicator.upper == 1.0003155506390384
+        assert indicator.middle == 1.0001900000000001
+        assert indicator.lower == 1.0000644493609618
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -146,7 +144,7 @@ class BollingerBandsTests(unittest.TestCase):
         indicator.reset()
 
         # Assert
-        self.assertFalse(indicator.initialized)
-        self.assertEqual(0, indicator.upper)
-        self.assertEqual(0, indicator.middle)
-        self.assertEqual(0, indicator.lower)
+        assert not indicator.initialized
+        assert indicator.upper == 0
+        assert indicator.middle == 0
+        assert indicator.lower == 0
