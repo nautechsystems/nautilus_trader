@@ -15,7 +15,6 @@
 
 from decimal import Decimal
 
-from parameterized import parameterized
 import pytest
 
 from nautilus_trader.common.clock import TestClock
@@ -66,11 +65,12 @@ class TestPosition:
         with pytest.raises(ValueError):
             Position.side_from_order_side(0)
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "order_side,expected",
         [
             [OrderSide.BUY, PositionSide.LONG],
             [OrderSide.SELL, PositionSide.SHORT],
-        ]
+        ],
     )
     def test_side_from_order_side_given_valid_sides_returns_expected_side(
         self, order_side, expected
