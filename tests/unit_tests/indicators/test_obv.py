@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.obv import OnBalanceVolume
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -23,8 +21,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class OnBalanceVolumeTests(unittest.TestCase):
-    def setUp(self):
+class TestOnBalanceVolume:
+    def setup(self):
         # Fixture Setup
         self.obv = OnBalanceVolume(100)
 
@@ -32,26 +30,26 @@ class OnBalanceVolumeTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("OnBalanceVolume", self.obv.name)
+        assert self.obv.name == "OnBalanceVolume"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("OnBalanceVolume(100)", str(self.obv))
-        self.assertEqual("OnBalanceVolume(100)", repr(self.obv))
+        assert str(self.obv) == "OnBalanceVolume(100)"
+        assert repr(self.obv) == "OnBalanceVolume(100)"
 
     def test_period_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(100, self.obv.period)
+        assert self.obv.period == 100
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.obv.initialized)
+        assert self.obv.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -60,7 +58,7 @@ class OnBalanceVolumeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(True, self.obv.initialized)
+        assert self.obv.initialized is True
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -72,8 +70,8 @@ class OnBalanceVolumeTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1000000, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1000000
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -81,7 +79,7 @@ class OnBalanceVolumeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(10000, self.obv.value)
+        assert self.obv.value == 10000
 
     def test_values_with_higher_inputs_returns_expected_value(self):
         # Arrange
@@ -98,7 +96,7 @@ class OnBalanceVolumeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(90000.0, self.obv.value)
+        assert self.obv.value == 90000.0
 
     def test_values_with_lower_inputs_returns_expected_value(self):
         # Arrange
@@ -115,7 +113,7 @@ class OnBalanceVolumeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(-90000.0, self.obv.value)
+        assert self.obv.value == -90000.0
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -126,4 +124,4 @@ class OnBalanceVolumeTests(unittest.TestCase):
         self.obv.reset()
 
         # Assert
-        self.assertFalse(self.obv.initialized)
+        assert not self.obv.initialized

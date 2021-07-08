@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
@@ -26,8 +26,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class WeightedMovingAverageTests(unittest.TestCase):
-    def setUp(self):
+class TestWeightedMovingAverage:
+    def setup(self):
         # Fixture Setup
         self.w = [round(i * 0.1, 2) for i in range(1, 11)]
         self.wma = WeightedMovingAverage(10, self.w)
@@ -40,27 +40,21 @@ class WeightedMovingAverageTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("WeightedMovingAverage", self.wma.name)
+        assert self.wma.name == "WeightedMovingAverage"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
         weights_repr = repr(self.wma.weights)
-        self.assertEqual(
-            f"WeightedMovingAverage(10, {weights_repr})",
-            str(self.wma),
-        )
-        self.assertEqual(
-            f"WeightedMovingAverage(10, {weights_repr})",
-            repr(self.wma),
-        )
+        assert str(self.wma) == f"WeightedMovingAverage(10, {weights_repr})"
+        assert repr(self.wma) == f"WeightedMovingAverage(10, {weights_repr})"
 
     def test_weights_returns_expected_weights(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(self.w, list(self.wma.weights))
+        assert list(self.wma.weights) == self.w
 
     def test_wma_factory_update_raw(self):
         # Arrange
@@ -69,8 +63,8 @@ class WeightedMovingAverageTests(unittest.TestCase):
             self.wma_factory.update_raw(float(i))
 
         # Assert
-        self.assertEqual(8.0, self.wma_factory.value)
-        self.assertEqual(list(self.w), list(self.wma_factory.weights))
+        assert self.wma_factory.value == 8.0
+        assert list(self.wma_factory.weights) == list(self.w)
 
     def test_handle_quote_tick_updates_indicator(self):
         # Arrange
@@ -82,8 +76,8 @@ class WeightedMovingAverageTests(unittest.TestCase):
         indicator.handle_quote_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00002, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00002
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
@@ -95,8 +89,8 @@ class WeightedMovingAverageTests(unittest.TestCase):
         indicator.handle_trade_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00001, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00001
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -108,8 +102,8 @@ class WeightedMovingAverageTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00003, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00003
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -117,7 +111,7 @@ class WeightedMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.0, self.wma.value)
+        assert self.wma.value == 1.0
 
     def test_value_with_two_input_returns_expected_value(self):
         # Arrange
@@ -128,7 +122,7 @@ class WeightedMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual((10 * 1.0 + 1 * 0.9) / 1.9, self.wma.value)
+        assert self.wma.value == (10 * 1.0 + 1 * 0.9) / 1.9
 
     def test_value_with_no_weights(self):
         # Arrange
@@ -137,7 +131,7 @@ class WeightedMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.5, self.wma_noweights.value)
+        assert self.wma_noweights.value == 1.5
 
     def test_value_with_ten_inputs_returns_expected_value(self):
         # Arrange
@@ -154,7 +148,7 @@ class WeightedMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertAlmostEqual(7.00, self.wma.value, 2)
+        assert self.wma.value == pytest.approx(7.00, 2)
 
     def test_value_at_returns_expected_value(self):
         # Arrange
@@ -172,7 +166,7 @@ class WeightedMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(8.0, self.wma.value)
+        assert self.wma.value == 8.0
 
     def test_reset(self):
         # Arrange
@@ -184,5 +178,5 @@ class WeightedMovingAverageTests(unittest.TestCase):
         self.wma.reset()
 
         # Assert
-        self.assertFalse(self.wma.initialized)
-        self.assertEqual(0, self.wma.value)
+        assert not self.wma.initialized
+        assert self.wma.value == 0
