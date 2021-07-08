@@ -246,7 +246,6 @@ cdef class LiveDataEngine(DataEngine):
 
         """
         Condition.not_none(response, "response")
-        # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
             self._message_queue.put_nowait(response)

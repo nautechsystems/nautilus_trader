@@ -299,7 +299,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         """
         Condition.not_none(event, "event")
-        # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
             self._queue.put_nowait(event)
