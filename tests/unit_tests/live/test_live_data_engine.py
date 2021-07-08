@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import unittest
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
@@ -44,8 +43,8 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-class LiveDataEngineTests(unittest.TestCase):
-    def setUp(self):
+class TestLiveDataEngine:
+    def setup(self):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
@@ -72,7 +71,7 @@ class LiveDataEngineTests(unittest.TestCase):
             logger=self.logger,
         )
 
-    def tearDown(self):
+    def teardown(self):
         self.engine.dispose()
         self.loop.stop()
         self.loop.close()
@@ -83,7 +82,7 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine.start()
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        assert True  # No exceptions raised
         self.engine.stop()
 
     def test_message_qsize_at_max_blocks_on_put_data_command(self):
@@ -110,8 +109,8 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine.execute(subscribe)
 
         # Assert
-        self.assertEqual(1, self.engine.message_qsize())
-        self.assertEqual(0, self.engine.command_count)
+        assert self.engine.message_qsize() == 1
+        assert self.engine.command_count == 0
 
     def test_message_qsize_at_max_blocks_on_send_request(self):
         # Arrange
@@ -146,8 +145,8 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine.send(request)
 
         # Assert
-        self.assertEqual(1, self.engine.message_qsize())
-        self.assertEqual(0, self.engine.command_count)
+        assert self.engine.message_qsize() == 1
+        assert self.engine.command_count == 0
 
     def test_message_qsize_at_max_blocks_on_receive_response(self):
         # Arrange
@@ -174,8 +173,8 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine.receive(response)  # Add over max size
 
         # Assert
-        self.assertEqual(1, self.engine.message_qsize())
-        self.assertEqual(0, self.engine.command_count)
+        assert self.engine.message_qsize() == 1
+        assert self.engine.command_count == 0
 
     def test_data_qsize_at_max_blocks_on_put_data(self):
         # Arrange
@@ -195,8 +194,8 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine.process(data)  # Add over max size
 
         # Assert
-        self.assertEqual(1, self.engine.data_qsize())
-        self.assertEqual(0, self.engine.data_count)
+        assert self.engine.data_qsize() == 1
+        assert self.engine.data_count == 0
 
     def test_get_event_loop_returns_expected_loop(self):
         # Arrange
@@ -204,7 +203,7 @@ class LiveDataEngineTests(unittest.TestCase):
         loop = self.engine.get_event_loop()
 
         # Assert
-        self.assertEqual(self.loop, loop)
+        assert loop == self.loop
 
     def test_start(self):
         async def run_test():
@@ -214,7 +213,7 @@ class LiveDataEngineTests(unittest.TestCase):
             await asyncio.sleep(0.1)
 
             # Assert
-            self.assertEqual(ComponentState.RUNNING, self.engine.state)
+            assert self.engine.state == ComponentState.RUNNING
 
             # Tear Down
             self.engine.stop()
@@ -230,7 +229,7 @@ class LiveDataEngineTests(unittest.TestCase):
             self.engine.kill()
 
             # Assert
-            self.assertEqual(ComponentState.STOPPED, self.engine.state)
+            assert self.engine.state == ComponentState.STOPPED
 
         self.loop.run_until_complete(run_test())
 
@@ -241,7 +240,7 @@ class LiveDataEngineTests(unittest.TestCase):
             self.engine.kill()
 
             # Assert
-            self.assertEqual(0, self.engine.data_qsize())
+            assert self.engine.data_qsize() == 0
 
         self.loop.run_until_complete(run_test())
 
@@ -263,8 +262,8 @@ class LiveDataEngineTests(unittest.TestCase):
             await asyncio.sleep(0.1)
 
             # Assert
-            self.assertEqual(0, self.engine.message_qsize())
-            self.assertEqual(1, self.engine.command_count)
+            assert self.engine.message_qsize() == 0
+            assert self.engine.command_count == 1
 
             # Tear Down
             self.engine.stop()
@@ -298,8 +297,8 @@ class LiveDataEngineTests(unittest.TestCase):
             await asyncio.sleep(0.1)
 
             # Assert
-            self.assertEqual(0, self.engine.message_qsize())
-            self.assertEqual(1, self.engine.request_count)
+            assert self.engine.message_qsize() == 0
+            assert self.engine.request_count == 1
 
             # Tear Down
             self.engine.stop()
@@ -325,8 +324,8 @@ class LiveDataEngineTests(unittest.TestCase):
             await asyncio.sleep(0.1)
 
             # Assert
-            self.assertEqual(0, self.engine.message_qsize())
-            self.assertEqual(1, self.engine.response_count)
+            assert self.engine.message_qsize() == 0
+            assert self.engine.response_count == 1
 
             # Tear Down
             self.engine.stop()
@@ -346,8 +345,8 @@ class LiveDataEngineTests(unittest.TestCase):
             await asyncio.sleep(0.1)
 
             # Assert
-            self.assertEqual(0, self.engine.data_qsize())
-            self.assertEqual(1, self.engine.data_count)
+            assert self.engine.data_qsize() == 0
+            assert self.engine.data_count == 1
 
             # Tear Down
             self.engine.stop()

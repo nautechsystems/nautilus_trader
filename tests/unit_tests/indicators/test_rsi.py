@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.rsi import RelativeStrengthIndex
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -23,8 +21,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class RelativeStrengthIndexTests(unittest.TestCase):
-    def setUp(self):
+class TestRelativeStrengthIndex:
+    def setup(self):
         # Fixture Setup
         self.rsi = RelativeStrengthIndex(10)
 
@@ -32,26 +30,26 @@ class RelativeStrengthIndexTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("RelativeStrengthIndex", self.rsi.name)
+        assert self.rsi.name == "RelativeStrengthIndex"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("RelativeStrengthIndex(10, EXPONENTIAL)", str(self.rsi))
-        self.assertEqual("RelativeStrengthIndex(10, EXPONENTIAL)", repr(self.rsi))
+        assert str(self.rsi) == "RelativeStrengthIndex(10, EXPONENTIAL)"
+        assert repr(self.rsi) == "RelativeStrengthIndex(10, EXPONENTIAL)"
 
     def test_period_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(10, self.rsi.period)
+        assert self.rsi.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.rsi.initialized)
+        assert self.rsi.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -68,7 +66,7 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(True, self.rsi.initialized)
+        assert self.rsi.initialized is True
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -80,8 +78,8 @@ class RelativeStrengthIndexTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.0, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.0
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -89,7 +87,7 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1, self.rsi.value)
+        assert self.rsi.value == 1
 
     def test_value_with_all_higher_inputs_returns_expected_value(self):
         # Arrange
@@ -100,7 +98,7 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1, self.rsi.value)
+        assert self.rsi.value == 1
 
     def test_value_with_all_lower_inputs_returns_expected_value(self):
         # Arrange
@@ -111,7 +109,7 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0, self.rsi.value)
+        assert self.rsi.value == 0
 
     def test_value_with_various_inputs_returns_expected_value(self):
         # Arrange
@@ -124,7 +122,7 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.6837363325825265, self.rsi.value)
+        assert self.rsi.value == 0.6837363325825265
 
     def test_value_at_returns_expected_value(self):
         # Arrange
@@ -139,7 +137,7 @@ class RelativeStrengthIndexTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.7615344667662725, self.rsi.value)
+        assert self.rsi.value == 0.7615344667662725
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -151,5 +149,5 @@ class RelativeStrengthIndexTests(unittest.TestCase):
         self.rsi.reset()
 
         # Assert
-        self.assertFalse(self.rsi.initialized)
-        self.assertEqual(0, self.rsi.value)
+        assert not self.rsi.initialized
+        assert self.rsi.value == 0

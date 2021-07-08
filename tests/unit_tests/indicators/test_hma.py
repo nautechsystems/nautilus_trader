@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.average.hma import HullMovingAverage
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit.providers import TestInstrumentProvider
@@ -24,21 +22,21 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class HullMovingAverageTests(unittest.TestCase):
-    def setUp(self):
+class TestHullMovingAverage:
+    def setup(self):
         # Fixture Setup
         self.hma = HullMovingAverage(10)
 
     def test_name_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual("HullMovingAverage", self.hma.name)
+        assert self.hma.name == "HullMovingAverage"
 
     def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual("HullMovingAverage(10)", str(self.hma))
-        self.assertEqual("HullMovingAverage(10)", repr(self.hma))
+        assert str(self.hma) == "HullMovingAverage(10)"
+        assert repr(self.hma) == "HullMovingAverage(10)"
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -55,7 +53,7 @@ class HullMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(True, self.hma.initialized)
+        assert self.hma.initialized is True
 
     def test_handle_quote_tick_updates_indicator(self):
         # Arrange
@@ -67,8 +65,8 @@ class HullMovingAverageTests(unittest.TestCase):
         indicator.handle_quote_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00002, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00002
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
@@ -80,8 +78,8 @@ class HullMovingAverageTests(unittest.TestCase):
         indicator.handle_trade_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00001, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00001
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -93,8 +91,8 @@ class HullMovingAverageTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00003, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00003
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -102,7 +100,7 @@ class HullMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.0, self.hma.value)
+        assert self.hma.value == 1.0
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
@@ -112,7 +110,7 @@ class HullMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.8245614035087718, self.hma.value)
+        assert self.hma.value == 1.8245614035087718
 
     def test_value_with_ten_inputs_returns_expected_value(self):
         # Arrange
@@ -130,7 +128,7 @@ class HullMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.0001403928170594, self.hma.value)
+        assert self.hma.value == 1.0001403928170594
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -142,4 +140,4 @@ class HullMovingAverageTests(unittest.TestCase):
         self.hma.reset()
 
         # Assert
-        self.assertFalse(self.hma.initialized)
+        assert not self.hma.initialized
