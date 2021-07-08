@@ -295,7 +295,7 @@ cdef class MessageBus:
                     sub.handler(message)
 
         if self._channel_all:
-            # Send to ANY subscriptions
+            # Send to ALL subscriptions
             for sub in self._channel_all:
                 sub.handler(message)
 
