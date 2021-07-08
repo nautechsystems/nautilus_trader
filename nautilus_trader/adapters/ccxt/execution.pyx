@@ -358,19 +358,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             # stop_tasks.append(self._update_instruments_task)
 
         # Cancel streaming tasks
-        if self._watch_balances_task:
+        if self._watch_balances_task and not self._watch_balances_task.cancelled():
             self._watch_balances_task.cancel()
-            stop_tasks.append(self._watch_balances_task)
-        if self._watch_orders_task:
+        if self._watch_orders_task and not self._watch_orders_task.cancelled():
             self._watch_orders_task.cancel()
-            stop_tasks.append(self._watch_orders_task)
-        if self._watch_exec_reports_task:
+        if self._watch_exec_reports_task and not self._watch_exec_reports_task.cancelled():
             self._watch_exec_reports_task.cancel()
-            stop_tasks.append(self._watch_exec_reports_task)
-
-        # Wait for all tasks to complete
-        if stop_tasks:
-            await asyncio.gather(*stop_tasks)
 
         # Ensure ccxt closed
         self._log.info("Closing WebSocket(s)...")
