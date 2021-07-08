@@ -14,8 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import cProfile
-import pstats
+from asyncio import AbstractEventLoop
 import time
 
 import pytest
@@ -145,7 +144,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         def execute_command():
             self.exec_engine.execute(command)
 
-        self.benchmark.pedantic(execute_command, iterations=10_000, rounds=1)
+        self.benchmark.pedantic(execute_command, iterations=100, rounds=100, warmup_rounds=5)
         # ~0.0ms / ~0.2μs / 218ns minimum of 10,000 runs @ 1 iteration each run.
 
     def test_submit_order(self):
@@ -162,7 +161,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
                 self.strategy.submit_order(order)
 
-            self.benchmark.pedantic(submit_order, iterations=10_000, rounds=1)
+            self.benchmark.pedantic(submit_order, iterations=100, rounds=100, warmup_rounds=5)
 
         self.loop.run_until_complete(run_test())
         # ~0.0ms / ~25.3μs / 25326ns minimum of 10,000 runs @ 1 iteration each run.
@@ -172,7 +171,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         time.sleep(0.1)
 
         async def run_test():
-            for _ in range(10000):
+            for _ in range(1000):
                 order = self.strategy.order_factory.market(
                     BTCUSDT_BINANCE.id,
                     OrderSide.BUY,
@@ -181,7 +180,11 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
                 self.strategy.submit_order(order)
 
-        stats_file = "perf_live_execution.prof"
-        cProfile.runctx("self.loop.run_until_complete(run_test())", globals(), locals(), stats_file)
-        s = pstats.Stats(stats_file)
-        s.strip_dirs().sort_stats("time").print_stats()
+        def setup():
+            loop = asyncio.get_event_loop()
+            return (loop,), {}
+
+        def run(loop: AbstractEventLoop):
+            loop.run_until_complete(run_test())
+
+        self.benchmark.pedantic(run, setup=setup, rounds=10, warmup_rounds=5)
