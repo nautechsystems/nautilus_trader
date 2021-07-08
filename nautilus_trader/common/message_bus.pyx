@@ -223,7 +223,7 @@ cdef class MessageBus:
         subscriptions.append(sub)
         subscriptions = sorted(subscriptions, reverse=True)
 
-        # Add to channel
+        # Update channel
         if msg_type is None:  # Subscribe ALL
             self._channel_all = subscriptions
         else:
@@ -260,10 +260,11 @@ cdef class MessageBus:
             self._log.warning(f"{sub} not found.")
             return
 
+        # Remove from channel
         subscriptions.remove(sub)
         self._log.debug(f"Removed {sub}.")
 
-        # Remove channel if no more handlers
+        # Delete channel if no more handlers
         if msg_type and not self._channels[msg_type.type]:
             del self._channels[msg_type.type]
 
@@ -288,11 +289,13 @@ cdef class MessageBus:
         cdef Subscription sub
         cdef list subscriptions = self._channels.get(msg_type.type)
         if subscriptions:
+            # Send to channel subscriptions
             for sub in subscriptions:
                 if sub.msg_type.key.issubset(msg_type.key):
                     sub.handler(message)
 
         if self._channel_all:
+            # Send to ANY subscriptions
             for sub in self._channel_all:
                 if sub.msg_type.key.issubset(msg_type.key):
                     sub.handler(message)
