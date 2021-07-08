@@ -15,12 +15,15 @@
 
 import asyncio
 
+import pytest
+
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.live.execution_client import LiveExecutionClientFactory
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands import SubmitOrder
@@ -50,6 +53,50 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
+class TestLiveExecutionClientFactory:
+    def test_create_when_not_implemented_raises_not_implemented_error(self):
+        # Arrange
+        self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
+        asyncio.set_event_loop(self.loop)
+
+        self.clock = LiveClock()
+        self.logger = LiveLogger(self.loop, self.clock)
+
+        self.trader_id = TraderId("TESTER-000")
+
+        self.cache = TestStubs.cache()
+
+        self.portfolio = Portfolio(
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Fresh isolated loop testing pattern
+        self.loop = asyncio.new_event_loop()
+        self.loop.set_debug(True)
+        asyncio.set_event_loop(self.loop)
+
+        self.exec_engine = LiveExecutionEngine(
+            loop=self.loop,
+            portfolio=self.portfolio,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act, Assert
+        with pytest.raises(NotImplementedError):
+            LiveExecutionClientFactory.create(
+                name="IB",
+                config={},
+                engine=self.exec_engine,
+                clock=self.clock,
+                logger=self.logger,
+            )
+
+
 class TestLiveExecutionClient:
     def setup(self):
         # Fixture Setup
@@ -61,7 +108,7 @@ class TestLiveExecutionClient:
 
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock)
+        self.logger = LiveLogger(self.loop, self.clock)
 
         self.trader_id = TraderId("TESTER-000")
 
