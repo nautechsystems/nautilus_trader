@@ -15,7 +15,6 @@
 
 import asyncio
 import json
-import unittest
 from unittest.mock import MagicMock
 
 import pytest
@@ -49,7 +48,7 @@ async def async_magic():
     return
 
 
-class CCXTInstrumentProviderTests(unittest.TestCase):
+class TestCCXTInstrumentProvider:
     @pytest.mark.skip  # Tests real API
     def test_real_api(self):
         import ccxt
@@ -61,7 +60,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         provider.load_all()
 
         # Assert
-        self.assertTrue(provider.count > 0)  # No exceptions raised
+        assert provider.count > 0  # No exceptions raised
 
     def test_load_all_when_decimal_precision_mode_exchange(self):
         # Arrange
@@ -83,7 +82,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         provider.load_all()
 
         # Assert
-        self.assertEqual(1236, provider.count)  # No exceptions raised
+        assert provider.count == 1236  # No exceptions raised
 
     def test_load_all_when_tick_size_precision_mode_exchange(self):
         # Arrange
@@ -105,7 +104,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         provider.load_all()
 
         # Assert
-        self.assertEqual(120, provider.count)  # No exceptions raised
+        assert provider.count == 120  # No exceptions raised
 
     def test_load_all_async(self):
         # Fresh isolated loop testing pattern
@@ -133,7 +132,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
             await asyncio.sleep(0.5)
 
             # Assert
-            self.assertTrue(provider.count > 0)  # No exceptions raised
+            assert provider.count > 0  # No exceptions raised
 
         loop.run_until_complete(run_test())
         loop.stop()
@@ -150,7 +149,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         instruments = provider.get_all()
 
         # Assert
-        self.assertEqual({}, instruments)
+        assert instruments == {}
 
     def test_get_all_when_loaded_returns_instruments(self):
         # Arrange
@@ -173,9 +172,9 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         instruments = provider.get_all()
 
         # Assert
-        self.assertTrue(len(instruments) > 0)
-        self.assertEqual(dict, type(instruments))
-        self.assertEqual(InstrumentId, type(next(iter(instruments))))
+        assert len(instruments) > 0
+        assert type(instruments) == dict
+        assert type(next(iter(instruments))) == InstrumentId
 
     def test_get_all_when_load_all_is_true_returns_expected_instruments(self):
         # Arrange
@@ -197,9 +196,9 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         instruments = provider.get_all()
 
         # Assert
-        self.assertTrue(len(instruments) > 0)
-        self.assertEqual(dict, type(instruments))
-        self.assertEqual(InstrumentId, type(next(iter(instruments))))
+        assert len(instruments) > 0
+        assert type(instruments) == dict
+        assert type(next(iter(instruments))) == InstrumentId
 
     def test_get_btcusdt_when_not_loaded_returns_none(self):
         # Arrange
@@ -214,7 +213,7 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         instrument = provider.find(instrument_id)
 
         # Assert
-        self.assertIsNone(instrument)
+        assert instrument is None
 
     def test_get_btcusdt_when_loaded_returns_expected_instrument(self):
         # Arrange
@@ -239,11 +238,11 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         instrument = provider.find(instrument_id)
 
         # Assert
-        self.assertEqual(CurrencySpot, type(instrument))
-        self.assertEqual(AssetClass.CRYPTO, instrument.asset_class)
-        self.assertEqual(AssetType.SPOT, instrument.asset_type)
-        self.assertEqual(BTC, instrument.base_currency)
-        self.assertEqual(USDT, instrument.quote_currency)
+        assert type(instrument) == CurrencySpot
+        assert instrument.asset_class == AssetClass.CRYPTO
+        assert instrument.asset_type == AssetType.SPOT
+        assert instrument.base_currency == BTC
+        assert instrument.quote_currency == USDT
 
     def test_get_btc_currency_when_loaded_returns_expected_currency(self):
         # Arrange
@@ -266,9 +265,9 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         currency = provider.currency("BTC")
 
         # Assert
-        self.assertEqual(Currency, type(currency))
-        self.assertEqual("BTC", currency.code)
-        self.assertEqual(8, currency.precision)
+        assert type(currency) == Currency
+        assert currency.code == "BTC"
+        assert currency.precision == 8
 
     def test_get_random_currency_when_not_loaded_returns_none(self):
         # Arrange
@@ -283,4 +282,4 @@ class CCXTInstrumentProviderTests(unittest.TestCase):
         currency = provider.currency("ZZZ")
 
         # Assert
-        self.assertIsNone(currency)
+        assert currency is None

@@ -15,7 +15,6 @@
 
 import asyncio
 import json
-import unittest
 from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.ccxt.data import CCXTDataClient
@@ -60,8 +59,8 @@ async def async_magic():
     return
 
 
-class CCXTDataClientTests(unittest.TestCase):
-    def setUp(self):
+class TestCCXTDataClient:
+    def setup(self):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
@@ -128,7 +127,7 @@ class CCXTDataClientTests(unittest.TestCase):
 
         self.data_engine.register_client(self.client)
 
-    def tearDown(self):
+    def teardown(self):
         self.loop.stop()
         self.loop.close()
 
@@ -140,7 +139,7 @@ class CCXTDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Assert
-            self.assertTrue(self.client.is_connected)
+            assert self.client.is_connected
 
             # Tear down
             self.data_engine.stop()
@@ -159,7 +158,7 @@ class CCXTDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             # Assert
-            self.assertFalse(self.client.is_connected)
+            assert not self.client.is_connected
 
             # Tear down
             self.data_engine.stop()
@@ -180,7 +179,7 @@ class CCXTDataClientTests(unittest.TestCase):
             self.client.reset()
 
             # Assert
-            self.assertFalse(self.client.is_connected)
+            assert not self.client.is_connected
 
         self.loop.run_until_complete(run_test())
 
@@ -194,7 +193,7 @@ class CCXTDataClientTests(unittest.TestCase):
             self.client.reset()
 
             # Assert
-            self.assertTrue(self.client.is_connected)
+            assert self.client.is_connected
 
             # Tear Down
             self.data_engine.stop()
@@ -212,7 +211,7 @@ class CCXTDataClientTests(unittest.TestCase):
             self.client.dispose()
 
             # Assert
-            self.assertTrue(self.client.is_connected)
+            assert self.client.is_connected
 
             # Tear Down
             self.data_engine.stop()
@@ -230,7 +229,7 @@ class CCXTDataClientTests(unittest.TestCase):
             self.client.subscribe_instrument(BTCUSDT)
 
             # Assert
-            self.assertIn(BTCUSDT, self.client.subscribed_instruments)
+            assert BTCUSDT in self.client.subscribed_instruments
 
             # Tear Down
             self.data_engine.stop()
@@ -249,8 +248,8 @@ class CCXTDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             # Assert
-            self.assertIn(ETHUSDT, self.client.subscribed_quote_ticks)
-            self.assertTrue(self.data_engine.cache.has_quote_ticks(ETHUSDT))
+            assert ETHUSDT in self.client.subscribed_quote_ticks
+            assert self.data_engine.cache.has_quote_ticks(ETHUSDT)
 
             # Tear Down
             self.data_engine.stop()
@@ -269,8 +268,8 @@ class CCXTDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             # Assert
-            self.assertIn(ETHUSDT, self.client.subscribed_trade_ticks)
-            self.assertTrue(self.data_engine.cache.has_trade_ticks(ETHUSDT))
+            assert ETHUSDT in self.client.subscribed_trade_ticks
+            assert self.data_engine.cache.has_trade_ticks(ETHUSDT)
 
             # Tear Down
             self.data_engine.stop()
@@ -290,7 +289,7 @@ class CCXTDataClientTests(unittest.TestCase):
             self.client.subscribe_bars(bar_type)
 
             # Assert
-            self.assertIn(bar_type, self.client.subscribed_bars)
+            assert bar_type in self.client.subscribed_bars
 
             # Tear Down
             self.data_engine.stop()
@@ -310,7 +309,7 @@ class CCXTDataClientTests(unittest.TestCase):
             self.client.unsubscribe_instrument(BTCUSDT)
 
             # Assert
-            self.assertNotIn(BTCUSDT, self.client.subscribed_instruments)
+            assert BTCUSDT not in self.client.subscribed_instruments
 
             # Tear Down
             self.data_engine.stop()
@@ -331,7 +330,7 @@ class CCXTDataClientTests(unittest.TestCase):
             self.client.unsubscribe_quote_ticks(ETHUSDT)
 
             # Assert
-            self.assertNotIn(ETHUSDT, self.client.subscribed_quote_ticks)
+            assert ETHUSDT not in self.client.subscribed_quote_ticks
 
             # Tear Down
             self.data_engine.stop()
@@ -351,7 +350,7 @@ class CCXTDataClientTests(unittest.TestCase):
             self.client.unsubscribe_trade_ticks(ETHUSDT)
 
             # Assert
-            self.assertNotIn(ETHUSDT, self.client.subscribed_trade_ticks)
+            assert ETHUSDT not in self.client.subscribed_trade_ticks
 
             # Tear Down
             self.data_engine.stop()
@@ -372,7 +371,7 @@ class CCXTDataClientTests(unittest.TestCase):
             self.client.unsubscribe_bars(bar_type)
 
             # Assert
-            self.assertNotIn(bar_type, self.client.subscribed_bars)
+            assert bar_type not in self.client.subscribed_bars
 
             # Tear Down
             self.data_engine.stop()
@@ -392,7 +391,7 @@ class CCXTDataClientTests(unittest.TestCase):
 
             # Assert
             # Instruments additionally requested on start
-            self.assertEqual(1, self.data_engine.response_count)
+            assert self.data_engine.response_count == 1
 
             # Tear Down
             self.data_engine.stop()
@@ -412,7 +411,7 @@ class CCXTDataClientTests(unittest.TestCase):
 
             # Assert
             # Instruments additionally requested on start
-            self.assertEqual(1, self.data_engine.response_count)
+            assert self.data_engine.response_count == 1
 
             # Tear Down
             self.data_engine.stop()
@@ -430,7 +429,7 @@ class CCXTDataClientTests(unittest.TestCase):
             self.client.request_quote_ticks(BTCUSDT, None, None, 0, uuid4())
 
             # Assert
-            self.assertTrue(True)  # Logs warning
+            assert True  # Logs warning
 
             # Tear Down
             self.data_engine.stop()
@@ -468,8 +467,8 @@ class CCXTDataClientTests(unittest.TestCase):
             await asyncio.sleep(1)
 
             # Assert
-            self.assertEqual(1, self.data_engine.response_count)
-            self.assertEqual(1, handler.count)
+            assert self.data_engine.response_count == 1
+            assert handler.count == 1
 
             # Tear Down
             self.data_engine.stop()
@@ -515,9 +514,9 @@ class CCXTDataClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             # Assert
-            self.assertEqual(1, self.data_engine.response_count)
-            self.assertEqual(1, handler.count)
-            self.assertEqual(100, len(handler.get_store()[0]))
+            assert self.data_engine.response_count == 1
+            assert handler.count == 1
+            assert len(handler.get_store()[0]) == 100
 
             # Tear Down
             self.data_engine.stop()

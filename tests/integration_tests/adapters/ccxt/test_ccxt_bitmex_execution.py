@@ -15,7 +15,6 @@
 
 import asyncio
 import json
-import unittest
 from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.ccxt.execution import BitmexCCXTExecutionClient
@@ -50,8 +49,8 @@ async def async_magic():
     return
 
 
-class BitmexExecutionClientTests(unittest.TestCase):
-    def setUp(self):
+class TestBitmexExecutionClient:
+    def setup(self):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
@@ -118,7 +117,7 @@ class BitmexExecutionClientTests(unittest.TestCase):
         # Wire up components
         self.exec_engine.register_client(self.client)
 
-    def tearDown(self):
+    def teardown(self):
         self.loop.stop()
         self.loop.close()
 
@@ -130,7 +129,7 @@ class BitmexExecutionClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)  # Allow engine message queue to start
 
             # Assert
-            self.assertTrue(self.client.is_connected)
+            assert self.client.is_connected
 
             # Tear down
             self.exec_engine.stop()
@@ -149,7 +148,7 @@ class BitmexExecutionClientTests(unittest.TestCase):
             await asyncio.sleep(0.3)
 
             # Assert
-            self.assertFalse(self.client.is_connected)
+            assert not self.client.is_connected
 
             # Tear down
             self.exec_engine.stop()
@@ -170,7 +169,7 @@ class BitmexExecutionClientTests(unittest.TestCase):
             self.client.reset()
 
             # Assert
-            self.assertFalse(self.client.is_connected)
+            assert not self.client.is_connected
 
         self.loop.run_until_complete(run_test())
 
@@ -184,7 +183,7 @@ class BitmexExecutionClientTests(unittest.TestCase):
             self.client.reset()
 
             # Assert
-            self.assertTrue(self.client.is_connected)
+            assert self.client.is_connected
 
             # Tear Down
             self.exec_engine.stop()
@@ -202,7 +201,7 @@ class BitmexExecutionClientTests(unittest.TestCase):
             self.client.dispose()
 
             # Assert
-            self.assertTrue(self.client.is_connected)
+            assert self.client.is_connected
 
             # Tear Down
             self.exec_engine.stop()
