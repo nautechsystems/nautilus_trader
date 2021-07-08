@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import sys
-import unittest
 
 from nautilus_trader.indicators.hilbert_snr import HilbertSignalNoiseRatio
 from tests.test_kit.providers import TestInstrumentProvider
@@ -24,8 +23,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class HilbertSignalNoiseRatioTests(unittest.TestCase):
-    def setUp(self):
+class TestHilbertSignalNoiseRatio:
+    def setup(self):
         # Fixture Setup
         self.snr = HilbertSignalNoiseRatio()
 
@@ -33,26 +32,26 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("HilbertSignalNoiseRatio", self.snr.name)
+        assert self.snr.name == "HilbertSignalNoiseRatio"
 
     def test_str_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("HilbertSignalNoiseRatio(7)", str(self.snr))
-        self.assertEqual("HilbertSignalNoiseRatio(7)", repr(self.snr))
+        assert str(self.snr) == "HilbertSignalNoiseRatio(7)"
+        assert repr(self.snr) == "HilbertSignalNoiseRatio(7)"
 
     def test_period_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(7, self.snr.period)
+        assert self.snr.period == 7
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.snr.initialized)
+        assert self.snr.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -61,7 +60,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
             self.snr.update_raw(1.00010, 1.00000)
 
         # Assert
-        self.assertEqual(True, self.snr.initialized)
+        assert self.snr.initialized is True
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -73,13 +72,13 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertEqual(0, indicator.value)
+        assert indicator.value == 0
 
     def test_value_with_no_inputs_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(0.0, self.snr.value)
+        assert self.snr.value == 0.0
 
     def test_value_with_epsilon_inputs_returns_expected_value(self):
         # Arrange
@@ -88,7 +87,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0, self.snr.value)
+        assert self.snr.value == 0
 
     def test_value_with_ones_inputs_returns_expected_value(self):
         # Arrange
@@ -97,7 +96,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0, self.snr.value)
+        assert self.snr.value == 0
 
     def test_value_with_seven_inputs_returns_expected_value(self):
         # Arrange
@@ -111,7 +110,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
             self.snr.update_raw(high, low)
 
         # Assert
-        self.assertEqual(0, self.snr.value)
+        assert self.snr.value == 0
 
     def test_value_with_close_on_high_returns_expected_value(self):
         # Arrange
@@ -125,7 +124,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
             self.snr.update_raw(high, low)
 
         # Assert
-        self.assertEqual(51.90000000000095, self.snr.value)
+        assert self.snr.value == 51.90000000000095
 
     def test_value_with_close_on_low_returns_expected_value(self):
         # Arrange
@@ -139,7 +138,7 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
             self.snr.update_raw(high, low)
 
         # Assert
-        self.assertEqual(51.90000000000095, self.snr.value)
+        assert self.snr.value == 51.90000000000095
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -150,4 +149,4 @@ class HilbertSignalNoiseRatioTests(unittest.TestCase):
         self.snr.reset()
 
         # Assert
-        self.assertEqual(0.0, self.snr.value)  # No assertion errors.
+        assert self.snr.value == 0.0  # No assertion errors.

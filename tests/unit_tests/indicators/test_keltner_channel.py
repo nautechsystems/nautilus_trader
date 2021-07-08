@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.keltner_channel import KeltnerChannel
 from tests.test_kit.providers import TestInstrumentProvider
@@ -24,8 +22,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class KeltnerChannelTests(unittest.TestCase):
-    def setUp(self):
+class TestKeltnerChannel:
+    def setup(self):
         # Fixture Setup
         self.kc = KeltnerChannel(10, 2.5, MovingAverageType.EXPONENTIAL, MovingAverageType.SIMPLE)
 
@@ -33,32 +31,32 @@ class KeltnerChannelTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("KeltnerChannel", self.kc.name)
+        assert self.kc.name == "KeltnerChannel"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", str(self.kc))
-        self.assertEqual("KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", repr(self.kc))
+        assert str(self.kc) == "KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)"
+        assert repr(self.kc) == "KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)"
 
     def test_period_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(10, self.kc.period)
+        assert self.kc.period == 10
 
     def test_k_multiple_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(2.5, self.kc.k_multiplier)
+        assert self.kc.k_multiplier == 2.5
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.kc.initialized)
+        assert self.kc.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -75,7 +73,7 @@ class KeltnerChannelTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(True, self.kc.initialized)
+        assert self.kc.initialized is True
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -87,8 +85,8 @@ class KeltnerChannelTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.0000266666666666, indicator.middle)
+        assert indicator.has_inputs
+        assert indicator.middle == 1.0000266666666666
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -96,9 +94,9 @@ class KeltnerChannelTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.0006, self.kc.upper)
-        self.assertEqual(1.0001, self.kc.middle)
-        self.assertEqual(0.9996, self.kc.lower)
+        assert self.kc.upper == 1.0006
+        assert self.kc.middle == 1.0001
+        assert self.kc.lower == 0.9996
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
@@ -108,9 +106,9 @@ class KeltnerChannelTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.0006512396694212, self.kc.upper)
-        self.assertEqual(1.0001512396694212, self.kc.middle)
-        self.assertEqual(0.9996512396694213, self.kc.lower)
+        assert self.kc.upper == 1.0006512396694212
+        assert self.kc.middle == 1.0001512396694212
+        assert self.kc.lower == 0.9996512396694213
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -122,4 +120,4 @@ class KeltnerChannelTests(unittest.TestCase):
         self.kc.reset()
 
         # Assert
-        self.assertFalse(self.kc.initialized)
+        assert not self.kc.initialized

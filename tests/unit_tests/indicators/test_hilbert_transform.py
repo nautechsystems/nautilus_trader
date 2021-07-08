@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import sys
-import unittest
 
 from nautilus_trader.indicators.hilbert_transform import HilbertTransform
 from tests.test_kit.providers import TestInstrumentProvider
@@ -24,8 +23,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class HilbertTransformTests(unittest.TestCase):
-    def setUp(self):
+class TestHilbertTransform:
+    def setup(self):
         # Fixture Setup
         self.ht = HilbertTransform()
 
@@ -33,26 +32,26 @@ class HilbertTransformTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("HilbertTransform", self.ht.name)
+        assert self.ht.name == "HilbertTransform"
 
     def test_str_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("HilbertTransform(7)", str(self.ht))
-        self.assertEqual("HilbertTransform(7)", repr(self.ht))
+        assert str(self.ht) == "HilbertTransform(7)"
+        assert repr(self.ht) == "HilbertTransform(7)"
 
     def test_period_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(7, self.ht.period)
+        assert self.ht.period == 7
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.ht.initialized)
+        assert self.ht.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -61,7 +60,7 @@ class HilbertTransformTests(unittest.TestCase):
             self.ht.update_raw(1.00000)
 
         # Assert
-        self.assertEqual(True, self.ht.initialized)
+        assert self.ht.initialized is True
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -73,15 +72,15 @@ class HilbertTransformTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(0, indicator.value_quad)
+        assert indicator.has_inputs
+        assert indicator.value_quad == 0
 
     def test_value_with_no_inputs_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(0.0, self.ht.value_in_phase)
-        self.assertEqual(0.0, self.ht.value_quad)
+        assert self.ht.value_in_phase == 0.0
+        assert self.ht.value_quad == 0.0
 
     def test_value_with_epsilon_inputs_returns_expected_value(self):
         # Arrange
@@ -90,8 +89,8 @@ class HilbertTransformTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.0, self.ht.value_in_phase)
-        self.assertEqual(0.0, self.ht.value_quad)
+        assert self.ht.value_in_phase == 0.0
+        assert self.ht.value_quad == 0.0
 
     def test_value_with_ones_inputs_returns_expected_value(self):
         # Arrange
@@ -100,8 +99,8 @@ class HilbertTransformTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.0, self.ht.value_in_phase)
-        self.assertEqual(0.0, self.ht.value_quad)
+        assert self.ht.value_in_phase == 0.0
+        assert self.ht.value_quad == 0.0
 
     def test_value_with_seven_inputs_returns_expected_value(self):
         # Arrange
@@ -115,8 +114,8 @@ class HilbertTransformTests(unittest.TestCase):
             self.ht.update_raw((high + low) / 2)
 
         # Assert
-        self.assertEqual(0.0, self.ht.value_in_phase)
-        self.assertEqual(0.0, self.ht.value_quad)
+        assert self.ht.value_in_phase == 0.0
+        assert self.ht.value_quad == 0.0
 
     def test_value_with_close_on_high_returns_expected_value(self):
         # Arrange
@@ -130,8 +129,8 @@ class HilbertTransformTests(unittest.TestCase):
             self.ht.update_raw((high + low) / 2)
 
         # Assert
-        self.assertEqual(0.001327272727272581, self.ht.value_in_phase)
-        self.assertEqual(0.0005999999999999338, self.ht.value_quad)
+        assert self.ht.value_in_phase == 0.001327272727272581
+        assert self.ht.value_quad == 0.0005999999999999338
 
     def test_value_with_close_on_low_returns_expected_value(self):
         # Arrange
@@ -145,8 +144,8 @@ class HilbertTransformTests(unittest.TestCase):
             self.ht.update_raw((high + low) / 2)
 
         # Assert
-        self.assertEqual(-0.001327272727272581, self.ht.value_in_phase)
-        self.assertEqual(-0.0005999999999999338, self.ht.value_quad)
+        assert self.ht.value_in_phase == -0.001327272727272581
+        assert self.ht.value_quad == -0.0005999999999999338
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -157,5 +156,5 @@ class HilbertTransformTests(unittest.TestCase):
         self.ht.reset()
 
         # Assert
-        self.assertEqual(0.0, self.ht.value_in_phase)  # No assertion errors.
-        self.assertEqual(0.0, self.ht.value_quad)
+        assert self.ht.value_in_phase == 0.0  # No assertion errors.
+        assert self.ht.value_quad == 0.0
