@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
@@ -44,8 +44,8 @@ from tests.test_kit.stubs import TestStubs
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
-class TraderTests(unittest.TestCase):
-    def setUp(self):
+class TestTrader:
+    def setup(self):
         # Fixture Setup
         clock = TestClock()
         logger = Logger(clock)
@@ -146,9 +146,9 @@ class TraderTests(unittest.TestCase):
         trader_id = self.trader.id
 
         # Assert
-        self.assertEqual(TraderId("TESTER-000"), trader_id)
-        self.assertEqual(ComponentState.INITIALIZED, self.trader.state)
-        self.assertEqual(2, len(self.trader.strategy_states()))
+        assert trader_id == TraderId("TESTER-000")
+        assert self.trader.state == ComponentState.INITIALIZED
+        assert len(self.trader.strategy_states()) == 2
 
     def test_get_strategy_states(self):
         # Arrange
@@ -156,11 +156,11 @@ class TraderTests(unittest.TestCase):
         status = self.trader.strategy_states()
 
         # Assert
-        self.assertTrue(StrategyId("TradingStrategy-001") in status)
-        self.assertTrue(StrategyId("TradingStrategy-002") in status)
-        self.assertEqual("INITIALIZED", status[StrategyId("TradingStrategy-001")])
-        self.assertEqual("INITIALIZED", status[StrategyId("TradingStrategy-002")])
-        self.assertEqual(2, len(status))
+        assert StrategyId("TradingStrategy-001") in status
+        assert StrategyId("TradingStrategy-002") in status
+        assert status[StrategyId("TradingStrategy-001")] == "INITIALIZED"
+        assert status[StrategyId("TradingStrategy-002")] == "INITIALIZED"
+        assert len(status) == 2
 
     def test_change_strategies(self):
         # Arrange
@@ -173,9 +173,9 @@ class TraderTests(unittest.TestCase):
         self.trader.initialize_strategies(strategies, warn_no_strategies=True)
 
         # Assert
-        self.assertTrue(strategies[0].id in self.trader.strategy_states())
-        self.assertTrue(strategies[1].id in self.trader.strategy_states())
-        self.assertEqual(2, len(self.trader.strategy_states()))
+        assert strategies[0].id in self.trader.strategy_states()
+        assert strategies[1].id in self.trader.strategy_states()
+        assert len(self.trader.strategy_states()) == 2
 
     def test_trader_detects_duplicate_identifiers(self):
         # Arrange
@@ -185,12 +185,8 @@ class TraderTests(unittest.TestCase):
         ]
 
         # Act
-        self.assertRaises(
-            ValueError,
-            self.trader.initialize_strategies,
-            strategies,
-            True,
-        )
+        with pytest.raises(ValueError):
+            self.trader.initialize_strategies(strategies, True)
 
     def test_start_a_trader(self):
         # Arrange
@@ -200,9 +196,9 @@ class TraderTests(unittest.TestCase):
         strategy_states = self.trader.strategy_states()
 
         # Assert
-        self.assertEqual(ComponentState.RUNNING, self.trader.state)
-        self.assertEqual("RUNNING", strategy_states[StrategyId("TradingStrategy-001")])
-        self.assertEqual("RUNNING", strategy_states[StrategyId("TradingStrategy-002")])
+        assert self.trader.state == ComponentState.RUNNING
+        assert strategy_states[StrategyId("TradingStrategy-001")] == "RUNNING"
+        assert strategy_states[StrategyId("TradingStrategy-002")] == "RUNNING"
 
     def test_stop_a_running_trader(self):
         # Arrange
@@ -214,6 +210,6 @@ class TraderTests(unittest.TestCase):
         strategy_states = self.trader.strategy_states()
 
         # Assert
-        self.assertEqual(ComponentState.STOPPED, self.trader.state)
-        self.assertEqual("STOPPED", strategy_states[StrategyId("TradingStrategy-001")])
-        self.assertEqual("STOPPED", strategy_states[StrategyId("TradingStrategy-002")])
+        assert self.trader.state == ComponentState.STOPPED
+        assert strategy_states[StrategyId("TradingStrategy-001")] == "STOPPED"
+        assert strategy_states[StrategyId("TradingStrategy-002")] == "STOPPED"
