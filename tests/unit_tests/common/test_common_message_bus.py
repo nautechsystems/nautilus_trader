@@ -16,7 +16,137 @@
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.message_bus import MessageBus
+from nautilus_trader.common.message_bus import Subscription
 from nautilus_trader.core.type import MessageType
+
+
+class TestSubscription:
+    def test_equality_when_equal_returns_true(self):
+        # Arrange
+        subscriber = []
+        string_msg = MessageType(type=str)
+
+        subscription1 = Subscription(
+            msg_type=string_msg,
+            handler=subscriber.append,
+            priority=1,
+        )
+
+        subscription2 = Subscription(
+            msg_type=string_msg,
+            handler=subscriber.append,
+            priority=2,  # <-- priority does not affect equality
+        )
+
+        # Act, Assert
+        assert subscription1 == subscription2
+
+    def test_equality_when_not_equal_returns_false(self):
+        # Arrange
+        subscriber = []
+        string_msg1 = MessageType(type=str)
+        string_msg2 = MessageType(type=str, header={"topic": "status"})
+
+        subscription1 = Subscription(
+            msg_type=string_msg1,
+            handler=subscriber.append,
+            priority=1,
+        )
+
+        subscription2 = Subscription(
+            msg_type=string_msg2,
+            handler=subscriber.append,
+            priority=2,  # <-- priority does not affect equality
+        )
+
+        # Act, Assert
+        assert subscription1 != subscription2
+
+    def test_reverse_sorting_list_of_subscribers_returns_expected_ordered_list(self):
+        # Arrange
+        subscriber = []
+        string_msg = MessageType(type=str)
+
+        subscription1 = Subscription(
+            msg_type=string_msg,
+            handler=subscriber.append,
+        )
+
+        subscription2 = Subscription(
+            msg_type=string_msg,
+            handler=subscriber.append,
+            priority=5,  # <-- priority does not affect equality
+        )
+
+        subscription3 = Subscription(
+            msg_type=string_msg,
+            handler=subscriber.append,
+            priority=2,  # <-- priority does not affect equality
+        )
+
+        subscription4 = Subscription(
+            msg_type=string_msg,
+            handler=subscriber.append,
+            priority=10,  # <-- priority does not affect equality
+        )
+
+        # Act
+        sorted_list = sorted(
+            [
+                subscription1,
+                subscription2,
+                subscription3,
+                subscription4,
+            ],
+            reverse=True,
+        )
+
+        # Assert
+        assert sorted_list == [subscription4, subscription2, subscription3, subscription1]
+        assert sorted_list[0] == subscription4
+        assert sorted_list[1] == subscription2
+        assert sorted_list[2] == subscription3
+        assert sorted_list[3] == subscription1
+
+    def test_subscription_for_all(self):
+        # Arrange
+        subscriber = []
+        handler_str = str(subscriber.append)
+
+        # Act
+        subscription = Subscription(
+            msg_type=None,
+            handler=subscriber.append,
+        )
+
+        # Assert
+        assert subscription.msg_type is None
+        assert str(subscription).startswith(
+            f"Subscription(msg_type=*, handler={handler_str}, priority=0)"
+        )
+
+    def test_hash_str_repr(self):
+        # Arrange
+        subscriber = []
+        string_msg = MessageType(type=str, header={"topic": "status"})
+        handler_str = str(subscriber.append)
+
+        # Act
+        subscription = Subscription(
+            msg_type=string_msg,
+            handler=subscriber.append,
+        )
+
+        # Assert
+        assert isinstance(hash(subscription), int)
+        assert (
+            str(subscription)
+            == f"Subscription(msg_type=<str> {{'topic': 'status'}}, handler={handler_str}, priority=0)"
+        )
+        assert (
+            repr(subscription)
+            == f"Subscription(msg_type=<str> {{'topic': 'status'}}, handler={handler_str}, priority=0)"
+        )
 
 
 class TestMessageBus:
@@ -61,7 +191,19 @@ class TestMessageBus:
         # Assert
         assert result == [str]
 
-    def test_subscribe_to_msg_type_returns_handlers_list_including_handler(self):
+    def test_subscribe_to_all_returns_channels_list_including_none(self):
+        # Arrange
+        handler = [].append
+
+        # Act
+        self.msg_bus.subscribe(msg_type=None, handler=handler)
+
+        result = self.msg_bus.channels()
+
+        # Assert
+        assert result == [None]
+
+    def test_subscribe_to_msg_type_returns_subscriptions_list_including_handler(self):
         # Arrange
         all_strings = MessageType(type=str)
         handler = [].append
@@ -70,6 +212,19 @@ class TestMessageBus:
         self.msg_bus.subscribe(msg_type=all_strings, handler=handler)
 
         result = self.msg_bus.subscriptions(all_strings)
+
+        # Assert
+        assert len(result) == 1
+        assert result[0].handler == handler
+
+    def test_subscribe_to_all_returns_subscriptions_list_including_handler(self):
+        # Arrange
+        handler = [].append
+
+        # Act
+        self.msg_bus.subscribe(msg_type=None, handler=handler)
+
+        result = self.msg_bus.subscriptions()
 
         # Assert
         assert len(result) == 1
