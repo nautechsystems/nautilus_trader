@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
-import unittest
 
 from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.common.clock import TestClock
@@ -36,8 +35,8 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
 
-class AnalyzerTests(unittest.TestCase):
-    def setUp(self):
+class TestAnalyzer:
+    def setup(self):
         # Fixture Setup
         self.analyzer = PerformanceAnalyzer()
         self.order_factory = OrderFactory(
@@ -52,7 +51,7 @@ class AnalyzerTests(unittest.TestCase):
         result = self.analyzer.daily_returns()
 
         # Assert
-        self.assertTrue(result.empty)
+        assert result.empty
 
     def test_get_realized_pnls_when_no_data_returns_none(self):
         # Arrange
@@ -60,7 +59,7 @@ class AnalyzerTests(unittest.TestCase):
         result = self.analyzer.realized_pnls()
 
         # Assert
-        self.assertIsNone(result)
+        assert result is None
 
     def test_get_realized_pnls_with_currency_when_no_data_returns_none(self):
         # Arrange
@@ -68,7 +67,7 @@ class AnalyzerTests(unittest.TestCase):
         result = self.analyzer.realized_pnls(AUD)
 
         # Assert
-        self.assertIsNone(result)
+        assert result is None
 
     def test_analyzer_tracks_daily_returns(self):
         # Arrange
@@ -98,9 +97,9 @@ class AnalyzerTests(unittest.TestCase):
         result = self.analyzer.daily_returns()
 
         # Assert
-        self.assertEqual(10, len(result))
-        self.assertEqual(-0.12, sum(result))
-        self.assertEqual(-0.20, result.iloc[9])
+        assert len(result) == 10
+        assert sum(result) == -0.12
+        assert result.iloc[9] == -0.20
 
     def test_get_realized_pnls_when_all_flat_positions_returns_expected_series(self):
         # Arrange
@@ -172,6 +171,6 @@ class AnalyzerTests(unittest.TestCase):
         result = self.analyzer.realized_pnls(USD)
 
         # Assert
-        self.assertEqual(2, len(result))
-        self.assertEqual(6.0, result["P-1"])
-        self.assertEqual(16.0, result["P-2"])
+        assert len(result) == 2
+        assert result["P-1"] == 6.0
+        assert result["P-2"] == 16.0
