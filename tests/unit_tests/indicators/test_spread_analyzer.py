@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.indicators.spread_analyzer import SpreadAnalyzer
 from nautilus_trader.model.objects import Price
@@ -27,17 +27,17 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class SpreadAnalyzerTests(unittest.TestCase):
+class TestSpreadAnalyzer:
     def test_instantiate(self):
         # Arrange
         analyzer = SpreadAnalyzer(AUDUSD_SIM.id, 1000)
 
         # Act
         # Assert
-        self.assertEqual(0, analyzer.current)
-        self.assertEqual(0, analyzer.current)
-        self.assertEqual(0, analyzer.average)
-        self.assertEqual(False, analyzer.initialized)
+        assert analyzer.current == 0
+        assert analyzer.current == 0
+        assert analyzer.average == 0
+        assert analyzer.initialized is False
 
     def test_handle_ticks_initializes_indicator(self):
         # Arrange
@@ -49,7 +49,7 @@ class SpreadAnalyzerTests(unittest.TestCase):
         analyzer.handle_quote_tick(tick)
 
         # Assert
-        self.assertTrue(analyzer.initialized)
+        assert analyzer.initialized
 
     def test_update_with_incorrect_tick_raises_exception(self):
         # Arrange
@@ -65,7 +65,8 @@ class SpreadAnalyzerTests(unittest.TestCase):
         )
         # Act
         # Assert
-        self.assertRaises(ValueError, analyzer.handle_quote_tick, tick)
+        with pytest.raises(ValueError):
+            analyzer.handle_quote_tick(tick)
 
     def test_update_correctly_updates_analyzer(self):
         # Arrange
@@ -95,8 +96,8 @@ class SpreadAnalyzerTests(unittest.TestCase):
         analyzer.handle_quote_tick(tick2)
 
         # Assert
-        self.assertAlmostEqual(6e-05, analyzer.current)
-        self.assertAlmostEqual(8e-05, analyzer.average)
+        assert analyzer.current == pytest.approx(6e-05)
+        assert analyzer.average == pytest.approx(8e-05)
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -106,5 +107,5 @@ class SpreadAnalyzerTests(unittest.TestCase):
         instance.reset()
 
         # Assert
-        self.assertFalse(instance.initialized)
-        self.assertEqual(0, instance.current)
+        assert not instance.initialized
+        assert instance.current == 0

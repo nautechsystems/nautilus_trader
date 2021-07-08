@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.indicators.keltner_position import KeltnerPosition
 from tests.test_kit.providers import TestInstrumentProvider
@@ -23,8 +23,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class KeltnerPositionTests(unittest.TestCase):
-    def setUp(self):
+class TestKeltnerPosition:
+    def setup(self):
         # Fixture Setup
         self.kp = KeltnerPosition(10, 2.5)
 
@@ -32,20 +32,20 @@ class KeltnerPositionTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("KeltnerPosition", self.kp.name)
+        assert self.kp.name == "KeltnerPosition"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", str(self.kp))
-        self.assertEqual("KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)", repr(self.kp))
+        assert str(self.kp) == "KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)"
+        assert repr(self.kp) == "KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)"
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.kp.initialized)
+        assert self.kp.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -54,19 +54,19 @@ class KeltnerPositionTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(True, self.kp.initialized)
+        assert self.kp.initialized is True
 
     def test_period_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(10, self.kp.period)
+        assert self.kp.period == 10
 
     def test_k_multiple_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(2.5, self.kp.k_multiplier)
+        assert self.kp.k_multiplier == 2.5
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -78,8 +78,8 @@ class KeltnerPositionTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(0.0444444444447405, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 0.0444444444447405
 
     def test_value_with_one_input_returns_zero(self):
         # Arrange
@@ -87,7 +87,7 @@ class KeltnerPositionTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0, self.kp.value)
+        assert self.kp.value == 0
 
     def test_value_with_zero_width_input_returns_zero(self):
         # Arrange
@@ -96,7 +96,7 @@ class KeltnerPositionTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0, self.kp.value)
+        assert self.kp.value == 0
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
@@ -106,7 +106,7 @@ class KeltnerPositionTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.29752066115754594, self.kp.value)
+        assert self.kp.value == 0.29752066115754594
 
     def test_value_with_close_on_high_returns_positive_value(self):
         # Arrange
@@ -121,7 +121,7 @@ class KeltnerPositionTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.637585941284833, self.kp.value)
+        assert self.kp.value == 1.637585941284833
 
     def test_value_with_close_on_low_returns_lower_value(self):
         # Arrange
@@ -136,7 +136,7 @@ class KeltnerPositionTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertAlmostEqual(-1.637585941284833, self.kp.value)
+        assert self.kp.value == pytest.approx(-1.637585941284833)
 
     def test_value_with_ten_inputs_returns_expected_value(self):
         # Arrange
@@ -153,7 +153,7 @@ class KeltnerPositionTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(-0.14281747514671334, self.kp.value)
+        assert self.kp.value == -0.14281747514671334
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -165,4 +165,4 @@ class KeltnerPositionTests(unittest.TestCase):
         self.kp.reset()
 
         # Assert
-        self.assertFalse(self.kp.initialized)
+        assert not self.kp.initialized
