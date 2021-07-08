@@ -4,6 +4,7 @@ from decimal import Decimal
 from functools import partial
 import pathlib
 import pickle
+import sys
 from typing import Optional
 
 from dask.base import tokenize
@@ -69,13 +70,14 @@ def data_loader():
     return loader
 
 
-@pytest.fixture()
+@pytest.fixture(scope="function")
 def catalog(data_loader):
-    catalog = DataCatalog(path="/", fs_protocol="memory")
-    catalog.fs.rm(
-        "/",
-        recursive=True,
-    )
+    root = pathlib.Path(sys.executable).anchor
+    catalog = DataCatalog(path=root, fs_protocol="memory")
+    try:
+        catalog.fs.rm(root, recursive=True)
+    except FileNotFoundError:
+        pass
     catalog.import_from_data_loader(loader=data_loader)
     assert len(catalog.instruments()) == 1
     assert len(catalog.quote_ticks()) == 100000

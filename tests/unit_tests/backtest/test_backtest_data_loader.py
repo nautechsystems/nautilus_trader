@@ -4,6 +4,7 @@ from functools import partial
 import json
 import os
 import pathlib
+import sys
 
 from betfairlightweight import APIClient
 import fsspec.implementations.memory
@@ -79,11 +80,12 @@ def data_loader():
 
 @pytest.fixture(scope="function")
 def catalog(data_loader):
-    catalog = DataCatalog(path="/", fs_protocol="memory")
-    catalog.fs.rm(
-        "/",
-        recursive=True,
-    )
+    root = pathlib.Path(sys.executable).anchor
+    catalog = DataCatalog(path=root, fs_protocol="memory")
+    try:
+        catalog.fs.rm(root, recursive=True)
+    except FileNotFoundError:
+        pass
     return catalog
 
 
