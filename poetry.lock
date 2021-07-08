@@ -141,7 +141,7 @@ uvloop = ["uvloop (>=0.15.2)"]
 
 [[package]]
 name = "ccxt"
-version = "1.52.65"
+version = "1.52.67"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = true
@@ -1162,38 +1162,6 @@ optional = false
 python-versions = "*"
 
 [[package]]
-name = "types-frozendict"
-version = "0.1.5"
-description = "Typing stubs for frozendict"
-category = "dev"
-optional = false
-python-versions = "*"
-
-[[package]]
-name = "types-orjson"
-version = "0.1.1"
-description = "Typing stubs for orjson"
-category = "dev"
-optional = false
-python-versions = "*"
-
-[[package]]
-name = "types-pytz"
-version = "2021.1.0"
-description = "Typing stubs for pytz"
-category = "dev"
-optional = false
-python-versions = "*"
-
-[[package]]
-name = "types-redis"
-version = "3.5.4"
-description = "Typing stubs for redis"
-category = "dev"
-optional = false
-python-versions = "*"
-
-[[package]]
 name = "typing-extensions"
 version = "3.10.0.0"
 description = "Backported and Experimental Type Hints for Python 3.5+"
@@ -1281,7 +1249,7 @@ oanda = ["oandapyV20"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "c45e23a07ccf33d61680f5c01729c64e3b32a806e19df23fb8de37b479c6daf4"
+content-hash = "bb64ce2dc166ede7a4e4f261a83b86a175a8d24349df331c20359c3743bc5571"
 
 [metadata.files]
 aiodns = [
@@ -1364,8 +1332,8 @@ black = [
     {file = "black-21.6b0.tar.gz", hash = "sha256:dc132348a88d103016726fe360cb9ede02cecf99b76e3660ce6c596be132ce04"},
 ]
 ccxt = [
-    {file = "ccxt-1.52.65-py2.py3-none-any.whl", hash = "sha256:3599baebaf00eb0370325462312dc71928699d416d49f79245351fc2ea455ca7"},
-    {file = "ccxt-1.52.65.tar.gz", hash = "sha256:d8c47016d65028eeccfe55e54e218922dc6c9a3750b8dbcdc428d8b6b4231ca1"},
+    {file = "ccxt-1.52.67-py2.py3-none-any.whl", hash = "sha256:fbc7c6f2ca435152d5faa37e492c101264cb394264dbaea8dcd9e6457c440aa0"},
+    {file = "ccxt-1.52.67.tar.gz", hash = "sha256:2a0e731fca7bb130ce41e3c30eef309fbce251f0f1ffbf1dd650e085c6794e5e"},
 ]
 certifi = [
     {file = "certifi-2021.5.30-py2.py3-none-any.whl", hash = "sha256:50b1e4f8446b06f41be7dd6338db18e0990601dce795c2b1686458aa7e8fa7d8"},
@@ -2203,22 +2171,6 @@ typed-ast = [
     {file = "typed_ast-1.4.3-cp39-cp39-win32.whl", hash = "sha256:209596a4ec71d990d71d5e0d312ac935d86930e6eecff6ccc7007fe54d703808"},
     {file = "typed_ast-1.4.3-cp39-cp39-win_amd64.whl", hash = "sha256:9c6d1a54552b5330bc657b7ef0eae25d00ba7ffe85d9ea8ae6540d2197a3788c"},
     {file = "typed_ast-1.4.3.tar.gz", hash = "sha256:fb1bbeac803adea29cedd70781399c99138358c26d05fcbd23c13016b7f5ec65"},
-]
-types-frozendict = [
-    {file = "types-frozendict-0.1.5.tar.gz", hash = "sha256:fa5e6a24adfe23db1e37c5f571bca5dda4c0ab388ec03462e498ed22c2449494"},
-    {file = "types_frozendict-0.1.5-py2.py3-none-any.whl", hash = "sha256:9e08c9593d6a20b13411fcf4e7597dbae896d06afaf664c7759dee5cb180d969"},
-]
-types-orjson = [
-    {file = "types-orjson-0.1.1.tar.gz", hash = "sha256:7454bfbaed27900a844bb9d8e211b69f1c335f0b9e3541d4950a793db41c104d"},
-    {file = "types_orjson-0.1.1-py2.py3-none-any.whl", hash = "sha256:92f85986261ea1a5cb215e4b35e4016631d35163a372f023918750f340ea737f"},
-]
-types-pytz = [
-    {file = "types-pytz-2021.1.0.tar.gz", hash = "sha256:addfa2a1a27b324b6beb422faa4737962532bbab3793481d5bdebbffb8f9f243"},
-    {file = "types_pytz-2021.1.0-py3-none-any.whl", hash = "sha256:ec9555397f91518b2cf028ed837a69e388763c6a5e58abffaf37732f9c581a46"},
-]
-types-redis = [
-    {file = "types-redis-3.5.4.tar.gz", hash = "sha256:936e98f9090c11610f4f5171d2ca8fa5c5eab842422b3cc2f9355f57d01e1a6b"},
-    {file = "types_redis-3.5.4-py3-none-any.whl", hash = "sha256:954feb1f573216b215c1d564c1b27091a7ce8b7fd3af9474d9e88d4081881aff"},
 ]
 typing-extensions = [
     {file = "typing_extensions-3.10.0.0-py2-none-any.whl", hash = "sha256:0ac0f89795dd19de6b97debb0c6af1c70987fd80a2d62d1958f7e56fcc31b497"},

@@ -48,6 +48,13 @@ repos:
 #            --ignore-missing-imports,
 #            --warn-no-return,
 #        ]
+#        additional_dependencies: [
+#            types-frozendict,
+#            types-orjson,
+#            types-pytz,
+#            types-redis,
+#            types-toml,
+#        ]
 
   - repo: https://gitlab.com/PyCQA/flake8
     rev: 3.9.2

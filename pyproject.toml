@@ -81,10 +81,6 @@ pytest-mock = "^3.6.1"
 pytest-xdist = { version = "^2.3.0", extras = ["psutil"] }
 sphinx = { version = "^4.0.2", optional = true }
 sphinx-rtd-theme = { version = "^0.5.1", optional = true }
-types-frozendict = "^0.1.5"
-types-orjson = "^0.1.1"
-types-redis = "^3.5.4"
-types-pytz = "^2021.1.0"
 
 [tool.poetry.extras]
 betfair = ["betfairlightweight"]
@@ -92,7 +88,6 @@ ccxt = ["ccxt"]
 docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]
 ib = ["ib_insync"]
 oanda = ["oandapyV20"]
-
 
 ##########################################################
 # Test configs                                           #
