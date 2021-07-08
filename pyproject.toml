@@ -68,7 +68,7 @@ oandapyV20 = { version = "^0.6.3", optional = true }
 black = "^21.6b0"
 coverage = "4.5.4"  # Pinned at 4.5.4 due Cython 3.0.0a8
 flake8 = "^3.9.2"
-isort = "^5.9.1"
+isort = "^5.9.2"
 mypy = "^0.910"
 nox = "^2021.6.12"
 parameterized = "^0.8.1"

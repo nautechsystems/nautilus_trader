@@ -141,7 +141,7 @@ uvloop = ["uvloop (>=0.15.2)"]
 
 [[package]]
 name = "ccxt"
-version = "1.52.60"
+version = "1.52.65"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = true
@@ -444,7 +444,7 @@ python-versions = "*"
 
 [[package]]
 name = "isort"
-version = "5.9.1"
+version = "5.9.2"
 description = "A Python utility / library to sort Python imports."
 category = "dev"
 optional = false
@@ -1281,7 +1281,7 @@ oanda = ["oandapyV20"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "b796bb1d2c53c90de33920ed991adf6eb5a5240814b33a278a45f9acd4b2e9ab"
+content-hash = "c45e23a07ccf33d61680f5c01729c64e3b32a806e19df23fb8de37b479c6daf4"
 
 [metadata.files]
 aiodns = [
@@ -1364,8 +1364,8 @@ black = [
     {file = "black-21.6b0.tar.gz", hash = "sha256:dc132348a88d103016726fe360cb9ede02cecf99b76e3660ce6c596be132ce04"},
 ]
 ccxt = [
-    {file = "ccxt-1.52.60-py2.py3-none-any.whl", hash = "sha256:520e6c91c2e99ddb56ea19102e8e8b605a02b7a0a55889195d0dd8fbf9b13b29"},
-    {file = "ccxt-1.52.60.tar.gz", hash = "sha256:930adbeee05a374fcdb817064b1c4595e0072a1e2df262de819859adc3dd2b14"},
+    {file = "ccxt-1.52.65-py2.py3-none-any.whl", hash = "sha256:3599baebaf00eb0370325462312dc71928699d416d49f79245351fc2ea455ca7"},
+    {file = "ccxt-1.52.65.tar.gz", hash = "sha256:d8c47016d65028eeccfe55e54e218922dc6c9a3750b8dbcdc428d8b6b4231ca1"},
 ]
 certifi = [
     {file = "certifi-2021.5.30-py2.py3-none-any.whl", hash = "sha256:50b1e4f8446b06f41be7dd6338db18e0990601dce795c2b1686458aa7e8fa7d8"},
@@ -1573,8 +1573,8 @@ iniconfig = [
     {file = "iniconfig-1.1.1.tar.gz", hash = "sha256:bc3af051d7d14b2ee5ef9969666def0cd1a000e121eaea580d4a313df4b37f32"},
 ]
 isort = [
-    {file = "isort-5.9.1-py3-none-any.whl", hash = "sha256:8e2c107091cfec7286bc0f68a547d0ba4c094d460b732075b6fba674f1035c0c"},
-    {file = "isort-5.9.1.tar.gz", hash = "sha256:83510593e07e433b77bd5bff0f6f607dbafa06d1a89022616f02d8b699cfcd56"},
+    {file = "isort-5.9.2-py3-none-any.whl", hash = "sha256:eed17b53c3e7912425579853d078a0832820f023191561fcee9d7cae424e0813"},
+    {file = "isort-5.9.2.tar.gz", hash = "sha256:f65ce5bd4cbc6abdfbe29afc2f0245538ab358c14590912df638033f157d555e"},
 ]
 jinja2 = [
     {file = "Jinja2-3.0.1-py3-none-any.whl", hash = "sha256:1f06f2da51e7b56b8f238affdd6b4e2c61e39598a378cc49345bc1bd42a978a4"},
