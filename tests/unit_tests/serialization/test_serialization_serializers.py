@@ -46,6 +46,9 @@ from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdateRejected
 from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.events import PositionChanged
+from nautilus_trader.model.events import PositionClosed
+from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -65,6 +68,7 @@ from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
+from nautilus_trader.model.position import Position
 from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.serialization.arrow.core import _deserialize
 from nautilus_trader.serialization.arrow.core import _serialize
@@ -80,7 +84,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-class TestInstrumentSerializer:
+class TestMsgPackInstrumentSerializer:
     def setup(self):
         # Fixture Setup
         self.serializer = MsgPackInstrumentSerializer()
@@ -116,7 +120,7 @@ class TestInstrumentSerializer:
         print(deserialized)
 
 
-class TestOrderUnpackerSerializer:
+class TestOrderSerializer:
     def setup(self):
         # Fixture Setup
         self.unpacker = OrderUnpacker()
@@ -410,6 +414,11 @@ class TestMsgPackEventSerializer:
     def setup(self):
         # Fixture Setup
         self.account_id = TestStubs.account_id()
+        self.order_factory = OrderFactory(
+            trader_id=TraderId("TESTER-000"),
+            strategy_id=StrategyId("S-001"),
+            clock=TestClock(),
+        )
         self.serializer = MsgPackEventSerializer()
 
     def test_serialize_and_deserialize_account_state_with_base_currency_events(self):
@@ -843,6 +852,120 @@ class TestMsgPackEventSerializer:
             uuid4(),
             0,
         )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+
+    def test_serialize_and_deserialize_position_opened_events(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        fill = TestStubs.event_order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00001"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+
+        uuid = uuid4()
+        event = PositionOpened.create(position, fill, uuid, 0)
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+
+    def test_serialize_and_deserialize_position_changed_events(self):
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        fill1 = TestStubs.event_order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00001"),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(50000),
+        )
+
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00011"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        uuid = uuid4()
+        event = PositionChanged.create(position, fill2, uuid, 0)
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+
+    def test_serialize_and_deserialize_position_closed_events(self):
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        fill1 = TestStubs.event_order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00001"),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+        )
+
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00011"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        uuid = uuid4()
+        event = PositionClosed.create(position, fill2, uuid, 0)
 
         # Act
         serialized = self.serializer.serialize(event)

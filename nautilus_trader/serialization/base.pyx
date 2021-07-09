@@ -35,6 +35,9 @@ from nautilus_trader.model.events cimport OrderSubmitted
 from nautilus_trader.model.events cimport OrderTriggered
 from nautilus_trader.model.events cimport OrderUpdateRejected
 from nautilus_trader.model.events cimport OrderUpdated
+from nautilus_trader.model.events cimport PositionChanged
+from nautilus_trader.model.events cimport PositionClosed
+from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
 from nautilus_trader.model.instruments.cfd cimport CFDInstrument
@@ -66,6 +69,9 @@ _OBJECT_TO_DICT_MAP = {
     OrderTriggered.__name__: OrderTriggered.to_dict_c,
     OrderUpdateRejected.__name__: OrderUpdateRejected.to_dict_c,
     OrderUpdated.__name__: OrderUpdated.to_dict_c,
+    PositionOpened.__name__: PositionOpened.to_dict_c,
+    PositionChanged.__name__: PositionChanged.to_dict_c,
+    PositionClosed.__name__: PositionClosed.to_dict_c,
     Instrument.__name__: Instrument.base_to_dict_c,
     BettingInstrument.__name__: BettingInstrument.to_dict_c,
     CFDInstrument.__name__: CFDInstrument.to_dict_c,
@@ -98,6 +104,9 @@ _OBJECT_FROM_DICT_MAP = {
     OrderTriggered.__name__: OrderTriggered.from_dict_c,
     OrderUpdateRejected.__name__: OrderUpdateRejected.from_dict_c,
     OrderUpdated.__name__: OrderUpdated.from_dict_c,
+    PositionOpened.__name__: PositionOpened.from_dict_c,
+    PositionChanged.__name__: PositionChanged.from_dict_c,
+    PositionClosed.__name__: PositionClosed.from_dict_c,
     Instrument.__name__: Instrument.base_from_dict_c,
     BettingInstrument.__name__: BettingInstrument.from_dict_c,
     CFDInstrument.__name__: CFDInstrument.from_dict_c,
