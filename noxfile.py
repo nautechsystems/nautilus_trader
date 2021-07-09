@@ -4,7 +4,7 @@ import nox
 from nox.sessions import Session
 
 
-ALL_EXTRAS = "betfair ccxt docs ib oanda"
+ALL_EXTRAS = "betfair ccxt docs ib"
 
 
 # Ensure everything runs within Poetry venvs
