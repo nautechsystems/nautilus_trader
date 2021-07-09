@@ -47,8 +47,7 @@ if __name__ == "__main__":
     # Create the backtest engine
     engine = BacktestEngine(
         use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
-        # exec_db_type="redis",
-        # exec_db_flush=False,
+        # cache_db_type="redis",
         # bypass_logging=True,
         config_risk={
             "bypass": True,  # Example of bypassing pre-trade risk checks for backtests
