@@ -36,7 +36,7 @@ jobs:
       # Test pip installation
       - name: Test pip installation
         if: runner.os != 'Windows'
-        run: pip install .[betfair,ccxt,docs,ib,oanda]
+        run: pip install .[betfair,ccxt,docs,ib]
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
