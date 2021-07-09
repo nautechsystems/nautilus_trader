@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -48,8 +48,8 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class ExecutionClientTests(unittest.TestCase):
-    def setUp(self):
+class TestExecutionClient:
+    def setup(self):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
@@ -112,16 +112,20 @@ class ExecutionClientTests(unittest.TestCase):
         assert client.venue is None
 
     def test_connect_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.client.connect)
+        with pytest.raises(NotImplementedError):
+            self.client.connect()
 
     def test_disconnect_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.client.disconnect)
+        with pytest.raises(NotImplementedError):
+            self.client.disconnect()
 
     def test_reset_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.client.reset)
+        with pytest.raises(NotImplementedError):
+            self.client.reset()
 
     def test_dispose_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.client.dispose)
+        with pytest.raises(NotImplementedError):
+            self.client.dispose()
 
     def test_submit_order_raises_exception(self):
         order = self.order_factory.limit(
@@ -140,7 +144,8 @@ class ExecutionClientTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.assertRaises(NotImplementedError, self.client.submit_order, command)
+        with pytest.raises(NotImplementedError):
+            self.client.submit_order(command)
 
     def test_submit_bracket_order_raises_not_implemented_error(self):
         entry_order = self.order_factory.stop_market(
@@ -165,7 +170,8 @@ class ExecutionClientTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.assertRaises(NotImplementedError, self.client.submit_bracket_order, command)
+        with pytest.raises(NotImplementedError):
+            self.client.submit_bracket_order(command)
 
     def test_update_order_raises_not_implemented_error(self):
         # Arrange
@@ -184,7 +190,8 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertRaises(NotImplementedError, self.client.update_order, command)
+        with pytest.raises(NotImplementedError):
+            self.client.update_order(command)
 
     def test_cancel_order_raises_not_implemented_error(self):
         # Arrange
@@ -200,4 +207,5 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertRaises(NotImplementedError, self.client.cancel_order, command)
+        with pytest.raises(NotImplementedError):
+            self.client.cancel_order(command)
