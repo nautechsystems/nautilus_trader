@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
-import unittest
 from unittest.mock import MagicMock
 
 from nautilus_trader.adapters.oanda.providers import OandaInstrumentProvider
@@ -31,7 +30,7 @@ from tests import TESTS_PACKAGE_ROOT
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/oanda/responses/"
 
 
-class OandaInstrumentProviderTests(unittest.TestCase):
+class TestOandaInstrumentProvider:
     def test_load_all(self):
         # Arrange
         mock_client = MagicMock()
@@ -47,7 +46,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         provider.load_all()
 
         # Assert
-        self.assertTrue(provider.count > 0)  # No exceptions raised
+        assert provider.count > 0  # No exceptions raised
 
     def test_get_all_when_not_loaded_returns_empty_dict(self):
         # Arrange
@@ -59,7 +58,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         instruments = provider.get_all()
 
         # Assert
-        self.assertEqual({}, instruments)
+        assert instruments == {}
 
     def test_get_all_when_loaded_returns_instruments(self):
         # Arrange
@@ -77,9 +76,9 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         instruments = provider.get_all()
 
         # Assert
-        self.assertTrue(len(instruments) > 0)
-        self.assertEqual(dict, type(instruments))
-        self.assertEqual(InstrumentId, type(next(iter(instruments))))
+        assert len(instruments) > 0
+        assert type(instruments) == dict
+        assert type(next(iter(instruments))) == InstrumentId
 
     def test_get_audusd_when_not_loaded_returns_none(self):
         # Arrange
@@ -98,7 +97,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         instrument = provider.find(instrument_id)
 
         # Assert
-        self.assertIsNone(instrument)
+        assert instrument is None
 
     def test_get_audusd_when_loaded_returns_expected_instrument(self):
         # Arrange
@@ -117,7 +116,7 @@ class OandaInstrumentProviderTests(unittest.TestCase):
         instrument = provider.find(instrument_id)
 
         # Assert
-        self.assertEqual(CFDInstrument, type(instrument))
-        self.assertEqual(AssetClass.FX, instrument.asset_class)
-        self.assertEqual(AssetType.CFD, instrument.asset_type)
-        self.assertEqual(USD, instrument.quote_currency)
+        assert type(instrument) == CFDInstrument
+        assert instrument.asset_class == AssetClass.FX
+        assert instrument.asset_type == AssetType.CFD
+        assert instrument.quote_currency == USD
