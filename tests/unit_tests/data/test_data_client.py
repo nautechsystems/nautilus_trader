@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
@@ -47,8 +47,8 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-class DataClientTests(unittest.TestCase):
-    def setUp(self):
+class TestDataClient:
+    def setup(self):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
@@ -82,48 +82,50 @@ class DataClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.connect)
+        with pytest.raises(NotImplementedError):
+            self.client.connect()
 
     def test_disconnect_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.disconnect)
+        with pytest.raises(NotImplementedError):
+            self.client.disconnect()
 
     def test_reset_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.reset)
+        with pytest.raises(NotImplementedError):
+            self.client.reset()
 
     def test_dispose_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.dispose)
+        with pytest.raises(NotImplementedError):
+            self.client.dispose()
 
     def test_subscribe_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.subscribe, DataType(str))
+        with pytest.raises(NotImplementedError):
+            self.client.subscribe(DataType(str))
 
     def test_unsubscribe_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.unsubscribe, DataType(str))
+        with pytest.raises(NotImplementedError):
+            self.client.unsubscribe(DataType(str))
 
     def test_request_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError,
-            self.client.request,
-            DataType(str),
-            self.uuid_factory.generate(),
-        )
+        with pytest.raises(NotImplementedError):
+            self.client.request(DataType(str), self.uuid_factory.generate())
 
     def test_handle_data_sends_to_data_engine(self):
         # Arrange
@@ -141,7 +143,7 @@ class DataClientTests(unittest.TestCase):
         self.client._handle_data_py(generic_data)
 
         # Assert
-        self.assertEqual(1, self.data_engine.data_count)
+        assert self.data_engine.data_count == 1
 
     def test_handle_data_response_sends_to_data_engine(self):
         # Arrange
@@ -158,11 +160,11 @@ class DataClientTests(unittest.TestCase):
         self.client._handle_data_response_py(data_type, data, self.uuid_factory.generate())
 
         # Assert
-        self.assertEqual(1, self.data_engine.response_count)
+        assert self.data_engine.response_count == 1
 
 
-class MarketDataClientTests(unittest.TestCase):
-    def setUp(self):
+class TestMarketDataClient:
+    def setup(self):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
@@ -196,141 +198,134 @@ class MarketDataClientTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.connect)
+        with pytest.raises(NotImplementedError):
+            self.client.connect()
 
     def test_disconnect_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.disconnect)
+        with pytest.raises(NotImplementedError):
+            self.client.disconnect()
 
     def test_reset_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.reset)
+        with pytest.raises(NotImplementedError):
+            self.client.reset()
 
     def test_dispose_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.dispose)
+        with pytest.raises(NotImplementedError):
+            self.client.dispose()
 
     def test_subscribe_instrument_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.subscribe_instrument, AUDUSD_SIM.id)
+        with pytest.raises(NotImplementedError):
+            self.client.subscribe_instrument(AUDUSD_SIM.id)
 
     def test_subscribe_order_book_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError, self.client.subscribe_order_book, AUDUSD_SIM.id, 2, 0
-        )
+        with pytest.raises(NotImplementedError):
+            self.client.subscribe_order_book(AUDUSD_SIM.id, 2, 0)
 
     def test_subscribe_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.subscribe_quote_ticks, AUDUSD_SIM.id)
+        with pytest.raises(NotImplementedError):
+            self.client.subscribe_quote_ticks(AUDUSD_SIM.id)
 
     def test_subscribe_trade_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.subscribe_trade_ticks, AUDUSD_SIM.id)
+        with pytest.raises(NotImplementedError):
+            self.client.subscribe_trade_ticks(AUDUSD_SIM.id)
 
     def test_subscribe_bars_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError,
-            self.client.subscribe_bars,
-            TestStubs.bartype_gbpusd_1sec_mid(),
-        )
+        with pytest.raises(NotImplementedError):
+            self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
 
     def test_unsubscribe_instrument_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.unsubscribe_instrument, AUDUSD_SIM.id)
+        with pytest.raises(NotImplementedError):
+            self.client.unsubscribe_instrument(AUDUSD_SIM.id)
 
     def test_unsubscribe_order_book_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.unsubscribe_order_book, AUDUSD_SIM.id)
+        with pytest.raises(NotImplementedError):
+            self.client.unsubscribe_order_book(AUDUSD_SIM.id)
 
     def test_unsubscribe_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.unsubscribe_quote_ticks, AUDUSD_SIM.id)
+        with pytest.raises(NotImplementedError):
+            self.client.unsubscribe_quote_ticks(AUDUSD_SIM.id)
 
     def test_unsubscribe_trade_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.unsubscribe_trade_ticks, AUDUSD_SIM.id)
+        with pytest.raises(NotImplementedError):
+            self.client.unsubscribe_trade_ticks(AUDUSD_SIM.id)
 
     def test_unsubscribe_bars_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError,
-            self.client.unsubscribe_bars,
-            TestStubs.bartype_gbpusd_1sec_mid(),
-        )
+        with pytest.raises(NotImplementedError):
+            self.client.unsubscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
 
     def test_request_instrument_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.request_instrument, None, None)
+        with pytest.raises(NotImplementedError):
+            self.client.request_instrument(None, None)
 
     def test_request_instruments_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.request_instruments, None)
+        with pytest.raises(NotImplementedError):
+            self.client.request_instruments(None)
 
     def test_request_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError,
-            self.client.request_quote_ticks,
-            None,
-            None,
-            None,
-            0,
-            None,
-        )
+        with pytest.raises(NotImplementedError):
+            self.client.request_quote_ticks(None, None, None, 0, None)
 
     def test_request_trade_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError,
-            self.client.request_trade_ticks,
-            None,
-            None,
-            None,
-            0,
-            None,
-        )
+        with pytest.raises(NotImplementedError):
+            self.client.request_trade_ticks(None, None, None, 0, None)
 
     def test_request_bars_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, self.client.request_bars, None, None, None, 0, None)
+        with pytest.raises(NotImplementedError):
+            self.client.request_bars(None, None, None, 0, None)
 
     def test_unavailable_methods_when_none_given_returns_empty_list(self):
         # Arrange
@@ -338,7 +333,7 @@ class MarketDataClientTests(unittest.TestCase):
         result = self.client.unavailable_methods()
 
         # Assert
-        self.assertEqual([], result)
+        assert result == []
 
     def test_handle_instrument_sends_to_data_engine(self):
         # Arrange
@@ -346,7 +341,7 @@ class MarketDataClientTests(unittest.TestCase):
         self.client._handle_data_py(AUDUSD_SIM)
 
         # Assert
-        self.assertEqual(1, self.data_engine.data_count)
+        assert self.data_engine.data_count == 1
 
     def test_handle_order_book_snapshot_sends_to_data_engine(self):
         # Arrange
@@ -363,7 +358,7 @@ class MarketDataClientTests(unittest.TestCase):
         self.client._handle_data_py(snapshot)
 
         # Assert
-        self.assertEqual(1, self.data_engine.data_count)
+        assert self.data_engine.data_count == 1
 
     def test_handle_order_book_operations_sends_to_data_engine(self):
         # Arrange
@@ -379,7 +374,7 @@ class MarketDataClientTests(unittest.TestCase):
         self.client._handle_data_py(deltas)
 
         # Assert
-        self.assertEqual(1, self.data_engine.data_count)
+        assert self.data_engine.data_count == 1
 
     def test_handle_quote_tick_sends_to_data_engine(self):
         # Arrange
@@ -397,7 +392,7 @@ class MarketDataClientTests(unittest.TestCase):
         self.client._handle_data_py(tick)
 
         # Assert
-        self.assertEqual(1, self.data_engine.data_count)
+        assert self.data_engine.data_count == 1
 
     def test_handle_trade_tick_sends_to_data_engine(self):
         # Arrange
@@ -415,7 +410,7 @@ class MarketDataClientTests(unittest.TestCase):
         self.client._handle_data_py(tick)
 
         # Assert
-        self.assertEqual(1, self.data_engine.data_count)
+        assert self.data_engine.data_count == 1
 
     def test_handle_bar_sends_to_data_engine(self):
         # Arrange
@@ -436,7 +431,7 @@ class MarketDataClientTests(unittest.TestCase):
         self.client._handle_data_py(bar)
 
         # Assert
-        self.assertEqual(1, self.data_engine.data_count)
+        assert self.data_engine.data_count == 1
 
     def test_handle_instruments_sends_to_data_engine(self):
         # Arrange
@@ -444,7 +439,7 @@ class MarketDataClientTests(unittest.TestCase):
         self.client._handle_instruments_py([], self.uuid_factory.generate())
 
         # Assert
-        self.assertEqual(1, self.data_engine.response_count)
+        assert self.data_engine.response_count == 1
 
     def test_handle_quote_ticks_sends_to_data_engine(self):
         # Arrange
@@ -452,7 +447,7 @@ class MarketDataClientTests(unittest.TestCase):
         self.client._handle_quote_ticks_py(AUDUSD_SIM.id, [], self.uuid_factory.generate())
 
         # Assert
-        self.assertEqual(1, self.data_engine.response_count)
+        assert self.data_engine.response_count == 1
 
     def test_handle_trade_ticks_sends_to_data_engine(self):
         # Arrange
@@ -460,7 +455,7 @@ class MarketDataClientTests(unittest.TestCase):
         self.client._handle_trade_ticks_py(AUDUSD_SIM.id, [], self.uuid_factory.generate())
 
         # Assert
-        self.assertEqual(1, self.data_engine.response_count)
+        assert self.data_engine.response_count == 1
 
     def test_handle_bars_sends_to_data_engine(self):
         # Arrange
@@ -473,4 +468,4 @@ class MarketDataClientTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(1, self.data_engine.response_count)
+        assert self.data_engine.response_count == 1
