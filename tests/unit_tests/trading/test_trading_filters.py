@@ -17,7 +17,6 @@ from datetime import datetime
 import os
 
 import pandas as pd
-from parameterized import parameterized
 import pytest
 import pytz
 
@@ -34,13 +33,14 @@ class TestForexSessionFilter:
         # Fixture Setup
         self.session_filter = ForexSessionFilter()
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "session,expected",
         [
             [ForexSession.SYDNEY, "1970-01-01 10:00:00+10:00"],
             [ForexSession.TOKYO, "1970-01-01 09:00:00+09:00"],
             [ForexSession.LONDON, "1970-01-01 01:00:00+01:00"],
             [ForexSession.NEW_YORK, "1969-12-31 19:00:00-05:00"],
-        ]
+        ],
     )
     def test_local_from_utc_given_various_sessions_returns_expected_datetime(
         self, session, expected
@@ -52,13 +52,14 @@ class TestForexSessionFilter:
         # Assert
         assert str(result) == expected
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "session,expected",
         [
             [ForexSession.SYDNEY, datetime(1970, 1, 1, 21, 0, tzinfo=pytz.utc)],
             [ForexSession.TOKYO, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
             [ForexSession.LONDON, datetime(1970, 1, 1, 7, 0, tzinfo=pytz.utc)],
             [ForexSession.NEW_YORK, datetime(1970, 1, 1, 13, 0, tzinfo=pytz.utc)],
-        ]
+        ],
     )
     def test_next_start_given_various_sessions_returns_expected_datetime(self, session, expected):
         # Arrange
@@ -86,13 +87,14 @@ class TestForexSessionFilter:
         # Assert
         assert result == datetime(2020, 7, 14, 0, 0, tzinfo=pytz.utc)
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "session,expected",
         [
             [ForexSession.SYDNEY, datetime(1969, 12, 31, 21, 0, tzinfo=pytz.utc)],
             [ForexSession.TOKYO, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
             [ForexSession.LONDON, datetime(1969, 12, 31, 7, 0, tzinfo=pytz.utc)],
             [ForexSession.NEW_YORK, datetime(1969, 12, 31, 13, 0, tzinfo=pytz.utc)],
-        ]
+        ],
     )
     def test_prev_start_given_various_sessions_returns_expected_datetime(self, session, expected):
         # Arrange
@@ -102,13 +104,14 @@ class TestForexSessionFilter:
         # Assert
         assert result == expected
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "session,expected",
         [
             [ForexSession.SYDNEY, datetime(1970, 1, 1, 6, 0, tzinfo=pytz.utc)],
             [ForexSession.TOKYO, datetime(1970, 1, 1, 9, 0, tzinfo=pytz.utc)],
             [ForexSession.LONDON, datetime(1970, 1, 1, 15, 0, tzinfo=pytz.utc)],
             [ForexSession.NEW_YORK, datetime(1970, 1, 1, 22, 0, tzinfo=pytz.utc)],
-        ]
+        ],
     )
     def test_next_end_given_various_sessions_returns_expected_datetime(self, session, expected):
         # Arrange
@@ -118,13 +121,14 @@ class TestForexSessionFilter:
         # Assert
         assert result == expected
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "session,expected",
         [
             [ForexSession.SYDNEY, datetime(1969, 12, 31, 6, 0, tzinfo=pytz.utc)],
             [ForexSession.TOKYO, datetime(1969, 12, 31, 9, 0, tzinfo=pytz.utc)],
             [ForexSession.LONDON, datetime(1969, 12, 31, 15, 0, tzinfo=pytz.utc)],
             [ForexSession.NEW_YORK, datetime(1969, 12, 31, 22, 0, tzinfo=pytz.utc)],
-        ]
+        ],
     )
     def test_prev_end_given_various_sessions_returns_expected_datetime(self, session, expected):
         # Arrange

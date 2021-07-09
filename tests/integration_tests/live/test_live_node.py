@@ -16,7 +16,6 @@
 import asyncio
 import threading
 import time
-import unittest
 
 from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
@@ -25,7 +24,7 @@ from nautilus_trader.live.node import TradingNode
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
-class TradingNodeConfigurationTests(unittest.TestCase):
+class TestTradingNodeConfiguration:
     def test_config_with_inmemory_execution_database(self):
         # Arrange
         config = {
@@ -64,7 +63,7 @@ class TradingNodeConfigurationTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertIsNotNone(node)
+        assert node is not None
 
     def test_config_with_redis_execution_database(self):
         # Arrange
@@ -106,11 +105,11 @@ class TradingNodeConfigurationTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertIsNotNone(node)
+        assert node is not None
 
 
-class TradingNodeOperationTests(unittest.TestCase):
-    def setUp(self):
+class TestTradingNodeOperation:
+    def setup(self):
         # Fixture Setup
 
         # Fresh isolated loop testing pattern
@@ -148,7 +147,7 @@ class TradingNodeOperationTests(unittest.TestCase):
         loop = self.node.get_event_loop()
 
         # Assert
-        self.assertTrue(isinstance(loop, asyncio.AbstractEventLoop))
+        assert isinstance(loop, asyncio.AbstractEventLoop)
 
     def test_add_data_client_factory(self):
         self.node.add_data_client_factory("CCXT", CCXTDataClientFactory)
@@ -168,7 +167,7 @@ class TradingNodeOperationTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(ComponentState.RUNNING, self.node.trader.state)
+        assert self.node.trader.state == ComponentState.RUNNING
         self.loop.call_soon_threadsafe(self.node.stop)
 
     def test_stop(self):
@@ -184,7 +183,7 @@ class TradingNodeOperationTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(ComponentState.STOPPED, self.node.trader.state)
+        assert self.node.trader.state == ComponentState.STOPPED
 
     def test_dispose(self):
         # Arrange
@@ -202,4 +201,4 @@ class TradingNodeOperationTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(ComponentState.DISPOSED, self.node.trader.state)
+        assert self.node.trader.state == ComponentState.DISPOSED
