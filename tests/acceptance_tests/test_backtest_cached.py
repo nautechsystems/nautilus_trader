@@ -15,7 +15,6 @@
 
 from decimal import Decimal
 import os
-import unittest
 
 import pandas as pd
 
@@ -40,8 +39,8 @@ from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
 
 
-class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
-    def setUp(self):
+class TestBacktestAcceptanceTestsUSDJPYWit:
+    def setup(self):
         # Fixture Setup
         self.engine = BacktestEngine(
             bypass_logging=True,
@@ -80,7 +79,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
             modules=[fx_rollover_interest],
         )
 
-    def tearDown(self):
+    def teardown(self):
         self.engine.dispose()
 
     def test_run_ema_cross_strategy(self):
@@ -97,12 +96,9 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         self.engine.run(strategies=[strategy])
 
         # Assert - Should return expected PnL
-        self.assertEqual(2689, strategy.fast_ema.count)
-        self.assertEqual(115043, self.engine.iteration)
-        self.assertEqual(
-            Money(997731.23, USD),
-            self.engine.portfolio.account(self.venue).balance_total(USD),
-        )
+        assert strategy.fast_ema.count == 2689
+        assert self.engine.iteration == 115043
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(997731.23, USD)
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
@@ -123,7 +119,7 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         result2 = self.engine.analyzer.get_performance_stats_pnls()
 
         # Assert
-        self.assertEqual(all(result1), all(result2))
+        assert all(result2) == all(result1)
 
     def test_run_multiple_strategies(self):
         # Arrange
@@ -153,17 +149,14 @@ class BacktestAcceptanceTestsUSDJPYWithBars(unittest.TestCase):
         self.engine.run(strategies=[strategy1, strategy2])
 
         # Assert
-        self.assertEqual(2689, strategy1.fast_ema.count)
-        self.assertEqual(2689, strategy2.fast_ema.count)
-        self.assertEqual(115043, self.engine.iteration)
-        self.assertEqual(
-            Money(992818.88, USD),
-            self.engine.portfolio.account(self.venue).balance_total(USD),
-        )
+        assert strategy1.fast_ema.count == 2689
+        assert strategy2.fast_ema.count == 2689
+        assert self.engine.iteration == 115043
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992818.88, USD)
 
 
-class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
-    def setUp(self):
+class TestBacktestAcceptanceTestsGBPUSDWit:
+    def setup(self):
         # Fixture Setup
         self.engine = BacktestEngine(
             bypass_logging=True,
@@ -202,7 +195,7 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
             modules=[fx_rollover_interest],
         )
 
-    def tearDown(self):
+    def teardown(self):
         self.engine.dispose()
 
     def test_run_ema_cross_with_minute_bar_spec(self):
@@ -219,16 +212,13 @@ class BacktestAcceptanceTestsGBPUSDWithBars(unittest.TestCase):
         self.engine.run(strategies=[strategy])
 
         # Assert
-        self.assertEqual(8353, strategy.fast_ema.count)
-        self.assertEqual(120467, self.engine.iteration)
-        self.assertEqual(
-            Money(947226.84, GBP),
-            self.engine.portfolio.account(self.venue).balance_total(GBP),
-        )
+        assert strategy.fast_ema.count == 8353
+        assert self.engine.iteration == 120467
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(947226.84, GBP)
 
 
-class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
-    def setUp(self):
+class TestBacktestAcceptanceTestsAUDUSDWith:
+    def setup(self):
         # Fixture Setup
         self.engine = BacktestEngine(
             bypass_logging=True,
@@ -256,7 +246,7 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
             modules=[fx_rollover_interest],
         )
 
-    def tearDown(self):
+    def teardown(self):
         self.engine.dispose()
 
     def test_run_ema_cross_with_minute_bar_spec(self):
@@ -273,12 +263,9 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         self.engine.run(strategies=[strategy])
 
         # Assert
-        self.assertEqual(1771, strategy.fast_ema.count)
-        self.assertEqual(99999, self.engine.iteration)
-        self.assertEqual(
-            Money(991360.19, AUD),
-            self.engine.portfolio.account(self.venue).balance_total(AUD),
-        )
+        assert strategy.fast_ema.count == 1771
+        assert self.engine.iteration == 99999
+        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(991360.19, AUD)
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
@@ -294,16 +281,13 @@ class BacktestAcceptanceTestsAUDUSDWithTicks(unittest.TestCase):
         self.engine.run(strategies=[strategy])
 
         # Assert
-        self.assertEqual(999, strategy.fast_ema.count)
-        self.assertEqual(99999, self.engine.iteration)
-        self.assertEqual(
-            Money(995431.92, AUD),
-            self.engine.portfolio.account(self.venue).balance_total(AUD),
-        )
+        assert strategy.fast_ema.count == 999
+        assert self.engine.iteration == 99999
+        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(995431.92, AUD)
 
 
-class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
-    def setUp(self):
+class TestBacktestAcceptanceTestsETHUSDTWithT:
+    def setup(self):
         # Fixture Setup
         self.engine = BacktestEngine(
             bypass_logging=True,
@@ -325,7 +309,7 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
             starting_balances=[Money(1_000_000, USDT)],
         )
 
-    def tearDown(self):
+    def teardown(self):
         self.engine.dispose()
 
     def test_run_ema_cross_with_tick_bar_spec(self):
@@ -342,16 +326,15 @@ class BacktestAcceptanceTestsETHUSDTWithTrades(unittest.TestCase):
         self.engine.run(strategies=[strategy])
 
         # Assert
-        self.assertEqual(279, strategy.fast_ema.count)
-        self.assertEqual(69806, self.engine.iteration)
-        self.assertEqual(
-            Money(998462.61716820, USDT),
-            self.engine.portfolio.account(self.venue).balance_total(USDT),
+        assert strategy.fast_ema.count == 279
+        assert self.engine.iteration == 69806
+        assert self.engine.portfolio.account(self.venue).balance_total(USDT) == Money(
+            998462.61716820, USDT
         )
 
 
-class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
-    def setUp(self):
+class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQ:
+    def setup(self):
         # Fixture Setup
         self.engine = BacktestEngine(
             bypass_logging=False,
@@ -373,7 +356,7 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
             starting_balances=[Money(1_000_000, USDT), Money(1, BTC)],
         )
 
-    def tearDown(self):
+    def teardown(self):
         self.engine.dispose()
 
     def test_run_ema_cross_with_tick_bar_spec(self):
@@ -390,9 +373,8 @@ class BacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes(unittest.TestCase):
         self.engine.run(strategies=[strategy])
 
         # Assert
-        self.assertEqual(39, strategy.fast_ema.count)
-        self.assertEqual(19998, self.engine.iteration)
-        self.assertEqual(
-            Money(999843.73560000, USDT),
-            self.engine.portfolio.account(self.venue).balance_total(USDT),
+        assert strategy.fast_ema.count == 39
+        assert self.engine.iteration == 19998
+        assert self.engine.portfolio.account(self.venue).balance_total(USDT) == Money(
+            999843.73560000, USDT
         )
