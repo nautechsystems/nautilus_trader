@@ -183,6 +183,29 @@ cdef class Throttler:
         cdef int64_t diff = self._timestamps[0] - self._timestamps[-1]
         return self._interval_ns - diff
 
+    cdef void _limit_msg(self, msg) except *:
+        if self._output_drop is None:
+            # Buffer
+            self._buffer.put_nowait(msg)
+            timer_target = self._process
+            self._log.warning(f"Buffering {msg}.")
+        else:
+            # Drop
+            self._output_drop(msg)
+            timer_target = self._resume
+            self._log.warning(f"Dropped {msg}.")
+
+        if not self.is_limiting:
+            self._set_timer(timer_target)
+            self.is_limiting = True
+
+    cdef void _set_timer(self, handler: callable) except *:
+        self._clock.set_time_alert(
+            name=self._timer_name,
+            alert_time=nanos_to_unix_dt(self._clock.timestamp_ns() + self._delta_next()),
+            handler=handler,
+        )
+
     cpdef void _process(self, TimeEvent event) except *:
         # Send next msg on buffer
         msg = self._buffer.get_nowait()
@@ -204,29 +227,6 @@ cdef class Throttler:
 
     cpdef void _resume(self, TimeEvent event) except *:
         self.is_limiting = False
-
-    cdef void _set_timer(self, handler: callable) except *:
-        self._clock.set_time_alert(
-            name=self._timer_name,
-            alert_time=nanos_to_unix_dt(self._clock.timestamp_ns() + self._delta_next()),
-            handler=handler,
-        )
-
-    cdef void _limit_msg(self, msg) except *:
-        if self._output_drop is not None:
-            # Drop
-            self._output_drop(msg)
-            timer_target = self._resume
-            self._log.warning(f"Dropped {msg}.")
-        else:
-            # Buffer
-            self._buffer.put_nowait(msg)
-            timer_target = self._process
-            self._log.warning(f"Buffering {msg}.")
-
-        if not self.is_limiting:
-            self._set_timer(timer_target)
-            self.is_limiting = True
 
     cdef void _send_msg(self, msg) except *:
         self._timestamps.appendleft(self._clock.timestamp_ns())
