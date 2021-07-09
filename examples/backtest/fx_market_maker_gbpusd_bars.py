@@ -48,7 +48,7 @@ if __name__ == "__main__":
     # Build the backtest engine
     engine = BacktestEngine(
         use_data_cache=True,
-        # exec_db_type="redis",
+        # cache_db_type="redis",
         # bypass_logging=True
     )
 
