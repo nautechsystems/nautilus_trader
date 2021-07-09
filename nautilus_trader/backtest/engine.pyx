@@ -111,7 +111,7 @@ cdef class BacktestEngine:
             The configuration for the risk engine.
         config_exec : dict[str, object]
             The configuration for the execution engine.
-        cache_db_type : str, optional
+        cache_db_type : str, optional  # TODO!
             The type for the cache (can be the default 'in-memory' or redis).
         cache_db_flush : bool, optional
             If the cache should be flushed on each run.

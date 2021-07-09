@@ -40,7 +40,6 @@ from nautilus_trader.model.events cimport PositionClosed
 from nautilus_trader.model.events cimport PositionOpened
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
-from nautilus_trader.model.instruments.cfd cimport CFDInstrument
 from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
 from nautilus_trader.model.instruments.currency cimport CurrencySpot
 from nautilus_trader.model.tick cimport TradeTick
@@ -74,7 +73,6 @@ _OBJECT_TO_DICT_MAP = {
     PositionClosed.__name__: PositionClosed.to_dict_c,
     Instrument.__name__: Instrument.base_to_dict_c,
     BettingInstrument.__name__: BettingInstrument.to_dict_c,
-    CFDInstrument.__name__: CFDInstrument.to_dict_c,
     CryptoSwap.__name__: CryptoSwap.to_dict_c,
     CurrencySpot.__name__: CurrencySpot.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
@@ -109,7 +107,6 @@ _OBJECT_FROM_DICT_MAP = {
     PositionClosed.__name__: PositionClosed.from_dict_c,
     Instrument.__name__: Instrument.base_from_dict_c,
     BettingInstrument.__name__: BettingInstrument.from_dict_c,
-    CFDInstrument.__name__: CFDInstrument.from_dict_c,
     CryptoSwap.__name__: CryptoSwap.from_dict_c,
     CurrencySpot.__name__: CurrencySpot.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,

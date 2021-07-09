@@ -85,15 +85,15 @@ class TestTradingNodeConfiguration:
                 "save_state": True,
             },
             "data_clients": {
-                "oanda": {
-                    "api_token": "OANDA_API_TOKEN",  # value is the environment variable name
-                    "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
+                "binance": {
+                    "api_key": "BINANCE_API_KEY",  # value is the environment variable name
+                    "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
                 },
             },
             "exec_clients": {
-                "oanda": {
-                    "api_token": "OANDA_API_TOKEN",  # value is the environment variable name
-                    "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
+                "binance": {
+                    "api_key": "BINANCE_API_KEY",  # value is the environment variable name
+                    "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
                 },
             },
         }

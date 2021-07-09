@@ -132,7 +132,6 @@ Index
     :hidden:
 
     integrations/ib
-    integrations/oanda
     integrations/ccxtpro
     integrations/binance
     integrations/bitmex

@@ -27,7 +27,6 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.cfd import CFDInstrument
 from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -42,7 +41,6 @@ XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSDT_BINANCE_INSTRUMENT = TestDataProvider.binance_btcusdt_instrument()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
-XAGUSD_OANDA = TestInstrumentProvider.xagusd_oanda()
 
 
 class TestInstrument:
@@ -149,37 +147,6 @@ class TestInstrument:
 
         # Assert
         assert result == BTCUSDT_BINANCE
-
-    def test_cfd_instrument_to_dict(self):
-        # Arrange, Act
-        result = CFDInstrument.to_dict(XAGUSD_OANDA)
-
-        # Assert
-        assert CFDInstrument.from_dict(result) == XAGUSD_OANDA
-        assert result == {
-            "type": "CFDInstrument",
-            "id": "XAG/USD.OANDA",
-            "asset_class": "METAL",
-            "quote_currency": "USD",
-            "price_precision": 5,
-            "price_increment": "0.00001",
-            "size_precision": 0,
-            "size_increment": "1",
-            "lot_size": "1",
-            "max_quantity": "10000000",
-            "min_quantity": "1",
-            "max_notional": None,
-            "min_notional": None,
-            "max_price": "1000000.00",
-            "min_price": "0.05",
-            "margin_init": "0.02",
-            "margin_maint": "0.007",
-            "maker_fee": "-0.00025",
-            "taker_fee": "0.00075",
-            "ts_event_ns": 0,
-            "ts_recv_ns": 0,
-            "info": None,
-        }
 
     def test_crypto_swap_instrument_to_dict(self):
         # Arrange, Act
