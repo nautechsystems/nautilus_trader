@@ -15,6 +15,7 @@
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType
 from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseTypeParser
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
@@ -95,6 +96,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
 
     @staticmethod
     cdef VenueStatusUpdate from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return VenueStatusUpdate(
             venue=Venue(values["venue"]),
             status=VenueStatusParser.from_str(values["status"]),
@@ -104,6 +106,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
 
     @staticmethod
     cdef dict to_dict_c(VenueStatusUpdate obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "VenueStatusUpdate",
             "venue": obj.venue.value,
@@ -184,6 +187,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
 
     @staticmethod
     cdef InstrumentStatusUpdate from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return InstrumentStatusUpdate(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             status=InstrumentStatusParser.from_str(values["status"]),
@@ -193,6 +197,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
 
     @staticmethod
     cdef dict to_dict_c(InstrumentStatusUpdate obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "InstrumentStatusUpdate",
             "instrument_id": obj.instrument_id.value,
@@ -278,6 +283,7 @@ cdef class InstrumentClosePrice(Data):
 
     @staticmethod
     cdef InstrumentClosePrice from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return InstrumentClosePrice(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             close_price=Price.from_str_c(values["close_price"]),
@@ -288,6 +294,7 @@ cdef class InstrumentClosePrice(Data):
 
     @staticmethod
     cdef dict to_dict_c(InstrumentClosePrice obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "InstrumentClosePrice",
             "instrument_id": obj.instrument_id.value,

@@ -18,6 +18,7 @@ from libc.stdint cimport int64_t
 
 from decimal import Decimal
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
@@ -185,6 +186,7 @@ cdef class CryptoSwap(Instrument):
 
     @staticmethod
     cdef CryptoSwap from_dict_c(dict values):
+        Condition.not_none(values, "values")
         cdef str max_q = values["max_quantity"]
         cdef str min_q = values["min_quantity"]
         cdef str max_n = values["max_notional"]
@@ -219,6 +221,7 @@ cdef class CryptoSwap(Instrument):
 
     @staticmethod
     cdef dict to_dict_c(CryptoSwap obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "CryptoSwap",
             "id": obj.id.value,

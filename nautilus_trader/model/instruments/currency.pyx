@@ -18,6 +18,7 @@ from libc.stdint cimport int64_t
 
 from decimal import Decimal
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
@@ -186,6 +187,7 @@ cdef class CurrencySpot(Instrument):
 
     @staticmethod
     cdef CurrencySpot from_dict_c(dict values):
+        Condition.not_none(values, "values")
         cdef str lot_s = values["lot_size"]
         cdef str max_q = values["max_quantity"]
         cdef str min_q = values["min_quantity"]
@@ -220,6 +222,7 @@ cdef class CurrencySpot(Instrument):
 
     @staticmethod
     cdef dict to_dict_c(CurrencySpot obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "CurrencySpot",
             "id": obj.id.value,

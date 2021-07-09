@@ -46,17 +46,17 @@ cdef class Position:
     cdef readonly AccountId account_id
     """The account ID associated with the position.\n\n:returns: `AccountId`"""
     cdef readonly ClientOrderId from_order
-    """The client order ID for the order which first opened the position.\n\n:returns: `ClientOrderId`"""
+    """The client order ID for the order which initially opened the position.\n\n:returns: `ClientOrderId`"""
     cdef readonly StrategyId strategy_id
     """The strategy ID associated with the position.\n\n:returns: `StrategyId`"""
     cdef readonly InstrumentId instrument_id
     """The position instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderSide entry
-    """The entry direction from open.\n\n:returns: `OrderSide`"""
+    """The position entry order side.\n\n:returns: `OrderSide`"""
     cdef readonly PositionSide side
     """The current position side.\n\n:returns: `PositionSide`"""
     cdef readonly object net_qty
-    """The net quantity (positive for LONG, negative for SHORT).\n\n:returns: `Decimal`"""
+    """The current net quantity (positive for LONG, negative for SHORT).\n\n:returns: `Decimal`"""
     cdef readonly Quantity quantity
     """The current open quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity peak_qty
@@ -78,9 +78,9 @@ cdef class Position:
     cdef readonly int64_t timestamp_ns
     """The position initialization UNIX timestamp (nanoseconds).\n\n:returns: `int64`"""
     cdef readonly int64_t ts_opened_ns
-    """The opened time UNIX timestamp (nanoseconds).\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `int64`"""
     cdef readonly int64_t ts_closed_ns
-    """The closed time UNIX timestamp (nanoseconds).\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `int64`"""
     cdef readonly int64_t duration_ns
     """The total open duration (nanoseconds).\n\n:returns: `int64`"""
     cdef readonly object avg_px_open
@@ -88,11 +88,11 @@ cdef class Position:
     cdef readonly object avg_px_close
     """The average closing price.\n\n:returns: `Decimal` or `None`"""
     cdef readonly object realized_points
-    """The realized points of the position.\n\n:returns: `Decimal`"""
+    """The current realized points for the position.\n\n:returns: `Decimal`"""
     cdef readonly object realized_return
-    """The realized return of the position.\n\n:returns: `Decimal`"""
+    """The current realized return for the position.\n\n:returns: `Decimal`"""
     cdef readonly Money realized_pnl
-    """The realized PnL of the position (including commission).\n\n:returns: `Money`"""
+    """The current realized PnL for the position (including commissions).\n\n:returns: `Money`"""
 
     cpdef dict to_dict(self)
 

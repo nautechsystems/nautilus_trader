@@ -119,6 +119,7 @@ cdef class QuoteTick(Tick):
 
     @staticmethod
     cdef QuoteTick from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return QuoteTick(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             bid=Price.from_str_c(values["bid"]),
@@ -131,6 +132,7 @@ cdef class QuoteTick(Tick):
 
     @staticmethod
     cdef dict to_dict_c(QuoteTick obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
             "instrument_id": obj.instrument_id.value,
@@ -286,6 +288,7 @@ cdef class TradeTick(Tick):
 
     @staticmethod
     cdef TradeTick from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return TradeTick(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             price=Price.from_str_c(values["price"]),
@@ -298,6 +301,7 @@ cdef class TradeTick(Tick):
 
     @staticmethod
     cdef dict to_dict_c(TradeTick obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
             "instrument_id": obj.instrument_id.value,

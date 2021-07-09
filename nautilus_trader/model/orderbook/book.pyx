@@ -1093,6 +1093,7 @@ cdef class OrderBookSnapshot(OrderBookData):
 
     @staticmethod
     cdef OrderBookSnapshot from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderBookSnapshot(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             level=BookLevelParser.from_str(values["level"]),
@@ -1104,6 +1105,7 @@ cdef class OrderBookSnapshot(OrderBookData):
 
     @staticmethod
     cdef dict to_dict_c(OrderBookSnapshot obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderBookSnapshot",
             "instrument_id": obj.instrument_id.value,
@@ -1193,6 +1195,7 @@ cdef class OrderBookDeltas(OrderBookData):
 
     @staticmethod
     cdef OrderBookDeltas from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderBookDeltas(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             level=BookLevelParser.from_str(values["level"]),
@@ -1203,6 +1206,7 @@ cdef class OrderBookDeltas(OrderBookData):
 
     @staticmethod
     cdef dict to_dict_c(OrderBookDeltas obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderBookDeltas",
             "instrument_id": obj.instrument_id.value,
@@ -1296,6 +1300,7 @@ cdef class OrderBookDelta(OrderBookData):
 
     @staticmethod
     cdef OrderBookDelta from_dict_c(dict values):
+        Condition.not_none(values, "values")
         cdef DeltaType delta_type = DeltaTypeParser.from_str(values["delta_type"])
         cdef Order order = Order.from_dict_c({
             "price": values["order_price"],
@@ -1314,6 +1319,7 @@ cdef class OrderBookDelta(OrderBookData):
 
     @staticmethod
     cdef dict to_dict_c(OrderBookDelta obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderBookDelta",
             "instrument_id": obj.instrument_id.value,

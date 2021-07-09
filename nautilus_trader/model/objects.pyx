@@ -599,6 +599,7 @@ cdef class AccountBalance:
 
     @staticmethod
     cdef AccountBalance from_dict_c(dict values):
+        Condition.not_none(values, "values")
         cdef Currency currency = Currency.from_str_c(values["currency"])
         return AccountBalance(
             currency=currency,

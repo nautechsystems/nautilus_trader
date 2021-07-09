@@ -333,7 +333,7 @@ cdef class Portfolio(PortfolioFacade):
             instrument_id=event.instrument_id,
         )
 
-        self._log.debug(f"Updated {event.position_status}.")
+        self._log.debug(f"Updated {event}.")
 
     cpdef void reset(self) except *:
         """

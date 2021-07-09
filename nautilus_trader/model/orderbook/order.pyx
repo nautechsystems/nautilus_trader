@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid import uuid4
 
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -123,6 +124,7 @@ cdef class Order:
 
     @staticmethod
     cdef Order from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return Order(
             price=values["price"],
             size=values["size"],
@@ -132,6 +134,7 @@ cdef class Order:
 
     @staticmethod
     cdef dict to_dict_c(Order obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "Order",
             "price": obj.price,
