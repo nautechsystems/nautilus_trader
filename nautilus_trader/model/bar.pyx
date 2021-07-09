@@ -357,6 +357,7 @@ cdef class Bar(Data):
 
     @staticmethod
     cdef Bar from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return Bar(
             bar_type=BarType.from_str_c(values["bar_type"]),
             open_price=Price.from_str_c(values["open"]),
@@ -370,6 +371,7 @@ cdef class Bar(Data):
 
     @staticmethod
     cdef dict to_dict_c(Bar obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": type(obj).__name__,
             "bar_type": str(obj.type),

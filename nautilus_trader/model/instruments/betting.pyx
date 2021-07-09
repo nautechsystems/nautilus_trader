@@ -14,11 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
+
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
+
 from cpython.datetime cimport datetime
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
@@ -117,10 +120,12 @@ cdef class BettingInstrument(Instrument):
 
     @staticmethod
     cdef BettingInstrument from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return BettingInstrument(**values)
 
     @staticmethod
     cdef dict to_dict_c(BettingInstrument obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "BettingInstrument",
             "venue_name": obj.id.venue.value,

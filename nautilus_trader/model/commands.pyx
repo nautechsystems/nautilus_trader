@@ -17,6 +17,7 @@ from libc.stdint cimport int64_t
 
 import json
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.events cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -130,6 +131,7 @@ cdef class SubmitOrder(TradingCommand):
 
     @staticmethod
     cdef SubmitOrder from_dict_c(dict values):
+        Condition.not_none(values, "values")
         cdef str p = values["position_id"]
         cdef PositionId position_id = PositionId(p) if p is not None else None
         return SubmitOrder(
@@ -143,6 +145,7 @@ cdef class SubmitOrder(TradingCommand):
 
     @staticmethod
     cdef dict to_dict_c(SubmitOrder obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "SubmitOrder",
             "trader_id": obj.trader_id.value,
@@ -237,6 +240,7 @@ cdef class SubmitBracketOrder(TradingCommand):
 
     @staticmethod
     cdef SubmitBracketOrder from_dict_c(dict values):
+        Condition.not_none(values, "values")
         cdef BracketOrder bracket_order = BracketOrder(
             entry=OrderUnpacker.unpack_c(json.loads(values["entry"])),
             stop_loss=OrderUnpacker.unpack_c(json.loads(values["stop_loss"])),
@@ -252,6 +256,7 @@ cdef class SubmitBracketOrder(TradingCommand):
 
     @staticmethod
     cdef dict to_dict_c(SubmitBracketOrder obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "SubmitBracketOrder",
             "trader_id": obj.trader_id.value,
@@ -370,6 +375,7 @@ cdef class UpdateOrder(TradingCommand):
 
     @staticmethod
     cdef UpdateOrder from_dict_c(dict values):
+        Condition.not_none(values, "values")
         cdef str q = values["quantity"]
         cdef str p = values["price"]
         cdef str t = values["trigger"]
@@ -388,6 +394,7 @@ cdef class UpdateOrder(TradingCommand):
 
     @staticmethod
     cdef dict to_dict_c(UpdateOrder obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "UpdateOrder",
             "trader_id": obj.trader_id.value,
@@ -494,6 +501,7 @@ cdef class CancelOrder(TradingCommand):
 
     @staticmethod
     cdef CancelOrder from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return CancelOrder(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -506,6 +514,7 @@ cdef class CancelOrder(TradingCommand):
 
     @staticmethod
     cdef dict to_dict_c(CancelOrder obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "CancelOrder",
             "trader_id": obj.trader_id.value,

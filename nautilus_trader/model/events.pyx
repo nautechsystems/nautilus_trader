@@ -13,9 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 import json
-
-import pandas as pd
 
 from libc.stdint cimport int64_t
 
@@ -30,6 +29,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
+from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.currency cimport Currency
@@ -42,6 +42,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.position cimport Position
 
 
 cdef class AccountState(Event):
@@ -107,6 +108,7 @@ cdef class AccountState(Event):
 
     @staticmethod
     cdef AccountState from_dict_c(dict values):
+        Condition.not_none(values, "values")
         cdef str base_str = values["base_currency"]
         return AccountState(
             account_id=AccountId.from_str_c(values["account_id"]),
@@ -122,6 +124,7 @@ cdef class AccountState(Event):
 
     @staticmethod
     cdef dict to_dict_c(AccountState obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "AccountState",
             "account_id": obj.account_id.value,
@@ -275,6 +278,7 @@ cdef class OrderInitialized(OrderEvent):
 
     @staticmethod
     cdef OrderInitialized from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderInitialized(
             client_order_id=ClientOrderId(values["client_order_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -290,6 +294,7 @@ cdef class OrderInitialized(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderInitialized obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderInitialized",
             "client_order_id": obj.client_order_id.value,
@@ -387,6 +392,7 @@ cdef class OrderDenied(OrderEvent):
 
     @staticmethod
     cdef OrderDenied from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderDenied(
             client_order_id=ClientOrderId(values["client_order_id"]),
             reason=values["reason"],
@@ -396,6 +402,7 @@ cdef class OrderDenied(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderDenied obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderDenied",
             "client_order_id": obj.client_order_id.value,
@@ -483,6 +490,7 @@ cdef class OrderSubmitted(OrderEvent):
 
     @staticmethod
     cdef OrderSubmitted from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderSubmitted(
             account_id=AccountId.from_str_c(values["account_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
@@ -493,6 +501,7 @@ cdef class OrderSubmitted(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderSubmitted obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderSubmitted",
             "account_id": obj.account_id.value,
@@ -597,6 +606,7 @@ cdef class OrderAccepted(OrderEvent):
 
     @staticmethod
     cdef OrderAccepted from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderAccepted(
             account_id=AccountId.from_str_c(values["account_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
@@ -608,6 +618,7 @@ cdef class OrderAccepted(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderAccepted obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderAccepted",
             "account_id": obj.account_id.value,
@@ -707,6 +718,7 @@ cdef class OrderRejected(OrderEvent):
 
     @staticmethod
     cdef OrderRejected from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderRejected(
             account_id=AccountId.from_str_c(values["account_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
@@ -718,6 +730,7 @@ cdef class OrderRejected(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderRejected obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderRejected",
             "account_id": obj.account_id.value,
@@ -816,6 +829,7 @@ cdef class OrderCanceled(OrderEvent):
 
     @staticmethod
     cdef OrderCanceled from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderCanceled(
             account_id=AccountId.from_str_c(values["account_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
@@ -827,6 +841,7 @@ cdef class OrderCanceled(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderCanceled obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderCanceled",
             "account_id": obj.account_id.value,
@@ -925,6 +940,7 @@ cdef class OrderExpired(OrderEvent):
 
     @staticmethod
     cdef OrderExpired from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderExpired(
             account_id=AccountId.from_str_c(values["account_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
@@ -936,6 +952,7 @@ cdef class OrderExpired(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderExpired obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderExpired",
             "account_id": obj.account_id.value,
@@ -1034,6 +1051,7 @@ cdef class OrderTriggered(OrderEvent):
 
     @staticmethod
     cdef OrderTriggered from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderTriggered(
             account_id=AccountId.from_str_c(values["account_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
@@ -1045,6 +1063,7 @@ cdef class OrderTriggered(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderTriggered obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderTriggered",
             "account_id": obj.account_id.value,
@@ -1145,6 +1164,7 @@ cdef class OrderPendingUpdate(OrderEvent):
 
     @staticmethod
     cdef OrderPendingUpdate from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderPendingUpdate(
             account_id=AccountId.from_str_c(values["account_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
@@ -1156,6 +1176,7 @@ cdef class OrderPendingUpdate(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderPendingUpdate obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderPendingUpdate",
             "account_id": obj.account_id.value,
@@ -1256,6 +1277,7 @@ cdef class OrderPendingCancel(OrderEvent):
 
     @staticmethod
     cdef OrderPendingCancel from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderPendingCancel(
             account_id=AccountId.from_str_c(values["account_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
@@ -1267,6 +1289,7 @@ cdef class OrderPendingCancel(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderPendingCancel obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderPendingCancel",
             "account_id": obj.account_id.value,
@@ -1379,6 +1402,7 @@ cdef class OrderUpdateRejected(OrderEvent):
 
     @staticmethod
     cdef OrderUpdateRejected from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderUpdateRejected(
             account_id=AccountId.from_str_c(values["account_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
@@ -1392,6 +1416,7 @@ cdef class OrderUpdateRejected(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderUpdateRejected obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderUpdateRejected",
             "account_id": obj.account_id.value,
@@ -1506,6 +1531,7 @@ cdef class OrderCancelRejected(OrderEvent):
 
     @staticmethod
     cdef OrderCancelRejected from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderCancelRejected(
             account_id=AccountId.from_str_c(values["account_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
@@ -1519,6 +1545,7 @@ cdef class OrderCancelRejected(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderCancelRejected obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderCancelRejected",
             "account_id": obj.account_id.value,
@@ -1634,6 +1661,7 @@ cdef class OrderUpdated(OrderEvent):
 
     @staticmethod
     cdef OrderUpdated from_dict_c(dict values):
+        Condition.not_none(values, "values")
         cdef str t = values["trigger"]
         return OrderUpdated(
             account_id=AccountId.from_str_c(values["account_id"]),
@@ -1649,6 +1677,7 @@ cdef class OrderUpdated(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderUpdated obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderUpdated",
             "account_id": obj.account_id.value,
@@ -1807,6 +1836,7 @@ cdef class OrderFilled(OrderEvent):
 
     @staticmethod
     cdef OrderFilled from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return OrderFilled(
             account_id=AccountId.from_str_c(values["account_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
@@ -1829,6 +1859,7 @@ cdef class OrderFilled(OrderEvent):
 
     @staticmethod
     cdef dict to_dict_c(OrderFilled obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "OrderFilled",
             "account_id": obj.account_id.value,
@@ -1921,11 +1952,23 @@ cdef class PositionEvent(Event):
 
     def __init__(
         self,
-        PositionId position_id not None,
-        StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
-        dict position_status not None,
         OrderFilled order_fill not None,
+        PositionId position_id not None,
+        InstrumentId instrument_id not None,
+        AccountId account_id not None,
+        ClientOrderId from_order not None,
+        StrategyId strategy_id not None,
+        OrderSide entry,
+        PositionSide side,
+        net_qty not None: Decimal,
+        Quantity quantity not None,
+        Quantity peak_qty not None,
+        Currency currency not None,
+        avg_px_open not None: Decimal,
+        realized_points not None: Decimal,
+        realized_return not None: Decimal,
+        Money realized_pnl not None,
+        int64_t ts_opened_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -1934,37 +1977,65 @@ cdef class PositionEvent(Event):
 
         Parameters
         ----------
-        position_id : PositionId
-            The position ID associated with the event.
-        strategy_id : StrategyId
-            The strategy ID associated with the event.
-        instrument_id : InstrumentId
-            The position instrument ID.
-        position_status : dict[str, object]
-            The position status.
         order_fill : OrderFilled
             The order fill event which triggered the event.
+        position_id : PositionId
+            The position ID associated with the event.
+        instrument_id : InstrumentId
+            The position instrument ID.
+        account_id : AccountId
+            The strategy ID associated with the event.
+        from_order : ClientOrderId
+            The client order ID for the order which initially opened the position.
+        strategy_id : StrategyId
+            The strategy ID associated with the event.
+        entry : OrderSide
+            The position entry order side.
+        side : PositionSide
+            The current position side.
+        net_qty : Decimal
+            The current net quantity (positive for LONG, negative for SHORT).
+        quantity : Quantity
+            The current open quantity.
+        peak_qty : Quantity
+            The peak directional quantity reached by the position.
+        currency : Currency
+            The position quote currency.
+        avg_px_open : Decimal
+            The average open price.
+        realized_points : Decimal
+            The realized points for the position.
+        realized_return : Decimal
+            The realized return for the position.
+        realized_pnl : Money
+            The realized PnL for the position.
+        ts_opened_ns : int64
+            The UNIX timestamp (nanoseconds) when the position was opened.
         event_id : UUID
             The event ID.
         timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event.
 
         """
         super().__init__(event_id, timestamp_ns)
 
-        self.position_id = position_id
-        self.strategy_id = strategy_id
-        self.instrument_id = instrument_id
-        self.position_status = position_status
         self.order_fill = order_fill
-
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"position_id={self.position_id}, "
-                f"strategy_id={self.strategy_id}, "
-                f"instrument_id={self.instrument_id}, "
-                f"position_status={self.position_status}, "
-                f"event_id={self.id})")
+        self.position_id = position_id
+        self.instrument_id = instrument_id
+        self.account_id = account_id
+        self.from_order = from_order
+        self.strategy_id = strategy_id
+        self.entry = entry
+        self.side = side
+        self.net_qty = net_qty
+        self.quantity = quantity
+        self.peak_qty = peak_qty
+        self.currency = currency
+        self.avg_px_open = avg_px_open
+        self.realized_points = realized_points
+        self.realized_return = realized_return
+        self.realized_pnl = realized_pnl
+        self.ts_opened_ns = ts_opened_ns
 
 
 cdef class PositionOpened(PositionEvent):
@@ -1974,11 +2045,23 @@ cdef class PositionOpened(PositionEvent):
 
     def __init__(
         self,
-        PositionId position_id not None,
-        StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
-        dict position_status not None,
         OrderFilled order_fill not None,
+        PositionId position_id not None,
+        InstrumentId instrument_id not None,
+        AccountId account_id not None,
+        ClientOrderId from_order not None,
+        StrategyId strategy_id not None,
+        OrderSide entry,
+        PositionSide side,
+        net_qty not None: Decimal,
+        Quantity quantity not None,
+        Quantity peak_qty not None,
+        Currency currency not None,
+        avg_px_open not None: Decimal,
+        realized_points not None: Decimal,
+        realized_return not None: Decimal,
+        Money realized_pnl not None,
+        int64_t ts_opened_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -1987,57 +2070,200 @@ cdef class PositionOpened(PositionEvent):
 
         Parameters
         ----------
-        position_id : PositionId
-            The position ID associated with the event.
-        strategy_id : StrategyId
-            The strategy ID associated with the event.
-        instrument_id : InstrumentId
-            The position instrument ID.
-        position_status : dict[str, object]
-            The position status.
         order_fill : OrderFilled
             The order fill event which triggered the event.
+        position_id : PositionId
+            The position ID associated with the event.
+        instrument_id : InstrumentId
+            The position instrument ID.
+        account_id : AccountId
+            The strategy ID associated with the event.
+        from_order : ClientOrderId
+            The client order ID for the order which initially opened the position.
+        strategy_id : StrategyId
+            The strategy ID associated with the event.
+        entry : OrderSide
+            The position entry order side.
+        side : PositionSide
+            The current position side.
+        net_qty : Decimal
+            The current net quantity (positive for LONG, negative for SHORT).
+        quantity : Quantity
+            The current open quantity.
+        peak_qty : Quantity
+            The peak directional quantity reached by the position.
+        currency : Currency
+            The position quote currency.
+        avg_px_open : Decimal
+            The average open price.
+        realized_points : Decimal
+            The realized points for the position.
+        realized_return : Decimal
+            The realized return for the position.
+        realized_pnl : Money
+            The realized PnL for the position.
+        ts_opened_ns : int64
+            The UNIX timestamp (nanoseconds) when the position was opened.
         event_id : UUID
             The event ID.
         timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event.
 
         """
-        assert position_status["side"] != "FLAT"  # Design-time check: position status matched event
+        assert side != PositionSide.FLAT  # Design-time check: position side matches event
         super().__init__(
-            position_id,
-            strategy_id,
-            instrument_id,
-            position_status,
             order_fill,
+            position_id,
+            instrument_id,
+            account_id,
+            from_order,
+            strategy_id,
+            entry,
+            side,
+            net_qty,
+            quantity,
+            peak_qty,
+            currency,
+            avg_px_open,
+            realized_points,
+            realized_return,
+            realized_pnl,
+            ts_opened_ns,
             event_id,
             timestamp_ns,
         )
 
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"position_id={self.position_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"from_order={self.from_order.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"entry={OrderSideParser.to_str(self.entry)}, "
+                f"side={PositionSideParser.to_str(self.side)}, "
+                f"net_qty={self.net_qty}, "
+                f"quantity={self.quantity.to_str()}, "
+                f"peak_qty={self.peak_qty.to_str()}, "
+                f"currency={self.currency.code}, "
+                f"avg_px_open={self.avg_px_open}, "
+                f"realized_points={self.realized_points}, "
+                f"realized_return={self.realized_return}, "
+                f"realized_pnl={self.realized_pnl}, "
+                f"ts_opened_ns={self.ts_opened_ns}, "
+                f"event_id={self.id})")
+
+    @staticmethod
+    cdef PositionOpened create_c(
+        Position position,
+        OrderFilled fill,
+        UUID event_id,
+        int64_t timestamp_ns,
+    ):
+        Condition.not_none(position, "position")
+        Condition.not_none(fill, "fill")
+        Condition.not_none(event_id, "event_id")
+
+        return PositionOpened(
+            order_fill=fill,
+            position_id=position.id,
+            instrument_id=position.instrument_id,
+            account_id=position.account_id,
+            from_order=position.from_order,
+            strategy_id=position.strategy_id,
+            entry=position.entry,
+            side=position.side,
+            net_qty=position.net_qty,
+            quantity=position.quantity,
+            peak_qty=position.peak_qty,
+            currency=position.quote_currency,
+            avg_px_open=position.avg_px_open,
+            realized_points=position.realized_points,
+            realized_return=position.realized_return,
+            realized_pnl=position.realized_pnl,
+            ts_opened_ns=position.ts_opened_ns,
+            event_id=event_id,
+            timestamp_ns=timestamp_ns,
+        )
+
     @staticmethod
     cdef PositionOpened from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return PositionOpened(
-            position_id=PositionId(values["position_id"]),
-            strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            position_status=json.loads(values["position_status"]),
             order_fill=OrderFilled.from_dict_c(json.loads(values["order_fill"])),
+            position_id=PositionId(values["position_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            account_id=AccountId.from_str_c(values["account_id"]),
+            from_order=ClientOrderId(values["from_order"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            entry=OrderSideParser.from_str(values["entry"]),
+            side=PositionSideParser.from_str(values["side"]),
+            net_qty=Decimal(values["net_qty"]),
+            quantity=Quantity.from_str_c(values["quantity"]),
+            peak_qty=Quantity.from_str_c(values["peak_qty"]),
+            currency=Currency.from_str_c(values["currency"]),
+            avg_px_open=Decimal(values["avg_px_open"]),
+            realized_points=Decimal(values["realized_points"]),
+            realized_return=Decimal(values["realized_return"]),
+            realized_pnl=Money.from_str_c(values["realized_pnl"]),
+            ts_opened_ns=values["ts_opened_ns"],
             event_id=UUID.from_str_c(values["event_id"]),
             timestamp_ns=values["timestamp_ns"],
         )
 
     @staticmethod
     cdef dict to_dict_c(PositionOpened obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "PositionOpened",
-            "position_id": obj.position_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "position_status": json.dumps(obj.position_status),
             "order_fill": json.dumps(OrderFilled.to_dict_c(obj.order_fill)),
+            "position_id": obj.position_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "account_id": obj.account_id.value,
+            "from_order": obj.from_order.value,
+            "strategy_id": obj.strategy_id.value,
+            "entry": OrderSideParser.to_str(obj.entry),
+            "side": PositionSideParser.to_str(obj.side),
+            "net_qty": str(obj.net_qty),
+            "quantity": str(obj.quantity),
+            "peak_qty": str(obj.peak_qty),
+            "currency": obj.currency.code,
+            "avg_px_open": str(obj.avg_px_open),
+            "realized_points": str(obj.realized_points),
+            "realized_return": f"{obj.realized_return:.5f}",
+            "realized_pnl": obj.realized_pnl.to_str(),
+            "ts_opened_ns": obj.ts_opened_ns,
             "event_id": obj.id.value,
             "timestamp_ns": obj.timestamp_ns,
         }
+
+    @staticmethod
+    def create(
+        Position position,
+        OrderFilled fill,
+        UUID event_id,
+        int64_t timestamp_ns,
+    ):
+        """
+        Return a position opened event from the given params.
+
+        Parameters
+        ----------
+        position : Position
+            The position for the event.
+        fill : OrderFilled
+            The order fill for the event.
+        event_id : UUID
+            The event ID.
+        timestamp_ns : int64
+            The UNIX timestamp (nanoseconds) of the event.
+
+        Returns
+        -------
+        PositionOpened
+
+        """
+        return PositionOpened.create_c(position, fill, event_id, timestamp_ns)
 
     @staticmethod
     def from_dict(dict values):
@@ -2076,11 +2302,23 @@ cdef class PositionChanged(PositionEvent):
 
     def __init__(
         self,
-        PositionId position_id not None,
-        StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
-        dict position_status not None,
         OrderFilled order_fill not None,
+        PositionId position_id not None,
+        InstrumentId instrument_id not None,
+        AccountId account_id not None,
+        ClientOrderId from_order not None,
+        StrategyId strategy_id not None,
+        OrderSide entry,
+        PositionSide side,
+        net_qty not None: Decimal,
+        Quantity quantity not None,
+        Quantity peak_qty not None,
+        Currency currency not None,
+        avg_px_open not None: Decimal,
+        realized_points not None: Decimal,
+        realized_return not None: Decimal,
+        Money realized_pnl not None,
+        int64_t ts_opened_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -2089,57 +2327,200 @@ cdef class PositionChanged(PositionEvent):
 
         Parameters
         ----------
-        position_id : PositionId
-            The position ID associated with the event.
-        strategy_id : StrategyId
-            The strategy ID associated with the event.
-        instrument_id : InstrumentId
-            The position instrument ID.
-        position_status : dict[str, object]
-            The position status.
         order_fill : OrderFilled
             The order fill event which triggered the event.
+        position_id : PositionId
+            The position ID associated with the event.
+        instrument_id : InstrumentId
+            The position instrument ID.
+        account_id : AccountId
+            The strategy ID associated with the event.
+        from_order : ClientOrderId
+            The client order ID for the order which initially opened the position.
+        strategy_id : StrategyId
+            The strategy ID associated with the event.
+        entry : OrderSide
+            The position entry order side.
+        side : PositionSide
+            The current position side.
+        net_qty : Decimal
+            The current net quantity (positive for LONG, negative for SHORT).
+        quantity : Quantity
+            The current open quantity.
+        peak_qty : Quantity
+            The peak directional quantity reached by the position.
+        currency : Currency
+            The position quote currency.
+        avg_px_open : Decimal
+            The average open price.
+        realized_points : Decimal
+            The realized points for the position.
+        realized_return : Decimal
+            The realized return for the position.
+        realized_pnl : Money
+            The realized PnL for the position.
+        ts_opened_ns : int64
+            The UNIX timestamp (nanoseconds) when the position was opened.
         event_id : UUID
             The event ID.
         timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event.
 
         """
-        assert position_status["side"] != "FLAT"  # Design-time check: position status matched event
+        assert side != PositionSide.FLAT  # Design-time check: position side matches event
         super().__init__(
-            position_id,
-            strategy_id,
-            instrument_id,
-            position_status,
             order_fill,
+            position_id,
+            instrument_id,
+            account_id,
+            from_order,
+            strategy_id,
+            entry,
+            side,
+            net_qty,
+            quantity,
+            peak_qty,
+            currency,
+            avg_px_open,
+            realized_points,
+            realized_return,
+            realized_pnl,
+            ts_opened_ns,
             event_id,
             timestamp_ns,
         )
 
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"position_id={self.position_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"from_order={self.from_order.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"entry={OrderSideParser.to_str(self.entry)}, "
+                f"side={PositionSideParser.to_str(self.side)}, "
+                f"net_qty={self.net_qty}, "
+                f"quantity={self.quantity.to_str()}, "
+                f"peak_qty={self.peak_qty.to_str()}, "
+                f"currency={self.currency.code}, "
+                f"avg_px_open={self.avg_px_open}, "
+                f"realized_points={self.realized_points}, "
+                f"realized_return={self.realized_return:.5f}, "
+                f"realized_pnl={self.realized_pnl}, "
+                f"ts_opened_ns={self.ts_opened_ns}, "
+                f"event_id={self.id})")
+
+    @staticmethod
+    cdef PositionChanged create_c(
+        Position position,
+        OrderFilled fill,
+        UUID event_id,
+        int64_t timestamp_ns,
+    ):
+        Condition.not_none(position, "position")
+        Condition.not_none(fill, "fill")
+        Condition.not_none(event_id, "event_id")
+
+        return PositionChanged(
+            order_fill=fill,
+            position_id=position.id,
+            instrument_id=position.instrument_id,
+            account_id=position.account_id,
+            from_order=position.from_order,
+            strategy_id=position.strategy_id,
+            entry=position.entry,
+            side=position.side,
+            net_qty=position.net_qty,
+            quantity=position.quantity,
+            peak_qty=position.peak_qty,
+            currency=position.quote_currency,
+            avg_px_open=position.avg_px_open,
+            realized_points=position.realized_points,
+            realized_return=position.realized_return,
+            realized_pnl=position.realized_pnl,
+            ts_opened_ns=position.ts_opened_ns,
+            event_id=event_id,
+            timestamp_ns=timestamp_ns,
+        )
+
     @staticmethod
     cdef PositionChanged from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return PositionChanged(
-            position_id=PositionId(values["position_id"]),
-            strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            position_status=json.loads(values["position_status"]),
             order_fill=OrderFilled.from_dict_c(json.loads(values["order_fill"])),
+            position_id=PositionId(values["position_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            account_id=AccountId.from_str_c(values["account_id"]),
+            from_order=ClientOrderId(values["from_order"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            entry=OrderSideParser.from_str(values["entry"]),
+            side=PositionSideParser.from_str(values["side"]),
+            net_qty=Decimal(values["net_qty"]),
+            quantity=Quantity.from_str_c(values["quantity"]),
+            peak_qty=Quantity.from_str_c(values["peak_qty"]),
+            currency=Currency.from_str_c(values["currency"]),
+            avg_px_open=Decimal(values["avg_px_open"]),
+            realized_points=Decimal(values["realized_points"]),
+            realized_return=Decimal(values["realized_return"]),
+            realized_pnl=Money.from_str_c(values["realized_pnl"]),
+            ts_opened_ns=values["ts_opened_ns"],
             event_id=UUID.from_str_c(values["event_id"]),
             timestamp_ns=values["timestamp_ns"],
         )
 
     @staticmethod
     cdef dict to_dict_c(PositionChanged obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "PositionChanged",
-            "position_id": obj.position_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "position_status": json.dumps(obj.position_status),
             "order_fill": json.dumps(OrderFilled.to_dict_c(obj.order_fill)),
+            "position_id": obj.position_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "account_id": obj.account_id.value,
+            "from_order": obj.from_order.value,
+            "strategy_id": obj.strategy_id.value,
+            "entry": OrderSideParser.to_str(obj.entry),
+            "side": PositionSideParser.to_str(obj.side),
+            "net_qty": str(obj.net_qty),
+            "quantity": str(obj.quantity),
+            "peak_qty": str(obj.peak_qty),
+            "currency": obj.currency.code,
+            "avg_px_open": str(obj.avg_px_open),
+            "realized_points": str(obj.realized_points),
+            "realized_return": f"{obj.realized_return:.5f}",
+            "realized_pnl": obj.realized_pnl.to_str(),
+            "ts_opened_ns": obj.ts_opened_ns,
             "event_id": obj.id.value,
             "timestamp_ns": obj.timestamp_ns,
         }
+
+    @staticmethod
+    def create(
+        Position position,
+        OrderFilled fill,
+        UUID event_id,
+        int64_t timestamp_ns,
+    ):
+        """
+        Return a position changed event from the given params.
+
+        Parameters
+        ----------
+        position : Position
+            The position for the event.
+        fill : OrderFilled
+            The order fill for the event.
+        event_id : UUID
+            The event ID.
+        timestamp_ns : int64
+            The UNIX timestamp (nanoseconds) of the event.
+
+        Returns
+        -------
+        PositionChanged
+
+        """
+        return PositionChanged.create_c(position, fill, event_id, timestamp_ns)
 
     @staticmethod
     def from_dict(dict values):
@@ -2178,11 +2559,26 @@ cdef class PositionClosed(PositionEvent):
 
     def __init__(
         self,
+        OrderFilled order_fill not None,
         PositionId position_id not None,
-        StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
-        dict position_status not None,
-        OrderEvent order_fill not None,
+        AccountId account_id not None,
+        ClientOrderId from_order not None,
+        StrategyId strategy_id not None,
+        OrderSide entry,
+        PositionSide side,
+        net_qty not None: Decimal,
+        Quantity quantity not None,
+        Quantity peak_qty not None,
+        Currency currency not None,
+        avg_px_open not None: Decimal,
+        avg_px_close not None: Decimal,
+        realized_points not None: Decimal,
+        realized_return not None: Decimal,
+        Money realized_pnl not None,
+        int64_t ts_opened_ns,
+        int64_t ts_closed_ns,
+        int64_t duration_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -2191,57 +2587,222 @@ cdef class PositionClosed(PositionEvent):
 
         Parameters
         ----------
+        order_fill : OrderFilled
+            The order fill event which triggered the event.
         position_id : PositionId
             The position ID associated with the event.
-        strategy_id : StrategyId
-            The strategy ID associated with the event.
         instrument_id : InstrumentId
             The position instrument ID.
-        position_status : dict[str, object]
-            The position status.
-        order_fill : OrderEvent
-            The order fill event which triggered the event.
+        account_id : AccountId
+            The strategy ID associated with the event.
+        from_order : ClientOrderId
+            The client order ID for the order which initially opened the position.
+        strategy_id : StrategyId
+            The strategy ID associated with the event.
+        entry : OrderSide
+            The position entry order side.
+        side : PositionSide
+            The current position side.
+        net_qty : Decimal
+            The current net quantity (positive for LONG, negative for SHORT).
+        quantity : Quantity
+            The current open quantity.
+        peak_qty : Quantity
+            The peak directional quantity reached by the position.
+        currency : Currency
+            The position quote currency.
+        avg_px_open : Decimal
+            The average open price.
+        avg_px_close : Decimal
+            The average close price.
+        realized_points : Decimal
+            The realized points for the position.
+        realized_return : Decimal
+            The realized return for the position.
+        realized_pnl : Money
+            The realized PnL for the position.
+        ts_opened_ns : int64
+            The UNIX timestamp (nanoseconds) when the position was opened.
+        ts_closed_ns : int64
+            The UNIX timestamp (nanoseconds) when the position was closed.
+        duration_ns : int64
+            The total open duration (nanoseconds)
         event_id : UUID
             The event ID.
         timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the event initialization.
+            The UNIX timestamp (nanoseconds) of the event.
 
         """
-        assert position_status["side"] == "FLAT"  # Design-time check: position status matched event
+        assert side == PositionSide.FLAT  # Design-time check: position side matches event
         super().__init__(
-            position_id,
-            strategy_id,
-            instrument_id,
-            position_status,
             order_fill,
+            position_id,
+            instrument_id,
+            account_id,
+            from_order,
+            strategy_id,
+            entry,
+            side,
+            net_qty,
+            quantity,
+            peak_qty,
+            currency,
+            avg_px_open,
+            realized_points,
+            realized_return,
+            realized_pnl,
+            ts_opened_ns,
             event_id,
             timestamp_ns,
         )
 
+        self.avg_px_close = avg_px_close
+        self.ts_closed_ns = ts_closed_ns
+        self.duration_ns = duration_ns
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"position_id={self.position_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"from_order={self.from_order.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"entry={OrderSideParser.to_str(self.entry)}, "
+                f"side={PositionSideParser.to_str(self.side)}, "
+                f"net_qty={self.net_qty}, "
+                f"quantity={self.quantity.to_str()}, "
+                f"peak_qty={self.peak_qty.to_str()}, "
+                f"currency={self.currency.code}, "
+                f"avg_px_open={self.avg_px_open}, "
+                f"avg_px_close={self.avg_px_close}, "
+                f"realized_points={self.realized_points}, "
+                f"realized_return={self.realized_return:.5f}, "
+                f"realized_pnl={self.realized_pnl}, "
+                f"ts_opened_ns={self.ts_opened_ns}, "
+                f"ts_closed_ns={self.ts_closed_ns}, "
+                f"duration_ns={self.duration_ns}, "
+                f"event_id={self.id})")
+
+    @staticmethod
+    cdef PositionClosed create_c(
+        Position position,
+        OrderFilled fill,
+        UUID event_id,
+        int64_t timestamp_ns,
+    ):
+        Condition.not_none(position, "position")
+        Condition.not_none(fill, "fill")
+        Condition.not_none(event_id, "event_id")
+
+        return PositionClosed(
+            order_fill=fill,
+            position_id=position.id,
+            instrument_id=position.instrument_id,
+            account_id=position.account_id,
+            from_order=position.from_order,
+            strategy_id=position.strategy_id,
+            entry=position.entry,
+            side=position.side,
+            net_qty=position.net_qty,
+            quantity=position.quantity,
+            peak_qty=position.peak_qty,
+            currency=position.quote_currency,
+            avg_px_open=position.avg_px_open,
+            avg_px_close=position.avg_px_close,
+            realized_points=position.realized_points,
+            realized_return=position.realized_return,
+            realized_pnl=position.realized_pnl,
+            ts_opened_ns=position.ts_opened_ns,
+            ts_closed_ns=position.ts_closed_ns,
+            duration_ns=position.duration_ns,
+            event_id=event_id,
+            timestamp_ns=timestamp_ns,
+        )
+
     @staticmethod
     cdef PositionClosed from_dict_c(dict values):
+        Condition.not_none(values, "values")
         return PositionClosed(
-            position_id=PositionId(values["position_id"]),
-            strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            position_status=json.loads(values["position_status"]),
             order_fill=OrderFilled.from_dict_c(json.loads(values["order_fill"])),
+            position_id=PositionId(values["position_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            account_id=AccountId.from_str_c(values["account_id"]),
+            from_order=ClientOrderId(values["from_order"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            entry=OrderSideParser.from_str(values["entry"]),
+            side=PositionSideParser.from_str(values["side"]),
+            net_qty=Decimal(values["net_qty"]),
+            quantity=Quantity.from_str_c(values["quantity"]),
+            peak_qty=Quantity.from_str_c(values["peak_qty"]),
+            currency=Currency.from_str_c(values["currency"]),
+            avg_px_open=Decimal(values["avg_px_open"]),
+            avg_px_close=Decimal(values["avg_px_close"]),
+            realized_points=Decimal(values["realized_points"]),
+            realized_return=Decimal(values["realized_return"]),
+            realized_pnl=Money.from_str_c(values["realized_pnl"]),
+            ts_opened_ns=values["ts_opened_ns"],
+            ts_closed_ns=values["ts_closed_ns"],
+            duration_ns=values["duration_ns"],
             event_id=UUID.from_str_c(values["event_id"]),
             timestamp_ns=values["timestamp_ns"],
         )
 
     @staticmethod
     cdef dict to_dict_c(PositionClosed obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "PositionClosed",
-            "position_id": obj.position_id.value,
-            "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
-            "position_status": json.dumps(obj.position_status),
             "order_fill": json.dumps(OrderFilled.to_dict_c(obj.order_fill)),
+            "position_id": obj.position_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "account_id": obj.account_id.value,
+            "from_order": obj.from_order.value,
+            "strategy_id": obj.strategy_id.value,
+            "entry": OrderSideParser.to_str(obj.entry),
+            "side": PositionSideParser.to_str(obj.side),
+            "net_qty": str(obj.net_qty),
+            "quantity": str(obj.quantity),
+            "peak_qty": str(obj.peak_qty),
+            "currency": obj.currency.code,
+            "avg_px_open": str(obj.avg_px_open),
+            "avg_px_close": str(obj.avg_px_close),
+            "realized_points": str(obj.realized_points),
+            "realized_return": f"{obj.realized_return:.5f}",
+            "realized_pnl": obj.realized_pnl.to_str(),
+            "ts_opened_ns": obj.ts_opened_ns,
+            "ts_closed_ns": obj.ts_closed_ns,
+            "duration_ns": obj.duration_ns,
             "event_id": obj.id.value,
             "timestamp_ns": obj.timestamp_ns,
         }
+
+    @staticmethod
+    def create(
+        Position position,
+        OrderFilled fill,
+        UUID event_id,
+        int64_t timestamp_ns,
+    ):
+        """
+        Return a position closed event from the given params.
+
+        Parameters
+        ----------
+        position : Position
+            The position for the event.
+        fill : OrderFilled
+            The order fill for the event.
+        event_id : UUID
+            The event ID.
+        timestamp_ns : int64
+            The UNIX timestamp (nanoseconds) of the event.
+
+        Returns
+        -------
+        PositionClosed
+
+        """
+        return PositionClosed.create_c(position, fill, event_id, timestamp_ns)
 
     @staticmethod
     def from_dict(dict values):
