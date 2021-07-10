@@ -501,6 +501,53 @@ class TestPositionEvents:
             == f"PositionOpened(position_id=P-123456, instrument_id=AUD/USD.SIM, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=100000, quantity=100_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, realized_points=0, realized_return=0, realized_pnl=-2.00, ts_opened_ns=0, event_id={uuid})"  # noqa
         )
 
+    def test_position_changed_event_to_from_dict_and_str_repr(self):
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        fill1 = TestStubs.event_order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00001"),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(50000),
+        )
+
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00011"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        uuid = uuid4()
+        event = PositionChanged.create(position, fill2, uuid, 0)
+
+        # Act, Assert
+        assert PositionChanged.from_dict(PositionChanged.to_dict(event)) == event
+        assert (
+            str(event)
+            == f"PositionChanged(position_id=P-123456, instrument_id=AUD/USD.SIM, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00, ts_opened_ns=0, event_id={uuid})"  # noqa
+        )
+        assert (
+            repr(event)
+            == f"PositionChanged(position_id=P-123456, instrument_id=AUD/USD.SIM, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00, ts_opened_ns=0, event_id={uuid})"  # noqa
+        )
+
     def test_position_closed_event_to_from_dict_and_str_repr(self):
         # Arrange
         order1 = self.order_factory.market(
@@ -546,51 +593,4 @@ class TestPositionEvents:
         assert (
             repr(event)
             == f"PositionClosed(position_id=P-123456, instrument_id=AUD/USD.SIM, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=FLAT, net_qty=0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=6.00, ts_opened_ns=0, ts_closed_ns=0, duration_ns=0, event_id={uuid})"  # noqa
-        )
-
-    def test_position_changed_event_to_from_dict_and_str_repr(self):
-        # Arrange
-        order1 = self.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        fill1 = TestStubs.event_order_filled(
-            order1,
-            instrument=AUDUSD_SIM,
-            position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
-            last_px=Price.from_str("1.00001"),
-        )
-
-        order2 = self.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity.from_int(50000),
-        )
-
-        fill2 = TestStubs.event_order_filled(
-            order2,
-            instrument=AUDUSD_SIM,
-            position_id=PositionId("P-123456"),
-            strategy_id=StrategyId("S-001"),
-            last_px=Price.from_str("1.00011"),
-        )
-
-        position = Position(instrument=AUDUSD_SIM, fill=fill1)
-        position.apply(fill2)
-
-        uuid = uuid4()
-        event = PositionChanged.create(position, fill2, uuid, 0)
-
-        # Act, Assert
-        assert PositionChanged.from_dict(PositionChanged.to_dict(event)) == event
-        assert (
-            str(event)
-            == f"PositionChanged(position_id=P-123456, instrument_id=AUD/USD.SIM, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00, ts_opened_ns=0, event_id={uuid})"  # noqa
-        )
-        assert (
-            repr(event)
-            == f"PositionChanged(position_id=P-123456, instrument_id=AUD/USD.SIM, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00, ts_opened_ns=0, event_id={uuid})"  # noqa
         )

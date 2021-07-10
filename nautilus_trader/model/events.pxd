@@ -320,6 +320,8 @@ cdef class PositionEvent(Event):
     """The peak directional quantity reached by the position.\n\n:returns: `Quantity`"""
     cdef readonly object avg_px_open
     """The average open price.\n\n:returns: `Decimal`"""
+    cdef readonly object avg_px_close
+    """The average closing price.\n\n:returns: `Decimal`"""
     cdef readonly object realized_points
     """The realized points for the position.\n\n:returns: `Decimal`"""
     cdef readonly object realized_return
@@ -330,6 +332,10 @@ cdef class PositionEvent(Event):
     """The realized PnL for the position (including commissions).\n\n:returns: `Money`"""
     cdef readonly int64_t ts_opened_ns
     """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_closed_ns
+    """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `int64`"""
+    cdef readonly int64_t duration_ns
+    """The total open duration (nanoseconds).\n\n:returns: `int64`"""
     cdef readonly OrderFilled order_fill
     """The order fill associated with the event.\n\n:returns: `OrderFilled`"""
 
@@ -369,12 +375,6 @@ cdef class PositionChanged(PositionEvent):
 
 
 cdef class PositionClosed(PositionEvent):
-    cdef readonly object avg_px_close
-    """The average closing price.\n\n:returns: `Decimal`"""
-    cdef readonly int64_t ts_closed_ns
-    """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `int64`"""
-    cdef readonly int64_t duration_ns
-    """The total open duration (nanoseconds).\n\n:returns: `int64`"""
 
     @staticmethod
     cdef PositionClosed create_c(
