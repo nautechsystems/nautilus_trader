@@ -18,12 +18,13 @@ from typing import Callable
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.type cimport MessageType
 
 
 cdef class Subscription:
-    cdef readonly MessageType msg_type
-    """The message type for the subscription.\n\n:returns: `MessageType`"""
+    cdef str _topic_str
+
+    cdef readonly str topic
+    """The topic for the subscription.\n\n:returns: `str`"""
     cdef readonly object handler
     """The handler for the subscription.\n\n:returns: `Callable`"""
     cdef readonly int priority
@@ -32,17 +33,20 @@ cdef class Subscription:
 
 cdef class MessageBus:
     cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef dict _channels
-    cdef list _channel_all
+    cdef Subscription[:] _patterns
 
     cdef readonly int processed_count
     """The count of messages process by the bus.\n\n:returns: `int32`"""
 
     cpdef list channels(self)
-    cpdef list subscriptions(self, MessageType msg_type=*)
+    cpdef list subscriptions(self, str topic)
 
-    cpdef void subscribe(self, MessageType msg_type, handler: Callable, int priority=*) except *
-    cpdef void unsubscribe(self, MessageType msg_type, handler: Callable) except *
-    cpdef void publish(self, MessageType msg_type, message) except *
+    cpdef void subscribe(self, str topic, handler: Callable, int priority=*) except *
+    cdef void _subscribe_pattern(self, Subscription sub) except *
+    cdef void _subscribe_channel(self, Subscription sub) except *
+    cpdef void unsubscribe(self, str topic, handler: Callable) except *
+    cdef void _unsubscribe_pattern(self, Subscription sub) except *
+    cdef void _unsubscribe_channel(self, Subscription sub) except *
+    cpdef void publish(self, str topic, message) except *
