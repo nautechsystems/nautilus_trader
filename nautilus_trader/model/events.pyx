@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 import json
+from typing import Optional
 
 from libc.stdint cimport int64_t
 
@@ -1965,10 +1966,13 @@ cdef class PositionEvent(Event):
         Quantity peak_qty not None,
         Currency currency not None,
         avg_px_open not None: Decimal,
+        avg_px_close: Optional[Decimal],
         realized_points not None: Decimal,
         realized_return not None: Decimal,
         Money realized_pnl not None,
         int64_t ts_opened_ns,
+        int64_t ts_closed_ns,
+        int64_t duration_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
     ):
@@ -2003,6 +2007,8 @@ cdef class PositionEvent(Event):
             The position quote currency.
         avg_px_open : Decimal
             The average open price.
+        avg_px_close : Optional[Decimal]
+            The average close price.
         realized_points : Decimal
             The realized points for the position.
         realized_return : Decimal
@@ -2011,6 +2017,10 @@ cdef class PositionEvent(Event):
             The realized PnL for the position.
         ts_opened_ns : int64
             The UNIX timestamp (nanoseconds) when the position was opened.
+        ts_closed_ns : int64
+            The UNIX timestamp (nanoseconds) when the position was closed.
+        duration_ns : int64
+            The total open duration (nanoseconds).
         event_id : UUID
             The event ID.
         timestamp_ns : int64
@@ -2032,10 +2042,13 @@ cdef class PositionEvent(Event):
         self.peak_qty = peak_qty
         self.currency = currency
         self.avg_px_open = avg_px_open
+        self.avg_px_close = avg_px_close
         self.realized_points = realized_points
         self.realized_return = realized_return
         self.realized_pnl = realized_pnl
         self.ts_opened_ns = ts_opened_ns
+        self.ts_closed_ns = ts_closed_ns
+        self.duration_ns = duration_ns
 
 
 cdef class PositionOpened(PositionEvent):
@@ -2125,10 +2138,13 @@ cdef class PositionOpened(PositionEvent):
             peak_qty,
             currency,
             avg_px_open,
+            None,
             realized_points,
             realized_return,
             realized_pnl,
             ts_opened_ns,
+            0,
+            0,
             event_id,
             timestamp_ns,
         )
@@ -2315,6 +2331,7 @@ cdef class PositionChanged(PositionEvent):
         Quantity peak_qty not None,
         Currency currency not None,
         avg_px_open not None: Decimal,
+        avg_px_close: Optional[Decimal],
         realized_points not None: Decimal,
         realized_return not None: Decimal,
         Money realized_pnl not None,
@@ -2353,6 +2370,8 @@ cdef class PositionChanged(PositionEvent):
             The position quote currency.
         avg_px_open : Decimal
             The average open price.
+        avg_px_close : Optional[Decimal]
+            The average close price.
         realized_points : Decimal
             The realized points for the position.
         realized_return : Decimal
@@ -2382,10 +2401,13 @@ cdef class PositionChanged(PositionEvent):
             peak_qty,
             currency,
             avg_px_open,
+            avg_px_close,
             realized_points,
             realized_return,
             realized_pnl,
             ts_opened_ns,
+            0,
+            0,
             event_id,
             timestamp_ns,
         )
@@ -2404,6 +2426,7 @@ cdef class PositionChanged(PositionEvent):
                 f"peak_qty={self.peak_qty.to_str()}, "
                 f"currency={self.currency.code}, "
                 f"avg_px_open={self.avg_px_open}, "
+                f"avg_px_close={self.avg_px_close}, "
                 f"realized_points={self.realized_points}, "
                 f"realized_return={self.realized_return:.5f}, "
                 f"realized_pnl={self.realized_pnl}, "
@@ -2435,6 +2458,7 @@ cdef class PositionChanged(PositionEvent):
             peak_qty=position.peak_qty,
             currency=position.quote_currency,
             avg_px_open=position.avg_px_open,
+            avg_px_close=position.avg_px_close,
             realized_points=position.realized_points,
             realized_return=position.realized_return,
             realized_pnl=position.realized_pnl,
@@ -2446,6 +2470,8 @@ cdef class PositionChanged(PositionEvent):
     @staticmethod
     cdef PositionChanged from_dict_c(dict values):
         Condition.not_none(values, "values")
+        avg_px_close_value = values["avg_px_close"]
+        avg_px_close: Optional[Decimal] = Decimal(avg_px_close_value) if avg_px_close_value else None
         return PositionChanged(
             order_fill=OrderFilled.from_dict_c(json.loads(values["order_fill"])),
             position_id=PositionId(values["position_id"]),
@@ -2460,6 +2486,7 @@ cdef class PositionChanged(PositionEvent):
             peak_qty=Quantity.from_str_c(values["peak_qty"]),
             currency=Currency.from_str_c(values["currency"]),
             avg_px_open=Decimal(values["avg_px_open"]),
+            avg_px_close=avg_px_close,
             realized_points=Decimal(values["realized_points"]),
             realized_return=Decimal(values["realized_return"]),
             realized_pnl=Money.from_str_c(values["realized_pnl"]),
@@ -2486,6 +2513,7 @@ cdef class PositionChanged(PositionEvent):
             "peak_qty": str(obj.peak_qty),
             "currency": obj.currency.code,
             "avg_px_open": str(obj.avg_px_open),
+            "avg_px_close": str(obj.avg_px_close) if obj.avg_px_close else None,
             "realized_points": str(obj.realized_points),
             "realized_return": f"{obj.realized_return:.5f}",
             "realized_pnl": obj.realized_pnl.to_str(),
@@ -2626,7 +2654,7 @@ cdef class PositionClosed(PositionEvent):
         ts_closed_ns : int64
             The UNIX timestamp (nanoseconds) when the position was closed.
         duration_ns : int64
-            The total open duration (nanoseconds)
+            The total open duration (nanoseconds).
         event_id : UUID
             The event ID.
         timestamp_ns : int64
@@ -2648,17 +2676,16 @@ cdef class PositionClosed(PositionEvent):
             peak_qty,
             currency,
             avg_px_open,
+            avg_px_close,
             realized_points,
             realized_return,
             realized_pnl,
             ts_opened_ns,
+            ts_closed_ns,
+            duration_ns,
             event_id,
             timestamp_ns,
         )
-
-        self.avg_px_close = avg_px_close
-        self.ts_closed_ns = ts_closed_ns
-        self.duration_ns = duration_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
