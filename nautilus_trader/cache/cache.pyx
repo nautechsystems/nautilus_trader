@@ -134,7 +134,7 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading accounts from database...")
 
-        if self._database:
+        if self._database is not None:
             self._currencies = self._database.load_currencies()
         else:
             self._currencies = {}
@@ -157,7 +157,7 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading instruments from database...")
 
-        if self._database:
+        if self._database is not None:
             self._instruments = self._database.load_instruments()
         else:
             self._instruments = {}
@@ -175,7 +175,7 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading accounts from database...")
 
-        if self._database:
+        if self._database is not None:
             self._accounts = self._database.load_accounts()
         else:
             self._accounts = {}
@@ -193,7 +193,7 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading orders from database...")
 
-        if self._database:
+        if self._database is not None:
             self._orders = self._database.load_orders()
         else:
             self._orders = {}
@@ -211,7 +211,7 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading positions from database...")
 
-        if self._database:
+        if self._database is not None:
             self._positions = self._database.load_positions()
         else:
             self._positions = {}
@@ -591,7 +591,7 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug("Flushing execution database...")
 
-        if self._database:
+        if self._database is not None:
             self._database.flush()
 
         self._log.info("Execution database flushed.")
@@ -708,10 +708,10 @@ cdef class Cache(CacheFacade):
 
         cdef dict state = None
 
-        if self._database:
+        if self._database is not None:
             state = self._database.load_strategy(strategy.id)
 
-        if state is not None:
+        if state:
             for key, value in state.items():
                 self._log.debug(f"Loading {strategy.id}) state {{ {key}: {value} }}")
             strategy.load(state)
@@ -735,9 +735,9 @@ cdef class Cache(CacheFacade):
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef Instrument instrument = self._instruments.get(instrument_id)
-        if instrument is None and self._database:
+        if instrument is None and self._database is not None:
             instrument = self._database.load_instrument(instrument_id)
-            if instrument:
+            if instrument is not None:
                 self._instruments[instrument.id] = instrument
 
         return instrument
@@ -1004,7 +1004,7 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Added currency {currency.code}.")
 
         # Update database
-        if self._database:
+        if self._database is not None:
             self._database.add_currency(currency)
 
     cpdef void add_instrument(self, Instrument instrument) except *:
@@ -1027,7 +1027,7 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Added instrument {instrument.id.value}.")
 
         # Update database
-        if self._database:
+        if self._database is not None:
             self._database.add_instrument(instrument)
 
     cpdef void add_account(self, Account account) except *:
@@ -1055,7 +1055,7 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Indexed {repr(account.id)}.")
 
         # Update database
-        if self._database:
+        if self._database is not None:
             self._database.add_account(account)
 
     cpdef void add_order(self, Order order, PositionId position_id) except *:
@@ -1118,7 +1118,7 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Added Order(id={order.client_order_id.value}{position_id_str}).")
 
         # Update database
-        if self._database:
+        if self._database is not None:
             self._database.add_order(order)  # Logs
 
         if position_id.is_null():
@@ -1236,7 +1236,7 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Added Position(id={position.id.value}, strategy_id={position.strategy_id}).")
 
         # Update database
-        if self._database:
+        if self._database is not None:
             self._database.add_position(position)
 
     cpdef void update_account(self, Account account) except *:
@@ -1251,7 +1251,7 @@ cdef class Cache(CacheFacade):
         Condition.not_none(account, "account")
 
         # Update database
-        if self._database:
+        if self._database is not None:
             self._database.update_account(account)
 
     cpdef void update_order(self, Order order) except *:
@@ -1279,7 +1279,7 @@ cdef class Cache(CacheFacade):
             self._index_orders_completed.discard(order.client_order_id)
 
         # Update database
-        if self._database:
+        if self._database is not None:
             self._database.update_order(order)
 
     cpdef void update_position(self, Position position) except *:
@@ -1299,7 +1299,7 @@ cdef class Cache(CacheFacade):
             self._index_positions_open.discard(position.id)
 
         # Update database
-        if self._database:
+        if self._database is not None:
             self._database.update_position(position)
 
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
@@ -1316,7 +1316,7 @@ cdef class Cache(CacheFacade):
         self._index_strategies.add(strategy.id)
 
         # Update database
-        if self._database:
+        if self._database is not None:
             self._database.update_strategy(strategy)
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
@@ -1346,7 +1346,7 @@ cdef class Cache(CacheFacade):
             del self._index_strategy_positions[strategy.id]
 
         # Update database
-        if self._database:
+        if self._database is not None:
             self._database.delete_strategy(strategy.id)
             self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
