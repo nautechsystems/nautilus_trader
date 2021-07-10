@@ -75,6 +75,7 @@ class TestTradingStrategy:
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
+        self.trader_id = TraderId("TRADER-000")
 
         self.cache = TestStubs.cache()
 
@@ -96,6 +97,7 @@ class TestTradingStrategy:
 
         self.exec_engine = ExecutionEngine(
             portfolio=self.portfolio,
+            trader_id=self.trader_id,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,

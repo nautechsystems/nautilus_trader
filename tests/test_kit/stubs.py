@@ -20,7 +20,6 @@ from typing import List
 import pytz
 
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import uuid4
@@ -515,16 +514,9 @@ class TestStubs:
         return LiveLogger(loop=asyncio.get_event_loop(), clock=TestStubs.clock())
 
     @staticmethod
-    def cache_db():
-        return BypassCacheDatabase(
-            trader_id=TestStubs.trader_id(),
-            logger=TestStubs.logger(),
-        )
-
-    @staticmethod
     def cache():
         return Cache(
-            database=TestStubs.cache_db(),
+            database=None,
             logger=TestStubs.logger(),
         )
 
@@ -551,6 +543,7 @@ class TestStubs:
         return MockLiveExecutionEngine(
             loop=asyncio.get_event_loop(),
             portfolio=TestStubs.portfolio(),
+            trader_id=TestStubs.trader_id(),
             cache=TestStubs.cache(),
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),

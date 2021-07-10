@@ -739,6 +739,7 @@ class MockLiveExecutionEngine(LiveExecutionEngine):
         self,
         loop,
         portfolio,
+        trader_id,
         cache,
         clock,
         logger,
@@ -747,6 +748,7 @@ class MockLiveExecutionEngine(LiveExecutionEngine):
         super().__init__(
             loop=loop,
             portfolio=portfolio,
+            trader_id=trader_id,
             cache=cache,
             clock=clock,
             logger=logger,

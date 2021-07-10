@@ -7,6 +7,8 @@
 ## Enhancements
 - Added `MessageBus` class.
 - Added `MessageType` class.
+- Improved efficiency of `Throttler`.
+- Removed redundant `BypassCacheDatabase`.
 
 ## Fixes
 None

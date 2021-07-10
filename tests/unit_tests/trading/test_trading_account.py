@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
@@ -62,13 +61,8 @@ class TestAccount:
             clock=TestClock(),
         )
 
-        cache_db = BypassCacheDatabase(
-            trader_id=trader_id,
-            logger=logger,
-        )
-
         cache = Cache(
-            database=cache_db,
+            database=None,
             logger=logger,
         )
 
@@ -80,6 +74,7 @@ class TestAccount:
 
         self.exec_engine = ExecutionEngine(
             portfolio=self.portfolio,
+            trader_id=trader_id,
             cache=cache,
             clock=clock,
             logger=logger,

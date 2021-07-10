@@ -87,6 +87,7 @@ cdef class ExecutionEngine(Component):
     def __init__(
         self,
         Portfolio portfolio not None,
+        TraderId trader_id not None,
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
@@ -122,13 +123,13 @@ cdef class ExecutionEngine(Component):
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]
         self._default_client = None  # type: Optional[ExecutionClient]
         self._pos_id_generator = PositionIdGenerator(
-            trader_id=cache.trader_id,
+            trader_id=trader_id,
             clock=clock,
         )
         self._portfolio = portfolio
         self._risk_engine = None  # Initialized when risk engine registered
 
-        self.trader_id = cache.trader_id
+        self.trader_id = trader_id
         self.cache = cache
 
         # Counters

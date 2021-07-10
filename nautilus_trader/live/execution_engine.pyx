@@ -35,6 +35,7 @@ from nautilus_trader.model.commands cimport TradingCommand
 from nautilus_trader.model.events cimport Event
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.portfolio cimport Portfolio
 
@@ -49,6 +50,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         self,
         loop not None: asyncio.AbstractEventLoop,
         Portfolio portfolio not None,
+        TraderId trader_id not None,
         Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
@@ -61,6 +63,8 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the engine.
+        trader_id : TraderId
+            The trader ID for the engine.
         portfolio : Portfolio
             The portfolio for the engine.
         cache : Cache
@@ -77,6 +81,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             config = {}
         super().__init__(
             portfolio=portfolio,
+            trader_id=trader_id,
             cache=cache,
             clock=clock,
             logger=logger,
