@@ -311,7 +311,7 @@ class TestCache:
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
-            TestStubs.bartype_audusd_1min_bid(),
+            bar_type,
             Price.from_str("1.00001"),
             Price.from_str("1.00004"),
             Price.from_str("1.00002"),
@@ -327,13 +327,13 @@ class TestCache:
         result = self.cache.bars(bar_type)
 
         # Assert
-        assert [bar], result
+        assert result == [bar]
 
     def test_add_bars_when_already_bars_does_not_add(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
-            TestStubs.bartype_audusd_1min_bid(),
+            bar_type,
             Price.from_str("1.00001"),
             Price.from_str("1.00004"),
             Price.from_str("1.00002"),
@@ -350,7 +350,7 @@ class TestCache:
         result = self.cache.bars(bar_type)
 
         # Assert
-        assert [bar], result
+        assert result == [bar]
 
     def test_instrument_when_no_instrument_returns_none(self):
         # Arrange
