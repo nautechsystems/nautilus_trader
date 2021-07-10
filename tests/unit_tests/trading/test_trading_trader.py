@@ -73,6 +73,7 @@ class TestTrader:
 
         self.exec_engine = ExecutionEngine(
             portfolio=self.portfolio,
+            trader_id=trader_id,
             cache=self.cache,
             clock=clock,
             logger=logger,

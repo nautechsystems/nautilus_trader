@@ -98,6 +98,7 @@ class TestSimulatedExchange:
 
         self.exec_engine = ExecutionEngine(
             portfolio=self.portfolio,
+            trader_id=self.trader_id,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -1906,6 +1907,7 @@ class TestBitmexExchange:
 
         self.exec_engine = ExecutionEngine(
             portfolio=self.portfolio,
+            trader_id=self.trader_id,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -2047,6 +2049,7 @@ class TestOrderBookExchange:
 
         self.exec_engine = ExecutionEngine(
             portfolio=self.portfolio,
+            trader_id=self.trader_id,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,

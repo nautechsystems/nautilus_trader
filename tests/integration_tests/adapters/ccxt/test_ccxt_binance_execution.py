@@ -80,6 +80,7 @@ class TestBinanceExecutionClient:
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            trader_id=self.trader_id,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,

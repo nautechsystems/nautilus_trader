@@ -60,7 +60,3 @@ cdef class CacheDatabase:
     cpdef void update_order(self, Order order) except *
     cpdef void update_position(self, Position position) except *
     cpdef void update_strategy(self, TradingStrategy strategy) except *
-
-
-cdef class BypassCacheDatabase(CacheDatabase):
-    cdef dict _instruments

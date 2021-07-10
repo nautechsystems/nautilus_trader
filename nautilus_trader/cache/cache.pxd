@@ -72,8 +72,6 @@ cdef class Cache(CacheFacade):
     cdef set _index_positions_closed
     cdef set _index_strategies
 
-    cdef readonly TraderId trader_id
-    """The trader ID for the cache.\n\n:returns: `TraderId`"""
     cdef readonly int tick_capacity
     """The caches tick capacity.\n\n:returns: `int`"""
     cdef readonly int bar_capacity

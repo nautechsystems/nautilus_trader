@@ -53,7 +53,7 @@ cdef class Cache(CacheFacade):
 
     def __init__(
         self,
-        CacheDatabase database not None,
+        CacheDatabase database,
         Logger logger not None,
         dict config=None,
     ):
@@ -62,8 +62,8 @@ cdef class Cache(CacheFacade):
 
         Parameters
         ----------
-        database : CacheDatabase
-            The database for the cache.
+        database : CacheDatabase, optional
+            The database for the cache. If None then will bypass persistence.
         logger : Logger
             The logger for the cache.
         config : dict[str, object], optional
@@ -80,8 +80,6 @@ cdef class Cache(CacheFacade):
         if config is None:
             config = {}
 
-        self.trader_id = database.trader_id
-
         self._database = database
         self._log = LoggerAdapter(component=type(self).__name__, logger=logger)
         self._xrate_calculator = ExchangeRateCalculator()
@@ -93,16 +91,16 @@ cdef class Cache(CacheFacade):
         Condition.positive_int(self.bar_capacity, "bar_capacity")
 
         # Caches
-        self._xrate_symbols = {}  # type: dict[InstrumentId, str]
-        self._quote_ticks = {}    # type: dict[InstrumentId, deque[QuoteTick]]
-        self._trade_ticks = {}    # type: dict[InstrumentId, deque[TradeTick]]
-        self._order_books = {}    # type: dict[InstrumentId, OrderBook]
-        self._bars = {}           # type: dict[BarType, deque[Bar]]
-        self._currencies = {}     # type: dict[str, Currency]
-        self._instruments = {}    # type: dict[InstrumentId, Instrument]
-        self._accounts = {}       # type: dict[AccountId, Account]
-        self._orders = {}         # type: dict[ClientOrderId, Order]
-        self._positions = {}      # type: dict[PositionId, Position]
+        self._xrate_symbols = {}               # type: dict[InstrumentId, str]
+        self._quote_ticks = {}                 # type: dict[InstrumentId, deque[QuoteTick]]
+        self._trade_ticks = {}                 # type: dict[InstrumentId, deque[TradeTick]]
+        self._order_books = {}                 # type: dict[InstrumentId, OrderBook]
+        self._bars = {}                        # type: dict[BarType, deque[Bar]]
+        self._currencies = {}                  # type: dict[str, Currency]
+        self._instruments = {}                 # type: dict[InstrumentId, Instrument]
+        self._accounts = {}                    # type: dict[AccountId, Account]
+        self._orders = {}                      # type: dict[ClientOrderId, Order]
+        self._positions = {}                   # type: dict[PositionId, Position]
 
         # Cache index
         self._index_venue_account = {}         # type: dict[Venue, AccountId]
@@ -136,7 +134,10 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading accounts from database...")
 
-        self._currencies = self._database.load_currencies()
+        if self._database:
+            self._currencies = self._database.load_currencies()
+        else:
+            self._currencies = {}
 
         # Register currencies in internal `_CURRENCY_MAP`.
         cdef Currency currency
@@ -156,7 +157,10 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading instruments from database...")
 
-        self._instruments = self._database.load_instruments()
+        if self._database:
+            self._instruments = self._database.load_instruments()
+        else:
+            self._instruments = {}
 
         cdef int count = len(self._instruments)
         self._log.info(
@@ -171,7 +175,10 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading accounts from database...")
 
-        self._accounts = self._database.load_accounts()
+        if self._database:
+            self._accounts = self._database.load_accounts()
+        else:
+            self._accounts = {}
 
         cdef int count = len(self._accounts)
         self._log.info(
@@ -186,7 +193,10 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading orders from database...")
 
-        self._orders = self._database.load_orders()
+        if self._database:
+            self._orders = self._database.load_orders()
+        else:
+            self._orders = {}
 
         cdef int count = len(self._orders)
         self._log.info(
@@ -201,7 +211,10 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading positions from database...")
 
-        self._positions = self._database.load_positions()
+        if self._database:
+            self._positions = self._database.load_positions()
+        else:
+            self._positions = {}
 
         cdef int count = len(self._positions)
         self._log.info(
@@ -578,7 +591,8 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug("Flushing execution database...")
 
-        self._database.flush()
+        if self._database:
+            self._database.flush()
 
         self._log.info("Execution database flushed.")
 
@@ -692,7 +706,10 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(strategy, "strategy")
 
-        cdef dict state = self._database.load_strategy(strategy.id)
+        cdef dict state = None
+
+        if self._database:
+            state = self._database.load_strategy(strategy.id)
 
         if state is not None:
             for key, value in state.items():
@@ -718,7 +735,7 @@ cdef class Cache(CacheFacade):
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef Instrument instrument = self._instruments.get(instrument_id)
-        if instrument is None:
+        if instrument is None and self._database:
             instrument = self._database.load_instrument(instrument_id)
             if instrument:
                 self._instruments[instrument.id] = instrument
@@ -987,7 +1004,8 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Added currency {currency.code}.")
 
         # Update database
-        self._database.add_currency(currency)
+        if self._database:
+            self._database.add_currency(currency)
 
     cpdef void add_instrument(self, Instrument instrument) except *:
         """
@@ -1009,7 +1027,8 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Added instrument {instrument.id.value}.")
 
         # Update database
-        self._database.add_instrument(instrument)
+        if self._database:
+            self._database.add_instrument(instrument)
 
     cpdef void add_account(self, Account account) except *:
         """
@@ -1036,7 +1055,8 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Indexed {repr(account.id)}.")
 
         # Update database
-        self._database.add_account(account)
+        if self._database:
+            self._database.add_account(account)
 
     cpdef void add_order(self, Order order, PositionId position_id) except *:
         """
@@ -1098,7 +1118,8 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Added Order(id={order.client_order_id.value}{position_id_str}).")
 
         # Update database
-        self._database.add_order(order)  # Logs
+        if self._database:
+            self._database.add_order(order)  # Logs
 
         if position_id.is_null():
             return  # Do not index the NULL id
@@ -1215,7 +1236,8 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Added Position(id={position.id.value}, strategy_id={position.strategy_id}).")
 
         # Update database
-        self._database.add_position(position)
+        if self._database:
+            self._database.add_position(position)
 
     cpdef void update_account(self, Account account) except *:
         """
@@ -1229,7 +1251,8 @@ cdef class Cache(CacheFacade):
         Condition.not_none(account, "account")
 
         # Update database
-        self._database.update_account(account)
+        if self._database:
+            self._database.update_account(account)
 
     cpdef void update_order(self, Order order) except *:
         """
@@ -1256,7 +1279,8 @@ cdef class Cache(CacheFacade):
             self._index_orders_completed.discard(order.client_order_id)
 
         # Update database
-        self._database.update_order(order)
+        if self._database:
+            self._database.update_order(order)
 
     cpdef void update_position(self, Position position) except *:
         """
@@ -1275,7 +1299,8 @@ cdef class Cache(CacheFacade):
             self._index_positions_open.discard(position.id)
 
         # Update database
-        self._database.update_position(position)
+        if self._database:
+            self._database.update_position(position)
 
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
         """
@@ -1291,7 +1316,8 @@ cdef class Cache(CacheFacade):
         self._index_strategies.add(strategy.id)
 
         # Update database
-        self._database.update_strategy(strategy)
+        if self._database:
+            self._database.update_strategy(strategy)
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
@@ -1320,8 +1346,9 @@ cdef class Cache(CacheFacade):
             del self._index_strategy_positions[strategy.id]
 
         # Update database
-        self._database.delete_strategy(strategy.id)
-        self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
+        if self._database:
+            self._database.delete_strategy(strategy.id)
+            self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
 # -- DATA QUERIES ----------------------------------------------------------------------------------
 

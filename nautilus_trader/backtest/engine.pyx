@@ -29,7 +29,6 @@ from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.cache.database cimport BypassCacheDatabase
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
@@ -178,11 +177,8 @@ cdef class BacktestEngine:
         ########################################################################
         # Build platform
         ########################################################################
-
         if cache_db_type == "in-memory":
-            cache_db = BypassCacheDatabase(
-                trader_id=trader_id,
-                logger=self._logger)
+            cache_db = None
         elif cache_db_type == "redis":
             cache_db = RedisCacheDatabase(
                 trader_id=trader_id,
@@ -193,10 +189,12 @@ cdef class BacktestEngine:
                 config={"host": "localhost", "port": 6379},
             )
         else:
-            raise ValueError(f"The exec_db_type in the backtest configuration is unrecognized, "
-                             f"can be either \"in-memory\" or \"redis\"")
+            raise ValueError(
+                f"The cache_db_type in the configuration is unrecognized, "
+                f"can one of {{\'in-memory\', \'redis\'}}.",
+            )
 
-        if self._cache_db_flush:
+        if self._cache_db_flush and cache_db:
             cache_db.flush()
 
         cache = Cache(
@@ -229,6 +227,7 @@ cdef class BacktestEngine:
 
         self._exec_engine = ExecutionEngine(
             portfolio=self.portfolio,
+            trader_id=trader_id,
             cache=cache,
             clock=self._test_clock,
             logger=self._test_logger,

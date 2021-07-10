@@ -18,7 +18,6 @@ from decimal import Decimal
 import pytest
 
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.factories import OrderFactory
@@ -185,13 +184,8 @@ class TestPortfolio:
             clock=TestClock(),
         )
 
-        cache_db = BypassCacheDatabase(
-            trader_id=trader_id,
-            logger=logger,
-        )
-
         self.cache = Cache(
-            database=cache_db,
+            database=None,
             logger=logger,
         )
 
@@ -203,6 +197,7 @@ class TestPortfolio:
 
         self.exec_engine = ExecutionEngine(
             portfolio=self.portfolio,
+            trader_id=trader_id,
             cache=self.cache,
             clock=clock,
             logger=logger,
