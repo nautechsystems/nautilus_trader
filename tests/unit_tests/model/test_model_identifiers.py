@@ -176,18 +176,6 @@ class TestIdentifiers:
         assert "TESTER-000" == trader_id1.value
         assert trader_id1.get_tag() == "000"
 
-    def test_strategy_identifier(self):
-        # Arrange
-        # Act
-        strategy_id1 = StrategyId.null()
-        strategy_id2 = StrategyId("SCALPER-001")
-
-        # Assert
-        assert "NULL" == strategy_id1.value
-        assert strategy_id1 == strategy_id1
-        assert strategy_id1 != strategy_id2
-        assert strategy_id2.get_tag() == "001"
-
     def test_account_identifier(self):
         # Arrange
         # Act

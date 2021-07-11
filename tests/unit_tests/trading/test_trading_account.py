@@ -692,7 +692,7 @@ class TestAccount:
 
         fill = TestStubs.event_order_filled(
             order,
-            instrument=BTCUSDT_BINANCE,
+            instrument=AUDUSD_SIM,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("0.80000"),

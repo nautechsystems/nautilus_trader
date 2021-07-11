@@ -30,6 +30,7 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -60,7 +61,16 @@ cdef class AccountState(Event):
     cdef dict to_dict_c(AccountState obj)
 
 
-cdef class OrderEvent(Event):
+cdef class TradingEvent(Event):
+    cdef readonly TraderId trader_id
+    """The trader ID associated with the event.\n\n:returns: `TraderId`"""
+    cdef readonly StrategyId strategy_id
+    """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
+    cdef readonly InstrumentId instrument_id
+    """The instrument ID associated with the event.\n\n:returns: `InstrumentId`"""
+
+
+cdef class OrderEvent(TradingEvent):
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the event.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
@@ -68,10 +78,6 @@ cdef class OrderEvent(Event):
 
 
 cdef class OrderInitialized(OrderEvent):
-    cdef readonly InstrumentId instrument_id
-    """The order instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly StrategyId strategy_id
-    """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType order_type
@@ -267,10 +273,6 @@ cdef class OrderFilled(OrderEvent):
     """The execution ID associated with the event.\n\n:returns: `ExecutionId`"""
     cdef readonly PositionId position_id
     """The position ID associated with the event.\n\n:returns: `PositionId`"""
-    cdef readonly StrategyId strategy_id
-    """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
-    cdef readonly InstrumentId instrument_id
-    """The order instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly Quantity last_qty
@@ -297,17 +299,13 @@ cdef class OrderFilled(OrderEvent):
     cdef bint is_sell_c(self) except *
 
 
-cdef class PositionEvent(Event):
+cdef class PositionEvent(TradingEvent):
     cdef readonly PositionId position_id
     """The position ID associated with the event.\n\n:returns: `PositionId`"""
-    cdef readonly InstrumentId instrument_id
-    """The position instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly AccountId account_id
     """The account ID associated with the position.\n\n:returns: `AccountId`"""
     cdef readonly ClientOrderId from_order
     """The client order ID for the order which first opened the position.\n\n:returns: `ClientOrderId`"""
-    cdef readonly StrategyId strategy_id
-    """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly OrderSide entry
     """The entry direction from open.\n\n:returns: `OrderSide`"""
     cdef readonly PositionSide side
@@ -318,6 +316,12 @@ cdef class PositionEvent(Event):
     """The position open quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity peak_qty
     """The peak directional quantity reached by the position.\n\n:returns: `Quantity`"""
+    cdef readonly Quantity last_qty
+    """The last fill quantity for the position.\n\n:returns: `Quantity`"""
+    cdef readonly Price last_px
+    """The last fill price for the position.\n\n:returns: `Price`"""
+    cdef readonly Currency currency
+    """The position quote currency.\n\n:returns: `Currency`"""
     cdef readonly object avg_px_open
     """The average open price.\n\n:returns: `Decimal`"""
     cdef readonly object avg_px_close
@@ -326,8 +330,6 @@ cdef class PositionEvent(Event):
     """The realized points for the position.\n\n:returns: `Decimal`"""
     cdef readonly object realized_return
     """The realized return for the position.\n\n:returns: `Decimal`"""
-    cdef readonly Currency currency
-    """The position quote currency.\n\n:returns: `Currency`"""
     cdef readonly Money realized_pnl
     """The realized PnL for the position (including commissions).\n\n:returns: `Money`"""
     cdef readonly int64_t ts_opened_ns
@@ -336,8 +338,6 @@ cdef class PositionEvent(Event):
     """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `int64`"""
     cdef readonly int64_t duration_ns
     """The total open duration (nanoseconds).\n\n:returns: `int64`"""
-    cdef readonly OrderFilled order_fill
-    """The order fill associated with the event.\n\n:returns: `OrderFilled`"""
 
 
 cdef class PositionOpened(PositionEvent):

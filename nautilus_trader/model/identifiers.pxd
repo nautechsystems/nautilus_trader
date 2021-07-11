@@ -47,9 +47,6 @@ cdef class TraderId(Identifier):
 cdef class StrategyId(Identifier):
     cpdef str get_tag(self)
 
-    @staticmethod
-    cdef StrategyId null_c()
-
 
 cdef class AccountId(Identifier):
     cdef readonly str issuer

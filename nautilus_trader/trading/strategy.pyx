@@ -485,11 +485,11 @@ cdef class TradingStrategy(Component):
     # -- REGISTRATION ----------------------------------------------------------------------------------
 
     cpdef void register_trader(
-            self,
-            TraderId trader_id,
-            Clock clock,
-            Logger logger,
-            int order_id_count=0,
+        self,
+        TraderId trader_id,
+        Clock clock,
+        Logger logger,
+        int order_id_count=0,
     ) except *:
         """
         Register the strategy with a trader.
@@ -832,12 +832,12 @@ cdef class TradingStrategy(Component):
         self._send_data_cmd(command)
 
     cpdef void subscribe_order_book(
-            self,
-            InstrumentId instrument_id,
-            BookLevel level=BookLevel.L2,
-            int depth=0,
-            int interval=0,
-            dict kwargs=None,
+        self,
+        InstrumentId instrument_id,
+        BookLevel level=BookLevel.L2,
+        int depth=0,
+        int interval=0,
+        dict kwargs=None,
     ) except *:
         """
         Subscribe to streaming `OrderBook` for the given instrument ID.
@@ -892,10 +892,10 @@ cdef class TradingStrategy(Component):
         self._send_data_cmd(command)
 
     cpdef void subscribe_order_book_deltas(
-            self,
-            InstrumentId instrument_id,
-            BookLevel level=BookLevel.L2,
-            dict kwargs=None,
+        self,
+        InstrumentId instrument_id,
+        BookLevel level=BookLevel.L2,
+        dict kwargs=None,
     ) except *:
         """
         Subscribe to streaming `OrderBook` snapshot then deltas data for the
@@ -1276,10 +1276,10 @@ cdef class TradingStrategy(Component):
         self._send_data_req(request)
 
     cpdef void request_quote_ticks(
-            self,
-            InstrumentId instrument_id,
-            datetime from_datetime=None,
-            datetime to_datetime=None,
+        self,
+        InstrumentId instrument_id,
+        datetime from_datetime=None,
+        datetime to_datetime=None,
     ) except *:
         """
         Request historical quote ticks for the given parameters.
@@ -1322,10 +1322,10 @@ cdef class TradingStrategy(Component):
         self._send_data_req(request)
 
     cpdef void request_trade_ticks(
-            self,
-            InstrumentId instrument_id,
-            datetime from_datetime=None,
-            datetime to_datetime=None,
+        self,
+        InstrumentId instrument_id,
+        datetime from_datetime=None,
+        datetime to_datetime=None,
     ) except *:
         """
         Request historical trade ticks for the given parameters.
@@ -1368,10 +1368,10 @@ cdef class TradingStrategy(Component):
         self._send_data_req(request)
 
     cpdef void request_bars(
-            self,
-            BarType bar_type,
-            datetime from_datetime=None,
-            datetime to_datetime=None,
+        self,
+        BarType bar_type,
+        datetime from_datetime=None,
+        datetime to_datetime=None,
     ) except *:
         """
         Request historical bars for the given parameters.
@@ -1416,9 +1416,9 @@ cdef class TradingStrategy(Component):
     # -- TRADING COMMANDS ------------------------------------------------------------------------------
 
     cpdef void submit_order(
-            self,
-            Order order,
-            PositionId position_id=None,
+        self,
+        Order order,
+        PositionId position_id=None,
     ) except *:
         """
         Submit the given order with optional position ID and routing instructions.
@@ -1477,11 +1477,11 @@ cdef class TradingStrategy(Component):
         self._send_exec_cmd(command)
 
     cpdef void update_order(
-            self,
-            PassiveOrder order,
-            Quantity quantity=None,
-            Price price=None,
-            Price trigger=None,
+        self,
+        PassiveOrder order,
+        Quantity quantity=None,
+        Price price=None,
+        Price trigger=None,
     ) except *:
         """
         Update the given order with optional parameters and routing instructions.

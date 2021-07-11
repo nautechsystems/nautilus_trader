@@ -32,7 +32,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -61,7 +60,7 @@ class TestRedisCacheDatabase:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(self.clock)
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
 
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register_trader(self.trader_id, self.clock, self.logger)

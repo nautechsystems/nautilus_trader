@@ -58,6 +58,8 @@ from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ExecutionId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Quantity
@@ -210,6 +212,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"Received {command}")
 
         self.generate_order_submitted(
+            instrument_id=command.instrument_id,
+            strategy_id=command.strategy_id,
             client_order_id=command.order.client_order_id,
             ts_submitted_ns=self._clock.timestamp_ns(),
         )
@@ -217,7 +221,12 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         f = self._loop.run_in_executor(None, self._submit_order, command)  # type: asyncio.Future
         self._log.debug(f"future: {f}")
-        f.add_done_callback(partial(self._post_submit_order, client_order_id=command.order.client_order_id))
+        f.add_done_callback(partial(
+            self._post_submit_order,
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.order.client_order_id,
+        ))
 
     def _submit_order(self, SubmitOrder command):
         instrument = self._instrument_provider.find(command.instrument_id)
@@ -226,7 +235,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"{kw}")
         return self._client.betting.place_orders(**kw)
 
-    def _post_submit_order(self, f: asyncio.Future, client_order_id):
+    def _post_submit_order(self, f: asyncio.Future, strategy_id, instrument_id, client_order_id):
         self._log.debug(f"inside _post_submit_order for {client_order_id}")
         try:
             resp = f.result()
@@ -240,6 +249,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             reason = f"{resp['errorCode']}: {resp['instructionReports'][0]['errorCode']}"
             self._log.warning(f"Submit failed - {reason}")
             self.generate_order_rejected(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
                 client_order_id=client_order_id,
                 reason=reason,
                 ts_rejected_ns=self._clock.timestamp_ns(),
@@ -249,6 +260,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"Matching venue_order_id: {bet_id} to client_order_id: {client_order_id}")
         self.venue_order_id_to_client_order_id[bet_id] = client_order_id
         self.generate_order_accepted(
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=VenueOrderId(bet_id),
             ts_accepted_ns=self._clock.timestamp_ns(),
@@ -257,13 +270,20 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef void update_order(self, UpdateOrder command) except *:
         self._log.debug(f"Received {command}")
         self.generate_order_pending_replace(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
             client_order_id=command.client_order_id,
             venue_order_id=command.venue_order_id,
             ts_pending_ns=self._clock.timestamp_ns(),
         )
         f = self._loop.run_in_executor(None, self._update_order, command)  # type: asyncio.Future
         self._log.debug(f"future: {f}")
-        f.add_done_callback(partial(self._post_update_order, client_order_id=command.client_order_id))
+        f.add_done_callback(partial(
+            self._post_update_order,
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+        ))
 
     def _update_order(self, UpdateOrder command):
         existing_order = self._engine.cache.order(command.client_order_id)  # type: Order
@@ -285,7 +305,13 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.pending_update_order_client_ids.add((command.client_order_id, existing_order.venue_order_id))
         return self._client.betting.replace_orders(**kw)
 
-    def _post_update_order(self, f: asyncio.Future, client_order_id: ClientOrderId):
+    def _post_update_order(
+        self,
+        f: asyncio.Future,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+    ):
         Condition.type(client_order_id, ClientOrderId, "client_order_id")
 
         self._log.debug(f"inside _post_update_order for {client_order_id}")
@@ -301,6 +327,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             reason = f"{resp['errorCode']}: {resp['instructionReports'][0]['errorCode']}"
             self._log.warning(f"Submit failed - {reason}")
             self.generate_order_rejected(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
                 client_order_id=client_order_id,
                 reason=reason,
                 ts_rejected_ns=self._clock.timestamp_ns(),
@@ -315,6 +343,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         instructions = resp["instructionReports"][0]["placeInstructionReport"]
         self.venue_order_id_to_client_order_id[instructions["betId"]] = client_order_id
         self.generate_order_updated(
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=VenueOrderId(instructions["betId"]),
             quantity=Quantity(instructions["instruction"]['limitOrder']["size"], precision=4),
@@ -327,6 +357,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef void cancel_order(self, CancelOrder command) except *:
         self._log.debug("Received cancel order")
         self.generate_order_pending_cancel(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
             client_order_id=command.client_order_id,
             venue_order_id=command.venue_order_id,
             ts_pending_ns=self._clock.timestamp_ns(),
@@ -397,6 +429,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             self._log.debug(f"Skipping order_accept as order exists: {venue_order_id}")
                         else:
                             self.generate_order_accepted(
+                                strategy_id=None,  # Fetched from cache
+                                instrument_id=instrument.id,
                                 client_order_id=client_order_id,
                                 venue_order_id=venue_order_id,
                                 ts_accepted_ns=millis_to_nanos(order["pd"]),
@@ -407,11 +441,12 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             execution_id = ExecutionId(str(order["md"]))  # Use matched date as execution id
                             if execution_id not in self.published_executions[client_order_id]:
                                 self.generate_order_filled(
+                                    strategy_id=None,  # Fetched from cache
+                                    instrument_id=instrument.id,
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
                                     execution_id=execution_id,
                                     position_id=None,  # Assigned in engine
-                                    instrument_id=instrument.id,
                                     order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
                                     last_qty=Quantity(order["sm"], instrument.size_precision),
                                     last_px=price_to_probability(order["p"]),
@@ -430,11 +465,12 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             if execution_id not in self.published_executions[client_order_id]:
                                 # At least some part of this order has been filled
                                 self.generate_order_filled(
+                                    strategy_id=None,  # Fetched from cache
+                                    instrument_id=instrument.id,
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
                                     execution_id=execution_id,
                                     position_id=None,  # Assigned in engine
-                                    instrument_id=instrument.id,
                                     order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
                                     last_qty=Quantity(order["sm"], instrument.size_precision),
                                     last_px=price_to_probability(order['p']),
@@ -453,6 +489,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             if key not in self.pending_update_order_client_ids:
                                 # The remainder of this order has been canceled
                                 self.generate_order_canceled(
+                                    strategy_id=None,  # Fetched from cache
+                                    instrument_id=instrument.id,
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
                                     ts_canceled_ns=millis_to_nanos(order.get("cd") or order.get("ld") or order.get('md')),

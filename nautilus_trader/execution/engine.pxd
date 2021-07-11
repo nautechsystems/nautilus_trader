@@ -101,7 +101,6 @@ cdef class ExecutionEngine(Component):
     cdef void _handle_account_event(self, AccountState event) except *
     cdef void _handle_position_event(self, PositionEvent event) except *
     cdef void _handle_order_event(self, OrderEvent event) except *
-    cdef void _confirm_strategy_id(self, OrderFilled fill) except *
     cdef void _confirm_position_id(self, OrderFilled fill) except *
     cdef void _handle_order_command_rejected(self, OrderEvent event) except *
     cdef void _handle_order_fill(self, OrderFilled fill) except *

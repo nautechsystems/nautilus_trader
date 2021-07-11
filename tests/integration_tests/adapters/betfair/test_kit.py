@@ -462,11 +462,12 @@ class BetfairTestStubs(TestStubs):
             strategy_id=BetfairTestStubs.strategy_id(),
             position_id=BetfairTestStubs.position_id(),
             order=LimitOrder(
+                trader_id=BetfairTestStubs.trader_id(),
+                strategy_id=BetfairTestStubs.strategy_id(),
+                instrument_id=BetfairTestStubs.instrument_id(),
                 client_order_id=ClientOrderId(
                     f"O-20210410-022422-001-001-{BetfairTestStubs.strategy_id().value}"
                 ),
-                strategy_id=BetfairTestStubs.strategy_id(),
-                instrument_id=BetfairTestStubs.instrument_id(),
                 order_side=OrderSide.BUY,
                 quantity=Quantity.from_int(10),
                 price=Price(0.33, precision=5),

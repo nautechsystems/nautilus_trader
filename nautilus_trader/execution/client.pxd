@@ -36,6 +36,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
@@ -87,14 +88,56 @@ cdef class ExecutionClient:
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void generate_account_state(self, list balances, bint reported, int64_t ts_updated_ns, dict info=*) except *
-    cpdef void generate_order_submitted(self, ClientOrderId client_order_id, int64_t ts_submitted_ns) except *
-    cpdef void generate_order_rejected(self, ClientOrderId client_order_id, str reason, int64_t ts_rejected_ns) except *
-    cpdef void generate_order_accepted(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t ts_accepted_ns) except *
-    cpdef void generate_order_pending_replace(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t ts_pending_ns) except *
-    cpdef void generate_order_pending_cancel(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t ts_pending_ns) except *
+    cpdef void generate_account_state(
+        self,
+        list balances,
+        bint reported,
+        int64_t ts_updated_ns,
+        dict info=*,
+    ) except *
+    cpdef void generate_order_submitted(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        int64_t ts_submitted_ns,
+    ) except *
+    cpdef void generate_order_rejected(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        str reason,
+        int64_t ts_rejected_ns,
+    ) except *
+    cpdef void generate_order_accepted(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        int64_t ts_accepted_ns,
+    ) except *
+    cpdef void generate_order_pending_replace(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        int64_t ts_pending_ns,
+    ) except *
+    cpdef void generate_order_pending_cancel(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        int64_t ts_pending_ns,
+    ) except *
     cpdef void generate_order_update_rejected(
         self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         str response_to,
         str reason,
@@ -102,6 +145,8 @@ cdef class ExecutionClient:
     ) except *
     cpdef void generate_order_cancel_rejected(
         self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         str response_to,
         str reason,
@@ -109,6 +154,8 @@ cdef class ExecutionClient:
     ) except *
     cpdef void generate_order_updated(
         self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         Quantity quantity,
@@ -117,16 +164,38 @@ cdef class ExecutionClient:
         int64_t ts_updated_ns,
         bint venue_order_id_modified=*,
     ) except *
-    cpdef void generate_order_canceled(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t ts_canceled_ns) except *
-    cpdef void generate_order_triggered(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t ts_triggered_ns) except *
-    cpdef void generate_order_expired(self, ClientOrderId client_order_id, VenueOrderId venue_order_id, int64_t ts_expired_ns) except *
+    cpdef void generate_order_canceled(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        int64_t ts_canceled_ns,
+    ) except *
+    cpdef void generate_order_triggered(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        int64_t ts_triggered_ns,
+    ) except *
+    cpdef void generate_order_expired(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        int64_t ts_expired_ns,
+    ) except *
     cpdef void generate_order_filled(
         self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         ExecutionId execution_id,
         PositionId position_id,
-        InstrumentId instrument_id,
         OrderSide order_side,
         Quantity last_qty,
         Price last_px,

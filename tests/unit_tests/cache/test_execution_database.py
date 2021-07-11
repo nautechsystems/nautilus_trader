@@ -21,7 +21,6 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from tests.test_kit.stubs import TestStubs
 
 
@@ -36,7 +35,7 @@ class TestCacheDatabase:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(

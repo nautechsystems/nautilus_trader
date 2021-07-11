@@ -61,7 +61,7 @@ class TestLiveExecutionEngine:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,

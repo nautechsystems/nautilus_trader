@@ -252,7 +252,10 @@ cdef class ExecutionClient:
         self._handle_event(account_state)
 
     cpdef void generate_order_submitted(
-        self, ClientOrderId client_order_id,
+        self,
+        StrategyId strategy_id,  # Can be None
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
         int64_t ts_submitted_ns,
     ) except *:
         """
@@ -260,15 +263,33 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
+        strategy_id : StrategyId, optional
+            The strategy ID associated with the event.
+            If None will be fetched from cache (error if not found).
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         ts_submitted_ns : int64
             The UNIX timestamp (nanoseconds) when the order was submitted.
 
         """
+        # Confirm strategy_id
+        if strategy_id is None:
+            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
+            if strategy_id is None:
+                self._log.error(
+                    "Cannot generate OrderSubmitted: "
+                    f"no strategy_id found for {repr(client_order_id)}."
+                )
+                return
+
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
-            self.account_id,
+            trader_id=self._engine.trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            account_id=self.account_id,
             client_order_id=client_order_id,
             ts_submitted_ns=ts_submitted_ns,
             event_id=self._uuid_factory.generate(),
@@ -279,6 +300,8 @@ cdef class ExecutionClient:
 
     cpdef void generate_order_rejected(
         self,
+        StrategyId strategy_id,  # Can be None
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         str reason,
         int64_t ts_rejected_ns,
@@ -288,6 +311,11 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
+        strategy_id : StrategyId, optional
+            The strategy ID associated with the event.
+            If None will be fetched from cache (error if not found).
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         reason : datetime
@@ -296,9 +324,22 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order was rejected.
 
         """
+        # Confirm strategy_id
+        if strategy_id is None:
+            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
+            if strategy_id is None:
+                self._log.error(
+                    "Cannot generate OrderRejected: "
+                    f"no strategy_id found for {repr(client_order_id)}."
+                )
+                return
+
         # Generate event
         cdef OrderRejected rejected = OrderRejected(
-            self.account_id,
+            trader_id=self._engine.trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            account_id=self.account_id,
             client_order_id=client_order_id,
             reason=reason,
             ts_rejected_ns=ts_rejected_ns,
@@ -310,6 +351,8 @@ cdef class ExecutionClient:
 
     cpdef void generate_order_accepted(
         self,
+        StrategyId strategy_id,  # Can be None
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         int64_t ts_accepted_ns,
@@ -319,6 +362,11 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
+        strategy_id : StrategyId, optional
+            The strategy ID associated with the event.
+            If None will be fetched from cache (error if not found).
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -327,9 +375,22 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order was accepted.
 
         """
+        # Confirm strategy_id
+        if strategy_id is None:
+            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
+            if strategy_id is None:
+                self._log.error(
+                    "Cannot generate OrderAccepted: "
+                    f"no strategy_id found for {repr(client_order_id)}."
+                )
+                return
+
         # Generate event
         cdef OrderAccepted accepted = OrderAccepted(
-            self.account_id,
+            trader_id=self._engine.trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             ts_accepted_ns=ts_accepted_ns,
@@ -341,6 +402,8 @@ cdef class ExecutionClient:
 
     cpdef void generate_order_pending_replace(
         self,
+        StrategyId strategy_id,  # Can be None
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         int64_t ts_pending_ns,
@@ -350,6 +413,11 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
+        strategy_id : StrategyId, optional
+            The strategy ID associated with the event.
+            If None will be fetched from cache (error if not found).
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -358,8 +426,21 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the replace was pending.
 
         """
+        # Confirm strategy_id
+        if strategy_id is None:
+            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
+            if strategy_id is None:
+                self._log.error(
+                    "Cannot generate OrderPendingUpdate: "
+                    f"no strategy_id found for {repr(client_order_id)}."
+                )
+                return
+
         # Generate event
         cdef OrderPendingUpdate pending_replace = OrderPendingUpdate(
+            trader_id=self._engine.trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
@@ -372,6 +453,8 @@ cdef class ExecutionClient:
 
     cpdef void generate_order_pending_cancel(
         self,
+        StrategyId strategy_id,  # Can be None
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         int64_t ts_pending_ns,
@@ -381,6 +464,11 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
+        strategy_id : StrategyId, optional
+            The strategy ID associated with the event.
+            If None will be fetched from cache (error if not found).
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -389,8 +477,21 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the cancel was pending.
 
         """
+        # Confirm strategy_id
+        if strategy_id is None:
+            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
+            if strategy_id is None:
+                self._log.error(
+                    "Cannot generate OrderPendingCancel: "
+                    f"no strategy_id found for {repr(client_order_id)}."
+                )
+                return
+
         # Generate event
         cdef OrderPendingCancel pending_cancel = OrderPendingCancel(
+            trader_id=self._engine.trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
@@ -403,6 +504,8 @@ cdef class ExecutionClient:
 
     cpdef void generate_order_update_rejected(
         self,
+        StrategyId strategy_id,  # Can be None
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         str response_to,
         str reason,
@@ -413,6 +516,11 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
+        strategy_id : StrategyId, optional
+            The strategy ID associated with the event.
+            If None will be fetched from cache (error if not found).
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         response_to : str
@@ -423,6 +531,16 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order update was rejected.
 
         """
+        # Confirm strategy_id
+        if strategy_id is None:
+            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
+            if strategy_id is None:
+                self._log.error(
+                    "Cannot generate OrderUpdateRejected: "
+                    f"no strategy_id found for {repr(client_order_id)}."
+                )
+                return
+
         cdef VenueOrderId venue_order_id = None
         cdef Order order = self._engine.cache.order(client_order_id)
         if order is not None:
@@ -432,6 +550,9 @@ cdef class ExecutionClient:
 
         # Generate event
         cdef OrderUpdateRejected update_rejected = OrderUpdateRejected(
+            trader_id=self._engine.trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
@@ -446,6 +567,8 @@ cdef class ExecutionClient:
 
     cpdef void generate_order_cancel_rejected(
         self,
+        StrategyId strategy_id,  # Can be None
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         str response_to,
         str reason,
@@ -456,6 +579,11 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
+        strategy_id : StrategyId, optional
+            The strategy ID associated with the event.
+            If None will be fetched from cache (error if not found).
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         response_to : str
@@ -466,6 +594,16 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order cancel was rejected.
 
         """
+        # Confirm strategy_id
+        if strategy_id is None:
+            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
+            if strategy_id is None:
+                self._log.error(
+                    "Cannot generate OrderCancelRejected: "
+                    f"no strategy_id found for {repr(client_order_id)}."
+                )
+                return
+
         cdef VenueOrderId venue_order_id = None
         cdef Order order = self._engine.cache.order(client_order_id)
         if order is not None:
@@ -475,6 +613,9 @@ cdef class ExecutionClient:
 
         # Generate event
         cdef OrderCancelRejected cancel_rejected = OrderCancelRejected(
+            trader_id=self._engine.trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
@@ -489,6 +630,8 @@ cdef class ExecutionClient:
 
     cpdef void generate_order_updated(
         self,
+        StrategyId strategy_id,  # Can be None
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         Quantity quantity,
@@ -502,6 +645,11 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
+        strategy_id : StrategyId, optional
+            The strategy ID associated with the event.
+            If None will be fetched from cache (error if not found).
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -518,6 +666,16 @@ cdef class ExecutionClient:
             If the ID was modified for this event.
 
         """
+        # Confirm strategy_id
+        if strategy_id is None:
+            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
+            if strategy_id is None:
+                self._log.error(
+                    "Cannot generate OrderUpdated: "
+                    f"no strategy_id found for {repr(client_order_id)}."
+                )
+                return
+
         # Check venue_order_id against cache, only allow modification when `venue_order_id_modified=True`
         if not venue_order_id_modified:
             existing = self._engine.cache.venue_order_id(client_order_id)
@@ -525,6 +683,9 @@ cdef class ExecutionClient:
 
         # Generate event
         cdef OrderUpdated updated = OrderUpdated(
+            trader_id=self._engine.trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
@@ -540,6 +701,8 @@ cdef class ExecutionClient:
 
     cpdef void generate_order_canceled(
         self,
+        StrategyId strategy_id,  # Can be None
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         int64_t ts_canceled_ns,
@@ -549,6 +712,11 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
+        strategy_id : StrategyId, optional
+            The strategy ID associated with the event.
+            If None will be fetched from cache (error if not found).
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -557,8 +725,21 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when order was canceled.
 
         """
+        # Confirm strategy_id
+        if strategy_id is None:
+            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
+            if strategy_id is None:
+                self._log.error(
+                    "Cannot generate OrderCanceled: "
+                    f"no strategy_id found for {repr(client_order_id)}."
+                )
+                return
+
         # Generate event
         cdef OrderCanceled canceled = OrderCanceled(
+            trader_id=self._engine.trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
@@ -571,6 +752,8 @@ cdef class ExecutionClient:
 
     cpdef void generate_order_triggered(
         self,
+        StrategyId strategy_id,  # Can be None
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         int64_t ts_triggered_ns,
@@ -580,6 +763,11 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
+        strategy_id : StrategyId, optional
+            The strategy ID associated with the event.
+            If None will be fetched from cache (error if not found).
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -588,8 +776,21 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order was triggered.
 
         """
+        # Confirm strategy_id
+        if strategy_id is None:
+            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
+            if strategy_id is None:
+                self._log.error(
+                    "Cannot generate OrderTriggered: "
+                    f"no strategy_id found for {repr(client_order_id)}."
+                )
+                return
+
         # Generate event
         cdef OrderTriggered triggered = OrderTriggered(
+            trader_id=self._engine.trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
@@ -602,6 +803,8 @@ cdef class ExecutionClient:
 
     cpdef void generate_order_expired(
         self,
+        StrategyId strategy_id,  # Can be None
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         int64_t ts_expired_ns,
@@ -611,6 +814,11 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
+        strategy_id : StrategyId, optional
+            The strategy ID associated with the event.
+            If None will be fetched from cache (error if not found).
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -619,8 +827,21 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order expired.
 
         """
+        # Confirm strategy_id
+        if strategy_id is None:
+            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
+            if strategy_id is None:
+                self._log.error(
+                    "Cannot generate OrderExpired: "
+                    f"no strategy_id found for {repr(client_order_id)}."
+                )
+                return
+
         # Generate event
         cdef OrderExpired expired = OrderExpired(
+            trader_id=self._engine.trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
@@ -633,11 +854,12 @@ cdef class ExecutionClient:
 
     cpdef void generate_order_filled(
         self,
+        StrategyId strategy_id,  # Can be None
+        InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
         ExecutionId execution_id,
         PositionId position_id,  # Can be None
-        InstrumentId instrument_id,
         OrderSide order_side,
         Quantity last_qty,
         Price last_px,
@@ -651,6 +873,11 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
+        strategy_id : StrategyId, optional
+            The strategy ID associated with the event.
+            If None will be fetched from cache (error if not found).
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -659,8 +886,6 @@ cdef class ExecutionClient:
             The execution ID.
         position_id : PositionId
             The position ID associated with the order.
-        instrument_id : InstrumentId
-            The instrument ID.
         order_side : OrderSide
             The execution order side.
         last_qty : Quantity
@@ -677,12 +902,22 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order was filled.
 
         """
+        # Confirm strategy_id
+        if strategy_id is None:
+            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
+            if strategy_id is None:
+                self._log.error(
+                    "Cannot generate OrderFilled: "
+                    f"no strategy_id found for {repr(client_order_id)}."
+                )
+                return
+
         # Check account
         if self._account is None:
             account = self._engine.cache.account_for_venue(instrument_id.venue)
             if account is None:
                 self._log.error(
-                    "Cannot generate order filled: "
+                    "Cannot generate OrderFilled: "
                     f"no account found for venue {instrument_id.venue}."
                 )
                 return
@@ -690,13 +925,14 @@ cdef class ExecutionClient:
 
         # Generate event
         cdef OrderFilled fill = OrderFilled(
+            trader_id=self._engine.trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
             account_id=self.account_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             execution_id=execution_id,
             position_id=position_id or PositionId.null_c(),  # If 'NULL' then assigned in engine
-            strategy_id=StrategyId.null_c(),
-            instrument_id=instrument_id,
             order_side=order_side,
             last_qty=last_qty,
             last_px=last_px,

@@ -41,7 +41,7 @@ class TestCommands:
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(

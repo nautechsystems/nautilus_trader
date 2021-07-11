@@ -36,10 +36,10 @@ def test_order_submit_to_betfair(betting_instrument):
     result = order_submit_to_betfair(command=command, instrument=betting_instrument)
     expected = {
         "customer_ref": command.id.value.replace("-", ""),
-        "customer_strategy_ref": "Test-1",
+        "customer_strategy_ref": "S-001",
         "instructions": [
             {
-                "customerOrderRef": "O-20210410-022422-001-001-Test",
+                "customerOrderRef": "O-20210410-022422-001-001-S",
                 "handicap": "",
                 "limitOrder": {
                     "minFillSize": 0,
