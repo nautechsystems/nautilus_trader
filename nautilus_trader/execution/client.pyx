@@ -274,16 +274,6 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order was submitted.
 
         """
-        # Confirm strategy_id
-        if strategy_id is None:
-            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
-            if strategy_id is None:
-                self._log.error(
-                    "Cannot generate OrderSubmitted: "
-                    f"no strategy_id found for {repr(client_order_id)}."
-                )
-                return
-
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
             trader_id=self._engine.trader_id,
@@ -324,16 +314,6 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order was rejected.
 
         """
-        # Confirm strategy_id
-        if strategy_id is None:
-            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
-            if strategy_id is None:
-                self._log.error(
-                    "Cannot generate OrderRejected: "
-                    f"no strategy_id found for {repr(client_order_id)}."
-                )
-                return
-
         # Generate event
         cdef OrderRejected rejected = OrderRejected(
             trader_id=self._engine.trader_id,
@@ -375,16 +355,6 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order was accepted.
 
         """
-        # Confirm strategy_id
-        if strategy_id is None:
-            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
-            if strategy_id is None:
-                self._log.error(
-                    "Cannot generate OrderAccepted: "
-                    f"no strategy_id found for {repr(client_order_id)}."
-                )
-                return
-
         # Generate event
         cdef OrderAccepted accepted = OrderAccepted(
             trader_id=self._engine.trader_id,
@@ -426,16 +396,6 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the replace was pending.
 
         """
-        # Confirm strategy_id
-        if strategy_id is None:
-            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
-            if strategy_id is None:
-                self._log.error(
-                    "Cannot generate OrderPendingUpdate: "
-                    f"no strategy_id found for {repr(client_order_id)}."
-                )
-                return
-
         # Generate event
         cdef OrderPendingUpdate pending_replace = OrderPendingUpdate(
             trader_id=self._engine.trader_id,
@@ -477,16 +437,6 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the cancel was pending.
 
         """
-        # Confirm strategy_id
-        if strategy_id is None:
-            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
-            if strategy_id is None:
-                self._log.error(
-                    "Cannot generate OrderPendingCancel: "
-                    f"no strategy_id found for {repr(client_order_id)}."
-                )
-                return
-
         # Generate event
         cdef OrderPendingCancel pending_cancel = OrderPendingCancel(
             trader_id=self._engine.trader_id,
@@ -531,16 +481,6 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order update was rejected.
 
         """
-        # Confirm strategy_id
-        if strategy_id is None:
-            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
-            if strategy_id is None:
-                self._log.error(
-                    "Cannot generate OrderUpdateRejected: "
-                    f"no strategy_id found for {repr(client_order_id)}."
-                )
-                return
-
         cdef VenueOrderId venue_order_id = None
         cdef Order order = self._engine.cache.order(client_order_id)
         if order is not None:
@@ -594,16 +534,6 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order cancel was rejected.
 
         """
-        # Confirm strategy_id
-        if strategy_id is None:
-            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
-            if strategy_id is None:
-                self._log.error(
-                    "Cannot generate OrderCancelRejected: "
-                    f"no strategy_id found for {repr(client_order_id)}."
-                )
-                return
-
         cdef VenueOrderId venue_order_id = None
         cdef Order order = self._engine.cache.order(client_order_id)
         if order is not None:
@@ -666,16 +596,6 @@ cdef class ExecutionClient:
             If the ID was modified for this event.
 
         """
-        # Confirm strategy_id
-        if strategy_id is None:
-            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
-            if strategy_id is None:
-                self._log.error(
-                    "Cannot generate OrderUpdated: "
-                    f"no strategy_id found for {repr(client_order_id)}."
-                )
-                return
-
         # Check venue_order_id against cache, only allow modification when `venue_order_id_modified=True`
         if not venue_order_id_modified:
             existing = self._engine.cache.venue_order_id(client_order_id)
@@ -725,16 +645,6 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when order was canceled.
 
         """
-        # Confirm strategy_id
-        if strategy_id is None:
-            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
-            if strategy_id is None:
-                self._log.error(
-                    "Cannot generate OrderCanceled: "
-                    f"no strategy_id found for {repr(client_order_id)}."
-                )
-                return
-
         # Generate event
         cdef OrderCanceled canceled = OrderCanceled(
             trader_id=self._engine.trader_id,
@@ -776,16 +686,6 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order was triggered.
 
         """
-        # Confirm strategy_id
-        if strategy_id is None:
-            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
-            if strategy_id is None:
-                self._log.error(
-                    "Cannot generate OrderTriggered: "
-                    f"no strategy_id found for {repr(client_order_id)}."
-                )
-                return
-
         # Generate event
         cdef OrderTriggered triggered = OrderTriggered(
             trader_id=self._engine.trader_id,
@@ -827,16 +727,6 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order expired.
 
         """
-        # Confirm strategy_id
-        if strategy_id is None:
-            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
-            if strategy_id is None:
-                self._log.error(
-                    "Cannot generate OrderExpired: "
-                    f"no strategy_id found for {repr(client_order_id)}."
-                )
-                return
-
         # Generate event
         cdef OrderExpired expired = OrderExpired(
             trader_id=self._engine.trader_id,
@@ -902,16 +792,6 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order was filled.
 
         """
-        # Confirm strategy_id
-        if strategy_id is None:
-            strategy_id = self._engine.cache.strategy_id_for_order(client_order_id)
-            if strategy_id is None:
-                self._log.error(
-                    "Cannot generate OrderFilled: "
-                    f"no strategy_id found for {repr(client_order_id)}."
-                )
-                return
-
         # Check account
         if self._account is None:
             account = self._engine.cache.account_for_venue(instrument_id.venue)
