@@ -65,12 +65,13 @@ class TestExecutionEngine:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
+        self.strategy_id = TestStubs.strategy_id()
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("S-001"),
+            strategy_id=self.strategy_id,
             clock=TestClock(),
         )
 
@@ -1008,6 +1009,9 @@ class TestExecutionEngine:
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
         canceled = OrderCanceled(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
@@ -1057,6 +1061,9 @@ class TestExecutionEngine:
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
         canceled = OrderCanceled(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             VenueOrderId("RANDOM_001"),  # Also a random order id the engine won't find
@@ -1104,6 +1111,9 @@ class TestExecutionEngine:
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
         canceled = OrderCanceled(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
@@ -1119,63 +1129,6 @@ class TestExecutionEngine:
         # Assert (order was found and OrderCanceled event was applied)
         assert order.state == OrderState.CANCELED
         assert order.event_count == 4
-
-    def test_handle_order_fill_event_with_no_strategy_id_correctly_handles_fill(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
-        )
-
-        self.exec_engine.register_strategy(strategy)
-
-        order = strategy.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            PositionId.null(),
-            order,
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
-        )
-
-        self.risk_engine.execute(submit_order)
-
-        # Act
-        self.exec_engine.process(TestStubs.event_order_submitted(order))
-        self.exec_engine.process(TestStubs.event_order_accepted(order))
-        self.exec_engine.process(
-            TestStubs.event_order_filled(
-                order=order,
-                instrument=AUDUSD_SIM,
-                strategy_id=StrategyId.null(),
-            )
-        )
-
-        expected_position_id = PositionId("P-19700101-000000-000-001-1")
-
-        # Assert
-        assert self.cache.position_exists(expected_position_id)
-        assert self.cache.is_position_open(expected_position_id)
-        assert not self.cache.is_position_closed(expected_position_id)
-        assert type(self.cache.position(expected_position_id)) == Position
-        assert expected_position_id in self.cache.position_ids()
-        assert expected_position_id not in self.cache.position_closed_ids(strategy_id=strategy.id)
-        assert expected_position_id not in self.cache.position_closed_ids()
-        assert expected_position_id in self.cache.position_open_ids(strategy_id=strategy.id)
-        assert expected_position_id in self.cache.position_open_ids()
-        assert self.cache.positions_total_count() == 1
-        assert self.cache.positions_open_count() == 1
-        assert self.cache.positions_closed_count() == 0
 
     def test_handle_order_fill_event_with_no_position_id_correctly_handles_fill(self):
         # Arrange
@@ -1214,7 +1167,6 @@ class TestExecutionEngine:
             TestStubs.event_order_filled(
                 order=order,
                 instrument=AUDUSD_SIM,
-                strategy_id=StrategyId.null(),
             )
         )
 
@@ -1974,6 +1926,9 @@ class TestExecutionEngine:
         # Act
         new_venue_id = VenueOrderId("UPDATED")
         order_updated = OrderUpdated(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=AUDUSD_SIM.id,
             account_id=self.account_id,
             client_order_id=order.client_order_id,
             venue_order_id=new_venue_id,

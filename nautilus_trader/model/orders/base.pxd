@@ -41,6 +41,7 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -52,20 +53,22 @@ cdef class Order:
     cdef FiniteStateMachine _fsm
     cdef OrderState _rollback_state
 
+    cdef readonly TraderId trader_id
+    """The trader ID associated with the position.\n\n:returns: `TraderId`"""
+    cdef readonly StrategyId strategy_id
+    """The strategy ID associated with the order.\n\n:returns: `StrategyId`"""
+    cdef readonly InstrumentId instrument_id
+    """The order instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly ClientOrderId client_order_id
     """The client order ID.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The venue assigned order ID.\n\n:returns: `VenueOrderId`"""
     cdef readonly PositionId position_id
     """The position ID associated with the order.\n\n:returns: `PositionId`"""
-    cdef readonly StrategyId strategy_id
-    """The strategy ID associated with the order.\n\n:returns: `StrategyId`"""
     cdef readonly AccountId account_id
     """The account ID associated with the order.\n\n:returns: `AccountId` or None"""
     cdef readonly ExecutionId execution_id
     """The orders last execution ID.\n\n:returns: `ExecutionId` or None"""
-    cdef readonly InstrumentId instrument_id
-    """The order instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType type

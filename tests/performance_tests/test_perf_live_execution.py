@@ -51,7 +51,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
         self.logger = Logger(self.clock, bypass=True)
 
         self.account_id = AccountId(BINANCE.value, "001")

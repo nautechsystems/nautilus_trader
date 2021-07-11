@@ -57,7 +57,7 @@ class TestCache:
         clock = TestClock()
         logger = Logger(clock)
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
 
         self.strategy = TradingStrategy(order_id_tag="001")

@@ -47,7 +47,6 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
@@ -93,7 +92,7 @@ class TestSimulatedExchange:
             config={"use_previous_close": False},  # To correctly reproduce historical data bars
         )
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
         self.account_id = AccountId("SIM", "001")
 
         self.exec_engine = ExecutionEngine(
@@ -1902,7 +1901,7 @@ class TestBitmexExchange:
             config={"use_previous_close": False},  # To correctly reproduce historical data bars
         )
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
         self.account_id = AccountId("BITMEX", "001")
 
         self.exec_engine = ExecutionEngine(
@@ -2044,7 +2043,7 @@ class TestOrderBookExchange:
             config={"use_previous_close": False},  # To correctly reproduce historical data bars
         )
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
         self.account_id = AccountId("SIM", "001")
 
         self.exec_engine = ExecutionEngine(

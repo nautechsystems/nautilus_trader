@@ -681,7 +681,6 @@ cdef class ExecutionEngine(Component):
             # The StrategyId needs to be confirmed prior to the PositionId.
             # This is in case there is no PositionId currently assigned and one
             # must be generated.
-            self._confirm_strategy_id(event)
             self._confirm_position_id(event)
 
         try:
@@ -703,28 +702,6 @@ cdef class ExecutionEngine(Component):
 
         self._risk_engine.process(event)
         self._send_to_strategy(event, self.cache.strategy_id_for_order(client_order_id))
-
-    cdef void _confirm_strategy_id(self, OrderFilled fill) except *:
-        if fill.strategy_id.not_null():
-            # Already assigned to fill
-            return
-
-        # Fetch ID from cache
-        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(fill.client_order_id)
-        if strategy_id is not None:
-            # Assign ID to fill
-            fill.strategy_id = strategy_id
-            return
-
-        if fill.position_id.not_null():
-            # Check if strategy ID assigned for position
-            strategy_id = self.cache.strategy_id_for_position(fill.position_id)
-        if strategy_id is None:
-            self._log.error(
-                f"Cannot find StrategyId for "
-                f"{repr(fill.client_order_id)} and "
-                f"{repr(fill.position_id)} not found for {fill}."
-            )
 
     cdef void _confirm_position_id(self, OrderFilled fill) except *:
         if fill.position_id.not_null():
@@ -837,13 +814,14 @@ cdef class ExecutionEngine(Component):
         cdef OrderFilled fill_split1 = None
         # Split fill to close original position
         fill_split1 = OrderFilled(
+            trader_id=fill.trader_id,
+            strategy_id=fill.strategy_id,
+            instrument_id=fill.instrument_id,
             account_id=fill.account_id,
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
             position_id=fill.position_id,
-            strategy_id=fill.strategy_id,
-            instrument_id=fill.instrument_id,
             order_side=fill.order_side,
             last_qty=position.quantity,  # Fill original position quantity remaining
             last_px=fill.last_px,
@@ -866,13 +844,14 @@ cdef class ExecutionEngine(Component):
 
         # Generate order fill for flipped position
         cdef OrderFilled fill_split2 = OrderFilled(
+            trader_id=fill.trader_id,
+            strategy_id=fill.strategy_id,
+            instrument_id=fill.instrument_id,
             account_id=fill.account_id,
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
             position_id=position_id_flip,
-            strategy_id=fill.strategy_id,
-            instrument_id=fill.instrument_id,
             order_side=fill.order_side,
             last_qty=difference,  # Fill difference from original as above
             last_px=fill.last_px,
@@ -888,13 +867,6 @@ cdef class ExecutionEngine(Component):
         self._handle_order_fill(fill_split2)
 
     cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
-        if strategy_id is None:
-            self._log.error(
-                f"Cannot send event to strategy: "
-                f"{repr(strategy_id)} not found for {event}."
-            )
-            return  # Cannot send to strategy
-
         cdef TradingStrategy strategy = self._strategies.get(strategy_id)
         if strategy is None:
             self._log.error(

@@ -52,6 +52,7 @@ ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
 class TestPosition:
     def setup(self):
         # Fixture Setup
+        self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
         self.order_factory = OrderFactory(
             trader_id=TraderId("TESTER-000"),
@@ -364,13 +365,14 @@ class TestPosition:
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
 
         fill2 = OrderFilled(
+            self.trader_id,
+            StrategyId("S-001"),
+            order.instrument_id,
             self.account_id,
             order.client_order_id,
             VenueOrderId("2"),
             ExecutionId("E2"),
             PositionId("T123456"),
-            StrategyId("S-001"),
-            order.instrument_id,
             OrderSide.SELL,
             order.quantity,
             Price.from_str("1.00011"),

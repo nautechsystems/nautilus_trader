@@ -68,11 +68,12 @@ cdef class Position:
         self._commissions = {}
 
         # Identifiers
+        self.trader_id = fill.trader_id
+        self.strategy_id = fill.strategy_id
+        self.instrument_id = fill.instrument_id
         self.id = fill.position_id
         self.account_id = fill.account_id
         self.from_order = fill.client_order_id
-        self.strategy_id = fill.strategy_id
-        self.instrument_id = fill.instrument_id
 
         # Properties
         self.entry = fill.order_side

@@ -36,6 +36,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
@@ -144,8 +145,22 @@ cdef class SimulatedExchange:
     cdef void _generate_order_accepted(self, Order order) except *
     cdef void _generate_order_pending_replace(self, Order order) except *
     cdef void _generate_order_pending_cancel(self, Order order) except *
-    cdef void _generate_order_update_rejected(self, ClientOrderId client_order_id, str response, str reason) except *
-    cdef void _generate_order_cancel_rejected(self, ClientOrderId client_order_id, str response, str reason) except *
+    cdef void _generate_order_update_rejected(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        str response,
+        str reason,
+    ) except *
+    cdef void _generate_order_cancel_rejected(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        str response,
+        str reason,
+    ) except *
     cdef void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *
     cdef void _generate_order_canceled(self, PassiveOrder order) except *
     cdef void _generate_order_triggered(self, StopLimitOrder order) except *

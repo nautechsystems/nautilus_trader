@@ -312,7 +312,7 @@ class TestStubs:
 
     @staticmethod
     def strategy_id() -> StrategyId:
-        return StrategyId("Test-1")
+        return StrategyId("S-001")
 
     @staticmethod
     def event_account_state(account_id=None) -> AccountState:
@@ -341,6 +341,9 @@ class TestStubs:
     @staticmethod
     def event_order_submitted(order) -> OrderSubmitted:
         return OrderSubmitted(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             ts_submitted_ns=0,
@@ -353,6 +356,9 @@ class TestStubs:
         if venue_order_id is None:
             venue_order_id = VenueOrderId("1")
         return OrderAccepted(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
@@ -364,6 +370,9 @@ class TestStubs:
     @staticmethod
     def event_order_rejected(order) -> OrderRejected:
         return OrderRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             reason="ORDER_REJECTED",
@@ -375,6 +384,9 @@ class TestStubs:
     @staticmethod
     def event_order_pending_update(order) -> OrderPendingUpdate:
         return OrderPendingUpdate(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
@@ -386,6 +398,9 @@ class TestStubs:
     @staticmethod
     def event_order_pending_cancel(order) -> OrderPendingCancel:
         return OrderPendingCancel(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
@@ -427,13 +442,14 @@ class TestStubs:
         )
 
         return OrderFilled(
+            trader_id=TestStubs.trader_id(),
+            strategy_id=strategy_id,
+            instrument_id=instrument.id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
             execution_id=execution_id,
             position_id=position_id,
-            strategy_id=strategy_id,
-            instrument_id=order.instrument_id,
             order_side=order.side,
             last_qty=last_qty,
             last_px=order.price if last_px is None else last_px,
@@ -448,6 +464,9 @@ class TestStubs:
     @staticmethod
     def event_order_canceled(order) -> OrderCanceled:
         return OrderCanceled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
@@ -459,6 +478,9 @@ class TestStubs:
     @staticmethod
     def event_order_expired(order) -> OrderExpired:
         return OrderExpired(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
@@ -470,6 +492,9 @@ class TestStubs:
     @staticmethod
     def event_order_triggered(order) -> OrderTriggered:
         return OrderTriggered(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,

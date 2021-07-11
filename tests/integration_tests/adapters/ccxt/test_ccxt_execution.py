@@ -26,7 +26,6 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
@@ -55,7 +54,7 @@ class TestCCXTExecutionClient:
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER-001")
+        self.trader_id = TestStubs.trader_id()
         self.account_id = AccountId(BINANCE.value, "001")
 
         # Fresh isolated loop testing pattern

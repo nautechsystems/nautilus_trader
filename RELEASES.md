@@ -3,11 +3,15 @@
 
 ## Breaking Changes
 - Renamed `MessageType` enum to `MessageCategory`.
+- All `Event` serialization due to domain refactorings.
 
 ## Enhancements
 - Added `MessageBus` class.
 - Added `MessageType` class.
+- Added `TradingEvent` base class.
+- Added `TraderId` to `Order` and `Position`.
 - Improved efficiency of `Throttler`.
+- Standardized identifiers on events and objects.
 - Removed redundant `BypassCacheDatabase`.
 
 ## Fixes

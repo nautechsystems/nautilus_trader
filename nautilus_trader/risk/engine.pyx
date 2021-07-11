@@ -673,6 +673,9 @@ cdef class RiskEngine(Component):
 
         # Generate event
         cdef OrderDenied denied = OrderDenied(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             reason=reason,
             event_id=self._uuid_factory.generate(),

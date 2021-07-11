@@ -136,13 +136,16 @@ cdef class Order:
         )
         self._rollback_state = OrderState.INITIALIZED
 
+        # Identifiers
+        self.trader_id = init.trader_id
+        self.strategy_id = init.strategy_id
+        self.instrument_id = init.instrument_id
         self.client_order_id = init.client_order_id
         self.venue_order_id = VenueOrderId.null_c()
         self.position_id = PositionId.null_c()
-        self.strategy_id = init.strategy_id
         self.account_id = None    # Can be None
         self.execution_id = None  # Can be None
-        self.instrument_id = init.instrument_id
+
         self.side = init.order_side
         self.type = init.order_type
         self.quantity = init.quantity
@@ -645,9 +648,10 @@ cdef class PassiveOrder(Order):
     """
     def __init__(
         self,
-        ClientOrderId client_order_id not None,
+        TraderId trader_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
+        ClientOrderId client_order_id not None,
         OrderSide order_side,
         OrderType order_type,
         Quantity quantity not None,
@@ -663,12 +667,14 @@ cdef class PassiveOrder(Order):
 
         Parameters
         ----------
-        client_order_id : ClientOrderId
-            The client order ID.
+        trader_id : TraderId
+            The trader ID associated with the order.
         strategy_id : StrategyId
             The strategy ID associated with the order.
         instrument_id : InstrumentId
             The order instrument ID.
+        client_order_id : ClientOrderId
+            The client order ID.
         order_side : OrderSide
             The order side (BUY or SELL).
         order_type : OrderType
@@ -709,9 +715,10 @@ cdef class PassiveOrder(Order):
             options["expire_time"] = maybe_dt_to_unix_nanos(expire_time)
 
         cdef OrderInitialized init = OrderInitialized(
-            client_order_id=client_order_id,
+            trader_id=trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
+            client_order_id=client_order_id,
             order_side=order_side,
             order_type=order_type,
             quantity=quantity,

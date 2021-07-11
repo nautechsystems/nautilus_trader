@@ -26,7 +26,6 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.stubs import TestStubs
 
@@ -36,7 +35,7 @@ class TestCCXTDataClientFactory:
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER-001")
+        self.trader_id = TestStubs.trader_id()
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()
@@ -109,7 +108,7 @@ class TestCCXTExecClientFactory:
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER-001")
+        self.trader_id = TestStubs.trader_id()
 
         # Fresh isolated loop testing pattern
         self.loop = asyncio.new_event_loop()

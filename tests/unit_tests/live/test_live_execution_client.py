@@ -63,7 +63,7 @@ class TestLiveExecutionClientFactory:
         self.clock = LiveClock()
         self.logger = LiveLogger(self.loop, self.clock)
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
 
         self.cache = TestStubs.cache()
 
@@ -111,7 +111,7 @@ class TestLiveExecutionClient:
         self.uuid_factory = UUIDFactory()
         self.logger = LiveLogger(self.loop, self.clock)
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
