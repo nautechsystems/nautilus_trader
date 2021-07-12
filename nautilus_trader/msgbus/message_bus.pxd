@@ -13,11 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+Initial Cython implementation of the MessageBus.
+Eventually replace with msgbus C implementation.
+"""
+
 from typing import Callable
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
 
 
 cdef class Subscription:

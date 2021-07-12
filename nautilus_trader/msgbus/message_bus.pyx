@@ -13,6 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+"""
+Initial Cython implementation of the MessageBus.
+Eventually replace with msgbus C implementation.
+"""
+
 from typing import Callable
 
 import cython
