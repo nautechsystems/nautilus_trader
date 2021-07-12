@@ -28,7 +28,7 @@ from examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId

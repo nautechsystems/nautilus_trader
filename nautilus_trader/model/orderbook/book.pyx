@@ -27,14 +27,14 @@ from nautilus_trader.model.c_enums.delta_type cimport DeltaType
 from nautilus_trader.model.c_enums.delta_type cimport DeltaTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport Tick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 from nautilus_trader.model.orderbook.order cimport Order
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport Tick
-from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class OrderBook:

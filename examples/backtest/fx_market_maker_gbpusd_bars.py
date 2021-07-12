@@ -30,8 +30,8 @@ from examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
-from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType

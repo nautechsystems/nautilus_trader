@@ -19,7 +19,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_timedelta
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.model.c_enums.order_state cimport OrderState
-from nautilus_trader.model.events cimport AccountState
+from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.trading.account cimport Account
 
 

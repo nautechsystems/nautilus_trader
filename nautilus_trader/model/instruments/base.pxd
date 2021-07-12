@@ -20,7 +20,7 @@ from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price

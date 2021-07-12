@@ -15,10 +15,10 @@
 
 import pyarrow as pa
 
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.orderbook.book import OrderBookData
 from nautilus_trader.model.orderbook.book import OrderBookDelta
-from nautilus_trader.model.tick import TradeTick
 
 
 TYPE_TO_SCHEMA = {}

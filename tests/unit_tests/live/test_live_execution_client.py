@@ -26,7 +26,7 @@ from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClientFactory
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
-from nautilus_trader.model.commands import SubmitOrder
+from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide

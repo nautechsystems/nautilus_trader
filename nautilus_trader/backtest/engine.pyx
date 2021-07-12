@@ -54,8 +54,11 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
-from nautilus_trader.model.data cimport Data
-from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.model.data.base cimport GenericData
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport Tick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -64,9 +67,6 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.orderbook.book cimport OrderBookData
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport Tick
-from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackCommandSerializer
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackEventSerializer
