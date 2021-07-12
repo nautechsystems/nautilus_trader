@@ -15,8 +15,8 @@
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.message_bus import MessageBus
-from nautilus_trader.common.message_bus import Subscription
+from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.message_bus import Subscription
 
 
 class TestSubscription:
@@ -171,7 +171,7 @@ class TestMessageBus:
         self.logger = Logger(self.clock)
 
         self.handler = []
-        self.msg_bus = MessageBus(
+        self.msgbus = MessageBus(
             name="TestBus",
             clock=self.clock,
             logger=self.logger,
@@ -179,13 +179,13 @@ class TestMessageBus:
 
     def test_channels_with_no_subscribers_returns_empty_list(self):
         # Arrange, Act
-        result = self.msg_bus.channels()
+        result = self.msgbus.channels()
 
         assert result == []
 
     def test_subscriptions_with_no_subscribers_returns_empty_list(self):
         # Arrange, Act
-        result = self.msg_bus.subscriptions("*")
+        result = self.msgbus.subscriptions("*")
 
         # Assert
         assert result == []
@@ -195,10 +195,10 @@ class TestMessageBus:
         handler = [].append
 
         # Act
-        self.msg_bus.subscribe(topic="*", handler=handler)
-        self.msg_bus.subscribe(topic="system", handler=handler)
+        self.msgbus.subscribe(topic="*", handler=handler)
+        self.msgbus.subscribe(topic="system", handler=handler)
 
-        result = self.msg_bus.channels()
+        result = self.msgbus.channels()
 
         # Assert
         assert result == ["system", "*"]
@@ -207,12 +207,12 @@ class TestMessageBus:
         # Arrange
         handler = [].append
 
-        self.msg_bus.subscribe(topic="a", handler=handler)
+        self.msgbus.subscribe(topic="a", handler=handler)
 
         # Act
-        self.msg_bus.subscribe(topic="a", handler=handler)
+        self.msgbus.subscribe(topic="a", handler=handler)
 
-        result = self.msg_bus.channels()
+        result = self.msgbus.channels()
 
         # Assert
         assert result == ["a"]
@@ -222,9 +222,9 @@ class TestMessageBus:
         handler = [].append
 
         # Act
-        self.msg_bus.subscribe(topic="system", handler=handler)
+        self.msgbus.subscribe(topic="system", handler=handler)
 
-        result = self.msg_bus.subscriptions("system")
+        result = self.msgbus.subscriptions("system")
 
         # Assert
         assert len(result) == 1
@@ -235,9 +235,9 @@ class TestMessageBus:
         handler = [].append
 
         # Act
-        self.msg_bus.subscribe(topic="*", handler=handler)
+        self.msgbus.subscribe(topic="*", handler=handler)
 
-        result = self.msg_bus.subscriptions("*")
+        result = self.msgbus.subscriptions("*")
 
         # Assert
         assert len(result) == 1
@@ -247,12 +247,12 @@ class TestMessageBus:
         # Arrange
         handler = [].append
 
-        self.msg_bus.subscribe(topic="a*", handler=handler)
+        self.msgbus.subscribe(topic="a*", handler=handler)
 
         # Act
-        self.msg_bus.subscribe(topic="a*", handler=handler)
+        self.msgbus.subscribe(topic="a*", handler=handler)
 
-        result = self.msg_bus.subscriptions("a*")
+        result = self.msgbus.subscriptions("a*")
 
         # Assert
         assert len(result) == 1
@@ -262,12 +262,12 @@ class TestMessageBus:
         # Arrange
         handler = [].append
 
-        self.msg_bus.subscribe(topic="orders:*", handler=handler)
+        self.msgbus.subscribe(topic="orders:*", handler=handler)
 
         # Act
-        self.msg_bus.unsubscribe(topic="orders:*", handler=handler)
+        self.msgbus.unsubscribe(topic="orders:*", handler=handler)
 
-        result = self.msg_bus.subscriptions("orders:*")
+        result = self.msgbus.subscriptions("orders:*")
 
         # Assert
         assert result == []
@@ -277,9 +277,9 @@ class TestMessageBus:
         handler = [].append
 
         # Act
-        self.msg_bus.unsubscribe(topic="*", handler=handler)
+        self.msgbus.unsubscribe(topic="*", handler=handler)
 
-        result = self.msg_bus.subscriptions(topic="*")
+        result = self.msgbus.subscriptions(topic="*")
 
         # Assert
         assert result == []
@@ -288,12 +288,12 @@ class TestMessageBus:
         # Arrange
         handler = [].append
 
-        self.msg_bus.subscribe(topic="*", handler=handler)
+        self.msgbus.subscribe(topic="*", handler=handler)
 
         # Act
-        self.msg_bus.unsubscribe(topic="*", handler=handler)
+        self.msgbus.unsubscribe(topic="*", handler=handler)
 
-        result = self.msg_bus.subscriptions("*")
+        result = self.msgbus.subscriptions("*")
 
         # Assert
         assert result == []
@@ -303,16 +303,16 @@ class TestMessageBus:
         handler = [].append
 
         # Act
-        self.msg_bus.unsubscribe(topic="*", handler=handler)
+        self.msgbus.unsubscribe(topic="*", handler=handler)
 
-        result = self.msg_bus.subscriptions("*")
+        result = self.msgbus.subscriptions("*")
 
         # Assert
         assert result == []
 
     def test_publish_with_no_subscribers_does_nothing(self):
         # Arrange, Act
-        self.msg_bus.publish("*", "hello world")
+        self.msgbus.publish("*", "hello world")
 
         # Assert
         assert True  # No exceptions raised
@@ -321,10 +321,10 @@ class TestMessageBus:
         # Arrange
         subscriber = []
 
-        self.msg_bus.subscribe(topic="system", handler=subscriber.append)
+        self.msgbus.subscribe(topic="system", handler=subscriber.append)
 
         # Act
-        self.msg_bus.publish("system", "hello world")
+        self.msgbus.publish("system", "hello world")
 
         # Assert
         assert "hello world" in subscriber
@@ -335,12 +335,12 @@ class TestMessageBus:
         subscriber2 = []
         subscriber3 = []
 
-        self.msg_bus.subscribe(topic="system", handler=subscriber1.append)
-        self.msg_bus.subscribe(topic="system", handler=subscriber2.append)
-        self.msg_bus.subscribe(topic="system", handler=subscriber3.append)
+        self.msgbus.subscribe(topic="system", handler=subscriber1.append)
+        self.msgbus.subscribe(topic="system", handler=subscriber2.append)
+        self.msgbus.subscribe(topic="system", handler=subscriber3.append)
 
         # Act
-        self.msg_bus.publish("system", "hello world")
+        self.msgbus.publish("system", "hello world")
 
         # Assert
         assert "hello world" in subscriber1
@@ -351,10 +351,10 @@ class TestMessageBus:
         # Arrange
         subscriber = []
 
-        self.msg_bus.subscribe(topic="Event:OrderEvent*", handler=subscriber.append)
+        self.msgbus.subscribe(topic="Event:OrderEvent*", handler=subscriber.append)
 
         # Act
-        self.msg_bus.publish("Event:OrderEvent*", "OK!")
+        self.msgbus.publish("Event:OrderEvent*", "OK!")
 
         # Assert
         assert "OK!" in subscriber
@@ -363,13 +363,13 @@ class TestMessageBus:
         # Arrange
         subscriber = []
 
-        self.msg_bus.subscribe(
+        self.msgbus.subscribe(
             topic="Event:PositionEvent:*",
             handler=subscriber.append,
         )
 
         # Act
-        self.msg_bus.publish("Event:OrderEvent*", "OK!")
+        self.msgbus.publish("Event:OrderEvent*", "OK!")
 
         # Assert
         assert "OK!" not in subscriber
@@ -378,13 +378,13 @@ class TestMessageBus:
         # Arrange
         subscriber = []
 
-        self.msg_bus.subscribe(
+        self.msgbus.subscribe(
             topic="order*",
             handler=subscriber.append,
         )
 
         # Act
-        self.msg_bus.publish("order.S-001", "OK!")
+        self.msgbus.publish("order.S-001", "OK!")
 
         # Assert
         assert "OK!" in subscriber
@@ -394,18 +394,18 @@ class TestMessageBus:
         subscriber1 = []
         subscriber2 = []
 
-        self.msg_bus.subscribe(
+        self.msgbus.subscribe(
             topic="MyMessages",
             handler=subscriber1.append,
         )
 
-        self.msg_bus.subscribe(
+        self.msgbus.subscribe(
             topic="*",  # <-- subscribe ALL
             handler=subscriber2.append,
         )
 
         # Act
-        self.msg_bus.publish("MyMessages", "OK!")
+        self.msgbus.publish("MyMessages", "OK!")
 
         # Assert
         assert "OK!" in subscriber1
