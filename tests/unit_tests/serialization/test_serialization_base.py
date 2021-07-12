@@ -18,8 +18,8 @@ import pytest
 from nautilus_trader.core.type import DataType
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.messages import Subscribe
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.serialization.base import CommandSerializer
 from nautilus_trader.serialization.base import EventSerializer
 from nautilus_trader.serialization.base import InstrumentSerializer

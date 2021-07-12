@@ -32,7 +32,8 @@ from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model import currencies
 from nautilus_trader.model.currencies import GBP
-from nautilus_trader.model.data import Data
+from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
@@ -45,7 +46,6 @@ from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.tick import QuoteTick
 from nautilus_trader.serialization.arrow.core import register_parquet
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider

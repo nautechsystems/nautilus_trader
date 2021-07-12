@@ -29,23 +29,17 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
-
-from nautilus_trader.model.data import Data
-
-
-try:
-    from tqdm import tqdm
-except ImportError:
-    pass
+from tqdm import tqdm
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBookDelta
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
-from nautilus_trader.model.venue import InstrumentStatusUpdate
 from nautilus_trader.serialization.arrow.core import _deserialize
 from nautilus_trader.serialization.arrow.core import _partition_keys
 from nautilus_trader.serialization.arrow.core import _schemas

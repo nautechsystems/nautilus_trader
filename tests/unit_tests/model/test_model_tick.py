@@ -15,12 +15,12 @@
 
 import pytest
 
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
 from tests.test_kit.providers import TestInstrumentProvider
 
 

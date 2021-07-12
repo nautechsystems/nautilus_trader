@@ -17,12 +17,12 @@ import pytz
 
 from nautilus_trader.indicators.bid_ask_min_max import BidAskMinMax
 from nautilus_trader.indicators.bid_ask_min_max import WindowedMinMaxPrices
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.tick import QuoteTick
 
 
 class TestBidAskMinMax:

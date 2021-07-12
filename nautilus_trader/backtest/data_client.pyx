@@ -27,8 +27,8 @@ from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.engine cimport DataEngine
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue

@@ -16,12 +16,9 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
@@ -35,42 +32,15 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.position cimport Position
 
 
-cdef class AccountState(Event):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly AccountType account_type
-    """The account type for the event.\n\n:returns: `AccountType`"""
-    cdef readonly Currency base_currency
-    """The account type for the event.\n\n:returns: `Currency` or None"""
-    cdef readonly list balances
-    """The account balances.\n\n:returns: `list[AccountBalance]`"""
-    cdef readonly bint is_reported
-    """If the state is reported from the exchange (otherwise system calculated).\n\n:returns: `bool`"""
-    cdef readonly dict info
-    """The additional implementation specific account information.\n\n:returns: `dict[str, object]`"""
-    cdef readonly int64_t ts_updated_ns
-    """The UNIX timestamp (nanoseconds) when the account was updated.\n\n:returns: `int64`"""
-
-    @staticmethod
-    cdef AccountState from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(AccountState obj)
-
-
-cdef class TradingEvent(Event):
+cdef class OrderEvent(Event):
     cdef readonly TraderId trader_id
     """The trader ID associated with the event.\n\n:returns: `TraderId`"""
     cdef readonly StrategyId strategy_id
     """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly InstrumentId instrument_id
     """The instrument ID associated with the event.\n\n:returns: `InstrumentId`"""
-
-
-cdef class OrderEvent(TradingEvent):
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the event.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
@@ -297,95 +267,3 @@ cdef class OrderFilled(OrderEvent):
     cdef dict to_dict_c(OrderFilled obj)
     cdef bint is_buy_c(self) except *
     cdef bint is_sell_c(self) except *
-
-
-cdef class PositionEvent(TradingEvent):
-    cdef readonly PositionId position_id
-    """The position ID associated with the event.\n\n:returns: `PositionId`"""
-    cdef readonly AccountId account_id
-    """The account ID associated with the position.\n\n:returns: `AccountId`"""
-    cdef readonly ClientOrderId from_order
-    """The client order ID for the order which first opened the position.\n\n:returns: `ClientOrderId`"""
-    cdef readonly OrderSide entry
-    """The entry direction from open.\n\n:returns: `OrderSide`"""
-    cdef readonly PositionSide side
-    """The position side.\n\n:returns: `PositionSide`"""
-    cdef readonly object net_qty
-    """The net quantity (positive for LONG, negative for SHORT).\n\n:returns: `Decimal`"""
-    cdef readonly Quantity quantity
-    """The position open quantity.\n\n:returns: `Quantity`"""
-    cdef readonly Quantity peak_qty
-    """The peak directional quantity reached by the position.\n\n:returns: `Quantity`"""
-    cdef readonly Quantity last_qty
-    """The last fill quantity for the position.\n\n:returns: `Quantity`"""
-    cdef readonly Price last_px
-    """The last fill price for the position.\n\n:returns: `Price`"""
-    cdef readonly Currency currency
-    """The position quote currency.\n\n:returns: `Currency`"""
-    cdef readonly object avg_px_open
-    """The average open price.\n\n:returns: `Decimal`"""
-    cdef readonly object avg_px_close
-    """The average closing price.\n\n:returns: `Decimal`"""
-    cdef readonly object realized_points
-    """The realized points for the position.\n\n:returns: `Decimal`"""
-    cdef readonly object realized_return
-    """The realized return for the position.\n\n:returns: `Decimal`"""
-    cdef readonly Money realized_pnl
-    """The realized PnL for the position (including commissions).\n\n:returns: `Money`"""
-    cdef readonly int64_t ts_opened_ns
-    """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_closed_ns
-    """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `int64`"""
-    cdef readonly int64_t duration_ns
-    """The total open duration (nanoseconds).\n\n:returns: `int64`"""
-
-
-cdef class PositionOpened(PositionEvent):
-
-    @staticmethod
-    cdef PositionOpened create_c(
-        Position position,
-        OrderFilled fill,
-        UUID event_id,
-        int64_t timestamp_ns,
-    )
-
-    @staticmethod
-    cdef PositionOpened from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(PositionOpened obj)
-
-
-cdef class PositionChanged(PositionEvent):
-
-    @staticmethod
-    cdef PositionChanged create_c(
-        Position position,
-        OrderFilled fill,
-        UUID event_id,
-        int64_t timestamp_ns,
-    )
-
-    @staticmethod
-    cdef PositionChanged from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(PositionChanged obj)
-
-
-cdef class PositionClosed(PositionEvent):
-
-    @staticmethod
-    cdef PositionClosed create_c(
-        Position position,
-        OrderFilled fill,
-        UUID event_id,
-        int64_t timestamp_ns,
-    )
-
-    @staticmethod
-    cdef PositionClosed from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(PositionClosed obj)

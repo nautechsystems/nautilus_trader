@@ -16,9 +16,9 @@
 import pytest
 
 from nautilus_trader.indicators.spread_analyzer import SpreadAnalyzer
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
