@@ -217,6 +217,7 @@ class TestDatetimeFunctions:
             [UNIX_EPOCH + timedelta(milliseconds=1), 1_000_000],
             [UNIX_EPOCH + timedelta(microseconds=3), 3_000],
             [UNIX_EPOCH + timedelta(hours=12), 43_200_000_000_000],
+            [datetime(2021, 5, 7, 13, 41, 7, 930000, tzinfo=pytz.utc), 1620394867930000000],
         ],
     )
     def test_dt_to_unix_nanos(self, value, expected):
