@@ -156,4 +156,8 @@ class TestBacktestDataProducer:
             logger=self.logger, instruments=[instrument], trade_ticks={instrument.id: [tick]}
         )
 
-        producer.setup(start_ns=1620394867930000000, stop_ns=1620394867930000128)
+        # Check timestamps within data range
+        producer.setup(start_ns=1620394867930000000, stop_ns=1620394867930000000)
+
+        # Check timestamps outside data range
+        producer.setup(start_ns=0, stop_ns=1620394867930000128)
