@@ -115,6 +115,7 @@ cdef class SimulatedExchange:
     cpdef void process_tick(self, Tick tick) except *
     cpdef void process_modules(self, int64_t now_ns) except *
     cpdef void check_residuals(self) except *
+    cpdef void setup(self) except *
     cpdef void reset(self) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
 import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -416,3 +417,11 @@ class TestBacktestEngine:
 
         # Assert
         assert True  # No exceptions raised
+
+    def test_account_state_timestamp(self):
+        # Arrange
+        start = pd.Timestamp("2013-01-31 23:59:59.700000+00:00")
+        self.engine.run(start=start)
+
+        account = self.engine.trader.generate_account_report(Venue("SIM"))
+        assert account.index[0] == start
