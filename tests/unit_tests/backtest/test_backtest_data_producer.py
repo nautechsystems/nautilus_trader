@@ -44,8 +44,8 @@ class TestBacktestDataProducer:
 
         # Act
         # Assert
-        assert producer.min_timestamp_ns == 9223285636854774784
-        assert producer.max_timestamp_ns == -9223285636854776832
+        assert producer.min_timestamp_ns == 9223285636854775000
+        assert producer.max_timestamp_ns == -9223285636854776000
         assert producer.min_timestamp == pd.Timestamp("2262-04-10 23:47:16.854774+0000", tz="UTC")
         assert producer.max_timestamp == pd.Timestamp("1677-09-22 00:12:43.145224", tz="UTC")
         assert not producer.has_data
