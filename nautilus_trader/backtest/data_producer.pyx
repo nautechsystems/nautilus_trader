@@ -353,14 +353,20 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
         if self._stream:
             # Set data stream start index
-            self._stream_index = next(
-                idx for idx, data in enumerate(self._stream) if start_ns <= data.ts_recv_ns
-            )
+            if start_ns < self._stream[0].ts_recv_ns:
+                self._stream_index_last = 0
+            else:
+                self._stream_index = next(
+                    idx for idx, data in enumerate(self._stream) if start_ns <= data.ts_recv_ns
+                )
 
             # Set data stream stop index
-            self._stream_index_last = len(self._stream) - 1 - next(
-                idx for idx, data in enumerate(reversed(self._stream)) if stop_ns <= data.ts_recv_ns
-            )
+            if stop_ns > self._stream[-1].ts_recv_ns:
+                self._stream_index_last = len(self._stream)- 1
+            else:
+                self._stream_index_last = len(self._stream) - 1 - next(
+                    idx for idx, data in enumerate(reversed(self._stream)) if stop_ns <= data.ts_recv_ns
+                )
 
             # Prepare initial data
             self._iterate_stream()
