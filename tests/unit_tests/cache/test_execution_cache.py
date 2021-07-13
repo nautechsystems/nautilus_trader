@@ -16,8 +16,11 @@
 from decimal import Decimal
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import BarSpecification
@@ -31,14 +34,16 @@ from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.account import Account
+from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
@@ -60,14 +65,56 @@ class TestCache:
         self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
 
+        self.msgbus = MessageBus(
+            clock=clock,
+            logger=logger,
+        )
+
+        self.cache = Cache(
+            database=None,
+            logger=logger,
+        )
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=clock,
+            logger=logger,
+        )
+
+        self.data_engine = DataEngine(
+            portfolio=self.portfolio,
+            cache=self.cache,
+            clock=clock,
+            logger=logger,
+        )
+
+        self.exec_engine = ExecutionEngine(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=clock,
+            logger=logger,
+        )
+
+        self.risk_engine = RiskEngine(
+            exec_engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=clock,
+            logger=logger,
+        )
+
         self.strategy = TradingStrategy(order_id_tag="001")
-        self.strategy.register_trader(
-            TraderId("TESTER-000"),
+        self.strategy.register(
+            self.trader_id,
+            self.msgbus,
+            self.portfolio,
+            self.data_engine,
+            self.risk_engine,
             clock,
             logger,
         )
-
-        self.cache = TestStubs.cache()
 
     def test_cache_currencies_with_no_currencies(self):
         # Arrange

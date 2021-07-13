@@ -52,12 +52,14 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class TradingStrategy(Component):
+    cdef MessageBus _msgbus
     cdef DataEngine _data_engine
     cdef RiskEngine _risk_engine
     cdef list _indicators
@@ -109,16 +111,16 @@ cdef class TradingStrategy(Component):
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
-    cpdef void register_trader(
+    cpdef void register(
         self,
         TraderId trader_id,
+        MessageBus msgbus,
+        Portfolio portfolio,
+        DataEngine data_engine,
+        RiskEngine risk_engine,
         Clock clock,
         Logger logger,
-        int order_id_count=*,
     ) except *
-    cpdef void register_data_engine(self, DataEngine engine) except *
-    cpdef void register_risk_engine(self, RiskEngine engine) except *
-    cpdef void register_portfolio(self, Portfolio portfolio) except *
     cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator) except *
     cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator) except *
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *

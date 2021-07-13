@@ -26,6 +26,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.stubs import TestStubs
 
@@ -47,9 +48,15 @@ class TestCCXTDataClientFactory:
             clock=self.clock,
         )
 
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -65,8 +72,8 @@ class TestCCXTDataClientFactory:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
             trader_id=self.trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -120,9 +127,15 @@ class TestCCXTExecClientFactory:
             clock=self.clock,
         )
 
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -138,8 +151,8 @@ class TestCCXTExecClientFactory:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
             trader_id=self.trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,

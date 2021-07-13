@@ -51,7 +51,7 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
-from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class RiskEngine(Component):
@@ -81,7 +81,7 @@ cdef class RiskEngine(Component):
     def __init__(
         self,
         ExecutionEngine exec_engine not None,
-        Portfolio portfolio not None,
+        MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
@@ -94,8 +94,8 @@ cdef class RiskEngine(Component):
         ----------
         exec_engine : ExecutionEngine
             The execution engine for the engine.
-        portfolio : Portfolio
-            The portfolio for the engine.
+        msgbus : MessageBus
+            The message bus for the engine.
         cache : Cache
             The cache for the engine.
         clock : Clock
@@ -114,7 +114,7 @@ cdef class RiskEngine(Component):
             name="RiskEngine",
         )
 
-        self._portfolio = portfolio
+        self._msgbus = msgbus
         self._exec_engine = exec_engine
 
         self.trader_id = exec_engine.trader_id
@@ -156,6 +156,10 @@ cdef class RiskEngine(Component):
 
         # Configure
         self._initialize_risk_checks(config)
+
+        # Required subscriptions
+        self._msgbus.subscribe(topic="events.order*", handler=self._handle_event)
+        self._msgbus.subscribe(topic="events.position*", handler=self._handle_event)
 
     cdef void _initialize_risk_checks(self, dict config) except *:
         cdef dict max_notional_config = config.get("max_notional_per_order", {})
@@ -721,6 +725,6 @@ cdef class RiskEngine(Component):
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, Event event) except *:
+    cpdef void _handle_event(self, Event event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
         self.event_count += 1

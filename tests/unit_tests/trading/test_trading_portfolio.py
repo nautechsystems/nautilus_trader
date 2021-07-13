@@ -17,7 +17,6 @@ from decimal import Decimal
 
 import pytest
 
-from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.factories import OrderFactory
@@ -42,6 +41,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.portfolio import PortfolioFacade
@@ -184,20 +184,23 @@ class TestPortfolio:
             clock=TestClock(),
         )
 
-        self.cache = Cache(
-            database=None,
+        self.msgbus = MessageBus(
+            clock=clock,
             logger=logger,
         )
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=clock,
             logger=logger,
         )
 
         self.exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
             trader_id=trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=clock,
             logger=logger,
@@ -205,14 +208,11 @@ class TestPortfolio:
 
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=clock,
             logger=logger,
         )
-
-        # Wire up components
-        self.exec_engine.register_risk_engine(self.risk_engine)
 
         # Prepare components
         self.cache.add_instrument(AUDUSD_SIM)

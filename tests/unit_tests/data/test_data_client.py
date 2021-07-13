@@ -35,6 +35,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.filters import NewsImpact
 from nautilus_trader.trading.portfolio import Portfolio
@@ -54,9 +55,15 @@ class TestDataClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -170,9 +177,15 @@ class TestMarketDataClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,

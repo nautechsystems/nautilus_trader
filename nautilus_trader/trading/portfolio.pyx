@@ -38,13 +38,16 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.trading.account cimport Account
 
 
@@ -113,6 +116,7 @@ cdef class Portfolio(PortfolioFacade):
 
     def __init__(
         self,
+        MessageBus msgbus not None,
         CacheFacade cache not None,
         Clock clock not None,
         Logger logger=None,
@@ -122,6 +126,8 @@ cdef class Portfolio(PortfolioFacade):
 
         Parameters
         ----------
+        msgbus : MessageBus
+            The message bus for the engine.
         cache : CacheFacade
             The read-only cache for the portfolio.
         clock : Clock
@@ -133,11 +139,16 @@ cdef class Portfolio(PortfolioFacade):
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(component=type(self).__name__, logger=logger)
+        self._msgbus = msgbus
         self._cache = cache
 
         self._unrealized_pnls = {}   # type: dict[InstrumentId, Money]
         self._net_positions = {}     # type: dict[InstrumentId, Decimal]
         self._pending_calcs = set()  # type: set[InstrumentId]
+
+        # Required subscriptions
+        self._msgbus.subscribe(topic="events.order*", handler=self.update_order)
+        self._msgbus.subscribe(topic="events.position*", handler=self.update_position)
 
         self.initialized = False
 
@@ -284,24 +295,31 @@ cdef class Portfolio(PortfolioFacade):
                 if not self._pending_calcs:
                     self.initialized = True
 
-    cpdef void update_order(self, Order order) except *:
+    cpdef void update_order(self, OrderEvent event) except *:
         """
         Update the portfolio with the given order.
 
         Parameters
         ----------
-        order : Order
-            The order to update with.
+        event : OrderEvent
+            The event to update with.
 
         """
-        Condition.not_none(order, "order")
-        Condition.not_none(self._cache, "self._cache")
+        Condition.not_none(event, "event")
+
+        cdef Order order = self._cache.order(event.client_order_id)
+        if (
+            order is None
+            or not order.is_passive_c()
+            or not (order.is_working_c() or order.is_completed_c())
+        ):
+            return  # Nothing to update
 
         cdef list orders_working = self._cache.orders_working(
             venue=None,  # Faster query filtering
-            instrument_id=order.instrument_id,
+            instrument_id=event.instrument_id,
         )
-        self._update_initial_margin(order.instrument_id.venue, orders_working)
+        self._update_initial_margin(event.instrument_id.venue, orders_working)
 
     cpdef void update_position(self, PositionEvent event) except *:
         """
@@ -314,7 +332,6 @@ cdef class Portfolio(PortfolioFacade):
 
         """
         Condition.not_none(event, "event")
-        Condition.not_none(self._cache, "self._cache")
 
         cdef list positions_open = self._cache.positions_open(
             venue=None,  # Faster query filtering

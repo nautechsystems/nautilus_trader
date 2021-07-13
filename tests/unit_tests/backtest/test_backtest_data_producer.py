@@ -20,10 +20,10 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.type import DataType
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
-from nautilus_trader.model.tick import TradeTick
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import MyData

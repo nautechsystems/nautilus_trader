@@ -28,6 +28,7 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -49,9 +50,16 @@ class TestLiveDataClientFactory:
 
         self.clock = LiveClock()
         self.logger = LiveLogger(self.loop, self.clock)
+
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -88,9 +96,15 @@ class TestLiveDataClientTests:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock, level_stdout=LogLevel.DEBUG)
 
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -130,9 +144,15 @@ class TestLiveMarketDataClientTests:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock, level_stdout=LogLevel.DEBUG)
 
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,

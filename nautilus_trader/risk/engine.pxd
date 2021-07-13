@@ -34,11 +34,11 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.bracket cimport BracketOrder
-from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class RiskEngine(Component):
-    cdef Portfolio _portfolio
+    cdef MessageBus _msgbus
     cdef ExecutionEngine _exec_engine
     cdef dict _max_notional_per_order
     cdef Throttler _order_throttler
@@ -109,4 +109,4 @@ cdef class RiskEngine(Component):
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, Event event) except *
+    cpdef void _handle_event(self, Event event) except *

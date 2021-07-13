@@ -305,22 +305,6 @@ cdef class DataEngine(Component):
 
         self._log.info(f"Registered {client}.")
 
-    cpdef void register_strategy(self, TradingStrategy strategy) except *:
-        """
-        Register the given trading strategy with the data engine.
-
-        Parameters
-        ----------
-        strategy : TradingStrategy
-            The strategy to register.
-
-        """
-        Condition.not_none(strategy, "strategy")
-
-        strategy.register_data_engine(self)
-
-        self._log.info(f"Registered {strategy}.")
-
     cpdef void deregister_client(self, DataClient client) except *:
         """
         Deregister the given data client from the data engine.

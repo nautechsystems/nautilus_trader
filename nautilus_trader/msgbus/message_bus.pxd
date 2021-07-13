@@ -18,8 +18,6 @@ Initial Cython implementation of the MessageBus.
 Eventually replace with msgbus C implementation.
 """
 
-from typing import Callable
-
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 
@@ -40,6 +38,7 @@ cdef class MessageBus:
     cdef LoggerAdapter _log
     cdef dict _channels
     cdef Subscription[:] _patterns
+    cdef int _patterns_len
 
     cdef readonly int processed_count
     """The count of messages process by the bus.\n\n:returns: `int32`"""
@@ -47,10 +46,11 @@ cdef class MessageBus:
     cpdef list channels(self)
     cpdef list subscriptions(self, str topic)
 
-    cpdef void subscribe(self, str topic, handler: Callable, int priority=*) except *
+    cpdef void subscribe(self, str topic, handler, int priority=*) except *
     cdef void _subscribe_pattern(self, Subscription sub) except *
     cdef void _subscribe_channel(self, Subscription sub) except *
-    cpdef void unsubscribe(self, str topic, handler: Callable) except *
+    cpdef void unsubscribe(self, str topic, handler) except *
     cdef void _unsubscribe_pattern(self, Subscription sub) except *
     cdef void _unsubscribe_channel(self, Subscription sub) except *
-    cpdef void publish(self, str topic, message) except *
+    cpdef void publish(self, str topic, msg) except *
+    cdef void publish_c(self, str topic, msg) except *

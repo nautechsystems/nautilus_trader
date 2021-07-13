@@ -211,19 +211,23 @@ cpdef int64_t dt_to_unix_nanos(datetime dt) except *:
     TypeError
         If timestamp is None.
 
+    Warnings
+    --------
+    The maximum resolution of a Python `datetime` is 1 microsecond (μs).
+
     """
     # If timestamp is None then `-` unsupported operand for `NoneType` and `timedelta`
     cdef timedelta td = (dt - UNIX_EPOCH)
-    return td.days * NANOSECONDS_IN_DAY + td.seconds * NANOSECONDS_IN_SECOND + td.microsecond * NANOSECONDS_IN_MICROSECOND
+    return timedelta_to_nanos(td)
 
 
-cpdef int64_t timedelta_to_nanos(timedelta delta) except *:
+cpdef int64_t timedelta_to_nanos(timedelta td) except *:
     """
     Return round nanoseconds (ns) converted from the given `timedelta`.
 
     Parameters
     ----------
-    delta : timedelta
+    td : timedelta
         The timedelta to convert.
 
     Returns
@@ -235,7 +239,11 @@ cpdef int64_t timedelta_to_nanos(timedelta delta) except *:
     The maximum resolution of a Python `timedelta` is 1 microsecond (μs).
 
     """
-    return NANOSECONDS_IN_SECOND * delta.total_seconds()
+    return (
+        td.days * NANOSECONDS_IN_DAY
+        + td.seconds * NANOSECONDS_IN_SECOND
+        + td.microsecond * NANOSECONDS_IN_MICROSECOND
+    )
 
 
 cpdef timedelta nanos_to_timedelta(int64_t nanos):

@@ -33,6 +33,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -53,9 +54,15 @@ class TestTrader:
         trader_id = TraderId("TESTER-000")
         account_id = TestStubs.account_id()
 
+        self.msgbus = MessageBus(
+            clock=clock,
+            logger=logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=clock,
             logger=logger,
@@ -72,8 +79,8 @@ class TestTrader:
         self.data_engine.process(USDJPY_SIM)
 
         self.exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
             trader_id=trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=clock,
             logger=logger,
@@ -114,7 +121,7 @@ class TestTrader:
 
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=clock,
             logger=logger,
@@ -122,7 +129,6 @@ class TestTrader:
 
         # Wire up components
         self.data_engine.register_client(self.data_client)
-        self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
 
         strategies = [
@@ -133,6 +139,7 @@ class TestTrader:
         self.trader = Trader(
             trader_id=trader_id,
             strategies=strategies,
+            msgbus=self.msgbus,
             portfolio=self.portfolio,
             data_engine=self.data_engine,
             risk_engine=self.risk_engine,

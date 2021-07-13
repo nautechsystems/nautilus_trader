@@ -29,6 +29,7 @@ from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.enums import AccountType
@@ -53,6 +54,7 @@ if __name__ == "__main__":
             "bypass": True,  # Example of bypassing pre-trade risk checks for backtests
             "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
         },
+        level_stdout=LogLevel.INFO,
     )
 
     # Setup trading instruments

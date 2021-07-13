@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
@@ -37,6 +36,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
@@ -61,21 +61,24 @@ class TestAccount:
             clock=TestClock(),
         )
 
-        cache = Cache(
-            database=None,
+        self.msgbus = MessageBus(
+            clock=clock,
             logger=logger,
         )
 
+        self.cache = TestStubs.cache()
+
         self.portfolio = Portfolio(
-            cache=cache,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=clock,
             logger=logger,
         )
 
         self.exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
             trader_id=trader_id,
-            cache=cache,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=clock,
             logger=logger,
         )

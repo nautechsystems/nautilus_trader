@@ -23,6 +23,7 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
+from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -42,6 +43,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveExecutionClient
@@ -80,9 +82,23 @@ class TestLiveExecutionEngine:
         self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.data_engine = LiveDataEngine(
+            loop=self.loop,
+            portfolio=self.portfolio,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -90,8 +106,8 @@ class TestLiveExecutionEngine:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
             trader_id=self.trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -100,7 +116,7 @@ class TestLiveExecutionEngine:
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
             exec_engine=self.exec_engine,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -123,7 +139,6 @@ class TestLiveExecutionEngine:
         )
 
         # Wired up components
-        self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.client)
 
     def teardown(self):
@@ -152,24 +167,24 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
             trader_id=self.trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},
         )
 
-        self.exec_engine.register_risk_engine(self.risk_engine)
-
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            portfolio=self.portfolio,
+            data_engine=self.data_engine,
+            risk_engine=self.risk_engine,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -198,24 +213,24 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
             trader_id=self.trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             config={"qsize": 1},
         )
 
-        self.exec_engine.register_risk_engine(self.risk_engine)
-
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            portfolio=self.portfolio,
+            data_engine=self.data_engine,
+            risk_engine=self.risk_engine,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -287,13 +302,15 @@ class TestLiveExecutionEngine:
             self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
-            strategy.register_trader(
-                TraderId("TESTER-000"),
-                self.clock,
-                self.logger,
+            strategy.register(
+                trader_id=self.trader_id,
+                msgbus=self.msgbus,
+                portfolio=self.portfolio,
+                data_engine=self.data_engine,
+                risk_engine=self.risk_engine,
+                clock=self.clock,
+                logger=self.logger,
             )
-
-            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
                 AUDUSD_SIM.id,
@@ -329,13 +346,15 @@ class TestLiveExecutionEngine:
             self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
-            strategy.register_trader(
-                TraderId("TESTER-000"),
-                self.clock,
-                self.logger,
+            strategy.register(
+                trader_id=self.trader_id,
+                msgbus=self.msgbus,
+                portfolio=self.portfolio,
+                data_engine=self.data_engine,
+                risk_engine=self.risk_engine,
+                clock=self.clock,
+                logger=self.logger,
             )
-
-            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
                 AUDUSD_SIM.id,
@@ -364,13 +383,15 @@ class TestLiveExecutionEngine:
             self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
-            strategy.register_trader(
-                TraderId("TESTER-000"),
-                self.clock,
-                self.logger,
+            strategy.register(
+                trader_id=self.trader_id,
+                msgbus=self.msgbus,
+                portfolio=self.portfolio,
+                data_engine=self.data_engine,
+                risk_engine=self.risk_engine,
+                clock=self.clock,
+                logger=self.logger,
             )
-
-            self.exec_engine.register_strategy(strategy)
 
             # Act
             await self.exec_engine.reconcile_state(timeout_secs=10)
@@ -387,13 +408,15 @@ class TestLiveExecutionEngine:
             self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
-            strategy.register_trader(
-                TraderId("TESTER-000"),
-                self.clock,
-                self.logger,
+            strategy.register(
+                trader_id=self.trader_id,
+                msgbus=self.msgbus,
+                portfolio=self.portfolio,
+                data_engine=self.data_engine,
+                risk_engine=self.risk_engine,
+                clock=self.clock,
+                logger=self.logger,
             )
-
-            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
@@ -442,13 +465,15 @@ class TestLiveExecutionEngine:
             self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
-            strategy.register_trader(
-                TraderId("TESTER-000"),
-                self.clock,
-                self.logger,
+            strategy.register(
+                trader_id=self.trader_id,
+                msgbus=self.msgbus,
+                portfolio=self.portfolio,
+                data_engine=self.data_engine,
+                risk_engine=self.risk_engine,
+                clock=self.clock,
+                logger=self.logger,
             )
-
-            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
@@ -497,13 +522,15 @@ class TestLiveExecutionEngine:
             self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
-            strategy.register_trader(
-                TraderId("TESTER-000"),
-                self.clock,
-                self.logger,
+            strategy.register(
+                trader_id=self.trader_id,
+                msgbus=self.msgbus,
+                portfolio=self.portfolio,
+                data_engine=self.data_engine,
+                risk_engine=self.risk_engine,
+                clock=self.clock,
+                logger=self.logger,
             )
-
-            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
@@ -552,13 +579,15 @@ class TestLiveExecutionEngine:
             self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
-            strategy.register_trader(
-                TraderId("TESTER-000"),
-                self.clock,
-                self.logger,
+            strategy.register(
+                trader_id=self.trader_id,
+                msgbus=self.msgbus,
+                portfolio=self.portfolio,
+                data_engine=self.data_engine,
+                risk_engine=self.risk_engine,
+                clock=self.clock,
+                logger=self.logger,
             )
-
-            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
@@ -632,13 +661,15 @@ class TestLiveExecutionEngine:
             self.exec_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
-            strategy.register_trader(
-                TraderId("TESTER-000"),
-                self.clock,
-                self.logger,
+            strategy.register(
+                trader_id=self.trader_id,
+                msgbus=self.msgbus,
+                portfolio=self.portfolio,
+                data_engine=self.data_engine,
+                risk_engine=self.risk_engine,
+                clock=self.clock,
+                logger=self.logger,
             )
-
-            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.limit(
                 AUDUSD_SIM.id,
