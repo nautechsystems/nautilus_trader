@@ -889,6 +889,10 @@ cdef class BacktestEngine:
         # Setup clocks
         self._test_clock.set_time(start_ns)
 
+        # Setup Exchanges
+        for exchange in self._exchanges.values():
+            exchange.setup()
+
         # Setup data
         self._data_producer.setup(start_ns=start_ns, stop_ns=stop_ns)
 
