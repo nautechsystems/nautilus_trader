@@ -22,6 +22,7 @@ import pytest
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -31,9 +32,9 @@ from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
@@ -56,9 +57,15 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         self.account_id = AccountId(BINANCE.value, "001")
 
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -69,10 +76,18 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
-        self.exec_engine = LiveExecutionEngine(
+        self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_engine = LiveExecutionEngine(
+            loop=self.loop,
             trader_id=self.trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -81,7 +96,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
             exec_engine=self.exec_engine,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -99,18 +114,19 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         )
 
         # Wire up components
-        self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(exec_client)
         self.exec_engine.process(TestStubs.event_account_state(self.account_id))
 
         self.strategy = TradingStrategy(order_id_tag="001")
-        self.strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        self.strategy.register(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            portfolio=self.portfolio,
+            data_engine=self.data_engine,
+            risk_engine=self.risk_engine,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(self.strategy)
 
     @pytest.fixture(autouse=True)
     @pytest.mark.benchmark(disable_gc=True, warmup=True)

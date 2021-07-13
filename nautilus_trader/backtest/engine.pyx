@@ -197,59 +197,67 @@ cdef class BacktestEngine:
         if self._cache_db_flush and cache_db:
             cache_db.flush()
 
-        cache = Cache(
+        self._msgbus = MessageBus(
+            clock=self._test_clock,
+            logger=self._test_logger,
+        )
+
+        self._cache = Cache(
             database=cache_db,
             logger=self._test_logger,
             config=config_cache,
         )
+        # Set external facade
+        self.cache = self._cache
 
         self._test_clock.set_time(self._clock.timestamp_ns())  # For logging consistency
 
-        self.portfolio = Portfolio(
-            cache=cache,
+        self._portfolio = Portfolio(
+            msgbus=self._msgbus,
+            cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
         )
+        # Set external facade
+        self.portfolio = self._portfolio
 
         self._data_producer = None  # Instantiated on first run
 
         if config_data is None:
             config_data = {}
-        config_data["use_previous_close"] = False  # Ensures bars match historical data
+        config_data["use_previous_close"] = False  # Ensure bars match historical data
 
         self._data_engine = DataEngine(
             portfolio=self.portfolio,
-            cache=cache,
+            cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
             config=config_data,
         )
 
         self._exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
             trader_id=trader_id,
-            cache=cache,
+            msgbus=self._msgbus,
+            cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
             config=config_exec,
         )
+        self._exec_engine.load_cache()
 
         self._risk_engine = RiskEngine(
             exec_engine=self._exec_engine,
-            portfolio=self.portfolio,
-            cache=cache,
+            msgbus=self._msgbus,
+            cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
             config=config_risk,
         )
 
-        # Wire up components
-        self._exec_engine.register_risk_engine(self._risk_engine)
-        self._exec_engine.load_cache()
-
         self.trader = Trader(
             trader_id=trader_id,
             strategies=[],  # Added in `run()`
+            msgbus=self._msgbus,
             portfolio=self.portfolio,
             data_engine=self._data_engine,
             risk_engine=self._risk_engine,

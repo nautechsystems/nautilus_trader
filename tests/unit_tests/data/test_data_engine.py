@@ -49,8 +49,8 @@ from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.book import OrderBookData
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
-from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockMarketDataClient
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.providers import TestInstrumentProvider
@@ -71,9 +71,15 @@ class TestDataEngine:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -158,16 +164,6 @@ class TestDataEngine:
 
         # Assert
         assert BINANCE.value not in self.data_engine.registered_clients
-
-    def test_register_strategy_successfully_registered_with_strategy(self):
-        # Arrange
-        strategy = TradingStrategy("000")
-
-        # Act
-        strategy.register_data_engine(self.data_engine)
-
-        # Assert
-        assert strategy.cache == self.data_engine.cache
 
     def test_reset(self):
         # Arrange

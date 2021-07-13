@@ -29,6 +29,7 @@ from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID
 from nautilus_trader.live.data_engine import LiveDataEngine
@@ -40,14 +41,12 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.trading.portfolio import Portfolio
-from nautilus_trader.trading.strategy import TradingStrategy
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.mocks import MockLiveRiskEngine
@@ -437,17 +436,14 @@ class BetfairTestStubs(TestStubs):
         return updates
 
     @staticmethod
-    def make_order(engine: MockLiveExecutionEngine) -> LimitOrder:
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            BetfairTestStubs.clock(),
-            BetfairTestStubs.logger(),
+    def make_order() -> LimitOrder:
+        order_factory = OrderFactory(
+            trader_id=BetfairTestStubs.trader_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
+            clock=BetfairTestStubs.clock(),
         )
 
-        engine.register_strategy(strategy)
-
-        order = strategy.order_factory.limit(
+        order = order_factory.limit(
             BetfairTestStubs.instrument_id(),
             OrderSide.BUY,
             Quantity.from_int(10),

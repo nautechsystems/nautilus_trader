@@ -55,6 +55,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import MockStrategy
@@ -76,9 +77,15 @@ class TestSimulatedExchange:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -96,8 +103,8 @@ class TestSimulatedExchange:
         self.account_id = AccountId("SIM", "001")
 
         self.exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
             trader_id=self.trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -105,7 +112,7 @@ class TestSimulatedExchange:
 
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -141,7 +148,6 @@ class TestSimulatedExchange:
         self.data_engine.cache.add_instrument(AUDUSD_SIM)
         self.data_engine.cache.add_instrument(USDJPY_SIM)
 
-        self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
 
@@ -151,14 +157,15 @@ class TestSimulatedExchange:
 
         # Create mock strategy
         self.strategy = MockStrategy(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.strategy.register_trader(
+        self.strategy.register(
             self.trader_id,
+            self.msgbus,
+            self.portfolio,
+            self.data_engine,
+            self.risk_engine,
             self.clock,
             self.logger,
         )
-
-        self.data_engine.register_strategy(self.strategy)
-        self.exec_engine.register_strategy(self.strategy)
 
         # Start components
         self.data_engine.start()
@@ -1885,9 +1892,15 @@ class TestBitmexExchange:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -1905,8 +1918,8 @@ class TestBitmexExchange:
         self.account_id = AccountId("BITMEX", "001")
 
         self.exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
             trader_id=self.trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -1914,7 +1927,7 @@ class TestBitmexExchange:
 
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -1948,21 +1961,23 @@ class TestBitmexExchange:
 
         # Wire up components
         self.data_engine.cache.add_instrument(XBTUSD_BITMEX)
-        self.exec_engine.register_risk_engine(self.risk_engine)
+
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
 
         self.exec_engine.cache.add_instrument(XBTUSD_BITMEX)
 
         self.strategy = MockStrategy(bar_type=TestStubs.bartype_btcusdt_binance_100tick_last())
-        self.strategy.register_trader(
+        self.strategy.register(
             self.trader_id,
+            self.msgbus,
+            self.portfolio,
+            self.data_engine,
+            self.risk_engine,
             self.clock,
             self.logger,
         )
 
-        self.data_engine.register_strategy(self.strategy)
-        self.exec_engine.register_strategy(self.strategy)
         self.data_engine.start()
         self.exec_engine.start()
         self.strategy.start()
@@ -2027,9 +2042,15 @@ class TestOrderBookExchange:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -2047,8 +2068,8 @@ class TestOrderBookExchange:
         self.account_id = AccountId("SIM", "001")
 
         self.exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
             trader_id=self.trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -2056,7 +2077,7 @@ class TestOrderBookExchange:
 
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -2100,19 +2121,21 @@ class TestOrderBookExchange:
                 level=BookLevel.L2,
             )
         )
-        self.exec_engine.register_risk_engine(self.risk_engine)
+
         self.exec_engine.register_client(self.exec_client)
         self.exchange.register_client(self.exec_client)
 
         self.strategy = MockStrategy(bar_type=TestStubs.bartype_usdjpy_1min_bid())
-        self.strategy.register_trader(
+        self.strategy.register(
             self.trader_id,
+            self.msgbus,
+            self.portfolio,
+            self.data_engine,
+            self.risk_engine,
             self.clock,
             self.logger,
         )
 
-        self.data_engine.register_strategy(self.strategy)
-        self.exec_engine.register_strategy(self.strategy)
         self.data_engine.start()
         self.exec_engine.start()
         self.strategy.start()

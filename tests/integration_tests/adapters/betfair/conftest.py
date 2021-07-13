@@ -31,6 +31,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -105,6 +106,14 @@ def live_logger(event_loop, clock):
 
 
 @pytest.fixture()
+def msgbus(clock, live_logger):
+    return MessageBus(
+        clock=clock,
+        logger=live_logger,
+    )
+
+
+@pytest.fixture()
 def cache(live_logger):
     return Cache(
         database=None,
@@ -113,8 +122,9 @@ def cache(live_logger):
 
 
 @pytest.fixture()
-def portfolio(cache, clock, live_logger):
+def portfolio(msgbus, cache, clock, live_logger):
     return Portfolio(
+        msgbus=msgbus,
         cache=cache,
         clock=clock,
         logger=live_logger,

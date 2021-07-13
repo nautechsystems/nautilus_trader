@@ -18,7 +18,7 @@ Initial Cython implementation of the MessageBus.
 Eventually replace with msgbus C implementation.
 """
 
-from typing import Callable
+from typing import Any, Callable
 
 import cython
 import numpy as np
@@ -26,7 +26,9 @@ import numpy as np
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport Message
+
+
+cdef str WILDCARD = "*"
 
 
 cdef class Subscription:
@@ -46,7 +48,7 @@ cdef class Subscription:
     def __init__(
         self,
         str topic,
-        handler not None: Callable[[Message], None],
+        handler not None: Callable[[Any], None],
         int priority=0,
     ):
         """
@@ -64,7 +66,7 @@ cdef class Subscription:
 
         """
         self._topic_str = topic
-        self.topic = topic.replace("*", "")
+        self.topic = topic.replace(WILDCARD, "")
         self.handler = handler
         self.priority = priority
 
@@ -103,23 +105,25 @@ cdef class MessageBus:
 
     def __init__(
         self,
-        str name not None,
         Clock clock not None,
         Logger logger not None,
+        str name=None,
     ):
         """
         Initialize a new instance of the ``MessageBus`` class.
 
         Parameters
         ----------
-        name : str
-            The component name for the message bus.
         clock : Clock
             The clock for the message bus.
         logger : Logger
             The logger for the message bus.
+        name : str, optional
+            The custom name for the message bus.
 
         """
+        if name is None:
+            name = "MessageBus"
         Condition.not_none(name, "name")
 
         self._clock = clock
@@ -127,25 +131,24 @@ cdef class MessageBus:
 
         self._channels = {}    # type: dict[str, Subscription[:]]
         self._patterns = None  # type: Subscription[:]
+        self._patterns_len = 0
 
         # Counters
         self.processed_count = 0
 
     cpdef list channels(self):
         """
-        Return all channels with active subscribers.
-
-        If there are subscribers for ALL then `None` will be included.
+        Return all topic channels with active subscribers (including '*').
 
         Returns
         -------
-        list[type]
+        list[str]
 
         """
         cdef list channels = []
         channels.extend(list(self._channels.keys()))
         if self._patterns is not None:
-            channels.extend([s.topic + "*" for s in list(self._patterns)])
+            channels.extend([s.topic + WILDCARD for s in list(self._patterns)])
         return channels
 
     cpdef list subscriptions(self, str topic):
@@ -165,7 +168,7 @@ cdef class MessageBus:
         """
         Condition.valid_string(topic, "topic")
 
-        topic = topic.replace("*", "")
+        topic = topic.replace(WILDCARD, "")
 
         cdef list output = []
         for sub in self._channels.get(topic, []):
@@ -181,7 +184,7 @@ cdef class MessageBus:
     cpdef void subscribe(
         self,
         str topic,
-        handler: Callable,
+        handler: Callable[[Any], None],
         int priority=0,
     ) except *:
         """
@@ -191,7 +194,7 @@ cdef class MessageBus:
         ----------
         topic : MessageType
             The message type to subscribe to. If "*" then subscribes to ALL messages.
-        handler : Callable
+        handler : Callable[[Any], None]
             The handler for the subscription.
         priority : int
             The priority for the subscription. Determines the ordering of
@@ -219,7 +222,7 @@ cdef class MessageBus:
         )
 
         # Get current subscriptions for topic
-        if "*" in topic:
+        if WILDCARD in topic:
             self._subscribe_pattern(sub)
         else:
             self._subscribe_channel(sub)
@@ -238,6 +241,7 @@ cdef class MessageBus:
         subscriptions.append(sub)
         subscriptions = sorted(subscriptions, reverse=True)
         self._patterns = np.ascontiguousarray(subscriptions)
+        self._patterns_len = len(subscriptions)
         self._log.info(f"Added {sub}.")
 
     cdef void _subscribe_channel(self, Subscription sub) except *:
@@ -252,7 +256,7 @@ cdef class MessageBus:
         self._channels[sub.topic] = np.ascontiguousarray(subscriptions)
         self._log.info(f"Added {sub}.")
 
-    cpdef void unsubscribe(self, str topic, handler: Callable) except *:
+    cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *:
         """
         Unsubscribe the handler from the given message type.
 
@@ -260,7 +264,7 @@ cdef class MessageBus:
         ----------
         topic : str, optional
             The topic to unsubscribe from. If "*" then unsubscribes from ALL messages.
-        handler : Callable
+        handler : Callable[[Any], None]
             The handler for the subscription.
 
         """
@@ -270,7 +274,7 @@ cdef class MessageBus:
         cdef Subscription sub = Subscription(topic=topic, handler=handler)
 
         # Get current subscriptions for topic
-        if "*" in topic:
+        if WILDCARD in topic:
             self._unsubscribe_pattern(sub)
         else:
             self._unsubscribe_channel(sub)
@@ -290,8 +294,10 @@ cdef class MessageBus:
         subscriptions = sorted(subscriptions, reverse=True)
         if not subscriptions:
             self._patterns = None
+            self._patterns_len = 0
         else:
             self._patterns = np.ascontiguousarray(subscriptions)
+            self._patterns_len = len(subscriptions)
         self._log.debug(f"Removed {sub}.")
 
     cdef void _unsubscribe_channel(self, Subscription sub) except *:
@@ -312,9 +318,7 @@ cdef class MessageBus:
         subscriptions = sorted(subscriptions, reverse=True)
         self._channels[sub.topic] = np.ascontiguousarray(subscriptions)
 
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void publish(self, str topic, msg) except *:
+    cpdef void publish(self, str topic, msg: Any) except *:
         """
         Publish the given message.
 
@@ -324,11 +328,16 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str
-            The topic to publish on (determines the channel).
+            The topic to publish on (determines the channel and matching patterns).
         msg : object
             The message to publish.
 
         """
+        self.publish_c(topic, msg)
+
+    @cython.boundscheck(False)
+    @cython.wraparound(False)
+    cdef void publish_c(self, str topic, msg: Any) except *:
         Condition.not_none(topic, "topic")
         Condition.not_none(msg, "msg")
 
@@ -340,7 +349,8 @@ cdef class MessageBus:
                 sub = subscriptions[i]
                 sub.handler(msg)
 
-        for i in range(len(self._patterns)):
+        # Check all pattern subscriptions
+        for i in range(self._patterns_len):
             sub = self._patterns[i]
             if topic.__contains__(sub.topic):
                 sub.handler(msg)

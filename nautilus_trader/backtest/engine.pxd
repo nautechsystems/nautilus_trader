@@ -19,6 +19,8 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_producer cimport DataProducerFacade
+from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -26,8 +28,10 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.trading.portfolio cimport PortfolioFacade
 from nautilus_trader.trading.trader cimport Trader
 
 
@@ -35,6 +39,9 @@ cdef class BacktestEngine:
     cdef Clock _clock
     cdef Clock _test_clock
     cdef UUIDFactory _uuid_factory
+    cdef MessageBus _msgbus
+    cdef Cache _cache
+    cdef Portfolio _portfolio
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
     cdef RiskEngine _risk_engine
@@ -66,8 +73,10 @@ cdef class BacktestEngine:
     """The backtest engine time to initialize.\n\n:returns: `timedelta`"""
     cdef readonly int iteration
     """The backtest engine iteration count.\n\n:returns: `int`"""
-    cdef readonly Portfolio portfolio
-    """The portfolio for the backtest.\n\n:returns: `Portfolio`"""
+    cdef readonly CacheFacade cache
+    """The backtest engine cache.\n\n:returns: `CacheFacade`"""
+    cdef readonly PortfolioFacade portfolio
+    """The backtest engine portfolio.\n\n:returns: `PortfolioFacade`"""
     cdef readonly PerformanceAnalyzer analyzer
     """The performance analyzer for the backtest.\n\n:returns: `PerformanceAnalyzer`"""
 

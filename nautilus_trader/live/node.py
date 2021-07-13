@@ -42,6 +42,7 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
@@ -180,6 +181,11 @@ class TradingNode:
                 "can one of {{'in-memory', 'redis'}}.",
             )
 
+        self._msgbus = MessageBus(
+            clock=self._clock,
+            logger=self._logger,
+        )
+
         cache = Cache(
             database=cache_db,
             logger=self._logger,
@@ -187,6 +193,7 @@ class TradingNode:
         )
 
         self.portfolio = Portfolio(
+            msgbus=self._msgbus,
             cache=cache,
             clock=self._clock,
             logger=self._logger,
@@ -203,31 +210,29 @@ class TradingNode:
 
         self._exec_engine = LiveExecutionEngine(
             loop=self._loop,
-            portfolio=self.portfolio,
             trader_id=self.trader_id,
+            msgbus=self._msgbus,
             cache=cache,
             clock=self._clock,
             logger=self._logger,
             config=config_exec,
         )
+        self._exec_engine.load_cache()
 
         self._risk_engine = LiveRiskEngine(
             loop=self._loop,
             exec_engine=self._exec_engine,
-            portfolio=self.portfolio,
+            msgbus=self._msgbus,
             cache=cache,
             clock=self._clock,
             logger=self._logger,
             config=config_risk,
         )
 
-        # Wire up components
-        self._exec_engine.register_risk_engine(self._risk_engine)
-        self._exec_engine.load_cache()
-
         self.trader = Trader(
             trader_id=self.trader_id,
             strategies=strategies,
+            msgbus=self._msgbus,
             portfolio=self.portfolio,
             data_engine=self._data_engine,
             risk_engine=self._risk_engine,
@@ -526,6 +531,10 @@ class TradingNode:
                 return
             self._log.info("State reconciled.", color=LogColor.GREEN)
 
+            # Initialize portfolio
+            self.portfolio.initialize_orders()
+            self.portfolio.initialize_positions()
+
             # Await portfolio initialization
             self._log.info(
                 "Waiting for portfolio to initialize " f"({self._timeout_portfolio}s timeout)...",
@@ -540,6 +549,10 @@ class TradingNode:
                 )
                 return
             self._log.info("Portfolio initialized.", color=LogColor.GREEN)
+
+            # Update portfolio
+            for account in self._exec_engine.cache.accounts():
+                self.portfolio.register_account(account)
 
             # Start trader and strategies
             self.trader.start()

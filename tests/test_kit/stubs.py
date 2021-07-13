@@ -66,6 +66,7 @@ from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
@@ -539,6 +540,13 @@ class TestStubs:
         return LiveLogger(loop=asyncio.get_event_loop(), clock=TestStubs.clock())
 
     @staticmethod
+    def msgbus():
+        return MessageBus(
+            clock=TestStubs.clock(),
+            logger=TestStubs.logger(),
+        )
+
+    @staticmethod
     def cache():
         return Cache(
             database=None,
@@ -548,6 +556,7 @@ class TestStubs:
     @staticmethod
     def portfolio():
         return Portfolio(
+            msgbus=TestStubs.msgbus(),
             clock=TestStubs.clock(),
             cache=TestStubs.cache(),
             logger=TestStubs.logger(),
@@ -567,8 +576,8 @@ class TestStubs:
     def mock_live_exec_engine():
         return MockLiveExecutionEngine(
             loop=asyncio.get_event_loop(),
-            portfolio=TestStubs.portfolio(),
             trader_id=TestStubs.trader_id(),
+            msgbus=TestStubs.msgbus(),
             cache=TestStubs.cache(),
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),
@@ -579,7 +588,7 @@ class TestStubs:
         return MockLiveRiskEngine(
             loop=asyncio.get_event_loop(),
             exec_engine=TestStubs.mock_live_exec_engine(),
-            portfolio=TestStubs.portfolio(),
+            msgbus=TestStubs.msgbus(),
             cache=TestStubs.cache(),
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),

@@ -20,6 +20,7 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -33,6 +34,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
@@ -67,9 +69,15 @@ class TestLiveRiskEngine:
             clock=self.clock,
         )
 
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -80,10 +88,18 @@ class TestLiveRiskEngine:
         self.loop.set_debug(True)
         asyncio.set_event_loop(self.loop)
 
-        self.exec_engine = LiveExecutionEngine(
+        self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_engine = LiveExecutionEngine(
+            loop=self.loop,
             trader_id=self.trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -92,7 +108,7 @@ class TestLiveRiskEngine:
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
             exec_engine=self.exec_engine,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -112,7 +128,6 @@ class TestLiveRiskEngine:
 
         # Wire up components
         self.exec_engine.register_client(self.exec_client)
-        self.exec_engine.register_risk_engine(self.risk_engine)
 
     def test_start_when_loop_not_running_logs(self):
         # Arrange
@@ -136,7 +151,7 @@ class TestLiveRiskEngine:
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
             exec_engine=self.exec_engine,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -144,13 +159,15 @@ class TestLiveRiskEngine:
         )
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            portfolio=self.portfolio,
+            data_engine=self.data_engine,
+            risk_engine=self.risk_engine,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -180,7 +197,7 @@ class TestLiveRiskEngine:
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
             exec_engine=self.exec_engine,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -188,13 +205,15 @@ class TestLiveRiskEngine:
         )
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            portfolio=self.portfolio,
+            data_engine=self.data_engine,
+            risk_engine=self.risk_engine,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -266,13 +285,15 @@ class TestLiveRiskEngine:
             self.risk_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
-            strategy.register_trader(
-                TraderId("TESTER-000"),
-                self.clock,
-                self.logger,
+            strategy.register(
+                trader_id=self.trader_id,
+                msgbus=self.msgbus,
+                portfolio=self.portfolio,
+                data_engine=self.data_engine,
+                risk_engine=self.risk_engine,
+                clock=self.clock,
+                logger=self.logger,
             )
-
-            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
                 AUDUSD_SIM.id,
@@ -309,13 +330,15 @@ class TestLiveRiskEngine:
             self.risk_engine.start()
 
             strategy = TradingStrategy(order_id_tag="001")
-            strategy.register_trader(
-                TraderId("TESTER-000"),
-                self.clock,
-                self.logger,
+            strategy.register(
+                trader_id=self.trader_id,
+                msgbus=self.msgbus,
+                portfolio=self.portfolio,
+                data_engine=self.data_engine,
+                risk_engine=self.risk_engine,
+                clock=self.clock,
+                logger=self.logger,
             )
-
-            self.exec_engine.register_strategy(strategy)
 
             order = strategy.order_factory.market(
                 AUDUSD_SIM.id,

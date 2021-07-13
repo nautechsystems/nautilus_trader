@@ -738,8 +738,8 @@ class MockLiveExecutionEngine(LiveExecutionEngine):
     def __init__(
         self,
         loop,
-        portfolio,
         trader_id,
+        msgbus,
         cache,
         clock,
         logger,
@@ -747,8 +747,8 @@ class MockLiveExecutionEngine(LiveExecutionEngine):
     ):
         super().__init__(
             loop=loop,
-            portfolio=portfolio,
             trader_id=trader_id,
+            msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
@@ -772,7 +772,7 @@ class MockLiveRiskEngine(LiveRiskEngine):
         self,
         loop,
         exec_engine,
-        portfolio,
+        msgbus,
         cache,
         clock,
         logger,
@@ -781,7 +781,7 @@ class MockLiveRiskEngine(LiveRiskEngine):
         super().__init__(
             loop=loop,
             exec_engine=exec_engine,
-            portfolio=portfolio,
+            msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,

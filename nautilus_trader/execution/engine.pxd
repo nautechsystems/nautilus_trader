@@ -26,24 +26,19 @@ from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
-from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.risk.engine cimport RiskEngine
-from nautilus_trader.trading.portfolio cimport Portfolio
-from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class ExecutionEngine(Component):
     cdef dict _clients
-    cdef dict _strategies
     cdef dict _routing_map
     cdef ExecutionClient _default_client
     cdef PositionIdGenerator _pos_id_generator
-    cdef Portfolio _portfolio
-    cdef RiskEngine _risk_engine
+    cdef MessageBus _msgbus
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the engine.\n\n:returns: `TraderId`"""
@@ -55,7 +50,6 @@ cdef class ExecutionEngine(Component):
     """The total count of events received by the engine.\n\n:returns: `int`"""
 
     cpdef int position_id_count(self, StrategyId strategy_id) except *
-    cpdef bint check_portfolio_equal(self, Portfolio portfolio) except *
     cpdef bint check_integrity(self) except *
     cpdef bint check_connected(self) except *
     cpdef bint check_disconnected(self) except *
@@ -63,13 +57,10 @@ cdef class ExecutionEngine(Component):
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
-    cpdef void register_risk_engine(self, RiskEngine engine) except *
     cpdef void register_client(self, ExecutionClient client) except *
     cpdef void register_default_client(self, ExecutionClient client) except *
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *
-    cpdef void register_strategy(self, TradingStrategy strategy) except *
     cpdef void deregister_client(self, ExecutionClient client) except *
-    cpdef void deregister_strategy(self, TradingStrategy strategy) except *
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -99,12 +90,9 @@ cdef class ExecutionEngine(Component):
 
     cdef void _handle_event(self, Event event) except *
     cdef void _handle_account_event(self, AccountState event) except *
-    cdef void _handle_position_event(self, PositionEvent event) except *
     cdef void _handle_order_event(self, OrderEvent event) except *
     cdef void _confirm_position_id(self, OrderFilled fill) except *
-    cdef void _handle_order_command_rejected(self, OrderEvent event) except *
     cdef void _handle_order_fill(self, OrderFilled fill) except *
     cdef void _open_position(self, OrderFilled fill) except *
     cdef void _update_position(self, Position position, OrderFilled fill) except *
     cdef void _flip_position(self, Position position, OrderFilled fill) except *
-    cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
