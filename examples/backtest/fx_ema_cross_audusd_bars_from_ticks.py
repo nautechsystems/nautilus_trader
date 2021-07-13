@@ -117,6 +117,9 @@ if __name__ == "__main__":
         print(engine.trader.generate_positions_report())
 
     # For repeated backtest runs make sure to reset the engine
+    account = engine.trader.generate_account_report(SIM)
+    assert account.index[0] == pd.Timestamp("2019-12-28 11:49:43.406000+00:00")
+    assert account.index[-1] == pd.Timestamp("2019-12-29 03:36:39.861000+00:00")
     engine.reset()
 
     # Good practice to dispose of the object when done

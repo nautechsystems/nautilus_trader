@@ -34,11 +34,12 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip  # Only runs locally, comment to run
+@pytest.mark.skip(reason="Local testing only")
 async def test_client_connect(live_logger):
     betfair_client = betfairlightweight.APIClient(
         username=os.environ["BETFAIR_USERNAME"],
@@ -60,7 +61,7 @@ async def test_client_connect(live_logger):
 async def test_submit_order(mocker, execution_client, exec_engine):
     mock_place_orders = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.place_orders",
-        return_value=BetfairTestStubs.place_orders_success(),
+        return_value=BetfairDataProvider.place_orders_success(),
     )
     command = BetfairTestStubs.submit_order_command()
     execution_client.submit_order(command)
@@ -93,7 +94,7 @@ async def test_submit_order(mocker, execution_client, exec_engine):
 @pytest.mark.asyncio
 async def test_post_order_submit_success(execution_client, exec_engine):
     f = asyncio.Future()
-    f.set_result(BetfairTestStubs.place_orders_success())
+    f.set_result(BetfairDataProvider.place_orders_success())
     execution_client._post_submit_order(
         f,
         BetfairTestStubs.strategy_id(),
@@ -107,7 +108,7 @@ async def test_post_order_submit_success(execution_client, exec_engine):
 @pytest.mark.asyncio
 async def test_post_order_submit_error(execution_client, exec_engine):
     f = asyncio.Future()
-    f.set_result(BetfairTestStubs.place_orders_error())
+    f.set_result(BetfairDataProvider.place_orders_error())
     execution_client._post_submit_order(
         f,
         BetfairTestStubs.strategy_id(),
@@ -134,7 +135,7 @@ async def test_update_order(mocker, execution_client, exec_engine):
 
     mock_replace_orders = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.replace_orders",
-        return_value=BetfairTestStubs.place_orders_success(),
+        return_value=BetfairDataProvider.place_orders_success(),
     )
 
     # Actual test
@@ -167,7 +168,7 @@ async def test_post_order_update_success(execution_client, exec_engine):
     client_order_id = exec_engine.cache.orders()[0].client_order_id
 
     f = asyncio.Future()
-    f.set_result(BetfairTestStubs.replace_orders_resp_success())
+    f.set_result(BetfairDataProvider.replace_orders_resp_success())
     execution_client._post_update_order(
         f,
         BetfairTestStubs.strategy_id(),
@@ -186,7 +187,7 @@ async def test_update_order_fail(mocker, execution_client, exec_engine):
     await asyncio.sleep(0.1)
     mock_replace_orders = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.replace_orders",
-        return_value=BetfairTestStubs.place_orders_success(),
+        return_value=BetfairDataProvider.place_orders_success(),
     )
     mock_replace_orders.assert_not_called()
 
@@ -195,7 +196,7 @@ async def test_update_order_fail(mocker, execution_client, exec_engine):
 async def test_cancel_order(mocker, execution_client, exec_engine):
     mock_cancel_orders = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.cancel_orders",
-        return_value=BetfairTestStubs.cancel_orders_success(),
+        return_value=BetfairDataProvider.cancel_orders_success(),
     )
     command = BetfairTestStubs.cancel_order_command()
     execution_client.cancel_order(command)
@@ -230,10 +231,27 @@ def _prefill_venue_order_id_to_client_order_id(raw):
     return {oid: ClientOrderId(str(i + 1)) for i, oid in enumerate(order_ids)}
 
 
+def _prefill_client_order_id_to_strategy_id(raw):
+    order_ids = [
+        update["id"]
+        for market in raw.get("oc", [])
+        for order in market["orc"]
+        for update in order.get("uo", [])
+    ]
+    return {oid: ClientOrderId(str(i + 1)) for i, oid in enumerate(order_ids)}
+
+
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="cache needs StrategyId")
 async def test_order_stream_full_image(mocker, execution_client, exec_engine):
-    raw = BetfairTestStubs.streaming_ocm_FULL_IMAGE()
+    raw = BetfairDataProvider.streaming_ocm_FULL_IMAGE()
+
+    # setup
+    exec_engine.cache.add_order(
+        order=BetfairTestStubs.make_order(),
+        position_id=PositionId("P-001"),
+    )
+
+    # assert
     mocker.patch.object(
         execution_client,
         "venue_order_id_to_client_order_id",
@@ -245,18 +263,16 @@ async def test_order_stream_full_image(mocker, execution_client, exec_engine):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="cache needs StrategyId")
 async def test_order_stream_empty_image(execution_client, exec_engine):
-    raw = BetfairTestStubs.streaming_ocm_EMPTY_IMAGE()
+    raw = BetfairDataProvider.streaming_ocm_EMPTY_IMAGE()
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
     assert len(exec_engine.events) == 0
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="cache needs StrategyId")
 async def test_order_stream_new_full_image(mocker, execution_client, exec_engine):
-    raw = BetfairTestStubs.streaming_ocm_NEW_FULL_IMAGE()
+    raw = BetfairDataProvider.streaming_ocm_NEW_FULL_IMAGE()
     mocker.patch.object(
         execution_client,
         "venue_order_id_to_client_order_id",
@@ -269,7 +285,7 @@ async def test_order_stream_new_full_image(mocker, execution_client, exec_engine
 
 @pytest.mark.asyncio
 async def test_order_stream_sub_image(mocker, execution_client, exec_engine):
-    raw = BetfairTestStubs.streaming_ocm_SUB_IMAGE()
+    raw = BetfairDataProvider.streaming_ocm_SUB_IMAGE()
     mocker.patch.object(
         execution_client,
         "venue_order_id_to_client_order_id",
@@ -281,9 +297,8 @@ async def test_order_stream_sub_image(mocker, execution_client, exec_engine):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="cache needs StrategyId")
 async def test_order_stream_update(mocker, execution_client, exec_engine):
-    raw = BetfairTestStubs.streaming_ocm_UPDATE()
+    raw = BetfairDataProvider.streaming_ocm_UPDATE()
     mocker.patch.object(
         execution_client,
         "venue_order_id_to_client_order_id",
@@ -298,7 +313,7 @@ async def test_order_stream_update(mocker, execution_client, exec_engine):
 async def test_order_stream_cancel_after_update_doesnt_emit_event(
     mocker, execution_client, exec_engine
 ):
-    raw = BetfairTestStubs.streaming_ocm_order_update()
+    raw = BetfairDataProvider.streaming_ocm_order_update()
     mocker.patch.object(
         execution_client,
         "venue_order_id_to_client_order_id",
@@ -317,9 +332,8 @@ async def test_order_stream_cancel_after_update_doesnt_emit_event(
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="cache needs StrategyId")
 async def test_order_stream_filled(mocker, execution_client, exec_engine):
-    raw = BetfairTestStubs.streaming_ocm_FILLED()
+    raw = BetfairDataProvider.streaming_ocm_FILLED()
     mocker.patch.object(
         execution_client,
         "venue_order_id_to_client_order_id",
@@ -334,9 +348,8 @@ async def test_order_stream_filled(mocker, execution_client, exec_engine):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="cache needs StrategyId")
 async def test_order_stream_mixed(mocker, execution_client, exec_engine):
-    raw = BetfairTestStubs.streaming_ocm_MIXED()
+    raw = BetfairDataProvider.streaming_ocm_MIXED()
     mocker.patch.object(
         execution_client,
         "venue_order_id_to_client_order_id",
@@ -350,18 +363,17 @@ async def test_order_stream_mixed(mocker, execution_client, exec_engine):
     assert isinstance(exec_engine.events[2], OrderCanceled)
 
 
-# TODO
 @pytest.mark.asyncio
-@pytest.mark.skip
+@pytest.mark.skip(reason="Not implemented")
 async def test_generate_order_status_report(mocker, execution_client):
     # Betfair client login
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.list_current_orders",
-        return_value=BetfairTestStubs.current_orders(),
+        return_value=BetfairDataProvider.current_orders(),
     )
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.list_current_orders",
-        return_value=BetfairTestStubs.current_orders(),
+        return_value=BetfairDataProvider.current_orders(),
     )
     result = await execution_client.generate_order_status_report()
     assert result
@@ -372,7 +384,7 @@ async def test_generate_order_status_report(mocker, execution_client):
 async def test_generate_trades_list(mocker, execution_client):
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.list_cleared_orders",
-        return_value=BetfairTestStubs.list_cleared_orders(order_id="226125004209"),
+        return_value=BetfairDataProvider.list_cleared_orders(order_id="226125004209"),
     )
     mocker.patch.object(
         execution_client,
@@ -387,7 +399,6 @@ async def test_generate_trades_list(mocker, execution_client):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="cache needs StrategyId")
 async def test_duplicate_execution_id(mocker, execution_client, exec_engine):
     mocker.patch.object(
         execution_client,
@@ -438,3 +449,17 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine):
     # Second order example, partial fill followed by remainder filled
     assert isinstance(events[4], OrderFilled) and events[4].execution_id.value == "1618712776000"
     assert isinstance(events[5], OrderFilled) and events[5].execution_id.value == "1618712777000"
+
+
+# def test_update_account():
+#     # Arrange
+#     event = TestStubs.event_account_state()
+#     account = Account(event)
+#
+#     self.cache.add_account(account)
+#
+#     # Act
+#     self.cache.update_account(account)
+#
+#     # Assert
+#     assert True  # No exceptions raised

@@ -66,11 +66,11 @@ class BetfairTestStubs(TestStubs):
     def instrument_provider(betfair_client) -> BetfairInstrumentProvider:
         mock.patch(
             "betfairlightweight.endpoints.navigation.Navigation.list_navigation",
-            return_value=BetfairTestStubs.navigation(),
+            return_value=BetfairDataProvider.navigation(),
         )
         mock.patch(
             "betfairlightweight.endpoints.betting.Betting.resp_market_catalogue",
-            return_value=BetfairTestStubs.market_catalogue(),
+            return_value=BetfairDataProvider.market_catalogue(),
         )
         return BetfairInstrumentProvider(
             client=betfair_client,
@@ -201,8 +201,112 @@ class BetfairTestStubs(TestStubs):
         data_engine.register_client(client)
         return client
 
-    # ---- test data
+    @staticmethod
+    def make_order() -> LimitOrder:
+        order_factory = OrderFactory(
+            trader_id=BetfairTestStubs.trader_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
+            clock=BetfairTestStubs.clock(),
+        )
 
+        order = order_factory.limit(
+            BetfairTestStubs.instrument_id(),
+            OrderSide.BUY,
+            Quantity.from_int(10),
+            Price.from_str("0.50"),
+        )
+        return order
+
+    @staticmethod
+    def submit_order_command():
+        return SubmitOrder(
+            trader_id=BetfairTestStubs.trader_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
+            position_id=BetfairTestStubs.position_id(),
+            order=LimitOrder(
+                trader_id=BetfairTestStubs.trader_id(),
+                strategy_id=BetfairTestStubs.strategy_id(),
+                instrument_id=BetfairTestStubs.instrument_id(),
+                client_order_id=ClientOrderId(
+                    f"O-20210410-022422-001-001-{BetfairTestStubs.strategy_id().value}"
+                ),
+                order_side=OrderSide.BUY,
+                quantity=Quantity.from_int(10),
+                price=Price(0.33, precision=5),
+                time_in_force=TimeInForce.GTC,
+                expire_time=None,
+                init_id=BetfairTestStubs.uuid(),
+                timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
+            ),
+            command_id=BetfairTestStubs.uuid(),
+            timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
+        )
+
+    @staticmethod
+    def update_order_command(instrument_id=None, client_order_id=None):
+        if instrument_id is None:
+            instrument_id = BetfairTestStubs.instrument_id()
+        return UpdateOrder(
+            trader_id=BetfairTestStubs.trader_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
+            instrument_id=instrument_id,
+            client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
+            venue_order_id=VenueOrderId("001"),
+            quantity=Quantity.from_int(50),
+            price=Price(0.74347, precision=5),
+            trigger=None,
+            command_id=BetfairTestStubs.uuid(),
+            timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
+        )
+
+    @staticmethod
+    def cancel_order_command():
+        return CancelOrder(
+            trader_id=BetfairTestStubs.trader_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
+            instrument_id=BetfairTestStubs.instrument_id(),
+            client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
+            venue_order_id=VenueOrderId("229597791245"),
+            command_id=BetfairTestStubs.uuid(),
+            timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
+        )
+
+    @staticmethod
+    def make_order_place_response(
+        market_id="1.182127885",
+        customer_order_ref="O-20210418-015047-001-001-3",
+        bet_id="230486317487",
+    ):
+        return {
+            "customerRef": "c8dc484d5cea2ab472c844859bca7010",
+            "status": "SUCCESS",
+            "marketId": market_id,
+            "instructionReports": [
+                {
+                    "status": "SUCCESS",
+                    "instruction": {
+                        "selectionId": 237477,
+                        "handicap": 0.0,
+                        "limitOrder": {
+                            "size": 10.0,
+                            "price": 1.75,
+                            "persistenceType": "PERSIST",
+                        },
+                        "customerOrderRef": customer_order_ref,
+                        "orderType": "LIMIT",
+                        "side": "LAY",
+                    },
+                    "betId": bet_id,
+                    "placedDate": "2021-04-18T01:50:49.000Z",
+                    "averagePriceMatched": 1.73,
+                    "sizeMatched": 1.12,
+                    "orderStatus": "EXECUTABLE",
+                }
+            ],
+        }
+
+
+class BetfairDataProvider:
     @staticmethod
     def navigation():
         return orjson.loads((TEST_PATH / "navigation.json").read_bytes())
@@ -266,8 +370,8 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def market_catalogue_short():
-        catalogue = BetfairTestStubs.market_catalogue()
-        market_ids = BetfairTestStubs.market_ids()
+        catalogue = BetfairDataProvider.market_catalogue()
+        market_ids = BetfairDataProvider.market_ids()
         return [
             m
             for m in catalogue
@@ -416,7 +520,7 @@ class BetfairTestStubs(TestStubs):
     def raw_market_updates_instruments(
         market="1.166811431", runner1="60424", runner2="237478", currency="GBP"
     ):
-        updates = BetfairTestStubs.raw_market_updates(
+        updates = BetfairDataProvider.raw_market_updates(
             market=market, runner1=runner1, runner2=runner2
         )
         market_def = updates[0]["mc"][0]
@@ -428,28 +532,12 @@ class BetfairTestStubs(TestStubs):
         instrument_provider, market="1.166811431", runner1="60424", runner2="237478"
     ):
         updates = []
-        for raw in BetfairTestStubs.raw_market_updates(
+        for raw in BetfairDataProvider.raw_market_updates(
             market=market, runner1=runner1, runner2=runner2
         ):
             for message in on_market_update(instrument_provider=instrument_provider, update=raw):
                 updates.append(message)
         return updates
-
-    @staticmethod
-    def make_order() -> LimitOrder:
-        order_factory = OrderFactory(
-            trader_id=BetfairTestStubs.trader_id(),
-            strategy_id=BetfairTestStubs.strategy_id(),
-            clock=BetfairTestStubs.clock(),
-        )
-
-        order = order_factory.limit(
-            BetfairTestStubs.instrument_id(),
-            OrderSide.BUY,
-            Quantity.from_int(10),
-            Price.from_str("0.50"),
-        )
-        return order
 
     @staticmethod
     def submit_order_command():
@@ -504,37 +592,3 @@ class BetfairTestStubs(TestStubs):
             command_id=BetfairTestStubs.uuid(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
         )
-
-    @staticmethod
-    def make_order_place_response(
-        market_id="1.182127885",
-        customer_order_ref="O-20210418-015047-001-001-3",
-        bet_id="230486317487",
-    ):
-        return {
-            "customerRef": "c8dc484d5cea2ab472c844859bca7010",
-            "status": "SUCCESS",
-            "marketId": market_id,
-            "instructionReports": [
-                {
-                    "status": "SUCCESS",
-                    "instruction": {
-                        "selectionId": 237477,
-                        "handicap": 0.0,
-                        "limitOrder": {
-                            "size": 10.0,
-                            "price": 1.75,
-                            "persistenceType": "PERSIST",
-                        },
-                        "customerOrderRef": customer_order_ref,
-                        "orderType": "LIMIT",
-                        "side": "LAY",
-                    },
-                    "betId": bet_id,
-                    "placedDate": "2021-04-18T01:50:49.000Z",
-                    "averagePriceMatched": 1.73,
-                    "sizeMatched": 1.12,
-                    "orderStatus": "EXECUTABLE",
-                }
-            ],
-        }
