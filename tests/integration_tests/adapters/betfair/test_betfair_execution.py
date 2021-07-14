@@ -21,6 +21,7 @@ import betfairlightweight
 import orjson
 import pytest
 
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.model.currencies import AUD
@@ -35,6 +36,7 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
@@ -323,14 +325,13 @@ async def test_order_stream_update(mocker, execution_client, exec_engine, logger
 
 @pytest.mark.asyncio
 async def test_order_stream_cancel_after_update_doesnt_emit_event(
-    mocker, execution_client, exec_engine
+    mocker, execution_client, exec_engine, logger
 ):
     raw = BetfairDataProvider.streaming_ocm_order_update()
-    mocker.patch.object(
-        execution_client,
-        "venue_order_id_to_client_order_id",
-        _prefill_venue_order_id_to_client_order_id(orjson.loads(raw)),
+    setup_exec_client_and_cache(
+        mocker=mocker, exec_client=execution_client, exec_engine=exec_engine, logger=logger, raw=raw
     )
+
     s = set()
     s.add(("O-20210409-070830-001-001-1", "229506163591"))
     mocker.patch.object(
@@ -407,7 +408,14 @@ async def test_generate_trades_list(mocker, execution_client):
 
 
 @pytest.mark.asyncio
-async def test_duplicate_execution_id(mocker, execution_client, exec_engine):
+async def test_duplicate_execution_id(mocker, execution_client, exec_engine, logger):
+    raw = orjson.loads(BetfairDataProvider.streaming_ocm_order_update())
+    raw["oc"][0]["orc"][0]["uo"][0]["id"] = "230486317487"
+    raw = orjson.dumps(raw)
+    setup_exec_client_and_cache(
+        mocker=mocker, exec_client=execution_client, exec_engine=exec_engine, logger=logger, raw=raw
+    )
+
     mocker.patch.object(
         execution_client,
         "venue_order_id_to_client_order_id",
@@ -442,7 +450,14 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine):
     )
 
     # Act
-    for raw in orjson.loads(BetfairTestStubs.streaming_ocm_DUPLICATE_EXECUTION()):
+    for raw in orjson.loads(BetfairDataProvider.streaming_ocm_DUPLICATE_EXECUTION()):
+        setup_exec_client_and_cache(
+            mocker=mocker,
+            exec_client=execution_client,
+            exec_engine=exec_engine,
+            logger=logger,
+            raw=orjson.dumps(raw),
+        )
         execution_client.handle_order_stream_update(raw=orjson.dumps(raw))
         await asyncio.sleep(0.1)
 
@@ -452,21 +467,56 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine):
     assert isinstance(events[1], OrderAccepted)
     # First order example, partial fill followed by remainder canceled
     assert isinstance(events[2], OrderFilled)
-    assert isinstance(events[3], OrderCanceled)
+    assert isinstance(events[3], AccountState)
+    assert isinstance(events[4], OrderCanceled)
     # Second order example, partial fill followed by remainder filled
-    assert isinstance(events[4], OrderFilled) and events[4].execution_id.value == "1618712776000"
-    assert isinstance(events[5], OrderFilled) and events[5].execution_id.value == "1618712777000"
+    assert isinstance(events[5], OrderFilled) and events[5].execution_id.value == "1618712776000"
+    assert isinstance(events[6], AccountState)
+    assert isinstance(events[7], OrderFilled) and events[7].execution_id.value == "1618712777000"
+    assert isinstance(events[8], AccountState)
 
 
-# def test_update_account():
-#     # Arrange
-#     event = TestStubs.event_account_state()
-#     account = Account(event)
-#
-#     self.cache.add_account(account)
-#
-#     # Act
-#     self.cache.update_account(account)
-#
-#     # Assert
-#     assert True  # No exceptions raised
+@pytest.mark.asyncio
+@pytest.mark.skip(reason="Not implemented yet")
+async def test_betfair_account_states(execution_client, exec_engine):
+    # Setup
+    balance = exec_engine.cache.account_for_venue(BETFAIR_VENUE).balances()[AUD]
+    expected = {
+        "type": "AccountBalance",
+        "currency": "AUD",
+        "total": "1000.00",
+        "locked": "-0.00",
+        "free": "1000.00",
+    }
+    assert balance.to_dict() == expected
+
+    # Create an order to buy at 0.5 ($2.0) for $10 - exposure is $20
+    order = BetfairTestStubs.make_order(price=Price.from_str("0.5"), quantity=Quantity.from_int(10))
+
+    # Order accepted - expect balance to drop by exposure
+    order_accepted = BetfairTestStubs.event_order_accepted(order=order)
+    exec_engine._handle_event(order_accepted)
+    await asyncio.sleep(0.1)
+    balance = exec_engine.cache.account_for_venue(BETFAIR_VENUE).balances()[AUD]
+    expected = {
+        "type": "AccountBalance",
+        "currency": "AUD",
+        "total": "1000.00",
+        "locked": "20.00",
+        "free": "980.00",
+    }
+    assert balance.to_dict() == expected
+
+    # Cancel the order, balance should return
+    cancelled = BetfairTestStubs.event_order_canceled(order=order)
+    exec_engine._handle_event(cancelled)
+    await asyncio.sleep(0.1)
+    balance = exec_engine.cache.account_for_venue(BETFAIR_VENUE).balances()[AUD]
+    expected = {
+        "type": "AccountBalance",
+        "currency": "AUD",
+        "total": "1000.00",
+        "locked": "-0.00",
+        "free": "1080.00",
+    }
+    assert balance.to_dict() == expected

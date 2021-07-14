@@ -246,6 +246,28 @@ async def execution_client(
 
 
 @pytest.fixture()
+async def live_execution_client(
+    betfair_client, account_id, exec_engine, clock, live_logger, betfair_account_state
+) -> BetfairExecutionClient:
+    client = BetfairExecutionClient(
+        client=betfair_client,
+        account_id=account_id,
+        base_currency=AUD,
+        engine=exec_engine,
+        clock=clock,
+        logger=live_logger,
+        market_filter={},
+        load_instruments=False,
+    )
+    client.instrument_provider().load_all()
+    exec_engine.register_client(client)
+    exec_engine.cache.add_account(account=Account(betfair_account_state))
+    for instrument in client.instrument_provider().list_instruments():
+        exec_engine.cache.add_instrument(instrument)
+    return client
+
+
+@pytest.fixture()
 def betfair_data_client(betfair_client, data_engine, clock, live_logger):
     client = BetfairDataClient(
         client=betfair_client,

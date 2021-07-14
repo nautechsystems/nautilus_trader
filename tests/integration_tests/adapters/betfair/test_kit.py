@@ -212,13 +212,15 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def make_order(factory=None) -> LimitOrder:
+    def make_order(
+        factory=None, instrument_id=None, side=None, price=None, quantity=None
+    ) -> LimitOrder:
         order_factory = factory or BetfairTestStubs.order_factory()
         order = order_factory.limit(
-            BetfairTestStubs.instrument_id(),
-            OrderSide.BUY,
-            Quantity.from_int(10),
-            Price.from_str("0.50"),
+            instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
+            order_side=side or OrderSide.BUY,
+            quantity=quantity or Quantity.from_str("10"),
+            price=price or Price.from_str("0.5"),
         )
         return order
 
