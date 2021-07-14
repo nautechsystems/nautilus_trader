@@ -418,12 +418,13 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     async def _handle_order_stream_update(self, update):
         for market in update.get("oc", []):
             market_id = market["id"]
-            self._log.debug(f"Received order stream update len={len(market.get('orc', []))}")
+            # self._log.debug(f"Received order stream update len={len(market.get('orc', []))}")
             for selection in market.get("orc", []):
                 for order_update in selection.get("uo", []):
-                    self._log.debug(f"order_update: {order_update}")
+                    # self._log.debug(f"order_update: {order_update}")
                     client_order_id = await self.wait_for_order(order_update['id'], timeout_seconds=10.0)
                     if client_order_id is None:
+                        self._log.warning(f"Can't find client_order_id for {order_update}")
                         continue
                     venue_order_id = VenueOrderId(order_update["id"])
                     order = self._engine.cache.order(client_order_id)
