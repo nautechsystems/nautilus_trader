@@ -246,10 +246,10 @@ async def test_order_stream_full_image(mocker, execution_client, exec_engine):
     raw = BetfairDataProvider.streaming_ocm_FULL_IMAGE()
 
     # setup
-    exec_engine.cache.add_order(
-        order=BetfairTestStubs.make_order(),
-        position_id=PositionId("P-001"),
-    )
+    # exec_engine.cache.add_order(
+    #     order=BetfairTestStubs.make_order(),
+    #     position_id=PositionId("P-001"),
+    # )
 
     # assert
     mocker.patch.object(
@@ -257,6 +257,7 @@ async def test_order_stream_full_image(mocker, execution_client, exec_engine):
         "venue_order_id_to_client_order_id",
         _prefill_venue_order_id_to_client_order_id(orjson.loads(raw)),
     )
+
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0.1)
     assert len(exec_engine.events) == 6
