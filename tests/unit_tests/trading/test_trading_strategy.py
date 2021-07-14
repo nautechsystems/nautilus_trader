@@ -25,6 +25,7 @@ from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
@@ -74,7 +75,10 @@ class TestTradingStrategy:
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+        )
 
         self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
@@ -154,7 +158,7 @@ class TestTradingStrategy:
         self.exchange.register_client(self.exec_client)
         self.data_engine.register_client(self.data_client)
         self.exec_engine.register_client(self.exec_client)
-        self.exec_engine.process(TestStubs.event_account_state())
+        self.exchange.reset()
 
         # Add instruments
         self.data_engine.process(AUDUSD_SIM)
@@ -168,7 +172,6 @@ class TestTradingStrategy:
 
         self.data_engine.start()
         self.exec_engine.start()
-        self.exchange.setup()
 
     def test_strategy_equality(self):
         # Arrange

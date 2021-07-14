@@ -110,8 +110,8 @@ cdef class BacktestEngine:
             The configuration for the risk engine.
         config_exec : dict[str, object]
             The configuration for the execution engine.
-        cache_db_type : str, optional  # TODO!
-            The type for the cache (can be the default 'in-memory' or redis).
+        cache_db_type : str {'in-memory', 'redis'}
+            The type for the cache.
         cache_db_flush : bool, optional
             If the cache should be flushed on each run.
         use_data_cache : bool, optional
@@ -147,7 +147,6 @@ cdef class BacktestEngine:
         self.created_time = self._clock.utc_now()
 
         self._test_clock = TestClock()
-        self._test_clock.set_time(self._clock.timestamp_ns())
         self._uuid_factory = UUIDFactory()
         self.system_id = self._uuid_factory.generate()
 
@@ -163,7 +162,7 @@ cdef class BacktestEngine:
         )
 
         self._test_logger = Logger(
-            clock=self._test_clock,
+            clock=self._clock,
             trader_id=trader_id,
             system_id=self.system_id,
             level_stdout=level_stdout,
@@ -209,8 +208,6 @@ cdef class BacktestEngine:
         )
         # Set external facade
         self.cache = self._cache
-
-        self._test_clock.set_time(self._clock.timestamp_ns())  # For logging consistency
 
         self._portfolio = Portfolio(
             msgbus=self._msgbus,
@@ -270,8 +267,6 @@ cdef class BacktestEngine:
         self.analyzer = PerformanceAnalyzer()
 
         self._exchanges = {}
-
-        self._test_clock.set_time(self._clock.timestamp_ns())  # For logging consistency
 
         self.iteration = 0
 
@@ -836,6 +831,9 @@ cdef class BacktestEngine:
             If the stop is >= the start datetime.
 
         """
+        # Run the backtest
+        self._log.info(f"Running backtest...")
+
         if self._data_producer is None:
             self._data_producer = BacktestDataProducer(
                 logger=self._test_logger,
@@ -880,20 +878,18 @@ cdef class BacktestEngine:
         self._pre_run(run_started, start, stop)
         self._log.info(f"Setting up backtest...")
 
-        # Reset engine to fresh state (in case already run)
-        self.reset()
-
         cdef int64_t start_ns = dt_to_unix_nanos(start)
         cdef int64_t stop_ns = dt_to_unix_nanos(stop)
 
         # Setup clocks
         self._test_clock.set_time(start_ns)
+        self._test_logger.change_clock_c(self._test_clock)
 
-        # Setup Exchanges
-        for exchange in self._exchanges.values():
-            exchange.setup()
+        # Reset engine to fresh state (in case already run)
+        self.reset()
 
         # Setup data
+        self._log.info(f"Pre-processing data stream...")
         self._data_producer.setup(start_ns=start_ns, stop_ns=stop_ns)
 
         # Prepare instruments
@@ -901,12 +897,16 @@ cdef class BacktestEngine:
             self._data_engine.process(instrument)
             self._exec_engine.cache.add_instrument(instrument)
 
+        self._log.info("=================================================================")
+        self._log.info("BACKTEST")
+        self._log.info("=================================================================")
+
         # Setup new strategies
         if strategies:
-            self.trader.initialize_strategies(strategies, warn_no_strategies=False)
-
-        # Run the backtest
-        self._log.info(f"Running backtest...")
+            self.trader.initialize_strategies(
+                strategies=strategies,
+                warn_no_strategies=False,
+            )
 
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start_ns)

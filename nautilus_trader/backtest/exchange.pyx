@@ -457,12 +457,6 @@ cdef class SimulatedExchange:
         for order_id in self._oco_orders.values():
             self._log.warning(f"Residual OCO {order_id}")
 
-    cpdef void setup(self) except *:
-        """
-        Setup the exchange ready for a backtest
-        """
-        self._generate_fresh_account_state()
-
     cpdef void reset(self) except *:
         """
         Reset the simulated exchange.

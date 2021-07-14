@@ -13,9 +13,11 @@
 - Improved efficiency of `Throttler`.
 - Standardized identifiers on events and objects.
 - Removed redundant `BypassCacheDatabase`.
+- Improved `Account` `str` and `repr`.
 
 ## Fixes
-None
+- Fixed backtest log timestamping.
+- Fixed backtest duplicate initial account event.
 
 ---
 
