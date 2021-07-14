@@ -168,6 +168,7 @@ class TestSimulatedExchange:
         )
 
         # Start components
+        self.exchange.reset()
         self.data_engine.start()
         self.exec_engine.start()
         self.strategy.start()
@@ -1978,6 +1979,7 @@ class TestBitmexExchange:
             self.logger,
         )
 
+        self.exchange.reset()
         self.data_engine.start()
         self.exec_engine.start()
         self.strategy.start()
@@ -2136,6 +2138,7 @@ class TestOrderBookExchange:
             self.logger,
         )
 
+        self.exchange.reset()
         self.data_engine.start()
         self.exec_engine.start()
         self.strategy.start()

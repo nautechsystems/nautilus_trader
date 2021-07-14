@@ -113,8 +113,8 @@ class TestAccount:
 
         # Assert
         assert account.id == AccountId("SIM", "001")
-        assert str(account) == "Account(id=SIM-001)"
-        assert repr(account) == "Account(id=SIM-001)"
+        assert str(account) == "Account(id=SIM-001, type=CASH, base=USD)"
+        assert repr(account) == "Account(id=SIM-001, type=CASH, base=USD)"
         assert isinstance(hash(account), int)
         assert account == account
         assert not account != account

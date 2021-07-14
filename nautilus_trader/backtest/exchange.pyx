@@ -326,7 +326,6 @@ cdef class SimulatedExchange:
         Condition.not_none(client, "client")
 
         self.exec_client = client
-        self._generate_fresh_account_state()
 
         self._log.info(f"Registered {client}.")
 
