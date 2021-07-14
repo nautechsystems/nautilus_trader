@@ -413,8 +413,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef void handle_order_stream_update(self, bytes raw) except *:
         """ Handle an update from the order stream socket """
         cdef dict update = orjson.loads(raw)  # type: dict
-        self.create_task(self._handle_order_stream_update(update=update))
-        # self._loop.create_task(self._handle_order_stream_update(update=update))
+        self._loop.create_task(self._handle_order_stream_update(update=update))
 
     async def _handle_order_stream_update(self, update):
         for market in update.get("oc", []):
