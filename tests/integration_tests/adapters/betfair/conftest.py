@@ -105,9 +105,7 @@ def clock() -> LiveClock:
 
 @pytest.fixture()
 def live_logger(event_loop, clock):
-    level_stdout = (
-        LogLevel.DEBUG if os.environ.get("NAUTILUS_DEBUG", False) == "True" else LogLevel.ERROR
-    )
+    level_stdout = LogLevel.DEBUG if os.environ.get("NAUTILUS_DEBUG", False) else LogLevel.ERROR
     return LiveLogger(loop=event_loop, clock=clock, level_stdout=level_stdout)
 
 

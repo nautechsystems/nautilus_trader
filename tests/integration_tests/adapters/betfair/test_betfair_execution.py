@@ -15,7 +15,6 @@
 
 import asyncio
 import os
-from pprint import pprint
 
 import betfairlightweight
 import orjson
@@ -61,7 +60,7 @@ def setup_exec_client_and_cache(mocker, exec_client, exec_engine, logger, raw):
     Returns: `venue_order_id_to_client_order_id`
     """
     update = orjson.loads(raw)
-    logger.debug(f"raw_data:\n{pprint(update)}")
+    logger.debug(f"raw_data:\n{update}")
     venue_order_ids = _prefill_venue_order_id_to_client_order_id(update)
     venue_order_id_to_client_order_id = {}
     for v_id in venue_order_ids:
@@ -409,13 +408,6 @@ async def test_generate_trades_list(mocker, execution_client):
 
 @pytest.mark.asyncio
 async def test_duplicate_execution_id(mocker, execution_client, exec_engine, logger):
-    raw = orjson.loads(BetfairDataProvider.streaming_ocm_order_update())
-    raw["oc"][0]["orc"][0]["uo"][0]["id"] = "230486317487"
-    raw = orjson.dumps(raw)
-    setup_exec_client_and_cache(
-        mocker=mocker, exec_client=execution_client, exec_engine=exec_engine, logger=logger, raw=raw
-    )
-
     mocker.patch.object(
         execution_client,
         "venue_order_id_to_client_order_id",
@@ -459,7 +451,7 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine, log
             raw=orjson.dumps(raw),
         )
         execution_client.handle_order_stream_update(raw=orjson.dumps(raw))
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.5)
 
     # Assert
     events = exec_engine.events
