@@ -142,6 +142,19 @@ cdef class Logger:
         self.system_id = system_id
         self.is_bypassed = bypass
 
+    cdef void change_clock_c(self, Clock clock) except *:
+        """
+        Change the loggers internal clock to the given clock.
+
+        Parameters
+        ----------
+        clock : Clock
+
+        """
+        Condition.not_none(clock, "clock")
+
+        self._clock = clock
+
     cdef void log_c(self, dict record) except *:
         """
         Handle the given record by sending it to configured sinks.

@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
 import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.type import DataType
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.base import GenericData
@@ -352,7 +354,10 @@ class TestBacktestEngineData:
 class TestBacktestEngine:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(use_data_cache=True)
+        self.engine = BacktestEngine(
+            use_data_cache=True,
+            level_stdout=LogLevel.DEBUG,
+        )
 
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
@@ -416,3 +421,15 @@ class TestBacktestEngine:
 
         # Assert
         assert True  # No exceptions raised
+
+    def test_account_state_timestamp(self):
+        # Arrange
+        start = pd.Timestamp("2013-01-31 23:59:59.700000+00:00")
+        self.engine.run(start=start)
+
+        # Act
+        report = self.engine.trader.generate_account_report(Venue("SIM"))
+
+        # Assert
+        assert len(report) == 1
+        assert report.index[0] == start

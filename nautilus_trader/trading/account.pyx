@@ -16,6 +16,7 @@
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.identifiers cimport Venue
@@ -66,7 +67,11 @@ cdef class Account:
         return hash(self.id.value)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self.id.value})"
+        cdef str base_str = self.base_currency.code if self.base_currency is not None else None
+        return (f"{type(self).__name__}("
+                f"id={self.id.value}, "
+                f"type={AccountTypeParser.to_str(self.type)}, "
+                f"base={base_str})")
 
     cdef AccountState last_event_c(self):
         return self._events[-1]  # Always at least one event
