@@ -349,8 +349,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
             The UNIX timestamp (nanoseconds) for the run stop.
 
         """
-        self._log.info(f"Pre-processing data stream...")
-
         if self._stream:
             # Set data stream start index
             if start_ns < self._stream[0].ts_recv_ns:
