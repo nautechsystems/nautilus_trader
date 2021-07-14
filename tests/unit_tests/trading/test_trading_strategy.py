@@ -168,6 +168,7 @@ class TestTradingStrategy:
 
         self.data_engine.start()
         self.exec_engine.start()
+        self.exchange.setup()
 
     def test_strategy_equality(self):
         # Arrange
