@@ -168,10 +168,10 @@ class TestSimulatedExchange:
         )
 
         # Start components
+        self.exchange.reset()
         self.data_engine.start()
         self.exec_engine.start()
         self.strategy.start()
-        self.exchange.setup()
 
     def test_repr(self):
         # Arrange
@@ -1979,10 +1979,10 @@ class TestBitmexExchange:
             self.logger,
         )
 
+        self.exchange.reset()
         self.data_engine.start()
         self.exec_engine.start()
         self.strategy.start()
-        self.exchange.setup()
 
     def test_commission_maker_taker_order(self):
         # Arrange
@@ -2138,10 +2138,10 @@ class TestOrderBookExchange:
             self.logger,
         )
 
+        self.exchange.reset()
         self.data_engine.start()
         self.exec_engine.start()
         self.strategy.start()
-        self.exchange.setup()
 
     def test_submit_limit_order_aggressive_multiple_levels(self):
         # Arrange: Prepare market
