@@ -38,6 +38,8 @@ from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -202,19 +204,57 @@ class BetfairTestStubs(TestStubs):
         return client
 
     @staticmethod
-    def make_order() -> LimitOrder:
-        order_factory = OrderFactory(
+    def order_factory():
+        return OrderFactory(
             trader_id=BetfairTestStubs.trader_id(),
             strategy_id=BetfairTestStubs.strategy_id(),
             clock=BetfairTestStubs.clock(),
         )
 
+    @staticmethod
+    def make_order(factory=None) -> LimitOrder:
+        order_factory = factory or BetfairTestStubs.order_factory()
         order = order_factory.limit(
             BetfairTestStubs.instrument_id(),
             OrderSide.BUY,
             Quantity.from_int(10),
             Price.from_str("0.50"),
         )
+        return order
+
+    @staticmethod
+    def make_submitted_order(ts_submitted_ns=0, timestamp_ns=0, factory=None):
+        order = BetfairTestStubs.make_order(factory=factory)
+        submitted = OrderSubmitted(
+            trader_id=BetfairTestStubs.trader_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
+            instrument_id=BetfairTestStubs.instrument_id(),
+            account_id=BetfairTestStubs.account_id(),
+            client_order_id=order.client_order_id,
+            ts_submitted_ns=ts_submitted_ns,
+            event_id=BetfairTestStubs.uuid(),
+            timestamp_ns=timestamp_ns,
+        )
+        order.apply(submitted)
+        return order
+
+    @staticmethod
+    def make_accepted_order(
+        venue_order_id="1", ts_accepted_ns=0, timestamp_ns=0, factory=None
+    ) -> LimitOrder:
+        order = BetfairTestStubs.make_submitted_order(factory=factory)
+        accepted = OrderAccepted(
+            trader_id=BetfairTestStubs.trader_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
+            instrument_id=BetfairTestStubs.instrument_id(),
+            account_id=BetfairTestStubs.account_id(),
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId(venue_order_id),
+            ts_accepted_ns=ts_accepted_ns,
+            event_id=BetfairTestStubs.uuid(),
+            timestamp_ns=timestamp_ns,
+        )
+        order.apply(accepted)
         return order
 
     @staticmethod

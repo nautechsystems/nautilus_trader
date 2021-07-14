@@ -15,6 +15,7 @@
 
 import asyncio
 import os
+from pprint import pprint
 
 import betfairlightweight
 import orjson
@@ -36,6 +37,45 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+
+
+# Execution test helpers
+
+
+def _prefill_venue_order_id_to_client_order_id(raw):
+    order_ids = [
+        update["id"]
+        for market in raw.get("oc", [])
+        for order in market["orc"]
+        for update in order.get("uo", [])
+    ]
+    return {oid: ClientOrderId(str(i + 1)) for i, oid in enumerate(order_ids)}
+
+
+def setup_exec_client_and_cache(mocker, exec_client, exec_engine, logger, raw):
+    """
+    Parse raw order data and add orders to the execution cache.
+
+    Returns: `venue_order_id_to_client_order_id`
+    """
+    update = orjson.loads(raw)
+    logger.debug(f"raw_data:\n{pprint(update)}")
+    venue_order_ids = _prefill_venue_order_id_to_client_order_id(update)
+    venue_order_id_to_client_order_id = {}
+    for v_id in venue_order_ids:
+        order = BetfairTestStubs.make_accepted_order(venue_order_id=v_id)
+        logger.debug(f"created order: {order}")
+        venue_order_id_to_client_order_id[v_id] = order.client_order_id
+        logger.debug(f"venue_order_id={v_id}, client_order_id={order.client_order_id}")
+        cache_order = exec_engine.cache.order(client_order_id=order.client_order_id)
+        if cache_order is None:
+            logger.debug("adding to cache")
+            exec_engine.cache.add_order(order, position_id=PositionId(v_id))
+
+    mocker.patch.object(
+        exec_client, "venue_order_id_to_client_order_id", venue_order_id_to_client_order_id
+    )
+    return
 
 
 @pytest.mark.asyncio
@@ -221,46 +261,19 @@ def test_get_account_currency(execution_client):
     assert currency == AUD
 
 
-def _prefill_venue_order_id_to_client_order_id(raw):
-    order_ids = [
-        update["id"]
-        for market in raw.get("oc", [])
-        for order in market["orc"]
-        for update in order.get("uo", [])
-    ]
-    return {oid: ClientOrderId(str(i + 1)) for i, oid in enumerate(order_ids)}
-
-
-def _prefill_client_order_id_to_strategy_id(raw):
-    order_ids = [
-        update["id"]
-        for market in raw.get("oc", [])
-        for order in market["orc"]
-        for update in order.get("uo", [])
-    ]
-    return {oid: ClientOrderId(str(i + 1)) for i, oid in enumerate(order_ids)}
-
-
 @pytest.mark.asyncio
-async def test_order_stream_full_image(mocker, execution_client, exec_engine):
+async def test_order_stream_full_image(
+    mocker, execution_client, exec_engine, order_factory, logger
+):
     raw = BetfairDataProvider.streaming_ocm_FULL_IMAGE()
-
-    # setup
-    # exec_engine.cache.add_order(
-    #     order=BetfairTestStubs.make_order(),
-    #     position_id=PositionId("P-001"),
-    # )
-
-    # assert
-    mocker.patch.object(
-        execution_client,
-        "venue_order_id_to_client_order_id",
-        _prefill_venue_order_id_to_client_order_id(orjson.loads(raw)),
+    setup_exec_client_and_cache(
+        mocker=mocker, exec_client=execution_client, exec_engine=exec_engine, logger=logger, raw=raw
     )
 
+    # assert
     execution_client.handle_order_stream_update(raw=raw)
-    await asyncio.sleep(0.1)
-    assert len(exec_engine.events) == 6
+    await asyncio.sleep(1)
+    assert len(exec_engine.events) == 12
 
 
 @pytest.mark.asyncio
@@ -272,16 +285,16 @@ async def test_order_stream_empty_image(execution_client, exec_engine):
 
 
 @pytest.mark.asyncio
-async def test_order_stream_new_full_image(mocker, execution_client, exec_engine):
+async def test_order_stream_new_full_image(
+    mocker, execution_client, exec_engine, logger, order_factory
+):
     raw = BetfairDataProvider.streaming_ocm_NEW_FULL_IMAGE()
-    mocker.patch.object(
-        execution_client,
-        "venue_order_id_to_client_order_id",
-        _prefill_venue_order_id_to_client_order_id(orjson.loads(raw)),
+    setup_exec_client_and_cache(
+        mocker=mocker, exec_client=execution_client, exec_engine=exec_engine, logger=logger, raw=raw
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
-    assert len(exec_engine.events) == 3
+    assert len(exec_engine.events) == 6
 
 
 @pytest.mark.asyncio
@@ -298,12 +311,10 @@ async def test_order_stream_sub_image(mocker, execution_client, exec_engine):
 
 
 @pytest.mark.asyncio
-async def test_order_stream_update(mocker, execution_client, exec_engine):
+async def test_order_stream_update(mocker, execution_client, exec_engine, logger):
     raw = BetfairDataProvider.streaming_ocm_UPDATE()
-    mocker.patch.object(
-        execution_client,
-        "venue_order_id_to_client_order_id",
-        _prefill_venue_order_id_to_client_order_id(orjson.loads(raw)),
+    setup_exec_client_and_cache(
+        mocker=mocker, exec_client=execution_client, exec_engine=exec_engine, logger=logger, raw=raw
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0.1)
@@ -333,34 +344,30 @@ async def test_order_stream_cancel_after_update_doesnt_emit_event(
 
 
 @pytest.mark.asyncio
-async def test_order_stream_filled(mocker, execution_client, exec_engine):
+async def test_order_stream_filled(mocker, execution_client, exec_engine, logger):
     raw = BetfairDataProvider.streaming_ocm_FILLED()
-    mocker.patch.object(
-        execution_client,
-        "venue_order_id_to_client_order_id",
-        _prefill_venue_order_id_to_client_order_id(orjson.loads(raw)),
+    setup_exec_client_and_cache(
+        mocker=mocker, exec_client=execution_client, exec_engine=exec_engine, logger=logger, raw=raw
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0.01)
-    assert len(exec_engine.events) == 1
+    assert len(exec_engine.events) == 2
     event = exec_engine.events[0]
     assert isinstance(event, OrderFilled)
     assert event.last_px == Price(0.90909, precision=5)
 
 
 @pytest.mark.asyncio
-async def test_order_stream_mixed(mocker, execution_client, exec_engine):
+async def test_order_stream_mixed(mocker, execution_client, exec_engine, logger):
     raw = BetfairDataProvider.streaming_ocm_MIXED()
-    mocker.patch.object(
-        execution_client,
-        "venue_order_id_to_client_order_id",
-        _prefill_venue_order_id_to_client_order_id(orjson.loads(raw)),
+    setup_exec_client_and_cache(
+        mocker=mocker, exec_client=execution_client, exec_engine=exec_engine, logger=logger, raw=raw
     )
     execution_client.handle_order_stream_update(raw=raw)
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(1)
     assert len(exec_engine.events) == 3
     assert isinstance(exec_engine.events[0], OrderFilled)
-    assert isinstance(exec_engine.events[1], OrderFilled)
+    assert isinstance(exec_engine.events[1], AccountState)
     assert isinstance(exec_engine.events[2], OrderCanceled)
 
 
@@ -406,7 +413,6 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine):
         "venue_order_id_to_client_order_id",
         {"230486317487": ClientOrderId("1")},
     )
-    exec_engine.cache.add_order()
 
     # Load submitted orders
     kw = {
