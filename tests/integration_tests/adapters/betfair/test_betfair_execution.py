@@ -459,7 +459,7 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine, log
             raw=orjson.dumps(raw),
         )
         execution_client.handle_order_stream_update(raw=orjson.dumps(raw))
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.2)
 
     # Assert
     events = exec_engine.events
