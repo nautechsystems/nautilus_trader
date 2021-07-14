@@ -41,7 +41,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBookDeltas
 from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
 from nautilus_trader.trading.portfolio cimport Portfolio
-from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class DataEngine(Component):
