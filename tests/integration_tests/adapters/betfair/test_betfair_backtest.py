@@ -108,5 +108,5 @@ def test_betfair_backtest(instrument_provider):
 
     # Check account states
     account = engine.trader.generate_account_report(BETFAIR_VENUE)
-    assert account.index[0] == pd.Timestamp("2019-12-28 11:49:43.406000+00:00")
+    assert account.index[0] == pd.Timestamp("2019-12-28 02:23:03.086000+0000")
     assert account.index[-1] == pd.Timestamp("2019-12-29 03:36:39.861000+00:00")
