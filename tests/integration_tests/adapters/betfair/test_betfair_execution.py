@@ -366,11 +366,14 @@ async def test_order_stream_mixed(mocker, execution_client, exec_engine, logger)
         mocker=mocker, exec_client=execution_client, exec_engine=exec_engine, logger=logger, raw=raw
     )
     execution_client.handle_order_stream_update(raw=raw)
-    await asyncio.sleep(1)
-    assert len(exec_engine.events) == 3
-    assert isinstance(exec_engine.events[0], OrderFilled)
-    assert isinstance(exec_engine.events[1], AccountState)
-    assert isinstance(exec_engine.events[2], OrderCanceled)
+    await asyncio.sleep(0.5)
+    events = exec_engine.events
+    assert len(events) == 5
+    assert isinstance(events[0], OrderFilled) and events[0].venue_order_id.value == "229430281341"
+    assert isinstance(events[1], AccountState)
+    assert isinstance(events[2], OrderFilled) and events[2].venue_order_id.value == "229430281339"
+    assert isinstance(events[3], AccountState)
+    assert isinstance(events[4], OrderCanceled) and events[4].venue_order_id.value == "229430281339"
 
 
 @pytest.mark.asyncio

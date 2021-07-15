@@ -221,7 +221,7 @@ class BetfairTestStubs(TestStubs):
             trader_id=order_factory.trader_id,
             strategy_id=order_factory.strategy_id,
             instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
-            client_order_id=client_order_id or order_factory._id_generator.generate(),
+            client_order_id=client_order_id or ClientOrderId(str(order_factory.count)),
             order_side=side or OrderSide.BUY,
             quantity=quantity or Quantity.from_str("10"),
             price=price or Price.from_str("0.5"),

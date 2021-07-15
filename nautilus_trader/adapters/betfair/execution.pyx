@@ -574,6 +574,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
 cpdef ExecutionId create_execution_id(dict uo):
     cdef bytes data = orjson.dumps(
-        (uo['id'], uo['p'], uo['s'], uo['side'], uo['pt'], uo['ot'], uo['pd'], uo['md'], uo['avp'], uo['sm'])
+        (uo['id'], uo['p'], uo['s'], uo['side'], uo['pt'], uo['ot'], uo['pd'], uo.get('md'), uo.get('avp'), uo.get('sm'))
     )
     return ExecutionId(hashlib.sha1(data).hexdigest())
