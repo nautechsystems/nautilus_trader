@@ -30,18 +30,20 @@ from nautilus_trader.core.math cimport max_int64
 
 cdef class Throttler:
     """
-    Provides a generic throttler with an internal queue.
+    Provides a generic throttler which can either buffer or drop messages.
 
     Will throttle messages to the given maximum limit-interval rate.
-    The throttler is considered 'initialized' when it has received at least the
-    `limit` number of messages.
+    If an `output_drop` handler is provided, then will drop messages which
+    would exceed the rate limit. Otherwise will buffer messages until within
+    the rate limit, then send.
 
     Warnings
     --------
     This throttler is not thread-safe and must be called from the same thread as
     the event loop.
 
-    The internal queue is unbounded and so a bounded queue should be upstream.
+    The internal buffer queue is unbounded and so a bounded queue should be
+    upstream.
     """
 
     def __init__(
