@@ -13,11 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-Initial Cython implementation of the MessageBus.
-Eventually replace with msgbus C implementation.
-"""
-
 from typing import Any, Callable
 
 import cython
@@ -56,15 +51,24 @@ cdef class Subscription:
 
         Parameters
         ----------
-        topic : str, optional
-            The message type for the subscription.
-            If None then represents a subscription for ALL messages.
+        topic : str
+            The topic for the subscription. May include wildcard glob patterns.
         handler : Callable[[Message], None]
             The handler for the subscription.
         priority : int
             The priority for the subscription.
 
+        Raises
+        ------
+        ValueError
+            If topic is not a valid string.
+        ValueError
+            If priority is negative (< 0).
+
         """
+        Condition.valid_string(topic, "topic")
+        Condition.not_negative_int(priority, "priority")
+
         self._topic_str = topic
         self.topic = topic.replace(WILDCARD, "")
         self.handler = handler
@@ -121,10 +125,15 @@ cdef class MessageBus:
         name : str, optional
             The custom name for the message bus.
 
+        Raises
+        ------
+        ValueError
+            If name is not None and not a valid string.
+
         """
         if name is None:
             name = "MessageBus"
-        Condition.not_none(name, "name")
+        Condition.valid_string(name, "name")
 
         self._clock = clock
         self._log = LoggerAdapter(component=name, logger=logger)

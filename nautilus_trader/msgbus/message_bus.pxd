@@ -13,11 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-Initial Cython implementation of the MessageBus.
-Eventually replace with msgbus C implementation.
-"""
-
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 
