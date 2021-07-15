@@ -12,10 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from decimal import Decimal
 
 from cpython.datetime cimport datetime
 
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class BettingInstrument(Instrument):
@@ -41,3 +44,5 @@ cdef class BettingInstrument(Instrument):
 
     @staticmethod
     cdef dict to_dict_c(BettingInstrument obj)
+
+    cpdef Money notional_value(self, Quantity quantity, price: Decimal, bint inverse_as_quote=*)

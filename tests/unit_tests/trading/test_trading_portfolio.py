@@ -17,6 +17,7 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.factories import OrderFactory
@@ -26,6 +27,7 @@ from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.tick import QuoteTick
@@ -36,6 +38,7 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -52,6 +55,7 @@ from tests.test_kit.stubs import TestStubs
 SIM = Venue("SIM")
 BINANCE = Venue("BINANCE")
 BITMEX = Venue("BITMEX")
+BETFAIR = BETFAIR_VENUE
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
@@ -59,6 +63,7 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
+BETTING_INSTRUMENT = TestInstrumentProvider.betting_instrument()
 
 
 class TestPortfolioFacade:
@@ -220,6 +225,7 @@ class TestPortfolio:
         self.cache.add_instrument(BTCUSDT_BINANCE)
         self.cache.add_instrument(BTCUSD_BITMEX)
         self.cache.add_instrument(ETHUSD_BITMEX)
+        self.cache.add_instrument(BETTING_INSTRUMENT)
 
     def test_account_when_no_account_returns_none(self):
         # Arrange
@@ -404,6 +410,50 @@ class TestPortfolio:
 
         # Assert
         assert self.portfolio.initial_margins(BINANCE) == {}
+
+    def test_order_accept_updates_initial_margin(self):
+        # Arrange
+        state = AccountState(
+            account_id=AccountId("BETFAIR", "01234"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
+            reported=True,
+            balances=[
+                AccountBalance(
+                    currency=GBP,
+                    total=Money(1000, GBP),
+                    free=Money(1000, GBP),
+                    locked=Money(0, GBP),
+                ),
+            ],
+            info={},
+            event_id=uuid4(),
+            ts_updated_ns=0,
+            timestamp_ns=0,
+        )
+
+        self.exec_engine.process(state)
+
+        # Create a passive order
+        order1 = self.order_factory.limit(
+            BETTING_INSTRUMENT.id,
+            OrderSide.BUY,
+            Quantity.from_str("100"),
+            Price.from_str("0.5"),
+        )
+
+        self.exec_engine.cache.add_order(order1, PositionId.null())
+
+        # Push states to ACCEPTED
+        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestStubs.event_order_accepted(order1, venue_order_id=VenueOrderId("1")))
+        self.exec_engine.cache.update_order(order1)
+
+        # Act
+        self.portfolio.initialize_orders()
+
+        # Assert
+        assert self.portfolio.initial_margins(BETFAIR)[GBP] == Money(200, GBP)
 
     def test_update_positions(self):
         # Arrange
