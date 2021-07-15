@@ -17,7 +17,6 @@ import asyncio
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
-from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -62,10 +61,7 @@ class TestLiveExecutionEngine:
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(
-            clock=self.clock,
-            level_stdout=LogLevel.DEBUG,
-        )
+        self.logger = Logger(self.clock)
 
         self.trader_id = TestStubs.trader_id()
 

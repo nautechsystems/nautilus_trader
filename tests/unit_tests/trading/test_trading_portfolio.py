@@ -19,7 +19,6 @@ import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import uuid4
@@ -180,7 +179,7 @@ class TestPortfolio:
     def setup(self):
         # Fixture Setup
         clock = TestClock()
-        logger = Logger(clock, level_stdout=LogLevel.DEBUG)
+        logger = Logger(clock)
         trader_id = TraderId("TESTER-000")
 
         self.order_factory = OrderFactory(

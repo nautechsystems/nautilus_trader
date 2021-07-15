@@ -17,7 +17,6 @@ import asyncio
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.type import DataType
@@ -49,7 +48,7 @@ class TestLiveDataEngine:
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock, level_stdout=LogLevel.DEBUG)
+        self.logger = Logger(self.clock)
 
         self.msgbus = MessageBus(
             clock=self.clock,

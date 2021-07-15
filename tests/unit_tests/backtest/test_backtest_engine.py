@@ -18,7 +18,6 @@ import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core.type import DataType
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.base import GenericData
@@ -354,10 +353,7 @@ class TestBacktestEngineData:
 class TestBacktestEngine:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(
-            use_data_cache=True,
-            level_stdout=LogLevel.DEBUG,
-        )
+        self.engine = BacktestEngine(use_data_cache=True)
 
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
