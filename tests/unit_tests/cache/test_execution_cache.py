@@ -407,6 +407,51 @@ class TestCache:
         # Assert
         assert result == position
 
+    def test_update_order_for_submitted_order(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        position_id = PositionId("P-1")
+        self.cache.add_order(order, position_id)
+
+        order.apply(TestStubs.event_order_submitted(order))
+
+        # Act
+        self.cache.update_order(order)
+
+        # Assert
+        assert self.cache.order_exists(order.client_order_id)
+        assert order.client_order_id in self.cache.client_order_ids()
+        assert order in self.cache.orders()
+        assert order in self.cache.orders_inflight()
+        assert order in self.cache.orders_inflight(instrument_id=order.instrument_id)
+        assert order in self.cache.orders_inflight(strategy_id=self.strategy.id)
+        assert order in self.cache.orders_inflight(
+            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+        )
+        assert order not in self.cache.orders_working()
+        assert order not in self.cache.orders_working(instrument_id=order.instrument_id)
+        assert order not in self.cache.orders_working(strategy_id=self.strategy.id)
+        assert order not in self.cache.orders_working(
+            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+        )
+        assert order not in self.cache.orders_completed()
+        assert order not in self.cache.orders_completed(instrument_id=order.instrument_id)
+        assert order not in self.cache.orders_completed(strategy_id=self.strategy.id)
+        assert order not in self.cache.orders_completed(
+            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+        )
+
+        assert self.cache.orders_inflight_count() == 1
+        assert self.cache.orders_working_count() == 0
+        assert self.cache.orders_completed_count() == 0
+        assert self.cache.orders_total_count() == 1
+
     def test_update_order_for_accepted_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
@@ -437,6 +482,13 @@ class TestCache:
         assert order in self.cache.orders_working(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
+        assert order not in self.cache.orders_inflight()
+        assert order not in self.cache.orders_inflight()
+        assert order not in self.cache.orders_inflight(instrument_id=order.instrument_id)
+        assert order not in self.cache.orders_inflight(strategy_id=self.strategy.id)
+        assert order not in self.cache.orders_inflight(
+            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+        )
         assert order not in self.cache.orders_completed()
         assert order not in self.cache.orders_completed(instrument_id=order.instrument_id)
         assert order not in self.cache.orders_completed(strategy_id=self.strategy.id)
@@ -444,6 +496,7 @@ class TestCache:
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
 
+        assert self.cache.orders_inflight_count() == 0
         assert self.cache.orders_working_count() == 1
         assert self.cache.orders_completed_count() == 0
         assert self.cache.orders_total_count() == 1
@@ -483,6 +536,12 @@ class TestCache:
         assert order in self.cache.orders_completed(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
+        assert order not in self.cache.orders_inflight()
+        assert order not in self.cache.orders_inflight(instrument_id=order.instrument_id)
+        assert order not in self.cache.orders_inflight(strategy_id=self.strategy.id)
+        assert order not in self.cache.orders_inflight(
+            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+        )
         assert order not in self.cache.orders_working()
         assert order not in self.cache.orders_working(instrument_id=order.instrument_id)
         assert order not in self.cache.orders_working(strategy_id=self.strategy.id)
@@ -490,6 +549,7 @@ class TestCache:
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
         assert self.cache.venue_order_id(order.client_order_id) == order.venue_order_id
+        assert self.cache.orders_inflight_count() == 0
         assert self.cache.orders_working_count() == 0
         assert self.cache.orders_completed_count() == 1
         assert self.cache.orders_total_count() == 1

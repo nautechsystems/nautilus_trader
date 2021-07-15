@@ -207,6 +207,7 @@ class TestOrders:
         assert order.state == OrderState.INITIALIZED
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
+        assert not order.is_inflight
         assert not order.is_working
         assert not order.is_completed
         assert order.is_buy
@@ -231,6 +232,7 @@ class TestOrders:
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
         assert len(order.events) == 1
+        assert not order.is_inflight
         assert not order.is_working
         assert not order.is_completed
         assert not order.is_buy
@@ -661,6 +663,7 @@ class TestOrders:
         assert order.state == OrderState.SUBMITTED
         assert order.event_count == 2
         assert order.last_event == submitted
+        assert order.is_inflight
         assert not order.is_working
         assert not order.is_completed
         assert not order.is_pending_update
@@ -681,6 +684,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.ACCEPTED
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert (
@@ -707,6 +711,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.REJECTED
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
 
@@ -729,6 +734,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.EXPIRED
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
 
@@ -752,6 +758,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.TRIGGERED
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
 
@@ -771,6 +778,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.PENDING_CANCEL
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert not order.is_pending_update
@@ -794,6 +802,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.CANCELED
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
         assert not order.is_pending_update
@@ -816,6 +825,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.PENDING_UPDATE
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert order.is_pending_update
@@ -858,6 +868,7 @@ class TestOrders:
         assert order.venue_order_id == VenueOrderId("1")
         assert order.quantity == Quantity.from_int(120000)
         assert order.price == Price.from_str("1.00001")
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert order.event_count == 5
@@ -924,6 +935,7 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.00001")
         assert len(order.execution_ids) == 1
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
         assert order.ts_filled_ns == 0
@@ -955,6 +967,7 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.00001")
         assert len(order.execution_ids) == 1
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
         assert order.ts_filled_ns == 0
@@ -1001,6 +1014,7 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(60000)
         assert order.avg_px == Decimal("1.000014")
         assert len(order.execution_ids) == 2
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert order.ts_filled_ns == 0
@@ -1056,6 +1070,7 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.000018571428571428571428571")
         assert len(order.execution_ids) == 3
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
         assert order.ts_filled_ns == 0
@@ -1101,6 +1116,7 @@ class TestOrders:
         assert order.price == Price.from_str("1.00000")
         assert order.avg_px == Decimal("1.00001")
         assert order.slippage == Decimal("0.00001")
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
         assert order.ts_filled_ns == 0
@@ -1146,6 +1162,7 @@ class TestOrders:
         assert order.price == Price.from_str("1.00000")
         assert order.avg_px == Decimal("0.999999")
         assert order.slippage == Decimal("-0.000001")
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert order.ts_filled_ns == 1_000_000_000, order.ts_filled_ns

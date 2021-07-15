@@ -62,6 +62,10 @@ class TestExecutionCacheFacade:
         with pytest.raises(NotImplementedError):
             self.facade.client_order_ids()
 
+    def test_client_order_ids_inflight_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.client_order_ids_inflight()
+
     def test_client_order_ids_working_when_not_implemented_raises_exception(self):
         with pytest.raises(NotImplementedError):
             self.facade.client_order_ids_working()
@@ -90,7 +94,7 @@ class TestExecutionCacheFacade:
         with pytest.raises(NotImplementedError):
             self.facade.order(ClientOrderId("O-123456"))
 
-    def test_cld_ord_id_when_not_implemented_raises_exception(self):
+    def test_client_order_id_when_not_implemented_raises_exception(self):
         with pytest.raises(NotImplementedError):
             self.facade.client_order_id(VenueOrderId("1"))
 
@@ -102,9 +106,13 @@ class TestExecutionCacheFacade:
         with pytest.raises(NotImplementedError):
             self.facade.orders()
 
+    def test_orders_inflight_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.orders_inflight()
+
     def test_orders_working_when_not_implemented_raises_exception(self):
         with pytest.raises(NotImplementedError):
-            self.facade.orders_working()
+            self.facade.orders_inflight()
 
     def test_orders_completed_when_not_implemented_raises_exception(self):
         with pytest.raises(NotImplementedError):
@@ -118,6 +126,10 @@ class TestExecutionCacheFacade:
         with pytest.raises(NotImplementedError):
             self.facade.is_order_working(ClientOrderId("O-123456"))
 
+    def test_is_order_inflight_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.is_order_inflight(ClientOrderId("O-123456"))
+
     def test_is_order_completed_when_not_implemented_raises_exception(self):
         with pytest.raises(NotImplementedError):
             self.facade.is_order_completed(ClientOrderId("O-123456"))
@@ -125,6 +137,10 @@ class TestExecutionCacheFacade:
     def test_orders_total_count_when_not_implemented_raises_exception(self):
         with pytest.raises(NotImplementedError):
             self.facade.orders_total_count()
+
+    def test_orders_inflight_count_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.orders_inflight_count()
 
     def test_orders_working_count_when_not_implemented_raises_exception(self):
         with pytest.raises(NotImplementedError):
