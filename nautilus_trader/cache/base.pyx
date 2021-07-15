@@ -29,7 +29,7 @@ cdef class CacheFacade:
     Provides a read-only facade for the common `Cache`.
     """
 
-    # -- DATA QUERIES ----------------------------------------------------------
+# -- DATA QUERIES ----------------------------------------------------------------------------------
 
     cpdef list quote_ticks(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
@@ -101,7 +101,7 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- INSTRUMENT QUERIES ----------------------------------------------------
+# -- INSTRUMENT QUERIES ----------------------------------------------------------------------------
 
     cpdef Instrument instrument(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
@@ -115,7 +115,7 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- ACCOUNT QUERIES -------------------------------------------------------
+# -- ACCOUNT QUERIES -------------------------------------------------------------------------------
 
     cpdef Account account(self, AccountId account_id):
         """Abstract method (implement in subclass)."""
@@ -133,9 +133,13 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- IDENTIFIER QUERIES ----------------------------------------------------
+# -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
     cpdef set client_order_ids(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef set client_order_ids_inflight(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -163,7 +167,7 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- ORDER QUERIES ---------------------------------------------------------
+# -- ORDER QUERIES ---------------------------------------------------------------------------------
 
     cpdef Order order(self, ClientOrderId client_order_id):
         """Abstract method (implement in subclass)."""
@@ -181,6 +185,10 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef list orders_inflight(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef list orders_working(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -190,6 +198,10 @@ cdef class CacheFacade:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef bint is_order_inflight(self, ClientOrderId client_order_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -213,7 +225,7 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- POSITION QUERIES ------------------------------------------------------
+# -- POSITION QUERIES ------------------------------------------------------------------------------
 
     cpdef Position position(self, PositionId position_id):
         """Abstract method (implement in subclass)."""
@@ -251,6 +263,10 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef int orders_inflight_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef int positions_open_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -259,7 +275,7 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- STRATEGY QUERIES --------------------------------------------------------------------------
+# -- STRATEGY QUERIES ------------------------------------------------------------------------------
 
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId client_order_id):
         """Abstract method (implement in subclass)."""

@@ -218,6 +218,9 @@ cdef class Order:
     cdef bint is_aggressive_c(self) except *:
         return self.type == OrderType.MARKET
 
+    cdef bint is_inflight_c(self) except *:
+        return self._fsm.state == OrderState.SUBMITTED
+
     cdef bint is_working_c(self) except *:
         return (
             self._fsm.state == OrderState.ACCEPTED
@@ -389,6 +392,21 @@ cdef class Order:
 
         """
         return self.is_aggressive_c()
+
+    @property
+    def is_inflight(self):
+        """
+        If the order is in-flight (has been submitted to the trading venue).
+
+        An order is considered submitted when its state is `SUBMITTED`.
+
+        Returns
+        -------
+        bool
+            True if in-flight, else False.
+
+        """
+        return self.is_inflight_c()
 
     @property
     def is_working(self):

@@ -116,6 +116,7 @@ cdef class Cache(CacheFacade):
         self._index_strategy_orders = {}       # type: dict[StrategyId, set[ClientOrderId]]
         self._index_strategy_positions = {}    # type: dict[StrategyId, set[PositionId]]
         self._index_orders = set()             # type: set[ClientOrderId]
+        self._index_orders_inflight = set()    # type: set[ClientOrderId]
         self._index_orders_working = set()     # type: set[ClientOrderId]
         self._index_orders_completed = set()   # type: set[ClientOrderId]
         self._index_positions = set()          # type: set[PositionId]
@@ -289,6 +290,12 @@ cdef class Cache(CacheFacade):
                     f"{repr(client_order_id)} not found in self._index_orders"
                 )
                 error_count += 1
+            if order.is_inflight_c() and client_order_id not in self._index_orders_inflight:
+                self._log.error(
+                    f"{failure} in _cached_orders: "
+                    f"{repr(client_order_id)} not found in self._index_orders_inflight"
+                )
+                error_count += 1
             if order.is_working_c() and client_order_id not in self._index_orders_working:
                 self._log.error(
                     f"{failure} in _cached_orders: "
@@ -427,6 +434,14 @@ cdef class Cache(CacheFacade):
                 )
                 error_count += 1
 
+        for client_order_id in self._index_orders_inflight:
+            if client_order_id not in self._orders:
+                self._log.error(
+                    f"{failure} in _index_orders_inflight: "
+                    f"{repr(client_order_id)} not found in self._cached_orders"
+                )
+                error_count += 1
+
         for client_order_id in self._index_orders_working:
             if client_order_id not in self._orders:
                 self._log.error(
@@ -553,6 +568,7 @@ cdef class Cache(CacheFacade):
         self._index_strategy_orders.clear()
         self._index_strategy_positions.clear()
         self._index_orders.clear()
+        self._index_orders_inflight.clear()
         self._index_orders_working.clear()
         self._index_orders_completed.clear()
         self._index_positions.clear()
@@ -639,15 +655,19 @@ cdef class Cache(CacheFacade):
             # 7: Build _index_orders -> {ClientOrderId}
             self._index_orders.add(client_order_id)
 
-            # 8: Build _index_orders_working -> {ClientOrderId}
+            # 8: Build _index_orders_inflight -> {ClientOrderId}
+            if order.is_inflight_c():
+                self._index_orders_inflight.add(client_order_id)
+
+            # 9: Build _index_orders_working -> {ClientOrderId}
             if order.is_working_c():
                 self._index_orders_working.add(client_order_id)
 
-            # 9: Build _index_orders_completed -> {ClientOrderId}
+            # 10: Build _index_orders_completed -> {ClientOrderId}
             if order.is_completed_c():
                 self._index_orders_completed.add(client_order_id)
 
-            # 10: Build _index_strategies -> {StrategyId}
+            # 11: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(order.strategy_id)
 
     cdef void _build_indexes_from_positions(self) except *:
@@ -1270,12 +1290,16 @@ cdef class Cache(CacheFacade):
             # Assumes order_id does not change
             self._index_order_ids[order.venue_order_id] = order.client_order_id
 
-        if order.is_completed_c():
-            self._index_orders_completed.add(order.client_order_id)
+        if order.is_inflight_c():
+            self._index_orders_inflight.add(order.client_order_id)
+        elif order.is_completed_c():
+            self._index_orders_inflight.discard(order.client_order_id)
             self._index_orders_working.discard(order.client_order_id)
+            self._index_orders_completed.add(order.client_order_id)
         else:
             if order.is_working_c():
                 self._index_orders_working.add(order.client_order_id)
+            self._index_orders_inflight.discard(order.client_order_id)
             self._index_orders_completed.discard(order.client_order_id)
 
         # Update database
@@ -1948,6 +1972,36 @@ cdef class Cache(CacheFacade):
         else:
             return self._index_orders.intersection(query)
 
+    cpdef set client_order_ids_inflight(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
+        """
+        Return all inflight client order IDs with the given query filters.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+
+        Returns
+        -------
+        set[ClientOrderId]
+
+        """
+        cdef set query = self._build_ord_query_filter_set(venue, instrument_id, strategy_id)
+
+        if query is None:
+            return self._index_orders_inflight
+        else:
+            return self._index_orders_inflight.intersection(query)
+
     cpdef set client_order_ids_working(
         self,
         Venue venue=None,
@@ -1955,8 +2009,7 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all working client order IDs with the given query
-        filters.
+        Return all working client order IDs with the given query filters.
 
         Parameters
         ----------
@@ -1986,8 +2039,7 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all completed client order IDs with the given query
-        filters.
+        Return all completed client order IDs with the given query filters.
 
         Parameters
         ----------
@@ -2191,6 +2243,36 @@ cdef class Cache(CacheFacade):
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
             self._log.error("Cannot find order object in cached orders " + str(ex))
+
+    cpdef list orders_inflight(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
+        """
+        Return all working orders with the given query filters.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+
+        Returns
+        -------
+        list[Order]
+
+        """
+        cdef set client_order_ids = self.client_order_ids_inflight(venue, instrument_id, strategy_id)
+
+        try:
+            return [self._orders[client_order_id] for client_order_id in client_order_ids]
+        except KeyError as ex:
+            self._log.error("Cannot find Order object in cache " + str(ex))
 
     cpdef list orders_working(
         self,
@@ -2400,10 +2482,27 @@ cdef class Cache(CacheFacade):
 
         return client_order_id in self._index_orders
 
+    cpdef bint is_order_inflight(self, ClientOrderId client_order_id) except *:
+        """
+        Return a value indicating whether an order with the given ID is inflight.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID to check.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        return client_order_id in self._index_orders_inflight
+
     cpdef bint is_order_working(self, ClientOrderId client_order_id) except *:
         """
-        Return a value indicating whether an order with the given ID is
-        working.
+        Return a value indicating whether an order with the given ID is working.
 
         Parameters
         ----------
@@ -2421,8 +2520,7 @@ cdef class Cache(CacheFacade):
 
     cpdef bint is_order_completed(self, ClientOrderId client_order_id) except *:
         """
-        Return a value indicating whether an order with the given ID is
-        completed.
+        Return a value indicating whether an order with the given ID is completed.
 
         Parameters
         ----------
@@ -2462,6 +2560,31 @@ cdef class Cache(CacheFacade):
 
         """
         return len(self.client_order_ids(venue, instrument_id, strategy_id))
+
+    cpdef int orders_inflight_count(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ) except *:
+        """
+        Return the count of inflight orders with the given query filters.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+
+        Returns
+        -------
+        int
+
+        """
+        return len(self.client_order_ids_inflight(venue, instrument_id, strategy_id))
 
     cpdef int orders_working_count(
         self,

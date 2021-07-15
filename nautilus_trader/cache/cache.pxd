@@ -64,6 +64,7 @@ cdef class Cache(CacheFacade):
     cdef dict _index_strategy_orders
     cdef dict _index_strategy_positions
     cdef set _index_orders
+    cdef set _index_orders_inflight
     cdef set _index_orders_working
     cdef set _index_orders_completed
     cdef set _index_positions
