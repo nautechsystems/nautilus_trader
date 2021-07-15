@@ -63,8 +63,10 @@ def setup_exec_client_and_cache(mocker, exec_client, exec_engine, logger, raw):
     logger.debug(f"raw_data:\n{update}")
     venue_order_ids = _prefill_venue_order_id_to_client_order_id(update)
     venue_order_id_to_client_order_id = {}
-    for v_id in venue_order_ids:
-        order = BetfairTestStubs.make_accepted_order(venue_order_id=v_id)
+    for c_id, v_id in enumerate(venue_order_ids):
+        order = BetfairTestStubs.make_accepted_order(
+            venue_order_id=v_id, client_order_id=ClientOrderId(str(c_id))
+        )
         logger.debug(f"created order: {order}")
         venue_order_id_to_client_order_id[v_id] = order.client_order_id
         logger.debug(f"venue_order_id={v_id}, client_order_id={order.client_order_id}")
@@ -416,7 +418,7 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine, log
 
     # Load submitted orders
     kw = {
-        "customer_order_ref": "O-20210418-015047-001-001-3",
+        "customer_order_ref": "0",
         "bet_id": "230486317487",
     }
     f = asyncio.Future()
@@ -429,7 +431,7 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine, log
     )
 
     kw = {
-        "customer_order_ref": "O-20210418-022610-001-001-19",
+        "customer_order_ref": "1",
         "bet_id": "230487922962",
     }
     f = asyncio.Future()
@@ -451,7 +453,7 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine, log
             raw=orjson.dumps(raw),
         )
         execution_client.handle_order_stream_update(raw=orjson.dumps(raw))
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.3)
 
     # Assert
     events = exec_engine.events
@@ -462,9 +464,15 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine, log
     assert isinstance(events[3], AccountState)
     assert isinstance(events[4], OrderCanceled)
     # Second order example, partial fill followed by remainder filled
-    assert isinstance(events[5], OrderFilled) and events[5].execution_id.value == "1618712776000"
+    assert (
+        isinstance(events[5], OrderFilled)
+        and events[5].execution_id.value == "4721ad7594e7a4a4dffb1bacb0cb45ccdec0747a"
+    )
     assert isinstance(events[6], AccountState)
-    assert isinstance(events[7], OrderFilled) and events[7].execution_id.value == "1618712777000"
+    assert (
+        isinstance(events[7], OrderFilled)
+        and events[7].execution_id.value == "8b3e65be779968a3fdf2d72731c848c5153e88cd"
+    )
     assert isinstance(events[8], AccountState)
 
 

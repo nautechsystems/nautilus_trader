@@ -17,6 +17,7 @@ import asyncio
 from collections import defaultdict
 from datetime import datetime
 from functools import partial
+import hashlib
 from typing import Dict, List, Optional, Set
 
 import betfairlightweight
@@ -57,7 +58,9 @@ from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.enums import VenueType
-from nautilus_trader.model.identifiers import ExecutionId
+
+from nautilus_trader.model.identifiers cimport ExecutionId
+
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
@@ -446,7 +449,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
                         # Check for any portion executed
                         if order_update["sm"] != 0:
-                            execution_id = ExecutionId(str(order_update["md"]))  # Use matched date as execution id
+                            execution_id = create_execution_id(order_update)
                             if execution_id not in self.published_executions[client_order_id]:
                                 self.generate_order_filled(
                                     strategy_id=order.strategy_id,
@@ -469,7 +472,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                     # Execution complete, this order is fulled match or canceled
                     elif order_update["status"] == "EC":
                         if order_update["sm"] != 0:
-                            execution_id = ExecutionId(str(order_update["md"]))  # Use matched date as execution id
+                            execution_id = create_execution_id(order_update)
                             if execution_id not in self.published_executions[client_order_id]:
                                 # At least some part of this order has been filled
                                 self.generate_order_filled(
@@ -488,6 +491,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     liquidity_side=LiquiditySide.TAKER,  # TODO - Fix this?
                                     ts_filled_ns=millis_to_nanos(order_update['md']),
                                 )
+                                self.published_executions[client_order_id].append(execution_id)
+
                         if any([order_update[x] != 0 for x in ("sc", "sl", "sv")]):
                             cancel_qty = sum([order_update[k] for k in ("sc", "sl", "sv")])
                             assert order_update['sm'] + cancel_qty == order_update["s"], f"Size matched + canceled != total: {order_update}"
@@ -565,3 +570,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     cdef void _handle_event(self, Event event) except *:
         self._engine.process(event)
+
+
+cpdef ExecutionId create_execution_id(dict uo):
+    cdef bytes data = orjson.dumps(
+        (uo['id'], uo['p'], uo['s'], uo['side'], uo['pt'], uo['ot'], uo['pd'], uo['md'], uo['avp'], uo['sm'])
+    )
+    return ExecutionId(hashlib.sha1(data).hexdigest())

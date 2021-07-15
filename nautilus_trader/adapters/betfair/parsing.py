@@ -12,9 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from collections import defaultdict
 import datetime
+import hashlib
 import itertools
 from typing import List, Optional, Union
 
@@ -22,6 +22,7 @@ from betfairlightweight.filters import cancel_instruction
 from betfairlightweight.filters import limit_order
 from betfairlightweight.filters import place_instruction
 from betfairlightweight.filters import replace_instruction
+import orjson
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
@@ -200,6 +201,15 @@ def betfair_account_to_account_state(
         ts_updated_ns=ts_updated_ns,
         timestamp_ns=timestamp_ns,
     )
+
+
+EXECUTION_ID_KEYS = ("id", "p", "s", "side", "pt", "ot", "pd", "md", "avp", "sm")  # noqa:
+
+
+def betfair_execution_id(uo) -> ExecutionId:
+    data = orjson.dumps({k: uo[k] for k in EXECUTION_ID_KEYS if uo.get(k)})
+    hsh = hashlib.sha1(data).hexdigest()  # noqa: S303
+    return ExecutionId(hsh)
 
 
 def _handle_market_snapshot(selection, instrument, ts_event_ns, ts_recv_ns):

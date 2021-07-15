@@ -213,20 +213,30 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def make_order(
-        factory=None, instrument_id=None, side=None, price=None, quantity=None
+        factory=None, instrument_id=None, side=None, price=None, quantity=None, client_order_id=None
     ) -> LimitOrder:
         order_factory = factory or BetfairTestStubs.order_factory()
-        order = order_factory.limit(
+
+        return LimitOrder(
+            trader_id=order_factory.trader_id,
+            strategy_id=order_factory.strategy_id,
             instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
+            client_order_id=client_order_id or order_factory._id_generator.generate(),
             order_side=side or OrderSide.BUY,
             quantity=quantity or Quantity.from_str("10"),
             price=price or Price.from_str("0.5"),
+            time_in_force=TimeInForce.GTC,
+            expire_time=None,
+            init_id=BetfairTestStubs.uuid(),
+            timestamp_ns=0,
+            post_only=False,
+            reduce_only=False,
+            hidden=False,
         )
-        return order
 
     @staticmethod
-    def make_submitted_order(ts_submitted_ns=0, timestamp_ns=0, factory=None):
-        order = BetfairTestStubs.make_order(factory=factory)
+    def make_submitted_order(ts_submitted_ns=0, timestamp_ns=0, factory=None, client_order_id=None):
+        order = BetfairTestStubs.make_order(factory=factory, client_order_id=client_order_id)
         submitted = OrderSubmitted(
             trader_id=BetfairTestStubs.trader_id(),
             strategy_id=BetfairTestStubs.strategy_id(),
@@ -242,9 +252,11 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def make_accepted_order(
-        venue_order_id="1", ts_accepted_ns=0, timestamp_ns=0, factory=None
+        venue_order_id="1", ts_accepted_ns=0, timestamp_ns=0, factory=None, client_order_id=None
     ) -> LimitOrder:
-        order = BetfairTestStubs.make_submitted_order(factory=factory)
+        order = BetfairTestStubs.make_submitted_order(
+            factory=factory, client_order_id=client_order_id
+        )
         accepted = OrderAccepted(
             trader_id=BetfairTestStubs.trader_id(),
             strategy_id=BetfairTestStubs.strategy_id(),
