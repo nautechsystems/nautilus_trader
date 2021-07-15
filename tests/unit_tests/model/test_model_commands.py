@@ -73,11 +73,11 @@ class TestCommands:
         assert SubmitOrder.from_dict(SubmitOrder.to_dict(command)) == command
         assert (
             str(command)
-            == f"SubmitOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, strategy_id=S-001, command_id={uuid})"  # noqa
+            == f"SubmitOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, command_id={uuid})"  # noqa
         )
         assert (
             repr(command)
-            == f"SubmitOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, strategy_id=S-001, command_id={uuid})"  # noqa
+            == f"SubmitOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, command_id={uuid})"  # noqa
         )
 
     def test_submit_bracket_order_command_to_from_dict_and_str_repr(self):
