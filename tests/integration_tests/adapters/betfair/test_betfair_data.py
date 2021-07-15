@@ -37,11 +37,11 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import OrderBookDeltas
 from nautilus_trader.model.orderbook.book import OrderBookSnapshot
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip  # Only runs locally, comment to run
+@pytest.mark.skip(reason="Local testing only")
 async def test_betfair_data_client(betfair_data_client, data_engine):
     """
     Local test only, ensure we can connect to betfair and receive some market data
@@ -70,11 +70,11 @@ def test_individual_market_subscriptions():
 
 
 def test_market_heartbeat(betfair_data_client, data_engine):
-    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_HEARTBEAT())
+    betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_HEARTBEAT())
 
 
 def test_market_sub_image_market_def(betfair_data_client, data_engine):
-    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_SUB_IMAGE())
+    betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_SUB_IMAGE())
     result = [type(event).__name__ for event in data_engine.events]
     expected = ["InstrumentStatusUpdate"] * 7 + ["OrderBookSnapshot"] * 7
     assert result == expected
@@ -105,7 +105,9 @@ def test_market_sub_image_market_def(betfair_data_client, data_engine):
 
 
 def test_market_sub_image_no_market_def(betfair_data_client, data_engine):
-    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_SUB_IMAGE_no_market_def())
+    betfair_data_client._on_market_update(
+        BetfairDataProvider.streaming_mcm_SUB_IMAGE_no_market_def()
+    )
     result = Counter([type(event).__name__ for event in data_engine.events])
     expected = Counter(
         {
@@ -118,14 +120,14 @@ def test_market_sub_image_no_market_def(betfair_data_client, data_engine):
 
 
 def test_market_resub_delta(betfair_data_client, data_engine):
-    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_RESUB_DELTA())
+    betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_RESUB_DELTA())
     result = [type(event).__name__ for event in data_engine.events]
     expected = ["InstrumentStatusUpdate"] * 12 + ["OrderBookDeltas"] * 269
     assert result == expected
 
 
 def test_market_update(betfair_data_client, data_engine):
-    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_UPDATE())
+    betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_UPDATE())
     result = [type(event).__name__ for event in data_engine.events]
     expected = ["OrderBookDeltas"] * 1
     assert result == expected
@@ -137,25 +139,23 @@ def test_market_update(betfair_data_client, data_engine):
     assert update_op.order.price == 0.21277
 
 
-# TODO - waiting for market status event handling in engine
-@pytest.mark.skip
 def test_market_update_md(betfair_data_client, data_engine):
-    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_UPDATE_md())
+    betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_UPDATE_md())
     result = [type(event).__name__ for event in data_engine.events]
-    expected = ["InstrumentStatusUpdate"] * 7
+    expected = ["InstrumentStatusUpdate"] * 2
     assert result == expected
 
 
 @pytest.mark.skip  # We don't do anything with traded volume at this stage
 def test_market_update_tv(betfair_data_client, data_engine):
-    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_UPDATE_tv())
+    betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_UPDATE_tv())
     result = [type(event).__name__ for event in data_engine.events]
     expected = [] * 7
     assert result == expected
 
 
 def test_market_update_live_image(betfair_data_client, data_engine):
-    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_IMAGE())
+    betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_live_IMAGE())
     result = [type(event).__name__ for event in data_engine.events]
     expected = (
         ["OrderBookSnapshot"] + ["TradeTick"] * 13 + ["OrderBookSnapshot"] + ["TradeTick"] * 17
@@ -164,7 +164,7 @@ def test_market_update_live_image(betfair_data_client, data_engine):
 
 
 def test_market_update_live_update(betfair_data_client, data_engine):
-    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_UPDATE())
+    betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_live_UPDATE())
     result = [type(event).__name__ for event in data_engine.events]
     expected = ["TradeTick", "OrderBookDeltas"]
     assert result == expected
@@ -183,7 +183,7 @@ async def test_request_search_instruments(betfair_data_client, data_engine, uuid
 
 
 def test_orderbook_repr(betfair_data_client, data_engine):
-    betfair_data_client._on_market_update(BetfairTestStubs.streaming_mcm_live_IMAGE())
+    betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_live_IMAGE())
     ob_snap = data_engine.events[14]
     ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 5, 5)
     ob.apply_snapshot(ob_snap)
@@ -194,7 +194,7 @@ def test_orderbook_repr(betfair_data_client, data_engine):
 
 def test_orderbook_updates(betfair_data_client):
     order_books = {}
-    for raw in BetfairTestStubs.streaming_market_updates():
+    for raw in BetfairDataProvider.streaming_market_updates():
         for update in on_market_update(
             update=orjson.loads(raw),
             instrument_provider=betfair_data_client.instrument_provider(),
@@ -231,7 +231,7 @@ def test_orderbook_updates(betfair_data_client):
 
 
 def test_instrument_opening_events(betfair_data_client, data_engine):
-    updates = BetfairTestStubs.raw_market_updates()
+    updates = BetfairDataProvider.raw_market_updates()
     messages = on_market_update(
         instrument_provider=betfair_data_client.instrument_provider(), update=updates[0]
     )
@@ -249,7 +249,7 @@ def test_instrument_opening_events(betfair_data_client, data_engine):
 def test_instrument_in_play_events(betfair_data_client, data_engine):
     events = [
         msg
-        for update in BetfairTestStubs.raw_market_updates()
+        for update in BetfairDataProvider.raw_market_updates()
         for msg in on_market_update(
             instrument_provider=betfair_data_client.instrument_provider(), update=update
         )
@@ -277,7 +277,7 @@ def test_instrument_in_play_events(betfair_data_client, data_engine):
 
 
 def test_instrument_closing_events(data_engine, betfair_data_client):
-    updates = BetfairTestStubs.raw_market_updates()
+    updates = BetfairDataProvider.raw_market_updates()
     messages = on_market_update(
         instrument_provider=betfair_data_client.instrument_provider(),
         update=updates[-1],

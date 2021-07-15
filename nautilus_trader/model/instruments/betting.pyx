@@ -109,8 +109,8 @@ cdef class BettingInstrument(Instrument):
             min_notional=Money(5, Currency.from_str_c(currency)),
             max_price=None,      # Can be None
             min_price=None,      # Can be None
-            margin_init=Decimal(0),
-            margin_maint=Decimal(0),
+            margin_init=Decimal(1),
+            margin_maint=Decimal(1),
             maker_fee=Decimal(0),
             taker_fee=Decimal(0),
             ts_event_ns=ts_event_ns,
@@ -198,3 +198,10 @@ cdef class BettingInstrument(Instrument):
             return str(s).replace(' ', '').replace(':', '')
 
         return Symbol(value=",".join([_clean(getattr(self, k)) for k in keys]))
+
+    cpdef Money notional_value(self, Quantity quantity, price: Decimal, bint inverse_as_quote=False):
+        Condition.not_none(quantity, "quantity")
+        Condition.type(price, (Decimal, Price), "price")
+        bet_price: Decimal = Decimal("1.0") / price
+        notional_value: Decimal = quantity * self.multiplier * bet_price
+        return Money(notional_value, self.quote_currency)

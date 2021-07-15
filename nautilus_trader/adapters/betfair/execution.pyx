@@ -17,6 +17,7 @@ import asyncio
 from collections import defaultdict
 from datetime import datetime
 from functools import partial
+import hashlib
 from typing import Dict, List, Optional, Set
 
 import betfairlightweight
@@ -57,7 +58,9 @@ from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.enums import VenueType
-from nautilus_trader.model.identifiers import ExecutionId
+
+from nautilus_trader.model.identifiers cimport ExecutionId
+
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
@@ -389,6 +392,16 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
 # -- DEBUGGING -------------------------------------------------------------------------------------
 
+    def create_task(self, coro):
+        self._loop.create_task(self._check_task(coro))
+
+    async def _check_task(self, coro):
+        try:
+            awaitable = await coro
+            return awaitable
+        except Exception as e:
+            self._log.exception(f"Unhandled exception: {e}")
+
     cpdef object client(self):
         return self._client
 
@@ -408,92 +421,92 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     async def _handle_order_stream_update(self, update):
         for market in update.get("oc", []):
             market_id = market["id"]
+            # self._log.debug(f"Received order stream update len={len(market.get('orc', []))}")
             for selection in market.get("orc", []):
-                instrument = self._instrument_provider.get_betting_instrument(
-                    market_id=market_id,
-                    selection_id=str(selection["id"]),
-                    handicap=str(selection.get("hc", "")),
-                )
-                for order in selection.get("uo", []):
-                    self._log.debug(f"order_update: {order}")
-                    client_order_id = await self.wait_for_order(order['id'], timeout_seconds=10.0)
+                for order_update in selection.get("uo", []):
+                    # self._log.debug(f"order_update: {order_update}")
+                    client_order_id = await self.wait_for_order(order_update['id'], timeout_seconds=10.0)
                     if client_order_id is None:
+                        self._log.warning(f"Can't find client_order_id for {order_update}")
                         continue
-                    venue_order_id = VenueOrderId(order["id"])
-
+                    venue_order_id = VenueOrderId(order_update["id"])
+                    order = self._engine.cache.order(client_order_id)
+                    instrument = self._engine.cache.instrument(order.instrument_id)
                     # "E" = Executable (live / working)
-                    if order["status"] == "E":
+                    if order_update["status"] == "E":
                         # Check if this is the first time seeing this order (backtest or replay)
                         if venue_order_id.value in self.venue_order_id_to_client_order_id:
                             # We've already sent an accept for this order in self._post_submit_order
                             self._log.debug(f"Skipping order_accept as order exists: {venue_order_id}")
                         else:
                             self.generate_order_accepted(
-                                strategy_id=None,  # Fetched from cache
+                                strategy_id=order.strategy_id,
                                 instrument_id=instrument.id,
                                 client_order_id=client_order_id,
                                 venue_order_id=venue_order_id,
-                                ts_accepted_ns=millis_to_nanos(order["pd"]),
+                                ts_accepted_ns=millis_to_nanos(order_update["pd"]),
                             )
 
                         # Check for any portion executed
-                        if order["sm"] != 0:
-                            execution_id = ExecutionId(str(order["md"]))  # Use matched date as execution id
+                        if order_update["sm"] != 0:
+                            execution_id = create_execution_id(order_update)
                             if execution_id not in self.published_executions[client_order_id]:
                                 self.generate_order_filled(
-                                    strategy_id=None,  # Fetched from cache
+                                    strategy_id=order.strategy_id,
                                     instrument_id=instrument.id,
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
                                     execution_id=execution_id,
-                                    position_id=None,  # Assigned in engine
-                                    order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
-                                    last_qty=Quantity(order["sm"], instrument.size_precision),
-                                    last_px=price_to_probability(order["p"]),
+                                    position_id=order.position_id,
+                                    order_side=B2N_ORDER_STREAM_SIDE[order_update["side"]],
+                                    last_qty=Quantity(order_update["sm"], instrument.size_precision),
+                                    last_px=price_to_probability(order_update["p"]),
                                     # avg_px=Decimal(order['avp']),
                                     quote_currency=instrument.quote_currency,
                                     commission=Money(0, self.get_account_currency()),
                                     liquidity_side=LiquiditySide.NONE,
-                                    ts_filled_ns=millis_to_nanos(order["md"]),
+                                    ts_filled_ns=millis_to_nanos(order_update["md"]),
                                 )
                                 self.published_executions[client_order_id].append(execution_id)
 
                     # Execution complete, this order is fulled match or canceled
-                    elif order["status"] == "EC":
-                        if order["sm"] != 0:
-                            execution_id = ExecutionId(str(order["md"]))  # Use matched date as execution id
+                    elif order_update["status"] == "EC":
+                        if order_update["sm"] != 0:
+                            execution_id = create_execution_id(order_update)
                             if execution_id not in self.published_executions[client_order_id]:
                                 # At least some part of this order has been filled
                                 self.generate_order_filled(
-                                    strategy_id=None,  # Fetched from cache
+                                    strategy_id=order.strategy_id,
                                     instrument_id=instrument.id,
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
                                     execution_id=execution_id,
-                                    position_id=None,  # Assigned in engine
-                                    order_side=B2N_ORDER_STREAM_SIDE[order["side"]],
-                                    last_qty=Quantity(order["sm"], instrument.size_precision),
-                                    last_px=price_to_probability(order['p']),
+                                    position_id=order.position_id,
+                                    order_side=B2N_ORDER_STREAM_SIDE[order_update["side"]],
+                                    last_qty=Quantity(order_update["sm"], instrument.size_precision),
+                                    last_px=price_to_probability(order_update['p']),
                                     quote_currency=instrument.quote_currency,
                                     # avg_px=order['avp'],
                                     commission=Money(0, self.get_account_currency()),
                                     liquidity_side=LiquiditySide.TAKER,  # TODO - Fix this?
-                                    ts_filled_ns=millis_to_nanos(order['md']),
+                                    ts_filled_ns=millis_to_nanos(order_update['md']),
                                 )
-                        if any([order[x] != 0 for x in ("sc", "sl", "sv")]):
-                            cancel_qty = sum([order[k] for k in ("sc", "sl", "sv")])
-                            assert order['sm'] + cancel_qty == order["s"], f"Size matched + canceled != total: {order}"
+                                self.published_executions[client_order_id].append(execution_id)
+
+                        if any([order_update[x] != 0 for x in ("sc", "sl", "sv")]):
+                            cancel_qty = sum([order_update[k] for k in ("sc", "sl", "sv")])
+                            assert order_update['sm'] + cancel_qty == order_update["s"], f"Size matched + canceled != total: {order_update}"
                             # If this is the result of a UpdateOrder, we don't want to emit a cancel
-                            key = (ClientOrderId(order.get("rfo")), VenueOrderId(order["id"]))
+                            key = (ClientOrderId(order_update.get("rfo")), VenueOrderId(order_update["id"]))
                             self._log.debug(f"cancel key: {key}, pending_update_order_client_ids: {self.pending_update_order_client_ids}")
                             if key not in self.pending_update_order_client_ids:
                                 # The remainder of this order has been canceled
                                 self.generate_order_canceled(
-                                    strategy_id=None,  # Fetched from cache
+                                    strategy_id=order.strategy_id,
                                     instrument_id=instrument.id,
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
-                                    ts_canceled_ns=millis_to_nanos(order.get("cd") or order.get("ld") or order.get('md')),
+                                    ts_canceled_ns=millis_to_nanos(order_update.get("cd") or order_update.get("ld") or order_update.get('md')),
                                 )
                         # Market order will not be in self.published_executions
                         if client_order_id in self.published_executions:
@@ -529,8 +542,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         now = start
         while (now - start) < secs_to_nanos(timeout_seconds):
             if venue_order_id in self.venue_order_id_to_client_order_id:
-                self._log.debug(f"Found order in {nanos_to_secs(now - start)} sec ")
-                return self.venue_order_id_to_client_order_id[venue_order_id]
+                client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
+                self._log.debug(f"Found order in {nanos_to_secs(now - start)} sec: {client_order_id}")
+                return client_order_id
             now = self._clock.timestamp_ns()
             await asyncio.sleep(0)
         self._log.warning(f"Failed to find venue_order_id: {venue_order_id} "
@@ -556,3 +570,10 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     cdef void _handle_event(self, Event event) except *:
         self._engine.process(event)
+
+
+cpdef ExecutionId create_execution_id(dict uo):
+    cdef bytes data = orjson.dumps(
+        (uo['id'], uo['p'], uo['s'], uo['side'], uo['pt'], uo['ot'], uo['pd'], uo.get('md'), uo.get('avp'), uo.get('sm'))
+    )
+    return ExecutionId(hashlib.sha1(data).hexdigest())
