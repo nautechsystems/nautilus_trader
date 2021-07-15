@@ -126,7 +126,6 @@ cdef class SubmitOrder(TradingCommand):
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.order.client_order_id.value}, "
                 f"{position_id_str}"
-                f"strategy_id={self.strategy_id.value}, "
                 f"command_id={self.id})")
 
     @staticmethod
