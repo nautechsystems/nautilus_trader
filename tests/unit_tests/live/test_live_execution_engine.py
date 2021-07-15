@@ -395,7 +395,7 @@ class TestLiveExecutionEngine:
             )
 
             # Act
-            await self.exec_engine.reconcile_state(timeout_secs=5)
+            await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -452,7 +452,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.1)  # Allow processing time
 
             # Act
-            result = await self.exec_engine.reconcile_state(timeout_secs=5)
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -509,7 +509,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.1)  # Allow processing time
 
             # Act
-            result = await self.exec_engine.reconcile_state(timeout_secs=5)
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -563,10 +563,10 @@ class TestLiveExecutionEngine:
 
             self.client.add_order_status_report(report)
 
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)  # Allow processing time
 
             # Act
-            result = await self.exec_engine.reconcile_state(timeout_secs=5)
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -645,10 +645,10 @@ class TestLiveExecutionEngine:
             self.client.add_order_status_report(report)
             self.client.add_trades_list(VenueOrderId("1"), [trade1, trade2])
 
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)  # Allow processing time
 
             # Act
-            result = await self.exec_engine.reconcile_state(timeout_secs=5)
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
@@ -727,10 +727,10 @@ class TestLiveExecutionEngine:
             self.client.add_order_status_report(report)
             self.client.add_trades_list(VenueOrderId("1"), [trade1, trade2])
 
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.1)  # Allow processing time
 
             # Act
-            result = await self.exec_engine.reconcile_state(timeout_secs=5)
+            result = await self.exec_engine.reconcile_state(timeout_secs=10)
             self.exec_engine.stop()
 
             # Assert
