@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import os
 
 import pytest
 
@@ -25,6 +26,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.identifiers import InstrumentId
@@ -34,6 +36,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
@@ -47,35 +50,35 @@ def betfairlightweight_mocks(mocker):
     # Mock Navigation / market catalogue endpoints
     mocker.patch(
         "betfairlightweight.endpoints.navigation.Navigation.list_navigation",
-        return_value=BetfairTestStubs.navigation(),
+        return_value=BetfairDataProvider.navigation(),
     )
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.list_market_catalogue",
-        return_value=BetfairTestStubs.market_catalogue_short(),
+        return_value=BetfairDataProvider.market_catalogue_short(),
     )
 
     # Mock Account endpoints
     mocker.patch(
         "betfairlightweight.endpoints.account.Account.get_account_details",
-        return_value=BetfairTestStubs.account_detail(),
+        return_value=BetfairDataProvider.account_detail(),
     )
     mocker.patch(
         "betfairlightweight.endpoints.account.Account.get_account_funds",
-        return_value=BetfairTestStubs.account_funds_no_exposure(),
+        return_value=BetfairDataProvider.account_funds_no_exposure(),
     )
 
     # Mock Betting endpoints
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.place_orders",
-        return_value=BetfairTestStubs.place_orders_success(),
+        return_value=BetfairDataProvider.place_orders_success(),
     )
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.replace_orders",
-        return_value=BetfairTestStubs.replace_orders_success(),
+        return_value=BetfairDataProvider.replace_orders_success(),
     )
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.cancel_orders",
-        return_value=BetfairTestStubs.cancel_orders_success(),
+        return_value=BetfairDataProvider.cancel_orders_success(),
     )
 
     # Streaming endpoint
@@ -102,7 +105,13 @@ def clock() -> LiveClock:
 
 @pytest.fixture()
 def live_logger(event_loop, clock):
-    return LiveLogger(loop=event_loop, clock=clock, level_stdout=LogLevel.INFO)
+    level_stdout = LogLevel.DEBUG if os.environ.get("NAUTILUS_DEBUG", False) else LogLevel.ERROR
+    return LiveLogger(loop=event_loop, clock=clock, level_stdout=level_stdout)
+
+
+@pytest.fixture()
+def logger(live_logger):
+    return LoggerAdapter(component="conftest", logger=live_logger)
 
 
 @pytest.fixture()
@@ -229,6 +238,8 @@ async def execution_client(
     client.instrument_provider().load_all()
     exec_engine.register_client(client)
     exec_engine.cache.add_account(account=Account(betfair_account_state))
+    for instrument in client.instrument_provider().list_instruments():
+        exec_engine.cache.add_instrument(instrument)
     return client
 
 
@@ -244,3 +255,8 @@ def betfair_data_client(betfair_client, data_engine, clock, live_logger):
     )
     data_engine.register_client(client)
     return client
+
+
+@pytest.fixture()
+def order_factory():
+    return BetfairTestStubs.order_factory()

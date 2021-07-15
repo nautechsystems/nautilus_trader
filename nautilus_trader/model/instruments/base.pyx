@@ -485,7 +485,7 @@ cdef class Instrument(Data):
 
         notional: Decimal = self.notional_value(
             quantity=quantity,
-            close_price=price.as_decimal(),
+            price=price.as_decimal(),
             inverse_as_quote=inverse_as_quote,
         ).as_decimal()
 
@@ -537,7 +537,7 @@ cdef class Instrument(Data):
 
         notional: Decimal = self.notional_value(
             quantity=quantity,
-            close_price=last.as_decimal(),
+            price=last.as_decimal(),
             inverse_as_quote=inverse_as_quote
         ).as_decimal()
 
@@ -592,7 +592,7 @@ cdef class Instrument(Data):
 
         notional: Decimal = self.notional_value(
             quantity=last_qty,
-            close_price=last_px,
+            price=last_px,
             inverse_as_quote=inverse_as_quote,
         ).as_decimal()
 

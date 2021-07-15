@@ -22,6 +22,7 @@ from typing import List
 import pandas as pd
 from pandas import DataFrame
 
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.loaders import CSVBarDataLoader
 from nautilus_trader.backtest.loaders import CSVTickDataLoader
 from nautilus_trader.backtest.loaders import ParquetTickDataLoader
@@ -40,6 +41,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.objects import Money
@@ -485,6 +487,31 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.03"),
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
+
+    @staticmethod
+    def betting_instrument():
+        return BettingInstrument(
+            venue_name=BETFAIR_VENUE.value,
+            betting_type="ODDS",
+            competition_id="12282733",
+            competition_name="NFL",
+            event_country_code="GB",
+            event_id="29678534",
+            event_name="NFL",
+            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00").to_pydatetime(),
+            event_type_id="6423",
+            event_type_name="American Football",
+            market_id="1.179082386",
+            market_name="AFC Conference Winner",
+            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00").to_pydatetime(),
+            market_type="SPECIAL",
+            selection_handicap="",
+            selection_id="50214",
+            selection_name="Kansas City Chiefs",
+            currency="GBP",
             ts_event_ns=0,
             ts_recv_ns=0,
         )
