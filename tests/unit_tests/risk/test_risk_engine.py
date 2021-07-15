@@ -17,7 +17,6 @@ from datetime import timedelta
 from decimal import Decimal
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
@@ -58,7 +57,7 @@ class TestRiskEngine:
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock, level_stdout=LogLevel.DEBUG)
+        self.logger = Logger(self.clock)
 
         self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()

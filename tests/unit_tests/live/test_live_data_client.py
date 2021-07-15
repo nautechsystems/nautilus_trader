@@ -19,7 +19,6 @@ import pytest
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.data_client import LiveDataClient
@@ -94,7 +93,7 @@ class TestLiveDataClientTests:
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock, level_stdout=LogLevel.DEBUG)
+        self.logger = Logger(self.clock)
 
         self.msgbus = MessageBus(
             clock=self.clock,
@@ -142,7 +141,7 @@ class TestLiveMarketDataClientTests:
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock, level_stdout=LogLevel.DEBUG)
+        self.logger = Logger(self.clock)
 
         self.msgbus = MessageBus(
             clock=self.clock,
