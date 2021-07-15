@@ -22,6 +22,7 @@ from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
@@ -279,8 +280,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.state == OrderState.ACCEPTED
-        assert self.strategy.object_storer.count == 2
-        assert isinstance(self.strategy.object_storer.get_store()[1], OrderAccepted)
+        assert self.strategy.object_storer.count == 3
+        assert isinstance(self.strategy.object_storer.get_store()[2], OrderAccepted)
 
     def test_submit_sell_limit_order_with_no_market_accepts_order(self):
         # Arrange
@@ -296,8 +297,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.state == OrderState.ACCEPTED
-        assert self.strategy.object_storer.count == 2
-        assert isinstance(self.strategy.object_storer.get_store()[1], OrderAccepted)
+        assert self.strategy.object_storer.count == 3
+        assert isinstance(self.strategy.object_storer.get_store()[2], OrderAccepted)
 
     def test_submit_buy_market_order_with_no_market_rejects_order(self):
         # Arrange
@@ -312,8 +313,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.state == OrderState.REJECTED
-        assert self.strategy.object_storer.count == 2
-        assert isinstance(self.strategy.object_storer.get_store()[1], OrderRejected)
+        assert self.strategy.object_storer.count == 3
+        assert isinstance(self.strategy.object_storer.get_store()[2], OrderRejected)
 
     def test_submit_sell_market_order_with_no_market_rejects_order(self):
         # Arrange
@@ -328,8 +329,8 @@ class TestSimulatedExchange:
 
         # Assert
         assert order.state == OrderState.REJECTED
-        assert self.strategy.object_storer.count == 2
-        assert isinstance(self.strategy.object_storer.get_store()[1], OrderRejected)
+        assert self.strategy.object_storer.count == 3
+        assert isinstance(self.strategy.object_storer.get_store()[2], OrderRejected)
 
     def test_submit_order_with_invalid_price_gets_rejected(self):
         # Arrange: Prepare market
@@ -1158,9 +1159,9 @@ class TestSimulatedExchange:
 
         self.strategy.submit_order(top_up_order, position_id)
         self.strategy.submit_order(reduce_order, position_id)
-        fill_event1 = self.strategy.object_storer.get_store()[1]
-        fill_event2 = self.strategy.object_storer.get_store()[4]
-        fill_event3 = self.strategy.object_storer.get_store()[7]
+        fill_event1 = self.strategy.object_storer.get_store()[2]
+        fill_event2 = self.strategy.object_storer.get_store()[6]
+        fill_event3 = self.strategy.object_storer.get_store()[10]
 
         # Assert
         assert order.state == OrderState.FILLED
@@ -1891,7 +1892,10 @@ class TestBitmexExchange:
 
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+        )
 
         self.msgbus = MessageBus(
             clock=self.clock,
@@ -2031,10 +2035,10 @@ class TestBitmexExchange:
         self.portfolio.update_tick(quote2)
 
         # Assert
-        assert self.strategy.object_storer.get_store()[1].liquidity_side == LiquiditySide.TAKER
-        assert self.strategy.object_storer.get_store()[5].liquidity_side == LiquiditySide.MAKER
-        assert self.strategy.object_storer.get_store()[1].commission == Money(0.00652543, BTC)
-        assert self.strategy.object_storer.get_store()[5].commission == Money(-0.00217552, BTC)
+        assert self.strategy.object_storer.get_store()[2].liquidity_side == LiquiditySide.TAKER
+        assert self.strategy.object_storer.get_store()[7].liquidity_side == LiquiditySide.MAKER
+        assert self.strategy.object_storer.get_store()[2].commission == Money(0.00652543, BTC)
+        assert self.strategy.object_storer.get_store()[7].commission == Money(-0.00217552, BTC)
 
 
 class TestOrderBookExchange:

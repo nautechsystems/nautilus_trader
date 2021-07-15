@@ -352,9 +352,6 @@ cdef class RiskEngine(Component):
                 reason=f"Duplicate {repr(command.order.client_order_id)}")
             return  # Denied
 
-        # Cache order
-        self.cache.add_order(command.order, command.position_id)
-
         # Check position exists
         if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
             self._deny_command(
@@ -406,11 +403,6 @@ cdef class RiskEngine(Component):
                 command=command,
                 reason=f"Duplicate {repr(take_profit.client_order_id)}")
             return  # Denied
-
-        # Cache all orders
-        self.cache.add_order(entry, PositionId.null_c())
-        self.cache.add_order(stop_loss, PositionId.null_c())
-        self.cache.add_order(take_profit, PositionId.null_c())
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
@@ -674,6 +666,12 @@ cdef class RiskEngine(Component):
 
         if not self.cache.order_exists(order.client_order_id):
             self.cache.add_order(order, PositionId.null_c())
+
+            # Publish initialized event
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.value}.{order.client_order_id.value}",
+                msg=order.init_event_c(),
+            )
 
         # Generate event
         cdef OrderDenied denied = OrderDenied(

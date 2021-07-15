@@ -17,6 +17,7 @@ import asyncio
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -61,7 +62,10 @@ class TestLiveExecutionEngine:
         # Fixture Setup
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+        )
 
         self.trader_id = TestStubs.trader_id()
 
@@ -140,6 +144,7 @@ class TestLiveExecutionEngine:
 
         # Wired up components
         self.exec_engine.register_client(self.client)
+        self.exec_engine.process(TestStubs.event_account_state())
 
     def teardown(self):
         self.exec_engine.dispose()
@@ -292,7 +297,7 @@ class TestLiveExecutionEngine:
             self.exec_engine.kill()
 
             # Assert
-            assert self.exec_engine.qsize() == 0
+            assert self.exec_engine.qsize() == 1  # <-- AccountState event
 
         self.loop.run_until_complete(run_test())
 
@@ -370,7 +375,7 @@ class TestLiveExecutionEngine:
 
             # Assert
             assert self.exec_engine.qsize() == 0
-            assert self.exec_engine.event_count == 1
+            assert self.exec_engine.event_count == 2
 
             # Tear Down
             self.exec_engine.stop()
@@ -394,7 +399,7 @@ class TestLiveExecutionEngine:
             )
 
             # Act
-            await self.exec_engine.reconcile_state(timeout_secs=10)
+            await self.exec_engine.reconcile_state(timeout_secs=5)
             self.exec_engine.stop()
 
             # Assert
@@ -451,7 +456,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.1)  # Allow processing time
 
             # Act
-            result = await self.exec_engine.reconcile_state(timeout_secs=10)
+            result = await self.exec_engine.reconcile_state(timeout_secs=5)
             self.exec_engine.stop()
 
             # Assert
@@ -508,7 +513,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.1)  # Allow processing time
 
             # Act
-            result = await self.exec_engine.reconcile_state(timeout_secs=10)
+            result = await self.exec_engine.reconcile_state(timeout_secs=5)
             self.exec_engine.stop()
 
             # Assert
@@ -565,7 +570,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.01)
 
             # Act
-            result = await self.exec_engine.reconcile_state(timeout_secs=10)
+            result = await self.exec_engine.reconcile_state(timeout_secs=5)
             self.exec_engine.stop()
 
             # Assert
@@ -647,7 +652,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.01)
 
             # Act
-            result = await self.exec_engine.reconcile_state(timeout_secs=10)
+            result = await self.exec_engine.reconcile_state(timeout_secs=5)
             self.exec_engine.stop()
 
             # Assert
@@ -729,7 +734,7 @@ class TestLiveExecutionEngine:
             await asyncio.sleep(0.01)
 
             # Act
-            result = await self.exec_engine.reconcile_state(timeout_secs=10)
+            result = await self.exec_engine.reconcile_state(timeout_secs=5)
             self.exec_engine.stop()
 
             # Assert
