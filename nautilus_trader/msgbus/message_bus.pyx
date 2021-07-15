@@ -251,7 +251,7 @@ cdef class MessageBus:
         subscriptions = sorted(subscriptions, reverse=True)
         self._patterns = np.ascontiguousarray(subscriptions)
         self._patterns_len = len(subscriptions)
-        self._log.info(f"Added {sub}.")
+        self._log.debug(f"Added {sub}.")
 
     cdef void _subscribe_channel(self, Subscription sub) except *:
         cdef list subscriptions = list(self._channels.get(sub.topic, []))
