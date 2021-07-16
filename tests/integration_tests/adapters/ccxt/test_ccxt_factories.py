@@ -38,10 +38,8 @@ class TestCCXTDataClientFactory:
         self.uuid_factory = UUIDFactory()
         self.trader_id = TestStubs.trader_id()
 
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
+        self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
-        asyncio.set_event_loop(self.loop)
 
         self.logger = LiveLogger(
             loop=self.loop,
@@ -117,10 +115,8 @@ class TestCCXTExecClientFactory:
         self.uuid_factory = UUIDFactory()
         self.trader_id = TestStubs.trader_id()
 
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
+        self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
-        asyncio.set_event_loop(self.loop)
 
         self.logger = LiveLogger(
             loop=self.loop,

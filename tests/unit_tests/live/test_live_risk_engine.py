@@ -15,6 +15,8 @@
 
 import asyncio
 
+import pytest
+
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.factories import OrderFactory
@@ -83,10 +85,8 @@ class TestLiveRiskEngine:
             logger=self.logger,
         )
 
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
+        self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
-        asyncio.set_event_loop(self.loop)
 
         self.data_engine = LiveDataEngine(
             loop=self.loop,
@@ -240,124 +240,114 @@ class TestLiveRiskEngine:
         assert self.risk_engine.qsize() == 1
         assert self.risk_engine.event_count == 0
 
-    def test_start(self):
-        async def run_test():
-            # Arrange
-            # Act
-            self.risk_engine.start()
-            await asyncio.sleep(0.1)
+    @pytest.mark.asyncio
+    async def test_start(self):
+        # Arrange
+        # Act
+        self.risk_engine.start()
+        await asyncio.sleep(0.1)
 
-            # Assert
-            assert self.risk_engine.state == ComponentState.RUNNING
+        # Assert
+        assert self.risk_engine.state == ComponentState.RUNNING
 
-            # Tear Down
-            self.risk_engine.stop()
+        # Tear Down
+        self.risk_engine.stop()
 
-        self.loop.run_until_complete(run_test())
+    @pytest.mark.asyncio
+    async def test_kill_when_running_and_no_messages_on_queues(self):
+        # Arrange
+        # Act
+        self.risk_engine.start()
+        await asyncio.sleep(0)
+        self.risk_engine.kill()
 
-    def test_kill_when_running_and_no_messages_on_queues(self):
-        async def run_test():
-            # Arrange
-            # Act
-            self.risk_engine.start()
-            await asyncio.sleep(0)
-            self.risk_engine.kill()
+        # Assert
+        assert self.risk_engine.state == ComponentState.STOPPED
 
-            # Assert
-            assert self.risk_engine.state == ComponentState.STOPPED
+    @pytest.mark.asyncio
+    async def test_kill_when_not_running_with_messages_on_queue(self):
+        # Arrange
+        # Act
+        self.risk_engine.kill()
 
-        self.loop.run_until_complete(run_test())
+        # Assert
+        assert self.risk_engine.qsize() == 0
 
-    def test_kill_when_not_running_with_messages_on_queue(self):
-        async def run_test():
-            # Arrange
-            # Act
-            self.risk_engine.kill()
+    @pytest.mark.asyncio
+    async def test_execute_command_places_command_on_queue(self):
+        # Arrange
+        self.risk_engine.start()
 
-            # Assert
-            assert self.risk_engine.qsize() == 0
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            portfolio=self.portfolio,
+            data_engine=self.data_engine,
+            risk_engine=self.risk_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
-        self.loop.run_until_complete(run_test())
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
 
-    def test_execute_command_places_command_on_queue(self):
-        async def run_test():
-            # Arrange
-            self.risk_engine.start()
+        submit_order = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            PositionId.null(),
+            order,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
 
-            strategy = TradingStrategy(order_id_tag="001")
-            strategy.register(
-                trader_id=self.trader_id,
-                msgbus=self.msgbus,
-                portfolio=self.portfolio,
-                data_engine=self.data_engine,
-                risk_engine=self.risk_engine,
-                clock=self.clock,
-                logger=self.logger,
-            )
+        # Act
+        self.risk_engine.execute(submit_order)
+        await asyncio.sleep(0.1)
 
-            order = strategy.order_factory.market(
-                AUDUSD_SIM.id,
-                OrderSide.BUY,
-                Quantity.from_int(100000),
-            )
+        # Assert
+        assert self.risk_engine.qsize() == 0
+        assert self.risk_engine.command_count == 1
 
-            submit_order = SubmitOrder(
-                self.trader_id,
-                strategy.id,
-                PositionId.null(),
-                order,
-                self.uuid_factory.generate(),
-                self.clock.timestamp_ns(),
-            )
+        # Tear Down
+        self.risk_engine.stop()
+        await self.risk_engine.get_run_queue_task()
 
-            # Act
-            self.risk_engine.execute(submit_order)
-            await asyncio.sleep(0.1)
+    @pytest.mark.asyncio
+    async def test_handle_position_opening_with_position_id_none(self):
+        # Arrange
+        self.risk_engine.start()
 
-            # Assert
-            assert self.risk_engine.qsize() == 0
-            assert self.risk_engine.command_count == 1
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            portfolio=self.portfolio,
+            data_engine=self.data_engine,
+            risk_engine=self.risk_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
-            # Tear Down
-            self.risk_engine.stop()
-            await self.risk_engine.get_run_queue_task()
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
 
-        self.loop.run_until_complete(run_test())
+        event = TestStubs.event_order_submitted(order)
 
-    def test_handle_position_opening_with_position_id_none(self):
-        async def run_test():
-            # Arrange
-            self.risk_engine.start()
+        # Act
+        self.risk_engine.process(event)
+        await asyncio.sleep(0.1)
 
-            strategy = TradingStrategy(order_id_tag="001")
-            strategy.register(
-                trader_id=self.trader_id,
-                msgbus=self.msgbus,
-                portfolio=self.portfolio,
-                data_engine=self.data_engine,
-                risk_engine=self.risk_engine,
-                clock=self.clock,
-                logger=self.logger,
-            )
+        # Assert
+        assert self.risk_engine.qsize() == 0
+        assert self.risk_engine.event_count == 1
 
-            order = strategy.order_factory.market(
-                AUDUSD_SIM.id,
-                OrderSide.BUY,
-                Quantity.from_int(100000),
-            )
-
-            event = TestStubs.event_order_submitted(order)
-
-            # Act
-            self.risk_engine.process(event)
-            await asyncio.sleep(0.1)
-
-            # Assert
-            assert self.risk_engine.qsize() == 0
-            assert self.risk_engine.event_count == 1
-
-            # Tear Down
-            self.risk_engine.stop()
-            await self.risk_engine.get_run_queue_task()
-
-        self.loop.run_until_complete(run_test())
+        # Tear Down
+        self.risk_engine.stop()
+        await self.risk_engine.get_run_queue_task()
