@@ -15,6 +15,8 @@
 
 import asyncio
 
+import pytest
+
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import Logger
@@ -64,10 +66,8 @@ class TestLiveDataEngine:
             logger=self.logger,
         )
 
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
+        self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
-        asyncio.set_event_loop(self.loop)
 
         self.engine = LiveDataEngine(
             loop=self.loop,
@@ -79,8 +79,6 @@ class TestLiveDataEngine:
 
     def teardown(self):
         self.engine.dispose()
-        self.loop.stop()
-        self.loop.close()
 
     def test_start_when_loop_not_running_logs(self):
         # Arrange
@@ -211,150 +209,136 @@ class TestLiveDataEngine:
         # Assert
         assert loop == self.loop
 
-    def test_start(self):
-        async def run_test():
-            # Arrange
-            # Act
-            self.engine.start()
-            await asyncio.sleep(0.1)
+    @pytest.mark.asyncio
+    async def test_start(self):
+        # Arrange
+        # Act
+        self.engine.start()
+        await asyncio.sleep(0.1)
 
-            # Assert
-            assert self.engine.state == ComponentState.RUNNING
+        # Assert
+        assert self.engine.state == ComponentState.RUNNING
 
-            # Tear Down
-            self.engine.stop()
+        # Tear Down
+        self.engine.stop()
 
-        self.loop.run_until_complete(run_test())
+    @pytest.mark.asyncio
+    async def test_kill_when_running_and_no_messages_on_queues(self):
+        # Arrange
+        # Act
+        self.engine.start()
+        await asyncio.sleep(0)
+        self.engine.kill()
 
-    def test_kill_when_running_and_no_messages_on_queues(self):
-        async def run_test():
-            # Arrange
-            # Act
-            self.engine.start()
-            await asyncio.sleep(0)
-            self.engine.kill()
+        # Assert
+        assert self.engine.state == ComponentState.STOPPED
 
-            # Assert
-            assert self.engine.state == ComponentState.STOPPED
+    @pytest.mark.asyncio
+    async def test_kill_when_not_running_with_messages_on_queue(self):
+        # Arrange
+        # Act
+        self.engine.kill()
 
-        self.loop.run_until_complete(run_test())
+        # Assert
+        assert self.engine.data_qsize() == 0
 
-    def test_kill_when_not_running_with_messages_on_queue(self):
-        async def run_test():
-            # Arrange
-            # Act
-            self.engine.kill()
+    @pytest.mark.asyncio
+    async def test_execute_command_processes_message(self):
+        # Arrange
+        self.engine.start()
 
-            # Assert
-            assert self.engine.data_qsize() == 0
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            data_type=DataType(QuoteTick),
+            handler=[].append,
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
 
-        self.loop.run_until_complete(run_test())
+        # Act
+        self.engine.execute(subscribe)
+        await asyncio.sleep(0.1)
 
-    def test_execute_command_processes_message(self):
-        async def run_test():
-            # Arrange
-            self.engine.start()
+        # Assert
+        assert self.engine.message_qsize() == 0
+        assert self.engine.command_count == 1
 
-            subscribe = Subscribe(
-                client_id=ClientId(BINANCE.value),
-                data_type=DataType(QuoteTick),
-                handler=[].append,
-                command_id=self.uuid_factory.generate(),
-                timestamp_ns=self.clock.timestamp_ns(),
-            )
+        # Tear Down
+        self.engine.stop()
 
-            # Act
-            self.engine.execute(subscribe)
-            await asyncio.sleep(0.1)
+    @pytest.mark.asyncio
+    async def test_send_request_processes_message(self):
+        # Arrange
+        self.engine.start()
 
-            # Assert
-            assert self.engine.message_qsize() == 0
-            assert self.engine.command_count == 1
+        handler = []
+        request = DataRequest(
+            client_id=ClientId("RANDOM"),
+            data_type=DataType(
+                QuoteTick,
+                metadata={
+                    "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+                    "from_datetime": None,
+                    "to_datetime": None,
+                    "limit": 1000,
+                },
+            ),
+            callback=handler.append,
+            request_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
 
-            # Tear Down
-            self.engine.stop()
+        # Act
+        self.engine.send(request)
+        await asyncio.sleep(0.1)
 
-        self.loop.run_until_complete(run_test())
+        # Assert
+        assert self.engine.message_qsize() == 0
+        assert self.engine.request_count == 1
 
-    def test_send_request_processes_message(self):
-        async def run_test():
-            # Arrange
-            self.engine.start()
+        # Tear Down
+        self.engine.stop()
 
-            handler = []
-            request = DataRequest(
-                client_id=ClientId("RANDOM"),
-                data_type=DataType(
-                    QuoteTick,
-                    metadata={
-                        "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
-                        "from_datetime": None,
-                        "to_datetime": None,
-                        "limit": 1000,
-                    },
-                ),
-                callback=handler.append,
-                request_id=self.uuid_factory.generate(),
-                timestamp_ns=self.clock.timestamp_ns(),
-            )
+    @pytest.mark.asyncio
+    async def test_receive_response_processes_message(self):
+        # Arrange
+        self.engine.start()
 
-            # Act
-            self.engine.send(request)
-            await asyncio.sleep(0.1)
+        response = DataResponse(
+            client_id=ClientId("BINANCE"),
+            data_type=DataType(QuoteTick),
+            data=[],
+            correlation_id=self.uuid_factory.generate(),
+            response_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
 
-            # Assert
-            assert self.engine.message_qsize() == 0
-            assert self.engine.request_count == 1
+        # Act
+        self.engine.receive(response)
+        await asyncio.sleep(0.1)
 
-            # Tear Down
-            self.engine.stop()
+        # Assert
+        assert self.engine.message_qsize() == 0
+        assert self.engine.response_count == 1
 
-        self.loop.run_until_complete(run_test())
+        # Tear Down
+        self.engine.stop()
 
-    def test_receive_response_processes_message(self):
-        async def run_test():
-            # Arrange
-            self.engine.start()
+    @pytest.mark.asyncio
+    async def test_process_data_processes_data(self):
+        # Arrange
+        self.engine.start()
 
-            response = DataResponse(
-                client_id=ClientId("BINANCE"),
-                data_type=DataType(QuoteTick),
-                data=[],
-                correlation_id=self.uuid_factory.generate(),
-                response_id=self.uuid_factory.generate(),
-                timestamp_ns=self.clock.timestamp_ns(),
-            )
+        # Act
+        tick = TestStubs.trade_tick_5decimal()
 
-            # Act
-            self.engine.receive(response)
-            await asyncio.sleep(0.1)
+        # Act
+        self.engine.process(tick)
+        await asyncio.sleep(0.1)
 
-            # Assert
-            assert self.engine.message_qsize() == 0
-            assert self.engine.response_count == 1
+        # Assert
+        assert self.engine.data_qsize() == 0
+        assert self.engine.data_count == 1
 
-            # Tear Down
-            self.engine.stop()
-
-        self.loop.run_until_complete(run_test())
-
-    def test_process_data_processes_data(self):
-        async def run_test():
-            # Arrange
-            self.engine.start()
-
-            # Act
-            tick = TestStubs.trade_tick_5decimal()
-
-            # Act
-            self.engine.process(tick)
-            await asyncio.sleep(0.1)
-
-            # Assert
-            assert self.engine.data_qsize() == 0
-            assert self.engine.data_count == 1
-
-            # Tear Down
-            self.engine.stop()
-
-        self.loop.run_until_complete(run_test())
+        # Tear Down
+        self.engine.stop()

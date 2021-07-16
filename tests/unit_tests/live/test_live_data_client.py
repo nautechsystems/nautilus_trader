@@ -43,9 +43,8 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 class TestLiveDataClientFactory:
     def test_create_when_not_implemented_raises_not_implemented_error(self):
         # Arrange
-        self.loop = asyncio.new_event_loop()
+        self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
-        asyncio.set_event_loop(self.loop)
 
         self.clock = LiveClock()
         self.logger = LiveLogger(self.loop, self.clock)
@@ -64,10 +63,8 @@ class TestLiveDataClientFactory:
             logger=self.logger,
         )
 
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
+        self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
-        asyncio.set_event_loop(self.loop)
 
         self.data_engine = LiveDataEngine(
             loop=self.loop,
@@ -109,10 +106,8 @@ class TestLiveDataClientTests:
             logger=self.logger,
         )
 
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
+        self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
-        asyncio.set_event_loop(self.loop)
 
         self.engine = LiveDataEngine(
             loop=self.loop,
@@ -157,10 +152,8 @@ class TestLiveMarketDataClientTests:
             logger=self.logger,
         )
 
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
+        self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
-        asyncio.set_event_loop(self.loop)
 
         self.engine = LiveDataEngine(
             loop=self.loop,

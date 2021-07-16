@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from asyncio import AbstractEventLoop
 import time
 
 import pytest
@@ -71,10 +70,8 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             logger=self.logger,
         )
 
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
+        self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
-        asyncio.set_event_loop(self.loop)
 
         self.data_engine = LiveDataEngine(
             loop=self.loop,
@@ -164,30 +161,29 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.benchmark.pedantic(execute_command, iterations=100, rounds=100, warmup_rounds=5)
         # ~0.0ms / ~0.2μs / 218ns minimum of 10,000 runs @ 1 iteration each run.
 
-    def test_submit_order(self):
+    @pytest.mark.asyncio
+    async def test_submit_order(self):
         self.exec_engine.start()
         time.sleep(0.1)
 
-        async def run_test():
-            def submit_order():
-                order = self.strategy.order_factory.market(
-                    BTCUSDT_BINANCE.id,
-                    OrderSide.BUY,
-                    Quantity.from_str("1.00000000"),
-                )
+        def submit_order():
+            order = self.strategy.order_factory.market(
+                BTCUSDT_BINANCE.id,
+                OrderSide.BUY,
+                Quantity.from_str("1.00000000"),
+            )
 
-                self.strategy.submit_order(order)
+            self.strategy.submit_order(order)
 
-            self.benchmark.pedantic(submit_order, iterations=100, rounds=100, warmup_rounds=5)
-
-        self.loop.run_until_complete(run_test())
+        self.benchmark.pedantic(submit_order, iterations=100, rounds=100, warmup_rounds=5)
         # ~0.0ms / ~25.3μs / 25326ns minimum of 10,000 runs @ 1 iteration each run.
 
-    def test_submit_order_end_to_end(self):
+    @pytest.mark.asyncio
+    async def test_submit_order_end_to_end(self):
         self.exec_engine.start()
         time.sleep(0.1)
 
-        async def run_test():
+        def run():
             for _ in range(1000):
                 order = self.strategy.order_factory.market(
                     BTCUSDT_BINANCE.id,
@@ -197,11 +193,4 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
                 self.strategy.submit_order(order)
 
-        def setup():
-            loop = asyncio.get_event_loop()
-            return (loop,), {}
-
-        def run(loop: AbstractEventLoop):
-            loop.run_until_complete(run_test())
-
-        self.benchmark.pedantic(run, setup=setup, rounds=10, warmup_rounds=5)
+        self.benchmark.pedantic(run, rounds=10, warmup_rounds=5)
