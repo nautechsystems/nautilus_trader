@@ -64,7 +64,6 @@ repos:
         name: flake8 (python)
         additional_dependencies:
           - flake8-bandit
-          - flake8-black
           - flake8-bugbear
           - flake8-coding
 #          - flake8-comprehensions
@@ -81,7 +80,6 @@ repos:
         name: flake8 (cython)
         additional_dependencies:
           - flake8-bandit
-          - flake8-black
           - flake8-bugbear
           - flake8-coding
           - flake8-comprehensions
