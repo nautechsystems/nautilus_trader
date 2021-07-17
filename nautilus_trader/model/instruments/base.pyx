@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
+import orjson
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
@@ -263,7 +263,7 @@ cdef class Instrument(Data):
             taker_fee=Decimal(values["taker_fee"]),
             ts_event_ns=values["ts_event_ns"],
             ts_recv_ns=values["ts_recv_ns"],
-            info=json.loads(info) if info is not None else None,
+            info=orjson.loads(info) if info is not None else None,
         )
 
     @staticmethod
@@ -293,7 +293,7 @@ cdef class Instrument(Data):
             "taker_fee": str(obj.taker_fee),
             "ts_event_ns": obj.ts_event_ns,
             "ts_recv_ns": obj.ts_recv_ns,
-            "info": json.dumps(obj.info) if obj.info is not None else None,
+            "info": orjson.dumps(obj.info) if obj.info is not None else None,
         }
 
     @staticmethod

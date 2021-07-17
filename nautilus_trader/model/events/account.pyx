@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
+import orjson
 
 from libc.stdint cimport int64_t
 
@@ -98,8 +98,8 @@ cdef class AccountState(Event):
             account_type=AccountTypeParser.from_str(values["account_type"]),
             base_currency=Currency.from_str_c(base_str) if base_str is not None else None,
             reported=values["reported"],
-            balances=[AccountBalance.from_dict(b) for b in json.loads(values["balances"])],
-            info=json.loads(values["info"]),
+            balances=[AccountBalance.from_dict(b) for b in orjson.loads(values["balances"])],
+            info=orjson.loads(values["info"]),
             event_id=UUID.from_str_c(values["event_id"]),
             ts_updated_ns=values["ts_updated_ns"],
             timestamp_ns=values["timestamp_ns"],
@@ -113,9 +113,9 @@ cdef class AccountState(Event):
             "account_id": obj.account_id.value,
             "account_type": AccountTypeParser.to_str(obj.account_type),
             "base_currency": obj.base_currency.code if obj.base_currency else None,
-            "balances": json.dumps([b.to_dict() for b in obj.balances]),
+            "balances": orjson.dumps([b.to_dict() for b in obj.balances]),
             "reported": obj.is_reported,
-            "info": json.dumps(obj.info),
+            "info": orjson.dumps(obj.info),
             "event_id": obj.id.value,
             "ts_updated_ns": obj.ts_updated_ns,
             "timestamp_ns": obj.timestamp_ns,

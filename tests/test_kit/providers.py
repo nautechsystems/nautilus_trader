@@ -15,10 +15,10 @@
 
 import bz2
 from decimal import Decimal
-import json
 import os
 from typing import List
 
+import orjson
 import pandas as pd
 from pandas import DataFrame
 
@@ -47,7 +47,7 @@ from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.model.orderbook.data import Order
 from tests.test_kit import PACKAGE_ROOT
 
 
@@ -177,7 +177,7 @@ class TestDataProvider:
 
         return [
             parse_line(line)
-            for line in json.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
+            for line in orjson.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
         ]
 
     @staticmethod
@@ -223,7 +223,7 @@ class TestDataProvider:
 
         return [
             msg
-            for data in json.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
+            for data in orjson.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
             for msg in parser(data)
         ]
 
