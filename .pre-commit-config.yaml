@@ -40,22 +40,22 @@ repos:
           types_or: [python, cython, rst, markdown]
           exclude: "nautilus_trader/adapters/betfair/parsing.py"
 
-#  - repo: https://github.com/pre-commit/mirrors-mypy
-#    rev: v0.910
-#    hooks:
-#      - id: mypy
-#        args: [
-#            --no-strict-optional,
-#            --ignore-missing-imports,
-#            --warn-no-return,
-#        ]
-#        additional_dependencies: [
-#            types-frozendict,
-#            types-orjson,
-#            types-pytz,
-#            types-redis,
-#            types-toml,
-#        ]
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v0.910
+    hooks:
+      - id: mypy
+        args: [
+            --no-strict-optional,
+            --ignore-missing-imports,
+            --warn-no-return,
+        ]
+        additional_dependencies: [
+            types-frozendict,
+            types-orjson,
+            types-pytz,
+            types-redis,
+            types-toml,
+        ]
 
   - repo: https://gitlab.com/PyCQA/flake8
     rev: 3.9.2

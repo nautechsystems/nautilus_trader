@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Dict, Optional
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
@@ -92,7 +93,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
-        self.instrument = None  # Initialized in on_start
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.trail_atr_multiple = trail_atr_multiple
@@ -368,7 +369,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
         self.slow_ema.reset()
         self.atr.reset()
 
-    def on_save(self) -> {}:
+    def on_save(self) -> Dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -382,7 +383,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
         """
         return {}
 
-    def on_load(self, state: {}):
+    def on_load(self, state: Dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 

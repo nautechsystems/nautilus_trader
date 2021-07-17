@@ -69,7 +69,7 @@ class TradingNode:
     def __init__(
         self,
         strategies: List[TradingStrategy],
-        config: Dict[str, object],
+        config: Dict[str, Dict[str, object]],
     ):
         """
         Initialize a new instance of the TradingNode class.
@@ -78,7 +78,7 @@ class TradingNode:
         ----------
         strategies : list[TradingStrategy]
             The list of strategies to run on the trading node.
-        config : dict[str, object]
+        config : dict[str, dict[str, object]]
             The configuration for the trading node.
 
         Raises
@@ -98,7 +98,7 @@ class TradingNode:
 
         # Extract configs
         config_trader = config.get("trader", {})
-        config_system: Dict[str, object] = config.get("system", {})
+        config_system = config.get("system", {})
         config_log = config.get("logging", {})
         config_db = config.get("database", {})
         config_cache = config.get("cache", {})
@@ -108,19 +108,19 @@ class TradingNode:
         config_strategy = config.get("strategy", {})
 
         # System config
-        self._timeout_connection = config_system.get("timeout_connection", 5.0)
-        self._timeout_reconciliation = config_system.get("timeout_reconciliation", 10.0)
-        self._timeout_portfolio = config_system.get("timeout_portfolio", 10.0)
-        self._timeout_disconnection = config_system.get("timeout_disconnection", 5.0)
-        self._check_residuals_delay = config_system.get("check_residuals_delay", 5.0)
-        self._load_strategy_state = config_strategy.get("load_state", True)
-        self._save_strategy_state = config_strategy.get("save_state", True)
+        self._timeout_connection: float = config_system.get("timeout_connection", 5.0)  # type: ignore
+        self._timeout_reconciliation: float = config_system.get("timeout_reconciliation", 10.0)  # type: ignore
+        self._timeout_portfolio: float = config_system.get("timeout_portfolio", 10.0)  # type: ignore
+        self._timeout_disconnection: float = config_system.get("timeout_disconnection", 5.0)  # type: ignore
+        self._check_residuals_delay: float = config_system.get("check_residuals_delay", 5.0)  # type: ignore
+        self._load_strategy_state: bool = config_strategy.get("load_state", True)  # type: ignore
+        self._save_strategy_state: bool = config_strategy.get("save_state", True)  # type: ignore
 
         # Setup loop
         self._loop = asyncio.get_event_loop()
         self._executor = concurrent.futures.ThreadPoolExecutor()
         self._loop.set_default_executor(self._executor)
-        self._loop.set_debug(config_system.get("loop_debug", False))
+        self._loop.set_debug(bool(config_system.get("loop_debug", False)))
 
         # Components
         self._clock = LiveClock(loop=self._loop)
@@ -463,7 +463,7 @@ class TradingNode:
 
     def _log_header(self) -> None:
         nautilus_header(self._log)
-        self._log.info(f"redis {redis.__version__}")
+        self._log.info(f"redis {redis.__version__}")  # type: ignore
         self._log.info(f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
         if uvloop_version:
             self._log.info(f"uvloop {uvloop_version}")

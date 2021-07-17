@@ -9,18 +9,18 @@
 
 ## Enhancements
 - Added `MessageBus` class.
-- Added `MessageType` class.
-- Added `TradingEvent` base class.
 - Added `TraderId` to `Order` and `Position`.
-- Add OrderType to OrderFilled.
-- Add unrealized PnL to position events.
+- Added `OrderType` to OrderFilled.
+- Added unrealized PnL to position events.
+- Added order inflight concept to `Order` and `Cache`.
 - Improved efficiency of `Throttler`.
-- Standardized events str and repr.
-- Standardized commands str and repr.
+- Standardized events `str` and `repr`.
+- Standardized commands `str` and `repr`.
 - Standardized identifiers on events and objects.
-- Removed redundant `BypassCacheDatabase`.
 - Improved `Account` `str` and `repr`.
 - Using `orjson` over `json` 'under the hood' for efficiency.
+- Introduced `mypy` to the codebase.
+- Removed redundant `BypassCacheDatabase`.
 
 ## Fixes
 - Fixed backtest log timestamping.

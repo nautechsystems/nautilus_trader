@@ -15,7 +15,7 @@
 
 from datetime import datetime
 import inspect
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.clock import Clock
@@ -123,9 +123,9 @@ class MockStrategy(TradingStrategy):
         self.ema1 = ExponentialMovingAverage(10)
         self.ema2 = ExponentialMovingAverage(20)
 
-        self.position_id = None
+        self.position_id: Optional[PositionId] = None
 
-        self.calls = []
+        self.calls: List[str] = []
 
     def on_start(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -187,11 +187,11 @@ class MockStrategy(TradingStrategy):
     def on_reset(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def on_save(self) -> dict:
+    def on_save(self) -> Dict[str, bytes]:
         self.calls.append(inspect.currentframe().f_code.co_name)
-        return {"UserState": 1}
+        return {"UserState": b"1"}
 
-    def on_load(self, state) -> None:
+    def on_load(self, state: Dict[str, bytes]) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(state)
 
@@ -233,10 +233,10 @@ class KaboomStrategy(TradingStrategy):
     def on_reset(self) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_save(self) -> dict:
+    def on_save(self) -> Dict[str, bytes]:
         raise RuntimeError(f"{self} BOOM!")
 
-    def on_load(self, state) -> None:
+    def on_load(self, state: Dict[str, bytes]) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
     def on_dispose(self) -> None:
@@ -297,7 +297,7 @@ class MockMarketDataClient(MarketDataClient):
             logger=logger,
         )
 
-        self.calls = []
+        self.calls: List[str] = []
 
     # -- COMMANDS ----------------------------------------------------------------------------------
 
@@ -622,11 +622,11 @@ class MockCacheDatabase(CacheDatabase):
         """
         super().__init__(trader_id, logger)
 
-        self.currencies = {}
-        self.instruments = {}
-        self.accounts = {}
-        self.orders = {}
-        self.positions = {}
+        self.currencies = {}  # type: dict[str, Currency]
+        self.instruments = {}  # type: dict[InstrumentId, Instrument]
+        self.accounts = {}  # type: dict[AccountId, Account]
+        self.orders = {}  # type: dict[ClientOrderId, Order]
+        self.positions = {}  # type: dict[PositionId, Position]
 
     def flush(self) -> None:
         self.accounts.clear()

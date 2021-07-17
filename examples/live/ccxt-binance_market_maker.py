@@ -103,7 +103,7 @@ strategy = VolatilityMarketMaker(
 )
 
 # Instantiate the node passing a list of strategies and configuration
-node = TradingNode(strategies=[strategy], config=config)
+node = TradingNode(strategies=[strategy], config=config)  # type: ignore
 
 # Register your client factories with the node (can take user defined factories)
 node.add_data_client_factory("CCXT", CCXTDataClientFactory)

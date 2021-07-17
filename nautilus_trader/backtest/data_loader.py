@@ -20,7 +20,7 @@ from itertools import takewhile
 import os
 import pathlib
 import re
-from typing import Generator
+from typing import Callable, Generator
 import warnings
 
 import fsspec
@@ -63,7 +63,7 @@ class ByteParser:
 
     def __init__(
         self,
-        instrument_provider_update: callable = None,
+        instrument_provider_update: Callable = None,
     ):
         """
         Initialize a new instance of the ``ByteParser`` class.
@@ -81,9 +81,9 @@ class TextParser(ByteParser):
 
     def __init__(
         self,
-        parser: callable,
-        line_preprocessor: callable = None,
-        instrument_provider_update: callable = None,
+        parser: Callable,
+        line_preprocessor: Callable = None,
+        instrument_provider_update: Callable = None,
     ):
         """
         Initialize a new instance of the ``TextParser`` class.
@@ -162,7 +162,7 @@ class CSVParser(TextParser):
 
     def __init__(
         self,
-        parser: callable,
+        parser: Callable,
         line_preprocessor=None,
         instrument_provider_update=None,
     ):
@@ -207,7 +207,7 @@ class ParquetParser(ByteParser):
     def __init__(
         self,
         data_type: str,
-        parser: callable = None,
+        parser: Callable = None,
         instrument_provider_update=None,
     ):
         """
