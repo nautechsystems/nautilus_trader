@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from typing import Callable
 
 from betfairlightweight import APIClient
 from betfairlightweight.filters import streaming_market_data_filter
@@ -112,7 +113,7 @@ class BetfairOrderStreamClient(BetfairStreamClient):
 
 
 class BetfairMarketStreamClient(BetfairStreamClient):
-    def __init__(self, client: APIClient, logger: Logger, message_handler: callable, **kwargs):
+    def __init__(self, client: APIClient, logger: Logger, message_handler: Callable, **kwargs):
         self.subscription_message = None
         super().__init__(
             client=client,

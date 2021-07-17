@@ -1,6 +1,6 @@
 import asyncio
 from asyncio import IncompleteReadError
-from typing import Optional
+from typing import Callable, Optional
 
 import orjson
 
@@ -17,7 +17,7 @@ class SocketClient:
         host,
         port,
         logger_adapter: LoggerAdapter,
-        message_handler: callable,
+        message_handler: Callable,
         loop=None,
         crlf=None,
         encoding="utf-8",

@@ -539,7 +539,7 @@ async def generate_order_status_report(self, order) -> Optional[OrderStatusRepor
 
 
 async def generate_trades_list(
-    self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None
+    self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None  # type: ignore
 ) -> List[ExecutionReport]:
     filled = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],

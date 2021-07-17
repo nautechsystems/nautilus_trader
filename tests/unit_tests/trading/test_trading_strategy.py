@@ -964,7 +964,7 @@ class TestTradingStrategy:
         strategy.load(state)
 
         # Assert
-        assert state == {"UserState": 1}
+        assert state == {"UserState": b"1"}
         assert "on_save" in strategy.calls
         assert strategy.state == ComponentState.INITIALIZED
 
