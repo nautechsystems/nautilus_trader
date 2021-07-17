@@ -64,11 +64,7 @@ numpydoc = { version = "^1.1.0", optional = true }
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython
 # https://github.com/cython/cython/issues/3515
-black = "^21.6b0"
 coverage = "4.5.4"  # Pinned at 4.5.4 due Cython 3.0.0a8
-flake8 = "^3.9.2"
-isort = "^5.9.2"
-mypy = "^0.910"
 nox = "^2021.6.12"
 pre-commit = "^2.13.0"
 pytest = "^6.2.4"
