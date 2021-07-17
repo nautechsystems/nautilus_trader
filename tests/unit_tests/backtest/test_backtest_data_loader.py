@@ -1,7 +1,6 @@
 import datetime
 from decimal import Decimal
 from functools import partial
-import json
 import os
 import pathlib
 
@@ -380,7 +379,7 @@ def test_data_loader_generic_data(catalog_dir):
 
 def test_data_catalog_append(catalog_dir):
     catalog = DataCatalog()
-    instrument_data = json.loads(open(TEST_DATA_DIR + "/crypto_instruments.json").read())
+    instrument_data = orjson.loads(open(TEST_DATA_DIR + "/crypto_instruments.json").read())
 
     objects = []
     for data in instrument_data:

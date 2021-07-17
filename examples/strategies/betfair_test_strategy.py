@@ -29,7 +29,7 @@ from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.trading.strategy import TradingStrategy
 
