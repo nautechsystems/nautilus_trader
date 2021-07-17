@@ -36,13 +36,13 @@ cdef class OrderUnpacker:
 
     @staticmethod
     cdef Order from_init_c(OrderInitialized init):
-        if init.order_type == OrderType.MARKET:
+        if init.type == OrderType.MARKET:
             return MarketOrder.create(init=init)
-        elif init.order_type == OrderType.LIMIT:
+        elif init.type == OrderType.LIMIT:
             return LimitOrder.create(init=init)
-        elif init.order_type == OrderType.STOP_MARKET:
+        elif init.type == OrderType.STOP_MARKET:
             return StopMarketOrder.create(init=init)
-        elif init.order_type == OrderType.STOP_LIMIT:
+        elif init.type == OrderType.STOP_LIMIT:
             return StopLimitOrder.create(init=init)
         else:
             # Design-time error

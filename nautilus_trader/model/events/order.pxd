@@ -48,9 +48,9 @@ cdef class OrderEvent(Event):
 
 
 cdef class OrderInitialized(OrderEvent):
-    cdef readonly OrderSide order_side
+    cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
-    cdef readonly OrderType order_type
+    cdef readonly OrderType type
     """The order type.\n\n:returns: `OrderType`"""
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
@@ -243,8 +243,10 @@ cdef class OrderFilled(OrderEvent):
     """The execution ID associated with the event.\n\n:returns: `ExecutionId`"""
     cdef readonly PositionId position_id
     """The position ID associated with the event.\n\n:returns: `PositionId`"""
-    cdef readonly OrderSide order_side
+    cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
+    cdef readonly OrderType type
+    """The order type.\n\n:returns: `OrderType`"""
     cdef readonly Quantity last_qty
     """The fill quantity.\n\n:returns: `Quantity`"""
     cdef readonly Price last_px

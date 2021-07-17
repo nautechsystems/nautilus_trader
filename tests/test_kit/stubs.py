@@ -452,6 +452,7 @@ class TestStubs:
             execution_id=execution_id,
             position_id=position_id,
             order_side=order.side,
+            order_type=order.type,
             last_qty=last_qty,
             last_px=order.price if last_px is None else last_px,
             currency=instrument.quote_currency,

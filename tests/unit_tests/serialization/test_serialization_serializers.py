@@ -507,11 +507,11 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_limit_order_initialized_events(self):
         # Arrange
         options = {
-            "ExpireTime": None,
-            "Price": "1.0010",
-            "PostOnly": True,
-            "ReduceOnly": True,
-            "Hidden": False,
+            "expire_time": None,
+            "price": "1.0010",
+            "post_only": True,
+            "reduce_only": True,
+            "hidden": False,
         }
 
         event = OrderInitialized(
@@ -539,9 +539,9 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_stop_market_order_initialized_events(self):
         # Arrange
         options = {
-            "ExpireTime": None,
-            "Price": "1.0005",
-            "ReduceOnly": False,
+            "expire_time": None,
+            "price": "1.0005",
+            "reduce_only": False,
         }
 
         event = OrderInitialized(
@@ -569,12 +569,12 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_stop_limit_order_initialized_events(self):
         # Arrange
         options = {
-            "ExpireTime": None,
-            "Price": "1.0005",
-            "Trigger": "1.0010",
-            "PostOnly": True,
-            "ReduceOnly": False,
-            "Hidden": False,
+            "expire_time": None,
+            "price": "1.0005",
+            "trigger": "1.0010",
+            "post_only": True,
+            "reduce_only": False,
+            "hidden": False,
         }
 
         event = OrderInitialized(
@@ -867,6 +867,7 @@ class TestMsgPackEventSerializer:
             ExecutionId("E123456"),
             PositionId("T123456"),
             OrderSide.SELL,
+            OrderType.LIMIT,
             Quantity(50000, precision=0),
             Price(1.00000, precision=5),
             AUDUSD_SIM.quote_currency,
@@ -896,6 +897,7 @@ class TestMsgPackEventSerializer:
             ExecutionId("E123456"),
             PositionId("T123456"),
             OrderSide.SELL,
+            OrderType.STOP_MARKET,
             Quantity(100000, precision=0),
             Price(1.00000, precision=5),
             AUDUSD_SIM.quote_currency,
@@ -1071,7 +1073,7 @@ class TestParquetSerializer:
                 OrderBookDelta.from_dict(
                     {
                         "delta_type": "ADD",
-                        "order_side": "BUY",
+                        "side": "BUY",
                         "order_price": 8.0,
                         "order_size": 30.0,
                         "order_id": "e0364f94-8fcb-0262-cbb3-075c51ee4917",
@@ -1081,7 +1083,7 @@ class TestParquetSerializer:
                 OrderBookDelta.from_dict(
                     {
                         "delta_type": "ADD",
-                        "order_side": "SELL",
+                        "side": "SELL",
                         "order_price": 15.0,
                         "order_size": 10.0,
                         "order_id": "cabec174-acc6-9204-9ebf-809da3896daf",

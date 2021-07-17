@@ -714,7 +714,7 @@ cdef class Account:
         fill_qty: Decimal = fill.last_qty.as_decimal()
         fill_px: Decimal = fill.last_px.as_decimal()
 
-        if fill.order_side == OrderSide.BUY:
+        if fill.side == OrderSide.BUY:
             if base_currency:
                 pnls.append(Money(fill_qty, base_currency))
             pnls.append(Money(-(fill_px * fill_qty), quote_currency))
@@ -731,7 +731,7 @@ cdef class Account:
         Position position,
         OrderFilled fill,
     ):
-        if position and position.entry != fill.order_side:
+        if position and position.entry != fill.side:
             # Calculate positional PnL
             return position.calculate_pnl(
                 avg_px_open=position.avg_px_open,

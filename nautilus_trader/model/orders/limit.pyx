@@ -184,18 +184,18 @@ cdef class LimitOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If init.order_type is not equal to LIMIT.
+            If init.type is not equal to LIMIT.
 
         """
         Condition.not_none(init, "init")
-        Condition.equal(init.order_type, OrderType.LIMIT, "init.order_type", "OrderType")
+        Condition.equal(init.type, OrderType.LIMIT, "init.type", "OrderType")
 
         return LimitOrder(
             trader_id=init.trader_id,
             strategy_id=init.strategy_id,
             instrument_id=init.instrument_id,
             client_order_id=init.client_order_id,
-            order_side=init.order_side,
+            order_side=init.side,
             quantity=init.quantity,
             price=Price.from_str_c(init.options["price"]),
             time_in_force=init.time_in_force,

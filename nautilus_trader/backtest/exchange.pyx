@@ -1197,6 +1197,7 @@ cdef class SimulatedExchange:
             execution_id=self._generate_execution_id(),
             position_id=PositionId.null_c() if self.oms_type == OMSType.NETTING else position_id,
             order_side=order.side,
+            order_type=order.type,
             last_qty=last_qty,
             last_px=last_px,
             quote_currency=instrument.quote_currency,

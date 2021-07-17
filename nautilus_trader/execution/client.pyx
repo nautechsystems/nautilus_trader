@@ -23,6 +23,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelOrder
@@ -751,6 +752,7 @@ cdef class ExecutionClient:
         ExecutionId execution_id,
         PositionId position_id,  # Can be None
         OrderSide order_side,
+        OrderType order_type,
         Quantity last_qty,
         Price last_px,
         Currency quote_currency,
@@ -778,6 +780,8 @@ cdef class ExecutionClient:
             The position ID associated with the order.
         order_side : OrderSide
             The execution order side.
+        order_type : OrderType
+            The execution order type.
         last_qty : Quantity
             The fill quantity for this execution.
         last_px : Price
@@ -814,6 +818,7 @@ cdef class ExecutionClient:
             execution_id=execution_id,
             position_id=position_id or PositionId.null_c(),  # If 'NULL' then assigned in engine
             order_side=order_side,
+            order_type=order_type,
             last_qty=last_qty,
             last_px=last_px,
             currency=quote_currency,
@@ -892,7 +897,7 @@ cdef class ExecutionClient:
                 venue=fill.instrument_id.venue,
                 from_currency=fill.commission.currency,
                 to_currency=self.base_currency,
-                price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
+                price_type=PriceType.BID if fill.side is OrderSide.SELL else PriceType.ASK,
             )
             if xrate == 0:
                 self._log.error(
@@ -909,7 +914,7 @@ cdef class ExecutionClient:
                 venue=fill.instrument_id.venue,
                 from_currency=pnl.currency,
                 to_currency=self.base_currency,
-                price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
+                price_type=PriceType.BID if fill.side is OrderSide.SELL else PriceType.ASK,
             )
             if xrate == 0:
                 self._log.error(

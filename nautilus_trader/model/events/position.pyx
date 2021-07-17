@@ -64,6 +64,7 @@ cdef class PositionEvent(Event):
         realized_points not None: Decimal,
         realized_return not None: Decimal,
         Money realized_pnl not None,
+        Money unrealized_pnl not None,
         int64_t ts_opened_ns,
         int64_t ts_closed_ns,
         int64_t duration_ns,
@@ -113,6 +114,8 @@ cdef class PositionEvent(Event):
             The realized return for the position.
         realized_pnl : Money
             The realized PnL for the position.
+        unrealized_pnl : Money
+            The unrealized PnL for the position.
         ts_opened_ns : int64
             The UNIX timestamp (nanoseconds) when the position was opened.
         ts_closed_ns : int64
@@ -146,6 +149,7 @@ cdef class PositionEvent(Event):
         self.realized_points = realized_points
         self.realized_return = realized_return
         self.realized_pnl = realized_pnl
+        self.unrealized_pnl = unrealized_pnl
         self.ts_opened_ns = ts_opened_ns
         self.ts_closed_ns = ts_closed_ns
         self.duration_ns = duration_ns
@@ -170,6 +174,7 @@ cdef class PositionEvent(Event):
                 f"realized_points={self.realized_points}, "
                 f"realized_return={self.realized_return:.5f}, "
                 f"realized_pnl={self.realized_pnl}, "
+                f"unrealized_pnl={self.unrealized_pnl}, "
                 f"ts_opened_ns={self.ts_opened_ns}, "
                 f"ts_closed_ns={self.ts_closed_ns}, "
                 f"duration_ns={self.duration_ns}, "
@@ -198,8 +203,6 @@ cdef class PositionOpened(PositionEvent):
         Price last_px not None,
         Currency currency not None,
         avg_px_open not None: Decimal,
-        realized_points not None: Decimal,
-        realized_return not None: Decimal,
         Money realized_pnl not None,
         int64_t ts_opened_ns,
         UUID event_id not None,
@@ -242,10 +245,6 @@ cdef class PositionOpened(PositionEvent):
             The position quote currency.
         avg_px_open : Decimal
             The average open price.
-        realized_points : Decimal
-            The realized points for the position.
-        realized_return : Decimal
-            The realized return for the position.
         realized_pnl : Money
             The realized PnL for the position.
         ts_opened_ns : int64
@@ -274,9 +273,10 @@ cdef class PositionOpened(PositionEvent):
             currency,
             avg_px_open,
             None,
-            realized_points,
-            realized_return,
+            Decimal(),
+            Decimal(),
             realized_pnl,
+            Money(0, realized_pnl.currency),
             ts_opened_ns,
             0,
             0,
@@ -286,10 +286,10 @@ cdef class PositionOpened(PositionEvent):
 
     @staticmethod
     cdef PositionOpened create_c(
-            Position position,
-            OrderFilled fill,
-            UUID event_id,
-            int64_t timestamp_ns,
+        Position position,
+        OrderFilled fill,
+        UUID event_id,
+        int64_t timestamp_ns,
     ):
         Condition.not_none(position, "position")
         Condition.not_none(fill, "fill")
@@ -311,8 +311,6 @@ cdef class PositionOpened(PositionEvent):
             last_px=fill.last_px,
             currency=position.quote_currency,
             avg_px_open=position.avg_px_open,
-            realized_points=position.realized_points,
-            realized_return=position.realized_return,
             realized_pnl=position.realized_pnl,
             ts_opened_ns=position.ts_opened_ns,
             event_id=event_id,
@@ -338,8 +336,6 @@ cdef class PositionOpened(PositionEvent):
             last_px=Price.from_str_c(values["last_px"]),
             currency=Currency.from_str_c(values["currency"]),
             avg_px_open=Decimal(values["avg_px_open"]),
-            realized_points=Decimal(values["realized_points"]),
-            realized_return=Decimal(values["realized_return"]),
             realized_pnl=Money.from_str_c(values["realized_pnl"]),
             ts_opened_ns=values["ts_opened_ns"],
             event_id=UUID.from_str_c(values["event_id"]),
@@ -366,9 +362,6 @@ cdef class PositionOpened(PositionEvent):
             "last_px": str(obj.last_px),
             "currency": obj.currency.code,
             "avg_px_open": str(obj.avg_px_open),
-            "avg_px_close": str(obj.avg_px_close) if obj.avg_px_close else None,
-            "realized_points": str(obj.realized_points),
-            "realized_return": f"{obj.realized_return:.5f}",
             "realized_pnl": obj.realized_pnl.to_str(),
             "ts_opened_ns": obj.ts_opened_ns,
             "ts_closed_ns": obj.ts_closed_ns,
@@ -379,10 +372,10 @@ cdef class PositionOpened(PositionEvent):
 
     @staticmethod
     def create(
-            Position position,
-            OrderFilled fill,
-            UUID event_id,
-            int64_t timestamp_ns,
+        Position position,
+        OrderFilled fill,
+        UUID event_id,
+        int64_t timestamp_ns,
     ):
         """
         Return a position opened event from the given params.
@@ -461,6 +454,7 @@ cdef class PositionChanged(PositionEvent):
         realized_points not None: Decimal,
         realized_return not None: Decimal,
         Money realized_pnl not None,
+        Money unrealized_pnl not None,
         int64_t ts_opened_ns,
         UUID event_id not None,
         int64_t timestamp_ns,
@@ -510,6 +504,8 @@ cdef class PositionChanged(PositionEvent):
             The realized return for the position.
         realized_pnl : Money
             The realized PnL for the position.
+        unrealized_pnl : Money
+            The unrealized PnL for the position.
         ts_opened_ns : int64
             The UNIX timestamp (nanoseconds) when the position was opened.
         event_id : UUID
@@ -539,6 +535,7 @@ cdef class PositionChanged(PositionEvent):
             realized_points,
             realized_return,
             realized_pnl,
+            unrealized_pnl,
             ts_opened_ns,
             0,
             0,
@@ -548,10 +545,10 @@ cdef class PositionChanged(PositionEvent):
 
     @staticmethod
     cdef PositionChanged create_c(
-            Position position,
-            OrderFilled fill,
-            UUID event_id,
-            int64_t timestamp_ns,
+        Position position,
+        OrderFilled fill,
+        UUID event_id,
+        int64_t timestamp_ns,
     ):
         Condition.not_none(position, "position")
         Condition.not_none(fill, "fill")
@@ -577,6 +574,7 @@ cdef class PositionChanged(PositionEvent):
             realized_points=position.realized_points,
             realized_return=position.realized_return,
             realized_pnl=position.realized_pnl,
+            unrealized_pnl=position.unrealized_pnl(fill.last_px),
             ts_opened_ns=position.ts_opened_ns,
             event_id=event_id,
             timestamp_ns=timestamp_ns,
@@ -607,6 +605,7 @@ cdef class PositionChanged(PositionEvent):
             realized_points=Decimal(values["realized_points"]),
             realized_return=Decimal(values["realized_return"]),
             realized_pnl=Money.from_str_c(values["realized_pnl"]),
+            unrealized_pnl=Money.from_str_c(values["unrealized_pnl"]),
             ts_opened_ns=values["ts_opened_ns"],
             event_id=UUID.from_str_c(values["event_id"]),
             timestamp_ns=values["timestamp_ns"],
@@ -636,6 +635,7 @@ cdef class PositionChanged(PositionEvent):
             "realized_points": str(obj.realized_points),
             "realized_return": f"{obj.realized_return:.5f}",
             "realized_pnl": obj.realized_pnl.to_str(),
+            "unrealized_pnl": obj.unrealized_pnl.to_str(),
             "ts_opened_ns": obj.ts_opened_ns,
             "ts_closed_ns": obj.ts_closed_ns,
             "duration_ns": obj.duration_ns,
@@ -645,10 +645,10 @@ cdef class PositionChanged(PositionEvent):
 
     @staticmethod
     def create(
-            Position position,
-            OrderFilled fill,
-            UUID event_id,
-            int64_t timestamp_ns,
+        Position position,
+        OrderFilled fill,
+        UUID event_id,
+        int64_t timestamp_ns,
     ):
         """
         Return a position changed event from the given params.
@@ -811,6 +811,7 @@ cdef class PositionClosed(PositionEvent):
             realized_points,
             realized_return,
             realized_pnl,
+            Money(0, realized_pnl.currency),  # No further unrealized PnL
             ts_opened_ns,
             ts_closed_ns,
             duration_ns,
@@ -820,10 +821,10 @@ cdef class PositionClosed(PositionEvent):
 
     @staticmethod
     cdef PositionClosed create_c(
-            Position position,
-            OrderFilled fill,
-            UUID event_id,
-            int64_t timestamp_ns,
+        Position position,
+        OrderFilled fill,
+        UUID event_id,
+        int64_t timestamp_ns,
     ):
         Condition.not_none(position, "position")
         Condition.not_none(fill, "fill")
@@ -919,10 +920,10 @@ cdef class PositionClosed(PositionEvent):
 
     @staticmethod
     def create(
-            Position position,
-            OrderFilled fill,
-            UUID event_id,
-            int64_t timestamp_ns,
+        Position position,
+        OrderFilled fill,
+        UUID event_id,
+        int64_t timestamp_ns,
     ):
         """
         Return a position closed event from the given params.
