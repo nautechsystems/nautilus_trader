@@ -37,9 +37,9 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.orderbook.book import OrderBookDelta
-from nautilus_trader.model.orderbook.book import OrderBookDeltas
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.serialization.arrow.core import _deserialize
 from nautilus_trader.serialization.arrow.core import _partition_keys
 from nautilus_trader.serialization.arrow.core import _schemas

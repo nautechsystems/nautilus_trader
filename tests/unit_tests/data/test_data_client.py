@@ -33,8 +33,8 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.book import OrderBookDeltas
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.filters import NewsImpact

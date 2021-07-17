@@ -29,7 +29,7 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orderbook.book import OrderBookData
+from nautilus_trader.model.orderbook.data import OrderBookData
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.strategies import OrderBookImbalanceStrategy

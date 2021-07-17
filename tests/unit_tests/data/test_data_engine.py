@@ -46,9 +46,9 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookData
-from nautilus_trader.model.orderbook.book import OrderBookDeltas
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import MockMarketDataClient

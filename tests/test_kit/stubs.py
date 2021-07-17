@@ -63,9 +63,9 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
-from nautilus_trader.model.orderbook.order import Order
 from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import MockLiveDataEngine

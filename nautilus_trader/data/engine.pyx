@@ -73,9 +73,9 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.book cimport OrderBookData
-from nautilus_trader.model.orderbook.book cimport OrderBookDeltas
-from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
+from nautilus_trader.model.orderbook.data cimport OrderBookData
+from nautilus_trader.model.orderbook.data cimport OrderBookDeltas
+from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
