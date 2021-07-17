@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
+import orjson
 
 from libc.stdint cimport int64_t
 
@@ -144,7 +144,7 @@ cdef class SubmitOrder(TradingCommand):
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             position_id=position_id,
-            order=OrderUnpacker.unpack_c(json.loads(values["order"])),
+            order=OrderUnpacker.unpack_c(orjson.loads(values["order"])),
             command_id=UUID.from_str_c(values["command_id"]),
             timestamp_ns=values["timestamp_ns"],
         )
@@ -157,7 +157,7 @@ cdef class SubmitOrder(TradingCommand):
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
             "position_id": obj.position_id.value if obj.position_id is not None else None,
-            "order": json.dumps(OrderInitialized.to_dict_c(obj.order.init_event_c())),
+            "order": orjson.dumps(OrderInitialized.to_dict_c(obj.order.init_event_c())),
             "command_id": obj.id.value,
             "timestamp_ns": obj.timestamp_ns,
         }
@@ -260,9 +260,9 @@ cdef class SubmitBracketOrder(TradingCommand):
     cdef SubmitBracketOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef BracketOrder bracket_order = BracketOrder(
-            entry=OrderUnpacker.unpack_c(json.loads(values["entry"])),
-            stop_loss=OrderUnpacker.unpack_c(json.loads(values["stop_loss"])),
-            take_profit=OrderUnpacker.unpack_c(json.loads(values["take_profit"])),
+            entry=OrderUnpacker.unpack_c(orjson.loads(values["entry"])),
+            stop_loss=OrderUnpacker.unpack_c(orjson.loads(values["stop_loss"])),
+            take_profit=OrderUnpacker.unpack_c(orjson.loads(values["take_profit"])),
         )
         return SubmitBracketOrder(
             trader_id=TraderId(values["trader_id"]),
@@ -279,9 +279,9 @@ cdef class SubmitBracketOrder(TradingCommand):
             "type": "SubmitBracketOrder",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
-            "entry": json.dumps(OrderInitialized.to_dict_c(obj.bracket_order.entry.init_event_c())),
-            "stop_loss": json.dumps(OrderInitialized.to_dict_c(obj.bracket_order.stop_loss.init_event_c())),
-            "take_profit": json.dumps(OrderInitialized.to_dict_c(obj.bracket_order.take_profit.init_event_c())),
+            "entry": orjson.dumps(OrderInitialized.to_dict_c(obj.bracket_order.entry.init_event_c())),
+            "stop_loss": orjson.dumps(OrderInitialized.to_dict_c(obj.bracket_order.stop_loss.init_event_c())),
+            "take_profit": orjson.dumps(OrderInitialized.to_dict_c(obj.bracket_order.take_profit.init_event_c())),
             "command_id": obj.id.value,
             "timestamp_ns": obj.timestamp_ns,
         }
