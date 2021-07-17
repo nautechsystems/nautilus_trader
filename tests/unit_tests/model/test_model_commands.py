@@ -73,11 +73,11 @@ class TestCommands:
         assert SubmitOrder.from_dict(SubmitOrder.to_dict(command)) == command
         assert (
             str(command)
-            == f"SubmitOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, command_id={uuid})"  # noqa
+            == "SubmitOrder(instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, order=BUY 100_000 AUD/USD.SIM MARKET GTC)"  # noqa
         )
         assert (
             repr(command)
-            == f"SubmitOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, command_id={uuid})"  # noqa
+            == f"SubmitOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-000000-000-001-1, position_id=P-001, order=BUY 100_000 AUD/USD.SIM MARKET GTC, command_id={uuid}, timestamp_ns=0)"  # noqa
         )
 
     def test_submit_bracket_order_command_to_from_dict_and_str_repr(self):
@@ -108,11 +108,11 @@ class TestCommands:
         assert SubmitBracketOrder.from_dict(SubmitBracketOrder.to_dict(command)) == command
         assert (
             str(command)
-            == f"SubmitBracketOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_link_id=BO-19700101-000000-000-001-1, command_id={uuid})"  # noqa
+            == "SubmitBracketOrder(instrument_id=AUD/USD.SIM, client_order_link_id=BO-19700101-000000-000-001-1, entry=BUY 100_000 AUD/USD.SIM MARKET GTC, stop_loss=SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, take_profit=SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC)"  # noqa
         )
         assert (
             repr(command)
-            == f"SubmitBracketOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_link_id=BO-19700101-000000-000-001-1, command_id={uuid})"  # noqa
+            == f"SubmitBracketOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_link_id=BO-19700101-000000-000-001-1, entry=BUY 100_000 AUD/USD.SIM MARKET GTC, stop_loss=SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, take_profit=SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC, command_id={uuid}, timestamp_ns=0)"  # noqa
         )
 
     def test_update_order_command_to_from_dict_and_str_repr(self):
@@ -136,11 +136,11 @@ class TestCommands:
         assert UpdateOrder.from_dict(UpdateOrder.to_dict(command)) == command
         assert (
             str(command)
-            == f"UpdateOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010, command_id={uuid})"  # noqa
+            == f"UpdateOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010)"  # noqa
         )
         assert (
             repr(command)
-            == f"UpdateOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010, command_id={uuid})"  # noqa
+            == f"UpdateOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010, command_id={uuid}, timestamp_ns=0)"  # noqa
         )
 
     def test_cancel_order_command_to_from_dict_and_str_repr(self):
@@ -161,9 +161,9 @@ class TestCommands:
         assert CancelOrder.from_dict(CancelOrder.to_dict(command)) == command
         assert (
             str(command)
-            == f"CancelOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, command_id={uuid})"  # noqa
+            == "CancelOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001)"  # noqa
         )
         assert (
             repr(command)
-            == f"CancelOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, command_id={uuid})"  # noqa
+            == f"CancelOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, command_id={uuid}, timestamp_ns=0)"  # noqa
         )
