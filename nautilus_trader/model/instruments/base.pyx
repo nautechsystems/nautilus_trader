@@ -238,7 +238,7 @@ cdef class Instrument(Data):
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
-        cdef str info = values["info"]
+        cdef bytes info = values["info"]
         return Instrument(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             asset_class=AssetClassParser.from_str(values["asset_class"]),

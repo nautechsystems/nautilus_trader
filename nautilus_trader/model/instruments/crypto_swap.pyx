@@ -193,7 +193,7 @@ cdef class CryptoSwap(Instrument):
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
-        cdef str info = values["info"],
+        cdef bytes info = values["info"]
         return CryptoSwap(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             base_currency=Currency.from_str_c(values["base_currency"]),
