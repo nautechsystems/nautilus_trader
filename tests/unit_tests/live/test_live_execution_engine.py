@@ -142,6 +142,8 @@ class TestLiveExecutionEngine:
         self.exec_engine.register_client(self.client)
         self.exec_engine.process(TestStubs.event_account_state())
 
+        self.cache.add_instrument(AUDUSD_SIM)
+
     def teardown(self):
         self.exec_engine.dispose()
 
@@ -325,41 +327,6 @@ class TestLiveExecutionEngine:
         # Assert
         assert self.exec_engine.qsize() == 0
         assert self.exec_engine.command_count == 1
-
-        # Tear Down
-        self.exec_engine.stop()
-
-    @pytest.mark.asyncio
-    async def test_handle_position_opening_with_position_id_none(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register(
-            trader_id=self.trader_id,
-            msgbus=self.msgbus,
-            portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        order = strategy.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        event = TestStubs.event_order_submitted(order)
-
-        # Act
-        self.exec_engine.process(event)
-        await asyncio.sleep(0.1)
-
-        # Assert
-        assert self.exec_engine.qsize() == 0
-        assert self.exec_engine.event_count == 2
 
         # Tear Down
         self.exec_engine.stop()
