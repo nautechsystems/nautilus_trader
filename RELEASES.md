@@ -15,7 +15,8 @@
 - Add OrderType to OrderFilled.
 - Add unrealized PnL to position events.
 - Improved efficiency of `Throttler`.
-- Standardized order events str and repr.
+- Standardized events str and repr.
+- Standardized commands str and repr.
 - Standardized identifiers on events and objects.
 - Removed redundant `BypassCacheDatabase`.
 - Improved `Account` `str` and `repr`.
