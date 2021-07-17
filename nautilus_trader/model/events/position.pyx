@@ -154,6 +154,29 @@ cdef class PositionEvent(Event):
         self.ts_closed_ns = ts_closed_ns
         self.duration_ns = duration_ns
 
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value}, "
+                f"position_id={self.position_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"from_order={self.from_order.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"entry={OrderSideParser.to_str(self.entry)}, "
+                f"side={PositionSideParser.to_str(self.side)}, "
+                f"net_qty={self.net_qty}, "
+                f"quantity={self.quantity.to_str()}, "
+                f"peak_qty={self.peak_qty.to_str()}, "
+                f"currency={self.currency.code}, "
+                f"avg_px_open={self.avg_px_open}, "
+                f"avg_px_open={self.avg_px_close}, "
+                f"realized_points={self.realized_points}, "
+                f"realized_return={self.realized_return:.5f}, "
+                f"realized_pnl={self.realized_pnl}, "
+                f"unrealized_pnl={self.unrealized_pnl}, "
+                f"ts_opened_ns={self.ts_opened_ns}, "
+                f"ts_closed_ns={self.ts_closed_ns}, "
+                f"duration_ns={self.duration_ns})")
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
