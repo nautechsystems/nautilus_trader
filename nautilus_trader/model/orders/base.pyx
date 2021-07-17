@@ -146,8 +146,8 @@ cdef class Order:
         self.account_id = None    # Can be None
         self.execution_id = None  # Can be None
 
-        self.side = init.order_side
-        self.type = init.order_type
+        self.side = init.side
+        self.type = init.type
         self.quantity = init.quantity
         self.timestamp_ns = init.timestamp_ns
         self.time_in_force = init.time_in_force

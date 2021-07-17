@@ -23,6 +23,7 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
@@ -197,6 +198,7 @@ cdef class ExecutionClient:
         ExecutionId execution_id,
         PositionId position_id,
         OrderSide order_side,
+        OrderType order_type,
         Quantity last_qty,
         Price last_px,
         Currency quote_currency,

@@ -392,6 +392,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 execution_id=exec_report.id,
                 position_id=None,  # Assigned in engine
                 order_side=order.side,
+                order_type=order.type,
                 last_qty=exec_report.last_qty,
                 last_px=exec_report.last_px,
                 quote_currency=instrument.quote_currency,

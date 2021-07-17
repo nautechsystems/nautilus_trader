@@ -151,18 +151,33 @@ cdef class OrderInitialized(OrderEvent):
             timestamp_ns,
         )
 
-        self.client_order_id = client_order_id
-        self.order_side = order_side
-        self.order_type = order_type
+        self.side = order_side
+        self.type = order_type
         self.quantity = quantity
         self.time_in_force = time_in_force
         self.options = options
 
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"side={OrderSideParser.to_str(self.side)}, "
+                f"type={OrderTypeParser.to_str(self.type)}, "
+                f"quantity={self.quantity}, "
+                f"options={self.options})")
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"client_order_id={self.client_order_id}, "
-                f"strategy_id={self.strategy_id}, "
-                f"event_id={self.id})")
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"side={OrderSideParser.to_str(self.side)}, "
+                f"type={OrderTypeParser.to_str(self.type)}, "
+                f"quantity={self.quantity}, "
+                f"options={self.options}, "
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderInitialized from_dict_c(dict values):
@@ -190,8 +205,8 @@ cdef class OrderInitialized(OrderEvent):
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "order_side": OrderSideParser.to_str(obj.order_side),
-            "order_type": OrderTypeParser.to_str(obj.order_type),
+            "order_side": OrderSideParser.to_str(obj.side),
+            "order_type": OrderTypeParser.to_str(obj.type),
             "quantity": str(obj.quantity),
             "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
             "event_id": obj.id.value,
@@ -286,11 +301,21 @@ cdef class OrderDenied(OrderEvent):
 
         self.reason = reason
 
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"reason={self.reason})")
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"client_order_id={self.client_order_id}, "
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
                 f"reason={self.reason}, "
-                f"event_id={self.id})")
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderDenied from_dict_c(dict values):
@@ -402,11 +427,23 @@ cdef class OrderSubmitted(OrderEvent):
         self.account_id = account_id
         self.ts_submitted_ns = ts_submitted_ns
 
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"ts_submitted_ns={self.ts_submitted_ns})")
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
-                f"event_id={self.id})")
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"ts_submitted_ns={self.ts_submitted_ns}, "
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderSubmitted from_dict_c(dict values):
@@ -535,12 +572,25 @@ cdef class OrderAccepted(OrderEvent):
         self.account_id = account_id
         self.ts_accepted_ns = ts_accepted_ns
 
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"ts_accepted_ns={self.ts_accepted_ns})")
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
-                f"venue_order_id={self.venue_order_id}, "
-                f"event_id={self.id})")
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"ts_accepted_ns={self.ts_accepted_ns}, "
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderAccepted from_dict_c(dict values):
@@ -665,12 +715,27 @@ cdef class OrderRejected(OrderEvent):
         self.reason = reason
         self.ts_rejected_ns = ts_rejected_ns
 
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"reason='{self.reason}', "
+                f"ts_accepted_ns={self.ts_rejected_ns})")
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"reason='{self.reason}', "
-                f"event_id={self.id})")
+                f"ts_accepted_ns={self.ts_rejected_ns}, "
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderRejected from_dict_c(dict values):
@@ -794,12 +859,25 @@ cdef class OrderCanceled(OrderEvent):
         self.account_id = account_id
         self.ts_canceled_ns = ts_canceled_ns
 
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"ts_canceled_ns={self.ts_canceled_ns})")
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
-                f"venue_order_id={self.venue_order_id}, "
-                f"event_id={self.id})")
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"ts_canceled_ns={self.ts_canceled_ns}, "
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderCanceled from_dict_c(dict values):
@@ -923,12 +1001,25 @@ cdef class OrderExpired(OrderEvent):
         self.account_id = account_id
         self.ts_expired_ns = ts_expired_ns
 
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"ts_expired_ns={self.ts_expired_ns})")
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
-                f"venue_order_id={self.venue_order_id}, "
-                f"event_id={self.id})")
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"ts_expired_ns={self.ts_expired_ns}, "
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderExpired from_dict_c(dict values):
@@ -1052,12 +1143,25 @@ cdef class OrderTriggered(OrderEvent):
         self.account_id = account_id
         self.ts_triggered_ns = ts_triggered_ns
 
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"ts_triggered_ns={self.ts_triggered_ns})")
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
-                f"venue_order_id={self.venue_order_id}, "
-                f"event_id={self.id})")
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"ts_triggered_ns={self.ts_triggered_ns}, "
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderTriggered from_dict_c(dict values):
@@ -1182,13 +1286,25 @@ cdef class OrderPendingUpdate(OrderEvent):
         self.account_id = account_id
         self.ts_pending_ns = ts_pending_ns
 
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"ts_pending_ns={self.ts_pending_ns})")
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
-                f"venue_order_id={self.venue_order_id}, "
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"ts_pending_ns={self.ts_pending_ns}, "
-                f"event_id={self.id})")
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderPendingUpdate from_dict_c(dict values):
@@ -1313,13 +1429,25 @@ cdef class OrderPendingCancel(OrderEvent):
         self.account_id = account_id
         self.ts_pending_ns = ts_pending_ns
 
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"ts_pending_ns={self.ts_pending_ns})")
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
-                f"venue_order_id={self.venue_order_id}, "
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"ts_pending_ns={self.ts_pending_ns}, "
-                f"event_id={self.id})")
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderPendingCancel from_dict_c(dict values):
@@ -1455,14 +1583,29 @@ cdef class OrderUpdateRejected(OrderEvent):
         self.reason = reason
         self.ts_rejected_ns = ts_rejected_ns
 
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"response_to={self.response_to}, "
+                f"reason={self.reason}, "
+                f"ts_rejected_ns={self.ts_rejected_ns})")
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
-                f"venue_order_id={self.venue_order_id}, "
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"response_to={self.response_to}, "
-                f"reason='{self.reason}', "
-                f"event_id={self.id})")
+                f"reason={self.reason}, "
+                f"ts_rejected_ns={self.ts_rejected_ns}, "
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderUpdateRejected from_dict_c(dict values):
@@ -1602,14 +1745,29 @@ cdef class OrderCancelRejected(OrderEvent):
         self.reason = reason
         self.ts_rejected_ns = ts_rejected_ns
 
+    def __str__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"response_to={self.response_to}, "
+                f"reason={self.reason}, "
+                f"ts_rejected_ns={self.ts_rejected_ns})")
+
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
-                f"venue_order_id={self.venue_order_id}, "
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"response_to={self.response_to}, "
-                f"reason='{self.reason}', "
-                f"event_id={self.id})")
+                f"reason={self.reason}, "
+                f"ts_rejected_ns={self.ts_rejected_ns}, "
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderCancelRejected from_dict_c(dict values):
@@ -1749,15 +1907,31 @@ cdef class OrderUpdated(OrderEvent):
         self.trigger = trigger
         self.ts_updated_ns = ts_updated_ns
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
-                f"venue_order_id={self.venue_order_id}, "
-                f"qty={self.quantity.to_str()}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"quantity={self.quantity}, "
                 f"price={self.price}, "
                 f"trigger={self.trigger}, "
-                f"event_id={self.id})")
+                f"ts_updated_ns={self.ts_updated_ns})")
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"quantity={self.quantity}, "
+                f"price={self.price}, "
+                f"trigger={self.trigger}, "
+                f"ts_updated_ns={self.ts_updated_ns}, "
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderUpdated from_dict_c(dict values):
@@ -1843,6 +2017,7 @@ cdef class OrderFilled(OrderEvent):
         ExecutionId execution_id not None,
         PositionId position_id not None,
         OrderSide order_side,
+        OrderType order_type,
         Quantity last_qty not None,
         Price last_px not None,
         Currency currency not None,
@@ -1876,6 +2051,8 @@ cdef class OrderFilled(OrderEvent):
             The position ID associated with the order.
         order_side : OrderSide
             The execution order side.
+        order_side : OrderType
+            The execution order type.
         last_qty : Quantity
             The fill quantity for this execution.
         last_px : Price
@@ -1920,7 +2097,8 @@ cdef class OrderFilled(OrderEvent):
         self.account_id = account_id
         self.execution_id = execution_id
         self.position_id = position_id
-        self.order_side = order_side
+        self.side = order_side
+        self.type = order_type
         self.last_qty = last_qty
         self.last_px = last_px
         self.currency = currency
@@ -1929,20 +2107,41 @@ cdef class OrderFilled(OrderEvent):
         self.ts_filled_ns = ts_filled_ns
         self.info = info
 
-    def __repr__(self) -> str:
+    def __str__(self) -> str:
         return (f"{type(self).__name__}("
-                f"account_id={self.account_id}, "
-                f"client_order_id={self.client_order_id}, "
-                f"venue_order_id={self.venue_order_id}, "
-                f"position_id={self.position_id}, "
-                f"strategy_id={self.strategy_id}, "
-                f"instrument_id={self.instrument_id}, "
-                f"side={OrderSideParser.to_str(self.order_side)}"
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"execution_id={self.execution_id.value}, "
+                f"position_id={self.position_id.value}, "
+                f"side={OrderSideParser.to_str(self.side)}"
                 f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
+                f"type={OrderTypeParser.to_str(self.type)}, "
                 f"last_qty={self.last_qty.to_str()}, "
                 f"last_px={self.last_px} {self.currency.code}, "
                 f"commission={self.commission.to_str()}, "
-                f"event_id={self.id})")
+                f"ts_filled_ns={self.ts_filled_ns})")
+
+    def __repr__(self) -> str:
+        return (f"{type(self).__name__}("
+                f"trader_id={self.trader_id.value}, "
+                f"strategy_id={self.strategy_id.value}, "
+                f"instrument_id={self.instrument_id.value}, "
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id.value}, "
+                f"account_id={self.account_id.value}, "
+                f"execution_id={self.execution_id.value}, "
+                f"position_id={self.position_id.value}, "
+                f"side={OrderSideParser.to_str(self.side)}"
+                f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
+                f"type={OrderTypeParser.to_str(self.type)}, "
+                f"last_qty={self.last_qty.to_str()}, "
+                f"last_px={self.last_px} {self.currency.code}, "
+                f"commission={self.commission.to_str()}, "
+                f"ts_filled_ns={self.ts_filled_ns}, "
+                f"event_id={self.id}, "
+                f"timestamp_ns={self.timestamp_ns})")
 
     @staticmethod
     cdef OrderFilled from_dict_c(dict values):
@@ -1957,6 +2156,7 @@ cdef class OrderFilled(OrderEvent):
             execution_id=ExecutionId(values["execution_id"]),
             position_id=PositionId(values["position_id"]),
             order_side=OrderSideParser.from_str(values["order_side"]),
+            order_type=OrderTypeParser.from_str(values["order_type"]),
             last_qty=Quantity.from_str_c(values["last_qty"]),
             last_px=Price.from_str_c(values["last_px"]),
             currency=Currency.from_str_c(values["currency"]),
@@ -1981,7 +2181,8 @@ cdef class OrderFilled(OrderEvent):
             "venue_order_id": obj.venue_order_id.value,
             "execution_id": obj.execution_id.value,
             "position_id": obj.position_id.value,
-            "order_side": OrderSideParser.to_str(obj.order_side),
+            "order_side": OrderSideParser.to_str(obj.side),
+            "order_type": OrderTypeParser.to_str(obj.type),
             "last_qty": str(obj.last_qty),
             "last_px": str(obj.last_px),
             "currency": obj.currency.code,
@@ -2023,10 +2224,10 @@ cdef class OrderFilled(OrderEvent):
         return OrderFilled.to_dict_c(obj)
 
     cdef bint is_buy_c(self) except *:
-        return self.order_side == OrderSide.BUY
+        return self.side == OrderSide.BUY
 
     cdef bint is_sell_c(self) except *:
-        return self.order_side == OrderSide.SELL
+        return self.side == OrderSide.SELL
 
     @property
     def is_buy(self):

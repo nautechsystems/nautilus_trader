@@ -3,6 +3,8 @@
 
 ## Breaking Changes
 - Renamed `MessageType` enum to `MessageCategory`.
+- Renamed `fill.order_side` to `fill.side`.
+- Renamed `fill.order_type` to `fill.type`.
 - All `Event` serialization due to domain refactorings.
 
 ## Enhancements
@@ -10,7 +12,10 @@
 - Added `MessageType` class.
 - Added `TradingEvent` base class.
 - Added `TraderId` to `Order` and `Position`.
+- Add OrderType to OrderFilled.
+- Add unrealized PnL to position events.
 - Improved efficiency of `Throttler`.
+- Standardized order events str and repr.
 - Standardized identifiers on events and objects.
 - Removed redundant `BypassCacheDatabase`.
 - Improved `Account` `str` and `repr`.

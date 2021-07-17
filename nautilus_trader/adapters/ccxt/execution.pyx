@@ -726,6 +726,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             execution_id=ExecutionId(event["id"]),
             position_id=None,  # Assigned in engine
             order_side=order.side,
+            order_type=order.type,
             last_qty=Quantity(event["amount"], instrument.size_precision),
             last_px=Price(event["price"], instrument.price_precision),
             quote_currency=instrument.quote_currency,

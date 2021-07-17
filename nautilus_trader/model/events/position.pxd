@@ -72,6 +72,8 @@ cdef class PositionEvent(Event):
     """The realized return for the position.\n\n:returns: `Decimal`"""
     cdef readonly Money realized_pnl
     """The realized PnL for the position (including commissions).\n\n:returns: `Money`"""
+    cdef readonly Money unrealized_pnl
+    """The unrealized PnL for the position (including commissions).\n\n:returns: `Money`"""
     cdef readonly int64_t ts_opened_ns
     """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `int64`"""
     cdef readonly int64_t ts_closed_ns

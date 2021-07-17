@@ -28,11 +28,18 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport millis_to_nanos
+from nautilus_trader.core.datetime cimport nanos_to_secs
+from nautilus_trader.core.datetime cimport secs_to_nanos
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.execution.messages cimport ExecutionReport
+from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.order_type cimport OrderType
+from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport UpdateOrder
@@ -40,7 +47,14 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecutionId
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orders.base cimport Order
 
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -52,21 +66,6 @@ from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
-from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.core.datetime import nanos_to_secs
-from nautilus_trader.core.datetime import secs_to_nanos
-from nautilus_trader.execution.messages import ExecutionReport
-from nautilus_trader.execution.messages import OrderStatusReport
-from nautilus_trader.model.enums import VenueType
-
-from nautilus_trader.model.identifiers cimport ExecutionId
-
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.base import Order
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -459,6 +458,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     execution_id=execution_id,
                                     position_id=order.position_id,
                                     order_side=B2N_ORDER_STREAM_SIDE[order_update["side"]],
+                                    order_type=OrderType.LIMIT,
                                     last_qty=Quantity(order_update["sm"], instrument.size_precision),
                                     last_px=price_to_probability(order_update["p"]),
                                     # avg_px=Decimal(order['avp']),
@@ -483,6 +483,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     execution_id=execution_id,
                                     position_id=order.position_id,
                                     order_side=B2N_ORDER_STREAM_SIDE[order_update["side"]],
+                                    order_type=OrderType.LIMIT,
                                     last_qty=Quantity(order_update["sm"], instrument.size_precision),
                                     last_px=price_to_probability(order_update['p']),
                                     quote_currency=instrument.quote_currency,
