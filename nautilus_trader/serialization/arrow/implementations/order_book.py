@@ -84,12 +84,12 @@ def deserialize(data: List[Dict]):
             bids=[
                 (order["order_price"], order["order_size"])
                 for order in data[1:]
-                if order["side"] == "BUY"
+                if order["order_side"] == "BUY"
             ],
             asks=[
                 (order["order_price"], order["order_size"])
                 for order in data[1:]
-                if order["side"] == "SELL"
+                if order["order_side"] == "SELL"
             ],
             ts_event_ns=data[1]["ts_event_ns"],
             ts_recv_ns=data[1]["ts_recv_ns"],
@@ -107,7 +107,7 @@ def deserialize(data: List[Dict]):
             ts_recv_ns=data[0]["ts_recv_ns"],
         )
 
-    assert not set([d["side"] for d in data]).difference((None, "BUY", "SELL")), "Wrong sides"
+    assert not set([d["order_side"] for d in data]).difference((None, "BUY", "SELL")), "Wrong sides"
     results = []
     for _, chunk in itertools.groupby(data, key=timestamp_key):
         chunk = list(chunk)

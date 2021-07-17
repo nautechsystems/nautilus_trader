@@ -1073,7 +1073,7 @@ class TestParquetSerializer:
                 OrderBookDelta.from_dict(
                     {
                         "delta_type": "ADD",
-                        "side": "BUY",
+                        "order_side": "BUY",
                         "order_price": 8.0,
                         "order_size": 30.0,
                         "order_id": "e0364f94-8fcb-0262-cbb3-075c51ee4917",
@@ -1083,7 +1083,7 @@ class TestParquetSerializer:
                 OrderBookDelta.from_dict(
                     {
                         "delta_type": "ADD",
-                        "side": "SELL",
+                        "order_side": "SELL",
                         "order_price": 15.0,
                         "order_size": 10.0,
                         "order_id": "cabec174-acc6-9204-9ebf-809da3896daf",
