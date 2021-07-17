@@ -72,8 +72,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.limit cimport LimitOrder
-from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.trading.account cimport Account
 
 
@@ -498,43 +496,17 @@ cdef class ExecutionEngine(Component):
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
     cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
-        cdef Order order = command.order
-
         # Cache order
-        self.cache.add_order(order, command.position_id)
-
-        # Publish initialized event
-        self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.value}.{order.client_order_id.value}",
-            msg=order.init_event_c(),
-        )
+        self.cache.add_order(command.order, command.position_id)
 
         # Send to execution client
         client.submit_order(command)
 
     cdef void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
-        cdef Order entry = command.bracket_order.entry
-        cdef StopMarketOrder stop_loss = command.bracket_order.stop_loss
-        cdef LimitOrder take_profit = command.bracket_order.take_profit
-
         # Cache all orders
-        self.cache.add_order(entry, PositionId.null_c())
-        self.cache.add_order(stop_loss, PositionId.null_c())
-        self.cache.add_order(take_profit, PositionId.null_c())
-
-        # Publish initialized events
-        self._msgbus.publish_c(
-            topic=f"events.order.{entry.strategy_id.value}.{entry.client_order_id.value}",
-            msg=command.bracket_order.entry.init_event_c(),
-        )
-        self._msgbus.publish_c(
-            topic=f"events.order.{stop_loss.strategy_id.value}.{stop_loss.client_order_id.value}",
-            msg=command.bracket_order.stop_loss.init_event_c(),
-        )
-        self._msgbus.publish_c(
-            topic=f"events.order.{take_profit.strategy_id.value}.{take_profit.client_order_id.value}",
-            msg=command.bracket_order.take_profit.init_event_c(),
-        )
+        self.cache.add_order(command.bracket_order.entry, PositionId.null_c())
+        self.cache.add_order(command.bracket_order.stop_loss, PositionId.null_c())
+        self.cache.add_order(command.bracket_order.take_profit, PositionId.null_c())
 
         # Send to execution client
         client.submit_bracket_order(command)

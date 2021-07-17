@@ -667,12 +667,6 @@ cdef class RiskEngine(Component):
         if not self.cache.order_exists(order.client_order_id):
             self.cache.add_order(order, PositionId.null_c())
 
-            # Publish initialized event
-            self._msgbus.publish_c(
-                topic=f"events.order.{order.strategy_id.value}.{order.client_order_id.value}",
-                msg=order.init_event_c(),
-            )
-
         # Generate event
         cdef OrderDenied denied = OrderDenied(
             trader_id=order.trader_id,
