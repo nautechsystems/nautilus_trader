@@ -433,11 +433,11 @@ class TestEvents:
         assert OrderUpdated.from_dict(OrderUpdated.to_dict(event)) == event
         assert (
             str(event)
-            == "OrderUpdated(instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, account_id=SIM-000, quantity=500000, price=1.95000, trigger=None, ts_updated_ns=0)"  # noqa
+            == "OrderUpdated(instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, account_id=SIM-000, quantity=500_000, price=1.95000, trigger=None, ts_updated_ns=0)"  # noqa
         )
         assert (
             repr(event)
-            == f"OrderUpdated(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, account_id=SIM-000, quantity=500000, price=1.95000, trigger=None, ts_updated_ns=0, event_id={uuid}, timestamp_ns=0)"  # noqa
+            == f"OrderUpdated(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, account_id=SIM-000, quantity=500_000, price=1.95000, trigger=None, ts_updated_ns=0, event_id={uuid}, timestamp_ns=0)"  # noqa
         )
 
     def test_order_filled_event_to_from_dict_and_str_repr(self):
@@ -512,7 +512,7 @@ class TestPositionEvents:
         assert PositionOpened.from_dict(PositionOpened.to_dict(event)) == event
         assert (
             str(event)
-            == f"PositionOpened(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=100000, quantity=100_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_open=None, realized_points=0, realized_return=0.00000, realized_pnl=-2.00, unrealized_pnl=0.00, ts_opened_ns=0, ts_closed_ns=0, duration_ns=0, event_id={uuid})"  # noqa
+            == "PositionOpened(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=100000, quantity=100_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_open=None, realized_points=0, realized_return=0.00000, realized_pnl=-2.00, unrealized_pnl=0.00, ts_opened_ns=0, ts_closed_ns=0, duration_ns=0)"  # noqa
         )
         assert (
             repr(event)
@@ -559,7 +559,7 @@ class TestPositionEvents:
         assert PositionChanged.from_dict(PositionChanged.to_dict(event)) == event
         assert (
             str(event)
-            == f"PositionChanged(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_open=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00, unrealized_pnl=5.00, ts_opened_ns=0, ts_closed_ns=0, duration_ns=0, event_id={uuid})"  # noqa
+            == f"PositionChanged(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_open=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00, unrealized_pnl=5.00, ts_opened_ns=0, ts_closed_ns=0, duration_ns=0)"  # noqa
         )
         assert (
             repr(event)
@@ -606,7 +606,7 @@ class TestPositionEvents:
         assert PositionClosed.from_dict(PositionClosed.to_dict(event)) == event
         assert (
             str(event)
-            == f"PositionClosed(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=FLAT, net_qty=0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_open=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=6.00, unrealized_pnl=0.00, ts_opened_ns=0, ts_closed_ns=0, duration_ns=0, event_id={uuid})"  # noqa
+            == f"PositionClosed(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=FLAT, net_qty=0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_open=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=6.00, unrealized_pnl=0.00, ts_opened_ns=0, ts_closed_ns=0, duration_ns=0)"  # noqa
         )
         assert (
             repr(event)
