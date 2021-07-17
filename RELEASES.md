@@ -19,6 +19,7 @@
 - Standardized identifiers on events and objects.
 - Removed redundant `BypassCacheDatabase`.
 - Improved `Account` `str` and `repr`.
+- Using `orjson` over `json` 'under the hood' for efficiency.
 
 ## Fixes
 - Fixed backtest log timestamping.
