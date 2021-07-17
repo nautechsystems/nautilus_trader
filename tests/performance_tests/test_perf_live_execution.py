@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import time
 
 import pytest
 
@@ -164,7 +163,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
     @pytest.mark.asyncio
     async def test_submit_order(self):
         self.exec_engine.start()
-        time.sleep(0.1)
+        await asyncio.sleep(1)
 
         def submit_order():
             order = self.strategy.order_factory.market(
@@ -181,7 +180,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
     @pytest.mark.asyncio
     async def test_submit_order_end_to_end(self):
         self.exec_engine.start()
-        time.sleep(0.1)
+        await asyncio.sleep(1)
 
         def run():
             for _ in range(1000):

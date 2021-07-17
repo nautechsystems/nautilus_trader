@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import threading
-import time
+
+import pytest
 
 from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
@@ -111,9 +111,6 @@ class TestTradingNodeConfiguration:
 class TestTradingNodeOperation:
     def setup(self):
         # Fixture Setup
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
         config = {
             "trader": {
                 "name": "tester",
@@ -150,51 +147,54 @@ class TestTradingNodeOperation:
         self.node.add_data_client_factory("CCXT", CCXTDataClientFactory)
         self.node.build()
 
+        # TODO(cs): Assert existence of client
+
     def test_add_exec_client_factory(self):
         self.node.add_exec_client_factory("CCXT", CCXTExecutionClientFactory)
         self.node.build()
 
-    def test_start(self):
+        # TODO(cs): Assert existence of client
+
+    @pytest.mark.asyncio
+    async def test_start(self):
         # Arrange
         self.node.build()
-        run = threading.Thread(target=self.node.start, daemon=True)
-        run.start()
-
-        time.sleep(2)  # Allow node to start
 
         # Act
+        self.node.start()
+        await asyncio.sleep(2)
+
         # Assert
         assert self.node.trader.state == ComponentState.RUNNING
-        self.loop.call_soon_threadsafe(self.node.stop)
 
-    def test_stop(self):
+    @pytest.mark.asyncio
+    async def test_stop(self):
         # Arrange
         self.node.build()
-        run = threading.Thread(target=self.node.start, daemon=True)
-        run.start()
-
-        time.sleep(2)  # Allow node to start
-        self.loop.call_soon_threadsafe(self.node.stop)
-
-        time.sleep(3)  # Allow node to stop
+        self.node.start()
+        await asyncio.sleep(2)  # Allow node to start
 
         # Act
+        self.node.stop()
+        await asyncio.sleep(3)  # Allow node to stop
+
         # Assert
         assert self.node.trader.state == ComponentState.STOPPED
 
-    def test_dispose(self):
+    @pytest.mark.skip(reason="refactor TradingNode coroutines")
+    @pytest.mark.asyncio
+    async def test_dispose(self):
         # Arrange
         self.node.build()
-        run = threading.Thread(target=self.node.start, daemon=True)
-        run.start()
+        self.node.start()
+        await asyncio.sleep(2)  # Allow node to start
 
-        time.sleep(2)  # Allow node to start
-        self.loop.call_soon_threadsafe(self.node.stop)
+        self.node.stop()
+        await asyncio.sleep(2)  # Allow node to stop
 
-        # Allow node to stop
-        time.sleep(3)
-
+        # Act
         self.node.dispose()
+        await asyncio.sleep(1)  # Allow node to dispose
 
         # Act
         # Assert
