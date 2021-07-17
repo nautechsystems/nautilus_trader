@@ -163,7 +163,7 @@ cdef class OrderInitialized(OrderEvent):
                 f"client_order_id={self.client_order_id.value}, "
                 f"side={OrderSideParser.to_str(self.side)}, "
                 f"type={OrderTypeParser.to_str(self.type)}, "
-                f"quantity={self.quantity}, "
+                f"quantity={self.quantity.to_str()}, "
                 f"options={self.options})")
 
     def __repr__(self) -> str:
@@ -174,7 +174,7 @@ cdef class OrderInitialized(OrderEvent):
                 f"client_order_id={self.client_order_id.value}, "
                 f"side={OrderSideParser.to_str(self.side)}, "
                 f"type={OrderTypeParser.to_str(self.type)}, "
-                f"quantity={self.quantity}, "
+                f"quantity={self.quantity.to_str()}, "
                 f"options={self.options}, "
                 f"event_id={self.id}, "
                 f"timestamp_ns={self.timestamp_ns})")
@@ -1913,7 +1913,7 @@ cdef class OrderUpdated(OrderEvent):
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
                 f"account_id={self.account_id.value}, "
-                f"quantity={self.quantity}, "
+                f"quantity={self.quantity.to_str()}, "
                 f"price={self.price}, "
                 f"trigger={self.trigger}, "
                 f"ts_updated_ns={self.ts_updated_ns})")
@@ -1926,7 +1926,7 @@ cdef class OrderUpdated(OrderEvent):
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
                 f"account_id={self.account_id.value}, "
-                f"quantity={self.quantity}, "
+                f"quantity={self.quantity.to_str()}, "
                 f"price={self.price}, "
                 f"trigger={self.trigger}, "
                 f"ts_updated_ns={self.ts_updated_ns}, "
