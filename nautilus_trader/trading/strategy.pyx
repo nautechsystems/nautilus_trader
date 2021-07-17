@@ -1411,6 +1411,14 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self._risk_engine, "self._risk_engine")
 
+        # Publish initialized event
+        self._msgbus.publish_c(
+            topic=f"events.order"
+                  f".{order.strategy_id.value}"
+                  f".{order.client_order_id.value}",
+            msg=order.init_event_c(),
+        )
+
         cdef SubmitOrder command = SubmitOrder(
             self.trader_id,
             self.id,
@@ -1438,6 +1446,26 @@ cdef class TradingStrategy(Component):
         Condition.not_none(bracket_order, "bracket_order")
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self._risk_engine, "self._risk_engine")
+
+        # Publish initialized events
+        self._msgbus.publish_c(
+            topic=f"events.order"
+                  f".{bracket_order.entry.strategy_id.value}"
+                  f".{bracket_order.entry.client_order_id.value}",
+            msg=bracket_order.entry.init_event_c(),
+        )
+        self._msgbus.publish_c(
+            topic=f"events.order"
+                  f".{bracket_order.stop_loss.strategy_id.value}"
+                  f".{bracket_order.stop_loss.client_order_id.value}",
+            msg=bracket_order.stop_loss.init_event_c(),
+        )
+        self._msgbus.publish_c(
+            topic=f"events.order"
+                  f".{bracket_order.take_profit.strategy_id.value}"
+                  f".{bracket_order.take_profit.client_order_id.value}",
+            msg=bracket_order.take_profit.init_event_c(),
+        )
 
         cdef SubmitBracketOrder command = SubmitBracketOrder(
             self.trader_id,
@@ -1656,6 +1684,14 @@ cdef class TradingStrategy(Component):
             position.instrument_id,
             Order.flatten_side_c(position.side),
             position.quantity,
+        )
+
+        # Publish initialized event
+        self._msgbus.publish_c(
+            topic=f"events.order"
+                  f".{order.strategy_id.value}"
+                  f".{order.client_order_id.value}",
+            msg=order.init_event_c(),
         )
 
         # Create command
