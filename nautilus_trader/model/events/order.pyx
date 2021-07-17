@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
+import orjson
 
 from libc.stdint cimport int64_t
 
@@ -193,7 +193,7 @@ cdef class OrderInitialized(OrderEvent):
             time_in_force=TimeInForceParser.from_str(values["time_in_force"]),
             event_id=UUID.from_str_c(values["event_id"]),
             timestamp_ns=values["timestamp_ns"],
-            options=json.loads(values["options"]),
+            options=orjson.loads(values["options"]),
         )
 
     @staticmethod
@@ -211,7 +211,7 @@ cdef class OrderInitialized(OrderEvent):
             "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
             "event_id": obj.id.value,
             "timestamp_ns": obj.timestamp_ns,
-            "options": json.dumps(obj.options),
+            "options": orjson.dumps(obj.options).decode(),
         }
 
     @staticmethod
@@ -2165,7 +2165,7 @@ cdef class OrderFilled(OrderEvent):
             ts_filled_ns=values["ts_filled_ns"],
             event_id=UUID.from_str_c(values["event_id"]),
             timestamp_ns=values["timestamp_ns"],
-            info=json.loads(values["info"])
+            info=orjson.loads(values["info"])
         )
 
     @staticmethod
@@ -2191,7 +2191,7 @@ cdef class OrderFilled(OrderEvent):
             "ts_filled_ns": obj.ts_filled_ns,
             "event_id": obj.id.value,
             "timestamp_ns": obj.timestamp_ns,
-            "info": json.dumps(obj.info),
+            "info": orjson.dumps(obj.info).decode(),
         }
 
     @staticmethod
