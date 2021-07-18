@@ -145,8 +145,6 @@ def build(setup_kwargs):
     cmd.ensure_finalized()
     cmd.run()
 
-    print("Build completed\n")
-
     # Copy the build back into the project for packaging
     _copy_build_dir_to_project(cmd)
 
@@ -189,3 +187,4 @@ if __name__ == "__main__":
     print("")
 
     build({})
+    print("Build completed\n")
