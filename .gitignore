@@ -36,4 +36,4 @@ venv*/
 .DS_Store
 !tests/integration_tests/adapters/betfair/responses/*.log
 tests/test_kit/data/catalog/
-PERF.JSON
+output.json
