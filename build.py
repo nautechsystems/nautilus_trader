@@ -28,14 +28,6 @@ PARALLEL_BUILD = True if os.getenv("PARALLEL_BUILD", "true") == "true" else Fals
 # If SKIP_BUILD_COPY is enabled, prevents copying built *.so files back into the source tree
 SKIP_BUILD_COPY = bool(os.getenv("SKIP_BUILD_COPY", ""))
 
-print(
-    f"DEBUG_MODE={DEBUG_MODE}\n"
-    f"PROFILING_MODE={PROFILING_MODE}\n"
-    f"ANNOTATION_MODE={ANNOTATION_MODE}\n"
-    f"PARALLEL_BUILD={PARALLEL_BUILD}\n"
-    f"SKIP_BUILD_COPY={SKIP_BUILD_COPY}"
-)
-
 ##########################
 #  Cython build options  #
 ##########################
@@ -153,6 +145,8 @@ def build(setup_kwargs):
     cmd.ensure_finalized()
     cmd.run()
 
+    print("Build completed\n")
+
     # Copy the build back into the project for packaging
     _copy_build_dir_to_project(cmd)
 
@@ -160,7 +154,9 @@ def build(setup_kwargs):
 
 
 if __name__ == "__main__":
-    print("")
+    print("\n=====================================================================")
+    print("Nautilus Builder")
+    print("=====================================================================")
 
     # Work around a Cython problem in Python 3.8.x on macOS
     # https://github.com/cython/cython/issues/3262
@@ -174,7 +170,6 @@ if __name__ == "__main__":
         except ImportError:
             print("multiprocessing not available")
 
-    print("Starting build...")
     # Note: On macOS (and perhaps other platforms), executable files may be
     # universal files containing multiple architectures. To determine the
     # “64-bitness” of the current interpreter, it is more reliable to query the
@@ -184,5 +179,13 @@ if __name__ == "__main__":
     print(f"Python: {platform.python_version()}")
     print(f"Cython: {cython_compiler_version}")
     print(f"NumPy:  {np.__version__}")
+    print("")
+    print("Starting build...")
+    print(f"DEBUG_MODE={DEBUG_MODE}")
+    print(f"PROFILING_MODE={PROFILING_MODE}")
+    print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
+    print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
+    print(f"SKIP_BUILD_COPY={SKIP_BUILD_COPY}")
+    print("")
 
     build({})
