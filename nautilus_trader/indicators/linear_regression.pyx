@@ -13,10 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from statistics import mean
 from collections import deque
+from statistics import mean
 
 import numpy as np
+cimport numpy as np
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
