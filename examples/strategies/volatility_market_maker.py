@@ -266,10 +266,10 @@ class VolatilityMarketMaker(TradingStrategy):
 
         # If order filled then replace order at atr multiple distance from the market
         if isinstance(event, OrderFilled):
-            if event.order_side == OrderSide.BUY:
+            if event.side == OrderSide.BUY:
                 if self.buy_order.is_completed:
                     self.create_buy_order(last)
-            elif event.order_side == OrderSide.SELL:
+            elif event.side == OrderSide.SELL:
                 if self.sell_order.is_completed:
                     self.create_sell_order(last)
 

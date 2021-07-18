@@ -342,9 +342,9 @@ class EMACrossStopEntryTrail(TradingStrategy):
             if self.entry:
                 if event.client_order_id == self.entry.client_order_id:
                     last_bar = self.cache.bar(self.bar_type)
-                    if event.order_side == OrderSide.BUY:
+                    if event.side == OrderSide.BUY:
                         self.trailing_stop_sell(last_bar)
-                    elif event.order_side == OrderSide.SELL:
+                    elif event.side == OrderSide.SELL:
                         self.trailing_stop_buy(last_bar)
             if self.trailing_stop:
                 if event.client_order_id == self.trailing_stop.client_order_id:
