@@ -1,4 +1,6 @@
-from nautilus_trader.indicators.helpers import cross_over, cross_up, cross_down
+from nautilus_trader.indicators.helpers import cross_down
+from nautilus_trader.indicators.helpers import cross_over
+from nautilus_trader.indicators.helpers import cross_up
 
 
 class TestCrossOverHelpers:
