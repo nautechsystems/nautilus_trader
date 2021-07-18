@@ -58,7 +58,7 @@ def coverage(session: Session) -> None:
 @nox.session
 def build_docs(session: Session) -> None:
     """Build documentation."""
-    _setup_poetry(session, "--extras", ALL_EXTRAS)
+    _setup_poetry(session, "--extras", "docs")
     session.run("poetry", "run", "sphinx-build", "docs/source", "docs/build")
 
 
