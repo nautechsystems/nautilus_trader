@@ -3,8 +3,6 @@ name: performance
 on:
   push:
     branches: [ develop ]
-  pull_request:
-    branches: [ develop ]
 
 jobs:
   performance:
