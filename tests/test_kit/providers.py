@@ -15,13 +15,14 @@
 
 import bz2
 from decimal import Decimal
-import json
 import os
 from typing import List
 
+import orjson
 import pandas as pd
 from pandas import DataFrame
 
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.loaders import CSVBarDataLoader
 from nautilus_trader.backtest.loaders import CSVTickDataLoader
 from nautilus_trader.backtest.loaders import ParquetTickDataLoader
@@ -35,19 +36,18 @@ from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments.cfd import CFDInstrument
+from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.order import Order
-from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.orderbook.data import Order
 from tests.test_kit import PACKAGE_ROOT
 
 
@@ -177,7 +177,7 @@ class TestDataProvider:
 
         return [
             parse_line(line)
-            for line in json.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
+            for line in orjson.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
         ]
 
     @staticmethod
@@ -223,7 +223,7 @@ class TestDataProvider:
 
         return [
             msg
-            for data in json.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
+            for data in orjson.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
             for msg in parser(data)
         ]
 
@@ -428,42 +428,6 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def xagusd_oanda() -> CFDInstrument:
-        """
-        Return the OANDA XAG/USD CFD instrument for backtesting.
-
-        Returns
-        -------
-        CFDInstrument
-
-        """
-        return CFDInstrument(
-            instrument_id=InstrumentId(
-                symbol=Symbol("XAG/USD"),
-                venue=Venue("OANDA"),
-            ),
-            asset_class=AssetClass.METAL,
-            quote_currency=USD,
-            price_precision=5,
-            size_precision=0,
-            price_increment=Price.from_str("0.00001"),
-            size_increment=Quantity.from_int(1),
-            lot_size=Quantity.from_int(1),
-            max_quantity=Quantity.from_int(10000000),
-            min_quantity=Quantity.from_int(1),
-            max_notional=None,
-            min_notional=None,
-            max_price=Price.from_str("1000000.00"),
-            min_price=Price.from_str("0.05"),
-            margin_init=Decimal("0.02"),
-            margin_maint=Decimal("0.007"),
-            maker_fee=Decimal("-0.00025"),
-            taker_fee=Decimal("0.00075"),
-            ts_event_ns=0,
-            ts_recv_ns=0,
-        )
-
-    @staticmethod
     def default_fx_ccy(symbol: str, venue: Venue = None) -> CurrencySpot:
         """
         Return a default FX currency pair instrument from the given instrument_id.
@@ -523,6 +487,31 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.03"),
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
+            ts_event_ns=0,
+            ts_recv_ns=0,
+        )
+
+    @staticmethod
+    def betting_instrument():
+        return BettingInstrument(
+            venue_name=BETFAIR_VENUE.value,
+            betting_type="ODDS",
+            competition_id="12282733",
+            competition_name="NFL",
+            event_country_code="GB",
+            event_id="29678534",
+            event_name="NFL",
+            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00").to_pydatetime(),
+            event_type_id="6423",
+            event_type_name="American Football",
+            market_id="1.179082386",
+            market_name="AFC Conference Winner",
+            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00").to_pydatetime(),
+            market_type="SPECIAL",
+            selection_handicap="",
+            selection_id="50214",
+            selection_name="Kansas City Chiefs",
+            currency="GBP",
             ts_event_ns=0,
             ts_recv_ns=0,
         )

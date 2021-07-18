@@ -16,15 +16,17 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
-from nautilus_trader.model.c_enums.delta_type cimport DeltaType
-from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport Tick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.orderbook.data cimport Order
+from nautilus_trader.model.orderbook.data cimport OrderBookData
+from nautilus_trader.model.orderbook.data cimport OrderBookDelta
+from nautilus_trader.model.orderbook.data cimport OrderBookDeltas
+from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
-from nautilus_trader.model.orderbook.order cimport Order
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport Tick
-from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class OrderBook:
@@ -83,6 +85,7 @@ cdef class OrderBook:
     cpdef double get_quote_volume_for_price(self, bint is_buy, double price)
     cpdef double get_vwap_for_volume(self, bint is_buy, double volume)
 
+
 cdef class L3OrderBook(OrderBook):
     pass
 
@@ -104,47 +107,3 @@ cdef class L1OrderBook(OrderBook):
     cdef void _update_bid(self, double price, double size)
     cdef void _update_ask(self, double price, double size)
     cdef Order _process_order(self, Order order)
-
-
-cdef class OrderBookData(Data):
-    cdef readonly InstrumentId instrument_id
-    """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
-    cdef readonly BookLevel level
-    """The order book level (L1, L2, L3).\n\n:returns: `BookLevel`"""
-
-
-cdef class OrderBookSnapshot(OrderBookData):
-    cdef readonly list bids
-    """The snapshot bids.\n\n:returns: `list`"""
-    cdef readonly list asks
-    """The snapshot asks.\n\n:returns: `list`"""
-
-    @staticmethod
-    cdef OrderBookSnapshot from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(OrderBookSnapshot obj)
-
-
-cdef class OrderBookDeltas(OrderBookData):
-    cdef readonly list deltas
-    """The order book deltas.\n\n:returns: `list[OrderBookDelta]`"""
-
-    @staticmethod
-    cdef OrderBookDeltas from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(OrderBookDeltas obj)
-
-
-cdef class OrderBookDelta(OrderBookData):
-    cdef readonly DeltaType type
-    """The type of change (ADD, UPDATED, DELETE, CLEAR).\n\n:returns: `DeltaType`"""
-    cdef readonly Order order
-    """The order to apply.\n\n:returns: `Order`"""
-
-    @staticmethod
-    cdef OrderBookDelta from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(OrderBookDelta obj)

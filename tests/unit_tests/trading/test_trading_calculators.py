@@ -16,9 +16,9 @@
 import datetime
 from decimal import Decimal
 import os
-import unittest
 
 import pandas as pd
+import pytest
 
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
@@ -37,7 +37,7 @@ GBPUSD_SIM = TestStubs.gbpusd_id()
 USDJPY_SIM = TestStubs.usdjpy_id()
 
 
-class ExchangeRateCalculatorTests(unittest.TestCase):
+class TestExchangeRateCalculator:
     def test_get_rate_when_price_type_last_raises_value_error(self):
         # Arrange
         converter = ExchangeRateCalculator()
@@ -46,15 +46,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(
-            ValueError,
-            converter.get_rate,
-            USD,
-            JPY,
-            PriceType.LAST,
-            bid_rates,
-            ask_rates,
-        )
+        with pytest.raises(ValueError):
+            converter.get_rate(USD, JPY, PriceType.LAST, bid_rates, ask_rates)
 
     def test_get_rate_when_from_currency_equals_to_currency_returns_one(self):
         # Arrange
@@ -72,7 +65,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(1, result)
+        assert result == 1
 
     def test_get_rate_when_no_currency_rate_returns_zero(self):
         # Arrange
@@ -90,7 +83,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(0, result)
+        assert result == 0
 
     def test_get_rate(self):
         # Arrange
@@ -108,7 +101,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Decimal("0.80000"), result)
+        assert result == Decimal("0.80000")
 
     def test_get_rate_when_symbol_has_slash(self):
         # Arrange
@@ -126,7 +119,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Decimal("0.80000"), result)
+        assert result == Decimal("0.80000")
 
     def test_get_rate_for_inverse1(self):
         # Arrange
@@ -144,7 +137,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Decimal("0.00009522449173927534161786411465"), result)
+        assert result == Decimal("0.00009522449173927534161786411465")
 
     def test_get_rate_for_inverse2(self):
         # Arrange
@@ -162,7 +155,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertAlmostEqual(Decimal("0.009082652"), result)
+        assert Decimal("0.009082652") == pytest.approx(result)
 
     def test_calculate_exchange_rate_by_inference(self):
         # Arrange
@@ -194,8 +187,8 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertAlmostEqual(Decimal("0.01135331516802906448683015441"), result1)  # JPYAUD
-        self.assertAlmostEqual(Decimal("88.11501299999999999999999997"), result2)  # AUDJPY
+        assert Decimal("0.01135331516802906448683015441") == pytest.approx(result1)  # JPYAUD
+        assert Decimal("88.11501299999999999999999997") == pytest.approx(result2)  # AUDJPY
 
     def test_calculate_exchange_rate_for_mid_price_type(self):
         # Arrange
@@ -213,7 +206,7 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Decimal("0.009081414884438995595513781047"), result)
+        assert result == Decimal("0.009081414884438995595513781047")
 
     def test_calculate_exchange_rate_for_mid_price_type2(self):
         # Arrange
@@ -231,11 +224,11 @@ class ExchangeRateCalculatorTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertEqual(Decimal("110.115"), result)
+        assert result == Decimal("110.115")
 
 
-class RolloverInterestCalculatorTests(unittest.TestCase):
-    def setUp(self):
+class TestRolloverInterestCalculator:
+    def setup(self):
         # Fixture Setup
         self.data = pd.read_csv(os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv"))
 
@@ -247,7 +240,7 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
         rate_data = calculator.get_rate_data()
 
         # Assert
-        self.assertEqual(dict, type(rate_data))
+        assert isinstance(rate_data, dict)
 
     def test_calc_overnight_fx_rate_with_audusd_on_unix_epoch_returns_correct_rate(
         self,
@@ -259,7 +252,7 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
         rate = calculator.calc_overnight_rate(AUDUSD_SIM, UNIX_EPOCH)
 
         # Assert
-        self.assertEqual(-8.52054794520548e-05, rate)
+        assert rate == -8.52054794520548e-05
 
     def test_calc_overnight_fx_rate_with_audusd_on_later_date_returns_correct_rate(
         self,
@@ -271,7 +264,7 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
         rate = calculator.calc_overnight_rate(AUDUSD_SIM, datetime.date(2018, 2, 1))
 
         # Assert
-        self.assertEqual(-2.739726027397263e-07, rate)
+        assert rate == -2.739726027397263e-07
 
     def test_calc_overnight_fx_rate_with_audusd_on_impossible_dates_returns_zero(self):
         # Arrange
@@ -279,15 +272,8 @@ class RolloverInterestCalculatorTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(
-            RuntimeError,
-            calculator.calc_overnight_rate,
-            AUDUSD_SIM,
-            datetime.date(1900, 1, 1),
-        )
-        self.assertRaises(
-            RuntimeError,
-            calculator.calc_overnight_rate,
-            AUDUSD_SIM,
-            datetime.date(3000, 1, 1),
-        )
+        with pytest.raises(RuntimeError):
+            calculator.calc_overnight_rate(AUDUSD_SIM, datetime.date(1900, 1, 1))
+
+        with pytest.raises(RuntimeError):
+            calculator.calc_overnight_rate(AUDUSD_SIM, datetime.date(3000, 1, 1))

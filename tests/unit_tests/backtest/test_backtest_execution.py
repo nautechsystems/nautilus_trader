@@ -21,10 +21,10 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.commands import CancelOrder
-from nautilus_trader.model.commands import SubmitBracketOrder
-from nautilus_trader.model.commands import SubmitOrder
-from nautilus_trader.model.commands import UpdateOrder
+from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import SubmitBracketOrder
+from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
@@ -34,11 +34,11 @@ from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestInstrumentProvider
@@ -56,19 +56,26 @@ class TestBacktestExecClientTests:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
         self.account_id = AccountId("BINANCE", "000")
+
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,

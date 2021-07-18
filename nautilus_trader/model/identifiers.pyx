@@ -228,8 +228,6 @@ cdef class TraderId(Identifier):
         return self.value.partition("-")[2]
 
 
-cdef StrategyId _NULL_STRATEGY_ID = StrategyId(_NULL_ID)
-
 cdef class StrategyId(Identifier):
     """
     Represents a valid strategy ID.
@@ -274,22 +272,6 @@ cdef class StrategyId(Identifier):
 
         """
         return self.value.partition("-")[2]
-
-    @staticmethod
-    cdef StrategyId null_c():
-        return _NULL_STRATEGY_ID
-
-    @staticmethod
-    def null():
-        """
-        Return a strategy ID with a 'NULL' value.
-
-        Returns
-        -------
-        StrategyId
-
-        """
-        return _NULL_STRATEGY_ID
 
 
 cdef class AccountId(Identifier):

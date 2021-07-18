@@ -14,21 +14,22 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Optional
 
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarSpecification
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarSpecification
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.market cimport MarketOrder
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -90,7 +91,7 @@ cdef class EMACross(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
-        self.instrument = None  # Initialize in on_start
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
 

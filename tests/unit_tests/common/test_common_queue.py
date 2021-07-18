@@ -109,45 +109,31 @@ class TestQueue:
         with pytest.raises(asyncio.QueueEmpty):
             queue.get_nowait()
 
-    def test_await_put(self):
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        self.loop.set_debug(True)
-        asyncio.set_event_loop(self.loop)
+    @pytest.mark.asyncio
+    async def test_await_put(self):
+        # Arrange
+        queue = Queue()
+        await queue.put("A")
 
-        async def run_test():
-            # Arrange
-            queue = Queue()
-            await queue.put("A")
+        # Act
+        item = queue.get_nowait()
 
-            # Act
-            item = queue.get_nowait()
+        # Assert
+        assert queue.empty()
+        assert item == "A"
 
-            # Assert
-            assert queue.empty()
-            assert item == "A"
+    @pytest.mark.asyncio
+    async def test_await_get(self):
+        # Arrange
+        queue = Queue()
+        queue.put_nowait("A")
 
-        self.loop.run_until_complete(run_test())
+        # Act
+        item = await queue.get()
 
-    def test_await_get(self):
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        self.loop.set_debug(True)
-        asyncio.set_event_loop(self.loop)
-
-        async def run_test():
-            # Arrange
-            queue = Queue()
-            queue.put_nowait("A")
-
-            # Act
-            item = await queue.get()
-
-            # Assert
-            assert queue.empty()
-            assert item == "A"
-
-        self.loop.run_until_complete(run_test())
+        # Assert
+        assert queue.empty()
+        assert item == "A"
 
     def test_peek_when_no_items_returns_none(self):
         # Arrange

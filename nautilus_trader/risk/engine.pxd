@@ -22,11 +22,11 @@ from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
-from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport SubmitBracketOrder
-from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.commands cimport TradingCommand
-from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport TradingCommand
+from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -34,11 +34,11 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.bracket cimport BracketOrder
-from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class RiskEngine(Component):
-    cdef Portfolio _portfolio
+    cdef MessageBus _msgbus
     cdef ExecutionEngine _exec_engine
     cdef dict _max_notional_per_order
     cdef Throttler _order_throttler
@@ -109,4 +109,4 @@ cdef class RiskEngine(Component):
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, Event event) except *
+    cpdef void _handle_event(self, Event event) except *

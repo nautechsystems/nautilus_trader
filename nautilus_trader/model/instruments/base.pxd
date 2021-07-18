@@ -20,7 +20,7 @@ from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -83,7 +83,7 @@ cdef class Instrument(Data):
     cpdef Currency get_cost_currency(self)
     cpdef Price make_price(self, value)
     cpdef Quantity make_qty(self, value)
-    cpdef Money notional_value(self, Quantity quantity, close_price: Decimal, bint inverse_as_quote=*)
+    cpdef Money notional_value(self, Quantity quantity, price: Decimal, bint inverse_as_quote=*)
     cpdef Money calculate_initial_margin(self, Quantity quantity, Price price, leverage=*, bint inverse_as_quote=*)
     cpdef Money calculate_maint_margin(self, PositionSide side, Quantity quantity, Price last, leverage=*, bint inverse_as_quote=*)
     cpdef Money calculate_commission(self, Quantity last_qty, last_px: Decimal, LiquiditySide liquidity_side, bint inverse_as_quote=*)

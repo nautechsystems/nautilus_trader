@@ -62,7 +62,6 @@ Also, the following optional dependency 'extras' are separately available for in
 - `ccxt` for the CCXT Pro adapter.
 - `docs` for building the documentation.
 - `ib` for the Interactive Brokers adapter.
-- `oanda` for the OANDA adapter.
 
 For example, to install including the `ccxt` extra using pip:
 

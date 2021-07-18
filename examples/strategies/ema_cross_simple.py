@@ -14,21 +14,22 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Dict, Optional
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.data import Data
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -79,7 +80,7 @@ class EMACross(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
-        self.instrument = None  # Initialize in on_start
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
 
@@ -269,7 +270,7 @@ class EMACross(TradingStrategy):
         self.fast_ema.reset()
         self.slow_ema.reset()
 
-    def on_save(self) -> {}:
+    def on_save(self) -> Dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -283,7 +284,7 @@ class EMACross(TradingStrategy):
         """
         return {}
 
-    def on_load(self, state: {}):
+    def on_load(self, state: Dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 

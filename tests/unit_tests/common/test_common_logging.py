@@ -159,10 +159,8 @@ class TestLoggerTests:
 
 class TestLiveLogger:
     def setup(self):
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
+        self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
-        asyncio.set_event_loop(self.loop)
 
         self.logger = LiveLogger(
             loop=self.loop,
@@ -179,62 +177,55 @@ class TestLiveLogger:
         # Assert
         assert True  # No exceptions raised
 
-    def test_start_runs_on_event_loop(self):
-        async def run_test():
-            # Arrange
-            self.logger.start()
+    @pytest.mark.asyncio
+    async def test_start_runs_on_event_loop(self):
+        # Arrange
+        self.logger.start()
 
-            self.logger_adapter.info("A log message.")
-            await asyncio.sleep(0)
+        self.logger_adapter.info("A log message.")
+        await asyncio.sleep(0)
 
-            # Act
-            # Assert
-            assert self.logger.is_running
-            self.logger.stop()
+        # Act, Assert
+        assert self.logger.is_running
+        self.logger.stop()
 
-        self.loop.run_until_complete(run_test())
+    @pytest.mark.asyncio
+    async def test_stop_when_running_stops_logger(self):
+        # Arrange
+        self.logger.start()
 
-    def test_stop_when_running_stops_logger(self):
-        async def run_test():
-            # Arrange
-            self.logger.start()
+        self.logger_adapter.info("A log message.")
+        await asyncio.sleep(0)
 
-            self.logger_adapter.info("A log message.")
-            await asyncio.sleep(0)
+        # Act
+        self.logger.stop()
+        self.logger_adapter.info("A log message.")
 
-            # Act
-            self.logger.stop()
-            self.logger_adapter.info("A log message.")
+        # Assert
+        assert not self.logger.is_running
 
-            # Assert
-            assert not self.logger.is_running
+    @pytest.mark.asyncio
+    async def test_log_when_queue_over_maxsize_blocks(self):
+        # Arrange
+        logger = LiveLogger(
+            loop=self.loop,
+            clock=LiveClock(),
+            maxsize=5,
+        )
 
-        self.loop.run_until_complete(run_test())
+        logger_adapter = LoggerAdapter(component="LIVE_LOGGER", logger=logger)
+        logger.start()
 
-    def test_log_when_queue_over_maxsize_blocks(self):
-        async def run_test():
-            # Arrange
-            logger = LiveLogger(
-                loop=self.loop,
-                clock=LiveClock(),
-                maxsize=5,
-            )
+        # Act
+        logger_adapter.info("A log message.")
+        logger_adapter.info("A log message.")  # <-- blocks
+        logger_adapter.info("A different log message.")  # <-- blocks
+        logger_adapter.info("A log message.")  # <-- blocks
+        logger_adapter.info("A different log message.")  # <-- blocks
+        logger_adapter.info("A log message.")  # <-- blocks
 
-            logger_adapter = LoggerAdapter(component="LIVE_LOGGER", logger=logger)
-            logger.start()
+        await asyncio.sleep(0.1)  # <-- processes all log messages
+        self.logger.stop()
 
-            # Act
-            logger_adapter.info("A log message.")
-            logger_adapter.info("A log message.")  # <-- blocks
-            logger_adapter.info("A different log message.")  # <-- blocks
-            logger_adapter.info("A log message.")  # <-- blocks
-            logger_adapter.info("A different log message.")  # <-- blocks
-            logger_adapter.info("A log message.")  # <-- blocks
-
-            await asyncio.sleep(0.1)  # <-- processes all log messages
-            self.logger.stop()
-
-            # Assert
-            assert not self.logger.is_running
-
-        self.loop.run_until_complete(run_test())
+        # Assert
+        assert not self.logger.is_running

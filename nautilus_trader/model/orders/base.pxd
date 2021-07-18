@@ -24,23 +24,24 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderCanceled
-from nautilus_trader.model.events cimport OrderDenied
-from nautilus_trader.model.events cimport OrderEvent
-from nautilus_trader.model.events cimport OrderExpired
-from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport OrderInitialized
-from nautilus_trader.model.events cimport OrderRejected
-from nautilus_trader.model.events cimport OrderSubmitted
-from nautilus_trader.model.events cimport OrderTriggered
-from nautilus_trader.model.events cimport OrderUpdated
+from nautilus_trader.model.events.order cimport OrderAccepted
+from nautilus_trader.model.events.order cimport OrderCanceled
+from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
+from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderSubmitted
+from nautilus_trader.model.events.order cimport OrderTriggered
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -52,20 +53,22 @@ cdef class Order:
     cdef FiniteStateMachine _fsm
     cdef OrderState _rollback_state
 
+    cdef readonly TraderId trader_id
+    """The trader ID associated with the position.\n\n:returns: `TraderId`"""
+    cdef readonly StrategyId strategy_id
+    """The strategy ID associated with the order.\n\n:returns: `StrategyId`"""
+    cdef readonly InstrumentId instrument_id
+    """The order instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly ClientOrderId client_order_id
     """The client order ID.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The venue assigned order ID.\n\n:returns: `VenueOrderId`"""
     cdef readonly PositionId position_id
     """The position ID associated with the order.\n\n:returns: `PositionId`"""
-    cdef readonly StrategyId strategy_id
-    """The strategy ID associated with the order.\n\n:returns: `StrategyId`"""
     cdef readonly AccountId account_id
     """The account ID associated with the order.\n\n:returns: `AccountId` or None"""
     cdef readonly ExecutionId execution_id
     """The orders last execution ID.\n\n:returns: `ExecutionId` or None"""
-    cdef readonly InstrumentId instrument_id
-    """The order instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType type
@@ -101,6 +104,7 @@ cdef class Order:
     cdef bint is_sell_c(self) except *
     cdef bint is_passive_c(self) except *
     cdef bint is_aggressive_c(self) except *
+    cdef bint is_inflight_c(self) except *
     cdef bint is_working_c(self) except *
     cdef bint is_pending_update_c(self) except *
     cdef bint is_pending_cancel_c(self) except *

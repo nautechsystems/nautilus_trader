@@ -47,7 +47,7 @@ cdef class TimeEvent(Event):
         Parameters
         ----------
         name : str
-            The event label.
+            The event name.
         event_id : UUID
             The event ID.
         event_timestamp : datetime

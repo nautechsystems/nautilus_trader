@@ -22,17 +22,22 @@ from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.type cimport DataType
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
-from nautilus_trader.model.commands cimport TradingCommand
-from nautilus_trader.model.data cimport Data
-from nautilus_trader.model.data cimport DataType
-from nautilus_trader.model.events cimport Event
+from nautilus_trader.model.commands.trading cimport TradingCommand
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.venue cimport InstrumentClosePrice
+from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
+from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -42,22 +47,19 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.book cimport OrderBookData
+from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.model.venue cimport InstrumentClosePrice
-from nautilus_trader.model.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.venue cimport VenueStatusUpdate
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class TradingStrategy(Component):
+    cdef MessageBus _msgbus
     cdef DataEngine _data_engine
     cdef RiskEngine _risk_engine
     cdef list _indicators
@@ -109,16 +111,16 @@ cdef class TradingStrategy(Component):
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
-    cpdef void register_trader(
+    cpdef void register(
         self,
         TraderId trader_id,
+        MessageBus msgbus,
+        Portfolio portfolio,
+        DataEngine data_engine,
+        RiskEngine risk_engine,
         Clock clock,
         Logger logger,
-        int order_id_count=*,
     ) except *
-    cpdef void register_data_engine(self, DataEngine engine) except *
-    cpdef void register_risk_engine(self, RiskEngine engine) except *
-    cpdef void register_portfolio(self, Portfolio portfolio) except *
     cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator) except *
     cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator) except *
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator) except *

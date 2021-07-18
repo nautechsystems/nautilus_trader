@@ -13,13 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.core.uuid cimport UUID
 
 
-cpdef str message_type_to_str(int value):
+cpdef str message_category_to_str(int value):
     """
-    Convert a C Enum int to a message type string.
+    Convert a C Enum int to a message category string.
 
     Parameters
     ----------
@@ -43,11 +43,13 @@ cpdef str message_type_to_str(int value):
         return "REQUEST"
     elif value == 6:
         return "RESPONSE"
+    else:
+        raise ValueError(f"value was invalid, was {value}")
 
 
-cpdef MessageType message_type_from_str(str value):
+cpdef MessageCategory message_category_from_str(str value):
     """
-    Parse a string to a message type.
+    Parse a string to a message category.
 
     Parameters
     ----------
@@ -60,17 +62,19 @@ cpdef MessageType message_type_from_str(str value):
 
     """
     if value == "STRING":
-        return MessageType.STRING
+        return MessageCategory.STRING
     elif value == "COMMAND":
-        return MessageType.COMMAND
+        return MessageCategory.COMMAND
     elif value == "DOCUMENT":
-        return MessageType.DOCUMENT
+        return MessageCategory.DOCUMENT
     elif value == "EVENT":
-        return MessageType.EVENT
+        return MessageCategory.EVENT
     elif value == "REQUEST":
-        return MessageType.REQUEST
+        return MessageCategory.REQUEST
     elif value == "RESPONSE":
-        return MessageType.RESPONSE
+        return MessageCategory.RESPONSE
+    else:
+        raise ValueError(f"value was invalid, was {value}")
 
 
 cdef class Message:
@@ -82,7 +86,7 @@ cdef class Message:
 
     def __init__(
         self,
-        MessageType msg_type,
+        MessageCategory category,
         UUID message_id not None,
         int64_t timestamp_ns,
     ):
@@ -91,23 +95,23 @@ cdef class Message:
 
         Parameters
         ----------
-        msg_type : MessageType
-            The message type.
+        category : MessageCategory
+            The message category.
         message_id : UUID
             The message ID.
         timestamp_ns : int64
             The UNIX timestamp (nanoseconds) of the message initialization.
 
         """
-        self.type = msg_type
+        self.category = category
         self.id = message_id
         self.timestamp_ns = timestamp_ns
 
     def __eq__(self, Message other) -> bool:
-        return self.type == other.type and self.id == other.id
+        return self.category == other.category and self.id == other.id
 
     def __hash__(self) -> int:
-        return hash((self.type, self.id))
+        return hash((self.category, self.id))
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(id={self.id}, timestamp={self.timestamp_ns})"
@@ -132,7 +136,7 @@ cdef class Command(Message):
             The UNIX timestamp (nanoseconds) of the command initialization.
 
         """
-        super().__init__(MessageType.COMMAND, command_id, timestamp_ns)
+        super().__init__(MessageCategory.COMMAND, command_id, timestamp_ns)
 
 
 cdef class Document(Message):
@@ -158,7 +162,7 @@ cdef class Document(Message):
             The UNIX timestamp (nanoseconds) of the document initialization.
 
         """
-        super().__init__(MessageType.DOCUMENT, document_id, timestamp_ns)
+        super().__init__(MessageCategory.DOCUMENT, document_id, timestamp_ns)
 
 
 cdef class Event(Message):
@@ -184,7 +188,7 @@ cdef class Event(Message):
             The UNIX timestamp (nanoseconds) of the event initialization.
 
         """
-        super().__init__(MessageType.EVENT, event_id, timestamp_ns)
+        super().__init__(MessageCategory.EVENT, event_id, timestamp_ns)
 
 
 cdef class Request(Message):
@@ -206,7 +210,7 @@ cdef class Request(Message):
             The UNIX timestamp (nanoseconds) of the request initialization.
 
         """
-        super().__init__(MessageType.REQUEST, request_id, timestamp_ns)
+        super().__init__(MessageCategory.REQUEST, request_id, timestamp_ns)
 
 
 cdef class Response(Message):
@@ -235,7 +239,7 @@ cdef class Response(Message):
             The UNIX timestamp (nanoseconds) of the response initialization.
 
         """
-        super().__init__(MessageType.RESPONSE, response_id, timestamp_ns)
+        super().__init__(MessageCategory.RESPONSE, response_id, timestamp_ns)
 
         self.correlation_id = correlation_id
 

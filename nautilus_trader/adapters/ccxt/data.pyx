@@ -29,9 +29,6 @@ from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.live.data_engine cimport LiveDataEngine
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarSpecification
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
@@ -39,14 +36,17 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarSpecification
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60

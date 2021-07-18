@@ -17,8 +17,6 @@ jobs:
         python-version: [ 3.7, 3.8, 3.9 ]
     name: test - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    env:
-      PARALLEL_BUILD: false
 
     steps:
       - uses: actions/checkout@v2
@@ -36,7 +34,7 @@ jobs:
       # Test pip installation
       - name: Test pip installation
         if: runner.os != 'Windows'
-        run: pip install .[betfair,ccxt,docs,ib,oanda]
+        run: pip install .[betfair,ccxt,docs,ib]
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
@@ -72,4 +70,4 @@ jobs:
 
       # Run tests
       - name: Run tests
-        run: nox -s tests_with_integration --reuse-existing-virtualenvs
+        run: nox -rs tests_with_integration -- no-parallel

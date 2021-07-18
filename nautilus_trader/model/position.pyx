@@ -20,7 +20,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
-from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -68,15 +68,16 @@ cdef class Position:
         self._commissions = {}
 
         # Identifiers
+        self.trader_id = fill.trader_id
+        self.strategy_id = fill.strategy_id
+        self.instrument_id = fill.instrument_id
         self.id = fill.position_id
         self.account_id = fill.account_id
         self.from_order = fill.client_order_id
-        self.strategy_id = fill.strategy_id
-        self.instrument_id = fill.instrument_id
 
         # Properties
-        self.entry = fill.order_side
-        self.side = Position.side_from_order_side(fill.order_side)
+        self.entry = fill.side
+        self.side = Position.side_from_order_side(fill.side)
         self.net_qty = Decimal()
         self.quantity = Quantity.zero_c(precision=instrument.size_precision)
         self.peak_qty = Quantity.zero_c(precision=instrument.size_precision)
@@ -421,9 +422,9 @@ cdef class Position:
         self._commissions[currency] = cum_commission
 
         # Calculate avg prices, points, return, PnL
-        if fill.order_side == OrderSide.BUY:
+        if fill.side == OrderSide.BUY:
             self._handle_buy_order_fill(fill)
-        else:  # event.order_side == OrderSide.SELL:
+        else:  # event.side == OrderSide.SELL:
             self._handle_sell_order_fill(fill)
 
         # Set quantities

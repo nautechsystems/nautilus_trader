@@ -43,26 +43,31 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.type cimport DataType
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport SubmitBracketOrder
-from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.commands cimport UpdateOrder
-from nautilus_trader.model.data cimport Data
-from nautilus_trader.model.data cimport DataType
-from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.events cimport OrderCancelRejected
-from nautilus_trader.model.events cimport OrderDenied
-from nautilus_trader.model.events cimport OrderRejected
-from nautilus_trader.model.events cimport OrderUpdateRejected
+from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport UpdateOrder
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.venue cimport InstrumentClosePrice
+from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
+from nautilus_trader.model.data.venue cimport VenueStatusUpdate
+from nautilus_trader.model.events.order cimport OrderCancelRejected
+from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderUpdateRejected
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -71,17 +76,13 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orderbook.book cimport OrderBookData
+from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.model.venue cimport InstrumentClosePrice
-from nautilus_trader.model.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.venue cimport VenueStatusUpdate
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
 
 
@@ -127,6 +128,7 @@ cdef class TradingStrategy(Component):
             log_initialized=False,
         )
 
+        self._msgbus = None   # Initialized when registered
         self._data_engine = None  # Initialized when registered with the data engine
         self._risk_engine = None  # Initialized when registered with the execution engine
 
@@ -189,7 +191,7 @@ cdef class TradingStrategy(Component):
                 return False
         return True
 
-    # -- ABSTRACT METHODS ------------------------------------------------------------------------------
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void on_start(self) except *:
         """
@@ -482,14 +484,17 @@ cdef class TradingStrategy(Component):
         """
         pass  # Optionally override in subclass
 
-    # -- REGISTRATION ----------------------------------------------------------------------------------
+# -- REGISTRATION ----------------------------------------------------------------------------------
 
-    cpdef void register_trader(
-            self,
-            TraderId trader_id,
-            Clock clock,
-            Logger logger,
-            int order_id_count=0,
+    cpdef void register(
+        self,
+        TraderId trader_id,
+        MessageBus msgbus,
+        Portfolio portfolio,
+        DataEngine data_engine,
+        RiskEngine risk_engine,
+        Clock clock,
+        Logger logger,
     ) except *:
         """
         Register the strategy with a trader.
@@ -500,10 +505,16 @@ cdef class TradingStrategy(Component):
             The trader ID for the strategy.
         clock : Clock
             The clock for the strategy.
+        msgbus : MessageBus
+            The message bus for the strategy.
+        portfolio : Portfolio
+            The portfolio for the strategy.
+        data_engine : DataEngine
+            The data engine for the strategy.
+        risk_engine : RiskEngine
+            The risk engine for the strategy.
         logger : Logger
             The logger for the strategy.
-        order_id_count : int, optional
-            The running order ID count for the strategy.
 
         Warnings
         --------
@@ -529,64 +540,26 @@ cdef class TradingStrategy(Component):
             clock=self.clock,
         )
 
+        self._msgbus = msgbus
+
+        # Required subscriptions
+        self._msgbus.subscribe(topic=f"events.order.{self.id.value}*", handler=self.handle_event)
+        self._msgbus.subscribe(topic=f"events.position.{self.id.value}*", handler=self.handle_event)
+
+        self._data_engine = data_engine
+        self._risk_engine = risk_engine
+        self.cache = data_engine.cache
+        self.portfolio = portfolio  # Assigned as PortfolioFacade
+
+        cdef set client_order_ids = self.cache.client_order_ids(
+            venue=None,
+            instrument_id=None,
+            strategy_id=self.id,
+        )
+
+        cdef int order_id_count = len(client_order_ids)
         self.order_factory.set_count(order_id_count)
         self.log.info(f"Set ClientOrderIdGenerator count to {order_id_count}.")
-
-    cpdef void register_data_engine(self, DataEngine engine) except *:
-        """
-        Register the strategy with the given data engine.
-
-        Parameters
-        ----------
-        engine : DataEngine
-            The data engine to register.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(engine, "engine")
-
-        self._data_engine = engine
-        self.cache = engine.cache
-
-    cpdef void register_risk_engine(self, RiskEngine engine) except *:
-        """
-        Register the strategy with the given risk engine.
-
-        Parameters
-        ----------
-        engine : RiskEngine
-            The risk engine to register.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(engine, "engine")
-
-        self._risk_engine = engine
-        self.cache = engine.cache
-
-    cpdef void register_portfolio(self, Portfolio portfolio) except *:
-        """
-        Register the strategy with the given portfolio.
-
-        Parameters
-        ----------
-        portfolio : Portfolio
-            The portfolio to register.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(portfolio, "portfolio")
-
-        self.portfolio = portfolio  # Assigned as PortfolioFacade
 
     cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator) except *:
         """
@@ -672,7 +645,7 @@ cdef class TradingStrategy(Component):
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
-    # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
+# -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
     cpdef void _start(self) except *:
         self._check_trader_registered()
@@ -712,7 +685,7 @@ cdef class TradingStrategy(Component):
         self._check_trader_registered()
         self.on_dispose()
 
-    # -- STRATEGY COMMANDS -----------------------------------------------------------------------------
+# -- STRATEGY COMMANDS -----------------------------------------------------------------------------
 
     cpdef dict save(self):
         """
@@ -781,7 +754,7 @@ cdef class TradingStrategy(Component):
             self.log.exception(ex)
             raise
 
-    # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_data(self, ClientId client_id, DataType data_type) except *:
         """
@@ -832,12 +805,12 @@ cdef class TradingStrategy(Component):
         self._send_data_cmd(command)
 
     cpdef void subscribe_order_book(
-            self,
-            InstrumentId instrument_id,
-            BookLevel level=BookLevel.L2,
-            int depth=0,
-            int interval=0,
-            dict kwargs=None,
+        self,
+        InstrumentId instrument_id,
+        BookLevel level=BookLevel.L2,
+        int depth=0,
+        int interval=0,
+        dict kwargs=None,
     ) except *:
         """
         Subscribe to streaming `OrderBook` for the given instrument ID.
@@ -892,10 +865,10 @@ cdef class TradingStrategy(Component):
         self._send_data_cmd(command)
 
     cpdef void subscribe_order_book_deltas(
-            self,
-            InstrumentId instrument_id,
-            BookLevel level=BookLevel.L2,
-            dict kwargs=None,
+        self,
+        InstrumentId instrument_id,
+        BookLevel level=BookLevel.L2,
+        dict kwargs=None,
     ) except *:
         """
         Subscribe to streaming `OrderBook` snapshot then deltas data for the
@@ -1248,7 +1221,7 @@ cdef class TradingStrategy(Component):
 
         self._send_data_cmd(command)
 
-    # -- REQUESTS --------------------------------------------------------------------------------------
+# -- REQUESTS --------------------------------------------------------------------------------------
 
     cpdef void request_data(self, ClientId client_id, DataType data_type) except *:
         """
@@ -1276,10 +1249,10 @@ cdef class TradingStrategy(Component):
         self._send_data_req(request)
 
     cpdef void request_quote_ticks(
-            self,
-            InstrumentId instrument_id,
-            datetime from_datetime=None,
-            datetime to_datetime=None,
+        self,
+        InstrumentId instrument_id,
+        datetime from_datetime=None,
+        datetime to_datetime=None,
     ) except *:
         """
         Request historical quote ticks for the given parameters.
@@ -1322,10 +1295,10 @@ cdef class TradingStrategy(Component):
         self._send_data_req(request)
 
     cpdef void request_trade_ticks(
-            self,
-            InstrumentId instrument_id,
-            datetime from_datetime=None,
-            datetime to_datetime=None,
+        self,
+        InstrumentId instrument_id,
+        datetime from_datetime=None,
+        datetime to_datetime=None,
     ) except *:
         """
         Request historical trade ticks for the given parameters.
@@ -1368,10 +1341,10 @@ cdef class TradingStrategy(Component):
         self._send_data_req(request)
 
     cpdef void request_bars(
-            self,
-            BarType bar_type,
-            datetime from_datetime=None,
-            datetime to_datetime=None,
+        self,
+        BarType bar_type,
+        datetime from_datetime=None,
+        datetime to_datetime=None,
     ) except *:
         """
         Request historical bars for the given parameters.
@@ -1413,12 +1386,12 @@ cdef class TradingStrategy(Component):
 
         self._send_data_req(request)
 
-    # -- TRADING COMMANDS ------------------------------------------------------------------------------
+# -- TRADING COMMANDS ------------------------------------------------------------------------------
 
     cpdef void submit_order(
-            self,
-            Order order,
-            PositionId position_id=None,
+        self,
+        Order order,
+        PositionId position_id=None,
     ) except *:
         """
         Submit the given order with optional position ID and routing instructions.
@@ -1437,6 +1410,14 @@ cdef class TradingStrategy(Component):
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self._risk_engine, "self._risk_engine")
+
+        # Publish initialized event
+        self._msgbus.publish_c(
+            topic=f"events.order"
+                  f".{order.strategy_id.value}"
+                  f".{order.client_order_id.value}",
+            msg=order.init_event_c(),
+        )
 
         cdef SubmitOrder command = SubmitOrder(
             self.trader_id,
@@ -1466,6 +1447,26 @@ cdef class TradingStrategy(Component):
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self._risk_engine, "self._risk_engine")
 
+        # Publish initialized events
+        self._msgbus.publish_c(
+            topic=f"events.order"
+                  f".{bracket_order.entry.strategy_id.value}"
+                  f".{bracket_order.entry.client_order_id.value}",
+            msg=bracket_order.entry.init_event_c(),
+        )
+        self._msgbus.publish_c(
+            topic=f"events.order"
+                  f".{bracket_order.stop_loss.strategy_id.value}"
+                  f".{bracket_order.stop_loss.client_order_id.value}",
+            msg=bracket_order.stop_loss.init_event_c(),
+        )
+        self._msgbus.publish_c(
+            topic=f"events.order"
+                  f".{bracket_order.take_profit.strategy_id.value}"
+                  f".{bracket_order.take_profit.client_order_id.value}",
+            msg=bracket_order.take_profit.init_event_c(),
+        )
+
         cdef SubmitBracketOrder command = SubmitBracketOrder(
             self.trader_id,
             self.id,
@@ -1477,11 +1478,11 @@ cdef class TradingStrategy(Component):
         self._send_exec_cmd(command)
 
     cpdef void update_order(
-            self,
-            PassiveOrder order,
-            Quantity quantity=None,
-            Price price=None,
-            Price trigger=None,
+        self,
+        PassiveOrder order,
+        Quantity quantity=None,
+        Price price=None,
+        Price trigger=None,
     ) except *:
         """
         Update the given order with optional parameters and routing instructions.
@@ -1685,6 +1686,14 @@ cdef class TradingStrategy(Component):
             position.quantity,
         )
 
+        # Publish initialized event
+        self._msgbus.publish_c(
+            topic=f"events.order"
+                  f".{order.strategy_id.value}"
+                  f".{order.client_order_id.value}",
+            msg=order.init_event_c(),
+        )
+
         # Create command
         cdef SubmitOrder command = SubmitOrder(
             self.trader_id,
@@ -1730,7 +1739,7 @@ cdef class TradingStrategy(Component):
         for position in positions_open:
             self.flatten_position(position)
 
-    # -- HANDLERS --------------------------------------------------------------------------------------
+# -- HANDLERS --------------------------------------------------------------------------------------
 
     cpdef void handle_instrument(self, Instrument instrument) except *:
         """
@@ -2142,7 +2151,8 @@ cdef class TradingStrategy(Component):
                 self.log.exception(ex)
                 raise
 
-    # -- INTERNAL --------------------------------------------------------------------------------------
+# -- INTERNAL --------------------------------------------------------------------------------------
+
     cdef void _send_data_cmd(self, DataCommand command) except *:
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")

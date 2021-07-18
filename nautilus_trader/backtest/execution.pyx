@@ -19,10 +19,10 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport SubmitBracketOrder
-from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId

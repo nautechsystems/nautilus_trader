@@ -17,11 +17,11 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarSpecification
-from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarSpecification
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class CCXTDataClient(LiveMarketDataClient):

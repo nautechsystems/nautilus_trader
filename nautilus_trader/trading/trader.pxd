@@ -20,17 +20,19 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
 cdef class Trader(Component):
-    cdef list _strategies
+    cdef MessageBus _msgbus
     cdef Portfolio _portfolio
     cdef DataEngine _data_engine
     cdef RiskEngine _risk_engine
     cdef ExecutionEngine _exec_engine
     cdef ReportProvider _report_provider
+    cdef list _strategies
 
     cdef readonly TraderId id
     """The trader ID.\n\n:returns: `TraderId`"""

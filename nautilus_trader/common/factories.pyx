@@ -154,9 +154,10 @@ cdef class OrderFactory:
 
         """
         return MarketOrder(
-            client_order_id=self._id_generator.generate(),
+            trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             time_in_force=time_in_force,
@@ -219,9 +220,10 @@ cdef class OrderFactory:
 
         """
         return LimitOrder(
-            client_order_id=self._id_generator.generate(),
+            trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             price=price,
@@ -279,9 +281,10 @@ cdef class OrderFactory:
 
         """
         return StopMarketOrder(
-            client_order_id=self._id_generator.generate(),
+            trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             price=price,
@@ -350,9 +353,10 @@ cdef class OrderFactory:
 
         """
         return StopLimitOrder(
-            client_order_id=self._id_generator.generate(),
+            trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             price=price,

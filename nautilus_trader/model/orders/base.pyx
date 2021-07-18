@@ -36,21 +36,21 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderCancelRejected
-from nautilus_trader.model.events cimport OrderCanceled
-from nautilus_trader.model.events cimport OrderDenied
-from nautilus_trader.model.events cimport OrderEvent
-from nautilus_trader.model.events cimport OrderExpired
-from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport OrderInitialized
-from nautilus_trader.model.events cimport OrderPendingCancel
-from nautilus_trader.model.events cimport OrderPendingUpdate
-from nautilus_trader.model.events cimport OrderRejected
-from nautilus_trader.model.events cimport OrderSubmitted
-from nautilus_trader.model.events cimport OrderTriggered
-from nautilus_trader.model.events cimport OrderUpdateRejected
-from nautilus_trader.model.events cimport OrderUpdated
+from nautilus_trader.model.events.order cimport OrderAccepted
+from nautilus_trader.model.events.order cimport OrderCancelRejected
+from nautilus_trader.model.events.order cimport OrderCanceled
+from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
+from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderPendingCancel
+from nautilus_trader.model.events.order cimport OrderPendingUpdate
+from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderSubmitted
+from nautilus_trader.model.events.order cimport OrderTriggered
+from nautilus_trader.model.events.order cimport OrderUpdateRejected
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -136,15 +136,18 @@ cdef class Order:
         )
         self._rollback_state = OrderState.INITIALIZED
 
+        # Identifiers
+        self.trader_id = init.trader_id
+        self.strategy_id = init.strategy_id
+        self.instrument_id = init.instrument_id
         self.client_order_id = init.client_order_id
         self.venue_order_id = VenueOrderId.null_c()
         self.position_id = PositionId.null_c()
-        self.strategy_id = init.strategy_id
         self.account_id = None    # Can be None
         self.execution_id = None  # Can be None
-        self.instrument_id = init.instrument_id
-        self.side = init.order_side
-        self.type = init.order_type
+
+        self.side = init.side
+        self.type = init.type
         self.quantity = init.quantity
         self.timestamp_ns = init.timestamp_ns
         self.time_in_force = init.time_in_force
@@ -214,6 +217,9 @@ cdef class Order:
 
     cdef bint is_aggressive_c(self) except *:
         return self.type == OrderType.MARKET
+
+    cdef bint is_inflight_c(self) except *:
+        return self._fsm.state == OrderState.SUBMITTED
 
     cdef bint is_working_c(self) except *:
         return (
@@ -386,6 +392,21 @@ cdef class Order:
 
         """
         return self.is_aggressive_c()
+
+    @property
+    def is_inflight(self):
+        """
+        If the order is in-flight (has been submitted to the trading venue).
+
+        An order is considered submitted when its state is `SUBMITTED`.
+
+        Returns
+        -------
+        bool
+            True if in-flight, else False.
+
+        """
+        return self.is_inflight_c()
 
     @property
     def is_working(self):
@@ -645,9 +666,10 @@ cdef class PassiveOrder(Order):
     """
     def __init__(
         self,
-        ClientOrderId client_order_id not None,
+        TraderId trader_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
+        ClientOrderId client_order_id not None,
         OrderSide order_side,
         OrderType order_type,
         Quantity quantity not None,
@@ -663,12 +685,14 @@ cdef class PassiveOrder(Order):
 
         Parameters
         ----------
-        client_order_id : ClientOrderId
-            The client order ID.
+        trader_id : TraderId
+            The trader ID associated with the order.
         strategy_id : StrategyId
             The strategy ID associated with the order.
         instrument_id : InstrumentId
             The order instrument ID.
+        client_order_id : ClientOrderId
+            The client order ID.
         order_side : OrderSide
             The order side (BUY or SELL).
         order_type : OrderType
@@ -709,9 +733,10 @@ cdef class PassiveOrder(Order):
             options["expire_time"] = maybe_dt_to_unix_nanos(expire_time)
 
         cdef OrderInitialized init = OrderInitialized(
-            client_order_id=client_order_id,
+            trader_id=trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
+            client_order_id=client_order_id,
             order_side=order_side,
             order_type=order_type,
             quantity=quantity,

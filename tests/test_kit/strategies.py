@@ -15,21 +15,22 @@
 
 from datetime import timedelta
 from decimal import Decimal
+from typing import Dict, Optional
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
-from nautilus_trader.model.venue import InstrumentClosePrice
-from nautilus_trader.model.venue import InstrumentStatusUpdate
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -54,7 +55,7 @@ class TickTock(TradingStrategy):
 
         self.instrument = instrument
         self.bar_type = bar_type
-        self.store = []
+        self.store = []  # type: list[object]
         self.timer_running = False
         self.time_alert_counter = 0
 
@@ -129,7 +130,7 @@ class EMACross(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
-        self.instrument = None
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
 
@@ -292,7 +293,7 @@ class EMACross(TradingStrategy):
         self.fast_ema.reset()
         self.slow_ema.reset()
 
-    def on_save(self) -> {}:
+    def on_save(self) -> Dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -306,7 +307,7 @@ class EMACross(TradingStrategy):
         """
         return {"example": b"123456"}
 
-    def on_load(self, state: {}):
+    def on_load(self, state: Dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 
@@ -318,7 +319,9 @@ class EMACross(TradingStrategy):
             The strategy state dictionary.
 
         """
-        self.log.info(f"Loaded users state {state['example']}")
+        example = state["example"].decode()
+
+        self.log.info(f"Loaded users state {example}")
 
     def on_dispose(self):
         """
@@ -358,10 +361,10 @@ class OrderBookImbalanceStrategy(TradingStrategy):
             extra_id_tag = ""
         super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag)
         self.instrument_id = instrument_id
-        self.instrument = None  # Initialized in on_start
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.trade_size = trade_size
-        self.instrument_status = None
-        self.close_price = None
+        self.instrument_status: Optional[InstrumentStatus] = None
+        self.close_price: Optional[InstrumentClosePrice] = None
 
     def on_start(self):
         """Actions to be performed on strategy start."""

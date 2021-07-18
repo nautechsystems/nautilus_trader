@@ -27,16 +27,15 @@ from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.events import OrderDenied
-from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.events import OrderInitialized
-from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.events.order import OrderDenied
+from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ClientOrderLinkId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -56,10 +55,13 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 class TestOrders:
     def setup(self):
         # Fixture Setup
+        self.trader_id = TestStubs.trader_id()
+        self.strategy_id = TestStubs.strategy_id()
         self.account_id = TestStubs.account_id()
+
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER-000"),
-            strategy_id=StrategyId("S-001"),
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
             clock=TestClock(),
         )
 
@@ -108,9 +110,10 @@ class TestOrders:
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
             MarketOrder(
-                ClientOrderId("O-123456"),
-                StrategyId("S-001"),
+                self.trader_id,
+                self.strategy_id,
                 AUDUSD_SIM.id,
+                ClientOrderId("O-123456"),
                 OrderSide.BUY,
                 Quantity.zero(),
                 TimeInForce.DAY,
@@ -122,9 +125,10 @@ class TestOrders:
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
             MarketOrder(
-                ClientOrderId("O-123456"),
-                StrategyId("S-001"),
+                self.trader_id,
+                self.strategy_id,
                 AUDUSD_SIM.id,
+                ClientOrderId("O-123456"),
                 OrderSide.BUY,
                 Quantity.zero(),
                 TimeInForce.GTD,  # <-- invalid
@@ -136,9 +140,10 @@ class TestOrders:
         # Arrange, Act, Assert
         with pytest.raises(TypeError):
             StopMarketOrder(
-                ClientOrderId("O-123456"),
-                StrategyId("S-001"),
+                self.trader_id,
+                self.strategy_id,
                 AUDUSD_SIM.id,
+                ClientOrderId("O-123456"),
                 OrderSide.BUY,
                 Quantity.from_int(100000),
                 price=Price.from_str("1.00000"),
@@ -152,9 +157,10 @@ class TestOrders:
         # Arrange, Act, Assert
         with pytest.raises(TypeError):
             StopLimitOrder(
-                ClientOrderId("O-123456"),
-                StrategyId("S-001"),
+                self.trader_id,
+                self.strategy_id,
                 AUDUSD_SIM.id,
+                ClientOrderId("O-123456"),
                 OrderSide.BUY,
                 Quantity.from_int(100000),
                 price=Price.from_str("1.00001"),
@@ -201,6 +207,7 @@ class TestOrders:
         assert order.state == OrderState.INITIALIZED
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
+        assert not order.is_inflight
         assert not order.is_working
         assert not order.is_completed
         assert order.is_buy
@@ -225,6 +232,7 @@ class TestOrders:
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
         assert len(order.events) == 1
+        assert not order.is_inflight
         assert not order.is_working
         assert not order.is_completed
         assert not order.is_buy
@@ -275,13 +283,14 @@ class TestOrders:
 
         # Assert
         assert result == {
+            "trader_id": "TESTER-000",
+            "strategy_id": "S-001",
+            "instrument_id": "AUD/USD.SIM",
             "client_order_id": "O-19700101-000000-000-001-1",
             "venue_order_id": "NULL",
             "position_id": "NULL",
-            "strategy_id": "S-001",
             "account_id": None,
             "execution_id": None,
-            "instrument_id": "AUD/USD.SIM",
             "type": "MARKET",
             "side": "BUY",
             "quantity": "100000",
@@ -334,13 +343,14 @@ class TestOrders:
 
         # Assert
         assert result == {
+            "trader_id": "TESTER-000",
+            "strategy_id": "S-001",
+            "instrument_id": "AUD/USD.SIM",
             "client_order_id": "O-19700101-000000-000-001-1",
             "venue_order_id": "NULL",
             "position_id": "NULL",
-            "strategy_id": "S-001",
             "account_id": None,
             "execution_id": None,
-            "instrument_id": "AUD/USD.SIM",
             "type": "LIMIT",
             "side": "BUY",
             "quantity": "100000",
@@ -420,13 +430,14 @@ class TestOrders:
 
         # Assert
         assert result == {
+            "trader_id": "TESTER-000",
+            "strategy_id": "S-001",
+            "instrument_id": "AUD/USD.SIM",
             "client_order_id": "O-19700101-000000-000-001-1",
             "venue_order_id": "NULL",
             "position_id": "NULL",
-            "strategy_id": "S-001",
             "account_id": None,
             "execution_id": None,
-            "instrument_id": "AUD/USD.SIM",
             "type": "STOP_MARKET",
             "side": "BUY",
             "quantity": "100000",
@@ -485,13 +496,14 @@ class TestOrders:
 
         # Assert
         assert result == {
+            "trader_id": "TESTER-000",
+            "strategy_id": "S-001",
+            "instrument_id": "AUD/USD.SIM",
             "client_order_id": "O-19700101-000000-000-001-1",
             "venue_order_id": "NULL",
             "position_id": "NULL",
-            "strategy_id": "S-001",
             "account_id": None,
             "execution_id": None,
-            "instrument_id": "AUD/USD.SIM",
             "type": "STOP_LIMIT",
             "side": "BUY",
             "quantity": "100000",
@@ -616,6 +628,9 @@ class TestOrders:
         )
 
         denied = OrderDenied(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
             order.client_order_id,
             "SOME_REASON",
             uuid4(),
@@ -648,6 +663,7 @@ class TestOrders:
         assert order.state == OrderState.SUBMITTED
         assert order.event_count == 2
         assert order.last_event == submitted
+        assert order.is_inflight
         assert not order.is_working
         assert not order.is_completed
         assert not order.is_pending_update
@@ -668,6 +684,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.ACCEPTED
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert (
@@ -694,6 +711,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.REJECTED
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
 
@@ -716,6 +734,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.EXPIRED
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
 
@@ -739,6 +758,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.TRIGGERED
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
 
@@ -758,6 +778,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.PENDING_CANCEL
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert not order.is_pending_update
@@ -781,6 +802,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.CANCELED
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
         assert not order.is_pending_update
@@ -803,6 +825,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.PENDING_UPDATE
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert order.is_pending_update
@@ -823,7 +846,10 @@ class TestOrders:
         order.apply(TestStubs.event_order_pending_update(order))
 
         updated = OrderUpdated(
-            self.account_id,
+            order.trader_id,
+            order.strategy_id,
+            order.instrument_id,
+            order.account_id,
             order.client_order_id,
             VenueOrderId("1"),
             Quantity.from_int(120000),
@@ -842,6 +868,7 @@ class TestOrders:
         assert order.venue_order_id == VenueOrderId("1")
         assert order.quantity == Quantity.from_int(120000)
         assert order.price == Price.from_str("1.00001")
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert order.event_count == 5
@@ -860,7 +887,10 @@ class TestOrders:
         order.apply(TestStubs.event_order_pending_update(order))
 
         updated = OrderUpdated(
-            self.account_id,
+            order.trader_id,
+            order.strategy_id,
+            order.instrument_id,
+            order.account_id,
             order.client_order_id,
             VenueOrderId("2"),
             Quantity.from_int(120000),
@@ -905,6 +935,7 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.00001")
         assert len(order.execution_ids) == 1
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
         assert order.ts_filled_ns == 0
@@ -936,6 +967,7 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.00001")
         assert len(order.execution_ids) == 1
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
         assert order.ts_filled_ns == 0
@@ -982,6 +1014,7 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(60000)
         assert order.avg_px == Decimal("1.000014")
         assert len(order.execution_ids) == 2
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert order.ts_filled_ns == 0
@@ -1037,6 +1070,7 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.000018571428571428571428571")
         assert len(order.execution_ids) == 3
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
         assert order.ts_filled_ns == 0
@@ -1054,14 +1088,16 @@ class TestOrders:
         order.apply(TestStubs.event_order_accepted(order))
 
         filled = OrderFilled(
-            self.account_id,
+            order.trader_id,
+            order.strategy_id,
+            order.instrument_id,
+            order.account_id,
             order.client_order_id,
             VenueOrderId("1"),
             ExecutionId("E-1"),
             PositionId("P-1"),
-            StrategyId.null(),
-            order.instrument_id,
             order.side,
+            order.type,
             order.quantity,
             Price.from_str("1.00001"),
             AUDUSD_SIM.quote_currency,
@@ -1081,6 +1117,7 @@ class TestOrders:
         assert order.price == Price.from_str("1.00000")
         assert order.avg_px == Decimal("1.00001")
         assert order.slippage == Decimal("0.00001")
+        assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
         assert order.ts_filled_ns == 0
@@ -1098,14 +1135,16 @@ class TestOrders:
         order.apply(TestStubs.event_order_accepted(order))
 
         partially = OrderFilled(
-            self.account_id,
+            order.trader_id,
+            order.strategy_id,
+            order.instrument_id,
+            order.account_id,
             order.client_order_id,
             VenueOrderId("1"),
             ExecutionId("E-1"),
             PositionId("P-1"),
-            StrategyId.null(),
-            order.instrument_id,
             order.side,
+            order.type,
             Quantity.from_int(50000),
             Price.from_str("0.999999"),
             AUDUSD_SIM.quote_currency,
@@ -1125,6 +1164,7 @@ class TestOrders:
         assert order.price == Price.from_str("1.00000")
         assert order.avg_px == Decimal("0.999999")
         assert order.slippage == Decimal("-0.000001")
+        assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert order.ts_filled_ns == 1_000_000_000, order.ts_filled_ns
