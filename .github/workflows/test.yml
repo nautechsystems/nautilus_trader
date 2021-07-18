@@ -17,8 +17,6 @@ jobs:
         python-version: [ 3.7, 3.8, 3.9 ]
     name: test - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    env:
-      PARALLEL_BUILD: false
 
     steps:
       - uses: actions/checkout@v2
