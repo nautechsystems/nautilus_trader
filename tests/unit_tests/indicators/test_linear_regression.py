@@ -1,7 +1,7 @@
 from nautilus_trader.indicators.linear_regression import LinearRegression
-
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
+
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
@@ -14,7 +14,7 @@ class TestLinearRegression:
     def test_init(self):
         assert not self.linear_regression.initialized
         assert not self.linear_regression.has_inputs
-        assert self.linear_regression.period == 4
+        assert self.linear_regression.period == self.period
         assert self.linear_regression.value == 0
 
     def test_name_returns_expected_string(self):
@@ -52,5 +52,5 @@ class TestLinearRegression:
 
         assert not self.linear_regression.initialized
         assert not self.linear_regression.has_inputs
-        assert self.linear_regression.period == 4
+        assert self.linear_regression.period == self.period
         assert self.linear_regression.value == 0
