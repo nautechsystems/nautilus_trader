@@ -49,7 +49,7 @@ jobs:
 
       # Run performance
       - name: Run performance tests
-        run: nox -s performance_tests --reuse-existing-virtualenvs
+        run: nox -rs performance_tests -- no-parallel
 
       # Store benchmark results
       - name: Store benchmark result
