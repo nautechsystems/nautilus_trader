@@ -1173,7 +1173,7 @@ class TestExecutionEngine:
         assert self.cache.position_exists(expected_position_id)
         assert self.cache.is_position_open(expected_position_id)
         assert not self.cache.is_position_closed(expected_position_id)
-        assert type(self.cache.position(expected_position_id)) == Position
+        assert isinstance(self.cache.position(expected_position_id), Position)
         assert expected_position_id in self.cache.position_ids()
         assert expected_position_id not in self.cache.position_closed_ids(strategy_id=strategy.id)
         assert expected_position_id not in self.cache.position_closed_ids()
@@ -1226,7 +1226,7 @@ class TestExecutionEngine:
         assert self.cache.position_exists(expected_position_id)
         assert self.cache.is_position_open(expected_position_id)
         assert not self.cache.is_position_closed(expected_position_id)
-        assert type(self.cache.position(expected_position_id)) == Position
+        assert isinstance(self.cache.position(expected_position_id), Position)
         assert expected_position_id in self.cache.position_ids()
         assert expected_position_id not in self.cache.position_closed_ids(strategy_id=strategy.id)
         assert expected_position_id not in self.cache.position_closed_ids()
@@ -1295,7 +1295,7 @@ class TestExecutionEngine:
         assert self.cache.position_exists(expected_position_id)
         assert self.cache.is_position_open(expected_position_id)
         assert not self.cache.is_position_closed(expected_position_id)
-        assert type(self.cache.position(expected_position_id)) == Position
+        assert isinstance(self.cache.position(expected_position_id), Position)
         assert expected_position_id in self.cache.position_ids()
         assert expected_position_id not in self.cache.position_closed_ids(strategy_id=strategy.id)
         assert expected_position_id not in self.cache.position_closed_ids()
@@ -1350,7 +1350,7 @@ class TestExecutionEngine:
         assert self.cache.position_exists(expected_id)
         assert self.cache.is_position_open(expected_id)
         assert not self.cache.is_position_closed(expected_id)
-        assert type(self.cache.position(expected_id)) == Position
+        assert isinstance(self.cache.position(expected_id), Position)
         assert expected_id in self.cache.position_ids()
         assert expected_id not in self.cache.position_closed_ids(strategy_id=strategy.id)
         assert expected_id not in self.cache.position_closed_ids()
@@ -1424,7 +1424,7 @@ class TestExecutionEngine:
         assert self.cache.position_exists(expected_position_id)
         assert self.cache.is_position_open(expected_position_id)
         assert not self.cache.is_position_closed(expected_position_id)
-        assert type(self.cache.position(expected_position_id)) == Position
+        assert isinstance(self.cache.position(expected_position_id), Position)
         assert len(self.cache.positions_closed(strategy_id=strategy.id)) == 0
         assert len(self.cache.positions_closed()) == 0
         assert len(self.cache.positions_open(strategy_id=strategy.id)) == 1
@@ -1596,8 +1596,8 @@ class TestExecutionEngine:
         assert self.cache.is_position_open(position2_id)
         assert not self.cache.is_position_closed(position1_id)
         assert not self.cache.is_position_closed(position2_id)
-        assert type(self.cache.position(position1_id)) == Position
-        assert type(self.cache.position(position2_id)) == Position
+        assert isinstance(self.cache.position(position1_id), Position)
+        assert isinstance(self.cache.position(position2_id), Position)
         assert position1_id in self.cache.position_ids(strategy_id=strategy1.id)
         assert position2_id in self.cache.position_ids(strategy_id=strategy2.id)
         assert position1_id in self.cache.position_ids()

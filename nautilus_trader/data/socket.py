@@ -42,8 +42,8 @@ class SocketClient:
         self.crlf = crlf or DEFAULT_CRLF
         self.encoding = encoding
         self.ssl = ssl
-        self.reader = None  # type: Optional[asyncio.StreamReader]
-        self.writer = None  # type: Optional[asyncio.StreamWriter]
+        self.reader: Optional[asyncio.StreamReader] = None
+        self.writer: Optional[asyncio.StreamWriter] = None
         self.connected = False
         self._stop = False
         self._stopped = False
