@@ -1,7 +1,8 @@
 import asyncio
 from asyncio import IncompleteReadError
-import json
-from typing import Optional
+from typing import Callable, Optional
+
+import orjson
 
 from nautilus_trader.common.logging import LoggerAdapter
 
@@ -16,7 +17,7 @@ class SocketClient:
         host,
         port,
         logger_adapter: LoggerAdapter,
-        message_handler: callable,
+        message_handler: Callable,
         loop=None,
         crlf=None,
         encoding="utf-8",
@@ -41,8 +42,8 @@ class SocketClient:
         self.crlf = crlf or DEFAULT_CRLF
         self.encoding = encoding
         self.ssl = ssl
-        self.reader = None  # type: Optional[asyncio.StreamReader]
-        self.writer = None  # type: Optional[asyncio.StreamWriter]
+        self.reader: Optional[asyncio.StreamReader] = None
+        self.writer: Optional[asyncio.StreamWriter] = None
         self.connected = False
         self._stop = False
         self._stopped = False
@@ -80,7 +81,7 @@ class SocketClient:
 
     async def send(self, raw):
         if not isinstance(raw, (bytes, str)):
-            raw = json.dumps(raw)
+            raw = orjson.dumps(raw)
         if not isinstance(raw, bytes):
             raw = raw.encode(self.encoding)
         self.logger.debug(f"SEND: {raw.decode()}")

@@ -18,7 +18,7 @@ import pytest
 from nautilus_trader.adapters.betfair.providers import load_markets
 from nautilus_trader.adapters.betfair.providers import load_markets_metadata
 from nautilus_trader.adapters.betfair.providers import make_instruments
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 
 
 @pytest.fixture(autouse=True)
@@ -30,7 +30,7 @@ def fix_mocks(mocker):
     # Mock market catalogue endpoints
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.list_market_catalogue",
-        return_value=BetfairTestStubs.market_catalogue(),
+        return_value=BetfairDataProvider.market_catalogue(),
     )
 
 

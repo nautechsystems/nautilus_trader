@@ -26,10 +26,11 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
-from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport PassiveOrder
@@ -45,9 +46,10 @@ cdef class LimitOrder(PassiveOrder):
     """
     def __init__(
         self,
-        ClientOrderId client_order_id not None,
+        TraderId trader_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
+        ClientOrderId client_order_id not None,
         OrderSide order_side,
         Quantity quantity not None,
         Price price not None,
@@ -64,12 +66,14 @@ cdef class LimitOrder(PassiveOrder):
 
         Parameters
         ----------
-        client_order_id : ClientOrderId
-            The client order ID.
+        trader_id : TraderId
+            The trader ID associated with the order.
         strategy_id : StrategyId
             The strategy ID associated with the order.
         instrument_id : InstrumentId
-            The order instrument_id.
+            The order instrument ID.
+        client_order_id : ClientOrderId
+            The client order ID.
         order_side : OrderSide
             The order side (BUY or SELL).
         quantity : Quantity
@@ -104,9 +108,10 @@ cdef class LimitOrder(PassiveOrder):
         if post_only:
             Condition.false(hidden, "A post-only order cannot be hidden")
         super().__init__(
-            client_order_id=client_order_id,
+            trader_id=trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
+            client_order_id=client_order_id,
             order_side=order_side,
             order_type=OrderType.LIMIT,
             quantity=quantity,
@@ -136,13 +141,14 @@ cdef class LimitOrder(PassiveOrder):
 
         """
         return {
+            "trader_id": self.trader_id.value,
+            "strategy_id": self.strategy_id.value,
+            "instrument_id": self.instrument_id.value,
             "client_order_id": self.client_order_id.value,
             "venue_order_id": self.venue_order_id.value,
             "position_id": self.position_id.value,
-            "strategy_id": self.strategy_id.value,
             "account_id": self.account_id.value if self.account_id else None,
             "execution_id": self.execution_id.value if self.execution_id else None,
-            "instrument_id": self.instrument_id.value,
             "type": OrderTypeParser.to_str(self.type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
@@ -178,17 +184,18 @@ cdef class LimitOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If init.order_type is not equal to LIMIT.
+            If init.type is not equal to LIMIT.
 
         """
         Condition.not_none(init, "init")
-        Condition.equal(init.order_type, OrderType.LIMIT, "init.order_type", "OrderType")
+        Condition.equal(init.type, OrderType.LIMIT, "init.type", "OrderType")
 
         return LimitOrder(
-            client_order_id=init.client_order_id,
+            trader_id=init.trader_id,
             strategy_id=init.strategy_id,
             instrument_id=init.instrument_id,
-            order_side=init.order_side,
+            client_order_id=init.client_order_id,
+            order_side=init.side,
             quantity=init.quantity,
             price=Price.from_str_c(init.options["price"]),
             time_in_force=init.time_in_force,

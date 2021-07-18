@@ -13,13 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
 import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.core.type import DataType
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookLevel
@@ -33,10 +34,10 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.book import OrderBookDelta
-from nautilus_trader.model.orderbook.book import OrderBookDeltas
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
-from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
@@ -416,3 +417,15 @@ class TestBacktestEngine:
 
         # Assert
         assert True  # No exceptions raised
+
+    def test_account_state_timestamp(self):
+        # Arrange
+        start = pd.Timestamp("2013-01-31 23:59:59.700000+00:00")
+        self.engine.run(start=start)
+
+        # Act
+        report = self.engine.trader.generate_account_report(Venue("SIM"))
+
+        # Assert
+        assert len(report) == 1
+        assert report.index[0] == start

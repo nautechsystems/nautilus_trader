@@ -12,9 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from collections import defaultdict
 import datetime
+import hashlib
 import itertools
 from typing import List, Optional, Union
 
@@ -22,6 +22,7 @@ from betfairlightweight.filters import cancel_instruction
 from betfairlightweight.filters import limit_order
 from betfairlightweight.filters import place_instruction
 from betfairlightweight.filters import replace_instruction
+import orjson
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
@@ -41,10 +42,13 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
-from nautilus_trader.model.commands import CancelOrder
-from nautilus_trader.model.commands import SubmitOrder
-from nautilus_trader.model.commands import UpdateOrder
+from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookLevel
@@ -54,7 +58,7 @@ from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
-from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -65,15 +69,12 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.book import OrderBookDelta
-from nautilus_trader.model.orderbook.book import OrderBookDeltas
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
-from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.model.tick import TradeTick
-from nautilus_trader.model.venue import InstrumentClosePrice
-from nautilus_trader.model.venue import InstrumentStatusUpdate
 
 
 uuid_factory = UUIDFactory()
@@ -200,6 +201,15 @@ def betfair_account_to_account_state(
         ts_updated_ns=ts_updated_ns,
         timestamp_ns=timestamp_ns,
     )
+
+
+EXECUTION_ID_KEYS = ("id", "p", "s", "side", "pt", "ot", "pd", "md", "avp", "sm")  # noqa:
+
+
+def betfair_execution_id(uo) -> ExecutionId:
+    data = orjson.dumps({k: uo[k] for k in EXECUTION_ID_KEYS if uo.get(k)})
+    hsh = hashlib.sha1(data).hexdigest()  # noqa: S303
+    return ExecutionId(hsh)
 
 
 def _handle_market_snapshot(selection, instrument, ts_event_ns, ts_recv_ns):
@@ -529,7 +539,7 @@ async def generate_order_status_report(self, order) -> Optional[OrderStatusRepor
 
 
 async def generate_trades_list(
-    self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None
+    self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None  # type: ignore
 ) -> List[ExecutionReport]:
     filled = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],

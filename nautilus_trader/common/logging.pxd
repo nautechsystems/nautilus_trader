@@ -68,6 +68,7 @@ cdef class Logger:
     cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
+    cdef void change_clock_c(self, Clock clock) except *
     cdef void log_c(self, dict record) except *
     cdef dict create_record(self, LogLevel level, LogColor color, str component, str msg, dict annotations=*)
 
@@ -109,3 +110,4 @@ cdef class LiveLogger(Logger):
 
     cpdef void start(self) except *
     cpdef void stop(self) except *
+    cdef void _enqueue_sentinel(self) except *

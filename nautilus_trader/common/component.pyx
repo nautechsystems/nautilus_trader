@@ -91,7 +91,7 @@ cdef class Component:
         self,
         Clock clock not None,
         Logger logger not None,
-        str name=None,
+        str name=None,  # Do not reorder (default arg)
         bint log_initialized=True,
     ):
         """

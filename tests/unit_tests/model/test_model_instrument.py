@@ -20,6 +20,7 @@ import pytest
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
@@ -27,11 +28,11 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.instruments.cfd import CFDInstrument
 from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 
@@ -42,7 +43,6 @@ XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSDT_BINANCE_INSTRUMENT = TestDataProvider.binance_btcusdt_instrument()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
-XAGUSD_OANDA = TestInstrumentProvider.xagusd_oanda()
 
 
 class TestInstrument:
@@ -149,37 +149,6 @@ class TestInstrument:
 
         # Assert
         assert result == BTCUSDT_BINANCE
-
-    def test_cfd_instrument_to_dict(self):
-        # Arrange, Act
-        result = CFDInstrument.to_dict(XAGUSD_OANDA)
-
-        # Assert
-        assert CFDInstrument.from_dict(result) == XAGUSD_OANDA
-        assert result == {
-            "type": "CFDInstrument",
-            "id": "XAG/USD.OANDA",
-            "asset_class": "METAL",
-            "quote_currency": "USD",
-            "price_precision": 5,
-            "price_increment": "0.00001",
-            "size_precision": 0,
-            "size_increment": "1",
-            "lot_size": "1",
-            "max_quantity": "10000000",
-            "min_quantity": "1",
-            "max_notional": None,
-            "min_notional": None,
-            "max_price": "1000000.00",
-            "min_price": "0.05",
-            "margin_init": "0.02",
-            "margin_maint": "0.007",
-            "maker_fee": "-0.00025",
-            "taker_fee": "0.00075",
-            "ts_event_ns": 0,
-            "ts_recv_ns": 0,
-            "info": None,
-        }
 
     def test_crypto_swap_instrument_to_dict(self):
         # Arrange, Act
@@ -449,3 +418,52 @@ class TestInstrument:
 
         # Assert
         assert result == Money(5294, JPY)
+
+
+class TestBettingInstrument:
+    def setup(self):
+        self.instrument = BetfairTestStubs.betting_instrument()
+
+    def test_notional_value(self):
+        notional = self.instrument.notional_value(
+            quantity=Quantity.from_int(100),
+            price=Price.from_str("0.5").as_decimal(),
+            inverse_as_quote=False,
+        ).as_decimal()
+        # We are long 100 at 0.5 probability, aka 2.0 in odds terms
+        assert notional == Decimal("200.0")
+
+    def test_calculate_initial_margin(self):
+        # Arrange
+        instrument = BetfairTestStubs.betting_instrument()
+
+        result = instrument.calculate_initial_margin(
+            Quantity.from_int(100),
+            Price.from_str("0.5"),
+        )
+
+        # Assert
+        assert result == Money("200.00", GBP)
+
+    def test_calculate_maintenance_margin(self):
+        # Arrange
+        long = self.instrument.calculate_maint_margin(
+            side=PositionSide.LONG,
+            quantity=Quantity.from_int(100),
+            last=Price.from_str("0.4"),
+        )
+        short = self.instrument.calculate_maint_margin(
+            side=PositionSide.SHORT,
+            quantity=Quantity.from_int(100),
+            last=Price.from_str("0.8"),
+        )
+        very_short = self.instrument.calculate_maint_margin(
+            side=PositionSide.SHORT,
+            quantity=Quantity.from_int(100),
+            last=Price.from_str("0.1"),
+        )
+
+        # Assert
+        assert long == Money("250.00", GBP)
+        assert short == Money("125.00", GBP)
+        assert very_short == Money("1000.00", GBP)

@@ -43,6 +43,8 @@ class TestBufferingThrottler:
         assert not self.throttler.is_limiting
         assert self.throttler.qsize == 0
         assert self.throttler.used() == 0
+        assert self.throttler.recv_count == 0
+        assert self.throttler.sent_count == 0
 
     def test_send_sends_message_to_handler(self):
         # Arrange
@@ -54,6 +56,8 @@ class TestBufferingThrottler:
         # Assert
         assert not self.throttler.is_limiting
         assert self.handler == ["MESSAGE"]
+        assert self.throttler.recv_count == 1
+        assert self.throttler.sent_count == 1
 
     def test_send_to_limit_becomes_throttled(self):
         # Arrange
@@ -73,6 +77,8 @@ class TestBufferingThrottler:
         assert self.handler == ["MESSAGE"] * 5
         assert self.throttler.qsize == 1
         assert self.throttler.used() == 1
+        assert self.throttler.recv_count == 6
+        assert self.throttler.sent_count == 5
 
     def test_used_when_sent_to_limit_returns_one(self):
         # Arrange
@@ -89,8 +95,9 @@ class TestBufferingThrottler:
         used = self.throttler.used()
 
         # Assert: Remaining items sent
-        assert self.throttler.is_initialized
         assert used == 1
+        assert self.throttler.recv_count == 5
+        assert self.throttler.sent_count == 5
 
     def test_used_when_half_interval_from_limit_returns_half(self):
         # Arrange
@@ -109,6 +116,23 @@ class TestBufferingThrottler:
 
         # Assert: Remaining items sent
         assert used == 0.5
+        assert self.throttler.recv_count == 5
+        assert self.throttler.sent_count == 5
+
+    def test_used_before_limit_when_halfway_returns_half(self):
+        # Arrange
+        item = "MESSAGE"
+
+        # Act: Send 6 items
+        self.throttler.send(item)
+        self.throttler.send(item)
+        self.throttler.send(item)
+
+        # Act
+        used = self.throttler.used()
+
+        # Assert
+        assert used == 0.6
 
     def test_refresh_when_at_limit_sends_remaining_items(self):
         # Arrange
@@ -132,6 +156,8 @@ class TestBufferingThrottler:
         assert self.handler == ["MESSAGE"] * 6
         assert self.throttler.qsize == 0
         assert self.throttler.used() == 0
+        assert self.throttler.recv_count == 6
+        assert self.throttler.sent_count == 6
 
 
 class TestDroppingThrottler:
@@ -158,6 +184,8 @@ class TestDroppingThrottler:
         assert not self.throttler.is_limiting
         assert self.throttler.qsize == 0
         assert self.throttler.used() == 0
+        assert self.throttler.recv_count == 0
+        assert self.throttler.sent_count == 0
 
     def test_send_sends_message_to_handler(self):
         # Arrange
@@ -169,6 +197,8 @@ class TestDroppingThrottler:
         # Assert
         assert not self.throttler.is_limiting
         assert self.handler == ["MESSAGE"]
+        assert self.throttler.recv_count == 1
+        assert self.throttler.sent_count == 1
 
     def test_send_to_limit_drops_message(self):
         # Arrange
@@ -189,6 +219,8 @@ class TestDroppingThrottler:
         assert self.dropped == ["MESSAGE"]
         assert self.throttler.qsize == 0
         assert self.throttler.used() == 1
+        assert self.throttler.recv_count == 6
+        assert self.throttler.sent_count == 5
 
     def test_advance_time_when_at_limit_dropped_message(self):
         # Arrange
@@ -213,3 +245,5 @@ class TestDroppingThrottler:
         assert self.dropped == ["MESSAGE"]
         assert self.throttler.qsize == 0
         assert self.throttler.used() == 0
+        assert self.throttler.recv_count == 6
+        assert self.throttler.sent_count == 5

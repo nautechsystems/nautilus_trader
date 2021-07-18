@@ -19,9 +19,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport is_datetime_utc
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class BidAskMinMax(Indicator):

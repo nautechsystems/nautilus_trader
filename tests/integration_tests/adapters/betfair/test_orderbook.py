@@ -14,13 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.betfair.data import on_market_update
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.orderbook.book import L2OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookDelta
-from nautilus_trader.model.orderbook.book import OrderBookDeltas
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
-from nautilus_trader.model.tick import TradeTick
-from nautilus_trader.model.venue import InstrumentClosePrice
-from nautilus_trader.model.venue import InstrumentStatusUpdate
+from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
@@ -31,7 +32,7 @@ def test_betfair_orderbook(betfair_data_client, provider):
         price_precision=2,
         size_precision=2,
     )
-    for update in BetfairTestStubs.raw_market_updates():
+    for update in BetfairDataProvider.raw_market_updates():
         for message in on_market_update(instrument_provider=provider, update=update):
             try:
                 if isinstance(message, OrderBookSnapshot):

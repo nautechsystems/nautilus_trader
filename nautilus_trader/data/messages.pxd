@@ -16,7 +16,7 @@
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
-from nautilus_trader.model.data cimport DataType
+from nautilus_trader.core.type cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
 
 

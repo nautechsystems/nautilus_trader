@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.roc import RateOfChange
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -23,31 +21,31 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class RateOfChangeTests(unittest.TestCase):
-    def setUp(self):
+class TestRateOfChange:
+    def setup(self):
         # Fixture Setup
         self.roc = RateOfChange(3)
 
     def test_name_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual("RateOfChange", self.roc.name)
+        assert self.roc.name == "RateOfChange"
 
     def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual("RateOfChange(3)", str(self.roc))
-        self.assertEqual("RateOfChange(3)", repr(self.roc))
+        assert str(self.roc) == "RateOfChange(3)"
+        assert repr(self.roc) == "RateOfChange(3)"
 
     def test_period(self):
         # Act
         # Assert
-        self.assertEqual(3, self.roc.period)
+        assert self.roc.period == 3
 
     def test_initialized_without_inputs_returns_false(self):
         # Act
         # Assert
-        self.assertEqual(False, self.roc.initialized)
+        assert self.roc.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -56,7 +54,7 @@ class RateOfChangeTests(unittest.TestCase):
             self.roc.update_raw(1.00000)
 
         # Assert
-        self.assertEqual(True, self.roc.initialized)
+        assert self.roc.initialized is True
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -68,8 +66,8 @@ class RateOfChangeTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(0, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 0
 
     def test_value_with_one_input(self):
         # Arrange
@@ -77,7 +75,7 @@ class RateOfChangeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0, self.roc.value)
+        assert self.roc.value == 0
 
     def test_value_with_efficient_higher_inputs(self):
         # Arrange
@@ -89,7 +87,7 @@ class RateOfChangeTests(unittest.TestCase):
             self.roc.update_raw(price)
 
         # Assert
-        self.assertEqual(0.11111111111111116, self.roc.value)
+        assert self.roc.value == 0.11111111111111116
 
     def test_value_with_oscillating_inputs_returns_zero(self):
         # Arrange
@@ -101,7 +99,7 @@ class RateOfChangeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.0, self.roc.value)
+        assert self.roc.value == 0.0
 
     def test_value_with_half_oscillating_inputs_returns_zero(self):
         # Arrange
@@ -113,7 +111,7 @@ class RateOfChangeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(9.9990000999889e-05, self.roc.value)
+        assert self.roc.value == 9.9990000999889e-05
 
     def test_value_with_noisy_inputs(self):
         # Arrange
@@ -127,7 +125,7 @@ class RateOfChangeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(2.9996400432144683e-05, self.roc.value)
+        assert self.roc.value == 2.9996400432144683e-05
 
     def test_log_returns_value_with_noisy_inputs(self):
         # Arrange
@@ -143,7 +141,7 @@ class RateOfChangeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(2.999595054919663e-05, roc.value)
+        assert roc.value == 2.999595054919663e-05
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -154,5 +152,5 @@ class RateOfChangeTests(unittest.TestCase):
         self.roc.reset()
 
         # Assert
-        self.assertFalse(self.roc.initialized)
-        self.assertEqual(0, self.roc.value)
+        assert not self.roc.initialized
+        assert self.roc.value == 0

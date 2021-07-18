@@ -18,11 +18,12 @@ import pandas as pd
 from nautilus_trader.backtest.data_producer import BacktestDataProducer
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.core.type import DataType
+from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookLevel
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import MyData
@@ -43,8 +44,8 @@ class TestBacktestDataProducer:
 
         # Act
         # Assert
-        assert producer.min_timestamp_ns == 9223285636854774784
-        assert producer.max_timestamp_ns == -9223285636854776832
+        assert producer.min_timestamp_ns == 9223285636854775000
+        assert producer.max_timestamp_ns == -9223285636854776000
         assert producer.min_timestamp == pd.Timestamp("2262-04-10 23:47:16.854774+0000", tz="UTC")
         assert producer.max_timestamp == pd.Timestamp("1677-09-22 00:12:43.145224", tz="UTC")
         assert not producer.has_data
@@ -137,3 +138,26 @@ class TestBacktestDataProducer:
         assert str(next_data.ask) == "91.717"
         assert str(next_data.bid_size) == "1000000"
         assert str(next_data.ask_size) == "1000000"
+
+    def test_producer_run_start_stop_parsed_correctly(self):
+        instrument = AUDUSD_SIM
+        example = TestDataProvider.betfair_trade_ticks()[0]
+        tick = TradeTick.from_dict(
+            {
+                **example.to_dict(example),
+                **{
+                    "instrument_id": instrument.id.value,
+                    "ts_recv_ns": 1620394867930000000,
+                    "ts_event_ns": 1620394867930000000,
+                },
+            }
+        )
+        producer = BacktestDataProducer(
+            logger=self.logger, instruments=[instrument], trade_ticks={instrument.id: [tick]}
+        )
+
+        # Check timestamps within data range
+        producer.setup(start_ns=1620394867930000000, stop_ns=1620394867930000000)
+
+        # Check timestamps outside data range
+        producer.setup(start_ns=0, stop_ns=1620394867930000128)

@@ -27,7 +27,6 @@ import msgpack
 import redis
 
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LiveLogger
@@ -43,6 +42,7 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
@@ -69,7 +69,7 @@ class TradingNode:
     def __init__(
         self,
         strategies: List[TradingStrategy],
-        config: Dict[str, object],
+        config: Dict[str, Dict[str, object]],
     ):
         """
         Initialize a new instance of the TradingNode class.
@@ -78,7 +78,7 @@ class TradingNode:
         ----------
         strategies : list[TradingStrategy]
             The list of strategies to run on the trading node.
-        config : dict[str, object]
+        config : dict[str, dict[str, object]]
             The configuration for the trading node.
 
         Raises
@@ -108,19 +108,19 @@ class TradingNode:
         config_strategy = config.get("strategy", {})
 
         # System config
-        self._timeout_connection = config_system.get("timeout_connection", 5.0)
-        self._timeout_reconciliation = config_system.get("timeout_reconciliation", 10.0)
-        self._timeout_portfolio = config_system.get("timeout_portfolio", 10.0)
-        self._timeout_disconnection = config_system.get("timeout_disconnection", 5.0)
-        self._check_residuals_delay = config_system.get("check_residuals_delay", 5.0)
-        self._load_strategy_state = config_strategy.get("load_state", True)
-        self._save_strategy_state = config_strategy.get("save_state", True)
+        self._timeout_connection: float = config_system.get("timeout_connection", 5.0)  # type: ignore
+        self._timeout_reconciliation: float = config_system.get("timeout_reconciliation", 10.0)  # type: ignore
+        self._timeout_portfolio: float = config_system.get("timeout_portfolio", 10.0)  # type: ignore
+        self._timeout_disconnection: float = config_system.get("timeout_disconnection", 5.0)  # type: ignore
+        self._check_residuals_delay: float = config_system.get("check_residuals_delay", 5.0)  # type: ignore
+        self._load_strategy_state: bool = config_strategy.get("load_state", True)  # type: ignore
+        self._save_strategy_state: bool = config_strategy.get("save_state", True)  # type: ignore
 
         # Setup loop
         self._loop = asyncio.get_event_loop()
         self._executor = concurrent.futures.ThreadPoolExecutor()
         self._loop.set_default_executor(self._executor)
-        self._loop.set_debug(config_system.get("loop_debug", False))
+        self._loop.set_debug(bool(config_system.get("loop_debug", False)))
 
         # Components
         self._clock = LiveClock(loop=self._loop)
@@ -161,8 +161,9 @@ class TradingNode:
         ########################################################################
         # Build platform
         ########################################################################
-
-        if config_db["type"] == "redis":
+        if config_db["type"] == "in-memory":
+            cache_db = None
+        elif config_db["type"] == "redis":
             cache_db = RedisCacheDatabase(
                 trader_id=self.trader_id,
                 logger=self._logger,
@@ -175,10 +176,15 @@ class TradingNode:
                 },
             )
         else:
-            cache_db = BypassCacheDatabase(
-                trader_id=self.trader_id,
-                logger=self._logger,
+            raise ValueError(
+                "The cache_db_type in the configuration is unrecognized, "
+                "can one of {{'in-memory', 'redis'}}.",
             )
+
+        self._msgbus = MessageBus(
+            clock=self._clock,
+            logger=self._logger,
+        )
 
         cache = Cache(
             database=cache_db,
@@ -187,6 +193,7 @@ class TradingNode:
         )
 
         self.portfolio = Portfolio(
+            msgbus=self._msgbus,
             cache=cache,
             clock=self._clock,
             logger=self._logger,
@@ -203,30 +210,29 @@ class TradingNode:
 
         self._exec_engine = LiveExecutionEngine(
             loop=self._loop,
-            portfolio=self.portfolio,
+            trader_id=self.trader_id,
+            msgbus=self._msgbus,
             cache=cache,
             clock=self._clock,
             logger=self._logger,
             config=config_exec,
         )
+        self._exec_engine.load_cache()
 
         self._risk_engine = LiveRiskEngine(
             loop=self._loop,
             exec_engine=self._exec_engine,
-            portfolio=self.portfolio,
+            msgbus=self._msgbus,
             cache=cache,
             clock=self._clock,
             logger=self._logger,
             config=config_risk,
         )
 
-        # Wire up components
-        self._exec_engine.register_risk_engine(self._risk_engine)
-        self._exec_engine.load_cache()
-
         self.trader = Trader(
             trader_id=self.trader_id,
             strategies=strategies,
+            msgbus=self._msgbus,
             portfolio=self.portfolio,
             data_engine=self._data_engine,
             risk_engine=self._risk_engine,
@@ -431,7 +437,6 @@ class TradingNode:
 
             self._log.info("Stopping event loop...")
             self._cancel_all_tasks()
-            self._logger.stop()
             self._loop.stop()
         except RuntimeError as ex:
             self._log.exception(ex)
@@ -458,7 +463,7 @@ class TradingNode:
 
     def _log_header(self) -> None:
         nautilus_header(self._log)
-        self._log.info(f"redis {redis.__version__}")
+        self._log.info(f"redis {redis.__version__}")  # type: ignore
         self._log.info(f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
         if uvloop_version:
             self._log.info(f"uvloop {uvloop_version}")
@@ -526,6 +531,10 @@ class TradingNode:
                 return
             self._log.info("State reconciled.", color=LogColor.GREEN)
 
+            # Initialize portfolio
+            self.portfolio.initialize_orders()
+            self.portfolio.initialize_positions()
+
             # Await portfolio initialization
             self._log.info(
                 "Waiting for portfolio to initialize " f"({self._timeout_portfolio}s timeout)...",
@@ -540,6 +549,10 @@ class TradingNode:
                 )
                 return
             self._log.info("Portfolio initialized.", color=LogColor.GREEN)
+
+            # Update portfolio
+            for account in self._exec_engine.cache.accounts():
+                self.portfolio.register_account(account)
 
             # Start trader and strategies
             self.trader.start()
@@ -637,6 +650,7 @@ class TradingNode:
             self._log.info(f"Cancelled Timer(name={name}).")
 
         self._log.info("state=STOPPED.")
+        self._logger.stop()
         self._is_running = False
 
     async def _await_engines_disconnected(self) -> bool:

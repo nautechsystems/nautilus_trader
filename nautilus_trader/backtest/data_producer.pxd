@@ -17,9 +17,9 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.model.data cimport Data
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 
 
 cdef class DataProducerFacade:

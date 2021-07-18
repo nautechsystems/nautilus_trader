@@ -98,7 +98,6 @@ The documentation for the latest version of the package can be found at:
 | Logo | ID | Status |
 |:---:|:---:|:---:|
 | [![interactive-brokers](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ib-logo.png?raw=true)](https://interactivebrokers.com) | IB | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
-| [![oanda](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/oanda-logo.png?raw=true)](https://oanda.com/) | OANDA | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
 | [![ccxtpro](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ccxtpro-logo.png?raw=true)](https://ccxt.pro/) | CCXT-`exchange_id` | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
 | [![binance](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/binance-logo.png?raw=true)](https://www.binance.com/) | BINANCE | ![status](https://img.shields.io/badge/Integration-planned-gray) |
 | [![bitmex](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/bitmex-logo.png?raw=true)](https://www.bitmex.com/) | BITMEX | ![status](https://img.shields.io/badge/Integration-planned-gray) |
@@ -175,7 +174,6 @@ Also, the following optional dependency 'extras' are separately available for in
 - `ccxt` for the CCXT Pro adapter.
 - `docs` for building the documentation.
 - `ib` for the Interactive Brokers adapter.
-- `oanda` for the OANDA adapter.
 
 For example, to install including the `ccxt` extra using pip:
 
@@ -309,10 +307,6 @@ Refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/ov
 Involvement from the trading community is a goal for this project. All help is welcome!
 Developers can open issues on GitHub to discuss proposed enhancements/changes, or
 to make bug reports.
-
-Even as some issues are marked with the `help wanted` label - this does not imply
-that help is _only_ wanted on those issues. The label indicates where 'extra attention'
-is needed.
 
 Please make all pull requests to the `develop` branch.
 

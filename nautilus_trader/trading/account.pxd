@@ -15,8 +15,8 @@
 
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.events.account cimport AccountState
+from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
