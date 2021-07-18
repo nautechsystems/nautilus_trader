@@ -122,21 +122,23 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def exec_engine(event_loop, clock, live_logger, portfolio):
+    def exec_engine(event_loop, clock, live_logger):
         return MockLiveExecutionEngine(
             loop=event_loop,
-            portfolio=portfolio,
+            trader_id=TestStubs.trader_id(),
+            msgbus=TestStubs.msgbus(),
             cache=TestStubs.cache,
             clock=clock,
             logger=live_logger,
         )
 
     @staticmethod
-    def risk_engine(event_loop, clock, live_logger, portfolio, exec_engine):
+    def risk_engine(event_loop, clock, live_logger, exec_engine):
         return MockLiveRiskEngine(
             loop=event_loop,
             exec_engine=exec_engine,
-            portfolio=portfolio,
+            msgbus=TestStubs.msgbus(),
+            cache=TestStubs.cache(),
             clock=clock,
             logger=live_logger,
         )

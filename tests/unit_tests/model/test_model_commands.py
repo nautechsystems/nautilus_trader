@@ -136,7 +136,7 @@ class TestCommands:
         assert UpdateOrder.from_dict(UpdateOrder.to_dict(command)) == command
         assert (
             str(command)
-            == f"UpdateOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010)"  # noqa
+            == "UpdateOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010)"  # noqa
         )
         assert (
             repr(command)

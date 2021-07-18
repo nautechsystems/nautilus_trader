@@ -164,8 +164,8 @@ class TestCCXTInstrumentProvider:
 
         # Assert
         assert len(instruments) > 0
-        assert type(instruments) == dict
-        assert type(next(iter(instruments))) == InstrumentId
+        assert isinstance(instruments, dict)
+        assert isinstance(next(iter(instruments)), InstrumentId)
 
     def test_get_all_when_load_all_is_true_returns_expected_instruments(self):
         # Arrange
@@ -188,8 +188,8 @@ class TestCCXTInstrumentProvider:
 
         # Assert
         assert len(instruments) > 0
-        assert type(instruments) == dict
-        assert type(next(iter(instruments))) == InstrumentId
+        assert isinstance(instruments, dict)
+        assert isinstance(next(iter(instruments)), InstrumentId)
 
     def test_get_btcusdt_when_not_loaded_returns_none(self):
         # Arrange
@@ -229,7 +229,7 @@ class TestCCXTInstrumentProvider:
         instrument = provider.find(instrument_id)
 
         # Assert
-        assert type(instrument) == CurrencySpot
+        assert isinstance(instrument, CurrencySpot)
         assert instrument.asset_class == AssetClass.CRYPTO
         assert instrument.asset_type == AssetType.SPOT
         assert instrument.base_currency == BTC
@@ -256,7 +256,7 @@ class TestCCXTInstrumentProvider:
         currency = provider.currency("BTC")
 
         # Assert
-        assert type(currency) == Currency
+        assert isinstance(currency, Currency)
         assert currency.code == "BTC"
         assert currency.precision == 8
 

@@ -559,7 +559,7 @@ class TestPositionEvents:
         assert PositionChanged.from_dict(PositionChanged.to_dict(event)) == event
         assert (
             str(event)
-            == f"PositionChanged(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_open=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00, unrealized_pnl=5.00, ts_opened_ns=0, ts_closed_ns=0, duration_ns=0)"  # noqa
+            == "PositionChanged(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_open=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00, unrealized_pnl=5.00, ts_opened_ns=0, ts_closed_ns=0, duration_ns=0)"  # noqa
         )
         assert (
             repr(event)
@@ -606,7 +606,7 @@ class TestPositionEvents:
         assert PositionClosed.from_dict(PositionClosed.to_dict(event)) == event
         assert (
             str(event)
-            == f"PositionClosed(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=FLAT, net_qty=0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_open=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=6.00, unrealized_pnl=0.00, ts_opened_ns=0, ts_closed_ns=0, duration_ns=0)"  # noqa
+            == "PositionClosed(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=FLAT, net_qty=0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_open=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=6.00, unrealized_pnl=0.00, ts_opened_ns=0, ts_closed_ns=0, duration_ns=0)"  # noqa
         )
         assert (
             repr(event)

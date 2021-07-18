@@ -56,7 +56,7 @@ class TestDataType:
         assert data_type1 != data_type2
         assert data_type1 != data_type2
         assert data_type1 != data_type3
-        assert type(hash(data_type1)) == int
+        assert isinstance(hash(data_type1), int)
 
     def test_data_type_as_key_in_dict(self):
         # Arrange
