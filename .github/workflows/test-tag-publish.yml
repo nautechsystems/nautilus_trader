@@ -65,7 +65,7 @@ jobs:
 
       # Run tests
       - name: Run tests
-        run: nox -s tests_with_integration --reuse-existing-virtualenvs
+        run: nox -rs tests_with_integration -- no-parallel
 
 
   tag_release:
