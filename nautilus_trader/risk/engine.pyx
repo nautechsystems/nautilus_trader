@@ -62,16 +62,12 @@ cdef class RiskEngine(Component):
     within the platform. This includes both pre-trade risk checks and post-trade
     risk monitoring.
 
-    Configuration
-    -------------
-    The following configuration options are possible.
-
+    Configuration options:
     - bypass: If True then all risk checks are bypassed (will still check for duplicate IDs).
     - max_order_rate: tuple(int, timedelta). Default=(10, timedelta(seconds=1)).
     - max_notional_per_order: { str: Decimal }. Default = {}.
 
-    TradingStates
-    -------------
+    Trading states:
     - ACTIVE (trading is enabled).
     - REDUCING (only new orders or updates which reduce an open position are allowed).
     - HALTED (all trading commands except cancels are denied).
