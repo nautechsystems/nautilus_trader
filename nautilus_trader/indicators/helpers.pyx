@@ -1,4 +1,4 @@
-cdef bint cross_over(str direction, list values1, list values2) except *:
+cpdef bint cross_over(str direction, list values1, list values2) except *:
     """
     Determines if the values in list1 crossed list2 in the direction specirfied.
 
@@ -24,7 +24,7 @@ cdef bint cross_over(str direction, list values1, list values2) except *:
         raise Exception("Direction can only be 'UP' or 'DOWN'")
 
 
-cdef bint cross_up(list values1, list values2) except *:
+cpdef bint cross_up(list values1, list values2) except *:
     """
     Determines if the values in list1 crossed above list2.
 
@@ -43,7 +43,7 @@ cdef bint cross_up(list values1, list values2) except *:
     return values1[-2] < values2[-2] and values1[-1] > values2[-1]
 
 
-cdef bint cross_down(list values1, list values2) except *:
+cpdef bint cross_down(list values1, list values2) except *:
     """
     Determines if the values in list1 crossed below list2.
 
