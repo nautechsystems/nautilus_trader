@@ -267,7 +267,7 @@ cdef class MessageBus:
 
     cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *:
         """
-        Unsubscribe the given handler from the given message topic.
+        Unsubscribe the given callback handler from the given message topic.
 
         Parameters
         ----------
