@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any, Callable
+
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.component cimport Component
@@ -42,7 +44,10 @@ cdef class Trader(Component):
     cdef list strategies_c(self)
 
     cpdef list strategy_ids(self)
+    cpdef dict strategy_states(self)
     cpdef void initialize_strategies(self, list strategies, bint warn_no_strategies) except *
+    cpdef void subscribe(self, str topic, handler: Callable[[Any], None]) except *
+    cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *
     cpdef void start(self) except *
     cpdef void stop(self) except *
     cpdef void check_residuals(self) except *
@@ -50,7 +55,6 @@ cdef class Trader(Component):
     cpdef void load(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
-    cpdef dict strategy_states(self)
     cpdef object generate_orders_report(self)
     cpdef object generate_order_fills_report(self)
     cpdef object generate_positions_report(self)

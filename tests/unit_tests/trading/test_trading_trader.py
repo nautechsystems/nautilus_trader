@@ -221,3 +221,26 @@ class TestTrader:
         assert self.trader.state == ComponentState.STOPPED
         assert strategy_states[StrategyId("TradingStrategy-001")] == "STOPPED"
         assert strategy_states[StrategyId("TradingStrategy-002")] == "STOPPED"
+
+    def test_subscribe_to_msgbus_topic_adds_subscription(self):
+        # Arrange
+        consumer = []
+
+        # Act
+        self.trader.subscribe("events*", consumer.append)
+
+        # Assert
+        assert len(self.msgbus.subscriptions("events*")) == 9
+        assert "events*" in self.msgbus.channels()
+        assert self.msgbus.subscriptions("events*")[-1].handler == consumer.append
+
+    def test_unsubscribe_from_msgbus_topic_removes_subscription(self):
+        # Arrange
+        consumer = []
+        self.trader.subscribe("events*", consumer.append)
+
+        # Act
+        self.trader.unsubscribe("events*", consumer.append)
+
+        # Assert
+        assert len(self.msgbus.subscriptions("events*")) == 8

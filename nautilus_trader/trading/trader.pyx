@@ -21,6 +21,8 @@ A running instance could be either a test/backtest or live implementation - the
 `Trader` will operate in the same way.
 """
 
+from typing import Any, Callable
+
 import pandas as pd
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
@@ -248,6 +250,34 @@ cdef class Trader(Component):
             self._strategies.append(strategy)
 
             self._log.info(f"Initialized {strategy}.")
+
+    cpdef void subscribe(self, str topic, handler: Callable[[Any], None]) except *:
+        """
+        Subscribe to the given message topic with the given callback handler.
+
+        Parameters
+        ----------
+        topic : str
+            The topic for the subscription. May include wildcard glob patterns.
+        handler : Callable[[Any], None]
+            The handler for the subscription.
+
+        """
+        self._msgbus.subscribe(topic=topic, handler=handler)
+
+    cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *:
+        """
+        Unsubscribe the given handler from the given message topic.
+
+        Parameters
+        ----------
+        topic : str, optional
+            The topic to unsubscribe from. May include wildcard glob patterns.
+        handler : Callable[[Any], None]
+            The handler for the subscription.
+
+        """
+        self._msgbus.unsubscribe(topic=topic, handler=handler)
 
     cpdef void check_residuals(self) except *:
         """
