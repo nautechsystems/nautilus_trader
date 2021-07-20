@@ -197,15 +197,15 @@ cdef class MessageBus:
         int priority=0,
     ) except *:
         """
-        Subscribe to the given message type.
+        Subscribe to the given message topic with the given callback handler.
 
         Parameters
         ----------
-        topic : MessageType
-            The message type to subscribe to. If "*" then subscribes to ALL messages.
+        topic : str
+            The topic for the subscription. May include wildcard glob patterns.
         handler : Callable[[Any], None]
             The handler for the subscription.
-        priority : int
+        priority : int, optional
             The priority for the subscription. Determines the ordering of
             handlers receiving messages being processed, higher priority
             handlers will receive messages prior to lower priority handlers.
@@ -267,12 +267,12 @@ cdef class MessageBus:
 
     cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *:
         """
-        Unsubscribe the handler from the given message type.
+        Unsubscribe the given handler from the given message topic.
 
         Parameters
         ----------
         topic : str, optional
-            The topic to unsubscribe from. If "*" then unsubscribes from ALL messages.
+            The topic to unsubscribe from. May include wildcard glob patterns.
         handler : Callable[[Any], None]
             The handler for the subscription.
 
