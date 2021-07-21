@@ -32,8 +32,8 @@ import pyarrow.parquet as pq
 from tqdm import tqdm
 
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.core.type import DataType
 from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
