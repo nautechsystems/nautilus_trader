@@ -20,7 +20,6 @@ from typing import Dict, List, Optional
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.core.type import DataType
 from nautilus_trader.core.uuid import UUID
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
@@ -35,6 +34,7 @@ from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId

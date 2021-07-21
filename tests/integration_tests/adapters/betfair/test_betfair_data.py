@@ -25,7 +25,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data import on_market_update
-from nautilus_trader.core.type import DataType
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
