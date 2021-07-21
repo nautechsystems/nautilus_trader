@@ -219,10 +219,9 @@ cdef class Throttler:
             delta_next = self._delta_next()
             if delta_next <= 0:
                 self._send_msg(msg)
-                continue
-
-            self._set_timer(self._process)
-            break
+            else:
+                self._set_timer(self._process)
+                return
 
         # No longer throttling
         self.is_limiting = False
