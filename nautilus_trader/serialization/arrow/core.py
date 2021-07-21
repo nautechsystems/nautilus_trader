@@ -178,9 +178,8 @@ def _deserialize(cls, chunk):
 #     return msgpack.unpackb(message_bytes)
 
 
-"""
-Objects requiring special handling in parquet
-"""
+# Objects requiring special handling in parquet
+# ---------------------------------------------
 
 for cls in OrderBookData.__subclasses__():
     register_parquet(
