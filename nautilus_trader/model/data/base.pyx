@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import copy
 from libc.stdint cimport int64_t
-
-from nautilus_trader.core.type cimport DataType
+from frozendict import frozendict
 
 
 cdef class Data:
@@ -46,6 +46,43 @@ cdef class Data:
         return (f"{type(self).__name__}("
                 f"ts_event_ns={self.ts_event_ns}, "
                 f"ts_recv_ns{self.ts_recv_ns})")
+
+
+cdef class DataType:
+    """
+    Represents an immutable data type including metadata.
+    """
+
+    def __init__(self, type type not None, dict metadata=None):    # noqa (shadows built-in type)
+        """
+        Initialize a new instance of the ``DataType`` class.
+
+        Parameters
+        ----------
+        type : type
+            The ``Data`` type of the data.
+        metadata : dict
+            The data types metadata.
+
+        """
+        if metadata is None:
+            metadata = {}
+
+        self.type = type
+        self.metadata = <dict>frozendict(copy.deepcopy(metadata))
+        self._hash = hash(self.metadata)  # Assign hash for improved time complexity
+
+    def __eq__(self, DataType other) -> bool:
+        return self.type == other.type and self.metadata == other.metadata
+
+    def __hash__(self) -> int:
+        return self._hash
+
+    def __str__(self) -> str:
+        return f"<{self.type.__name__}> {str(self.metadata)[11:-1]}"
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(type={self.type.__name__}, metadata={str(self.metadata)[11:-1]})"
 
 
 cdef class GenericData(Data):

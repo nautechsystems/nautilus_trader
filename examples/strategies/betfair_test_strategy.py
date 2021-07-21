@@ -19,10 +19,10 @@ from typing import Optional
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.message import Event
-from nautilus_trader.core.type import DataType
 from nautilus_trader.model.c_enums.book_level import BookLevel
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled

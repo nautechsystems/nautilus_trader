@@ -15,14 +15,21 @@
 
 from libc.stdint cimport int64_t
 
-from nautilus_trader.core.type cimport DataType
-
 
 cdef class Data:
     cdef readonly int64_t ts_event_ns
     """The UNIX timestamp (nanoseconds) when data event occurred.\n\n:returns: `int64`"""
     cdef readonly int64_t ts_recv_ns
     """The UNIX timestamp (nanoseconds) when received by the Nautilus system.\n\n:returns: `int64`"""
+
+
+cdef class DataType:
+    cdef int _hash
+
+    cdef readonly type type
+    """The `Data` type of the data.\n\n:returns: `type`"""
+    cdef readonly dict metadata
+    """The data types metadata.\n\n:returns: `dict[str, object]`"""
 
 
 cdef class GenericData(Data):
