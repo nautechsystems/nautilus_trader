@@ -14,23 +14,24 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Dict, Optional
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.data import Data
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -92,7 +93,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
-        self.instrument = None  # Initialized in on_start
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.trail_atr_multiple = trail_atr_multiple
@@ -341,9 +342,9 @@ class EMACrossStopEntryTrail(TradingStrategy):
             if self.entry:
                 if event.client_order_id == self.entry.client_order_id:
                     last_bar = self.cache.bar(self.bar_type)
-                    if event.order_side == OrderSide.BUY:
+                    if event.side == OrderSide.BUY:
                         self.trailing_stop_sell(last_bar)
-                    elif event.order_side == OrderSide.SELL:
+                    elif event.side == OrderSide.SELL:
                         self.trailing_stop_buy(last_bar)
             if self.trailing_stop:
                 if event.client_order_id == self.trailing_stop.client_order_id:
@@ -368,7 +369,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
         self.slow_ema.reset()
         self.atr.reset()
 
-    def on_save(self) -> {}:
+    def on_save(self) -> Dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -382,7 +383,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
         """
         return {}
 
-    def on_load(self, state: {}):
+    def on_load(self, state: Dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 

@@ -3,8 +3,6 @@ name: performance
 on:
   push:
     branches: [ develop ]
-  pull_request:
-    branches: [ develop ]
 
 jobs:
   performance:
@@ -49,7 +47,7 @@ jobs:
 
       # Run performance
       - name: Run performance tests
-        run: nox -s performance_tests --reuse-existing-virtualenvs
+        run: nox -rs performance_tests -- no-parallel
 
       # Store benchmark results
       - name: Store benchmark result
@@ -63,4 +61,4 @@ jobs:
           # Show alert with commit comment on detecting possible performance regression
           alert-threshold: '200%'
           comment-always: true
-          fail-on-alert: true
+          fail-on-alert: false

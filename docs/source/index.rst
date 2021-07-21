@@ -121,6 +121,7 @@ Index
     api_reference/infrastructure
     api_reference/live
     api_reference/model
+    api_reference/msgbus
     api_reference/risk
     api_reference/serialization
     api_reference/trading
@@ -132,7 +133,6 @@ Index
     :hidden:
 
     integrations/ib
-    integrations/oanda
     integrations/ccxtpro
     integrations/binance
     integrations/bitmex

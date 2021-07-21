@@ -20,35 +20,36 @@ from typing import List
 import pytz
 
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.bar import BarType
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.book_level import BookLevel
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data import Data
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.events import AccountState
-from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderCanceled
-from nautilus_trader.model.events import OrderExpired
-from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.events import OrderPendingCancel
-from nautilus_trader.model.events import OrderPendingUpdate
-from nautilus_trader.model.events import OrderRejected
-from nautilus_trader.model.events import OrderSubmitted
-from nautilus_trader.model.events import OrderTriggered
-from nautilus_trader.model.events import PositionChanged
-from nautilus_trader.model.events import PositionClosed
-from nautilus_trader.model.events import PositionOpened
+from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.events.order import OrderCanceled
+from nautilus_trader.model.events.order import OrderExpired
+from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events.order import OrderPendingCancel
+from nautilus_trader.model.events.order import OrderPendingUpdate
+from nautilus_trader.model.events.order import OrderRejected
+from nautilus_trader.model.events.order import OrderSubmitted
+from nautilus_trader.model.events.order import OrderTriggered
+from nautilus_trader.model.events.position import PositionChanged
+from nautilus_trader.model.events.position import PositionClosed
+from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -62,11 +63,10 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
-from nautilus_trader.model.orderbook.order import Order
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
@@ -313,7 +313,7 @@ class TestStubs:
 
     @staticmethod
     def strategy_id() -> StrategyId:
-        return StrategyId("Test-1")
+        return StrategyId("S-001")
 
     @staticmethod
     def event_account_state(account_id=None) -> AccountState:
@@ -342,6 +342,9 @@ class TestStubs:
     @staticmethod
     def event_order_submitted(order) -> OrderSubmitted:
         return OrderSubmitted(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             ts_submitted_ns=0,
@@ -354,6 +357,9 @@ class TestStubs:
         if venue_order_id is None:
             venue_order_id = VenueOrderId("1")
         return OrderAccepted(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
@@ -365,6 +371,9 @@ class TestStubs:
     @staticmethod
     def event_order_rejected(order) -> OrderRejected:
         return OrderRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             reason="ORDER_REJECTED",
@@ -376,6 +385,9 @@ class TestStubs:
     @staticmethod
     def event_order_pending_update(order) -> OrderPendingUpdate:
         return OrderPendingUpdate(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
@@ -387,6 +399,9 @@ class TestStubs:
     @staticmethod
     def event_order_pending_cancel(order) -> OrderPendingCancel:
         return OrderPendingCancel(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
@@ -428,14 +443,16 @@ class TestStubs:
         )
 
         return OrderFilled(
+            trader_id=TestStubs.trader_id(),
+            strategy_id=strategy_id,
+            instrument_id=instrument.id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
             execution_id=execution_id,
             position_id=position_id,
-            strategy_id=strategy_id,
-            instrument_id=order.instrument_id,
             order_side=order.side,
+            order_type=order.type,
             last_qty=last_qty,
             last_px=order.price if last_px is None else last_px,
             currency=instrument.quote_currency,
@@ -449,6 +466,9 @@ class TestStubs:
     @staticmethod
     def event_order_canceled(order) -> OrderCanceled:
         return OrderCanceled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
@@ -460,6 +480,9 @@ class TestStubs:
     @staticmethod
     def event_order_expired(order) -> OrderExpired:
         return OrderExpired(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
@@ -471,6 +494,9 @@ class TestStubs:
     @staticmethod
     def event_order_triggered(order) -> OrderTriggered:
         return OrderTriggered(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
@@ -481,36 +507,27 @@ class TestStubs:
 
     @staticmethod
     def event_position_opened(position) -> PositionOpened:
-        return PositionOpened(
-            position_id=position.id,
-            strategy_id=position.strategy_id,
-            instrument_id=position.instrument_id,
-            position_status=position.to_dict(),
-            order_fill=position.last_event,
+        return PositionOpened.create(
+            position=position,
+            fill=position.last_event,
             event_id=uuid4(),
             timestamp_ns=0,
         )
 
     @staticmethod
     def event_position_changed(position) -> PositionChanged:
-        return PositionChanged(
-            position_id=position.id,
-            strategy_id=position.strategy_id,
-            instrument_id=position.instrument_id,
-            position_status=position.to_dict(),
-            order_fill=position.last_event,
+        return PositionChanged.create(
+            position=position,
+            fill=position.last_event,
             event_id=uuid4(),
             timestamp_ns=0,
         )
 
     @staticmethod
     def event_position_closed(position) -> PositionClosed:
-        return PositionClosed(
-            position_id=position.id,
-            strategy_id=position.strategy_id,
-            instrument_id=position.instrument_id,
-            position_status=position.to_dict(),
-            order_fill=position.last_event,
+        return PositionClosed.create(
+            position=position,
+            fill=position.last_event,
             event_id=uuid4(),
             timestamp_ns=0,
         )
@@ -524,22 +541,23 @@ class TestStubs:
         return LiveLogger(loop=asyncio.get_event_loop(), clock=TestStubs.clock())
 
     @staticmethod
-    def cache_db():
-        return BypassCacheDatabase(
-            trader_id=TestStubs.trader_id(),
+    def msgbus():
+        return MessageBus(
+            clock=TestStubs.clock(),
             logger=TestStubs.logger(),
         )
 
     @staticmethod
     def cache():
         return Cache(
-            database=TestStubs.cache_db(),
+            database=None,
             logger=TestStubs.logger(),
         )
 
     @staticmethod
     def portfolio():
         return Portfolio(
+            msgbus=TestStubs.msgbus(),
             clock=TestStubs.clock(),
             cache=TestStubs.cache(),
             logger=TestStubs.logger(),
@@ -559,7 +577,8 @@ class TestStubs:
     def mock_live_exec_engine():
         return MockLiveExecutionEngine(
             loop=asyncio.get_event_loop(),
-            portfolio=TestStubs.portfolio(),
+            trader_id=TestStubs.trader_id(),
+            msgbus=TestStubs.msgbus(),
             cache=TestStubs.cache(),
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),
@@ -570,7 +589,7 @@ class TestStubs:
         return MockLiveRiskEngine(
             loop=asyncio.get_event_loop(),
             exec_engine=TestStubs.mock_live_exec_engine(),
-            portfolio=TestStubs.portfolio(),
+            msgbus=TestStubs.msgbus(),
             cache=TestStubs.cache(),
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),

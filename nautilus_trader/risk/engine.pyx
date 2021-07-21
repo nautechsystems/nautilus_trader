@@ -36,12 +36,12 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.c_enums.trading_state cimport TradingStateParser
-from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport SubmitBracketOrder
-from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.commands cimport TradingCommand
-from nautilus_trader.model.commands cimport UpdateOrder
-from nautilus_trader.model.events cimport OrderDenied
+from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport TradingCommand
+from nautilus_trader.model.commands.trading cimport UpdateOrder
+from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -51,7 +51,7 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
-from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class RiskEngine(Component):
@@ -62,16 +62,12 @@ cdef class RiskEngine(Component):
     within the platform. This includes both pre-trade risk checks and post-trade
     risk monitoring.
 
-    Configuration
-    -------------
-    The following configuration options are possible.
-
+    Configuration options:
     - bypass: If True then all risk checks are bypassed (will still check for duplicate IDs).
     - max_order_rate: tuple(int, timedelta). Default=(10, timedelta(seconds=1)).
     - max_notional_per_order: { str: Decimal }. Default = {}.
 
-    TradingStates
-    -------------
+    Trading states:
     - ACTIVE (trading is enabled).
     - REDUCING (only new orders or updates which reduce an open position are allowed).
     - HALTED (all trading commands except cancels are denied).
@@ -81,7 +77,7 @@ cdef class RiskEngine(Component):
     def __init__(
         self,
         ExecutionEngine exec_engine not None,
-        Portfolio portfolio not None,
+        MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
@@ -94,8 +90,8 @@ cdef class RiskEngine(Component):
         ----------
         exec_engine : ExecutionEngine
             The execution engine for the engine.
-        portfolio : Portfolio
-            The portfolio for the engine.
+        msgbus : MessageBus
+            The message bus for the engine.
         cache : Cache
             The cache for the engine.
         clock : Clock
@@ -114,7 +110,7 @@ cdef class RiskEngine(Component):
             name="RiskEngine",
         )
 
-        self._portfolio = portfolio
+        self._msgbus = msgbus
         self._exec_engine = exec_engine
 
         self.trader_id = exec_engine.trader_id
@@ -156,6 +152,10 @@ cdef class RiskEngine(Component):
 
         # Configure
         self._initialize_risk_checks(config)
+
+        # Required subscriptions
+        self._msgbus.subscribe(topic="events.order*", handler=self._handle_event)
+        self._msgbus.subscribe(topic="events.position*", handler=self._handle_event)
 
     cdef void _initialize_risk_checks(self, dict config) except *:
         cdef dict max_notional_config = config.get("max_notional_per_order", {})
@@ -348,9 +348,6 @@ cdef class RiskEngine(Component):
                 reason=f"Duplicate {repr(command.order.client_order_id)}")
             return  # Denied
 
-        # Cache order
-        self.cache.add_order(command.order, command.position_id)
-
         # Check position exists
         if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
             self._deny_command(
@@ -402,11 +399,6 @@ cdef class RiskEngine(Component):
                 command=command,
                 reason=f"Duplicate {repr(take_profit.client_order_id)}")
             return  # Denied
-
-        # Cache all orders
-        self.cache.add_order(entry, PositionId.null_c())
-        self.cache.add_order(stop_loss, PositionId.null_c())
-        self.cache.add_order(take_profit, PositionId.null_c())
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
@@ -673,6 +665,9 @@ cdef class RiskEngine(Component):
 
         # Generate event
         cdef OrderDenied denied = OrderDenied(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             reason=reason,
             event_id=self._uuid_factory.generate(),
@@ -718,6 +713,6 @@ cdef class RiskEngine(Component):
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, Event event) except *:
+    cpdef void _handle_event(self, Event event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
         self.event_count += 1

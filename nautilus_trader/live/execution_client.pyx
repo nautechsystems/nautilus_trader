@@ -266,7 +266,8 @@ cdef class LiveExecutionClient(ExecutionClient):
         return mass_status
 
     async def reconcile_state(
-        self, OrderStatusReport report,
+        self,
+        OrderStatusReport report,
         Order order=None,
         list exec_reports=None,
     ) -> bool:
@@ -320,20 +321,44 @@ cdef class LiveExecutionClient(ExecutionClient):
         if report.order_state == OrderState.REJECTED:
             # No VenueOrderId would have been assigned from the exchange
             self._log.info("Generating OrderRejected event...", color=LogColor.BLUE)
-            self.generate_order_rejected(report.client_order_id, "unknown", report.timestamp_ns)
+            self.generate_order_rejected(
+                order.strategy_id,
+                order.instrument_id,
+                report.client_order_id,
+                "unknown",
+                report.timestamp_ns,
+            )
             return True
         elif report.order_state == OrderState.EXPIRED:
             self._log.info("Generating OrderExpired event...", color=LogColor.BLUE)
-            self.generate_order_expired(report.client_order_id, report.venue_order_id, report.timestamp_ns)
+            self.generate_order_expired(
+                order.strategy_id,
+                order.instrument_id,
+                report.client_order_id,
+                report.venue_order_id,
+                report.timestamp_ns,
+            )
             return True
         elif report.order_state == OrderState.CANCELED:
             self._log.info("Generating OrderCanceled event...", color=LogColor.BLUE)
-            self.generate_order_canceled(report.client_order_id, report.venue_order_id, report.timestamp_ns)
+            self.generate_order_canceled(
+                order.strategy_id,
+                order.instrument_id,
+                report.client_order_id,
+                report.venue_order_id,
+                report.timestamp_ns,
+            )
             return True
         elif report.order_state == OrderState.ACCEPTED:
             if order.state_c() == OrderState.SUBMITTED:
                 self._log.info("Generating OrderAccepted event...", color=LogColor.BLUE)
-                self.generate_order_accepted(report.client_order_id, report.venue_order_id, report.timestamp_ns)
+                self.generate_order_accepted(
+                    order.strategy_id,
+                    order.instrument_id,
+                    report.client_order_id,
+                    report.venue_order_id,
+                    report.timestamp_ns,
+                )
             return True
 
         # OrderState.PARTIALLY_FILLED or FILLED
@@ -360,12 +385,14 @@ cdef class LiveExecutionClient(ExecutionClient):
                 return False  # Cannot reconcile state
 
             self.generate_order_filled(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 venue_order_id=order.venue_order_id,
                 execution_id=exec_report.id,
                 position_id=None,  # Assigned in engine
-                instrument_id=order.instrument_id,
                 order_side=order.side,
+                order_type=order.type,
                 last_qty=exec_report.last_qty,
                 last_px=exec_report.last_px,
                 quote_currency=instrument.quote_currency,

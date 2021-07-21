@@ -42,7 +42,6 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport RES
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.type cimport DataType
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport BulkTickBarBuilder
@@ -58,24 +57,25 @@ from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.model.data.base cimport DataType
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.venue cimport InstrumentClosePrice
+from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
+from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.book cimport OrderBookData
-from nautilus_trader.model.orderbook.book cimport OrderBookDeltas
-from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.model.venue cimport InstrumentClosePrice
-from nautilus_trader.model.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.venue cimport StatusUpdate
+from nautilus_trader.model.orderbook.data cimport OrderBookData
+from nautilus_trader.model.orderbook.data cimport OrderBookDeltas
+from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
@@ -304,22 +304,6 @@ cdef class DataEngine(Component):
         self._clients[client.id] = client
 
         self._log.info(f"Registered {client}.")
-
-    cpdef void register_strategy(self, TradingStrategy strategy) except *:
-        """
-        Register the given trading strategy with the data engine.
-
-        Parameters
-        ----------
-        strategy : TradingStrategy
-            The strategy to register.
-
-        """
-        Condition.not_none(strategy, "strategy")
-
-        strategy.register_data_engine(self)
-
-        self._log.info(f"Registered {strategy}.")
 
     cpdef void deregister_client(self, DataClient client) except *:
         """

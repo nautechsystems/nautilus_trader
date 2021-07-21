@@ -15,10 +15,10 @@
 
 import pyarrow as pa
 
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.orderbook.book import OrderBookData
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.orderbook.data import OrderBookData
 
 
 NAUTILUS_PARQUET_SCHEMA = {

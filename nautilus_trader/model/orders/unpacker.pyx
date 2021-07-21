@@ -15,7 +15,7 @@
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
@@ -36,13 +36,13 @@ cdef class OrderUnpacker:
 
     @staticmethod
     cdef Order from_init_c(OrderInitialized init):
-        if init.order_type == OrderType.MARKET:
+        if init.type == OrderType.MARKET:
             return MarketOrder.create(init=init)
-        elif init.order_type == OrderType.LIMIT:
+        elif init.type == OrderType.LIMIT:
             return LimitOrder.create(init=init)
-        elif init.order_type == OrderType.STOP_MARKET:
+        elif init.type == OrderType.STOP_MARKET:
             return StopMarketOrder.create(init=init)
-        elif init.order_type == OrderType.STOP_LIMIT:
+        elif init.type == OrderType.STOP_LIMIT:
             return StopLimitOrder.create(init=init)
         else:
             # Design-time error

@@ -12,7 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from typing import Callable, Optional
+
+from typing import Callable, Dict, Optional
 
 import pyarrow as pa
 
@@ -23,8 +24,8 @@ from nautilus_trader.serialization.base import get_from_dict
 from nautilus_trader.serialization.base import get_to_dict
 
 
-_PARQUET_OBJECT_TO_DICT_MAP = {}
-_PARQUET_OBJECT_FROM_DICT_MAP = {}
+_PARQUET_OBJECT_TO_DICT_MAP: Dict[str, object] = {}
+_PARQUET_OBJECT_FROM_DICT_MAP: Dict[str, object] = {}
 _chunk = {}
 _partition_keys = {}
 _schemas = {}
@@ -32,8 +33,8 @@ _schemas = {}
 
 def register_parquet(
     cls_type,
-    serializer: Optional[callable] = None,
-    deserializer: Optional[callable] = None,
+    serializer: Optional[Callable] = None,
+    deserializer: Optional[Callable] = None,
     schema: Optional[pa.Schema] = None,
     partition_keys=None,
     chunk=None,
@@ -54,9 +55,9 @@ def register_parquet(
     assert isinstance(
         cls_type, type
     ), f"`name` should be <str> (i.e. Class.__name__) not {type(cls_type)}: {cls_type}"
-    assert serializer is None or isinstance(serializer, Callable), "Serializer must be callable"
+    assert serializer is None or isinstance(serializer, Callable), "Serializer must be callable"  # type: ignore
     assert deserializer is None or isinstance(
-        deserializer, Callable
+        deserializer, Callable  # type: ignore
     ), "Deserializer must be callable"
     assert schema is None or isinstance(schema, pa.Schema), "partition_keys must be tuple"
     assert partition_keys is None or isinstance(

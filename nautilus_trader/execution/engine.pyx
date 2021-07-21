@@ -46,23 +46,23 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.time cimport unix_timestamp_ms
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
-from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport SubmitBracketOrder
-from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.commands cimport UpdateOrder
-from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.events cimport OrderEvent
-from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport PositionChanged
-from nautilus_trader.model.events cimport PositionClosed
-from nautilus_trader.model.events cimport PositionEvent
-from nautilus_trader.model.events cimport PositionOpened
+from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport UpdateOrder
+from nautilus_trader.model.events.account cimport AccountState
+from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.position cimport PositionChanged
+from nautilus_trader.model.events.position cimport PositionClosed
+from nautilus_trader.model.events.position cimport PositionEvent
+from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -73,8 +73,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.account cimport Account
-from nautilus_trader.trading.portfolio cimport Portfolio
-from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class ExecutionEngine(Component):
@@ -86,7 +84,8 @@ cdef class ExecutionEngine(Component):
 
     def __init__(
         self,
-        Portfolio portfolio not None,
+        TraderId trader_id not None,
+        MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
@@ -97,8 +96,10 @@ cdef class ExecutionEngine(Component):
 
         Parameters
         ----------
-        portfolio : Portfolio
-            The portfolio for the engine.
+        trader_id : TraderId
+            The trader ID for the engine.
+        msgbus : MessageBus
+            The message bus for the engine.
         cache : Cache
             The cache for the engine.
         clock : Clock
@@ -117,18 +118,16 @@ cdef class ExecutionEngine(Component):
             name="ExecEngine",
         )
 
+        self.trader_id = trader_id
+
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
-        self._strategies = {}        # type: dict[StrategyId, TradingStrategy]
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]
         self._default_client = None  # type: Optional[ExecutionClient]
         self._pos_id_generator = PositionIdGenerator(
-            trader_id=cache.trader_id,
+            trader_id=trader_id,
             clock=clock,
         )
-        self._portfolio = portfolio
-        self._risk_engine = None  # Initialized when risk engine registered
-
-        self.trader_id = cache.trader_id
+        self._msgbus = msgbus
         self.cache = cache
 
         # Counters
@@ -159,18 +158,6 @@ cdef class ExecutionEngine(Component):
         """
         return self._default_client.id if self._default_client is not None else None
 
-    @property
-    def registered_strategies(self):
-        """
-        The strategy IDs registered with the engine.
-
-        Returns
-        -------
-        list[StrategyId]
-
-        """
-        return sorted(list(self._strategies.keys()))
-
     cpdef int position_id_count(self, StrategyId strategy_id) except *:
         """
         The position ID count for the given strategy ID.
@@ -186,24 +173,6 @@ cdef class ExecutionEngine(Component):
 
         """
         return self._pos_id_generator.get_count(strategy_id)
-
-    cpdef bint check_portfolio_equal(self, Portfolio portfolio) except *:
-        """
-        Check whether the given portfolio is the same object as the portfolio
-        wired to the execution engine.
-
-        Parameters
-        ----------
-        portfolio : Portfolio
-            The portfolio to check.
-
-        Returns
-        -------
-        bool
-            True if same object, else False.
-
-        """
-        return portfolio == self._portfolio
 
     cpdef bint check_integrity(self) except *:
         """
@@ -263,21 +232,6 @@ cdef class ExecutionEngine(Component):
         return self.cache.check_residuals()
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
-
-    cpdef void register_risk_engine(self, RiskEngine engine) except *:
-        """
-        Register the given risk engine with the execution engine.
-
-        Parameters
-        ----------
-        engine : RiskEngine
-            The risk engine to register.
-
-        """
-        Condition.not_none(engine, "engine")
-
-        self._risk_engine = engine
-        self._log.info(f"Registered {engine}.")
 
     cpdef void register_client(self, ExecutionClient client) except *:
         """
@@ -364,29 +318,6 @@ cdef class ExecutionEngine(Component):
             f"for routing to {venue}."
         )
 
-    cpdef void register_strategy(self, TradingStrategy strategy) except *:
-        """
-        Register the given strategy with the execution engine.
-
-        Parameters
-        ----------
-        strategy : TradingStrategy
-            The strategy to register.
-
-        Raises
-        ------
-        ValueError
-            If strategy is already registered with the execution engine.
-
-        """
-        Condition.not_none(strategy, "strategy")
-        Condition.not_in(strategy.id, self._strategies, "strategy.id", "registered_strategies")
-
-        strategy.register_risk_engine(self._risk_engine)
-        strategy.register_portfolio(self._portfolio)
-        self._strategies[strategy.id] = strategy
-        self._log.info(f"Registered {strategy}.")
-
     cpdef void deregister_client(self, ExecutionClient client) except *:
         """
         Deregister the given execution client from the execution engine.
@@ -415,27 +346,6 @@ cdef class ExecutionEngine(Component):
 
         self._log.info(f"Deregistered {client}.")
 
-    cpdef void deregister_strategy(self, TradingStrategy strategy) except *:
-        """
-        Deregister the given strategy with the execution engine.
-
-        Parameters
-        ----------
-        strategy : TradingStrategy
-            The strategy to deregister.
-
-        Raises
-        ------
-        ValueError
-            If strategy is not registered with the execution engine.
-
-        """
-        Condition.not_none(strategy, "strategy")
-        Condition.is_in(strategy.id, self._strategies, "strategy.id", "registered_strategies")
-
-        del self._strategies[strategy.id]
-        self._log.info(f"Deregistered {strategy}.")
-
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void _on_start(self) except *:
@@ -450,10 +360,6 @@ cdef class ExecutionEngine(Component):
         cdef ExecutionClient client
         for client in self._clients.values():
             client.connect()
-
-        # Initialize portfolio
-        self._portfolio.initialize_orders()
-        self._portfolio.initialize_positions()
 
         self._on_start()
 
@@ -497,10 +403,6 @@ cdef class ExecutionEngine(Component):
         self._set_position_id_counts()
 
         self._log.info(f"Loaded cache in {(unix_timestamp_ms() - ts)}ms.")
-
-        # Update portfolio
-        for account in self.cache.accounts():
-            self._portfolio.register_account(account)
 
     cpdef void execute(self, TradingCommand command) except *:
         """
@@ -594,9 +496,19 @@ cdef class ExecutionEngine(Component):
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
     cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
+        # Cache order
+        self.cache.add_order(command.order, command.position_id)
+
+        # Send to execution client
         client.submit_order(command)
 
     cdef void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
+        # Cache all orders
+        self.cache.add_order(command.bracket_order.entry, PositionId.null_c())
+        self.cache.add_order(command.bracket_order.stop_loss, PositionId.null_c())
+        self.cache.add_order(command.bracket_order.take_profit, PositionId.null_c())
+
+        # Send to execution client
         client.submit_bracket_order(command)
 
     cdef void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
@@ -613,8 +525,6 @@ cdef class ExecutionEngine(Component):
 
         if isinstance(event, OrderEvent):
             self._handle_order_event(event)
-        elif isinstance(event, PositionEvent):
-            self._handle_position_event(event)
         elif isinstance(event, AccountState):
             self._handle_account_event(event)
         else:
@@ -626,7 +536,6 @@ cdef class ExecutionEngine(Component):
             # Generate account
             account = Account(event)
             self.cache.add_account(account)
-            self._portfolio.register_account(account)
             for client in self._clients.values():
                 if client.account_id == account.id and client.get_account() is None:
                     client.register_account(account)
@@ -634,10 +543,10 @@ cdef class ExecutionEngine(Component):
             account.apply(event=event)
             self.cache.update_account(account)
 
-    cdef void _handle_position_event(self, PositionEvent event) except *:
-        self._portfolio.update_position(event)
-        self._risk_engine.process(event)
-        self._send_to_strategy(event, event.strategy_id)
+        self._msgbus.publish_c(
+            topic=f"events.account.{event.account_id.value}",
+            msg=event,
+        )
 
     cdef void _handle_order_event(self, OrderEvent event) except *:
         # Fetch Order from cache
@@ -680,7 +589,6 @@ cdef class ExecutionEngine(Component):
             # The StrategyId needs to be confirmed prior to the PositionId.
             # This is in case there is no PositionId currently assigned and one
             # must be generated.
-            self._confirm_strategy_id(event)
             self._confirm_position_id(event)
 
         try:
@@ -692,38 +600,14 @@ cdef class ExecutionEngine(Component):
 
         self.cache.update_order(order)
 
-        # Update portfolio
-        if order.is_passive_c() and (order.is_working_c() or order.is_completed_c()):
-            self._portfolio.update_order(order)
-
         if isinstance(event, OrderFilled):
             self._handle_order_fill(event)
-            return  # Event will be sent to strategy
+            return  # Published on msgbus
 
-        self._risk_engine.process(event)
-        self._send_to_strategy(event, self.cache.strategy_id_for_order(client_order_id))
-
-    cdef void _confirm_strategy_id(self, OrderFilled fill) except *:
-        if fill.strategy_id.not_null():
-            # Already assigned to fill
-            return
-
-        # Fetch ID from cache
-        cdef StrategyId strategy_id = self.cache.strategy_id_for_order(fill.client_order_id)
-        if strategy_id is not None:
-            # Assign ID to fill
-            fill.strategy_id = strategy_id
-            return
-
-        if fill.position_id.not_null():
-            # Check if strategy ID assigned for position
-            strategy_id = self.cache.strategy_id_for_position(fill.position_id)
-        if strategy_id is None:
-            self._log.error(
-                f"Cannot find StrategyId for "
-                f"{repr(fill.client_order_id)} and "
-                f"{repr(fill.position_id)} not found for {fill}."
-            )
+        self._msgbus.publish_c(
+            topic=f"events.order.{event.strategy_id.value}.{event.client_order_id.value}",
+            msg=event,
+        )
 
     cdef void _confirm_position_id(self, OrderFilled fill) except *:
         if fill.position_id.not_null():
@@ -753,11 +637,12 @@ cdef class ExecutionEngine(Component):
         # Assign existing positions ID to fill
         fill.position_id = positions_open[0].id
 
-    cdef void _handle_order_command_rejected(self, OrderEvent event) except *:
-        self._risk_engine.process(event)
-        self._send_to_strategy(event, self.cache.strategy_id_for_order(event.client_order_id))
-
     cdef void _handle_order_fill(self, OrderFilled fill) except *:
+        self._msgbus.publish_c(
+            topic=f"events.order.{fill.strategy_id.value}.{fill.client_order_id.value}",
+            msg=fill,
+        )
+
         cdef Position position = self.cache.position(fill.position_id)
         if position is None:  # No position open
             self._open_position(fill)
@@ -776,13 +661,21 @@ cdef class ExecutionEngine(Component):
         cdef Position position = Position(instrument, fill)
         self.cache.add_position(position)
 
-        self._risk_engine.process(fill)
-        self._send_to_strategy(fill, fill.strategy_id)
-        self.process(self._pos_opened_event(position, fill))
+        cdef PositionOpened event = PositionOpened.create_c(
+            position=position,
+            fill=fill,
+            event_id=self._uuid_factory.generate(),
+            timestamp_ns=self._clock.timestamp_ns(),
+        )
+
+        self._msgbus.publish_c(
+            topic=f"events.position.{event.strategy_id.value}.{event.position_id.value}",
+            msg=event,
+        )
 
     cdef void _update_position(self, Position position, OrderFilled fill) except *:
         # Check for flip
-        if position.is_opposite_side(fill.order_side) and fill.last_qty > position.quantity:
+        if position.is_opposite_side(fill.side) and fill.last_qty > position.quantity:
             self._flip_position(position, fill)
             return  # Handled in flip
 
@@ -797,13 +690,24 @@ cdef class ExecutionEngine(Component):
 
         cdef PositionEvent position_event
         if position.is_closed_c():
-            position_event = self._pos_closed_event(position, fill)
+            event = PositionClosed.create_c(
+                position=position,
+                fill=fill,
+                event_id=self._uuid_factory.generate(),
+                timestamp_ns=self._clock.timestamp_ns(),
+            )
         else:
-            position_event = self._pos_changed_event(position, fill)
+            event = PositionChanged.create_c(
+                position=position,
+                fill=fill,
+                event_id=self._uuid_factory.generate(),
+                timestamp_ns=self._clock.timestamp_ns(),
+            )
 
-        self._risk_engine.process(fill)
-        self._send_to_strategy(fill, fill.strategy_id)
-        self.process(position_event)
+        self._msgbus.publish_c(
+            topic=f"events.position.{event.strategy_id.value}.{event.position_id.value}",
+            msg=event,
+        )
 
     cdef void _flip_position(self, Position position, OrderFilled fill) except *:
         cdef Quantity difference = None
@@ -819,14 +723,16 @@ cdef class ExecutionEngine(Component):
         cdef OrderFilled fill_split1 = None
         # Split fill to close original position
         fill_split1 = OrderFilled(
+            trader_id=fill.trader_id,
+            strategy_id=fill.strategy_id,
+            instrument_id=fill.instrument_id,
             account_id=fill.account_id,
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
             position_id=fill.position_id,
-            strategy_id=fill.strategy_id,
-            instrument_id=fill.instrument_id,
-            order_side=fill.order_side,
+            order_side=fill.side,
+            order_type=fill.type,
             last_qty=position.quantity,  # Fill original position quantity remaining
             last_px=fill.last_px,
             currency=fill.currency,
@@ -848,14 +754,16 @@ cdef class ExecutionEngine(Component):
 
         # Generate order fill for flipped position
         cdef OrderFilled fill_split2 = OrderFilled(
+            trader_id=fill.trader_id,
+            strategy_id=fill.strategy_id,
+            instrument_id=fill.instrument_id,
             account_id=fill.account_id,
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
             position_id=position_id_flip,
-            strategy_id=fill.strategy_id,
-            instrument_id=fill.instrument_id,
-            order_side=fill.order_side,
+            order_side=fill.side,
+            order_type=fill.type,
             last_qty=difference,  # Fill difference from original as above
             last_px=fill.last_px,
             currency=fill.currency,
@@ -868,54 +776,3 @@ cdef class ExecutionEngine(Component):
 
         # Open flipped position
         self._handle_order_fill(fill_split2)
-
-    cdef PositionOpened _pos_opened_event(self, Position position, OrderFilled fill):
-        return PositionOpened(
-            position_id=position.id,
-            strategy_id=position.strategy_id,
-            instrument_id=position.instrument_id,
-            position_status=position.to_dict(),
-            order_fill=fill,
-            event_id=self._uuid_factory.generate(),
-            timestamp_ns=fill.timestamp_ns,
-        )
-
-    cdef PositionChanged _pos_changed_event(self, Position position, OrderFilled fill):
-        return PositionChanged(
-            position_id=position.id,
-            strategy_id=position.strategy_id,
-            instrument_id=position.instrument_id,
-            position_status=position.to_dict(),
-            order_fill=fill,
-            event_id=self._uuid_factory.generate(),
-            timestamp_ns=fill.timestamp_ns,
-        )
-
-    cdef PositionClosed _pos_closed_event(self, Position position, OrderFilled fill):
-        return PositionClosed(
-            position_id=position.id,
-            strategy_id=position.strategy_id,
-            instrument_id=position.instrument_id,
-            position_status=position.to_dict(),
-            order_fill=fill,
-            event_id=self._uuid_factory.generate(),
-            timestamp_ns=fill.timestamp_ns,
-        )
-
-    cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *:
-        if strategy_id is None:
-            self._log.error(
-                f"Cannot send event to strategy: "
-                f"{repr(strategy_id)} not found for {event}."
-            )
-            return  # Cannot send to strategy
-
-        cdef TradingStrategy strategy = self._strategies.get(strategy_id)
-        if strategy is None:
-            self._log.error(
-                f"Cannot send event to strategy: "
-                f"{repr(strategy_id)} not registered for {event}."
-            )
-            return  # Cannot send to strategy
-
-        strategy.handle_event(event)

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
@@ -33,6 +33,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -44,8 +45,8 @@ from tests.test_kit.stubs import TestStubs
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
-class TraderTests(unittest.TestCase):
-    def setUp(self):
+class TestTrader:
+    def setup(self):
         # Fixture Setup
         clock = TestClock()
         logger = Logger(clock)
@@ -53,9 +54,15 @@ class TraderTests(unittest.TestCase):
         trader_id = TraderId("TESTER-000")
         account_id = TestStubs.account_id()
 
+        self.msgbus = MessageBus(
+            clock=clock,
+            logger=logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=clock,
             logger=logger,
@@ -72,7 +79,8 @@ class TraderTests(unittest.TestCase):
         self.data_engine.process(USDJPY_SIM)
 
         self.exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
+            trader_id=trader_id,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=clock,
             logger=logger,
@@ -113,7 +121,7 @@ class TraderTests(unittest.TestCase):
 
         self.risk_engine = RiskEngine(
             exec_engine=self.exec_engine,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=clock,
             logger=logger,
@@ -121,7 +129,6 @@ class TraderTests(unittest.TestCase):
 
         # Wire up components
         self.data_engine.register_client(self.data_client)
-        self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
 
         strategies = [
@@ -132,6 +139,7 @@ class TraderTests(unittest.TestCase):
         self.trader = Trader(
             trader_id=trader_id,
             strategies=strategies,
+            msgbus=self.msgbus,
             portfolio=self.portfolio,
             data_engine=self.data_engine,
             risk_engine=self.risk_engine,
@@ -146,9 +154,9 @@ class TraderTests(unittest.TestCase):
         trader_id = self.trader.id
 
         # Assert
-        self.assertEqual(TraderId("TESTER-000"), trader_id)
-        self.assertEqual(ComponentState.INITIALIZED, self.trader.state)
-        self.assertEqual(2, len(self.trader.strategy_states()))
+        assert trader_id == TraderId("TESTER-000")
+        assert self.trader.state == ComponentState.INITIALIZED
+        assert len(self.trader.strategy_states()) == 2
 
     def test_get_strategy_states(self):
         # Arrange
@@ -156,11 +164,11 @@ class TraderTests(unittest.TestCase):
         status = self.trader.strategy_states()
 
         # Assert
-        self.assertTrue(StrategyId("TradingStrategy-001") in status)
-        self.assertTrue(StrategyId("TradingStrategy-002") in status)
-        self.assertEqual("INITIALIZED", status[StrategyId("TradingStrategy-001")])
-        self.assertEqual("INITIALIZED", status[StrategyId("TradingStrategy-002")])
-        self.assertEqual(2, len(status))
+        assert StrategyId("TradingStrategy-001") in status
+        assert StrategyId("TradingStrategy-002") in status
+        assert status[StrategyId("TradingStrategy-001")] == "INITIALIZED"
+        assert status[StrategyId("TradingStrategy-002")] == "INITIALIZED"
+        assert len(status) == 2
 
     def test_change_strategies(self):
         # Arrange
@@ -173,9 +181,9 @@ class TraderTests(unittest.TestCase):
         self.trader.initialize_strategies(strategies, warn_no_strategies=True)
 
         # Assert
-        self.assertTrue(strategies[0].id in self.trader.strategy_states())
-        self.assertTrue(strategies[1].id in self.trader.strategy_states())
-        self.assertEqual(2, len(self.trader.strategy_states()))
+        assert strategies[0].id in self.trader.strategy_states()
+        assert strategies[1].id in self.trader.strategy_states()
+        assert len(self.trader.strategy_states()) == 2
 
     def test_trader_detects_duplicate_identifiers(self):
         # Arrange
@@ -185,12 +193,8 @@ class TraderTests(unittest.TestCase):
         ]
 
         # Act
-        self.assertRaises(
-            ValueError,
-            self.trader.initialize_strategies,
-            strategies,
-            True,
-        )
+        with pytest.raises(ValueError):
+            self.trader.initialize_strategies(strategies, True)
 
     def test_start_a_trader(self):
         # Arrange
@@ -200,9 +204,9 @@ class TraderTests(unittest.TestCase):
         strategy_states = self.trader.strategy_states()
 
         # Assert
-        self.assertEqual(ComponentState.RUNNING, self.trader.state)
-        self.assertEqual("RUNNING", strategy_states[StrategyId("TradingStrategy-001")])
-        self.assertEqual("RUNNING", strategy_states[StrategyId("TradingStrategy-002")])
+        assert self.trader.state == ComponentState.RUNNING
+        assert strategy_states[StrategyId("TradingStrategy-001")] == "RUNNING"
+        assert strategy_states[StrategyId("TradingStrategy-002")] == "RUNNING"
 
     def test_stop_a_running_trader(self):
         # Arrange
@@ -214,6 +218,29 @@ class TraderTests(unittest.TestCase):
         strategy_states = self.trader.strategy_states()
 
         # Assert
-        self.assertEqual(ComponentState.STOPPED, self.trader.state)
-        self.assertEqual("STOPPED", strategy_states[StrategyId("TradingStrategy-001")])
-        self.assertEqual("STOPPED", strategy_states[StrategyId("TradingStrategy-002")])
+        assert self.trader.state == ComponentState.STOPPED
+        assert strategy_states[StrategyId("TradingStrategy-001")] == "STOPPED"
+        assert strategy_states[StrategyId("TradingStrategy-002")] == "STOPPED"
+
+    def test_subscribe_to_msgbus_topic_adds_subscription(self):
+        # Arrange
+        consumer = []
+
+        # Act
+        self.trader.subscribe("events*", consumer.append)
+
+        # Assert
+        assert len(self.msgbus.subscriptions("events*")) == 9
+        assert "events*" in self.msgbus.channels()
+        assert self.msgbus.subscriptions("events*")[-1].handler == consumer.append
+
+    def test_unsubscribe_from_msgbus_topic_removes_subscription(self):
+        # Arrange
+        consumer = []
+        self.trader.subscribe("events*", consumer.append)
+
+        # Act
+        self.trader.unsubscribe("events*", consumer.append)
+
+        # Assert
+        assert len(self.msgbus.subscriptions("events*")) == 8

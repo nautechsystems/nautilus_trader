@@ -29,7 +29,6 @@ from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.cache.database cimport BypassCacheDatabase
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
@@ -55,8 +54,11 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
-from nautilus_trader.model.data cimport Data
-from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.model.data.base cimport GenericData
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport Tick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -64,17 +66,13 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
-from nautilus_trader.model.orderbook.book cimport OrderBookData
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport Tick
-from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackCommandSerializer
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentSerializer
 from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
-from nautilus_trader.model.tick import QuoteTick
 
 
 cdef class BacktestEngine:
@@ -112,8 +110,8 @@ cdef class BacktestEngine:
             The configuration for the risk engine.
         config_exec : dict[str, object]
             The configuration for the execution engine.
-        cache_db_type : str, optional
-            The type for the cache (can be the default 'in-memory' or redis).
+        cache_db_type : str {'in-memory', 'redis'}
+            The type for the cache.
         cache_db_flush : bool, optional
             If the cache should be flushed on each run.
         use_data_cache : bool, optional
@@ -149,7 +147,6 @@ cdef class BacktestEngine:
         self.created_time = self._clock.utc_now()
 
         self._test_clock = TestClock()
-        self._test_clock.set_time(self._clock.timestamp_ns())
         self._uuid_factory = UUIDFactory()
         self.system_id = self._uuid_factory.generate()
 
@@ -165,7 +162,7 @@ cdef class BacktestEngine:
         )
 
         self._test_logger = Logger(
-            clock=self._test_clock,
+            clock=self._clock,
             trader_id=trader_id,
             system_id=self.system_id,
             level_stdout=level_stdout,
@@ -179,11 +176,8 @@ cdef class BacktestEngine:
         ########################################################################
         # Build platform
         ########################################################################
-
         if cache_db_type == "in-memory":
-            cache_db = BypassCacheDatabase(
-                trader_id=trader_id,
-                logger=self._logger)
+            cache_db = None
         elif cache_db_type == "redis":
             cache_db = RedisCacheDatabase(
                 trader_id=trader_id,
@@ -194,64 +188,73 @@ cdef class BacktestEngine:
                 config={"host": "localhost", "port": 6379},
             )
         else:
-            raise ValueError(f"The exec_db_type in the backtest configuration is unrecognized, "
-                             f"can be either \"in-memory\" or \"redis\"")
+            raise ValueError(
+                f"The cache_db_type in the configuration is unrecognized, "
+                f"can one of {{\'in-memory\', \'redis\'}}.",
+            )
 
-        if self._cache_db_flush:
+        if self._cache_db_flush and cache_db:
             cache_db.flush()
 
-        cache = Cache(
+        self._msgbus = MessageBus(
+            clock=self._test_clock,
+            logger=self._test_logger,
+        )
+
+        self._cache = Cache(
             database=cache_db,
             logger=self._test_logger,
             config=config_cache,
         )
+        # Set external facade
+        self.cache = self._cache
 
-        self._test_clock.set_time(self._clock.timestamp_ns())  # For logging consistency
-
-        self.portfolio = Portfolio(
-            cache=cache,
+        self._portfolio = Portfolio(
+            msgbus=self._msgbus,
+            cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
         )
+        # Set external facade
+        self.portfolio = self._portfolio
 
         self._data_producer = None  # Instantiated on first run
 
         if config_data is None:
             config_data = {}
-        config_data["use_previous_close"] = False  # Ensures bars match historical data
+        config_data["use_previous_close"] = False  # Ensure bars match historical data
 
         self._data_engine = DataEngine(
             portfolio=self.portfolio,
-            cache=cache,
+            cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
             config=config_data,
         )
 
         self._exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
-            cache=cache,
+            trader_id=trader_id,
+            msgbus=self._msgbus,
+            cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
             config=config_exec,
         )
+        self._exec_engine.load_cache()
 
         self._risk_engine = RiskEngine(
             exec_engine=self._exec_engine,
-            portfolio=self.portfolio,
-            cache=cache,
+            msgbus=self._msgbus,
+            cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
             config=config_risk,
         )
 
-        # Wire up components
-        self._exec_engine.register_risk_engine(self._risk_engine)
-        self._exec_engine.load_cache()
-
         self.trader = Trader(
             trader_id=trader_id,
             strategies=[],  # Added in `run()`
+            msgbus=self._msgbus,
             portfolio=self.portfolio,
             data_engine=self._data_engine,
             risk_engine=self._risk_engine,
@@ -264,8 +267,6 @@ cdef class BacktestEngine:
         self.analyzer = PerformanceAnalyzer()
 
         self._exchanges = {}
-
-        self._test_clock.set_time(self._clock.timestamp_ns())  # For logging consistency
 
         self.iteration = 0
 
@@ -830,6 +831,9 @@ cdef class BacktestEngine:
             If the stop is >= the start datetime.
 
         """
+        # Run the backtest
+        self._log.info(f"Running backtest...")
+
         if self._data_producer is None:
             self._data_producer = BacktestDataProducer(
                 logger=self._test_logger,
@@ -874,16 +878,18 @@ cdef class BacktestEngine:
         self._pre_run(run_started, start, stop)
         self._log.info(f"Setting up backtest...")
 
-        # Reset engine to fresh state (in case already run)
-        self.reset()
-
         cdef int64_t start_ns = dt_to_unix_nanos(start)
         cdef int64_t stop_ns = dt_to_unix_nanos(stop)
 
         # Setup clocks
         self._test_clock.set_time(start_ns)
+        self._test_logger.change_clock_c(self._test_clock)
+
+        # Reset engine to fresh state (in case already run)
+        self.reset()
 
         # Setup data
+        self._log.info(f"Pre-processing data stream...")
         self._data_producer.setup(start_ns=start_ns, stop_ns=stop_ns)
 
         # Prepare instruments
@@ -891,12 +897,16 @@ cdef class BacktestEngine:
             self._data_engine.process(instrument)
             self._exec_engine.cache.add_instrument(instrument)
 
+        self._log.info("=================================================================")
+        self._log.info("BACKTEST")
+        self._log.info("=================================================================")
+
         # Setup new strategies
         if strategies:
-            self.trader.initialize_strategies(strategies, warn_no_strategies=False)
-
-        # Run the backtest
-        self._log.info(f"Running backtest...")
+            self.trader.initialize_strategies(
+                strategies=strategies,
+                warn_no_strategies=False,
+            )
 
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start_ns)

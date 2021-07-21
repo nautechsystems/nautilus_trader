@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -29,8 +31,6 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.account cimport Account
 
 
@@ -78,6 +78,7 @@ cdef class CacheFacade:
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
     cpdef set client_order_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef set client_order_ids_inflight(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set client_order_ids_working(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set client_order_ids_completed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set position_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
@@ -91,12 +92,15 @@ cdef class CacheFacade:
     cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id)
     cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id)
     cpdef list orders(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef list orders_inflight(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list orders_working(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list orders_completed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef bint order_exists(self, ClientOrderId client_order_id) except *
+    cpdef bint is_order_inflight(self, ClientOrderId client_order_id) except *
     cpdef bint is_order_working(self, ClientOrderId client_order_id) except *
     cpdef bint is_order_completed(self, ClientOrderId client_order_id) except *
     cpdef int orders_total_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
+    cpdef int orders_inflight_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
     cpdef int orders_working_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
     cpdef int orders_completed_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
 

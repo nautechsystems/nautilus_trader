@@ -20,10 +20,12 @@ import redis
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase
-from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import CurrencyType
@@ -32,16 +34,18 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
+from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
 from nautilus_trader.trading.account import Account
+from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.providers import TestDataProvider
@@ -61,10 +65,56 @@ class TestRedisCacheDatabase:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(self.clock)
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
+
+        self.msgbus = MessageBus(
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.cache = TestStubs.cache()
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.data_engine = DataEngine(
+            portfolio=self.portfolio,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            config={"use_previous_close": False},
+        )
+
+        self.exec_engine = ExecutionEngine(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.risk_engine = RiskEngine(
+            exec_engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         self.strategy = TradingStrategy(order_id_tag="001")
-        self.strategy.register_trader(self.trader_id, self.clock, self.logger)
+        self.strategy.register(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            portfolio=self.portfolio,
+            data_engine=self.data_engine,
+            risk_engine=self.risk_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         config = {
             "host": "localhost",
@@ -293,7 +343,15 @@ class TestRedisCacheDatabase:
     def test_update_strategy(self):
         # Arrange
         strategy = MockStrategy(TestStubs.bartype_btcusdt_binance_100tick_last())
-        strategy.register_trader(self.trader_id, self.clock, self.logger)
+        strategy.register(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            portfolio=self.portfolio,
+            data_engine=self.data_engine,
+            risk_engine=self.risk_engine,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         # Act
         self.database.update_strategy(strategy)

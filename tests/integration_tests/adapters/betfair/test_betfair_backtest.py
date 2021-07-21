@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import pandas as pd
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -20,16 +20,17 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orderbook.book import OrderBookData
-from nautilus_trader.model.tick import TradeTick
-from nautilus_trader.model.venue import InstrumentClosePrice
-from nautilus_trader.model.venue import InstrumentStatusUpdate
+from nautilus_trader.model.orderbook.data import OrderBookData
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.strategies import OrderBookImbalanceStrategy
 
@@ -88,14 +89,13 @@ def create_engine(instruments, data):
     return engine
 
 
-@pytest.mark.skip(reason="segfault after latest changes 6/7/21")
 def test_betfair_backtest(instrument_provider):
     # Load instruments
-    instruments = BetfairTestStubs.raw_market_updates_instruments()
+    instruments = BetfairDataProvider.raw_market_updates_instruments()
     instrument_provider.set_instruments(instruments)
 
     # Load market data
-    all_data = BetfairTestStubs.parsed_market_updates(instrument_provider)
+    all_data = BetfairDataProvider.parsed_market_updates(instrument_provider)
 
     # Create strategy
     strategy = OrderBookImbalanceStrategy(instrument_id=instruments[0].id, trade_size=20)
@@ -105,3 +105,8 @@ def test_betfair_backtest(instrument_provider):
 
     assert strategy.instrument_status == InstrumentStatus.CLOSED
     assert strategy.close_price == 1.0
+
+    # Check account states
+    account = engine.trader.generate_account_report(BETFAIR_VENUE)
+    assert account.index[0] == pd.Timestamp("2019-12-28 02:23:03.086000+0000")
+    assert account.index[-1] == pd.Timestamp("2019-12-29 03:36:39.861000+00:00")

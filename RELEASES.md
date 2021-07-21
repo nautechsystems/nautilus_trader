@@ -1,15 +1,57 @@
-# NautilusTrader 1.125.0 Beta - Release Notes
+# NautilusTrader 1.126.0 Beta - Release Notes
 
 
 ## Breaking Changes
-- Renamed `MessageType` enum to `MessageCategory`.
+None
 
 ## Enhancements
-- Added `MessageBus` class.
-- Added `MessageType` class.
+- Added logger sink registration.
 
 ## Fixes
 None
+
+---
+
+# NautilusTrader 1.125.0 Beta - Release Notes
+
+This release introduces a major re-architecture of the internal messaging system.
+A common message bus has been implemented which now handles all events via a 
+PUB/SUB messaging pattern. The next release will see all data being handled by 
+the message bus, please see the related issue for further details on this enhancement.
+
+Another notable feature is the introduction of the order 'inflight' concept, 
+which is an order which has been submitted and not yet acknowledged by the 
+exchange/broker. Several properties on `Order`, and methods on `Cache`, now exist
+to support this.
+
+The `Throttler` has been refactored and optimized further. There has also been
+extensive reorganization of the model sub-package, standardization of identifiers
+on events, along with numerous 'under the hood' cleanups and two bug fixes.
+
+## Breaking Changes
+- Renamed `MessageType` enum to `MessageCategory`.
+- Renamed `fill.order_side` to `fill.side`.
+- Renamed `fill.order_type` to `fill.type`.
+- All `Event` serialization due to domain refactorings.
+
+## Enhancements
+- Added `MessageBus` class.
+- Added `TraderId` to `Order` and `Position`.
+- Added `OrderType` to OrderFilled.
+- Added unrealized PnL to position events.
+- Added order inflight concept to `Order` and `Cache`.
+- Improved efficiency of `Throttler`.
+- Standardized events `str` and `repr`.
+- Standardized commands `str` and `repr`.
+- Standardized identifiers on events and objects.
+- Improved `Account` `str` and `repr`.
+- Using `orjson` over `json` for efficiency.
+- Removed redundant `BypassCacheDatabase`.
+- Introduced `mypy` to the codebase.
+
+## Fixes
+- Fixed backtest log timestamping.
+- Fixed backtest duplicate initial account event.
 
 ---
 

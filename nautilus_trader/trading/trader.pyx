@@ -21,6 +21,8 @@ A running instance could be either a test/backtest or live implementation - the
 `Trader` will operate in the same way.
 """
 
+from typing import Any, Callable
+
 import pandas as pd
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
@@ -33,6 +35,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -47,6 +50,7 @@ cdef class Trader(Component):
         self,
         TraderId trader_id not None,
         list strategies not None,
+        MessageBus msgbus not None,
         Portfolio portfolio not None,
         DataEngine data_engine not None,
         RiskEngine risk_engine not None,
@@ -64,6 +68,8 @@ cdef class Trader(Component):
             The ID for the trader.
         strategies : list[TradingStrategy]
             The initial strategies for the trader.
+        msgbus : MessageBus
+            The message bus for the trader.
         portfolio : Portfolio
             The portfolio for the trader.
         data_engine : DataEngine
@@ -94,14 +100,14 @@ cdef class Trader(Component):
 
         """
         Condition.equal(trader_id, exec_engine.trader_id, "trader_id", "exec_engine.trader_id")
-        Condition.true(exec_engine.check_portfolio_equal(portfolio), "portfolio != exec_engine._portfolio")
         super().__init__(clock, logger)
 
-        self._strategies = []
+        self._msgbus = msgbus
         self._portfolio = portfolio
         self._data_engine = data_engine
         self._risk_engine = risk_engine
         self._exec_engine = exec_engine
+        self._strategies = []
         self._report_provider = ReportProvider()
 
         self.id = trader_id
@@ -215,7 +221,6 @@ cdef class Trader(Component):
 
         # Dispose of current strategies
         for strategy in self._strategies:
-            self._exec_engine.deregister_strategy(strategy)
             strategy.dispose()
 
         self._strategies.clear()
@@ -230,30 +235,49 @@ cdef class Trader(Component):
                 raise ValueError(f"The strategy_id {strategy.id} was not unique, "
                                  f"duplicate strategy IDs")
 
-            # Wire data engine into strategy
-            self._data_engine.register_strategy(strategy)
-
-            # Wire execution engine into strategy
-            self._exec_engine.register_strategy(strategy)
-
-            client_order_ids = self._exec_engine.cache.client_order_ids(
-                venue=None,
-                instrument_id=None,
-                strategy_id=strategy.id,
-            )
-
-            # Wire trader into strategy
-            strategy.register_trader(
-                self.id,
-                self._clock.__class__(),  # Clock per strategy
-                self._log.get_logger(),
-                order_id_count=len(client_order_ids),
+            # Wire strategy into trader
+            strategy.register(
+                trader_id=self.id,
+                msgbus=self._msgbus,
+                portfolio=self._portfolio,
+                data_engine=self._data_engine,
+                risk_engine=self._risk_engine,
+                clock=self._clock.__class__(),  # Clock per strategy
+                logger=self._log.get_logger(),
             )
 
             # Add to internal strategies
             self._strategies.append(strategy)
 
             self._log.info(f"Initialized {strategy}.")
+
+    cpdef void subscribe(self, str topic, handler: Callable[[Any], None]) except *:
+        """
+        Subscribe to the given message topic with the given callback handler.
+
+        Parameters
+        ----------
+        topic : str
+            The topic for the subscription. May include wildcard glob patterns.
+        handler : Callable[[Any], None]
+            The handler for the subscription.
+
+        """
+        self._msgbus.subscribe(topic=topic, handler=handler)
+
+    cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *:
+        """
+        Unsubscribe the given handler from the given message topic.
+
+        Parameters
+        ----------
+        topic : str, optional
+            The topic to unsubscribe from. May include wildcard glob patterns.
+        handler : Callable[[Any], None]
+            The handler for the subscription.
+
+        """
+        self._msgbus.unsubscribe(topic=topic, handler=handler)
 
     cpdef void check_residuals(self) except *:
         """

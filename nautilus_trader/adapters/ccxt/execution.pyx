@@ -45,10 +45,10 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
-from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport SubmitBracketOrder
-from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
@@ -358,19 +358,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             # stop_tasks.append(self._update_instruments_task)
 
         # Cancel streaming tasks
-        if self._watch_balances_task:
+        if self._watch_balances_task and not self._watch_balances_task.cancelled():
             self._watch_balances_task.cancel()
-            stop_tasks.append(self._watch_balances_task)
-        if self._watch_orders_task:
+        if self._watch_orders_task and not self._watch_orders_task.cancelled():
             self._watch_orders_task.cancel()
-            stop_tasks.append(self._watch_orders_task)
-        if self._watch_exec_reports_task:
+        if self._watch_exec_reports_task and not self._watch_exec_reports_task.cancelled():
             self._watch_exec_reports_task.cancel()
-            stop_tasks.append(self._watch_exec_reports_task)
-
-        # Wait for all tasks to complete
-        if stop_tasks:
-            await asyncio.gather(*stop_tasks)
 
         # Ensure ccxt closed
         self._log.info("Closing WebSocket(s)...")
@@ -535,6 +528,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         # Generate event here to ensure it is processed before OrderAccepted
         self.generate_order_submitted(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             ts_submitted_ns=self._clock.timestamp_ns(),
         )
@@ -551,6 +546,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             )
         except CCXTError as ex:
             self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 reason=str(ex),
                 ts_rejected_ns=self._clock.timestamp_ns(),
@@ -567,6 +564,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return  # Cannot cancel
 
         self.generate_order_pending_cancel(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_pending_ns=self._clock.timestamp_ns(),
@@ -647,6 +646,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
     cdef void _on_order_status(self, dict event) except *:
         cdef VenueOrderId venue_order_id = VenueOrderId(event["id"])
+        cdef Order order = self._cached_orders.get(venue_order_id)
 
         # Attempt to parse ClientOrderId
         client_order_id_str = event.get("clientOrderId")
@@ -655,10 +655,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return
         cdef ClientOrderId client_order_id = ClientOrderId(client_order_id_str)
 
-        if venue_order_id not in self._cached_orders:
+        if order is None:
             order = self._engine.cache.order(client_order_id)
             if order is None:
-                # If state resolution has done its job this should never happen
+                # If the reconciliation has done its job this should never happen
                 self._log.error(f"Cannot fill un-cached order with {repr(venue_order_id)}.")
                 return
             self._cache_order(venue_order_id, order)
@@ -672,11 +672,29 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef str status = event["status"]
         # status == "rejected" should be captured in `submit_order`
         if status == "open" and event["filled"] == 0:
-            self.generate_order_accepted(client_order_id, venue_order_id, timestamp_ns)
+            self.generate_order_accepted(
+                order.strategy_id,
+                order.instrument_id,
+                client_order_id,
+                venue_order_id,
+                timestamp_ns,
+            )
         elif status == "canceled":
-            self.generate_order_canceled(client_order_id, venue_order_id, timestamp_ns)
+            self.generate_order_canceled(
+                order.strategy_id,
+                order.instrument_id,
+                client_order_id,
+                venue_order_id,
+                timestamp_ns,
+            )
         elif status == "expired":
-            self.generate_order_expired(client_order_id, venue_order_id, timestamp_ns)
+            self.generate_order_expired(
+                order.strategy_id,
+                order.instrument_id,
+                client_order_id,
+                venue_order_id,
+                timestamp_ns,
+            )
 
     cdef void _on_exec_report(self, dict event) except *:
         cdef VenueOrderId venue_order_id = VenueOrderId(event["order"])
@@ -701,12 +719,14 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return  # Cannot generate state report
 
         self.generate_order_filled(
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
             execution_id=ExecutionId(event["id"]),
             position_id=None,  # Assigned in engine
-            instrument_id=order.instrument_id,
             order_side=order.side,
+            order_type=order.type,
             last_qty=Quantity(event["amount"], instrument.size_precision),
             last_px=Price(event["price"], instrument.price_precision),
             quote_currency=instrument.quote_currency,
@@ -828,6 +848,8 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
         self._log.debug(f"Submitted {order}.")
         # Generate event here to ensure it is processed before OrderAccepted
         self.generate_order_submitted(
+            instrument_id=order.instrument_id,
+            strategy_id=order.strategy_id,
             client_order_id=order.client_order_id,
             ts_submitted_ns=self._clock.timestamp_ns(),
         )
@@ -844,6 +866,8 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             )
         except CCXTError as ex:
             self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 reason=str(ex),
                 ts_rejected_ns=self._clock.timestamp_ns(),
@@ -937,6 +961,8 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
         self._log.debug(f"Submitted {order}.")
         # Generate event here to ensure it is processed before OrderAccepted
         self.generate_order_submitted(
+            instrument_id=order.instrument_id,
+            strategy_id=order.strategy_id,
             client_order_id=order.client_order_id,
             ts_submitted_ns=self._clock.timestamp_ns(),
         )
@@ -953,6 +979,8 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
             )
         except CCXTError as ex:
             self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 reason=str(ex),
                 ts_rejected_ns=self._clock.timestamp_ns(),

@@ -16,35 +16,37 @@
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport SubmitBracketOrder
-from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.commands cimport UpdateOrder
-from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderCancelRejected
-from nautilus_trader.model.events cimport OrderCanceled
-from nautilus_trader.model.events cimport OrderDenied
-from nautilus_trader.model.events cimport OrderExpired
-from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport OrderInitialized
-from nautilus_trader.model.events cimport OrderPendingCancel
-from nautilus_trader.model.events cimport OrderPendingUpdate
-from nautilus_trader.model.events cimport OrderRejected
-from nautilus_trader.model.events cimport OrderSubmitted
-from nautilus_trader.model.events cimport OrderTriggered
-from nautilus_trader.model.events cimport OrderUpdateRejected
-from nautilus_trader.model.events cimport OrderUpdated
+from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport UpdateOrder
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.venue cimport InstrumentClosePrice
+from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
+from nautilus_trader.model.data.venue cimport VenueStatusUpdate
+from nautilus_trader.model.events.account cimport AccountState
+from nautilus_trader.model.events.order cimport OrderAccepted
+from nautilus_trader.model.events.order cimport OrderCancelRejected
+from nautilus_trader.model.events.order cimport OrderCanceled
+from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderExpired
+from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderPendingCancel
+from nautilus_trader.model.events.order cimport OrderPendingUpdate
+from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderSubmitted
+from nautilus_trader.model.events.order cimport OrderTriggered
+from nautilus_trader.model.events.order cimport OrderUpdateRejected
+from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.events.position cimport PositionChanged
+from nautilus_trader.model.events.position cimport PositionClosed
+from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
-from nautilus_trader.model.instruments.cfd cimport CFDInstrument
 from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
 from nautilus_trader.model.instruments.currency cimport CurrencySpot
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
-from nautilus_trader.model.venue cimport InstrumentClosePrice
-from nautilus_trader.model.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.venue cimport VenueStatusUpdate
 
 
 # Default mappings for Nautilus objects
@@ -69,9 +71,11 @@ _OBJECT_TO_DICT_MAP = {
     OrderTriggered.__name__: OrderTriggered.to_dict_c,
     OrderUpdateRejected.__name__: OrderUpdateRejected.to_dict_c,
     OrderUpdated.__name__: OrderUpdated.to_dict_c,
+    PositionOpened.__name__: PositionOpened.to_dict_c,
+    PositionChanged.__name__: PositionChanged.to_dict_c,
+    PositionClosed.__name__: PositionClosed.to_dict_c,
     Instrument.__name__: Instrument.base_to_dict_c,
     BettingInstrument.__name__: BettingInstrument.to_dict_c,
-    CFDInstrument.__name__: CFDInstrument.to_dict_c,
     CryptoSwap.__name__: CryptoSwap.to_dict_c,
     CurrencySpot.__name__: CurrencySpot.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
@@ -102,9 +106,11 @@ _OBJECT_FROM_DICT_MAP = {
     OrderTriggered.__name__: OrderTriggered.from_dict_c,
     OrderUpdateRejected.__name__: OrderUpdateRejected.from_dict_c,
     OrderUpdated.__name__: OrderUpdated.from_dict_c,
+    PositionOpened.__name__: PositionOpened.from_dict_c,
+    PositionChanged.__name__: PositionChanged.from_dict_c,
+    PositionClosed.__name__: PositionClosed.from_dict_c,
     Instrument.__name__: Instrument.base_from_dict_c,
     BettingInstrument.__name__: BettingInstrument.from_dict_c,
-    CFDInstrument.__name__: CFDInstrument.from_dict_c,
     CryptoSwap.__name__: CryptoSwap.from_dict_c,
     CurrencySpot.__name__: CurrencySpot.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,

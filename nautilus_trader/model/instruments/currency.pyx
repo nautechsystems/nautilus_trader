@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
+import orjson
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
@@ -186,6 +187,7 @@ cdef class CurrencySpot(Instrument):
 
     @staticmethod
     cdef CurrencySpot from_dict_c(dict values):
+        Condition.not_none(values, "values")
         cdef str lot_s = values["lot_size"]
         cdef str max_q = values["max_quantity"]
         cdef str min_q = values["min_quantity"]
@@ -193,7 +195,7 @@ cdef class CurrencySpot(Instrument):
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
-        cdef str info = values["info"]
+        cdef bytes info = values["info"]
         return CurrencySpot(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             base_currency=Currency.from_str_c(values["base_currency"]),
@@ -215,11 +217,12 @@ cdef class CurrencySpot(Instrument):
             taker_fee=Decimal(values["taker_fee"]),
             ts_event_ns=values["ts_event_ns"],
             ts_recv_ns=values["ts_recv_ns"],
-            info=json.loads(info) if info is not None else None,
+            info=orjson.loads(info) if info is not None else None,
         )
 
     @staticmethod
     cdef dict to_dict_c(CurrencySpot obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "CurrencySpot",
             "id": obj.id.value,
@@ -242,7 +245,7 @@ cdef class CurrencySpot(Instrument):
             "taker_fee": str(obj.taker_fee),
             "ts_event_ns": obj.ts_event_ns,
             "ts_recv_ns": obj.ts_recv_ns,
-            "info": json.dumps(obj.info) if obj.info is not None else None,
+            "info": orjson.dumps(obj.info) if obj.info is not None else None,
         }
 
     @staticmethod

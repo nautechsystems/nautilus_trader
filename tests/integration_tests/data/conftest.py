@@ -1,6 +1,7 @@
 import socketserver
 import threading
 import time
+from typing import Generator
 
 import pytest
 
@@ -22,7 +23,7 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 
 @pytest.fixture()
-def socket_server() -> ThreadedTCPServer:
+def socket_server() -> Generator:
     server = ThreadedTCPServer(("localhost", 0), ThreadedTCPRequestHandler)
     with server:
         # Start a thread with the server -- that thread will then start one

@@ -14,24 +14,24 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Union
+from typing import Dict, Optional, Union
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
-from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.data import Data
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.limit import LimitOrder
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -80,7 +80,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         # Custom strategy variables
         self.instrument_id = instrument_id
-        self.instrument = None  # Initialize in on_start
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.atr_multiple = atr_multiple
@@ -266,10 +266,10 @@ class VolatilityMarketMaker(TradingStrategy):
 
         # If order filled then replace order at atr multiple distance from the market
         if isinstance(event, OrderFilled):
-            if event.order_side == OrderSide.BUY:
+            if event.side == OrderSide.BUY:
                 if self.buy_order.is_completed:
                     self.create_buy_order(last)
-            elif event.order_side == OrderSide.SELL:
+            elif event.side == OrderSide.SELL:
                 if self.sell_order.is_completed:
                     self.create_sell_order(last)
 
@@ -293,7 +293,7 @@ class VolatilityMarketMaker(TradingStrategy):
         # Reset indicators here
         self.atr.reset()
 
-    def on_save(self) -> {}:
+    def on_save(self) -> Dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -307,7 +307,7 @@ class VolatilityMarketMaker(TradingStrategy):
         """
         return {}
 
-    def on_load(self, state: {}):
+    def on_load(self, state: Dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 

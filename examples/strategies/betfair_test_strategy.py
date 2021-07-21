@@ -14,22 +14,24 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Optional
 
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.message import Event
-from nautilus_trader.core.type import DataType
 from nautilus_trader.model.c_enums.book_level import BookLevel
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
-from nautilus_trader.model.data import Data
+from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderCanceled
-from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.events.order import OrderCanceled
+from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.trading.strategy import TradingStrategy
 
@@ -60,22 +62,23 @@ class BetfairTestStrategy(TradingStrategy):
         ----------
         instrument_filter: dict
             The dict of filters to search for an instrument
-        theo_change_threshold: Decimal
         trade_size : Decimal
             The position size per trade.
         order_id_tag : str
             The unique order ID tag for the strategy. Must be unique
             amongst all running strategies for a particular trader ID.
+        theo_change_threshold: Decimal
+            The theoretical change threshold.
 
         """
         super().__init__(order_id_tag=order_id_tag)
         self.instrument_filter = instrument_filter
         self.theo_change_threshold = theo_change_threshold
-        self.instrument_id = None
-        self.midpoint = None
+        self.instrument_id: Optional[InstrumentId] = None
+        self.midpoint: Optional[Decimal] = None
         self.trade_size = trade_size
         self.market_width = market_width
-        self._in_flight = set()
+        self._in_flight = set()  # type: ignore
         self._state = "START"
 
     def on_start(self):

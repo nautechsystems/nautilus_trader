@@ -15,8 +15,6 @@ jobs:
         python-version: [ 3.7, 3.8, 3.9 ]
     name: test - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    env:
-      PARALLEL_BUILD: false
 
     steps:
       - uses: actions/checkout@v2
@@ -65,7 +63,7 @@ jobs:
 
       # Run tests
       - name: Run tests
-        run: nox -s tests_with_integration --reuse-existing-virtualenvs
+        run: nox -rs tests_with_integration -- no-parallel
 
 
   tag_release:
@@ -77,8 +75,6 @@ jobs:
         python-version: [ 3.9 ]
     name: test-tag-publish - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    env:
-      PARALLEL_BUILD: false
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
 
@@ -155,7 +151,6 @@ jobs:
     name: publish_sdist - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
-      PARALLEL_BUILD: false
       SKIP_BUILD_COPY: true
 
     steps:
@@ -230,8 +225,6 @@ jobs:
         python-version: [ 3.7, 3.8, 3.9 ]
     name: publish_wheels - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    env:
-      PARALLEL_BUILD: false
 
     steps:
       - uses: actions/checkout@v2

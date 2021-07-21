@@ -20,7 +20,7 @@ from itertools import takewhile
 import os
 import pathlib
 import re
-from typing import Generator
+from typing import Callable, Generator
 import warnings
 
 import fsspec
@@ -30,25 +30,19 @@ import pyarrow as pa
 from pyarrow import ArrowInvalid
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
-
-from nautilus_trader.core.type import DataType
-from nautilus_trader.model.data import Data
-from nautilus_trader.model.data import GenericData
-
-
-try:
-    from tqdm import tqdm
-except ImportError:
-    pass
+from tqdm import tqdm
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.orderbook.book import OrderBookDelta
-from nautilus_trader.model.orderbook.book import OrderBookDeltas
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
-from nautilus_trader.model.venue import InstrumentStatusUpdate
+from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.serialization.arrow.core import _deserialize
 from nautilus_trader.serialization.arrow.core import _partition_keys
 from nautilus_trader.serialization.arrow.core import _schemas
@@ -72,7 +66,7 @@ class ByteParser:
 
     def __init__(
         self,
-        instrument_provider_update: callable = None,
+        instrument_provider_update: Callable = None,
     ):
         """
         Initialize a new instance of the ``ByteParser`` class.
@@ -90,9 +84,9 @@ class TextParser(ByteParser):
 
     def __init__(
         self,
-        parser: callable,
-        line_preprocessor: callable = None,
-        instrument_provider_update: callable = None,
+        parser: Callable,
+        line_preprocessor: Callable = None,
+        instrument_provider_update: Callable = None,
     ):
         """
         Initialize a new instance of the ``TextParser`` class.
@@ -171,7 +165,7 @@ class CSVParser(TextParser):
 
     def __init__(
         self,
-        parser: callable,
+        parser: Callable,
         line_preprocessor=None,
         instrument_provider_update=None,
     ):
@@ -216,7 +210,7 @@ class ParquetParser(ByteParser):
     def __init__(
         self,
         data_type: str,
-        parser: callable = None,
+        parser: Callable = None,
         instrument_provider_update=None,
     ):
         """
@@ -283,7 +277,7 @@ class DataLoader:
         chunk_size=-1,
         compression="infer",
         instrument_provider=None,
-        file_filter: callable = None,
+        file_filter: Callable = None,
     ):
         """
         Initialize a new instance of the ``DataLoader`` class.

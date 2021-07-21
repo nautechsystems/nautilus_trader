@@ -4,7 +4,7 @@ import nox
 from nox.sessions import Session
 
 
-ALL_EXTRAS = "betfair ccxt docs ib oanda"
+ALL_EXTRAS = "betfair ccxt docs ib"
 
 
 # Ensure everything runs within Poetry venvs
@@ -58,7 +58,7 @@ def coverage(session: Session) -> None:
 @nox.session
 def build_docs(session: Session) -> None:
     """Build documentation."""
-    _setup_poetry(session, "--extras", ALL_EXTRAS)
+    _setup_poetry(session, "--extras", "docs")
     session.run("poetry", "run", "sphinx-build", "docs/source", "docs/build")
 
 
@@ -84,10 +84,12 @@ def _setup_poetry(session: Session, *args, **kwargs) -> None:
     # Once they are, the package dependencies can be installed and the
     # actual package can be compiled.
 
-    # No need to copy built *.so files back into the source tree
     env = kwargs.get("env", {})
-    # Ensure deterministic builds by disabling parallelism
-    env["PARALLEL_BUILD"] = ""  # false
+
+    if "no-parallel" in session.posargs:
+        # Ensure deterministic builds by disabling parallelism
+        env["PARALLEL_BUILD"] = ""  # Empty string parsed as false
+
     # Skip the build copy when using Nox
     env["SKIP_BUILD_COPY"] = "true"
     kwargs["env"] = env
@@ -103,7 +105,6 @@ def _run_pytest(session: Session, *args, parallel: bool = False) -> None:
         "run",
         "pytest",
         *args,
-        *session.posargs,
         "--new-first",
         "--failed-first",
     ]
