@@ -42,7 +42,7 @@ Installation from source requires Cython to compile the Python C extensions.
 
 1. To install Cython, run::
 
-        pip install -U Cython==3.0.0a8
+        pip install -U Cython==3.0.0a9
 
 2. Then to install NautilusTrader using ``pip``, run::
 
