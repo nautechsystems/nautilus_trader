@@ -16,12 +16,12 @@ from nautilus_trader.model.c_enums.account_type import AccountTypeParser
 from nautilus_trader.model.c_enums.oms_type import OMSTypeParser
 from nautilus_trader.model.c_enums.venue_type import VenueTypeParser
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orderbook.book import OrderBookDelta
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.orderbook.data import OrderBookDelta
 
 
 PARTIAL_SUFFIX = "Partial-"

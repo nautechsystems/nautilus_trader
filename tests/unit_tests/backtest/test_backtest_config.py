@@ -22,15 +22,15 @@ from nautilus_trader.backtest.data_loader import DataLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_nanos
-from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.tick import QuoteTick
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
@@ -337,7 +337,7 @@ def test_backtest_against_example(catalog):
     assert len(result["account"]) == 97
     assert len(result["positions"]) == 48
     assert len(result["fills"]) == 96
-    expected = '[{"type": "AccountBalance", "currency": "USD", "total": "997652.94", "locked": "0.00", "free": "997652.94"}]'
+    expected = b'[{"type":"AccountBalance","currency":"USD","total":"997756.33","locked":"0.00","free":"997756.33"}]'
     account_result = result["account"]["balances"].iloc[-2]
     assert account_result == expected
 
