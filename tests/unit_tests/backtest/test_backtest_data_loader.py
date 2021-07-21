@@ -4,6 +4,7 @@ from functools import partial
 import json
 import os
 import pathlib
+import sys
 
 import fsspec.implementations.memory
 from numpy import dtype
@@ -57,6 +58,8 @@ from tests.test_kit.stubs import TestStubs
 
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 
 
 @pytest.fixture(scope="function")
