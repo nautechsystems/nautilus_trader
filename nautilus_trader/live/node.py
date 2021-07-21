@@ -20,7 +20,7 @@ import platform
 import signal
 import sys
 import time
-from typing import Dict, List
+from typing import Callable, Dict, List
 import warnings
 
 import msgpack
@@ -305,6 +305,23 @@ class TradingNode:
 
         """
         return self._logger
+
+    def register_log_sink(self, handler: Callable[[Dict], None]):
+        """
+        Register the given sink handler with the nodes logger.
+
+        Parameters
+        ----------
+        handler : Callable[[Dict], None]
+            The sink handler to register.
+
+        Raises
+        ------
+        KeyError
+            If handler already registered.
+
+        """
+        self._logger.register_sink(handler=handler)
 
     def add_data_client_factory(self, name, factory):
         """
