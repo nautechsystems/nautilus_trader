@@ -169,7 +169,6 @@ cdef class BettingInstrument(Instrument):
         BettingInstrument
 
         """
-
         return BettingInstrument.from_dict_c(values)
 
     @staticmethod
