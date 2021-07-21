@@ -157,7 +157,7 @@ Installation from source requires Cython to compile the Python C extensions.
 
 1. First, install Cython:
 
-        pip install -U Cython==3.0.0a8
+        pip install -U Cython==3.0.0a9
 
 2. Then install the package using `pip`:
 
