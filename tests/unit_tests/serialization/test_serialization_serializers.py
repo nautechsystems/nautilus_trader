@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 from base64 import b64encode
 import copy
+import sys
 
 import pytest
 
@@ -1035,6 +1036,7 @@ class TestMsgPackEventSerializer:
         assert deserialized == event
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="does not run on windows")
 class TestParquetSerializer:
     def setup(self):
         self.catalog = DataCatalog(path="/", fs_protocol="memory")
