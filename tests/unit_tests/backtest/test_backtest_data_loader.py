@@ -525,6 +525,7 @@ def test_data_catalog_backtest_data_filtered(loaded_catalog):
     assert engine.iteration == 600
 
 
+@pytest.mark.skip(reason="flaky")
 def test_data_catalog_backtest_run(loaded_catalog):
     instruments = loaded_catalog.instruments(as_nautilus=True)
     engine = BacktestEngine(bypass_logging=True)
