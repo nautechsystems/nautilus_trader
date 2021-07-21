@@ -300,3 +300,20 @@ def load_markets_metadata(client: APIClient, markets: List[Dict]) -> Dict:
         )
         all_results.update({r["marketId"]: r for r in results})
     return all_results
+
+
+def get_market_book(client, market_ids):
+    resp = client.betting.list_market_book(market_ids=market_ids, price_projection={"priceData": ["EX_TRADED"]})
+    data = []
+    for market in resp:
+        for runner in market['runners']:
+            data.append({
+                'market_id': market['marketId'],
+                'selection_id': runner['selectionId'],
+                'market_matched': market['totalMatched'],
+                'market_status': market['status'],
+                'selection_status': runner['status'],
+                'selection_matched': runner.get('totalMatched'),
+                'selection_last_price': runner.get('lastPriceTraded'),
+            })
+    return pd.DataFrame(data)
