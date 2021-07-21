@@ -6,7 +6,6 @@ import os
 import pathlib
 import sys
 
-from betfairlightweight import APIClient
 import fsspec.implementations.memory
 from numpy import dtype
 import orjson
@@ -98,7 +97,7 @@ def loaded_catalog(catalog, data_loader):
 def test_is_custom_data():
     assert not is_custom_data(OrderBookData)
     assert not is_custom_data(TradeTick)
-    assert is_custom_data(APIClient)
+    assert is_custom_data(pd.DataFrame)
 
 
 @pytest.mark.parametrize(
