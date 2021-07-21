@@ -39,6 +39,8 @@ from tests.test_kit.stubs import TestStubs
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
+
 
 @pytest.fixture(scope="module")
 def data_loader():
