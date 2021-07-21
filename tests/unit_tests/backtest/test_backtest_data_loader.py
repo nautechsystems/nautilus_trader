@@ -4,7 +4,6 @@ from functools import partial
 import json
 import os
 import pathlib
-import sys
 
 import fsspec.implementations.memory
 from numpy import dtype
@@ -79,10 +78,9 @@ def data_loader():
 
 @pytest.fixture(scope="function")
 def catalog(data_loader):
-    root = pathlib.Path(sys.executable).anchor
-    catalog = DataCatalog(path=root, fs_protocol="memory")
+    catalog = DataCatalog(path="/", fs_protocol="memory")
     try:
-        catalog.fs.rm(root, recursive=True)
+        catalog.fs.rm("/", recursive=True)
     except FileNotFoundError:
         pass
     return catalog
