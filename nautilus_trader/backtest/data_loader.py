@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from collections import defaultdict
 from collections import namedtuple
 from io import BytesIO
@@ -39,6 +38,7 @@ from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
@@ -93,14 +93,14 @@ class TextParser(ByteParser):
 
         Parameters
         ----------
-        parser : callable
+        parser : Callable
             The handler which takes byte strings and yields Nautilus objects.
-        line_preprocessor : callable, optional
+        line_preprocessor : Callable, optional
             The context manager for preprocessing (cleaning log lines) of lines
             before json.loads is called. Nautilus objects are returned to the
             context manager for any post-processing also (for example, setting
             the `ts_recv_ns`).
-        instrument_provider_update : callable , optional
+        instrument_provider_update : Callable , optional
             An optional hook/callable to update instrument provider before
             data is passed to `line_parser` (in many cases instruments need to
             be known ahead of parsing).
@@ -140,7 +140,7 @@ class TextParser(ByteParser):
             if process:
                 for x in self.process_chunk(chunk=process, instrument_provider=instrument_provider):
                     try:
-                        self.state, x = x
+                        x, self.state = x
                     except TypeError as e:
                         if not e.args[0].startswith("cannot unpack non-iterable"):
                             raise e
@@ -441,8 +441,8 @@ class DataCatalog:
 
     @staticmethod
     def _determine_partition_cols(cls, instrument_id):
-        if _partition_keys.get(cls.__name__) is not None:
-            return list(_partition_keys[cls.__name__])
+        if _partition_keys.get(cls) is not None:
+            return list(_partition_keys[cls])
         elif instrument_id is not None:
             return ["instrument_id"]
         return
@@ -468,8 +468,9 @@ class DataCatalog:
                     processed_raw_files.append(obj.name)
                 continue
 
-            # TODO (bm) - better handling of instruments -> currency we're writing a file per instrument
             cls = type_conv.get(type(obj), type(obj))
+            if isinstance(obj, GenericData):
+                cls = obj.data_type.type
             for data in maybe_list(_serialize(obj)):
                 instrument_id = data.get("instrument_id", None)
                 if instrument_id not in tables[cls]:
@@ -498,7 +499,7 @@ class DataCatalog:
                 if not append_only:
                     if self.fs.exists(str(fn)) or self.fs.isdir(str(fn)):
                         existing = self._query(
-                            filename=camel_to_snake_case(cls.__name__),
+                            filename=class_to_filename(cls),
                             instrument_ids=ins_id
                             if cls not in Instrument.__subclasses__()
                             else None,
@@ -525,8 +526,8 @@ class DataCatalog:
                         df = df.sort_values(col)
                         break
 
-                df, mappings = clean_partition_cols(df, partition_cols)
-                schema = _schemas.get(cls.__name__)
+                df, mappings = clean_partition_cols(df, partition_cols, cls)
+                schema = _schemas.get(cls)
                 table = pa.Table.from_pandas(df, schema=schema)
                 metadata_collector = []
                 pq.write_to_dataset(
@@ -569,11 +570,11 @@ class DataCatalog:
 
     def setup_engine(
         self,
-        engine: BacktestEngine,
+        engine: "BacktestEngine",  # noqa: F821
         instruments,
         chunk_size=None,
         **kwargs,
-    ) -> BacktestEngine:
+    ) -> "BacktestEngine":  # noqa: F821
         """
         Load data into a backtest engine.
 
@@ -590,29 +591,28 @@ class DataCatalog:
             The kwargs passed to `self.load_backtest_data`.
 
         """
-        data = self.load_backtest_data(
-            instrument_ids=[ins.id.value for ins in instruments],
-            chunk_size=chunk_size,
-            **kwargs,
-        )
-
         # TODO(bm): Handle chunk size
         if chunk_size is not None:
             pass
 
         # Add instruments & data to engine
         for instrument in instruments:
+            data = self.load_backtest_data(
+                instrument_ids=[instrument.id.value],
+                chunk_size=chunk_size,
+                **kwargs,
+            )
             engine.add_instrument(instrument)
             for name in data:
-                if name == "trade_ticks":
+                if name == "trade_ticks" and data[name]:
                     engine.add_trade_tick_objects(instrument_id=instrument.id, data=data[name])
                 elif name == "quote_ticks":
                     engine.add_quote_ticks(instrument_id=instrument.id, data=data[name])
                 elif name == "order_book_deltas":
                     engine.add_order_book_data(data=data[name])
-                # TODO currently broken - BacktestEngine needs to accept events
-                # elif name == "instrument_status_events":
-                #     engine.add_other_data(data=data[name])
+                elif name == "instrument_status_update" and data["instrument_status_update"]:
+                    venue = data["instrument_status_update"][0].instrument_id.venue
+                    engine.add_data(data=data[name], client_id=ClientId(venue.value))
 
         return engine
 
@@ -681,9 +681,9 @@ class DataCatalog:
             ("order_book_deltas", order_book_deltas, self.order_book_deltas, {}),
             ("trade_ticks", trade_ticks, self.trade_ticks, {}),
             (
-                "instrument_status_events",
+                "instrument_status_update",
                 instrument_status_events,
-                self.instrument_status_events,
+                self.instrument_status_updates,
                 {},
             ),
             ("quote_ticks", quote_ticks, self.quote_ticks, {}),
@@ -820,7 +820,7 @@ class DataCatalog:
                 objects.extend(self._make_objects(df=df, cls=ins_type))
             return objects
 
-    def instrument_status_events(
+    def instrument_status_updates(
         self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
     ):
         df = self._query(
@@ -828,6 +828,9 @@ class DataCatalog:
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
             **kwargs,
+        )
+        df = df.sort_values(["instrument_id", "ts_event_ns"]).drop_duplicates(
+            subset=[c for c in df.columns if c not in ("event_id",)], keep="last"
         )
         if not as_nautilus:
             return df
@@ -968,7 +971,7 @@ def identity(x):
 INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
 
 
-def clean_partition_cols(df, partition_cols=None):
+def clean_partition_cols(df, partition_cols=None, cls=None):
     mappings = {}
     for col in partition_cols or []:
         values = list(map(str, df[col].unique()))

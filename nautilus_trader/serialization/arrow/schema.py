@@ -17,6 +17,25 @@ import pyarrow as pa
 
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.events.order import OrderCancelRejected
+from nautilus_trader.model.events.order import OrderCanceled
+from nautilus_trader.model.events.order import OrderDenied
+from nautilus_trader.model.events.order import OrderExpired
+from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.model.events.order import OrderPendingCancel
+from nautilus_trader.model.events.order import OrderPendingUpdate
+from nautilus_trader.model.events.order import OrderRejected
+from nautilus_trader.model.events.order import OrderSubmitted
+from nautilus_trader.model.events.order import OrderTriggered
+from nautilus_trader.model.events.order import OrderUpdateRejected
+from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events.position import PositionChanged
+from nautilus_trader.model.events.position import PositionClosed
+from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.orderbook.data import OrderBookData
 
@@ -75,16 +94,295 @@ NAUTILUS_PARQUET_SCHEMA = {
     OrderBookData: pa.schema(
         {
             "instrument_id": pa.string(),
-            "ts_event_ns": pa.uint64(),
-            "ts_recv_ns": pa.uint64(),
+            "ts_event_ns": pa.int64(),
+            "ts_recv_ns": pa.int64(),
             "delta_type": pa.string(),
             "order_side": pa.string(),
             "order_price": pa.float64(),
             "order_size": pa.float64(),
             "order_id": pa.string(),
             "level": pa.string(),
+            # Track grouped OrderBookDeltas
+            "_type": pa.dictionary(pa.int8(), pa.string()),
+            "_last": pa.bool_(),
         },
         metadata={"type": "OrderBookDelta"},
+    ),
+    AccountState: pa.schema(
+        {
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_type": pa.dictionary(pa.int8(), pa.string()),
+            "base_currency": pa.dictionary(pa.int8(), pa.string()),
+            "balance_currency": pa.dictionary(pa.int8(), pa.string()),
+            "balance_total": pa.float64(),
+            "balance_locked": pa.float64(),
+            "balance_free": pa.float64(),
+            "reported": pa.bool_(),
+            "info": pa.string(),
+            "event_id": pa.string(),
+            "ts_updated_ns": pa.int64(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    InstrumentStatusUpdate: pa.schema(
+        {
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "status": pa.dictionary(pa.int8(), pa.string()),
+            "ts_event_ns": pa.int64(),
+            "ts_recv_ns": pa.int64(),
+        }
+    ),
+    OrderInitialized: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "order_side": pa.dictionary(pa.int8(), pa.string()),
+            "order_type": pa.dictionary(pa.int8(), pa.string()),
+            "quantity": pa.float64(),
+            "time_in_force": pa.dictionary(pa.int8(), pa.string()),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+            # Options fields
+            # "options": pa.string(),
+            "post_only": pa.bool_(),
+            "reduce_only": pa.bool_(),
+            "hidden": pa.bool_(),
+            "price": pa.float64(),
+            "trigger": pa.bool_(),
+        }
+    ),
+    OrderDenied: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "reason": pa.dictionary(pa.int8(), pa.string()),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    OrderSubmitted: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "ts_submitted_ns": pa.int64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    OrderAccepted: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "venue_order_id": pa.string(),
+            "ts_accepted_ns": pa.int64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    OrderRejected: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "reason": pa.dictionary(pa.int8(), pa.string()),
+            "ts_rejected_ns": pa.int64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    OrderPendingCancel: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "venue_order_id": pa.string(),
+            "ts_pending_ns": pa.int64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    OrderCanceled: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "venue_order_id": pa.string(),
+            "ts_canceled_ns": pa.int64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    OrderCancelRejected: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "venue_order_id": pa.string(),
+            "response_to": pa.string(),
+            "reason": pa.string(),
+            "ts_rejected_ns": pa.int64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    OrderExpired: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "venue_order_id": pa.string(),
+            "ts_expired_ns": pa.int64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    OrderTriggered: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "venue_order_id": pa.string(),
+            "ts_triggered_ns": pa.int64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    OrderPendingUpdate: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "venue_order_id": pa.string(),
+            "ts_pending_ns": pa.int64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    OrderUpdateRejected: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "venue_order_id": pa.string(),
+            "response_to": pa.dictionary(pa.int8(), pa.string()),
+            "reason": pa.dictionary(pa.int8(), pa.string()),
+            "ts_rejected_ns": pa.int64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    OrderUpdated: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "venue_order_id": pa.string(),
+            "price": pa.float64(),
+            "trigger": pa.float64(),
+            "ts_updated_ns": pa.int64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    OrderFilled: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "client_order_id": pa.string(),
+            "venue_order_id": pa.string(),
+            "execution_id": pa.string(),
+            "position_id": pa.string(),
+            "order_side": pa.dictionary(pa.int8(), pa.string()),
+            "last_qty": pa.float64(),
+            "last_px": pa.float64(),
+            "currency": pa.string(),
+            "commission": pa.string(),
+            "liquidity_side": pa.string(),
+            "ts_filled_ns": pa.int64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+            "info": pa.string(),
+        }
+    ),
+    PositionOpened: pa.schema(
+        {
+            "position_id": pa.string(),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "entry": pa.string(),
+            "side": pa.string(),
+            "net_qty": pa.float64(),
+            "quantity": pa.float64(),
+            "peak_qty": pa.float64(),
+            "ts_opened_ns": pa.int64(),
+            "avg_px_open": pa.float64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    PositionChanged: pa.schema(
+        {
+            "position_id": pa.string(),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "entry": pa.string(),
+            "side": pa.string(),
+            "net_qty": pa.float64(),
+            "quantity": pa.float64(),
+            "peak_qty": pa.float64(),
+            "ts_opened_ns": pa.int64(),
+            "avg_px_open": pa.float64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
+    ),
+    PositionClosed: pa.schema(
+        {
+            "position_id": pa.string(),
+            "strategy_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "entry": pa.string(),
+            "side": pa.string(),
+            "net_qty": pa.float64(),
+            "quantity": pa.float64(),
+            "peak_qty": pa.float64(),
+            "ts_opened_ns": pa.int64(),
+            "avg_px_open": pa.float64(),
+            "avg_px_close": pa.float64(),
+            "realized_pnl": pa.float64(),
+            "event_id": pa.string(),
+            "timestamp_ns": pa.int64(),
+        }
     ),
 }
 
