@@ -29,7 +29,7 @@ requires = [
     "setuptools",
     "poetry-core>=1.0.3",
     "numpy>=1.21.1",
-    "Cython>=3.0.0a8",
+    "Cython>=3.0.0a9",
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -39,8 +39,8 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = "^3.7.9"
-cython = "^3.0.0a8"
 bokeh = "^2.3.2"
+cython = "^3.0.0a9"
 dask = "^2021.6.2"
 distributed = "^2021.6.2"
 empyrical = "^0.5.5"
@@ -65,7 +65,7 @@ ib_insync = { version = "^0.9.66", optional = true }
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython
 # https://github.com/cython/cython/issues/3515
-coverage = "4.5.4"  # Pinned at 4.5.4 due Cython 3.0.0a8
+coverage = "4.5.4"  # Pinned at 4.5.4 due Cython 3.0.0a9
 nox = "^2021.6.12"
 pre-commit = "^2.13.0"
 pytest = "^6.2.4"

@@ -142,7 +142,7 @@ typing_extensions = ">=3.7.4"
 
 [[package]]
 name = "ccxt"
-version = "1.53.45"
+version = "1.53.46"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = true
@@ -1297,12 +1297,11 @@ ccxt = ["ccxt"]
 distributed = ["distributed", "bokeh"]
 docs = []
 ib = ["ib_insync"]
-oanda = []
 
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "f7100b9ffc0cae11ad842ab3b7bf6cbf759436a8778113e9142be2562e60cd95"
+content-hash = "fe2c0e4230471ae43bdf7520e3d8b8831fc20976fd054a0d9cfb9817d64c4b87"
 
 [metadata.files]
 aiodns = [
@@ -1384,8 +1383,8 @@ bokeh = [
     {file = "bokeh-2.3.3.tar.gz", hash = "sha256:a5fdcc181835561447fcc5a371300973fce4114692d5853addec284d1cdeb677"},
 ]
 ccxt = [
-    {file = "ccxt-1.53.45-py2.py3-none-any.whl", hash = "sha256:6d92c63cebe4863acdee88d2a1898499365c84962ae830dbc5c1b4a04c806037"},
-    {file = "ccxt-1.53.45.tar.gz", hash = "sha256:97d2bf56a2a05dc85536a2db67f1cad3a3691258479788094cc2e2f1c9f6b2e3"},
+    {file = "ccxt-1.53.46-py2.py3-none-any.whl", hash = "sha256:4f21398ff2df4f3d734c1c41ec96844904228183f4b6e0f1b7c870c00c7d98dd"},
+    {file = "ccxt-1.53.46.tar.gz", hash = "sha256:de0764ede7998dbd14b009338fc8255178bc6c7368484987b01d1296dfa7c97d"},
 ]
 certifi = [
     {file = "certifi-2021.5.30-py2.py3-none-any.whl", hash = "sha256:50b1e4f8446b06f41be7dd6338db18e0990601dce795c2b1686458aa7e8fa7d8"},
@@ -1399,6 +1398,11 @@ cffi = [
     {file = "cffi-1.14.6-cp27-cp27m-win_amd64.whl", hash = "sha256:7bcac9a2b4fdbed2c16fa5681356d7121ecabf041f18d97ed5b8e0dd38a80224"},
     {file = "cffi-1.14.6-cp27-cp27mu-manylinux1_i686.whl", hash = "sha256:ed38b924ce794e505647f7c331b22a693bee1538fdf46b0222c4717b42f744e7"},
     {file = "cffi-1.14.6-cp27-cp27mu-manylinux1_x86_64.whl", hash = "sha256:e22dcb48709fc51a7b58a927391b23ab37eb3737a98ac4338e2448bef8559b33"},
+    {file = "cffi-1.14.6-cp35-cp35m-macosx_10_9_x86_64.whl", hash = "sha256:aedb15f0a5a5949ecb129a82b72b19df97bbbca024081ed2ef88bd5c0a610534"},
+    {file = "cffi-1.14.6-cp35-cp35m-manylinux1_i686.whl", hash = "sha256:48916e459c54c4a70e52745639f1db524542140433599e13911b2f329834276a"},
+    {file = "cffi-1.14.6-cp35-cp35m-manylinux1_x86_64.whl", hash = "sha256:f627688813d0a4140153ff532537fbe4afea5a3dffce1f9deb7f91f848a832b5"},
+    {file = "cffi-1.14.6-cp35-cp35m-win32.whl", hash = "sha256:f0010c6f9d1a4011e429109fda55a225921e3206e7f62a0c22a35344bfd13cca"},
+    {file = "cffi-1.14.6-cp35-cp35m-win_amd64.whl", hash = "sha256:57e555a9feb4a8460415f1aac331a2dc833b1115284f7ded7278b54afc5bd218"},
     {file = "cffi-1.14.6-cp36-cp36m-macosx_10_9_x86_64.whl", hash = "sha256:e8c6a99be100371dbb046880e7a282152aa5d6127ae01783e37662ef73850d8f"},
     {file = "cffi-1.14.6-cp36-cp36m-manylinux1_i686.whl", hash = "sha256:19ca0dbdeda3b2615421d54bef8985f72af6e0c47082a8d26122adac81a95872"},
     {file = "cffi-1.14.6-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:d950695ae4381ecd856bcaf2b1e866720e4ab9a1498cba61c602e56630ca7195"},
