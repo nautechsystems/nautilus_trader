@@ -19,8 +19,8 @@ A common message bus has been implemented which now handles all events via a
 PUB/SUB messaging pattern. The next release will see all data being handled by 
 the message bus, please see the related issue for further details on this enhancement.
 
-Another notable feature is the introduction of the order 'inflight' concept, 
-which is an order which has been submitted and not yet acknowledged by the 
+Another notable feature is the introduction of the order 'in-flight' concept, 
+which is a submitted order which has not yet been acknowledged by the 
 exchange/broker. Several properties on `Order`, and methods on `Cache`, now exist
 to support this.
 
