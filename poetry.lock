@@ -303,14 +303,6 @@ optional = false
 python-versions = "*"
 
 [[package]]
-name = "frozendict"
-version = "2.0.3"
-description = "A simple immutable dictionary"
-category = "main"
-optional = false
-python-versions = ">=3.6"
-
-[[package]]
 name = "fsspec"
 version = "2021.7.0"
 description = "File-system specification"
@@ -1141,7 +1133,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "6669eea53b1f7a862e60fbce0c8a5ca42f5fa8d52e7f329e8c440b3b0d02d5da"
+content-hash = "15fdaee5a23cf6105937b542bcb2c102f9ffa2507c5fb31b2583d4833096a0df"
 
 [metadata.files]
 aiodns = [
@@ -1390,10 +1382,6 @@ execnet = [
 filelock = [
     {file = "filelock-3.0.12-py3-none-any.whl", hash = "sha256:929b7d63ec5b7d6b71b0fa5ac14e030b3f70b75747cef1b10da9b879fef15836"},
     {file = "filelock-3.0.12.tar.gz", hash = "sha256:18d82244ee114f543149c66a6e0c14e9c4f8a1044b5cdaadd0f82159d6a6ff59"},
-]
-frozendict = [
-    {file = "frozendict-2.0.3-py3-none-any.whl", hash = "sha256:58143e2d3d11699bc295d9e7e05f10dde99a727e2295d7f43542ecdc42c5ec70"},
-    {file = "frozendict-2.0.3.tar.gz", hash = "sha256:163c616188beb97fdc8ef6e73ec2ebd70a844d4cf19d2e383aa94d1b8376653d"},
 ]
 fsspec = [
     {file = "fsspec-2021.7.0-py3-none-any.whl", hash = "sha256:86822ccf367da99957f49db64f7d5fd3d8d21444fac4dfdc8ebc38ee93d478c6"},

@@ -50,7 +50,6 @@ repos:
             --warn-no-return,
         ]
         additional_dependencies: [
-            types-frozendict,
             types-orjson,
             types-pytz,
             types-redis,

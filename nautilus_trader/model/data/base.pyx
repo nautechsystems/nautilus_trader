@@ -13,9 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import copy
 from libc.stdint cimport int64_t
-from frozendict import frozendict
 
 
 cdef class Data:
@@ -50,7 +48,7 @@ cdef class Data:
 
 cdef class DataType:
     """
-    Represents an immutable data type including metadata.
+    Represents a data type including metadata.
     """
 
     def __init__(self, type type not None, dict metadata=None):    # noqa (shadows built-in type)
@@ -64,25 +62,35 @@ cdef class DataType:
         metadata : dict
             The data types metadata.
 
+        Raises
+        ------
+        TypeError
+            If metadata contains a key or value which is not hashable.
+        Warnings
+        --------
+        This class may be used as a key in hash maps throughout the system, thus
+        the key and value contents of metadata must themselves be hashable.
+
         """
         if metadata is None:
             metadata = {}
 
+        self._key = frozenset(metadata.items())
+        self._hash = hash((self.type, self._key))  # Assign hash for improved time complexity
         self.type = type
-        self.metadata = <dict>frozendict(copy.deepcopy(metadata))
-        self._hash = hash(self.metadata)  # Assign hash for improved time complexity
+        self.metadata = metadata
 
     def __eq__(self, DataType other) -> bool:
-        return self.type == other.type and self.metadata == other.metadata
+        return self.type == other.type and self._key == other._key  # noqa
 
     def __hash__(self) -> int:
         return self._hash
 
     def __str__(self) -> str:
-        return f"<{self.type.__name__}> {str(self.metadata)[11:-1]}"
+        return f"<{self.type.__name__}> {self.metadata}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(type={self.type.__name__}, metadata={str(self.metadata)[11:-1]})"
+        return f"{type(self).__name__}(type={self.type.__name__}, metadata={self.metadata})"
 
 
 cdef class GenericData(Data):

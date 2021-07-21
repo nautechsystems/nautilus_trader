@@ -24,6 +24,7 @@ cdef class Data:
 
 
 cdef class DataType:
+    cdef frozenset _key
     cdef int _hash
 
     cdef readonly type type
