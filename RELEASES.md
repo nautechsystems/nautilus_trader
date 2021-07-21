@@ -1,3 +1,17 @@
+# NautilusTrader 1.126.0 Beta - Release Notes
+
+
+## Breaking Changes
+None
+
+## Enhancements
+- Added logger sink registration.
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.125.0 Beta - Release Notes
 
 This release introduces a major re-architecture of the internal messaging system.
