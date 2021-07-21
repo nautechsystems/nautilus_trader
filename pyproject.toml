@@ -41,7 +41,6 @@ generate-setup-file = false
 python = "^3.7.9"
 cython = "^3.0.0a8"
 empyrical = "^0.5.5"
-frozendict = "^2.0.3"
 fsspec = "^2021.7.0"
 msgpack = "^1.0.2"
 mypy = "^0.910"

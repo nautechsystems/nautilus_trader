@@ -13,19 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from frozendict import frozendict
-
 from nautilus_trader.model.data.base import DataType
 
 
 class TestDataType:
-    def test_key(self):
-        # Arrange
-        data_type = DataType(type=str, metadata={"category": 1, "code": 0})
-
-        # Act, Assert
-        assert data_type.metadata == frozendict({("code", 0), ("category", 1)})
-
     def test_equality_when_types_not_equal_returns_false(self):
         # Arrange
         data_type1 = DataType(type=str)
@@ -63,20 +54,7 @@ class TestDataType:
         data_type = DataType(type=str, metadata={"category": 1, "code": 0})
 
         # Act, Assert
-        assert data_type.metadata == frozendict({"category": 1, "code": 0})
-
-    def test_key_is_immutable(self):
-        # Arrange
-        spec = {"category": 1, "code": 0}
-        data_type = DataType(type=str, metadata=spec)
-
-        # Act
-        spec["category"] = 2  # <-- attempt to modify category
-
-        # Assert
-        assert data_type.metadata == frozendict(
-            {("category", 1), ("code", 0)}
-        )  # <-- category immutable
+        assert data_type.metadata == {"category": 1, "code": 0}
 
     def test_hash_str_repr(self):
         # Arrange
