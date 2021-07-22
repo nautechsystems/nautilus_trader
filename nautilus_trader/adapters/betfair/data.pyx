@@ -79,6 +79,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         Logger logger not None,
         dict market_filter not None,
         bint load_instruments=True,
+        bint strict_handling=False,
     ):
         """
         Initialize a new instance of the ``BetfairDataClient`` class.
@@ -120,6 +121,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         # Subscriptions
         self._subscribed_instrument_ids = set()  # type: set[InstrumentId]
+        self._strict_handling = strict_handling
         self._subscribed_market_ids = set()   # type: set[InstrumentId]
 
     cpdef void connect(self) except *:
@@ -367,10 +369,11 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         for data in updates:
             self._log.debug(f"{data}")
             if isinstance(data, Data):
-                if hasattr(data, "instrument_id") and data.instrument_id not in self._subscribed_instrument_ids:
-                    # We receive data for multiple instruments within a subscription, don't emit data if we're not
-                    # subscribed to this particular instrument as this will trigger a bunch of error logs
-                    continue
+                if self._strict_handling:
+                    if hasattr(data, "instrument_id") and data.instrument_id not in self._subscribed_instrument_ids:
+                        # We receive data for multiple instruments within a subscription, don't emit data if we're not
+                        # subscribed to this particular instrument as this will trigger a bunch of error logs
+                        continue
                 self._handle_data(data=data)
             elif isinstance(data, Event):
                 self._log.warning(f"Received event: {data}, DataEngine not yet setup to send events")
