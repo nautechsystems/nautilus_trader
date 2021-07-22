@@ -14,10 +14,6 @@ classifiers = [
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
 ]
-packages = [
-    { include = "examples", format = "sdist" },
-    { include = "nautilus_trader" },
-]
 include = [
     # Compiled extensions must be included in the wheel distributions
     { path = "nautilus_trader/**/*.so", format = "wheel" },
