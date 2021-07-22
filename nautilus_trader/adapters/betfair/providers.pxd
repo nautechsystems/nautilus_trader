@@ -25,6 +25,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     cdef dict _cache
     cdef set _searched_filters
     cdef str _account_currency
+    cdef set _missing_instruments
 
     cdef readonly venue
 

@@ -39,7 +39,6 @@ from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.util import hash_json
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.commands.trading import CancelOrder
@@ -78,6 +77,8 @@ from nautilus_trader.model.orders.market import MarketOrder
 
 
 uuid_factory = UUIDFactory()
+MILLIS_TO_NANOS = 1_000_000
+SECS_TO_NANOS = 1_000_000_000
 
 
 def make_custom_order_ref(client_order_id, strategy_id):
@@ -100,6 +101,10 @@ def determine_order_price(order: Order):
             return MIN_BET_PROB
 
 
+def parse_betfair_timestamp(pt):
+    return pt * MILLIS_TO_NANOS
+
+
 def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
     """
     Convert a SubmitOrder command into the data required by betfairlightweight
@@ -118,9 +123,7 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
                 order_type="LIMIT",
                 selection_id=instrument.selection_id,
                 side=N2B_SIDE[order.side],
-                handicap={"0.0": "0"}.get(
-                    instrument.selection_handicap, instrument.selection_handicap
-                ),
+                handicap=instrument.selection_handicap,
                 limit_order=limit_order(
                     size=float(order.quantity),
                     price=float(probability_to_price(probability=price, side=order.side)),
@@ -221,6 +224,7 @@ def _handle_market_snapshot(selection, instrument, ts_event_ns, ts_recv_ns):
         bid_keys = ["atb"]
     if set(ask_keys) == {"batl", "atl"}:
         ask_keys = ["atl"]
+
     assert len(bid_keys) <= 1
     assert len(ask_keys) <= 1
 
@@ -234,15 +238,16 @@ def _handle_market_snapshot(selection, instrument, ts_event_ns, ts_recv_ns):
         asks = selection.get("atl", [])
     else:
         asks = [(p, v) for _, p, v in selection.get(ask_keys[0], [])]
-    snapshot = OrderBookSnapshot(
-        level=BookLevel.L2,
-        instrument_id=instrument.id,
-        bids=[(price_to_probability(p, OrderSide.BUY), v) for p, v in asks],
-        asks=[(price_to_probability(p, OrderSide.SELL), v) for p, v in bids],
-        ts_event_ns=ts_event_ns,
-        ts_recv_ns=ts_recv_ns,
-    )
-    updates.append(snapshot)
+    if bids or asks:
+        snapshot = OrderBookSnapshot(
+            level=BookLevel.L2,
+            instrument_id=instrument.id,
+            bids=[(price_to_probability(p, OrderSide.BUY), v) for p, v in asks],
+            asks=[(price_to_probability(p, OrderSide.SELL), v) for p, v in bids],
+            ts_event_ns=ts_event_ns,
+            ts_recv_ns=ts_recv_ns,
+        )
+        updates.append(snapshot)
     if "trd" in selection:
         updates.extend(
             _handle_market_trades(
@@ -327,7 +332,7 @@ def _handle_market_close(runner, instrument, timestamp_ns):
             ts_event_ns=timestamp_ns,
             ts_recv_ns=timestamp_ns,
         )
-    elif runner["status"] == "WINNER":
+    elif runner["status"] in ("WINNER", "PLACED"):
         close_price = InstrumentClosePrice(
             instrument_id=instrument.id,
             close_price=Price(1.0, precision=4),
@@ -384,7 +389,7 @@ def _handle_market_runners_status(instrument_provider, market, timestamp_ns):
         kw = dict(
             market_id=market["id"],
             selection_id=str(runner["id"]),
-            handicap=str(runner.get("hc") or ""),
+            handicap=parse_handicap(runner.get("hc")),
         )
         instrument = instrument_provider.get_betting_instrument(**kw)
         if instrument is None:
@@ -407,8 +412,8 @@ def build_market_snapshot_messages(
     instrument_provider, raw
 ) -> List[Union[OrderBookSnapshot, InstrumentStatusUpdate]]:
     updates = []
-    ts_event_ns = millis_to_nanos(raw["pt"])
-    timestamp_ns = millis_to_nanos(raw["pt"])  # TODO(bm): Could call clock.ts_recv_ns()
+    ts_event_ns = parse_betfair_timestamp(raw["pt"])
+    timestamp_ns = parse_betfair_timestamp(raw["pt"])  # TODO(bm): Could call clock.ts_recv_ns()
     for market in raw.get("mc", []):
         # Instrument Status
         updates.extend(
@@ -429,7 +434,7 @@ def build_market_snapshot_messages(
                     kw = dict(
                         market_id=market_id,
                         selection_id=str(selection_id),
-                        handicap=str(handicap or ""),
+                        handicap=parse_handicap(handicap),
                     )
                     instrument = instrument_provider.get_betting_instrument(**kw)
                     if instrument is None:
@@ -470,8 +475,8 @@ def build_market_update_messages(
 ) -> List[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]]:
     updates = []
     book_updates = []
-    ts_event_ns = millis_to_nanos(raw["pt"])
-    ts_recv_ns = millis_to_nanos(raw["pt"])  # TODO(bm): Could call self._clock.ts_recv_ns()
+    ts_event_ns = parse_betfair_timestamp(raw["pt"])
+    ts_recv_ns = parse_betfair_timestamp(raw["pt"])  # TODO(bm): Could call self._clock.ts_recv_ns()
     for market in raw.get("mc", []):
         updates.extend(
             _handle_market_runners_status(
@@ -532,7 +537,7 @@ async def generate_order_status_report(self, order) -> Optional[OrderStatusRepor
             venue_order_id=VenueOrderId(),
             order_state=OrderState(),
             filled_qty=Quantity.zero(),
-            timestamp_ns=millis_to_nanos(),
+            timestamp_ns=SECS_TO_NANOS * pd.Timestamp(order["timestamp"]).timestamp(),
         )
         for order in self.client().betting.list_current_orders()["currentOrders"]
     ]
@@ -548,7 +553,7 @@ async def generate_trades_list(
         self._log.warn(f"Found no existing order for {venue_order_id}")
         return []
     fill = filled["clearedOrders"][0]
-    timestamp_ns = millis_to_nanos(pd.Timestamp(fill["lastMatchedDate"]).timestamp())
+    timestamp_ns = SECS_TO_NANOS * pd.Timestamp(fill["lastMatchedDate"]).timestamp()
     return [
         ExecutionReport(
             client_order_id=self.venue_order_id_to_client_order_id[venue_order_id],
@@ -564,3 +569,17 @@ async def generate_trades_list(
             timestamp_ns=timestamp_ns,
         )
     ]
+
+
+def parse_handicap(x) -> str:
+    """
+    Ensure consistent parsing of the various handicap sources we get
+    """
+    if x in (None, ""):
+        return ""
+    if isinstance(x, (int, str)):
+        return str(float(x))
+    elif isinstance(x, float):
+        return str(x)
+    else:
+        raise TypeError(f"Unexpected type ({type(x)}) for handicap: {x}")
