@@ -39,8 +39,8 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = "^3.7.9"
-bokeh = "^2.3.2"
 cython = "^3.0.0a9"
+bokeh = "^2.3.2"
 dask = "^2021.6.2"
 distributed = "^2021.6.2"
 empyrical = "^0.5.5"
