@@ -31,6 +31,7 @@ cdef class Subscription:
 cdef class MessageBus:
     cdef Clock _clock
     cdef LoggerAdapter _log
+    cdef dict _endpoints
     cdef dict _channels
     cdef Subscription[:] _patterns
     cdef int _patterns_len
@@ -38,9 +39,13 @@ cdef class MessageBus:
     cdef readonly int processed_count
     """The count of messages process by the bus.\n\n:returns: `int32`"""
 
+    cpdef list endpoints(self)
     cpdef list channels(self)
     cpdef list subscriptions(self, str topic)
 
+    cpdef void register(self, str endpoint, handler) except *
+    cpdef void deregister(self, str endpoint, handler) except *
+    cpdef void send(self, str endpoint, msg) except *
     cpdef void subscribe(self, str topic, handler, int priority=*) except *
     cdef void _subscribe_pattern(self, Subscription sub) except *
     cdef void _subscribe_channel(self, Subscription sub) except *
