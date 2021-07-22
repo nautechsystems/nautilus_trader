@@ -17,15 +17,16 @@ from typing import Callable, Dict, Optional
 
 import pyarrow as pa
 
-from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.events.account import AccountState
-from nautilus_trader.model.events.order import OrderFilled
-from nautilus_trader.model.events.order import OrderInitialized
-from nautilus_trader.model.events.position import PositionChanged
-from nautilus_trader.model.events.position import PositionClosed
-from nautilus_trader.model.events.position import PositionOpened
-from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.data.base cimport GenericData
+from nautilus_trader.model.events.account cimport AccountState
+from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.position cimport PositionChanged
+from nautilus_trader.model.events.position cimport PositionClosed
+from nautilus_trader.model.events.position cimport PositionOpened
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.serialization.arrow.implementations import account_state
 from nautilus_trader.serialization.arrow.implementations import order_book
 from nautilus_trader.serialization.arrow.implementations import order_events
@@ -54,24 +55,29 @@ def register_parquet(
     """
     Register a new class for serialization to parquet.
 
-    :param cls_type: The type to register serialization for
-    :param serializer (callable): The callable to serialize instances of type `cls_type` to something parquet can write
-    :param deserializer (callable): The callable to deserialize rows from parquet into `cls_type`.
-    :param schema (dict): Optional dict if the schema cannot be correctly inferred from a subset of the data (ie if
-                          certain values may be missing in the first chunk)
-    :param chunk (bool): Whether to group objects by timestamp and operate together (Used for complex objects where
-                         we write each object as multiple rows in parquet, ie OrderBook or AccountState)
-    :param partition_key (optional): Optional partition key for data written to parquet (typically an id)
+    Parameters
+    ----------
+    cls_type : type
+        The type to register serialization for.
+    serializer : Optional[Callable]
+        The callable to serialize instances of type `cls_type` to something parquet can write.
+    deserializer : Optional[Callable]
+        The callable to deserialize rows from parquet into `cls_type`.
+    schema : Optional[pa.Schema]
+        If the schema cannot be correctly inferred from a subset of the data
+        (i.e. if certain values may be missing in the first chunk).
+    partition_keys : tuple, optional
+        The partition key for data written to parquet (typically an ID).
+    chunk : bool
+        Whether to group objects by timestamp and operate together (Used for complex objects where
+        we write each object as multiple rows in parquet, ie OrderBook or AccountState).
+
     """
-    assert isinstance(
-        cls_type, type
-    ), f"`name` should be <str> (i.e. Class.__name__) not {type(cls_type)}: {cls_type}"
-    assert serializer is None or isinstance(serializer, Callable), "Serializer must be callable"  # type: ignore
-    assert deserializer is None or isinstance(deserializer, Callable), "Deserializer must be callable"  # type: ignore
-    assert schema is None or isinstance(schema, pa.Schema), f"schema must be pa.Schema ({cls_type})"
-    assert partition_keys is None or isinstance(
-        partition_keys, tuple
-    ), f"partition_keys must be tuple ({cls_type})"
+    Condition.type(cls_type, type, "cls_type")
+    Condition.type_or_none(serializer, Callable, "serializer")
+    Condition.type_or_none(deserializer, Callable, "deserializer")
+    Condition.type_or_none(schema, pa.Schema, "schema")
+    Condition.type_or_none(partition_keys, tuple, "partition_keys")
 
     cls_name = cls_type
 
@@ -184,7 +190,9 @@ Objects requiring special handling in parquet
 
 for cls in OrderBookData.__subclasses__():
     register_parquet(
-        cls, serializer=order_book.serialize, deserializer=order_book.deserialize, chunk=True
+        cls,
+        serializer=order_book.serialize,
+        deserializer=order_book.deserialize, chunk=True,
     )
 
 for cls in Instrument.__subclasses__():
@@ -198,7 +206,9 @@ register_parquet(
 )
 for cls in (PositionOpened, PositionChanged, PositionClosed):
     register_parquet(
-        cls, serializer=position_events.serialize, deserializer=position_events.deserialize
+        cls,
+        serializer=position_events.serialize,
+        deserializer=position_events.deserialize,
     )
 
 register_parquet(OrderFilled, serializer=order_events.serialize)
