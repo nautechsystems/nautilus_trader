@@ -127,7 +127,7 @@ name = "bokeh"
 version = "2.3.3"
 description = "Interactive plots and applications in the browser from Python"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -208,7 +208,7 @@ name = "click"
 version = "8.0.1"
 description = "Composable command line interface toolkit"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -313,7 +313,7 @@ name = "distributed"
 version = "2021.7.0"
 description = "Distributed scheduler for Dask"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.7"
 
 [package.dependencies]
@@ -417,7 +417,7 @@ name = "heapdict"
 version = "1.0.1"
 description = "a heap with decrease-key and increase-key operations"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -489,7 +489,7 @@ name = "jinja2"
 version = "3.0.1"
 description = "A very fast and expressive template engine."
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -525,7 +525,7 @@ name = "markupsafe"
 version = "2.0.1"
 description = "Safely add untrusted strings to HTML/XML markup."
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [[package]]
@@ -696,7 +696,7 @@ name = "pillow"
 version = "8.3.1"
 description = "Python Imaging Library (Fork)"
 category = "main"
-optional = false
+optional = true
 python-versions = ">=3.6"
 
 [[package]]
@@ -1014,7 +1014,7 @@ name = "sortedcontainers"
 version = "2.4.0"
 description = "Sorted Containers -- Sorted List, Sorted Dict, Sorted Set"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [[package]]
@@ -1150,7 +1150,7 @@ name = "tblib"
 version = "1.7.0"
 description = "Traceback serialization library."
 category = "main"
-optional = false
+optional = true
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
 [[package]]
@@ -1174,7 +1174,7 @@ name = "tornado"
 version = "6.1"
 description = "Tornado is a Python web framework and asynchronous networking library, originally developed at FriendFeed."
 category = "main"
-optional = false
+optional = true
 python-versions = ">= 3.5"
 
 [[package]]
@@ -1273,7 +1273,7 @@ name = "zict"
 version = "2.0.0"
 description = "Mutable mapping tools"
 category = "main"
-optional = false
+optional = true
 python-versions = "*"
 
 [package.dependencies]
@@ -1301,7 +1301,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "fe2c0e4230471ae43bdf7520e3d8b8831fc20976fd054a0d9cfb9817d64c4b87"
+content-hash = "7244a416715c3987e64e1dcaff1b0eddddff19e6483e17b42b5070f778a411b6"
 
 [metadata.files]
 aiodns = [
