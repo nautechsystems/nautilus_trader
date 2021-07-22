@@ -17,12 +17,26 @@ from typing import Callable, Dict, Optional
 
 import pyarrow as pa
 
+from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.model.events.position import PositionChanged
+from nautilus_trader.model.events.position import PositionClosed
+from nautilus_trader.model.events.position import PositionOpened
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.serialization.arrow.implementations import account_state
+from nautilus_trader.serialization.arrow.implementations import order_book
+from nautilus_trader.serialization.arrow.implementations import order_events
+from nautilus_trader.serialization.arrow.implementations import position_events
+from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.base import get_from_dict
 from nautilus_trader.serialization.base import get_to_dict
 
 
-_PARQUET_OBJECT_TO_DICT_MAP: Dict[str, object] = {}
-_PARQUET_OBJECT_FROM_DICT_MAP: Dict[str, object] = {}
+_PARQUET_OBJECT_TO_DICT_MAP: Dict[type, object] = {}
+_PARQUET_OBJECT_FROM_DICT_MAP: Dict[type, object] = {}
 _chunk = {}
 _partition_keys = {}
 _schemas = {}
@@ -53,15 +67,13 @@ def register_parquet(
         cls_type, type
     ), f"`name` should be <str> (i.e. Class.__name__) not {type(cls_type)}: {cls_type}"
     assert serializer is None or isinstance(serializer, Callable), "Serializer must be callable"  # type: ignore
-    assert deserializer is None or isinstance(
-        deserializer, Callable  # type: ignore
-    ), "Deserializer must be callable"
-    assert schema is None or isinstance(schema, pa.Schema), "partition_keys must be tuple"
+    assert deserializer is None or isinstance(deserializer, Callable), "Deserializer must be callable"  # type: ignore
+    assert schema is None or isinstance(schema, pa.Schema), f"schema must be pa.Schema ({cls_type})"
     assert partition_keys is None or isinstance(
         partition_keys, tuple
-    ), "partition_keys must be tuple"
+    ), f"partition_keys must be tuple ({cls_type})"
 
-    cls_name = cls_type.__name__
+    cls_name = cls_type
 
     # secret kwarg that allows overriding an existing (de)serialization method.
     if not kwargs.get("force", False):
@@ -87,11 +99,13 @@ def register_parquet(
 
 
 def _serialize(obj):
-    name = obj.__class__.__name__
+    if isinstance(obj, GenericData):
+        obj = obj.data
+    name = obj.__class__
     if name in _PARQUET_OBJECT_TO_DICT_MAP:
         return _PARQUET_OBJECT_TO_DICT_MAP[name](obj)
-    elif get_to_dict(name) is not None:
-        return get_to_dict(name)(obj)
+    elif get_to_dict(name.__name__) is not None:
+        return get_to_dict(name.__name__)(obj)
     else:
         try:
             return obj.__class__.to_dict(obj)
@@ -104,16 +118,16 @@ def _serialize(obj):
 
 
 def _deserialize(cls, chunk):
-    name = cls.__name__
+    name = cls
     if not isinstance(chunk, list):
         chunk = [chunk]
     if name in _PARQUET_OBJECT_FROM_DICT_MAP:
-        if _chunk[name]:
+        if _chunk.get(name, False):
             return _PARQUET_OBJECT_FROM_DICT_MAP[name](chunk)
         else:
             return [_PARQUET_OBJECT_FROM_DICT_MAP[name](c) for c in chunk]
-    elif get_from_dict(name) is not None:
-        return [get_from_dict(name)(c) for c in chunk]
+    elif get_from_dict(name.__name__) is not None:
+        return [get_from_dict(name.__name__)(c) for c in chunk]
     raise TypeError(
         f"class {name} cannot be deserialized by arrow._deserialize, register a method via `register()`"
     )
@@ -164,8 +178,32 @@ def _deserialize(cls, chunk):
 #     return msgpack.unpackb(message_bytes)
 
 
-# Default nautilus implementations
-from nautilus_trader.serialization.arrow.implementations.order_book import order_book_register
+"""
+Objects requiring special handling in parquet
+"""
 
+for cls in OrderBookData.__subclasses__():
+    register_parquet(
+        cls, serializer=order_book.serialize, deserializer=order_book.deserialize, chunk=True
+    )
 
-order_book_register(func=register_parquet)
+for cls in Instrument.__subclasses__():
+    register_parquet(cls, partition_keys=tuple())
+
+register_parquet(
+    AccountState,
+    serializer=account_state.serialize,
+    deserializer=account_state.deserialize,
+    chunk=True,
+)
+for cls in (PositionOpened, PositionChanged, PositionClosed):
+    register_parquet(
+        cls, serializer=position_events.serialize, deserializer=position_events.deserialize
+    )
+
+register_parquet(OrderFilled, serializer=order_events.serialize)
+register_parquet(OrderInitialized, serializer=order_events.serialize_order_initialized)
+
+# Other defined schemas
+for cls, schema in NAUTILUS_PARQUET_SCHEMA.items():
+    register_parquet(cls, schema=schema)
