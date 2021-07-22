@@ -138,12 +138,24 @@ cdef class MessageBus:
         self._clock = clock
         self._log = LoggerAdapter(component=name, logger=logger)
 
+        self._endpoints = {}   # type: dict[str, Callable[[Any], None]]
         self._channels = {}    # type: dict[str, Subscription[:]]
         self._patterns = None  # type: Subscription[:]
         self._patterns_len = 0
 
         # Counters
         self.processed_count = 0
+
+    cpdef list endpoints(self):
+        """
+        Return all endpoint addresses registered with the message bus.
+
+        Returns
+        -------
+        list[str]
+
+        """
+        return list(self._endpoints.keys())
 
     cpdef list channels(self):
         """
@@ -190,6 +202,81 @@ cdef class MessageBus:
 
         return output
 
+    cpdef void register(self, str endpoint, handler: Callable[[Any], None]) except *:
+        """
+        Register the given handler to receive messages at the endpoint address.
+
+        Parameters
+        ----------
+        endpoint : str
+            The endpoint address to register.
+        handler : Callable[[Any], None]
+            The handler for the registration.
+
+        Raises
+        ------
+        ValueError
+            If endpoint is not a valid string.
+        KeyError
+            If endpoint already registered.
+
+        """
+        Condition.valid_string(endpoint, "endpoint")
+        Condition.not_none(handler, "handler")
+        Condition.not_in(endpoint, self._endpoints, "endpoint", "self._endpoints")
+
+        self._endpoints[endpoint] = handler
+
+    cpdef void deregister(self, str endpoint, handler: Callable[[Any], None]) except *:
+        """
+        De-register the given handler from the endpoint address.
+
+        Parameters
+        ----------
+        endpoint : str
+            The endpoint address to deregister.
+        handler : Callable[[Any], None]
+            The handler for the de-registration.
+
+        Raises
+        ------
+        ValueError
+            If endpoint is not a valid string.
+        KeyError
+            If endpoint is not registered.
+        ValueError
+            If handler is not registered at the endpoint.
+
+        """
+        Condition.valid_string(endpoint, "endpoint")
+        Condition.not_none(handler, "handler")
+        Condition.is_in(endpoint, self._endpoints, "endpoint", "self._endpoints")
+        Condition.equal(handler, self._endpoints[endpoint], "handler", "self._endpoints[endpoint]")
+
+        del self._endpoints[endpoint]
+
+    cpdef void send(self, str endpoint, msg) except *:
+        """
+        Send the given message to the given endpoint address.
+
+        Parameters
+        ----------
+        endpoint : str
+            The endpoint address to send to.
+        msg : object
+            The message to send.
+
+        """
+        Condition.not_none(endpoint, "endpoint")
+        Condition.not_none(msg, "msg")
+
+        handler = self._endpoints.get(endpoint)
+        if handler is None:
+            self._log.error(f"Cannot send message: no handler registered at '{endpoint}'.")
+            return
+
+        handler(msg)
+
     cpdef void subscribe(
         self,
         str topic,
@@ -209,6 +296,11 @@ cdef class MessageBus:
             The priority for the subscription. Determines the ordering of
             handlers receiving messages being processed, higher priority
             handlers will receive messages prior to lower priority handlers.
+
+        Raises
+        ------
+        ValueError
+            If topic is not a valid string.
 
         Warnings
         --------
@@ -350,6 +442,7 @@ cdef class MessageBus:
         Condition.not_none(topic, "topic")
         Condition.not_none(msg, "msg")
 
+        cdef int i
         cdef Subscription sub
         cdef Subscription[:] subscriptions = self._channels.get(topic)
         if subscriptions is not None:

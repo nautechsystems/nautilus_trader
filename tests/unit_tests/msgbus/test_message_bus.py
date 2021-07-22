@@ -177,6 +177,12 @@ class TestMessageBus:
             logger=self.logger,
         )
 
+    def test_endpoints_with_none_registered_returns_empty_list(self):
+        # Arrange, Act
+        result = self.msgbus.endpoints()
+
+        assert result == []
+
     def test_channels_with_no_subscribers_returns_empty_list(self):
         # Arrange, Act
         result = self.msgbus.channels()
@@ -189,6 +195,46 @@ class TestMessageBus:
 
         # Assert
         assert result == []
+
+    def test_register_adds_endpoint(self):
+        # Arrange
+        endpoint = []
+
+        # Act
+        self.msgbus.register("mailbox", endpoint.append)
+
+        # Assert
+        assert self.msgbus.endpoints() == ["mailbox"]
+
+    def test_deregister_removes_endpoint(self):
+        # Arrange
+        endpoint = []
+        self.msgbus.register("mailbox", endpoint.append)
+
+        # Act
+        self.msgbus.deregister("mailbox", endpoint.append)
+
+        # Assert
+        assert self.msgbus.endpoints() == []
+
+    def test_send_when_no_endpoint_at_address_logs_error(self):
+        # Arrange, Act
+        endpoint = []
+        self.msgbus.send("mailbox", "message")
+
+        # Assert
+        assert "message" not in endpoint
+
+    def test_send_when_endpoint_at_address_sends_message_to_handler(self):
+        # Arrange
+        endpoint = []
+        self.msgbus.register("mailbox", endpoint.append)
+
+        # Act
+        self.msgbus.send("mailbox", "message")
+
+        # Assert
+        assert "message" in endpoint
 
     def test_subscribe_to_msg_type_returns_channels_list_including_msg_type(self):
         # Arrange
