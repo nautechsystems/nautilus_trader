@@ -36,9 +36,7 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = "^3.7.9"
 cython = "^3.0.0a9"
-bokeh = "^2.3.2"
 dask = "^2021.6.2"
-distributed = "^2021.6.2"
 empyrical = "^0.5.5"
 fsspec = "^2021.7.0"
 msgpack = "^1.0.2"
@@ -54,7 +52,9 @@ scipy = "1.6.1"  # Pinned at 1.6.1 due Python 3.7.9
 tabulate = "^0.8.9"
 tqdm = "^4.61.2"
 uvloop = { version = "^0.15.3", markers = "sys_platform != 'win32'" }
+bokeh = { version = "^2.3.2", optional = true }
 betfairlightweight = {extras = ["speed"], version = "^2.12.1", optional = true}
+distributed = { version = "^2021.6.2", optional = true }
 ccxt = { version = "^1.53.20", optional = true }
 ib_insync = { version = "^0.9.66", optional = true }
 
@@ -77,9 +77,9 @@ sphinx-rtd-theme = { version = "^0.5.1", optional = true }
 [tool.poetry.extras]
 betfair = ["betfairlightweight"]
 ccxt = ["ccxt"]
+distributed = ["distributed", "bokeh"]
 docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]
 ib = ["ib_insync"]
-distributed = ["distributed", "bokeh"]
 
 
 ##########################################################
