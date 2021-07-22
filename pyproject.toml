@@ -36,6 +36,9 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = "^3.7.9"
 cython = "^3.0.0a9"
+bokeh = "^2.3.2"
+dask = "^2021.6.2"
+distributed = "^2021.6.2"
 empyrical = "^0.5.5"
 fsspec = "^2021.7.0"
 msgpack = "^1.0.2"
@@ -76,6 +79,8 @@ betfair = ["betfairlightweight"]
 ccxt = ["ccxt"]
 docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]
 ib = ["ib_insync"]
+distributed = ["distributed", "bokeh"]
+
 
 ##########################################################
 # Test configs                                           #

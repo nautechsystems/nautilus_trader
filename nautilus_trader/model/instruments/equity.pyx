@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import json
 
 from libc.stdint cimport int64_t
 
@@ -24,6 +25,10 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+
+from nautilus_trader.model.c_enums.asset_class import AssetClassParser
+from nautilus_trader.model.c_enums.asset_type import AssetTypeParser
+from nautilus_trader.model.objects import Money
 
 
 cdef class Equity(Instrument):
@@ -119,3 +124,19 @@ cdef class Equity(Instrument):
         self.time_zone_id = time_zone_id
         self.trading_hours = trading_hours
         self.last_trade_time = last_trade_time
+
+    @staticmethod
+    def from_dict(dict values) -> Instrument:
+        return Instrument.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(Instrument obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return Instrument.to_dict_c(obj)

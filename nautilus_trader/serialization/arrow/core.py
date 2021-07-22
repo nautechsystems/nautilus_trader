@@ -204,6 +204,7 @@ for cls in (PositionOpened, PositionChanged, PositionClosed):
 register_parquet(OrderFilled, serializer=order_events.serialize)
 register_parquet(OrderInitialized, serializer=order_events.serialize_order_initialized)
 
+
 # Other defined schemas
 for cls, schema in NAUTILUS_PARQUET_SCHEMA.items():
     register_parquet(cls, schema=schema)
