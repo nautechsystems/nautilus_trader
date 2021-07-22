@@ -988,6 +988,8 @@ def clean_partition_cols(df, partition_cols=None, cls=None):
                 raise ValueError(
                     f"Some values in partition column [{col}] contain invalid characters: {invalid_values}"
                 )
+    if partition_cols:
+        assert all([c in df.columns for c in partition_cols]), f"Missing col for {cls}"
     return df, mappings
 
 
