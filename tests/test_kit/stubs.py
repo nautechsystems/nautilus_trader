@@ -66,8 +66,10 @@ from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
+from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.mocks import MockLiveRiskEngine
@@ -316,6 +318,17 @@ class TestStubs:
         return StrategyId("S-001")
 
     @staticmethod
+    def limit_order(instrument_id=None, side=None, price=None, quantity=None) -> LimitOrder:
+        strategy = TestStubs.trading_strategy()
+        order = strategy.order_factory.limit(
+            instrument_id or TestStubs.audusd_id(),
+            side or OrderSide.BUY,
+            quantity or Quantity.from_int(10),
+            price or Price.from_str("0.50"),
+        )
+        return order
+
+    @staticmethod
     def event_account_state(account_id=None) -> AccountState:
         if account_id is None:
             account_id = TestStubs.account_id()
@@ -562,6 +575,20 @@ class TestStubs:
             cache=TestStubs.cache(),
             logger=TestStubs.logger(),
         )
+
+    @staticmethod
+    def trading_strategy():
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=TraderId("TESTER-000"),
+            clock=TestStubs.clock(),
+            logger=TestStubs.logger(),
+            msgbus=TestStubs.msgbus(),
+            portfolio=TestStubs.portfolio(),
+            data_engine=TestStubs.mock_live_data_engine(),
+            risk_engine=TestStubs.mock_live_risk_engine(),
+        )
+        return strategy
 
     @staticmethod
     def mock_live_data_engine():
