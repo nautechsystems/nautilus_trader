@@ -23,7 +23,7 @@ import pytest
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
-from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -74,6 +74,7 @@ def setup_exec_client_and_cache(mocker, exec_client, exec_engine, logger, raw):
         if cache_order is None:
             logger.debug("adding to cache")
             exec_engine.cache.add_order(order, position_id=PositionId(v_id))
+            exec_engine.cache.add_instrument(BetfairTestStubs.betting_instrument())
 
     mocker.patch.object(
         exec_client, "venue_order_id_to_client_order_id", venue_order_id_to_client_order_id
@@ -102,6 +103,7 @@ async def test_client_connect(live_logger):
 
 @pytest.mark.asyncio
 async def test_submit_order(mocker, execution_client, exec_engine):
+    exec_engine.cache.add_instrument(BetfairTestStubs.betting_instrument())
     mock_place_orders = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.place_orders",
         return_value=BetfairDataProvider.place_orders_success(),
@@ -175,10 +177,11 @@ async def test_update_order(mocker, execution_client, exec_engine):
         )
     )
     exec_engine.cache.add_order(order, PositionId("1"))
+    exec_engine.cache.add_instrument(BetfairTestStubs.betting_instrument())
 
     mock_replace_orders = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.replace_orders",
-        return_value=BetfairDataProvider.place_orders_success(),
+        return_value=BetfairDataProvider.replace_orders_resp_success(),
     )
 
     # Actual test
@@ -237,6 +240,7 @@ async def test_update_order_fail(mocker, execution_client, exec_engine):
 
 @pytest.mark.asyncio
 async def test_cancel_order(mocker, execution_client, exec_engine):
+    exec_engine.cache.add_instrument(BetfairTestStubs.betting_instrument())
     mock_cancel_orders = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.cancel_orders",
         return_value=BetfairDataProvider.cancel_orders_success(),
@@ -261,7 +265,7 @@ async def test_connection_account_state(execution_client, exec_engine):
 
 def test_get_account_currency(execution_client):
     currency = execution_client.get_account_currency()
-    assert currency == AUD
+    assert currency == GBP
 
 
 @pytest.mark.asyncio
@@ -483,10 +487,10 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine, log
 @pytest.mark.skip(reason="Not implemented yet")
 async def test_betfair_account_states(execution_client, exec_engine):
     # Setup
-    balance = exec_engine.cache.account_for_venue(BETFAIR_VENUE).balances()[AUD]
+    balance = exec_engine.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
     expected = {
         "type": "AccountBalance",
-        "currency": "AUD",
+        "currency": "GBP",
         "total": "1000.00",
         "locked": "-0.00",
         "free": "1000.00",
@@ -500,10 +504,10 @@ async def test_betfair_account_states(execution_client, exec_engine):
     order_accepted = BetfairTestStubs.event_order_accepted(order=order)
     exec_engine._handle_event(order_accepted)
     await asyncio.sleep(0.1)
-    balance = exec_engine.cache.account_for_venue(BETFAIR_VENUE).balances()[AUD]
+    balance = exec_engine.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
     expected = {
         "type": "AccountBalance",
-        "currency": "AUD",
+        "currency": "GBP",
         "total": "1000.00",
         "locked": "20.00",
         "free": "980.00",
@@ -514,10 +518,10 @@ async def test_betfair_account_states(execution_client, exec_engine):
     cancelled = BetfairTestStubs.event_order_canceled(order=order)
     exec_engine._handle_event(cancelled)
     await asyncio.sleep(0.1)
-    balance = exec_engine.cache.account_for_venue(BETFAIR_VENUE).balances()[AUD]
+    balance = exec_engine.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
     expected = {
         "type": "AccountBalance",
-        "currency": "AUD",
+        "currency": "GBP",
         "total": "1000.00",
         "locked": "-0.00",
         "free": "1080.00",

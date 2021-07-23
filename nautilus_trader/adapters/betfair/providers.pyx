@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import datetime
 import logging
 from typing import Dict, List
 
@@ -29,6 +29,7 @@ from nautilus_trader.model.instruments.betting cimport BettingInstrument
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import EVENT_TYPE_TO_NAME
+from nautilus_trader.adapters.betfair.parsing import parse_handicap
 from nautilus_trader.adapters.betfair.util import chunk
 from nautilus_trader.adapters.betfair.util import flatten_tree
 
@@ -69,6 +70,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
 
         self.market_filter = market_filter or {}
         self.venue = BETFAIR_VENUE
+        self._missing_instruments = set()
 
         if load_all:
             self._load_instruments()
@@ -129,11 +131,16 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         """ Performance friendly instrument lookup """
         key = (market_id, selection_id, handicap)
         if key not in self._cache:
-            instrument_filter = {'market_id': market_id, 'selection_id': selection_id, 'selection_handicap': handicap}
+            instrument_filter = {
+                'market_id': market_id, 'selection_id': selection_id, 'selection_handicap': parse_handicap(handicap)
+            }
             instruments = self.search_instruments(instrument_filter=instrument_filter, load=False)
             count = len(instruments)
             if count < 1:
-                self._log.warning(f"Found 0 instrument for filter: {instrument_filter}")
+                key = (market_id, selection_id, parse_handicap(handicap))
+                if key not in self._missing_instruments:
+                    self._log.warning(f"Found 0 instrument for filter: {instrument_filter}")
+                    self._missing_instruments.add(key)
                 return
             # assert count == 1, f"Wrong number of instruments: {len(instruments)} for filter: {instrument_filter}"
             self._cache[key] = instruments[0]
@@ -189,7 +196,7 @@ def parse_market_definition(market_definition):
                 {
                     "name": r.get("runnerName") or "NO_NAME",
                     "selection_id": r["selectionId"],
-                    "handicap": str(r.get("hc", r.get("handicap")) or ""),
+                    "handicap": parse_handicap(r.get("hc", r.get("handicap"))),
                     "sort_priority": r.get("sortPriority"),
                     "runner_id": r.get("metadata", {}).get("runnerId")
                     if str(r.get("metadata", {}).get("runnerId")) != str(r["selectionId"])
@@ -217,7 +224,7 @@ def parse_market_definition(market_definition):
                 {
                     "name": r.get("name") or "NO_NAME",
                     "selection_id": r["id"],
-                    "handicap": r.get("hc", ""),
+                    "handicap": parse_handicap(r.get("hc")),
                     "sort_priority": r.get("sortPriority"),
                 }
                 for r in market_definition["runners"]
@@ -244,7 +251,7 @@ def make_instruments(market_definition, currency):
             competition_id=market_definition.get("competition_id", ""),
             competition_name=market_definition.get("competition_name", ""),
             event_id=market_definition["event_id"],
-            event_name=(market_definition.get("event_name") or '').strip(),
+            event_name=(market_definition.get("event_name") or "").strip(),
             event_country_code=market_definition.get("country_code") or "",
             event_open_date=market_definition["event_open_date"],
             betting_type=market_definition["betting_type"],
@@ -254,7 +261,7 @@ def make_instruments(market_definition, currency):
             market_type=market_definition["market_type"],
             selection_id=str(runner["selection_id"]),
             selection_name=runner["name"],
-            selection_handicap=str(runner.get("hc", runner.get("handicap")) or ""),
+            selection_handicap=parse_handicap(runner.get("hc", runner.get("handicap"))),
             currency=currency,
             # TODO - Add the provider, use clock
             ts_event_ns=unix_timestamp_ns(),  # TODO(bm): Duplicate timestamps for now
@@ -300,3 +307,20 @@ def load_markets_metadata(client: APIClient, markets: List[Dict]) -> Dict:
         )
         all_results.update({r["marketId"]: r for r in results})
     return all_results
+
+
+def get_market_book(client, market_ids):
+    resp = client.betting.list_market_book(market_ids=market_ids, price_projection={"priceData": ["EX_TRADED"]})
+    data = []
+    for market in resp:
+        for runner in market['runners']:
+            data.append({
+                'market_id': market['marketId'],
+                'selection_id': runner['selectionId'],
+                'market_matched': market['totalMatched'],
+                'market_status': market['status'],
+                'selection_status': runner['status'],
+                'selection_matched': runner.get('totalMatched'),
+                'selection_last_price': runner.get('lastPriceTraded'),
+            })
+    return pd.DataFrame(data)

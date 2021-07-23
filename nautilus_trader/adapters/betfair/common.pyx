@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from enum import Enum
 
 import numpy as np
 
@@ -76,6 +77,8 @@ def parse_prob(p):
 
 
 def invert_price(p):
+    if p is None:
+        return
     return parse_price(1 / (1 - (1 / p))) / 100
 
 
@@ -212,3 +215,13 @@ EVENT_TYPE_TO_NAME = {
     "4339": "Greyhound Racing",
     "2378961": "Politics",
 }
+
+
+class HistoricalSportType(Enum):
+    HORSE_RACING = "Horse Racing"
+    SOCCER = "Soccer"
+    TENNIS = "Tennis"
+    CRICKET = "Cricket"
+    GOLF = "Golf"
+    GREYHOUND_RACING = "Greyhound Racing"
+    OTHER_SPORTS = "Other Sports"

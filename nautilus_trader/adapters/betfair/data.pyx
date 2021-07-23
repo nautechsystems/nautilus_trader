@@ -18,7 +18,6 @@ import asyncio
 from betfairlightweight import APIClient
 import orjson
 
-from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -36,6 +35,7 @@ from nautilus_trader.model.instruments.betting cimport BettingInstrument
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing import on_market_update
+from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 
 
@@ -79,6 +79,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         Logger logger not None,
         dict market_filter not None,
         bint load_instruments=True,
+        bint strict_handling=False,
     ):
         """
         Initialize a new instance of the ``BetfairDataClient`` class.
@@ -119,7 +120,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions
-        self._subscribed_instruments = set()  # type: set[InstrumentId]
+        self._subscribed_instrument_ids = set()  # type: set[InstrumentId]
+        self._strict_handling = strict_handling
         self._subscribed_market_ids = set()   # type: set[InstrumentId]
 
     cpdef void connect(self) except *:
@@ -193,7 +195,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             load_all=False,
         )
 
-        self._subscribed_instruments = set()
+        self._subscribed_instrument_ids = set()
 
         self._log.info("Reset.")
 
@@ -271,6 +273,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         # subscription after a short delay to allow other strategies to send
         # their subscriptions (every change triggers a full snapshot).
         self._subscribed_market_ids.add(instrument.market_id)
+        self._subscribed_instrument_ids.add(instrument.id)
         if self.subscription_status == SubscriptionStatus.UNSUBSCRIBED:
             self._loop.create_task(self.delayed_subscribe(delay=5))
             self.subscription_status = SubscriptionStatus.PENDING_STARTUP
@@ -290,6 +293,19 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:
         self.subscribe_order_book(instrument_id=instrument_id, level=level, kwargs=kwargs)
+
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
+        pass  # Subscribed as part of orderbook
+
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
+        for instrument in self._instrument_provider.list_instruments():
+            self._handle_data(data=instrument)
+
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+        pass  # Subscribed as part of orderbook
+
+    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+        pass  # Subscribed as part of orderbook
 
     cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
         """
@@ -353,6 +369,11 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         for data in updates:
             self._log.debug(f"{data}")
             if isinstance(data, Data):
+                if self._strict_handling:
+                    if hasattr(data, "instrument_id") and data.instrument_id not in self._subscribed_instrument_ids:
+                        # We receive data for multiple instruments within a subscription, don't emit data if we're not
+                        # subscribed to this particular instrument as this will trigger a bunch of error logs
+                        continue
                 self._handle_data(data=data)
             elif isinstance(data, Event):
                 self._log.warning(f"Received event: {data}, DataEngine not yet setup to send events")

@@ -27,8 +27,9 @@ cpdef enum SubscriptionStatus:
 cdef class BetfairDataClient(LiveMarketDataClient):
     cdef object _client
     cdef object _stream
-    cdef set _subscribed_instruments
+    cdef set _subscribed_instrument_ids
     cdef set _subscribed_market_ids
+    cdef bint _strict_handling
     cdef SubscriptionStatus subscription_status
     cdef BetfairInstrumentProvider _instrument_provider
 

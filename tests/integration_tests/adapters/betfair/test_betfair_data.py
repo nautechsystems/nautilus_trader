@@ -38,6 +38,7 @@ from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 @pytest.mark.asyncio
@@ -67,6 +68,12 @@ async def test_betfair_data_client(betfair_data_client, data_engine):
 # TODO - Subscribe to a couple of markets individually
 def test_individual_market_subscriptions():
     pass
+
+
+def test_subscriptions(betfair_data_client):
+    betfair_data_client.subscribe_trade_ticks(BetfairTestStubs.instrument_id())
+    betfair_data_client.subscribe_instrument_status_updates(BetfairTestStubs.instrument_id())
+    betfair_data_client.subscribe_instrument_close_prices(BetfairTestStubs.instrument_id())
 
 
 def test_market_heartbeat(betfair_data_client, data_engine):

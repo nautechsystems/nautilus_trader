@@ -74,3 +74,23 @@ def test_load_all(provider):
 def test_search_instruments(provider):
     markets = provider.search_markets(market_filter={"market_marketType": "MATCH_ODDS"})
     assert len(markets) == 1000
+
+
+def test_get_betting_instrument(provider):
+    provider.load_all()
+    instrument = provider.get_betting_instrument(
+        market_id="1.180294978", selection_id="6146434", handicap="0.0"
+    )
+    assert instrument.market_id == "1.180294978"
+
+    # Test throwing warning
+    instrument = provider.get_betting_instrument(
+        market_id="1.180294978", selection_id="6146434", handicap="-100"
+    )
+    assert instrument is None
+
+    # Test already in self._subscribed_instruments
+    instrument = provider.get_betting_instrument(
+        market_id="1.180294978", selection_id="6146434", handicap="-100"
+    )
+    assert instrument is None
