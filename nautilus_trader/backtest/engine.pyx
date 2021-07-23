@@ -243,7 +243,7 @@ cdef class BacktestEngine:
         self._exec_engine.load_cache()
 
         self._risk_engine = RiskEngine(
-            exec_engine=self._exec_engine,
+            portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self.cache,
             clock=self._test_clock,

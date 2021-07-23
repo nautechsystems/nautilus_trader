@@ -24,8 +24,8 @@ from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
-from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class LiveRiskEngine(RiskEngine):
@@ -36,7 +36,7 @@ cdef class LiveRiskEngine(RiskEngine):
     def __init__(
         self,
         loop not None: asyncio.AbstractEventLoop,
-        ExecutionEngine exec_engine not None,
+        PortfolioFacade portfolio not None,
         MessageBus msgbus not None,
         CacheFacade cache not None,
         LiveClock clock not None,
@@ -50,6 +50,8 @@ cdef class LiveRiskEngine(RiskEngine):
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the engine.
+        portfolio : PortfolioFacade
+            The portfolio for the engine.
         msgbus : MessageBus
             The message bus for the engine.
         cache : CacheFacade
@@ -67,7 +69,7 @@ cdef class LiveRiskEngine(RiskEngine):
         if "qsize" not in config:
             config["qsize"] = 10000
         super().__init__(
-            exec_engine=exec_engine,
+            portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

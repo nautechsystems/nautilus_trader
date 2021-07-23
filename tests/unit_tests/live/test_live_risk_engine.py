@@ -107,7 +107,7 @@ class TestLiveRiskEngine:
 
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
-            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -150,7 +150,7 @@ class TestLiveRiskEngine:
         # Arrange
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
-            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -196,7 +196,7 @@ class TestLiveRiskEngine:
         # Arrange
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
-            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

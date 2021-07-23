@@ -115,7 +115,7 @@ class TestLiveExecutionEngine:
 
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
-            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -166,6 +166,10 @@ class TestLiveExecutionEngine:
 
     def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
+        # Deregister test fixture ExecutionEngine from msgbus)
+        self.msgbus.deregister(endpoint="ExecutionEngine.execute", handler=self.exec_engine.execute)
+        self.msgbus.deregister(endpoint="ExecutionEngine.process", handler=self.exec_engine.process)
+
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             trader_id=self.trader_id,
@@ -212,6 +216,10 @@ class TestLiveExecutionEngine:
 
     def test_message_qsize_at_max_blocks_on_put_event(self):
         # Arrange
+        # Deregister test fixture ExecutionEngine from msgbus)
+        self.msgbus.deregister(endpoint="ExecutionEngine.execute", handler=self.exec_engine.execute)
+        self.msgbus.deregister(endpoint="ExecutionEngine.process", handler=self.exec_engine.process)
+
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
             trader_id=self.trader_id,

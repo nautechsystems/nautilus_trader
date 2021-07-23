@@ -29,7 +29,6 @@ from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -52,6 +51,7 @@ from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class RiskEngine(Component):
@@ -76,7 +76,7 @@ cdef class RiskEngine(Component):
 
     def __init__(
         self,
-        ExecutionEngine exec_engine not None,
+        PortfolioFacade portfolio not None,
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
@@ -88,8 +88,8 @@ cdef class RiskEngine(Component):
 
         Parameters
         ----------
-        exec_engine : ExecutionEngine
-            The execution engine for the engine.
+        portfolio : PortfolioFacade
+            The portfolio for the engine.
         msgbus : MessageBus
             The message bus for the engine.
         cache : Cache
@@ -110,10 +110,9 @@ cdef class RiskEngine(Component):
             name="RiskEngine",
         )
 
+        self._portfolio = portfolio
         self._msgbus = msgbus
-        self._exec_engine = exec_engine
 
-        self.trader_id = exec_engine.trader_id
         self.cache = cache
         self.trading_state = TradingState.ACTIVE  # Start active by default
         self.is_bypassed = config.get("bypass", False)
@@ -358,11 +357,11 @@ cdef class RiskEngine(Component):
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
-            self._exec_engine.execute(command)
+            self._msgbus.send(endpoint="ExecutionEngine.execute", msg=command)
             return
 
         # Get instrument for order
-        cdef Instrument instrument = self._exec_engine.cache.instrument(command.order.instrument_id)
+        cdef Instrument instrument = self.cache.instrument(command.order.instrument_id)
         if instrument is None:
             self._deny_command(
                 command=command,
@@ -406,7 +405,7 @@ cdef class RiskEngine(Component):
             return
 
         # Get instrument for orders
-        cdef Instrument instrument = self._exec_engine.cache.instrument(command.instrument_id)
+        cdef Instrument instrument = self.cache.instrument(command.instrument_id)
         if instrument is None:
             self._deny_command(
                 command=command,
@@ -438,7 +437,7 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         # Get instrument for orders
-        cdef Instrument instrument = self._exec_engine.cache.instrument(command.instrument_id)
+        cdef Instrument instrument = self.cache.instrument(command.instrument_id)
         if instrument is None:
             self._deny_command(
                 command=command,
@@ -498,7 +497,7 @@ cdef class RiskEngine(Component):
                     return  # Denied
 
         # All checks passed: send for execution
-        self._exec_engine.execute(command)
+        self._msgbus.send(endpoint="ExecutionEngine.execute", msg=command)
 
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
         ########################################################################
@@ -512,7 +511,7 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         # All checks passed: send for execution
-        self._exec_engine.execute(command)
+        self._msgbus.send(endpoint="ExecutionEngine.execute", msg=command)
 
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
 
@@ -674,7 +673,7 @@ cdef class RiskEngine(Component):
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
-        self._exec_engine.process(denied)
+        self._msgbus.send(endpoint="ExecutionEngine.process", msg=denied)
 
     cdef void _deny_bracket_order(self, BracketOrder bracket_order, str reason) except *:
         self._deny_order(order=bracket_order.entry, reason=reason)
@@ -709,7 +708,7 @@ cdef class RiskEngine(Component):
         self._order_throttler.send(command)
 
     cpdef _send_command(self, TradingCommand command):
-        self._exec_engine.execute(command)
+        self._msgbus.send(endpoint="ExecutionEngine.execute", msg=command)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

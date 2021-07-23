@@ -615,7 +615,7 @@ class TestStubs:
     def mock_live_risk_engine():
         return MockLiveRiskEngine(
             loop=asyncio.get_event_loop(),
-            exec_engine=TestStubs.mock_live_exec_engine(),
+            portfolio=TestStubs.portfolio(),
             msgbus=TestStubs.msgbus(),
             cache=TestStubs.cache(),
             clock=TestStubs.clock(),

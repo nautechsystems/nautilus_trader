@@ -136,7 +136,7 @@ class BetfairTestStubs(TestStubs):
     def risk_engine(event_loop, clock, live_logger, exec_engine):
         return MockLiveRiskEngine(
             loop=event_loop,
-            exec_engine=exec_engine,
+            portfolio=TestStubs.portfolio(),
             msgbus=TestStubs.msgbus(),
             cache=TestStubs.cache(),
             clock=clock,
