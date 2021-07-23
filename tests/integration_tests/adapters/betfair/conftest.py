@@ -28,7 +28,7 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
@@ -228,7 +228,7 @@ async def execution_client(
     client = BetfairExecutionClient(
         client=betfair_client,
         account_id=account_id,
-        base_currency=AUD,
+        base_currency=GBP,
         engine=exec_engine,
         clock=clock,
         logger=live_logger,

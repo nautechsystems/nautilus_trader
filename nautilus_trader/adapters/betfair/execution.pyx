@@ -211,7 +211,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     #  We could use some heuristics about the avg network latency and add an optional flag for throttle inserts etc.
 
     cpdef void submit_order(self, SubmitOrder command) except *:
-        self._log.debug(f"Received {command}")
+        self._log.debug(f"Received submit_order {command}")
 
         self.generate_order_submitted(
             instrument_id=command.instrument_id,
@@ -231,8 +231,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         ))
 
     def _submit_order(self, SubmitOrder command):
-        instrument = self._instrument_provider.find(command.instrument_id)
-        assert instrument is not None, f"Could not find instrument for {command.instrument_id}"
+        instrument = self._engine.cache.instrument(command.instrument_id)
+        Condition.not_none(instrument, "instrument")
         kw = order_submit_to_betfair(command=command, instrument=instrument)
         self._log.debug(f"{kw}")
         return self._client.betting.place_orders(**kw)
@@ -243,7 +243,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             resp = f.result()
             self._log.debug(f"resp: {resp}")
         except Exception as e:
-            self._log.warning(str(e))
+            self._log.error(f"_post_submit_order: {e}")
             return
         assert len(resp['instructionReports']) == 1, "Should only be a single order"
 
@@ -270,7 +270,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         )
 
     cpdef void update_order(self, UpdateOrder command) except *:
-        self._log.debug(f"Received {command}")
+        self._log.debug(f"Received update_order {command}")
         self.generate_order_pending_replace(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
@@ -296,7 +296,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             self._log.warning(f"Order found does not have `id` set: {existing_order}")
             return
         self._log.debug(f"existing_order: {existing_order}")
-        instrument = self._instrument_provider._instruments[command.instrument_id]
+        instrument = self._engine.cache.instrument(command.instrument_id)
+        print("Instrument", instrument)
+        Condition.not_none(instrument, "instrument")
         kw = order_update_to_betfair(
             command=command,
             venue_order_id=existing_order.venue_order_id,
@@ -315,13 +317,12 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         client_order_id: ClientOrderId,
     ):
         Condition.type(client_order_id, ClientOrderId, "client_order_id")
-
         self._log.debug(f"inside _post_update_order for {client_order_id}")
         try:
             resp = f.result()
             self._log.debug(f"resp: {resp}")
         except Exception as e:
-            self._log.warning(str(e))
+            self._log.error(f"_post_update_order: {e}")
             return
 
         assert len(resp['instructionReports']) == 1, "Should only be a single order"
@@ -365,7 +366,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             venue_order_id=command.venue_order_id,
             ts_pending_ns=self._clock.timestamp_ns(),
         )
-        instrument = self._instrument_provider._instruments[command.instrument_id]
+        instrument = self._engine.cache.instrument(command.instrument_id)
         kw = order_cancel_to_betfair(command=command, instrument=instrument)
         resp = self._client.betting.cancel_orders(**kw)
         self._log.debug(f"cancel: {resp}")
@@ -430,7 +431,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                         continue
                     venue_order_id = VenueOrderId(order_update["id"])
                     order = self._engine.cache.order(client_order_id)
+                    Condition.not_none(order, "order")
                     instrument = self._engine.cache.instrument(order.instrument_id)
+                    Condition.not_none(instrument, "instrument")
                     # "E" = Executable (live / working)
                     if order_update["status"] == "E":
                         # Check if this is the first time seeing this order (backtest or replay)
