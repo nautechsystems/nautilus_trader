@@ -489,7 +489,7 @@ def build_market_update_messages(
             kw = dict(
                 market_id=market["id"],
                 selection_id=str(runner["id"]),
-                handicap=str(runner.get("hc") or ""),
+                handicap=parse_handicap(runner.get("hc")),
             )
             instrument = instrument_provider.get_betting_instrument(**kw)
             if instrument is None:
@@ -576,7 +576,7 @@ def parse_handicap(x) -> str:
     Ensure consistent parsing of the various handicap sources we get
     """
     if x in (None, ""):
-        return ""
+        return "0.0"
     if isinstance(x, (int, str)):
         return str(float(x))
     elif isinstance(x, float):
