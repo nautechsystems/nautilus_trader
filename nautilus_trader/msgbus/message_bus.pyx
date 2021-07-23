@@ -63,10 +63,13 @@ cdef class Subscription:
         ValueError
             If topic is not a valid string.
         ValueError
+            If handler is not of type callable.
+        ValueError
             If priority is negative (< 0).
 
         """
         Condition.valid_string(topic, "topic")
+        Condition.callable(handler, "handler")
         Condition.not_negative_int(priority, "priority")
 
         self._topic_str = topic
@@ -217,12 +220,14 @@ cdef class MessageBus:
         ------
         ValueError
             If endpoint is not a valid string.
+        ValueError
+            If handler is not of type callable.
         KeyError
             If endpoint already registered.
 
         """
         Condition.valid_string(endpoint, "endpoint")
-        Condition.not_none(handler, "handler")
+        Condition.callable(handler, "handler")
         Condition.not_in(endpoint, self._endpoints, "endpoint", "self._endpoints")
 
         self._endpoints[endpoint] = handler
@@ -242,6 +247,8 @@ cdef class MessageBus:
         ------
         ValueError
             If endpoint is not a valid string.
+        ValueError
+            If handler is not of type callable.
         KeyError
             If endpoint is not registered.
         ValueError
@@ -249,7 +256,7 @@ cdef class MessageBus:
 
         """
         Condition.valid_string(endpoint, "endpoint")
-        Condition.not_none(handler, "handler")
+        Condition.callable(handler, "handler")
         Condition.is_in(endpoint, self._endpoints, "endpoint", "self._endpoints")
         Condition.equal(handler, self._endpoints[endpoint], "handler", "self._endpoints[endpoint]")
 
@@ -301,6 +308,8 @@ cdef class MessageBus:
         ------
         ValueError
             If topic is not a valid string.
+        ValueError
+            If handler is not of type callable.
 
         Warnings
         --------
@@ -313,7 +322,7 @@ cdef class MessageBus:
 
         """
         Condition.valid_string(topic, "topic")
-        Condition.not_none(handler, "handler")
+        Condition.callable(handler, "handler")
 
         # Create subscription
         cdef Subscription sub = Subscription(
@@ -368,9 +377,16 @@ cdef class MessageBus:
         handler : Callable[[Any], None]
             The handler for the subscription.
 
+        Raises
+        ------
+        ValueError
+            If topic is not a valid string.
+        ValueError
+            If handler is not of type callable.
+
         """
         Condition.valid_string(topic, "topic")
-        Condition.not_none(handler, "handler")
+        Condition.callable(handler, "handler")
 
         cdef Subscription sub = Subscription(topic=topic, handler=handler)
 
