@@ -179,7 +179,7 @@ if __name__ == "__main__":
     print(f"Cython: {cython_compiler_version}")
     print(f"NumPy:  {np.__version__}")
     print("")
-    print("Starting build...")
+    print("Starting nautilus_trader build...")
     print(f"DEBUG_MODE={DEBUG_MODE}")
     print(f"PROFILING_MODE={PROFILING_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
@@ -188,4 +188,4 @@ if __name__ == "__main__":
     print("")
 
     build({})
-    print("Build completed\n")
+    print("Build nautilus_trader completed\n")
