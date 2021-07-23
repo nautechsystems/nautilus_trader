@@ -134,6 +134,10 @@ cdef class ExecutionEngine(Component):
         self.command_count = 0
         self.event_count = 0
 
+        # Register endpoints
+        self._msgbus.register(endpoint="ExecutionEngine.execute", handler=self.execute)
+        self._msgbus.register(endpoint="ExecutionEngine.process", handler=self.process)
+
     @property
     def registered_clients(self):
         """

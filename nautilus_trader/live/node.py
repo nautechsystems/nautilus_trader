@@ -221,7 +221,7 @@ class TradingNode:
 
         self._risk_engine = LiveRiskEngine(
             loop=self._loop,
-            exec_engine=self._exec_engine,
+            portfolio=self.portfolio,
             msgbus=self._msgbus,
             cache=cache,
             clock=self._clock,

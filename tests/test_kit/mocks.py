@@ -771,7 +771,7 @@ class MockLiveRiskEngine(LiveRiskEngine):
     def __init__(
         self,
         loop,
-        exec_engine,
+        portfolio,
         msgbus,
         cache,
         clock,
@@ -780,7 +780,7 @@ class MockLiveRiskEngine(LiveRiskEngine):
     ):
         super().__init__(
             loop=loop,
-            exec_engine=exec_engine,
+            portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
