@@ -231,7 +231,7 @@ def test_data_catalog_instruments_df(loaded_catalog):
 
 def test_data_catalog_instruments_filtered_df(loaded_catalog):
     instrument_id = (
-        "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,237491,.BETFAIR"
+        "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,237491,0.0.BETFAIR"
     )
     instruments = loaded_catalog.instruments(instrument_ids=[instrument_id])
     assert len(instruments) == 1
@@ -356,8 +356,8 @@ def test_data_catalog_parquet_dtypes(loaded_catalog):
         "aggressor_side": CategoricalDtype(categories=["UNKNOWN"], ordered=False),
         "instrument_id": CategoricalDtype(
             categories=[
-                "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,237491,.BETFAIR",
-                "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,60424,.BETFAIR",
+                "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,237491,0.0.BETFAIR",
+                "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,60424,0.0.BETFAIR",
             ],
             ordered=False,
         ),
