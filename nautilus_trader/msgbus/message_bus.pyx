@@ -123,6 +123,8 @@ cdef class MessageBus:
 
         Parameters
         ----------
+        trader_id : TraderId
+            The trader ID associated with the message bus.
         clock : Clock
             The clock for the message bus.
         logger : Logger
