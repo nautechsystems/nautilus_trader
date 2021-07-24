@@ -1,7 +1,7 @@
 EXTRAS?=	"betfair ccxt distributed docs ib"
 
 install:
-	poetry install --extras ${EXTRAS_TRADER})
+	poetry install --extras ${EXTRAS}
 
 build:
 	poetry run python build.py
