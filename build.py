@@ -174,12 +174,14 @@ if __name__ == "__main__":
     # “64-bitness” of the current interpreter, it is more reliable to query the
     # sys.maxsize attribute:
     bits = "64-bit" if sys.maxsize > 2 ** 32 else "32-bit"
-    print(f"System: {platform.system()} {bits}")
-    print(f"Python: {platform.python_version()}")
-    print(f"Cython: {cython_compiler_version}")
-    print(f"NumPy:  {np.__version__}")
+    print("Project: nautilus_trader")
+    print(f"System:  {platform.system()} {bits}")
+    print(f"Python:  {platform.python_version()}")
+    print(f"Cython:  {cython_compiler_version}")
+    print(f"NumPy:   {np.__version__}")
     print("")
-    print("Starting build: nautilus_trader...")
+
+    print("Starting build...")
     print(f"DEBUG_MODE={DEBUG_MODE}")
     print(f"PROFILING_MODE={PROFILING_MODE}")
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
