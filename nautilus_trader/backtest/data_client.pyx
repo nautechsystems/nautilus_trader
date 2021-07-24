@@ -19,13 +19,13 @@ This module provides a data producer for backtesting.
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
-from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
@@ -33,6 +33,7 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class BacktestDataClient(DataClient):
@@ -43,7 +44,8 @@ cdef class BacktestDataClient(DataClient):
     def __init__(
         self,
         ClientId client_id not None,
-        DataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         Clock clock not None,
         Logger logger not None,
         dict config=None,
@@ -55,24 +57,22 @@ cdef class BacktestDataClient(DataClient):
         ----------
         client_id : ClientId
             The data client ID.
-        engine : DataEngine
-            The data engine to connect to the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : Clock
-            The clock for the component.
+            The clock for the client.
         logger : Logger
-            The logger for the component.
+            The logger for the client.
         config : dict[str, object], optional
             The configuration options.
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
 
         """
         super().__init__(
             client_id=client_id,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             config=config,
@@ -188,7 +188,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     def __init__(
         self,
         ClientId client_id not None,
-        DataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         Clock clock not None,
         Logger logger not None,
     ):
@@ -199,17 +200,20 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         ----------
         client_id : ClientId
             The data client ID.
-        engine : DataEngine
-            The data engine to connect to the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : Clock
-            The clock for the component.
+            The clock for the client.
         logger : Logger
-            The logger for the component.
+            The logger for the client.
 
         """
         super().__init__(
             client_id=client_id,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
         )
@@ -574,7 +578,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             self._log.error(f"Cannot request instrument for {instrument_id} (not connected).")
             return
 
-        cdef Instrument instrument = self._engine.cache.instrument(instrument_id)
+        cdef Instrument instrument = self._cache.instrument(instrument_id)
 
         if instrument is None:
             self._log.warning(f"No instrument found for {instrument_id}.")
@@ -595,7 +599,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(correlation_id, "correlation_id")
 
         # Just return all instruments in the cache for this venue
-        cdef list instruments = self._engine.cache.instruments(Venue(self.id.value))
+        cdef list instruments = self._cache.instruments(Venue(self.id.value))
 
         self._handle_instruments(instruments, correlation_id)
 

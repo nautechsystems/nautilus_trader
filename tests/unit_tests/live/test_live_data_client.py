@@ -49,7 +49,10 @@ class TestLiveDataClientFactory:
         self.clock = LiveClock()
         self.logger = LiveLogger(self.loop, self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -63,12 +66,10 @@ class TestLiveDataClientFactory:
             logger=self.logger,
         )
 
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -79,7 +80,8 @@ class TestLiveDataClientFactory:
             LiveDataClientFactory.create(
                 name="IB",
                 config={},
-                engine=self.data_engine,
+                msgbus=self.msgbus,
+                cache=self.cache,
                 clock=self.clock,
                 logger=self.logger,
             )
@@ -88,11 +90,17 @@ class TestLiveDataClientFactory:
 class TestLiveDataClientTests:
     def setup(self):
         # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
+
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -106,20 +114,20 @@ class TestLiveDataClientTests:
             logger=self.logger,
         )
 
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.client = LiveDataClient(
+            loop=self.loop,
             client_id=ClientId("BLOOMBERG"),
-            engine=self.engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -134,11 +142,17 @@ class TestLiveDataClientTests:
 class TestLiveMarketDataClientTests:
     def setup(self):
         # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
+
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -152,20 +166,20 @@ class TestLiveMarketDataClientTests:
             logger=self.logger,
         )
 
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.client = LiveMarketDataClient(
+            loop=self.loop,
             client_id=ClientId(BINANCE.value),
-            engine=self.engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )

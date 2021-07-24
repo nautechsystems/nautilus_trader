@@ -61,6 +61,9 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 class TestLiveExecutionEngine:
     def setup(self):
         # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
+
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
@@ -79,10 +82,8 @@ class TestLiveExecutionEngine:
             clock=self.clock,
         )
 
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -99,6 +100,7 @@ class TestLiveExecutionEngine:
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -106,7 +108,6 @@ class TestLiveExecutionEngine:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -127,13 +128,15 @@ class TestLiveExecutionEngine:
         self.instrument_provider.add(GBPUSD_SIM)
 
         self.client = MockLiveExecutionClient(
+            loop=self.loop,
             client_id=ClientId(SIM.value),
             venue_type=VenueType.ECN,
             account_id=TestStubs.account_id(),
             account_type=AccountType.CASH,
             base_currency=USD,
-            engine=self.exec_engine,
             instrument_provider=self.instrument_provider,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -156,14 +159,6 @@ class TestLiveExecutionEngine:
         assert True  # No exceptions raised
         self.exec_engine.stop()
 
-    def test_get_event_loop_returns_expected_loop(self):
-        # Arrange
-        # Act
-        loop = self.exec_engine.get_event_loop()
-
-        # Assert
-        assert loop == self.loop
-
     def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
         # Deregister test fixture ExecutionEngine from msgbus)
@@ -172,7 +167,6 @@ class TestLiveExecutionEngine:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -183,10 +177,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -222,7 +215,6 @@ class TestLiveExecutionEngine:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -233,10 +225,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -305,10 +296,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -347,10 +337,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -370,10 +359,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -425,10 +413,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -480,10 +467,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -535,10 +521,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -615,10 +600,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )

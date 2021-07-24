@@ -71,7 +71,10 @@ class TestDataEngine:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -87,6 +90,7 @@ class TestDataEngine:
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -94,21 +98,24 @@ class TestDataEngine:
 
         self.binance_client = BacktestMarketDataClient(
             client_id=ClientId(BINANCE.value),
-            engine=self.data_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.bitmex_client = BacktestMarketDataClient(
             client_id=ClientId(BITMEX.value),
-            engine=self.data_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.quandl = MockMarketDataClient(
             client_id=ClientId("QUANDL"),
-            engine=self.data_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -315,7 +322,7 @@ class TestDataEngine:
         )
 
         # Act
-        self.data_engine.send(request)
+        self.data_engine.request(request)
 
         # Assert
         assert self.data_engine.request_count == 1
@@ -342,7 +349,7 @@ class TestDataEngine:
         )
 
         # Act
-        self.data_engine.send(request)
+        self.data_engine.request(request)
 
         # Assert
         assert self.data_engine.request_count == 1
@@ -388,8 +395,8 @@ class TestDataEngine:
         )
 
         # Act
-        self.data_engine.send(request1)
-        self.data_engine.send(request2)
+        self.data_engine.request(request1)
+        self.data_engine.request(request2)
 
         # Assert
         assert self.data_engine.request_count == 2
@@ -538,7 +545,7 @@ class TestDataEngine:
         )
 
         # Act
-        self.data_engine.receive(response)
+        self.data_engine.response(response)
 
         # Assert
         assert self.data_engine.response_count == 1
@@ -1029,7 +1036,7 @@ class TestDataEngine:
         self.data_engine.process(snapshot)
 
         # Assert
-        cached_book = self.data_engine.cache.order_book(ETHUSDT_BINANCE.id)
+        cached_book = self.cache.order_book(ETHUSDT_BINANCE.id)
         assert self.data_engine.subscribed_order_books == [ETHUSDT_BINANCE.id]
         assert isinstance(cached_book, L2OrderBook)
         assert cached_book.instrument_id == ETHUSDT_BINANCE.id

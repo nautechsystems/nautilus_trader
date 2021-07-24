@@ -17,6 +17,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.msgbus.message_bus import Subscription
+from tests.test_kit.stubs import TestStubs
 
 
 class TestSubscription:
@@ -170,9 +171,11 @@ class TestMessageBus:
         self.clock = TestClock()
         self.logger = Logger(self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
         self.handler = []
         self.msgbus = MessageBus(
-            name="TestBus",
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )

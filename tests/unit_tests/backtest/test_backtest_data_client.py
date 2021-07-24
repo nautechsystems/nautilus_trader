@@ -36,7 +36,10 @@ class TestBacktestDataClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -52,6 +55,7 @@ class TestBacktestDataClient:
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -60,8 +64,9 @@ class TestBacktestDataClient:
 
         self.client = BacktestMarketDataClient(
             client_id=ClientId("SIM"),
-            engine=self.data_engine,
-            clock=TestClock(),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
             logger=self.logger,
         )
 

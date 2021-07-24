@@ -77,12 +77,12 @@ class TestExecutionEngine:
         )
 
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.cache_db = MockCacheDatabase(
-            trader_id=self.trader_id,
             logger=self.logger,
         )
 
@@ -100,13 +100,13 @@ class TestExecutionEngine:
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -132,7 +132,8 @@ class TestExecutionEngine:
             account_id=self.account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -156,7 +157,8 @@ class TestExecutionEngine:
             account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -179,7 +181,8 @@ class TestExecutionEngine:
             account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -312,13 +315,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -346,18 +348,17 @@ class TestExecutionEngine:
 
     def test_submit_order_for_random_venue_logs(self):
         # Arrange
-        self.exec_engine.cache.add_instrument(BTCUSDT_BINANCE)
+        self.cache.add_instrument(BTCUSDT_BINANCE)
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -388,13 +389,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -424,13 +424,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -470,13 +469,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         entry = strategy.order_factory.market(
@@ -534,13 +532,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         entry1 = strategy.order_factory.market(
@@ -629,13 +626,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         entry1 = strategy.order_factory.market(
@@ -722,13 +718,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -759,13 +754,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -785,7 +779,7 @@ class TestExecutionEngine:
 
         # Act
         self.risk_engine.execute(submit_order)
-        self.exec_engine.cache.clear_cache()
+        self.cache.clear_cache()
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
         # Assert
@@ -797,13 +791,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -834,13 +827,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -862,13 +854,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         # Push to OrderState.FILLED (completed)
@@ -914,13 +905,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         # Push to OrderState.FILLED (completed)
@@ -971,13 +961,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -1025,13 +1014,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -1077,13 +1065,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -1131,13 +1118,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -1189,13 +1175,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -1242,13 +1227,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -1311,13 +1295,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -1366,13 +1349,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -1439,13 +1421,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order1 = strategy.order_factory.stop_market(
@@ -1520,24 +1501,22 @@ class TestExecutionEngine:
 
         strategy1 = TradingStrategy(order_id_tag="001")
         strategy1.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         strategy2 = TradingStrategy(order_id_tag="002")
         strategy2.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order1 = strategy1.order_factory.stop_market(
@@ -1627,24 +1606,22 @@ class TestExecutionEngine:
 
         strategy1 = TradingStrategy(order_id_tag="001")
         strategy1.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         strategy2 = TradingStrategy(order_id_tag="002")
         strategy2.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order1 = strategy1.order_factory.stop_market(
@@ -1752,13 +1729,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -1832,13 +1808,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -1912,13 +1887,12 @@ class TestExecutionEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(

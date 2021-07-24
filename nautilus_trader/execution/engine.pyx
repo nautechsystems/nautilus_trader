@@ -84,7 +84,6 @@ cdef class ExecutionEngine(Component):
 
     def __init__(
         self,
-        TraderId trader_id not None,
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
@@ -96,8 +95,6 @@ cdef class ExecutionEngine(Component):
 
         Parameters
         ----------
-        trader_id : TraderId
-            The trader ID for the engine.
         msgbus : MessageBus
             The message bus for the engine.
         cache : Cache
@@ -118,17 +115,15 @@ cdef class ExecutionEngine(Component):
             name="ExecEngine",
         )
 
-        self.trader_id = trader_id
-
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]
         self._default_client = None  # type: Optional[ExecutionClient]
         self._pos_id_generator = PositionIdGenerator(
-            trader_id=trader_id,
+            trader_id=msgbus.trader_id,
             clock=clock,
         )
         self._msgbus = msgbus
-        self.cache = cache
+        self._cache = cache
 
         # Counters
         self.command_count = 0
@@ -187,7 +182,7 @@ cdef class ExecutionEngine(Component):
         bool
             True if checks pass, else False.
         """
-        return self.cache.check_integrity()
+        return self._cache.check_integrity()
 
     cpdef bint check_connected(self) except *:
         """
@@ -233,7 +228,7 @@ cdef class ExecutionEngine(Component):
             True if residuals exist, else False.
 
         """
-        return self.cache.check_residuals()
+        return self._cache.check_residuals()
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
@@ -378,7 +373,7 @@ cdef class ExecutionEngine(Component):
         for client in self._clients.values():
             client.reset()
 
-        self.cache.reset()
+        self._cache.reset()
         self._pos_id_generator.reset()
 
         self.command_count = 0
@@ -397,13 +392,13 @@ cdef class ExecutionEngine(Component):
         """
         cdef int64_t ts = unix_timestamp_ms()
 
-        self.cache.cache_currencies()
-        self.cache.cache_instruments()
-        self.cache.cache_accounts()
-        self.cache.cache_orders()
-        self.cache.cache_positions()
-        self.cache.build_index()
-        self.cache.check_integrity()
+        self._cache.cache_currencies()
+        self._cache.cache_instruments()
+        self._cache.cache_accounts()
+        self._cache.cache_orders()
+        self._cache.cache_positions()
+        self._cache.build_index()
+        self._cache.check_integrity()
         self._set_position_id_counts()
 
         self._log.info(f"Loaded cache in {(unix_timestamp_ms() - ts)}ms.")
@@ -445,13 +440,13 @@ cdef class ExecutionEngine(Component):
         Permanent data loss.
 
         """
-        self.cache.flush_db()
+        self._cache.flush_db()
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef void _set_position_id_counts(self) except *:
         # For the internal position ID generator
-        cdef list positions = self.cache.positions()
+        cdef list positions = self._cache.positions()
 
         # Count positions per instrument_id
         cdef dict counts = {}  # type: dict[StrategyId, int]
@@ -501,16 +496,16 @@ cdef class ExecutionEngine(Component):
 
     cdef void _handle_submit_order(self, ExecutionClient client, SubmitOrder command) except *:
         # Cache order
-        self.cache.add_order(command.order, command.position_id)
+        self._cache.add_order(command.order, command.position_id)
 
         # Send to execution client
         client.submit_order(command)
 
     cdef void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
         # Cache all orders
-        self.cache.add_order(command.bracket_order.entry, PositionId.null_c())
-        self.cache.add_order(command.bracket_order.stop_loss, PositionId.null_c())
-        self.cache.add_order(command.bracket_order.take_profit, PositionId.null_c())
+        self._cache.add_order(command.bracket_order.entry, PositionId.null_c())
+        self._cache.add_order(command.bracket_order.stop_loss, PositionId.null_c())
+        self._cache.add_order(command.bracket_order.take_profit, PositionId.null_c())
 
         # Send to execution client
         client.submit_bracket_order(command)
@@ -535,17 +530,17 @@ cdef class ExecutionEngine(Component):
             self._log.error(f"Cannot handle event: unrecognized {event}.")
 
     cdef void _handle_account_event(self, AccountState event) except *:
-        cdef Account account = self.cache.account(event.account_id)
+        cdef Account account = self._cache.account(event.account_id)
         if account is None:
             # Generate account
             account = Account(event)
-            self.cache.add_account(account)
+            self._cache.add_account(account)
             for client in self._clients.values():
                 if client.account_id == account.id and client.get_account() is None:
                     client.register_account(account)
         else:
             account.apply(event=event)
-            self.cache.update_account(account)
+            self._cache.update_account(account)
 
         self._msgbus.publish_c(
             topic=f"events.account.{event.account_id.value}",
@@ -555,7 +550,7 @@ cdef class ExecutionEngine(Component):
     cdef void _handle_order_event(self, OrderEvent event) except *:
         # Fetch Order from cache
         cdef ClientOrderId client_order_id = event.client_order_id
-        cdef Order order = self.cache.order(event.client_order_id)
+        cdef Order order = self._cache.order(event.client_order_id)
         if order is None:
             self._log.warning(
                 f"{repr(event.client_order_id)} was not found in cache "
@@ -563,7 +558,7 @@ cdef class ExecutionEngine(Component):
             )
 
             # Search cache for ClientOrderId matching the VenueOrderId
-            client_order_id = self.cache.client_order_id(event.venue_order_id)
+            client_order_id = self._cache.client_order_id(event.venue_order_id)
             if client_order_id is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
@@ -573,7 +568,7 @@ cdef class ExecutionEngine(Component):
                 return  # Cannot process event further
 
             # Search cache for Order matching the found ClientOrderId
-            order = self.cache.order(client_order_id)
+            order = self._cache.order(client_order_id)
             if order is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
@@ -602,7 +597,7 @@ cdef class ExecutionEngine(Component):
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
 
-        self.cache.update_order(order)
+        self._cache.update_order(order)
 
         if isinstance(event, OrderFilled):
             self._handle_order_fill(event)
@@ -619,14 +614,14 @@ cdef class ExecutionEngine(Component):
             return
 
         # Fetch ID from cache
-        cdef PositionId position_id = self.cache.position_id(fill.client_order_id)
+        cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
         if position_id is not None:
             # Assign ID to fill
             fill.position_id = position_id
             return
 
         # Check for open positions
-        cdef list positions_open = self.cache.positions_open(
+        cdef list positions_open = self._cache.positions_open(
             venue=None,  # Faster query filtering
             instrument_id=fill.instrument_id,
         )
@@ -647,14 +642,14 @@ cdef class ExecutionEngine(Component):
             msg=fill,
         )
 
-        cdef Position position = self.cache.position(fill.position_id)
+        cdef Position position = self._cache.position(fill.position_id)
         if position is None:  # No position open
             self._open_position(fill)
         else:
             self._update_position(position, fill)
 
     cdef void _open_position(self, OrderFilled fill) except *:
-        cdef Instrument instrument = self.cache.load_instrument(fill.instrument_id)
+        cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
         if instrument is None:
             self._log.error(
                 f"Cannot open position: "
@@ -663,7 +658,7 @@ cdef class ExecutionEngine(Component):
             return
 
         cdef Position position = Position(instrument, fill)
-        self.cache.add_position(position)
+        self._cache.add_position(position)
 
         cdef PositionOpened event = PositionOpened.create_c(
             position=position,
@@ -690,7 +685,7 @@ cdef class ExecutionEngine(Component):
             self._log.exception(ex)
             return  # Not re-raising to avoid crashing engine
 
-        self.cache.update_position(position)
+        self._cache.update_position(position)
 
         cdef PositionEvent position_event
         if position.is_closed_c():

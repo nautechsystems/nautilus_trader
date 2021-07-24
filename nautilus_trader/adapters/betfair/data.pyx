@@ -18,6 +18,8 @@ import asyncio
 from betfairlightweight import APIClient
 import orjson
 
+from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -25,17 +27,16 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
-from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing import on_market_update
-from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 
 
@@ -73,8 +74,10 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     def __init__(
         self,
+        loop not None: asyncio.AbstractEventLoop,
         client not None,
-        LiveDataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict market_filter not None,
@@ -86,17 +89,20 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
         client : APIClient
             The betfairlightweight client.
-        engine : LiveDataEngine
-            The live data engine for the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
             The clock for the client.
         logger : Logger
             The logger for the client.
 
         """
-
         self._client = client  # type: APIClient
         self._client.login()
 
@@ -107,14 +113,18 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             market_filter=market_filter
         )
         super().__init__(
+            loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
         )
         self._instrument_provider = instrument_provider
         self._stream = BetfairMarketStreamClient(
-            client=self._client, logger=logger, message_handler=self._on_market_update,
+            client=self._client,
+            logger=logger,
+            message_handler=self._on_market_update,
         )
         self.is_connected = False
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
@@ -142,9 +152,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         # Pass any preloaded instruments into the engine
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
-            self._engine.cache.add_instrument(instrument)
 
-        self._log.debug(f"DataEngine has {len(self._engine.cache.instruments(BETFAIR_VENUE))} Betfair instruments")
+        self._log.debug(f"DataEngine has {len(self._cache.instruments(BETFAIR_VENUE))} Betfair instruments")
 
         # Schedule a heartbeat in 10s to give us a little more time to load instruments
         self._log.debug("scheduling heartbeat")

@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -60,6 +61,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class ExecutionClient:
@@ -76,7 +78,8 @@ cdef class ExecutionClient:
         AccountId account_id not None,
         AccountType account_type,
         Currency base_currency,  # Can be None
-        ExecutionEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         Clock clock not None,
         Logger logger not None,
         dict config=None,
@@ -96,12 +99,14 @@ cdef class ExecutionClient:
             The account type for the client.
         base_currency : Currency, optional
             The account base currency. Use ``None`` for multi-currency accounts.
-        engine : ExecutionEngine
-            The execution engine to connect to the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : Clock
-            The clock for the component.
+            The clock for the client.
         logger : Logger
-            The logger for the component.
+            The logger for the client.
         config : dict[str, object], optional
             The configuration options.
 
@@ -122,11 +127,13 @@ cdef class ExecutionClient:
             component=config.get("name", f"ExecClient-{client_id.value}"),
             logger=logger,
         )
-        self._engine = engine
+        self._msgbus = msgbus
+        self._cache = cache
         self._config = config
         self._account = None  # Initialized on connection
 
         self.id = client_id
+        self.trader_id = msgbus.trader_id
         self.venue = Venue(client_id.value) if venue_type != VenueType.BROKERAGE_MULTI_VENUE else None
         self.venue_type = venue_type
         self.account_id = account_id
@@ -277,7 +284,7 @@ cdef class ExecutionClient:
         """
         # Generate event
         cdef OrderSubmitted submitted = OrderSubmitted(
-            trader_id=self._engine.trader_id,
+            trader_id=self._msgbus.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             account_id=self.account_id,
@@ -317,7 +324,7 @@ cdef class ExecutionClient:
         """
         # Generate event
         cdef OrderRejected rejected = OrderRejected(
-            trader_id=self._engine.trader_id,
+            trader_id=self.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             account_id=self.account_id,
@@ -358,7 +365,7 @@ cdef class ExecutionClient:
         """
         # Generate event
         cdef OrderAccepted accepted = OrderAccepted(
-            trader_id=self._engine.trader_id,
+            trader_id=self.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             account_id=self.account_id,
@@ -399,7 +406,7 @@ cdef class ExecutionClient:
         """
         # Generate event
         cdef OrderPendingUpdate pending_replace = OrderPendingUpdate(
-            trader_id=self._engine.trader_id,
+            trader_id=self.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             account_id=self.account_id,
@@ -440,7 +447,7 @@ cdef class ExecutionClient:
         """
         # Generate event
         cdef OrderPendingCancel pending_cancel = OrderPendingCancel(
-            trader_id=self._engine.trader_id,
+            trader_id=self.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             account_id=self.account_id,
@@ -483,7 +490,7 @@ cdef class ExecutionClient:
 
         """
         cdef VenueOrderId venue_order_id = None
-        cdef Order order = self._engine.cache.order(client_order_id)
+        cdef Order order = self._cache.order(client_order_id)
         if order is not None:
             venue_order_id = order.venue_order_id
         else:
@@ -491,7 +498,7 @@ cdef class ExecutionClient:
 
         # Generate event
         cdef OrderUpdateRejected update_rejected = OrderUpdateRejected(
-            trader_id=self._engine.trader_id,
+            trader_id=self.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             account_id=self.account_id,
@@ -536,7 +543,7 @@ cdef class ExecutionClient:
 
         """
         cdef VenueOrderId venue_order_id = None
-        cdef Order order = self._engine.cache.order(client_order_id)
+        cdef Order order = self._cache.order(client_order_id)
         if order is not None:
             venue_order_id = order.venue_order_id
         else:
@@ -544,7 +551,7 @@ cdef class ExecutionClient:
 
         # Generate event
         cdef OrderCancelRejected cancel_rejected = OrderCancelRejected(
-            trader_id=self._engine.trader_id,
+            trader_id=self.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             account_id=self.account_id,
@@ -599,12 +606,12 @@ cdef class ExecutionClient:
         """
         # Check venue_order_id against cache, only allow modification when `venue_order_id_modified=True`
         if not venue_order_id_modified:
-            existing = self._engine.cache.venue_order_id(client_order_id)
+            existing = self._cache.venue_order_id(client_order_id)
             Condition.equal(existing, venue_order_id, "existing", "order.venue_order_id")
 
         # Generate event
         cdef OrderUpdated updated = OrderUpdated(
-            trader_id=self._engine.trader_id,
+            trader_id=self.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             account_id=self.account_id,
@@ -648,7 +655,7 @@ cdef class ExecutionClient:
         """
         # Generate event
         cdef OrderCanceled canceled = OrderCanceled(
-            trader_id=self._engine.trader_id,
+            trader_id=self.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             account_id=self.account_id,
@@ -689,7 +696,7 @@ cdef class ExecutionClient:
         """
         # Generate event
         cdef OrderTriggered triggered = OrderTriggered(
-            trader_id=self._engine.trader_id,
+            trader_id=self.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             account_id=self.account_id,
@@ -730,7 +737,7 @@ cdef class ExecutionClient:
         """
         # Generate event
         cdef OrderExpired expired = OrderExpired(
-            trader_id=self._engine.trader_id,
+            trader_id=self.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             account_id=self.account_id,
@@ -798,7 +805,7 @@ cdef class ExecutionClient:
         """
         # Check account
         if self._account is None:
-            account = self._engine.cache.account_for_venue(instrument_id.venue)
+            account = self._cache.account_for_venue(instrument_id.venue)
             if account is None:
                 self._log.error(
                     "Cannot generate OrderFilled: "
@@ -809,7 +816,7 @@ cdef class ExecutionClient:
 
         # Generate event
         cdef OrderFilled fill = OrderFilled(
-            trader_id=self._engine.trader_id,
+            trader_id=self.trader_id,
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             account_id=self.account_id,
@@ -849,14 +856,14 @@ cdef class ExecutionClient:
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_event(self, Event event) except *:
-        self._engine.process(event)
+        self._msgbus.send(endpoint="ExecutionEngine.process", msg=event)
 
     cdef list _calculate_balances(self, OrderFilled fill):
         # Determine any position
         cdef PositionId position_id = fill.position_id
         if fill.position_id.is_null():
             # Check for open positions
-            positions_open = self._engine.cache.positions_open(
+            positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
                 instrument_id=fill.instrument_id,
             )
@@ -868,10 +875,10 @@ cdef class ExecutionClient:
         # Determine any position
         cdef Position position = None
         if position_id.not_null():
-            position = self._engine.cache.position(position_id)
+            position = self._cache.position(position_id)
         # *** position could still be None here ***
 
-        cdef Instrument instrument = self._engine.cache.instrument(fill.instrument_id)
+        cdef Instrument instrument = self._cache.instrument(fill.instrument_id)
         if instrument is None:
             self._log.error(
                 "Cannot calculate account state: "
@@ -893,7 +900,7 @@ cdef class ExecutionClient:
         cdef Money commission = fill.commission
         cdef list balances = []
         if commission.currency != self.base_currency:
-            xrate: Decimal = self._engine.cache.get_xrate(
+            xrate: Decimal = self._cache.get_xrate(
                 venue=fill.instrument_id.venue,
                 from_currency=fill.commission.currency,
                 to_currency=self.base_currency,
@@ -910,7 +917,7 @@ cdef class ExecutionClient:
             commission = Money(commission * xrate, self.base_currency)
 
         if pnl.currency != self.base_currency:
-            xrate: Decimal = self._engine.cache.get_xrate(
+            xrate: Decimal = self._cache.get_xrate(
                 venue=fill.instrument_id.venue,
                 from_currency=pnl.currency,
                 to_currency=self.base_currency,

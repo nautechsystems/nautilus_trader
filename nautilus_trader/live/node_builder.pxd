@@ -13,19 +13,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class TradingNodeBuilder:
     cdef LiveClock _clock
     cdef LiveLogger _logger
     cdef LoggerAdapter _log
+    cdef MessageBus _msgbus
+    cdef Cache _cache
     cdef LiveDataEngine _data_engine
     cdef LiveExecutionEngine _exec_engine
+    cdef object _loop
     cdef dict _data_factories
     cdef dict _exec_factories
 

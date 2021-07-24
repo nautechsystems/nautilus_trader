@@ -55,13 +55,14 @@ async def async_magic():
 class TestCCXTExecutionClient:
     def setup(self):
         # Fixture Setup
-        self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
-        self.trader_id = TestStubs.trader_id()
-        self.account_id = AccountId(BINANCE.value, "001")
-
         self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
+
+        self.clock = LiveClock()
+        self.uuid_factory = UUIDFactory()
+
+        self.trader_id = TestStubs.trader_id()
+        self.account_id = AccountId(BINANCE.value, "001")
 
         # Setup logging
         self.logger = LiveLogger(
@@ -70,6 +71,7 @@ class TestCCXTExecutionClient:
         )
 
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -85,7 +87,6 @@ class TestCCXTExecutionClient:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -118,11 +119,13 @@ class TestCCXTExecutionClient:
         self.mock_ccxt.watch_balance = watch_balance
 
         self.client = CCXTExecutionClient(
+            loop=self.loop,
             client=self.mock_ccxt,
             account_id=self.account_id,
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency account
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )

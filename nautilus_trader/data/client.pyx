@@ -22,12 +22,12 @@ as all abstract methods are implemented.
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data.bar cimport BarType
@@ -37,6 +37,7 @@ from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class DataClient:
@@ -49,7 +50,8 @@ cdef class DataClient:
     def __init__(
         self,
         ClientId client_id not None,
-        DataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         Clock clock not None,
         Logger logger not None,
         dict config=None,
@@ -61,19 +63,14 @@ cdef class DataClient:
         ----------
         client_id : ClientId
             The data client ID.
-        engine : DataEngine
-            The data engine to connect to the client.
+        msgbus : MessageBus
+            The message bus for the client.
         clock : Clock
-            The clock for the component.
+            The clock for the client.
         logger : Logger
-            The logger for the component.
+            The logger for the client.
         config : dict[str, object], optional
             The configuration options.
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
 
         """
         if config is None:
@@ -85,7 +82,8 @@ cdef class DataClient:
             component=config.get("name", f"DataClient-{client_id.value}"),
             logger=logger,
         )
-        self._engine = engine
+        self._msgbus = msgbus
+        self._cache = cache
         self._config = config
 
         self.id = client_id
@@ -139,7 +137,7 @@ cdef class DataClient:
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cdef void _handle_data(self, Data data) except *:
-        self._engine.process(data)
+        self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
     cdef void _handle_data_response(self, DataType data_type, Data data, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
@@ -151,7 +149,7 @@ cdef class DataClient:
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
-        self._engine.receive(response)
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
 
 cdef class MarketDataClient(DataClient):
@@ -164,7 +162,8 @@ cdef class MarketDataClient(DataClient):
     def __init__(
         self,
         ClientId client_id not None,
-        DataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         Clock clock not None,
         Logger logger not None,
         dict config=None,
@@ -176,19 +175,22 @@ cdef class MarketDataClient(DataClient):
         ----------
         client_id : ClientId
             The data client ID (normally the venue).
-        engine : DataEngine
-            The data engine to connect to the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : Clock
-            The clock for the component.
+            The clock for the client.
         logger : Logger
-            The logger for the component.
+            The logger for the client.
         config : dict[str, object], optional
             The configuration options.
 
         """
         super().__init__(
             client_id=client_id,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             config=config,
@@ -379,7 +381,7 @@ cdef class MarketDataClient(DataClient):
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
-        self._engine.receive(response)
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
     cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
@@ -391,7 +393,7 @@ cdef class MarketDataClient(DataClient):
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
-        self._engine.receive(response)
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
     cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
@@ -403,7 +405,7 @@ cdef class MarketDataClient(DataClient):
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
-        self._engine.receive(response)
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
     cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
@@ -415,4 +417,4 @@ cdef class MarketDataClient(DataClient):
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
-        self._engine.receive(response)
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)

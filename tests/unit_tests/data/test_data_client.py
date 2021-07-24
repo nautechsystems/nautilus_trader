@@ -55,7 +55,10 @@ class TestDataClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -71,6 +74,7 @@ class TestDataClient:
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -80,7 +84,8 @@ class TestDataClient:
 
         self.client = DataClient(
             client_id=ClientId("TEST_PROVIDER"),
-            engine=self.data_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -177,7 +182,10 @@ class TestMarketDataClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -193,6 +201,7 @@ class TestMarketDataClient:
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -202,7 +211,8 @@ class TestMarketDataClient:
 
         self.client = MarketDataClient(
             client_id=ClientId(self.venue.value),
-            engine=self.data_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )

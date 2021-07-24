@@ -60,6 +60,7 @@ class TestBacktestExecClientTests:
         self.account_id = AccountId("BINANCE", "000")
 
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -74,7 +75,6 @@ class TestBacktestExecClientTests:
         )
 
         self.exec_engine = ExecutionEngine(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -91,7 +91,7 @@ class TestBacktestExecClientTests:
             is_frozen_account=False,
             instruments=[ETHUSDT_BINANCE],
             modules=[],
-            cache=self.exec_engine.cache,
+            cache=self.cache,
             fill_model=FillModel(),
             clock=self.clock,
             logger=self.logger,
@@ -102,7 +102,8 @@ class TestBacktestExecClientTests:
             account_id=self.account_id,
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency account
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )

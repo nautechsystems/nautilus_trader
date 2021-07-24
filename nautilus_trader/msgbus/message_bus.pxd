@@ -15,6 +15,7 @@
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.model.identifiers cimport TraderId
 
 
 cdef class Subscription:
@@ -36,6 +37,8 @@ cdef class MessageBus:
     cdef Subscription[:] _patterns
     cdef int _patterns_len
 
+    cdef readonly TraderId trader_id
+    """The trader ID associated with the bus.\n\n:returns: `TraderId`"""
     cdef readonly int processed_count
     """The count of messages process by the bus.\n\n:returns: `int32`"""
 

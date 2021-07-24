@@ -15,11 +15,11 @@
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -38,11 +38,13 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.trading.account cimport Account
 
 
@@ -50,12 +52,15 @@ cdef class ExecutionClient:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
-    cdef ExecutionEngine _engine
+    cdef MessageBus _msgbus
+    cdef Cache _cache
     cdef Account _account
     cdef dict _config
 
     cdef readonly ClientId id
     """The clients ID.\n\n:returns: `ClientId`"""
+    cdef readonly TraderId trader_id
+    """The trader ID associated with the client.\n\n:returns: `TraderId`"""
     cdef readonly Venue venue
     """The clients venue ID (if not multi-venue brokerage).\n\n:returns: `Venue` or None"""
     cdef readonly VenueType venue_type

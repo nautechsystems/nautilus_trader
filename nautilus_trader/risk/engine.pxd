@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-from nautilus_trader.cache.cache cimport Cache
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.message cimport Command
@@ -39,11 +39,10 @@ from nautilus_trader.trading.portfolio cimport PortfolioFacade
 cdef class RiskEngine(Component):
     cdef PortfolioFacade _portfolio
     cdef MessageBus _msgbus
+    cdef CacheFacade _cache
     cdef dict _max_notional_per_order
     cdef Throttler _order_throttler
 
-    cdef readonly Cache cache
-    """The engines cache.\n\n:returns: `CacheFacade`"""
     cdef readonly TradingState trading_state
     """The current trading state for the engine.\n\n:returns: `TradingState`"""
     cdef readonly bint is_bypassed

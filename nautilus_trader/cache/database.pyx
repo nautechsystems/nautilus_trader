@@ -20,7 +20,6 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
@@ -34,19 +33,16 @@ cdef class CacheDatabase:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, TraderId trader_id not None, Logger logger not None):
+    def __init__(self, Logger logger not None):
         """
         Initialize a new instance of the ``CacheDatabase`` class.
 
         Parameters
         ----------
-        trader_id : TraderId
-            The trader ID to associate with the database.
         logger : Logger
             The logger for the database.
 
         """
-        self.trader_id = trader_id
         self._log = LoggerAdapter(component=type(self).__name__, logger=logger)
 
         self._log.info("Initialized.")

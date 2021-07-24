@@ -27,23 +27,19 @@ from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class ExecutionEngine(Component):
-    cdef dict _clients
-    cdef dict _routing_map
+    cdef MessageBus _msgbus
+    cdef Cache _cache
     cdef ExecutionClient _default_client
     cdef PositionIdGenerator _pos_id_generator
-    cdef MessageBus _msgbus
+    cdef dict _clients
+    cdef dict _routing_map
 
-    cdef readonly TraderId trader_id
-    """The trader ID associated with the engine.\n\n:returns: `TraderId`"""
-    cdef readonly Cache cache
-    """The engines cache.\n\n:returns: `Cache`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
