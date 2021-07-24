@@ -18,7 +18,6 @@ clean:
 	find . -name dask-worker-space -type d -exec rm -rf {} +
 	find . -name .benchmarks -type d -exec rm -rf {} +
 	find . -name '*.dll' -exec rm {} +
-	find . -name '*.html' -exec rm {} +
 	find . -name '*.prof' -exec rm {} +
 	find . -name '*.pyc' -exec rm {} +
 	find . -name '*.pyo' -exec rm {} +
