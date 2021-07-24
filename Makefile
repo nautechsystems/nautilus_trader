@@ -3,8 +3,10 @@ EXTRAS?=	"betfair ccxt distributed docs ib"
 install:
 	poetry install --extras ${EXTRAS}
 
-build:
+build: nautilus_trader
 	poetry run python build.py
+
+clean-build: clean build
 
 clean:
 	rm -rf .mypy_cache
@@ -25,8 +27,6 @@ clean:
 	find . -name '*.o' -exec rm {} +
 	rm -f coverage.xml
 	rm -f dump.rdb
-
-clean-build: clean build
 
 pre-commit:
 	pre-commit run --all-files
