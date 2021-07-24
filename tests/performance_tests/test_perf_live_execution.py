@@ -48,14 +48,18 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 class TestLiveExecutionPerformance(PerformanceHarness):
     def setup(self):
         # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
+
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TestStubs.trader_id()
         self.logger = Logger(self.clock, bypass=True)
 
+        self.trader_id = TestStubs.trader_id()
         self.account_id = AccountId(BINANCE.value, "001")
 
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -69,12 +73,10 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             logger=self.logger,
         )
 
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -82,7 +84,6 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -104,7 +105,8 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             account_id=self.account_id,
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency account
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -116,10 +118,9 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )

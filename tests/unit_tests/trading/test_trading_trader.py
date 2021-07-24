@@ -48,15 +48,16 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 class TestTrader:
     def setup(self):
         # Fixture Setup
-        clock = TestClock()
-        logger = Logger(clock)
+        self.clock = TestClock()
+        self.logger = Logger(self.clock)
 
-        trader_id = TraderId("TESTER-000")
-        account_id = TestStubs.account_id()
+        self.trader_id = TestStubs.trader_id()
+        self.account_id = TestStubs.account_id()
 
         self.msgbus = MessageBus(
-            clock=clock,
-            logger=logger,
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.cache = TestStubs.cache()
@@ -64,26 +65,26 @@ class TestTrader:
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.data_engine = DataEngine(
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
             config={"use_previous_close": False},
         )
 
         self.data_engine.process(USDJPY_SIM)
 
         self.exec_engine = ExecutionEngine(
-            trader_id=trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.exchange = SimulatedExchange(
@@ -94,37 +95,39 @@ class TestTrader:
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
             is_frozen_account=False,
-            cache=self.exec_engine.cache,
+            cache=self.cache,
             instruments=[USDJPY_SIM],
             modules=[],
             fill_model=FillModel(),
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.data_client = BacktestMarketDataClient(
             client_id=ClientId("SIM"),
-            engine=self.data_engine,
-            clock=clock,
-            logger=logger,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.exec_client = BacktestExecClient(
             exchange=self.exchange,
-            account_id=account_id,
+            account_id=self.account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            engine=self.exec_engine,
-            clock=clock,
-            logger=logger,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.risk_engine = RiskEngine(
             portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         # Wire up components
@@ -137,15 +140,16 @@ class TestTrader:
         ]
 
         self.trader = Trader(
-            trader_id=trader_id,
+            trader_id=self.trader_id,
             strategies=strategies,
             msgbus=self.msgbus,
+            cache=self.cache,
             portfolio=self.portfolio,
             data_engine=self.data_engine,
             risk_engine=self.risk_engine,
             exec_engine=self.exec_engine,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
     def test_initialize_trader(self):

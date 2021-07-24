@@ -113,10 +113,11 @@ class BetfairTestStubs(TestStubs):
         return AccountId(BETFAIR_VENUE.value, "000")
 
     @staticmethod
-    def data_engine(event_loop, clock, live_logger, portfolio):
+    def data_engine(event_loop, msgbus, clock, live_logger, portfolio):
         return LiveDataEngine(
             loop=event_loop,
             portfolio=portfolio,
+            msgbus=msgbus,
             clock=clock,
             logger=live_logger,
         )
@@ -125,7 +126,6 @@ class BetfairTestStubs(TestStubs):
     def exec_engine(event_loop, clock, live_logger):
         return MockLiveExecutionEngine(
             loop=event_loop,
-            trader_id=TestStubs.trader_id(),
             msgbus=TestStubs.msgbus(),
             cache=TestStubs.cache,
             clock=clock,
@@ -194,10 +194,11 @@ class BetfairTestStubs(TestStubs):
         return client
 
     @staticmethod
-    def betfair_data_client(betfair_client, data_engine, clock, live_logger):
+    def betfair_data_client(betfair_client, data_engine, cache, clock, live_logger):
         client = BetfairDataClient(
             client=betfair_client,
             engine=data_engine,
+            cache=cache,
             clock=clock,
             logger=live_logger,
         )

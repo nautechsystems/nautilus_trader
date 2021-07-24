@@ -30,7 +30,6 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
-from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
@@ -44,7 +43,6 @@ from nautilus_trader.common.logging cimport RES
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport BarAggregator
-from nautilus_trader.data.aggregation cimport BulkTickBarBuilder
 from nautilus_trader.data.aggregation cimport BulkTimeBarUpdater
 from nautilus_trader.data.aggregation cimport TickBarAggregator
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
@@ -76,8 +74,8 @@ from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orderbook.data cimport OrderBookDeltas
 from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.trading.portfolio cimport Portfolio
-from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class DataEngine(Component):
@@ -89,6 +87,7 @@ cdef class DataEngine(Component):
     def __init__(
         self,
         Portfolio portfolio not None,
+        MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
@@ -101,12 +100,14 @@ cdef class DataEngine(Component):
         ----------
         portfolio : int
             The portfolio to register.
+        msgbus : MessageBus
+            The message bus for the engine.
         cache : Cache
             The cache for the engine.
         clock : Clock
             The clock for the engine.
         logger : Logger
-            The logger for the component.
+            The logger for the engine.
         config : dict[str, object], optional
             The configuration options.
 
@@ -142,7 +143,8 @@ cdef class DataEngine(Component):
 
         # Public components
         self.portfolio = portfolio
-        self.cache = cache
+        self._msgbus = msgbus
+        self._cache = cache
 
         # Counters
         self.command_count = 0
@@ -151,6 +153,12 @@ cdef class DataEngine(Component):
         self.response_count = 0
 
         self._log.info(f"use_previous_close={self._use_previous_close}")
+
+        # Register endpoints
+        self._msgbus.register(endpoint="DataEngine.execute", handler=self.execute)
+        self._msgbus.register(endpoint="DataEngine.process", handler=self.process)
+        self._msgbus.register(endpoint="DataEngine.request", handler=self.request)
+        self._msgbus.register(endpoint="DataEngine.response", handler=self.response)
 
     @property
     def registered_clients(self):
@@ -354,8 +362,6 @@ cdef class DataEngine(Component):
         for client in self._clients.values():
             client.reset()
 
-        self.cache.reset()
-
         self._correlation_index.clear()
         self._instrument_handlers.clear()
         self._order_book_handlers.clear()
@@ -408,7 +414,7 @@ cdef class DataEngine(Component):
 
         self._handle_data(data)
 
-    cpdef void send(self, DataRequest request) except *:
+    cpdef void request(self, DataRequest request) except *:
         """
         Handle the given request.
 
@@ -422,7 +428,7 @@ cdef class DataEngine(Component):
 
         self._handle_request(request)
 
-    cpdef void receive(self, DataResponse response) except *:
+    cpdef void response(self, DataResponse response) except *:
         """
         Handle the given response.
 
@@ -624,8 +630,8 @@ cdef class DataEngine(Component):
                 self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <OrderBook> data.")
 
         # Create order book
-        if not self.cache.has_order_book(instrument_id):
-            instrument = self.cache.instrument(instrument_id)
+        if not self._cache.has_order_book(instrument_id):
+            instrument = self._cache.instrument(instrument_id)
             if instrument is None:
                 self._log.error(f"Cannot subscribe to {instrument_id} <OrderBook> data: "
                                 f"no instrument found in cache.")
@@ -635,7 +641,7 @@ cdef class DataEngine(Component):
                 level=metadata["level"],
             )
 
-            self.cache.add_order_book(order_book)
+            self._cache.add_order_book(order_book)
 
         # Always re-subscribe to override previous settings
         client.subscribe_order_book(
@@ -672,8 +678,8 @@ cdef class DataEngine(Component):
                               f"{instrument_id} <OrderBookDeltas> data.")
 
         # Create order book
-        if not self.cache.has_order_book(instrument_id):
-            instrument = self.cache.instrument(instrument_id)
+        if not self._cache.has_order_book(instrument_id):
+            instrument = self._cache.instrument(instrument_id)
             if instrument is None:
                 self._log.error(f"Cannot subscribe to {instrument_id} <OrderBookDeltas> data: "
                                 f"no instrument found in cache.")
@@ -683,7 +689,7 @@ cdef class DataEngine(Component):
                 level=metadata["level"],
             )
 
-            self.cache.add_order_book(order_book)
+            self._cache.add_order_book(order_book)
 
         # Always re-subscribe to override previous settings
         client.subscribe_order_book_deltas(
@@ -1119,14 +1125,14 @@ cdef class DataEngine(Component):
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}.")
 
     cdef void _handle_instrument(self, Instrument instrument) except *:
-        self.cache.add_instrument(instrument)
+        self._cache.add_instrument(instrument)
 
         cdef list instrument_handlers = self._instrument_handlers.get(instrument.id, [])
         for handler in instrument_handlers:
             handler(instrument)
 
     cdef void _handle_quote_tick(self, QuoteTick tick) except *:
-        self.cache.add_quote_tick(tick)
+        self._cache.add_quote_tick(tick)
 
         # Send to portfolio as a priority
         self.portfolio.update_tick(tick)
@@ -1137,7 +1143,7 @@ cdef class DataEngine(Component):
             handler(tick)
 
     cdef void _handle_trade_tick(self, TradeTick tick) except *:
-        self.cache.add_trade_tick(tick)
+        self._cache.add_trade_tick(tick)
 
         # Send to all registered tick handlers for that instrument_id
         cdef list tick_handlers = self._trade_tick_handlers.get(tick.instrument_id, [])
@@ -1146,7 +1152,7 @@ cdef class DataEngine(Component):
 
     cdef void _handle_order_book_deltas(self, OrderBookDeltas deltas) except *:
         cdef InstrumentId instrument_id = deltas.instrument_id
-        cdef OrderBook order_book = self.cache.order_book(instrument_id)
+        cdef OrderBook order_book = self._cache.order_book(instrument_id)
         if order_book is None:
             self._log.error(f"Cannot apply `OrderBookDeltas`: "
                             f"no book found for {deltas.instrument_id}.")
@@ -1166,7 +1172,7 @@ cdef class DataEngine(Component):
 
     cdef void _handle_order_book_snapshot(self, OrderBookSnapshot snapshot) except *:
         cdef InstrumentId instrument_id = snapshot.instrument_id
-        cdef OrderBook order_book = self.cache.order_book(instrument_id)
+        cdef OrderBook order_book = self._cache.order_book(instrument_id)
         if order_book is None:
             self._log.error(f"Cannot apply `OrderBookSnapshot`: "
                             f"no book found for {snapshot.instrument_id}.")
@@ -1185,7 +1191,7 @@ cdef class DataEngine(Component):
             orderbook_delta_handler(snapshot)
 
     cdef void _handle_bar(self, Bar bar) except *:
-        self.cache.add_bar(bar)
+        self._cache.add_bar(bar)
 
         # Send to all registered bar handlers for that bar type
         cdef list bar_handlers = self._bar_handlers.get(bar.type, [])
@@ -1252,7 +1258,7 @@ cdef class DataEngine(Component):
         callback(instruments)
 
     cdef void _handle_quote_ticks(self, list ticks, UUID correlation_id) except *:
-        self.cache.add_quote_ticks(ticks)
+        self._cache.add_quote_ticks(ticks)
 
         cdef callback = self._correlation_index.pop(correlation_id, None)
         if callback is None:
@@ -1262,7 +1268,7 @@ cdef class DataEngine(Component):
         callback(ticks)
 
     cdef void _handle_trade_ticks(self, list ticks, UUID correlation_id) except *:
-        self.cache.add_trade_ticks(ticks)
+        self._cache.add_trade_ticks(ticks)
 
         cdef callback = self._correlation_index.pop(correlation_id, None)
         if callback is None:
@@ -1272,7 +1278,7 @@ cdef class DataEngine(Component):
         callback(ticks)
 
     cdef void _handle_bars(self, list bars, Bar partial, UUID correlation_id) except *:
-        self.cache.add_bars(bars)
+        self._cache.add_bars(bars)
 
         cdef callback = self._correlation_index.pop(correlation_id, None)
         if callback is None:
@@ -1313,13 +1319,13 @@ cdef class DataEngine(Component):
             self._log.error("No handlers")
             return
 
-        cdef OrderBook order_book = self.cache.order_book(instrument_id)
+        cdef OrderBook order_book = self._cache.order_book(instrument_id)
         if order_book:
             for handler in handlers:
                 handler(order_book)
 
     cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
-        cdef Instrument instrument = self.cache.instrument(bar_type.instrument_id)
+        cdef Instrument instrument = self._cache.instrument(bar_type.instrument_id)
         if instrument is None:
             self._log.error(
                 f"Cannot start bar aggregation: "
@@ -1426,30 +1432,3 @@ cdef class DataEngine(Component):
 
         # Remove from aggregators
         del self._bar_aggregators[bar_type]
-
-    cdef void _bulk_build_tick_bars(
-        self,
-        Instrument instrument,
-        BarType bar_type,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        callback: callable,
-    ) except *:
-        # Bulk build tick bars
-        cdef int ticks_to_order = bar_type.spec.step * limit
-
-        cdef BulkTickBarBuilder bar_builder = BulkTickBarBuilder(
-            instrument,
-            bar_type,
-            self._log.get_logger(),
-            callback,
-        )
-
-        self._handle_request_quote_ticks(
-            bar_type.instrument_id,
-            from_datetime,
-            to_datetime,
-            ticks_to_order,
-            bar_builder.receive,
-        )

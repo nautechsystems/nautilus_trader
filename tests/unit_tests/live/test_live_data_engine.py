@@ -48,11 +48,17 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 class TestLiveDataEngine:
     def setup(self):
         # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
+
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -66,12 +72,10 @@ class TestLiveDataEngine:
             logger=self.logger,
         )
 
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -91,9 +95,15 @@ class TestLiveDataEngine:
 
     def test_message_qsize_at_max_blocks_on_put_data_command(self):
         # Arrange
+        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
+        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
+        self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
+        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -118,9 +128,15 @@ class TestLiveDataEngine:
 
     def test_message_qsize_at_max_blocks_on_send_request(self):
         # Arrange
+        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
+        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
+        self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
+        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -145,8 +161,8 @@ class TestLiveDataEngine:
         )
 
         # Act
-        self.engine.send(request)
-        self.engine.send(request)
+        self.engine.request(request)
+        self.engine.request(request)
 
         # Assert
         assert self.engine.message_qsize() == 1
@@ -154,9 +170,15 @@ class TestLiveDataEngine:
 
     def test_message_qsize_at_max_blocks_on_receive_response(self):
         # Arrange
+        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
+        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
+        self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
+        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -173,8 +195,8 @@ class TestLiveDataEngine:
         )
 
         # Act
-        self.engine.receive(response)
-        self.engine.receive(response)  # Add over max size
+        self.engine.response(response)
+        self.engine.response(response)  # Add over max size
 
         # Assert
         assert self.engine.message_qsize() == 1
@@ -182,9 +204,15 @@ class TestLiveDataEngine:
 
     def test_data_qsize_at_max_blocks_on_put_data(self):
         # Arrange
+        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
+        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
+        self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
+        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+
         self.engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -289,7 +317,7 @@ class TestLiveDataEngine:
         )
 
         # Act
-        self.engine.send(request)
+        self.engine.request(request)
         await asyncio.sleep(0.1)
 
         # Assert
@@ -314,7 +342,7 @@ class TestLiveDataEngine:
         )
 
         # Act
-        self.engine.receive(response)
+        self.engine.response(response)
         await asyncio.sleep(0.1)
 
         # Assert

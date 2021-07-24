@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+import asyncio
 import os
 
 import pytest
@@ -117,6 +119,7 @@ def logger(live_logger):
 @pytest.fixture()
 def msgbus(clock, live_logger):
     return MessageBus(
+        trader_id=BetfairTestStubs.trader_id(),
         clock=clock,
         logger=live_logger,
     )
@@ -223,13 +226,22 @@ def betfair_market_socket():
 
 @pytest.fixture()
 async def execution_client(
-    betfair_client, account_id, exec_engine, clock, live_logger, betfair_account_state
+    betfair_client,
+    account_id,
+    exec_engine,
+    msgbus,
+    cache,
+    clock,
+    live_logger,
+    betfair_account_state,
 ) -> BetfairExecutionClient:
     client = BetfairExecutionClient(
+        loop=asyncio.get_event_loop(),
         client=betfair_client,
         account_id=account_id,
         base_currency=GBP,
-        engine=exec_engine,
+        msgbus=msgbus,
+        cache=cache,
         clock=clock,
         logger=live_logger,
         market_filter={},
@@ -237,17 +249,19 @@ async def execution_client(
     )
     client.instrument_provider().load_all()
     exec_engine.register_client(client)
-    exec_engine.cache.add_account(account=Account(betfair_account_state))
+    cache.add_account(account=Account(betfair_account_state))
     for instrument in client.instrument_provider().list_instruments():
-        exec_engine.cache.add_instrument(instrument)
+        cache.add_instrument(instrument)
     return client
 
 
 @pytest.fixture()
-def betfair_data_client(betfair_client, data_engine, clock, live_logger):
+def betfair_data_client(betfair_client, data_engine, msgbus, cache, clock, live_logger):
     client = BetfairDataClient(
+        loop=asyncio.get_event_loop(),
         client=betfair_client,
-        engine=data_engine,
+        msgbus=msgbus,
+        cache=cache,
         clock=clock,
         logger=live_logger,
         market_filter={},

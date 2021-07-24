@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.timer cimport TimeEvent
@@ -40,10 +38,14 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.data cimport OrderBookDeltas
 from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.trading.portfolio cimport Portfolio
 
 
 cdef class DataEngine(Component):
+    cdef MessageBus _msgbus
+    cdef Cache _cache
+
     cdef bint _use_previous_close
     cdef dict _clients
     cdef dict _correlation_index
@@ -61,8 +63,6 @@ cdef class DataEngine(Component):
 
     cdef readonly Portfolio portfolio
     """The portfolio wired to the engine.\n\n:returns: `Portfolio`"""
-    cdef readonly Cache cache
-    """The engines cache.\n\n:returns: `Cache`"""
     cdef readonly int command_count
     """The total count of data commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int data_count
@@ -89,8 +89,8 @@ cdef class DataEngine(Component):
 
     cpdef void execute(self, DataCommand command) except *
     cpdef void process(self, Data data) except *
-    cpdef void send(self, DataRequest request) except *
-    cpdef void receive(self, DataResponse response) except *
+    cpdef void request(self, DataRequest request) except *
+    cpdef void response(self, DataResponse response) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
@@ -142,12 +142,3 @@ cdef class DataEngine(Component):
     cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *
     cdef void _hydrate_aggregator(self, MarketDataClient client, TimeBarAggregator aggregator, BarType bar_type) except *
     cdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *
-    cdef void _bulk_build_tick_bars(
-        self,
-        Instrument instrument,
-        BarType bar_type,
-        datetime from_datetime,
-        datetime to_datetime,
-        int limit,
-        callback: callable,
-    ) except *

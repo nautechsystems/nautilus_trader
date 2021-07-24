@@ -51,6 +51,7 @@ cdef class Trader(Component):
         TraderId trader_id not None,
         list strategies not None,
         MessageBus msgbus not None,
+        Cache cache not None,
         Portfolio portfolio not None,
         DataEngine data_engine not None,
         RiskEngine risk_engine not None,
@@ -70,6 +71,8 @@ cdef class Trader(Component):
             The initial strategies for the trader.
         msgbus : MessageBus
             The message bus for the trader.
+        cache : Cache
+            The cache for the trader.
         portfolio : Portfolio
             The portfolio for the trader.
         data_engine : DataEngine
@@ -88,8 +91,6 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
-            If trader_id is not equal to the exec_engine.trader_id.
-        ValueError
             If portfolio is not equal to the exec_engine._portfolio.
         ValueError
             If strategies is None.
@@ -99,10 +100,10 @@ cdef class Trader(Component):
             If strategies list contains a type other than TradingStrategy.
 
         """
-        Condition.equal(trader_id, exec_engine.trader_id, "trader_id", "exec_engine.trader_id")
         super().__init__(clock, logger)
 
         self._msgbus = msgbus
+        self._cache = cache
         self._portfolio = portfolio
         self._data_engine = data_engine
         self._risk_engine = risk_engine
@@ -238,10 +239,9 @@ cdef class Trader(Component):
             # Wire strategy into trader
             strategy.register(
                 trader_id=self.id,
-                msgbus=self._msgbus,
                 portfolio=self._portfolio,
-                data_engine=self._data_engine,
-                risk_engine=self._risk_engine,
+                msgbus=self._msgbus,
+                cache=self._cache,
                 clock=self._clock.__class__(),  # Clock per strategy
                 logger=self._log.get_logger(),
             )
@@ -290,14 +290,14 @@ cdef class Trader(Component):
         Save all strategy states to the execution cache.
         """
         for strategy in self._strategies:
-            self._exec_engine.cache.update_strategy(strategy)
+            self._cache.update_strategy(strategy)
 
     cpdef void load(self) except *:
         """
         Load all strategy states from the execution cache.
         """
         for strategy in self._strategies:
-            self._exec_engine.cache.load_strategy(strategy)
+            self._cache.load_strategy(strategy)
 
     cpdef object generate_orders_report(self):
         """
@@ -308,7 +308,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_orders_report(self._exec_engine.cache.orders())
+        return self._report_provider.generate_orders_report(self._cache.orders())
 
     cpdef object generate_order_fills_report(self):
         """
@@ -319,7 +319,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_order_fills_report(self._exec_engine.cache.orders())
+        return self._report_provider.generate_order_fills_report(self._cache.orders())
 
     cpdef object generate_positions_report(self):
         """
@@ -330,7 +330,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_positions_report(self._exec_engine.cache.positions())
+        return self._report_provider.generate_positions_report(self._cache.positions())
 
     cpdef object generate_account_report(self, Venue venue):
         """
@@ -341,7 +341,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        cdef Account account = self._exec_engine.cache.account_for_venue(venue)
+        cdef Account account = self._cache.account_for_venue(venue)
         if account is None:
             return pd.DataFrame()
         return self._report_provider.generate_account_report(account)

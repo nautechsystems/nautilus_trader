@@ -17,6 +17,7 @@ from typing import Any, Callable
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
@@ -29,6 +30,7 @@ from nautilus_trader.trading.portfolio cimport Portfolio
 
 cdef class Trader(Component):
     cdef MessageBus _msgbus
+    cdef Cache _cache
     cdef Portfolio _portfolio
     cdef DataEngine _data_engine
     cdef RiskEngine _risk_engine

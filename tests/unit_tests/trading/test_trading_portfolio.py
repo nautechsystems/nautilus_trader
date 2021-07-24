@@ -35,7 +35,6 @@ from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
@@ -178,19 +177,21 @@ class TestPortfolioFacade:
 class TestPortfolio:
     def setup(self):
         # Fixture Setup
-        clock = TestClock()
-        logger = Logger(clock)
-        trader_id = TraderId("TESTER-000")
+        self.clock = TestClock()
+        self.logger = Logger(self.clock)
+
+        self.trader_id = TestStubs.trader_id()
 
         self.order_factory = OrderFactory(
-            trader_id=trader_id,
+            trader_id=self.trader_id,
             strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
         self.msgbus = MessageBus(
-            clock=clock,
-            logger=logger,
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.cache = TestStubs.cache()
@@ -198,24 +199,23 @@ class TestPortfolio:
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
-            trader_id=trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.risk_engine = RiskEngine(
             portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         # Prepare components
@@ -374,14 +374,14 @@ class TestPortfolio:
             Price.from_str("25000.00"),
         )
 
-        self.exec_engine.cache.add_order(order1, PositionId.null())
-        self.exec_engine.cache.add_order(order2, PositionId.null())
+        self.cache.add_order(order1, PositionId.null())
+        self.cache.add_order(order2, PositionId.null())
 
         # Push states to ACCEPTED
         order1.apply(TestStubs.event_order_submitted(order1))
-        self.exec_engine.cache.update_order(order1)
+        self.cache.update_order(order1)
         order1.apply(TestStubs.event_order_accepted(order1))
-        self.exec_engine.cache.update_order(order1)
+        self.cache.update_order(order1)
 
         filled1 = TestStubs.event_order_filled(
             order1,
@@ -441,12 +441,12 @@ class TestPortfolio:
             Price.from_str("0.5"),
         )
 
-        self.exec_engine.cache.add_order(order1, PositionId.null())
+        self.cache.add_order(order1, PositionId.null())
 
         # Push states to ACCEPTED
         order1.apply(TestStubs.event_order_submitted(order1))
         order1.apply(TestStubs.event_order_accepted(order1, venue_order_id=VenueOrderId("1")))
-        self.exec_engine.cache.update_order(order1)
+        self.cache.update_order(order1)
 
         # Act
         self.portfolio.initialize_orders()
@@ -496,14 +496,14 @@ class TestPortfolio:
             Quantity.from_str("10.50000000"),
         )
 
-        self.exec_engine.cache.add_order(order1, PositionId.null())
-        self.exec_engine.cache.add_order(order2, PositionId.null())
+        self.cache.add_order(order1, PositionId.null())
+        self.cache.add_order(order2, PositionId.null())
 
         # Push states to ACCEPTED
         order1.apply(TestStubs.event_order_submitted(order1))
-        self.exec_engine.cache.update_order(order1)
+        self.cache.update_order(order1)
         order1.apply(TestStubs.event_order_accepted(order1))
-        self.exec_engine.cache.update_order(order1)
+        self.cache.update_order(order1)
 
         fill1 = TestStubs.event_order_filled(
             order1,
@@ -823,7 +823,7 @@ class TestPortfolio:
             Quantity.from_int(100),
         )
 
-        self.exec_engine.cache.add_order(order, PositionId.null())
+        self.cache.add_order(order, PositionId.null())
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
@@ -979,8 +979,8 @@ class TestPortfolio:
             Quantity.from_int(100000),
         )
 
-        self.exec_engine.cache.add_order(order1, PositionId.null())
-        self.exec_engine.cache.add_order(order2, PositionId.null())
+        self.cache.add_order(order1, PositionId.null())
+        self.cache.add_order(order2, PositionId.null())
 
         fill1 = TestStubs.event_order_filled(
             order1,
@@ -998,8 +998,8 @@ class TestPortfolio:
             last_px=Price.from_str("1.00000"),
         )
 
-        self.exec_engine.cache.update_order(order1)
-        self.exec_engine.cache.update_order(order2)
+        self.cache.update_order(order1)
+        self.cache.update_order(order2)
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
@@ -1078,7 +1078,7 @@ class TestPortfolio:
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.exec_engine.cache.add_position(position)
+        self.cache.add_position(position)
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         order2 = self.order_factory.market(
@@ -1152,7 +1152,7 @@ class TestPortfolio:
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.exec_engine.cache.add_position(position)
+        self.cache.add_position(position)
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         order2 = self.order_factory.market(
@@ -1170,7 +1170,7 @@ class TestPortfolio:
         )
 
         position.apply(order2_filled)
-        self.exec_engine.cache.update_position(position)
+        self.cache.update_position(position)
 
         # Act
         self.portfolio.update_position(TestStubs.event_position_closed(position))

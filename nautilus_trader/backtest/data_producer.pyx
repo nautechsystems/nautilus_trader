@@ -102,7 +102,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         bars_ask : dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
             The ask bar data for backtesting.
         logger : Logger
-            The logger for the component.
+            The logger for the producer.
 
         """
         if instruments is None:
@@ -317,7 +317,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
     cpdef LoggerAdapter get_logger(self):
         """
-        Return the logger for the component.
+        Return the producers logger.
 
         Returns
         -------

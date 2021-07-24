@@ -23,7 +23,6 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -43,6 +42,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -53,15 +53,12 @@ from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.message_bus cimport MessageBus
-from nautilus_trader.risk.engine cimport RiskEngine
-from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class TradingStrategy(Component):
     cdef MessageBus _msgbus
-    cdef DataEngine _data_engine
-    cdef RiskEngine _risk_engine
+    cdef CacheFacade _cache
     cdef list _indicators
     cdef dict _indicators_for_quotes
     cdef dict _indicators_for_trades
@@ -84,7 +81,7 @@ cdef class TradingStrategy(Component):
     cdef readonly OrderFactory order_factory
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
 
-    cdef void _check_trader_registered(self) except *
+    cdef void _check_registered(self) except *
 
     cpdef bint indicators_initialized(self) except *
 
@@ -114,10 +111,9 @@ cdef class TradingStrategy(Component):
     cpdef void register(
         self,
         TraderId trader_id,
+        PortfolioFacade portfolio,
         MessageBus msgbus,
-        Portfolio portfolio,
-        DataEngine data_engine,
-        RiskEngine risk_engine,
+        CacheFacade cache,
         Clock clock,
         Logger logger,
     ) except *
@@ -151,7 +147,7 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
-    cpdef void subscribe_venue_status_updates(self, str venue) except *
+    cpdef void subscribe_venue_status_updates(self, Venue venue) except *
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_data(self, ClientId client_id, DataType data_type) except *

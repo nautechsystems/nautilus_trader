@@ -556,6 +556,7 @@ class TestStubs:
     @staticmethod
     def msgbus():
         return MessageBus(
+            trader_id=TestStubs.trader_id(),
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),
         )
@@ -581,12 +582,11 @@ class TestStubs:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=TraderId("TESTER-000"),
-            clock=TestStubs.clock(),
-            logger=TestStubs.logger(),
-            msgbus=TestStubs.msgbus(),
             portfolio=TestStubs.portfolio(),
-            data_engine=TestStubs.mock_live_data_engine(),
-            risk_engine=TestStubs.mock_live_risk_engine(),
+            msgbus=TestStubs.msgbus(),
+            cache=TestStubs.cache(),
+            logger=TestStubs.logger(),
+            clock=TestStubs.clock(),
         )
         return strategy
 
@@ -595,6 +595,7 @@ class TestStubs:
         return MockLiveDataEngine(
             loop=asyncio.get_event_loop(),
             portfolio=TestStubs.portfolio(),
+            msgbus=TestStubs.msgbus(),
             cache=TestStubs.cache(),
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),
@@ -604,7 +605,6 @@ class TestStubs:
     def mock_live_exec_engine():
         return MockLiveExecutionEngine(
             loop=asyncio.get_event_loop(),
-            trader_id=TestStubs.trader_id(),
             msgbus=TestStubs.msgbus(),
             cache=TestStubs.cache(),
             clock=TestStubs.clock(),

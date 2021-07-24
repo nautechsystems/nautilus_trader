@@ -21,6 +21,7 @@ import numpy as np
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.identifiers cimport TraderId
 
 
 cdef str WILDCARD = "*"
@@ -112,6 +113,7 @@ cdef class MessageBus:
 
     def __init__(
         self,
+        TraderId trader_id not None,
         Clock clock not None,
         Logger logger not None,
         str name=None,
@@ -137,6 +139,8 @@ cdef class MessageBus:
         if name is None:
             name = "MessageBus"
         Condition.valid_string(name, "name")
+
+        self.trader_id = trader_id
 
         self._clock = clock
         self._log = LoggerAdapter(component=name, logger=logger)
@@ -279,7 +283,7 @@ cdef class MessageBus:
 
         handler = self._endpoints.get(endpoint)
         if handler is None:
-            self._log.error(f"Cannot send message: no handler registered at '{endpoint}'.")
+            self._log.error(f"Cannot send message: no endpoint registered at '{endpoint}'.")
             return
 
         handler(msg)

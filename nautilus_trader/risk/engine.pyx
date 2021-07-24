@@ -17,7 +17,7 @@ from decimal import Decimal
 
 from cpython.datetime cimport timedelta
 
-from nautilus_trader.cache.cache cimport Cache
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport CMD
@@ -78,7 +78,7 @@ cdef class RiskEngine(Component):
         self,
         PortfolioFacade portfolio not None,
         MessageBus msgbus not None,
-        Cache cache not None,
+        CacheFacade cache not None,
         Clock clock not None,
         Logger logger not None,
         dict config=None,
@@ -92,8 +92,8 @@ cdef class RiskEngine(Component):
             The portfolio for the engine.
         msgbus : MessageBus
             The message bus for the engine.
-        cache : Cache
-            The cache for the engine.
+        cache : CacheFacade
+            The read-only cache for the engine.
         clock : Clock
             The clock for the engine.
         logger : Logger
@@ -112,8 +112,8 @@ cdef class RiskEngine(Component):
 
         self._portfolio = portfolio
         self._msgbus = msgbus
+        self._cache = cache
 
-        self.cache = cache
         self.trading_state = TradingState.ACTIVE  # Start active by default
         self.is_bypassed = config.get("bypass", False)
         self._log_state()
@@ -151,6 +151,9 @@ cdef class RiskEngine(Component):
 
         # Configure
         self._initialize_risk_checks(config)
+
+        # Register endpoints
+        self._msgbus.register(endpoint="RiskEngine.execute", handler=self.execute)
 
         # Required subscriptions
         self._msgbus.subscribe(topic="events.order*", handler=self._handle_event)
@@ -348,7 +351,7 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         # Check position exists
-        if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
+        if command.position_id.not_null() and not self._cache.position_exists(command.position_id):
             self._deny_command(
                 command=command,
                 reason=f"{repr(command.position_id)} does not exist",
@@ -361,7 +364,7 @@ cdef class RiskEngine(Component):
             return
 
         # Get instrument for order
-        cdef Instrument instrument = self.cache.instrument(command.order.instrument_id)
+        cdef Instrument instrument = self._cache.instrument(command.order.instrument_id)
         if instrument is None:
             self._deny_command(
                 command=command,
@@ -405,7 +408,7 @@ cdef class RiskEngine(Component):
             return
 
         # Get instrument for orders
-        cdef Instrument instrument = self.cache.instrument(command.instrument_id)
+        cdef Instrument instrument = self._cache.instrument(command.instrument_id)
         if instrument is None:
             self._deny_command(
                 command=command,
@@ -429,7 +432,7 @@ cdef class RiskEngine(Component):
         ########################################################################
         # Validate command
         ########################################################################
-        if self.cache.is_order_completed(command.client_order_id):
+        if self._cache.is_order_completed(command.client_order_id):
             self._deny_command(
                 command=command,
                 reason=f"{repr(command.client_order_id)} already completed",
@@ -437,7 +440,7 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         # Get instrument for orders
-        cdef Instrument instrument = self.cache.instrument(command.instrument_id)
+        cdef Instrument instrument = self._cache.instrument(command.instrument_id)
         if instrument is None:
             self._deny_command(
                 command=command,
@@ -466,7 +469,7 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         # Get order relating to update
-        cdef Order order = self.cache.order(command.client_order_id)
+        cdef Order order = self._cache.order(command.client_order_id)
         if order is None:
             self._deny_command(
                 command=command,
@@ -503,7 +506,7 @@ cdef class RiskEngine(Component):
         ########################################################################
         # Validate command
         ########################################################################
-        if self.cache.is_order_completed(command.client_order_id):
+        if self._cache.is_order_completed(command.client_order_id):
             self._deny_command(
                 command=command,
                 reason=f"{repr(command.client_order_id)} already completed",
@@ -516,7 +519,7 @@ cdef class RiskEngine(Component):
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
 
     cdef bint _check_order_id(self, Order order) except *:
-        if order is None or not self.cache.order_exists(order.client_order_id):
+        if order is None or not self._cache.order_exists(order.client_order_id):
             return True  # Check passed
         else:
             return False  # Check failed (duplicate ID)
@@ -579,7 +582,7 @@ cdef class RiskEngine(Component):
 
         if order.type == OrderType.MARKET:
             # Determine entry price
-            last = self.cache.quote_tick(instrument.id)
+            last = self._cache.quote_tick(instrument.id)
             if last is None:
                 self._deny_order(
                     order=order,
@@ -659,8 +662,8 @@ cdef class RiskEngine(Component):
             # Already denied or duplicated (INITIALIZED -> DENIED only valid state transition)
             return
 
-        if not self.cache.order_exists(order.client_order_id):
-            self.cache.add_order(order, PositionId.null_c())
+        if not self._cache.order_exists(order.client_order_id):
+            self._cache.add_order(order, PositionId.null_c())
 
         # Generate event
         cdef OrderDenied denied = OrderDenied(

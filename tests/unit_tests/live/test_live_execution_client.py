@@ -60,11 +60,13 @@ class TestLiveExecutionClientFactory:
         self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
 
-        self.trader_id = TestStubs.trader_id()
         self.clock = LiveClock()
         self.logger = LiveLogger(self.loop, self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -78,12 +80,8 @@ class TestLiveExecutionClientFactory:
             logger=self.logger,
         )
 
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -98,6 +96,7 @@ class TestLiveExecutionClientFactory:
                 name="IB",
                 config={},
                 engine=self.exec_engine,
+                cache=self.cache,
                 clock=self.clock,
                 logger=self.logger,
             )
@@ -109,10 +108,11 @@ class TestLiveExecutionClient:
         self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
 
-        self.trader_id = TestStubs.trader_id()
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.logger = LiveLogger(self.loop, self.clock)
+
+        self.trader_id = TestStubs.trader_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
@@ -121,6 +121,7 @@ class TestLiveExecutionClient:
         )
 
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -137,6 +138,7 @@ class TestLiveExecutionClient:
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -144,7 +146,6 @@ class TestLiveExecutionClient:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -161,13 +162,15 @@ class TestLiveExecutionClient:
         )
 
         self.client = MockLiveExecutionClient(
+            loop=self.loop,
             client_id=ClientId(SIM.value),
             venue_type=VenueType.ECN,
             account_id=TestStubs.account_id(),
             account_type=AccountType.CASH,
             base_currency=USD,
-            engine=self.exec_engine,
             instrument_provider=InstrumentProvider(),
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -176,7 +179,7 @@ class TestLiveExecutionClient:
         self.exec_engine.register_client(self.client)
 
         # Prepare components
-        self.exec_engine.cache.add_instrument(AUDUSD_SIM)
+        self.cache.add_instrument(AUDUSD_SIM)
         self.exec_engine.process(TestStubs.event_account_state())
 
     def teardown(self):
@@ -207,13 +210,12 @@ class TestLiveExecutionClient:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.stop_market(
@@ -261,13 +263,12 @@ class TestLiveExecutionClient:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.stop_market(
@@ -315,13 +316,12 @@ class TestLiveExecutionClient:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.stop_market(
@@ -369,13 +369,12 @@ class TestLiveExecutionClient:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.stop_market(
@@ -425,13 +424,12 @@ class TestLiveExecutionClient:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -483,13 +481,12 @@ class TestLiveExecutionClient:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(

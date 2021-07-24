@@ -182,11 +182,12 @@ class TradingNode:
             )
 
         self._msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self._clock,
             logger=self._logger,
         )
 
-        cache = Cache(
+        self._cache = Cache(
             database=cache_db,
             logger=self._logger,
             config=config_cache,
@@ -194,7 +195,7 @@ class TradingNode:
 
         self.portfolio = Portfolio(
             msgbus=self._msgbus,
-            cache=cache,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
         )
@@ -202,7 +203,8 @@ class TradingNode:
         self._data_engine = LiveDataEngine(
             loop=self._loop,
             portfolio=self.portfolio,
-            cache=cache,
+            msgbus=self._msgbus,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
             config=config_data,
@@ -210,9 +212,8 @@ class TradingNode:
 
         self._exec_engine = LiveExecutionEngine(
             loop=self._loop,
-            trader_id=self.trader_id,
             msgbus=self._msgbus,
-            cache=cache,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
             config=config_exec,
@@ -223,7 +224,7 @@ class TradingNode:
             loop=self._loop,
             portfolio=self.portfolio,
             msgbus=self._msgbus,
-            cache=cache,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
             config=config_risk,
@@ -233,6 +234,7 @@ class TradingNode:
             trader_id=self.trader_id,
             strategies=strategies,
             msgbus=self._msgbus,
+            cache=self._cache,
             portfolio=self.portfolio,
             data_engine=self._data_engine,
             risk_engine=self._risk_engine,
@@ -245,8 +247,11 @@ class TradingNode:
             self.trader.load()
 
         self._builder = TradingNodeBuilder(
+            loop=self._loop,
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
+            msgbus=self._msgbus,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
             log=self._log,
@@ -323,7 +328,7 @@ class TradingNode:
         """
         self._logger.register_sink(handler=handler)
 
-    def add_data_client_factory(self, name, factory):
+    def add_data_client_factory(self, name: str, factory):
         """
         Add the given data client factory to the node.
 
@@ -344,7 +349,7 @@ class TradingNode:
         """
         self._builder.add_data_client_factory(name, factory)
 
-    def add_exec_client_factory(self, name, factory):
+    def add_exec_client_factory(self, name: str, factory):
         """
         Add the given execution client factory to the node.
 
@@ -568,7 +573,7 @@ class TradingNode:
             self._log.info("Portfolio initialized.", color=LogColor.GREEN)
 
             # Update portfolio
-            for account in self._exec_engine.cache.accounts():
+            for account in self._cache.accounts():
                 self.portfolio.register_account(account)
 
             # Start trader and strategies

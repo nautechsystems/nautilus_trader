@@ -30,6 +30,7 @@ import cython
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
@@ -44,7 +45,6 @@ from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
@@ -73,6 +73,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -83,7 +84,6 @@ from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.message_bus cimport MessageBus
-from nautilus_trader.risk.engine cimport RiskEngine
 
 
 # Events for WRN log level
@@ -128,33 +128,30 @@ cdef class TradingStrategy(Component):
             log_initialized=False,
         )
 
-        self._msgbus = None   # Initialized when registered
-        self._data_engine = None  # Initialized when registered with the data engine
-        self._risk_engine = None  # Initialized when registered with the execution engine
-
         # Identifiers
-        self.trader_id = None  # Initialized when registered with a trader
+        self.trader_id = None  # Initialized when registered
         self.id = strategy_id
 
         # Indicators
-        self._indicators = []  # type: list[Indicator]
+        self._indicators = []             # type: list[Indicator]
         self._indicators_for_quotes = {}  # type: dict[InstrumentId, list[Indicator]]
         self._indicators_for_trades = {}  # type: dict[InstrumentId, list[Indicator]]
-        self._indicators_for_bars = {}  # type: dict[BarType, list[Indicator]]
+        self._indicators_for_bars = {}    # type: dict[BarType, list[Indicator]]
 
         # Public components
         self.clock = self._clock
         self.uuid_factory = self._uuid_factory
         self.log = self._log
 
-        self.cache = None  # Initialized when registered with the risk engine
-        self.portfolio = None  # Initialized when registered with the risk engine
-        self.order_factory = None  # Initialized when registered with a trader
+        self._msgbus = None        # Initialized when registered
+        self.cache = None          # Initialized when registered
+        self.portfolio = None      # Initialized when registered
+        self.order_factory = None  # Initialized when registered
 
     def __eq__(self, TradingStrategy other) -> bool:
         return self.id.value == other.id.value
 
-    cdef void _check_trader_registered(self) except *:
+    cdef void _check_registered(self) except *:
         if self.trader_id is None:
             # This guards the case where some components are called which
             # have not yet been assigned, resulting in a SIGSEGV at runtime.
@@ -489,10 +486,9 @@ cdef class TradingStrategy(Component):
     cpdef void register(
         self,
         TraderId trader_id,
+        PortfolioFacade portfolio,
         MessageBus msgbus,
-        Portfolio portfolio,
-        DataEngine data_engine,
-        RiskEngine risk_engine,
+        CacheFacade cache,
         Clock clock,
         Logger logger,
     ) except *:
@@ -503,16 +499,14 @@ cdef class TradingStrategy(Component):
         ----------
         trader_id : TraderId
             The trader ID for the strategy.
-        clock : Clock
-            The clock for the strategy.
+        portfolio : PortfolioFacade
+            The read-only portfolio for the strategy.
         msgbus : MessageBus
             The message bus for the strategy.
-        portfolio : Portfolio
-            The portfolio for the strategy.
-        data_engine : DataEngine
-            The data engine for the strategy.
-        risk_engine : RiskEngine
-            The risk engine for the strategy.
+        cache : CacheFacade
+            The read-only cache for the strategy.
+        clock : Clock
+            The clock for the strategy.
         logger : Logger
             The logger for the strategy.
 
@@ -546,9 +540,7 @@ cdef class TradingStrategy(Component):
         self._msgbus.subscribe(topic=f"events.order.{self.id.value}*", handler=self.handle_event)
         self._msgbus.subscribe(topic=f"events.position.{self.id.value}*", handler=self.handle_event)
 
-        self._data_engine = data_engine
-        self._risk_engine = risk_engine
-        self.cache = data_engine.cache
+        self.cache = cache
         self.portfolio = portfolio  # Assigned as PortfolioFacade
 
         cdef set client_order_ids = self.cache.client_order_ids(
@@ -648,11 +640,11 @@ cdef class TradingStrategy(Component):
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
     cpdef void _start(self) except *:
-        self._check_trader_registered()
+        self._check_registered()
         self.on_start()
 
     cpdef void _stop(self) except *:
-        self._check_trader_registered()
+        self._check_registered()
 
         # Clean up clock
         cdef list timer_names = self.clock.timer_names()
@@ -665,11 +657,11 @@ cdef class TradingStrategy(Component):
         self.on_stop()
 
     cpdef void _resume(self) except *:
-        self._check_trader_registered()
+        self._check_registered()
         self.on_resume()
 
     cpdef void _reset(self) except *:
-        self._check_trader_registered()
+        self._check_registered()
 
         if self.order_factory:
             self.order_factory.reset()
@@ -682,7 +674,7 @@ cdef class TradingStrategy(Component):
         self.on_reset()
 
     cpdef void _dispose(self) except *:
-        self._check_trader_registered()
+        self._check_registered()
         self.on_dispose()
 
 # -- STRATEGY COMMANDS -----------------------------------------------------------------------------
@@ -703,7 +695,7 @@ cdef class TradingStrategy(Component):
         Exceptions raised will be caught, logged, and reraised.
 
         """
-        self._check_trader_registered()
+        self._check_registered()
 
         try:
             self.log.debug("Saving state...")
@@ -740,7 +732,7 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(state, "state")
 
-        self._check_trader_registered()
+        self._check_registered()
 
         if not state:
             self.log.info("No user state to load.", color=LogColor.BLUE)
@@ -769,7 +761,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(client_id, "client_id")
-        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Subscribe command = Subscribe(
             client_id=client_id,
@@ -792,7 +783,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
@@ -844,7 +834,6 @@ cdef class TradingStrategy(Component):
             If delay is not None and interval is None.
 
         """
-        Condition.not_none(self._data_engine, "self._data_engine")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative(depth, "depth")
         Condition.not_negative(interval, "interval")
@@ -891,7 +880,6 @@ cdef class TradingStrategy(Component):
             If delay is not None and interval is None.
 
         """
-        Condition.not_none(self._data_engine, "self._data_engine")
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef Subscribe command = Subscribe(
@@ -919,7 +907,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
@@ -942,7 +929,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "data_engine")
 
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
@@ -965,7 +951,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Subscribe command = Subscribe(
             client_id=ClientId(bar_type.instrument_id.venue.value),
@@ -977,22 +962,21 @@ cdef class TradingStrategy(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_venue_status_updates(self, str venue_name) except *:
+    cpdef void subscribe_venue_status_updates(self, Venue venue) except *:
         """
         Subscribe to status updates of the given venue.
 
         Parameters
         ----------
-        venue_name : str
-            The name of the Venue to subscribe to.
+        venue : Venue
+            The venue to subscribe to.
 
         """
-
-        Condition.not_none(self._data_engine, "self._data_engine")
+        Condition.not_none(venue, "venue")
 
         cdef Subscribe command = Subscribe(
-            client_id=ClientId(venue_name),
-            data_type=DataType(VenueStatusUpdate, metadata={"name": venue_name}),
+            client_id=ClientId(venue.value),
+            data_type=DataType(VenueStatusUpdate, metadata={"name": venue.value}),
             handler=self.handle_venue_status_update,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
@@ -1011,7 +995,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
@@ -1034,7 +1017,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
@@ -1058,7 +1040,7 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(client_id, "client_id")
-        Condition.not_none(self._data_engine, "self._data_engine")
+        Condition.not_none(data_type, "data_type")
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
@@ -1081,7 +1063,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
@@ -1109,7 +1090,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
@@ -1138,7 +1118,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
@@ -1163,7 +1142,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "self._data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
@@ -1186,7 +1164,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
@@ -1209,7 +1186,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data_engine, "data_engine")
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(bar_type.instrument_id.venue.value),
@@ -1236,7 +1212,7 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(client_id, "client_id")
-        Condition.not_none(self._data_engine, "data_engine")
+        Condition.not_none(data_type, "data_type")
 
         cdef DataRequest request = DataRequest(
             client_id=client_id,
@@ -1275,7 +1251,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "data_engine")
         if from_datetime is not None and to_datetime is not None:
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
@@ -1285,7 +1260,6 @@ cdef class TradingStrategy(Component):
                 "instrument_id": instrument_id,
                 "from_datetime": from_datetime,
                 "to_datetime": to_datetime,
-                "limit": self._data_engine.cache.tick_capacity,
             }),
             callback=self.handle_quote_ticks,
             request_id=self.uuid_factory.generate(),
@@ -1321,7 +1295,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(self._data_engine, "data_engine")
         if from_datetime is not None and to_datetime is not None:
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
@@ -1331,7 +1304,6 @@ cdef class TradingStrategy(Component):
                 "instrument_id": instrument_id,
                 "from_datetime": from_datetime,
                 "to_datetime": to_datetime,
-                "limit": self._data_engine.cache.tick_capacity,
             }),
             callback=self.handle_trade_ticks,
             request_id=self.uuid_factory.generate(),
@@ -1367,7 +1339,6 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(self._data_engine, "data_engine")
         if from_datetime is not None and to_datetime is not None:
             Condition.true(from_datetime < to_datetime, "from_datetime was >= to_datetime")
 
@@ -1377,7 +1348,7 @@ cdef class TradingStrategy(Component):
                 "bar_type": bar_type,
                 "from_datetime": from_datetime,
                 "to_datetime": to_datetime,
-                "limit": self._data_engine.cache.bar_capacity,
+                "limit": self.cache.bar_capacity,
             }),
             callback=self.handle_bars,
             request_id=self.uuid_factory.generate(),
@@ -1409,7 +1380,6 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "self.trader_id")
-        Condition.not_none(self._risk_engine, "self._risk_engine")
 
         # Publish initialized event
         self._msgbus.publish_c(
@@ -1445,7 +1415,6 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(bracket_order, "bracket_order")
         Condition.not_none(self.trader_id, "self.trader_id")
-        Condition.not_none(self._risk_engine, "self._risk_engine")
 
         # Publish initialized events
         self._msgbus.publish_c(
@@ -1519,7 +1488,6 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "self.trader_id")
-        Condition.not_none(self._risk_engine, "self._risk_engine")
         if trigger is not None:
             Condition.equal(order.type, OrderType.STOP_LIMIT, "order.type", "STOP_LIMIT")
 
@@ -1593,7 +1561,6 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "self.trader_id")
-        Condition.not_none(self._risk_engine, "self._risk_engine")
 
         if order.venue_order_id.is_null():
             self.log.error(
@@ -1633,7 +1600,6 @@ cdef class TradingStrategy(Component):
 
         """
         # instrument_id can be None
-        Condition.not_none(self._risk_engine, "self._risk_engine")
 
         cdef list working_orders = self.cache.orders_working(
             venue=None,  # Faster query filtering
@@ -1670,7 +1636,6 @@ cdef class TradingStrategy(Component):
         Condition.not_none(position, "position")
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self.order_factory, "self.order_factory")
-        Condition.not_none(self._risk_engine, "self._risk_engine")
 
         if position.is_closed_c():
             self.log.warning(
@@ -1720,7 +1685,6 @@ cdef class TradingStrategy(Component):
 
         """
         # instrument_id can be None
-        Condition.not_none(self._risk_engine, "self._risk_engine")
 
         cdef list positions_open = self.cache.positions_open(
             venue=None,  # Faster query filtering
@@ -2154,16 +2118,19 @@ cdef class TradingStrategy(Component):
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command) except *:
+        self._check_registered()
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
-        self._data_engine.execute(command)
+        self._msgbus.send(endpoint="DataEngine.execute", msg=command)
 
     cdef void _send_data_req(self, DataRequest request) except *:
+        self._check_registered()
         if not self.log.is_bypassed:
             self.log.info(f"{REQ}{SENT} {request}.")
-        self._data_engine.send(request)
+        self._msgbus.send(endpoint="DataEngine.request", msg=request)
 
     cdef void _send_exec_cmd(self, TradingCommand command) except *:
+        self._check_registered()
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
-        self._risk_engine.execute(command)
+        self._msgbus.send(endpoint="RiskEngine.execute", msg=command)

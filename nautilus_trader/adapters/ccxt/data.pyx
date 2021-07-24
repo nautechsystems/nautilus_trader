@@ -20,7 +20,7 @@ from cpython.datetime cimport datetime
 from ccxt.base.errors import BaseError as CCXTError
 
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
-
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
@@ -28,7 +28,6 @@ from nautilus_trader.core.datetime cimport dt_to_unix_millis
 from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
-from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
@@ -47,6 +46,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -59,8 +59,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     def __init__(
         self,
+        loop not None: asyncio.AbstractEventLoop,
         client not None,
-        LiveDataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
     ):
@@ -69,10 +71,14 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
         client : ccxtpro.Exchange
             The unified CCXT client.
-        engine : LiveDataEngine
-            The live data engine for the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
             The clock for the client.
         logger : Logger
@@ -85,8 +91,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         """
         super().__init__(
+            loop=loop,
             client_id=ClientId(client.name.upper()),
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             config={
@@ -106,11 +114,11 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         self.is_connected = False
 
         # Subscriptions
-        self._subscribed_instruments = set()   # type: set[InstrumentId]
-        self._subscribed_order_books = {}      # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_quote_ticks = {}      # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_trade_ticks = {}      # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_bars = {}             # type: dict[BarType, asyncio.Task]
+        self._subscribed_instruments = set()  # type: set[InstrumentId]
+        self._subscribed_order_books = {}     # type: dict[InstrumentId, asyncio.Task]
+        self._subscribed_quote_ticks = {}     # type: dict[InstrumentId, asyncio.Task]
+        self._subscribed_trade_ticks = {}     # type: dict[InstrumentId, asyncio.Task]
+        self._subscribed_bars = {}            # type: dict[BarType, asyncio.Task]
 
         # Scheduled tasks
         self._update_instruments_task = None

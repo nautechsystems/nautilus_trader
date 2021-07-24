@@ -24,6 +24,7 @@ from ccxt.base.errors import BaseError as CCXTError
 from cpython.datetime cimport datetime
 
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -34,7 +35,6 @@ from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.execution.messages cimport ExecutionReport
 from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
-from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -65,6 +65,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -77,11 +78,13 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
     def __init__(
         self,
+        loop not None: asyncio.AbstractEventLoop,
         client not None: ccxt.Exchange,
         AccountId account_id not None,
         AccountType account_type,
         Currency base_currency,  # Can be None
-        LiveExecutionEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
     ):
@@ -90,6 +93,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
         client : ccxt.Exchange
             The unified CCXT client.
         account_id : AccountId
@@ -98,8 +103,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             The account type for the client.
         base_currency : Currency, optional
             The account base currency for the client. Use ``None`` for multi-currency accounts.
-        engine : LiveDataEngine
-            The data engine for the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
             The clock for the client.
         logger : Logger
@@ -113,13 +120,15 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         cdef str exchange_name = client.name.upper()
         super().__init__(
+            loop=loop,
             client_id=ClientId(exchange_name),
             venue_type=VenueType.EXCHANGE,
             account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,
-            engine=engine,
             instrument_provider=instrument_provider,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             config={
@@ -149,7 +158,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._log.info("Connecting...")
 
         # Re-cache orders
-        cdef list orders_all = self._engine.cache.orders()
+        cdef list orders_all = self._cache.orders()
         cdef Order order
         for order in orders_all:
             if order.is_completed_c():
@@ -182,7 +191,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         # Add currencies to cache
         for currency in self._instrument_provider.currencies().values():
-            self._engine.cache.add_currency(currency)
+            self._cache.add_currency(currency)
 
         # Start streams
         self._watch_balances_task = self._loop.create_task(self._watch_balances())
@@ -306,7 +315,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         if not fills:
             return reports
 
-        cdef ClientOrderId client_order_id = self._engine.cache.client_order_id(venue_order_id)
+        cdef ClientOrderId client_order_id = self._cache.client_order_id(venue_order_id)
         if client_order_id is None:
             self._log.error(
                 f"Cannot generate trades list: "
@@ -447,7 +456,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         cdef Instrument instrument
         for instrument in self._instrument_provider.get_all().values():
-            self._engine.cache.add_instrument(instrument)
+            self._cache.add_instrument(instrument)
 
         self._log.info(f"Updated {self._instrument_provider.count} instruments.")
 
@@ -554,7 +563,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             )
 
     async def _cancel_order(self, ClientOrderId client_order_id):
-        cdef Order order = self._engine.cache.order(client_order_id)
+        cdef Order order = self._cache.order(client_order_id)
         if order is None:
             self._log.error(f"Cannot cancel order, {repr(client_order_id)} not found.")
             return  # Cannot cancel
@@ -656,7 +665,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef ClientOrderId client_order_id = ClientOrderId(client_order_id_str)
 
         if order is None:
-            order = self._engine.cache.order(client_order_id)
+            order = self._cache.order(client_order_id)
             if order is None:
                 # If the reconciliation has done its job this should never happen
                 self._log.error(f"Cannot fill un-cached order with {repr(venue_order_id)}.")
@@ -701,11 +710,11 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef Order order = self._cached_orders.get(venue_order_id)
 
         if order is None:
-            client_order_id = self._engine.cache.client_order_id(venue_order_id)
+            client_order_id = self._cache.client_order_id(venue_order_id)
             if client_order_id is None:
                 self._log.error(f"Cannot fill un-cached order with {repr(venue_order_id)}.")
                 return
-            order = self._engine.cache.order(client_order_id)
+            order = self._cache.order(client_order_id)
             if order is None:
                 # If `reconcile_state` has done its job this should never happen
                 self._log.error(f"Cannot fill un-cached order with {repr(venue_order_id)}.")
@@ -768,10 +777,12 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
 
     def __init__(
         self,
+        loop not None: asyncio.AbstractEventLoop,
         client not None: ccxt.Exchange,
         AccountId account_id not None,
         AccountType account_type,
-        LiveExecutionEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
     ):
@@ -780,14 +791,18 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
         client : ccxt.Exchange
             The unified CCXT client.
         account_id : AccountId
             The account ID for the client.
         account_type : AccountType
             The account type for the client.
-        engine : LiveDataEngine
-            The data engine for the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
             The clock for the client.
         logger : Logger
@@ -797,11 +812,13 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
         cdef str exchange_name = client.name.upper()
         Condition.true(exchange_name == "BINANCE", "client.name != BINANCE")
         super().__init__(
+            loop=loop,
             client=client,
             account_id=account_id,
             account_type=account_type,
             base_currency=None,  # Multi-currency accounts
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
         )
@@ -881,9 +898,11 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
 
     def __init__(
         self,
+        loop not None: asyncio.AbstractEventLoop,
         client not None: ccxt.Exchange,
         AccountId account_id not None,
-        LiveExecutionEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
     ):
@@ -892,12 +911,16 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
         client : ccxt.Exchange
             The unified CCXT client.
         account_id : AccountId
             The account ID for the client.
-        engine : LiveDataEngine
-            The data engine for the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
             The clock for the client.
         logger : Logger
@@ -907,11 +930,13 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
         cdef str exchange_name = client.name.upper()
         Condition.true(exchange_name == "BITMEX", "client.name != BITMEX")
         super().__init__(
+            loop=loop,
             client=client,
             account_id=account_id,
             account_type=AccountType.MARGIN,
             base_currency=Currency.from_str_c("BTC"),
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
         )

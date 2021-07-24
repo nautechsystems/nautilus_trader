@@ -17,6 +17,7 @@ import asyncio
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LogColor
@@ -40,6 +41,7 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class LiveExecutionClientFactory:
@@ -52,6 +54,7 @@ cdef class LiveExecutionClientFactory:
         str name not None,
         dict config not None,
         LiveExecutionEngine engine not None,
+        Cache cache not None,
         LiveClock clock not None,
         LiveLogger logger not None,
         client_cls=None,
@@ -67,6 +70,8 @@ cdef class LiveExecutionClientFactory:
             The configuration for the client.
         engine : LiveDataEngine
             The engine for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
             The clock for the client.
         logger : LiveLogger
@@ -92,13 +97,15 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     def __init__(
         self,
+        loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
         VenueType venue_type,
         AccountId account_id not None,
         AccountType account_type,
         Currency base_currency,  # Can be None
-        LiveExecutionEngine engine not None,
         InstrumentProvider instrument_provider not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict config=None,
@@ -108,6 +115,8 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
         client_id : ClientId
             The client ID.
         venue_type : VenueType
@@ -118,10 +127,12 @@ cdef class LiveExecutionClient(ExecutionClient):
             The account type for the client.
         base_currency : Currency, optional
             The account base currency for the client. Use ``None`` for multi-currency accounts.
-        engine : LiveDataEngine
-            The data engine for the client.
         instrument_provider : InstrumentProvider
             The instrument provider for the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
             The clock for the client.
         logger : Logger
@@ -136,13 +147,14 @@ cdef class LiveExecutionClient(ExecutionClient):
             account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             config=config,
         )
 
-        self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
+        self._loop = loop
         self._instrument_provider = instrument_provider
 
     cpdef void reset(self) except *:
@@ -304,7 +316,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             Condition.equal(report.client_order_id, order.client_order_id, "report.client_order_id", "order.client_order_id")
             Condition.equal(report.venue_order_id, order.venue_order_id, "report.venue_order_id", "order.venue_order_id")
         else:
-            order = self._engine.cache.order(report.client_order_id)
+            order = self._cache.order(report.client_order_id)
             if order is None:
                 self._log.error(
                     f"Cannot reconcile state for {repr(report.venue_order_id)}, "

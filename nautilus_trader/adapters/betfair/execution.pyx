@@ -24,6 +24,7 @@ import betfairlightweight
 import orjson
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -55,6 +56,7 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -78,10 +80,12 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     def __init__(
         self,
+        loop not None: asyncio.AbstractEventLoop,
         client not None,
         AccountId account_id not None,
         Currency base_currency not None,
-        LiveExecutionEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict market_filter not None,
@@ -92,14 +96,18 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
         client : betfairlightweight.APIClient
             The Betfair client.
         account_id : AccountId
             The account ID for the client.
         base_currency : Currency
             The account base currency for the client.
-        engine : LiveDataEngine
-            The data engine for the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
             The clock for the client.
         logger : Logger
@@ -117,13 +125,15 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         )
 
         super().__init__(
+            loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
             venue_type=VenueType.EXCHANGE,
             account_id=account_id,
             account_type=AccountType.CASH,
             base_currency=base_currency,
-            engine=engine,
             instrument_provider=instrument_provider,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             config={
@@ -231,7 +241,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         ))
 
     def _submit_order(self, SubmitOrder command):
-        instrument = self._engine.cache.instrument(command.instrument_id)
+        instrument = self._cache.instrument(command.instrument_id)
         Condition.not_none(instrument, "instrument")
         kw = order_submit_to_betfair(command=command, instrument=instrument)
         self._log.debug(f"{kw}")
@@ -288,7 +298,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         ))
 
     def _update_order(self, UpdateOrder command):
-        existing_order = self._engine.cache.order(command.client_order_id)  # type: Order
+        existing_order = self._cache.order(command.client_order_id)  # type: Order
         if existing_order is None:
             self._log.warning(f"Attempting to update order that does not exist in the cache: {command}")
             return
@@ -296,7 +306,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             self._log.warning(f"Order found does not have `id` set: {existing_order}")
             return
         self._log.debug(f"existing_order: {existing_order}")
-        instrument = self._engine.cache.instrument(command.instrument_id)
+        instrument = self._cache.instrument(command.instrument_id)
         print("Instrument", instrument)
         Condition.not_none(instrument, "instrument")
         kw = order_update_to_betfair(
@@ -338,7 +348,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             )
             return
         # Check the venue_order_id that has been deleted currently exists on our order
-        existing_order = self._engine.cache.order(client_order_id)  # type: Order
+        existing_order = self._cache.order(client_order_id)  # type: Order
         deleted_bet_id = resp["instructionReports"][0]["cancelInstructionReport"]["instruction"]["betId"]
         self._log.debug(f"{existing_order}, {deleted_bet_id}")
         assert existing_order.venue_order_id == VenueOrderId(deleted_bet_id)
@@ -366,7 +376,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             venue_order_id=command.venue_order_id,
             ts_pending_ns=self._clock.timestamp_ns(),
         )
-        instrument = self._engine.cache.instrument(command.instrument_id)
+        instrument = self._cache.instrument(command.instrument_id)
         kw = order_cancel_to_betfair(command=command, instrument=instrument)
         resp = self._client.betting.cancel_orders(**kw)
         self._log.debug(f"cancel: {resp}")
@@ -408,9 +418,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef BetfairInstrumentProvider instrument_provider(self):
         return self._instrument_provider
 
-    cpdef LiveExecutionEngine engine(self):
-        return self._engine
-
 # -- ORDER STREAM API ------------------------------------------------------------------------------
 
     cpdef void handle_order_stream_update(self, bytes raw) except *:
@@ -430,9 +437,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                         self._log.warning(f"Can't find client_order_id for {order_update}")
                         continue
                     venue_order_id = VenueOrderId(order_update["id"])
-                    order = self._engine.cache.order(client_order_id)
+                    order = self._cache.order(client_order_id)
                     Condition.not_none(order, "order")
-                    instrument = self._engine.cache.instrument(order.instrument_id)
+                    instrument = self._cache.instrument(order.instrument_id)
                     Condition.not_none(instrument, "instrument")
                     # "E" = Executable (live / working)
                     if order_update["status"] == "E":
@@ -569,11 +576,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     ) -> List[ExecutionReport]:
         self._log.debug(f"generate_exec_reports: {venue_order_id}, {symbol}, {since}")
         return await generate_trades_list(self, venue_order_id, symbol, since)
-
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
-
-    cdef void _handle_event(self, Event event) except *:
-        self._engine.process(event)
 
 
 cpdef ExecutionId create_execution_id(dict uo):

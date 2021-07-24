@@ -64,12 +64,13 @@ async def async_magic():
 class TestCCXTDataClient:
     def setup(self):
         # Fixture Setup
-        self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
-        self.trader_id = TestStubs.trader_id()
-
         self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
+
+        self.clock = LiveClock()
+        self.uuid_factory = UUIDFactory()
+
+        self.trader_id = TestStubs.trader_id()
 
         # Setup logging
         self.logger = LiveLogger(
@@ -78,6 +79,7 @@ class TestCCXTDataClient:
         )
 
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -94,6 +96,7 @@ class TestCCXTDataClient:
         self.data_engine = LiveDataEngine(
             loop=self.loop,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -125,8 +128,10 @@ class TestCCXTDataClient:
         self.mock_ccxt.fetch_trades = fetch_trades
 
         self.client = CCXTDataClient(
+            loop=self.loop,
             client=self.mock_ccxt,
-            engine=self.data_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -239,7 +244,7 @@ class TestCCXTDataClient:
 
         # Assert
         assert ETHUSDT in self.client.subscribed_quote_ticks
-        assert self.data_engine.cache.has_quote_ticks(ETHUSDT)
+        assert self.cache.has_quote_ticks(ETHUSDT)
 
         # Tear Down
         self.data_engine.stop()
@@ -257,7 +262,7 @@ class TestCCXTDataClient:
 
         # Assert
         assert ETHUSDT in self.client.subscribed_trade_ticks
-        assert self.data_engine.cache.has_trade_ticks(ETHUSDT)
+        assert self.cache.has_trade_ticks(ETHUSDT)
 
         # Tear Down
         self.data_engine.stop()
@@ -432,7 +437,7 @@ class TestCCXTDataClient:
         )
 
         # Act
-        self.data_engine.send(request)
+        self.data_engine.request(request)
 
         await asyncio.sleep(1)
 
@@ -477,7 +482,7 @@ class TestCCXTDataClient:
         )
 
         # Act
-        self.data_engine.send(request)
+        self.data_engine.request(request)
 
         await asyncio.sleep(0.3)
 

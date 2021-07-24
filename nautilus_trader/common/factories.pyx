@@ -58,7 +58,7 @@ cdef class OrderFactory:
         strategy_id : StrategyId
             The strategy ID (only numerical tag sent to venue).
         clock : Clock
-            The clock for the component.
+            The clock for the factory.
         initial_count : int, optional
             The initial order count for the factory.
 

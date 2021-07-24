@@ -53,7 +53,7 @@ cdef class Cache(CacheFacade):
 
     def __init__(
         self,
-        CacheDatabase database,
+        CacheDatabase database,  # Can be None
         Logger logger not None,
         dict config=None,
     ):
