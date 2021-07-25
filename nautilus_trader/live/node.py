@@ -202,7 +202,6 @@ class TradingNode:
 
         self._data_engine = LiveDataEngine(
             loop=self._loop,
-            portfolio=self.portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
             clock=self._clock,

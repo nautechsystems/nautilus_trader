@@ -238,11 +238,11 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, BookLevel level, int depth=0, dict kwargs=None) except *:
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:
+    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookLevel level, int depth=0, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -274,11 +274,11 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

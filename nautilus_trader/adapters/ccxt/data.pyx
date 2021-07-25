@@ -278,7 +278,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self._subscribed_instruments.add(instrument_id)
 
-    cpdef void subscribe_order_book(
+    cpdef void subscribe_order_book_snapshots(
         self,
         InstrumentId instrument_id,
         BookLevel level,
@@ -407,7 +407,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self._subscribed_instruments.discard(instrument_id)
 
-    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
         """
         Unsubscribe from `OrderBook` data for the given instrument ID.
 

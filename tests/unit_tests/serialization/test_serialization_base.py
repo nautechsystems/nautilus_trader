@@ -73,7 +73,6 @@ class TestSerializationBase:
         command = Subscribe(
             client_id=ClientId("SIM"),
             data_type=DataType(QuoteTick),
-            handler=[].append,
             command_id=uuid4(),
             timestamp_ns=0,
         )

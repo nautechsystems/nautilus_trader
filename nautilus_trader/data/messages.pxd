@@ -25,8 +25,6 @@ cdef class DataCommand(Command):
     """The data client ID for the command.\n\n:returns: `ClientId`"""
     cdef readonly DataType data_type
     """The command data type.\n\n:returns: `type`"""
-    cdef readonly object handler
-    """The handler for the command.\n\n:returns: `callable`"""
 
 
 cdef class Subscribe(DataCommand):

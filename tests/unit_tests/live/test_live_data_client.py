@@ -68,7 +68,6 @@ class TestLiveDataClientFactory:
 
         self.data_engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -116,7 +115,6 @@ class TestLiveDataClientTests:
 
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -168,7 +166,6 @@ class TestLiveMarketDataClientTests:
 
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

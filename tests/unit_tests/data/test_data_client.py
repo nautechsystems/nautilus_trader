@@ -73,7 +73,6 @@ class TestDataClient:
         )
 
         self.data_engine = DataEngine(
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -200,7 +199,6 @@ class TestMarketDataClient:
         )
 
         self.data_engine = DataEngine(
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -257,7 +255,7 @@ class TestMarketDataClient:
         # Act
         # Assert
         with pytest.raises(NotImplementedError):
-            self.client.subscribe_order_book(AUDUSD_SIM.id, 2, 0)
+            self.client.subscribe_order_book_snapshots(AUDUSD_SIM.id, 2, 0)
 
     def test_subscribe_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
@@ -292,7 +290,7 @@ class TestMarketDataClient:
         # Act
         # Assert
         with pytest.raises(NotImplementedError):
-            self.client.unsubscribe_order_book(AUDUSD_SIM.id)
+            self.client.unsubscribe_order_book_snapshots(AUDUSD_SIM.id)
 
     def test_unsubscribe_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange

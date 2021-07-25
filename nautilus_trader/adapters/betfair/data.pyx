@@ -244,7 +244,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    cpdef void subscribe_order_book(
+    cpdef void subscribe_order_book_snapshots(
         self, InstrumentId instrument_id,
         BookLevel level,
         int depth=0,
@@ -301,7 +301,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBookData> data.")
 
     cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:
-        self.subscribe_order_book(instrument_id=instrument_id, level=level, kwargs=kwargs)
+        self.subscribe_order_book_snapshots(instrument_id=instrument_id, level=level, kwargs=kwargs)
 
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         pass  # Subscribed as part of orderbook
@@ -316,7 +316,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
         pass  # Subscribed as part of orderbook
 
-    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
         """
         Unsubscribe from `OrderBook` data for the given instrument ID.
 
@@ -326,9 +326,11 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             The order book instrument to unsubscribe from.
 
         """
+        Condition.not_none(instrument_id, "instrument_id")
+
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
         #  subscription message - when we have a use case
-        Condition.not_none(instrument_id, "instrument_id")
+
         self._log.warning(f"Betfair does not support unsubscribing from instruments")
 
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:

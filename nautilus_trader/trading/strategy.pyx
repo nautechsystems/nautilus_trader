@@ -762,10 +762,11 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(client_id, "client_id")
 
+        self._msgbus.subscribe(topic=f"data.generic.{data_type}", handler=self.handle_data)
+
         cdef Subscribe command = Subscribe(
             client_id=client_id,
             data_type=data_type,
-            handler=self.handle_data,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -784,31 +785,79 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
+        self._msgbus.subscribe(
+            topic=f"data.instrument"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self.handle_instrument,
+        )
+
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
-            handler=self.handle_instrument,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_order_book(
+    cpdef void subscribe_order_book_deltas(
+            self,
+            InstrumentId instrument_id,
+            BookLevel level=BookLevel.L2,
+            dict kwargs=None,
+    ) except *:
+        """
+        Subscribe to the order book deltas stream, being a snapshot then deltas
+        `OrderBookData` for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument ID to subscribe to.
+        level : BookLevel
+            The order book level (L1, L2, L3).
+        kwargs : dict, optional
+            The keyword arguments for exchange specific parameters.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._msgbus.subscribe(
+            topic=f"data.book.deltas"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self.handle_order_book_delta,
+        )
+
+        cdef Subscribe command = Subscribe(
+            client_id=ClientId(instrument_id.venue.value),
+            data_type=DataType(OrderBookData, metadata={
+                "instrument_id": instrument_id,
+                "level": level,
+                "kwargs": kwargs,
+            }),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+
+    cpdef void subscribe_order_book_snapshots(
         self,
         InstrumentId instrument_id,
         BookLevel level=BookLevel.L2,
         int depth=0,
-        int interval=0,
+        int interval_ms=1000,
         dict kwargs=None,
     ) except *:
         """
-        Subscribe to streaming `OrderBook` for the given instrument ID.
+        Subscribe to `OrderBook` snapshots for the given instrument ID.
 
         The `DataEngine` will only maintain one order book stream for each
-        instrument. Because of this the level, depth and kwargs for the stream will
-        be as per the last subscription request (this will also affect all
-        subscribers).
+        instrument. Because of this - the level, depth and kwargs for the stream
+        will be set as per the last subscription request (this will also affect
+        all subscribers).
 
         If interval is not specified then will receive every order book update.
         Alternatively specify periodic snapshot intervals in seconds.
@@ -821,22 +870,30 @@ cdef class TradingStrategy(Component):
             The order book level (L1, L2, L3).
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
-        interval : int, optional
-            The order book snapshot interval in seconds.
+        interval_ms : int
+            The order book snapshot interval in milliseconds.
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
 
         Raises
         ------
         ValueError
-            If depth is negative.
+            If depth is negative (< 0).
         ValueError
-            If delay is not None and interval is None.
+            If interval_ms is not positive (> 0).
 
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative(depth, "depth")
-        Condition.not_negative(interval, "interval")
+        Condition.not_negative(interval_ms, "interval_ms")
+
+        self._msgbus.subscribe(
+            topic=f"data.book.snapshots"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}"
+                  f".{interval_ms}",
+            handler=self.handle_order_book,
+        )
 
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
@@ -844,52 +901,9 @@ cdef class TradingStrategy(Component):
                 "instrument_id": instrument_id,
                 "level": level,
                 "depth": depth,
-                "interval": interval,
+                "interval_ms": interval_ms,
                 "kwargs": kwargs,
             }),
-            handler=self.handle_order_book,
-            command_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
-        )
-        self._send_data_cmd(command)
-
-    cpdef void subscribe_order_book_deltas(
-        self,
-        InstrumentId instrument_id,
-        BookLevel level=BookLevel.L2,
-        dict kwargs=None,
-    ) except *:
-        """
-        Subscribe to streaming `OrderBook` snapshot then deltas data for the
-        given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument ID to subscribe to.
-        level : BookLevel
-            The order book level (L1, L2, L3).
-        kwargs : dict, optional
-            The keyword arguments for exchange specific parameters.
-
-        Raises
-        ------
-        ValueError
-            If depth is negative.
-        ValueError
-            If delay is not None and interval is None.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-
-        cdef Subscribe command = Subscribe(
-            client_id=ClientId(instrument_id.venue.value),
-            data_type=DataType(OrderBookData, metadata={
-                "instrument_id": instrument_id,
-                "level": level,
-                "kwargs": kwargs,
-            }),
-            handler=self.handle_order_book_delta,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -908,10 +922,16 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
+        self._msgbus.subscribe(
+            topic=f"data.quotes"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self.handle_quote_tick,
+        )
+
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
-            handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -930,10 +950,16 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
+        self._msgbus.subscribe(
+            topic=f"data.trades"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self.handle_trade_tick,
+        )
+
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
-            handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -952,10 +978,14 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(bar_type, "bar_type")
 
+        self._msgbus.subscribe(
+            topic=f"data.bars.{bar_type}",
+            handler=self.handle_bar,
+        )
+
         cdef Subscribe command = Subscribe(
             client_id=ClientId(bar_type.instrument_id.venue.value),
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
-            handler=self.handle_bar,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -974,10 +1004,14 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(venue, "venue")
 
+        self._msgbus.subscribe(
+            topic=f"data.venue.status",
+            handler=self.handle_venue_status_update,
+        )
+
         cdef Subscribe command = Subscribe(
             client_id=ClientId(venue.value),
             data_type=DataType(VenueStatusUpdate, metadata={"name": venue.value}),
-            handler=self.handle_venue_status_update,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -996,10 +1030,14 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
+        self._msgbus.subscribe(
+            topic=f"data.venue.status",
+            handler=self.handle_instrument_status_update,
+        )
+
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(InstrumentStatusUpdate, metadata={"instrument_id": instrument_id}),
-            handler=self.handle_instrument_status_update,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -1018,15 +1056,20 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
+        self._msgbus.subscribe(
+            topic=f"data.venue.close_price.{instrument_id.value}",
+            handler=self.handle_instrument_close_price,
+        )
+
         cdef Subscribe command = Subscribe(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(InstrumentClosePrice, metadata={"instrument_id": instrument_id}),
-            handler=self.handle_instrument_close_price,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
+
     cpdef void unsubscribe_data(self, ClientId client_id, DataType data_type) except *:
         """
         Unsubscribe from data of the given data type.
@@ -1042,10 +1085,11 @@ cdef class TradingStrategy(Component):
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
 
+        self._msgbus.unsubscribe(topic=f"data.generic.{data_type}", handler=self.handle_data)
+
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             data_type=data_type,
-            handler=self.handle_data,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -1064,40 +1108,16 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
+        self._msgbus.unsubscribe(
+            topic=f"data.instrument"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self.handle_instrument,
+        )
+
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
-            handler=self.handle_instrument,
-            command_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
-        )
-
-        self._send_data_cmd(command)
-
-    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id, int interval=0) except *:
-        """
-        Unsubscribe from `OrderBook` data for the given instrument ID.
-
-        The interval must match the previously defined interval if unsubscribing
-        from snapshots.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The order book instrument to subscribe to.
-        interval : int, optional
-            The order book snapshot interval in seconds.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-
-        cdef Unsubscribe command = Unsubscribe(
-            client_id=ClientId(instrument_id.venue.value),
-            data_type=DataType(OrderBook, metadata={
-                "instrument_id": instrument_id,
-                "interval": interval,
-            }),
-            handler=self.handle_order_book,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -1106,10 +1126,7 @@ cdef class TradingStrategy(Component):
 
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `OrderBook` data for the given instrument ID.
-
-        The interval must match the previously defined interval if unsubscribing
-        from snapshots.
+        Unsubscribe the order book deltas stream for the given instrument ID.
 
         Parameters
         ----------
@@ -1119,12 +1136,56 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
+        self._msgbus.unsubscribe(
+            topic=f"data.book.deltas"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self.handle_order_book_delta,
+        )
+
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
-            data_type=DataType(OrderBookData, metadata={
-                "instrument_id": instrument_id,
-            }),
+            data_type=DataType(OrderBookData, metadata={"instrument_id": instrument_id}),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+
+    cpdef void unsubscribe_order_book_snapshots(
+        self,
+        InstrumentId instrument_id,
+        int interval_ms=1000,
+    ) except *:
+        """
+        Unsubscribe from order book snapshots for the given instrument ID.
+
+        The interval must match the previously subscribed interval.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument to subscribe to.
+        interval_ms : int
+            The order book snapshot interval in milliseconds.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._msgbus.unsubscribe(
+            topic=f"data.book.snapshots"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}"
+                  f".{interval_ms}",
             handler=self.handle_order_book,
+        )
+
+        cdef Unsubscribe command = Unsubscribe(
+            client_id=ClientId(instrument_id.venue.value),
+            data_type=DataType(OrderBook, metadata={
+                "instrument_id": instrument_id,
+                "interval_ms": interval_ms,
+            }),
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -1143,10 +1204,16 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
+        self._msgbus.unsubscribe(
+            topic=f"data.quotes"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self.handle_quote_tick,
+        )
+
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
-            handler=self.handle_quote_tick,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -1165,10 +1232,16 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
+        self._msgbus.unsubscribe(
+            topic=f"data.trades"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self.handle_trade_tick,
+        )
+
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
-            handler=self.handle_trade_tick,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -1187,10 +1260,14 @@ cdef class TradingStrategy(Component):
         """
         Condition.not_none(bar_type, "bar_type")
 
+        self._msgbus.unsubscribe(
+            topic=f"data.bars.{bar_type}",
+            handler=self.handle_bar,
+        )
+
         cdef Unsubscribe command = Unsubscribe(
             client_id=ClientId(bar_type.instrument_id.venue.value),
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
-            handler=self.handle_bar,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -1730,6 +1807,31 @@ cdef class TradingStrategy(Component):
                 self.log.exception(ex)
                 raise
 
+    cpdef void handle_order_book_delta(self, OrderBookData data) except *:
+        """
+        Handle the given order book data.
+
+        Calls `on_order_book_delta` if `strategy.state` is `RUNNING`.
+
+        Parameters
+        ----------
+        data : {OrderBookDelta, OrderBookDeltas, OrderBookSnapshot}
+            The received order book data.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(data, "data")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_order_book_delta(data)
+            except Exception as ex:
+                self.log.exception(ex)
+                raise
+
     cpdef void handle_order_book(self, OrderBook order_book) except *:
         """
         Handle the given order book snapshot.
@@ -1751,31 +1853,6 @@ cdef class TradingStrategy(Component):
         if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_order_book(order_book)
-            except Exception as ex:
-                self.log.exception(ex)
-                raise
-
-    cpdef void handle_order_book_delta(self, OrderBookData data) except *:
-        """
-        Handle the given order book snapshot.
-
-        Calls `on_order_book_delta` if `strategy.state` is `RUNNING`.
-
-        Parameters
-        ----------
-        data : OrderBookData
-            The received order book data.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(data, "data")
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_order_book_delta(data)
             except Exception as ex:
                 self.log.exception(ex)
                 raise

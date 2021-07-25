@@ -96,7 +96,6 @@ class TestSimulatedExchange:
         )
 
         self.data_engine = DataEngine(
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             clock=self.clock,
             cache=self.cache,
@@ -1906,7 +1905,6 @@ class TestBitmexExchange:
         )
 
         self.data_engine = DataEngine(
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -2056,7 +2054,6 @@ class TestOrderBookExchange:
         )
 
         self.data_engine = DataEngine(
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

@@ -70,7 +70,6 @@ class TestTrader:
         )
 
         self.data_engine = DataEngine(
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

@@ -35,7 +35,7 @@ cdef class TimeEventHandler:
     cdef readonly TimeEvent event
     """The handlers event.\n\n:returns: `TimeEvent`"""
 
-    cdef void handle(self) except *
+    cpdef void handle(self) except *
 
 
 cdef class Timer:

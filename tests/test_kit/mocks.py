@@ -350,7 +350,10 @@ class MockMarketDataClient(MarketDataClient):
     def unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def unsubscribe_order_book(self, instrument_id: InstrumentId) -> None:
+    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     # -- REQUESTS ----------------------------------------------------------------------------------
@@ -713,7 +716,6 @@ class MockLiveDataEngine(LiveDataEngine):
     def __init__(
         self,
         loop,
-        portfolio,
         msgbus,
         cache,
         clock,
@@ -722,7 +724,6 @@ class MockLiveDataEngine(LiveDataEngine):
     ):
         super().__init__(
             loop=loop,
-            portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

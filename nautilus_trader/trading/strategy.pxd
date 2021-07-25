@@ -95,8 +95,8 @@ cdef class TradingStrategy(Component):
     cpdef void on_load(self, dict state) except *
     cpdef void on_dispose(self) except *
     cpdef void on_instrument(self, Instrument instrument) except *
-    cpdef void on_order_book(self, OrderBook order_book) except *
     cpdef void on_order_book_delta(self, OrderBookData data) except *
+    cpdef void on_order_book(self, OrderBook order_book) except *
     cpdef void on_quote_tick(self, QuoteTick tick) except *
     cpdef void on_trade_tick(self, TradeTick tick) except *
     cpdef void on_bar(self, Bar bar) except *
@@ -130,18 +130,18 @@ cdef class TradingStrategy(Component):
 
     cpdef void subscribe_data(self, ClientId client_id, DataType data_type) except *
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_order_book(
-        self,
-        InstrumentId instrument_id,
-        BookLevel level=*,
-        int depth=*,
-        int interval=*,
-        dict kwargs=*,
-    ) except *
     cpdef void subscribe_order_book_deltas(
         self,
         InstrumentId instrument_id,
         BookLevel level=*,
+        dict kwargs=*,
+    ) except *
+    cpdef void subscribe_order_book_snapshots(
+        self,
+        InstrumentId instrument_id,
+        BookLevel level=*,
+        int depth=*,
+        int interval_ms=*,
         dict kwargs=*,
     ) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
@@ -152,8 +152,8 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_data(self, ClientId client_id, DataType data_type) except *
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id, int interval=*) except *
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, int interval_ms=*) except *
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *

@@ -375,7 +375,7 @@ class OrderBookImbalanceStrategy(TradingStrategy):
             return
 
         # Subscribe to live data
-        self.subscribe_order_book(self.instrument_id)
+        self.subscribe_order_book_snapshots(self.instrument_id)
         self.subscribe_instrument_status_updates(self.instrument_id)
         self.subscribe_instrument_close_prices(self.instrument_id)
 
@@ -456,4 +456,4 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         Cleanup any resources used by the strategy here.
 
         """
-        self.unsubscribe_order_book(self.instrument_id)
+        self.subscribe_order_book_snapshots(self.instrument_id)
