@@ -181,21 +181,22 @@ cdef class MessageBus:
             channels.extend([s.topic + WILDCARD for s in list(self._patterns)])
         return channels
 
-    cpdef list subscriptions(self, str topic):
+    cpdef list subscriptions(self, str topic=None):
         """
         Return all subscriptions for the given message type.
 
         Parameters
         ----------
-        topic : str
-            The topic filter.
-            If None then will return subscriptions for ALL messages.
+        topic : str, optional
+            The topic filter. If None then filter is for ALL topics.
 
         Returns
         -------
         list[Subscription]
 
         """
+        if topic is None:
+            topic = WILDCARD
         Condition.valid_string(topic, "topic")
 
         topic = topic.replace(WILDCARD, "")
@@ -210,6 +211,25 @@ cdef class MessageBus:
                     output.append(sub)
 
         return output
+
+    cpdef bint has_subscribers(self, str topic=None):
+        """
+        If the message bus has subscribers for the give topic.
+
+        Parameters
+        ----------
+        topic : str, optional
+            THe topic filter. If None then query is for ALL topics.
+
+        Returns
+        -------
+        bool
+
+        """
+        if topic is None:
+            topic = WILDCARD
+
+        return len(self.subscriptions(topic=topic)) > 0
 
     cpdef void register(self, str endpoint, handler: Callable[[Any], None]) except *:
         """

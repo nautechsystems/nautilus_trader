@@ -194,10 +194,14 @@ class TestMessageBus:
 
     def test_subscriptions_with_no_subscribers_returns_empty_list(self):
         # Arrange, Act
-        result = self.msgbus.subscriptions("*")
+        result = self.msgbus.subscriptions()
 
         # Assert
         assert result == []
+
+    def test_has_subscribers_with_no_subscribers_returns_false(self):
+        # Arrange, Act, Assert
+        assert not self.msgbus.has_subscribers()
 
     def test_register_adds_endpoint(self):
         # Arrange
@@ -239,7 +243,7 @@ class TestMessageBus:
         # Assert
         assert "message" in endpoint
 
-    def test_subscribe_to_msg_type_returns_channels_list_including_msg_type(self):
+    def test_subscribe_then_returns_channels_list_including_topic(self):
         # Arrange
         handler = [].append
 
@@ -251,6 +255,15 @@ class TestMessageBus:
 
         # Assert
         assert result == ["system", "*"]
+
+    def test_has_subscribers_when_subscribers_returns_true(self):
+        # Arrange, Act
+        self.msgbus.subscribe(topic="*", handler=[].append)
+        self.msgbus.subscribe(topic="system", handler=[].append)
+
+        # Assert
+        assert self.msgbus.has_subscribers()
+        assert self.msgbus.has_subscribers(topic="system")
 
     def test_subscribe_when_handler_already_subscribed_does_not_add_subscription(self):
         # Arrange
