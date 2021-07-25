@@ -113,10 +113,9 @@ class BetfairTestStubs(TestStubs):
         return AccountId(BETFAIR_VENUE.value, "000")
 
     @staticmethod
-    def data_engine(event_loop, msgbus, clock, live_logger, portfolio):
+    def data_engine(event_loop, msgbus, clock, live_logger):
         return LiveDataEngine(
             loop=event_loop,
-            portfolio=portfolio,
             msgbus=msgbus,
             clock=clock,
             logger=live_logger,

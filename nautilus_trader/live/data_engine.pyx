@@ -28,7 +28,6 @@ from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.msgbus.message_bus cimport MessageBus
-from nautilus_trader.trading.portfolio cimport Portfolio
 
 
 cdef class LiveDataEngine(DataEngine):
@@ -40,7 +39,6 @@ cdef class LiveDataEngine(DataEngine):
     def __init__(
         self,
         loop not None: asyncio.AbstractEventLoop,
-        Portfolio portfolio not None,
         MessageBus msgbus not None,
         Cache cache not None,
         LiveClock clock not None,
@@ -54,8 +52,6 @@ cdef class LiveDataEngine(DataEngine):
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the engine.
-        portfolio : int
-            The portfolio to register.
         msgbus : MessageBus
             The message bus for the engine.
         cache : Cache
@@ -71,7 +67,6 @@ cdef class LiveDataEngine(DataEngine):
         if config is None:
             config = {}
         super().__init__(
-            portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

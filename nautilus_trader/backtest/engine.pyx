@@ -226,7 +226,6 @@ cdef class BacktestEngine:
         config_data["use_previous_close"] = False  # Ensure bars match historical data
 
         self._data_engine = DataEngine(
-            portfolio=self.portfolio,
             msgbus=self._msgbus,
             cache=self.cache,
             clock=self._test_clock,

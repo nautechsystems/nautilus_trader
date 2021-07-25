@@ -90,7 +90,7 @@ cdef class TimeEventHandler:
         """
         self.handle()
 
-    cdef void handle(self) except *:
+    cpdef void handle(self) except *:
         self._handler(self.event)
 
     def __eq__(self, TimeEventHandler other) -> bool:

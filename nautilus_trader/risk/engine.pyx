@@ -156,8 +156,8 @@ cdef class RiskEngine(Component):
         self._msgbus.register(endpoint="RiskEngine.execute", handler=self.execute)
 
         # Required subscriptions
-        self._msgbus.subscribe(topic="events.order*", handler=self._handle_event)
-        self._msgbus.subscribe(topic="events.position*", handler=self._handle_event)
+        self._msgbus.subscribe(topic="events.order*", handler=self._handle_event, priority=10)
+        self._msgbus.subscribe(topic="events.position*", handler=self._handle_event, priority=10)
 
     cdef void _initialize_risk_checks(self, dict config) except *:
         cdef dict max_notional_config = config.get("max_notional_per_order", {})

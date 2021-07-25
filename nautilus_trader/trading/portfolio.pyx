@@ -147,8 +147,9 @@ cdef class Portfolio(PortfolioFacade):
         self._pending_calcs = set()  # type: set[InstrumentId]
 
         # Required subscriptions
-        self._msgbus.subscribe(topic="events.order*", handler=self.update_order)
-        self._msgbus.subscribe(topic="events.position*", handler=self.update_position)
+        self._msgbus.subscribe(topic="data.quotes*", handler=self.update_tick, priority=10)
+        self._msgbus.subscribe(topic="events.order*", handler=self.update_order, priority=10)
+        self._msgbus.subscribe(topic="events.position*", handler=self.update_position, priority=10)
 
         self.initialized = False
 

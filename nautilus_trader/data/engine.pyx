@@ -75,7 +75,6 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orderbook.data cimport OrderBookDeltas
 from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.msgbus.message_bus cimport MessageBus
-from nautilus_trader.trading.portfolio cimport Portfolio
 
 
 cdef class DataEngine(Component):
@@ -86,7 +85,6 @@ cdef class DataEngine(Component):
 
     def __init__(
         self,
-        Portfolio portfolio not None,
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
@@ -98,8 +96,6 @@ cdef class DataEngine(Component):
 
         Parameters
         ----------
-        portfolio : int
-            The portfolio to register.
         msgbus : MessageBus
             The message bus for the engine.
         cache : Cache
@@ -120,31 +116,18 @@ cdef class DataEngine(Component):
             name="DataEngine",
         )
 
-        self._use_previous_close = config.get("use_previous_close", True)
-        self._clients = {}                    # type: dict[ClientId, DataClient]
-        self._correlation_index = {}          # type: dict[UUID, callable]
-
-        # Handlers
-        self._instrument_handlers = {}        # type: dict[InstrumentId, list[callable]]
-        self._order_book_handlers = {}        # type: dict[InstrumentId, list[callable]]
-        self._order_book_delta_handlers = {}  # type: dict[InstrumentId, list[callable]]
-        self._quote_tick_handlers = {}        # type: dict[InstrumentId, list[callable]]
-        self._trade_tick_handlers = {}        # type: dict[InstrumentId, list[callable]]
-        self._bar_handlers = {}               # type: dict[BarType, list[callable]]
-        self._data_handlers = {}              # type: dict[DataType, list[callable]]
-        self._status_update_handlers = {}     # type: dict[DataType, list[callable]]
-        self._close_price_handlers = {}       # type: dict[DataType, list[callable]]
-
-        # Aggregators
-        self._bar_aggregators = {}            # type: dict[BarType, BarAggregator]
-
-        # OrderBook indexes
-        self._order_book_intervals = {}       # type: dict[(InstrumentId, int), list[callable]]
-
-        # Public components
-        self.portfolio = portfolio
         self._msgbus = msgbus
         self._cache = cache
+
+        self._use_previous_close = config.get("use_previous_close", True)
+        self._clients = {}               # type: dict[ClientId, DataClient]
+        self._correlation_index = {}     # type: dict[UUID, callable]
+
+        # OrderBook indexes
+        self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[callable]]
+
+        # Aggregators
+        self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
 
         # Counters
         self.command_count = 0
@@ -173,16 +156,16 @@ cdef class DataEngine(Component):
         return sorted(list(self._clients.keys()))
 
     @property
-    def subscribed_data_types(self):
+    def subscribed_generic_data(self):
         """
-        The custom data types subscribed to.
+        The generic data types subscribed to.
 
         Returns
         -------
         list[DataType]
 
         """
-        return sorted(list(self._data_handlers.keys()))
+        return None  # TODO
 
     @property
     def subscribed_instruments(self):
@@ -194,10 +177,22 @@ cdef class DataEngine(Component):
         list[InstrumentId]
 
         """
-        return sorted(list(self._instrument_handlers.keys()))
+        return []  # TODO
 
     @property
-    def subscribed_order_books(self):
+    def subscribed_order_book_deltas(self):
+        """
+        The order books data (diffs) subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return []  # TODO
+
+    @property
+    def subscribed_order_book_snapshots(self):
         """
         The order books subscribed to.
 
@@ -207,19 +202,7 @@ cdef class DataEngine(Component):
 
         """
         cdef list interval_instruments = [k[0] for k in self._order_book_intervals.keys()]
-        return sorted(list(self._order_book_handlers.keys()) + interval_instruments)
-
-    @property
-    def subscribed_order_book_data(self):
-        """
-        The order books data (diffs) subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        return sorted(list(self._order_book_delta_handlers.keys()))
+        return []  # TODO
 
     @property
     def subscribed_quote_ticks(self):
@@ -231,7 +214,7 @@ cdef class DataEngine(Component):
         list[InstrumentId]
 
         """
-        return sorted(list(self._quote_tick_handlers.keys()))
+        return []  # TODO
 
     @property
     def subscribed_trade_ticks(self):
@@ -243,7 +226,7 @@ cdef class DataEngine(Component):
         list[InstrumentId]
 
         """
-        return sorted(list(self._trade_tick_handlers.keys()))
+        return []  # TODO
 
     @property
     def subscribed_bars(self):
@@ -255,7 +238,7 @@ cdef class DataEngine(Component):
         list[BarType]
 
         """
-        return sorted(list(self._bar_handlers.keys()))
+        return []  # TODO
 
     cpdef bint check_connected(self) except *:
         """
@@ -363,12 +346,7 @@ cdef class DataEngine(Component):
             client.reset()
 
         self._correlation_index.clear()
-        self._instrument_handlers.clear()
-        self._order_book_handlers.clear()
-        self._quote_tick_handlers.clear()
-        self._trade_tick_handlers.clear()
-        self._bar_handlers.clear()
-        self._data_handlers.clear()
+        self._order_book_intervals.clear()
         self._bar_aggregators.clear()
 
         self._clock.cancel_timers()
@@ -450,9 +428,10 @@ cdef class DataEngine(Component):
 
         cdef DataClient client = self._clients.get(command.client_id)
         if client is None:
-            self._log.error(f"Cannot handle command: "
-                            f"(no client registered for '{command.client_id}' in {self.registered_clients})"
-                            f" {command}.")
+            self._log.error(
+                f"Cannot handle command: "
+                f"no client registered for '{command.client_id}' in {self.registered_clients}, "
+                f" {command}.")
             return  # No client to handle command
 
         if isinstance(command, Subscribe):
@@ -467,229 +446,102 @@ cdef class DataEngine(Component):
             self._handle_subscribe_instrument(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.handler,
             )
         elif command.data_type.type == OrderBook:
-            self._handle_subscribe_order_book(
+            self._handle_subscribe_order_book_snapshots(
                 client,
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
-                command.handler,
             )
         elif command.data_type.type == OrderBookData:
             self._handle_subscribe_order_book_deltas(
                 client,
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
-                command.handler,
             )
         elif command.data_type.type == QuoteTick:
             self._handle_subscribe_quote_ticks(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.handler,
             )
         elif command.data_type.type == TradeTick:
             self._handle_subscribe_trade_ticks(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.handler,
             )
         elif command.data_type.type == Bar:
             self._handle_subscribe_bars(
                 client,
                 command.data_type.metadata.get("bar_type"),
-                command.handler,
             )
         elif command.data_type.type == InstrumentStatusUpdate:
             self._handle_subscribe_instrument_status_updates(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.handler,
             )
         elif command.data_type.type == InstrumentClosePrice:
             self._handle_subscribe_instrument_close_prices(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.handler,
             )
         else:
-            self._handle_subscribe_data(
-                client,
-                command.data_type,
-                command.handler,
-            )
+            self._handle_subscribe_data(client, command.data_type)
 
     cdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command) except *:
         if command.data_type.type == Instrument:
             self._handle_unsubscribe_instrument(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.handler,
             )
         elif command.data_type.type == OrderBook:
-            self._handle_unsubscribe_order_book(
+            self._handle_unsubscribe_order_book_snapshots(
                 client,
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
-                command.handler,
+            )
+        elif command.data_type.type == OrderBookData:
+            self._handle_unsubscribe_order_book_deltas(
+                client,
+                command.data_type.metadata.get("instrument_id"),
+                command.data_type.metadata,
             )
         elif command.data_type.type == QuoteTick:
             self._handle_unsubscribe_quote_ticks(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.handler,
             )
         elif command.data_type.type == TradeTick:
             self._handle_unsubscribe_trade_ticks(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.handler,
             )
         elif command.data_type.type == Bar:
             self._handle_unsubscribe_bars(
                 client,
                 command.data_type.metadata.get("bar_type"),
-                command.handler,
             )
         else:
-            self._handle_unsubscribe_data(
-                client,
-                command.data_type,
-                command.handler,
-            )
+            self._handle_unsubscribe_data(client, command.data_type)
 
     cdef void _handle_subscribe_instrument(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.callable(handler, "handler")
 
-        if instrument_id not in self._instrument_handlers:
-            self._instrument_handlers[instrument_id] = []  # type: list[callable]
-            client.subscribe_instrument(instrument_id)
-            self._log.info(f"Subscribed to {instrument_id} <Instrument> data.")
-
-        # Add handler for subscriber
-        if handler not in self._instrument_handlers[instrument_id]:
-            self._instrument_handlers[instrument_id].append(handler)
-            self._log.debug(f"Added handler {handler} for {instrument_id} <Instrument> data.")
-        else:
-            self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <Instrument> data.")
-
-    cdef void _handle_subscribe_order_book(
-        self,
-        MarketDataClient client,
-        InstrumentId instrument_id,
-        dict metadata,
-        handler: callable,
-    ) except *:
-        Condition.not_none(client, "client")
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(metadata, "metadata")
-        Condition.callable(handler, "handler")
-
-        cdef int interval = metadata["interval"]
-        if interval > 0:
-            # Subscribe to interval snapshots
-            key = (instrument_id, interval)
-            if key not in self._order_book_intervals:
-                self._order_book_intervals[key] = []
-                now = self._clock.utc_now()
-                start_time = now - timedelta(seconds=now.second % interval, microseconds=now.microsecond)
-                timer_name = f"OrderBookSnapshot-{instrument_id}-{interval}"
-                self._clock.set_timer(
-                    name=timer_name,
-                    interval=timedelta(seconds=interval),
-                    start_time=start_time,
-                    stop_time=None,
-                    handler=self._snapshot_order_book,
-                )
-                self._log.debug(f"Set timer {timer_name}.")
-
-            # Add handler for subscriber
-            self._order_book_intervals[key].append(handler)
-            self._log.info(f"Subscribed to {instrument_id} <OrderBook> "
-                           f"{interval} second intervals data.")
-        else:
-            # Subscribe to stream
-            if instrument_id not in self._order_book_handlers:
-                # Setup handlers
-                self._order_book_handlers[instrument_id] = []  # type: list[callable]
-                self._log.info(f"Subscribed to {instrument_id} <OrderBook> data.")
-
-            # Add handler for subscriber
-            if handler not in self._order_book_handlers[instrument_id]:
-                self._order_book_handlers[instrument_id].append(handler)
-                self._log.debug(f"Added {handler} for {instrument_id} <OrderBook> data.")
-            else:
-                self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <OrderBook> data.")
-
-        # Create order book
-        if not self._cache.has_order_book(instrument_id):
-            instrument = self._cache.instrument(instrument_id)
-            if instrument is None:
-                self._log.error(f"Cannot subscribe to {instrument_id} <OrderBook> data: "
-                                f"no instrument found in cache.")
-                return
-            order_book = OrderBook.create(
-                instrument=instrument,
-                level=metadata["level"],
-            )
-
-            self._cache.add_order_book(order_book)
-
-        # Always re-subscribe to override previous settings
-        client.subscribe_order_book(
-            instrument_id=instrument_id,
-            level=metadata.get("level"),
-            depth=metadata.get("depth"),
-            kwargs=metadata.get("kwargs"),
-        )
+        client.subscribe_instrument(instrument_id)
 
     cdef void _handle_subscribe_order_book_deltas(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
         dict metadata,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
-        Condition.callable(handler, "handler")
-
-        # Subscribe to stream
-        if instrument_id not in self._order_book_delta_handlers:
-            # Setup handlers
-            self._order_book_delta_handlers[instrument_id] = []  # type: list[callable]
-            self._log.info(f"Subscribed to {instrument_id} <OrderBookDeltas> data.")
-
-        # Add handler for subscriber
-        if handler not in self._order_book_delta_handlers[instrument_id]:
-            self._order_book_delta_handlers[instrument_id].append(handler)
-            self._log.debug(f"Added {handler} for {instrument_id} <OrderBookDeltas> data.")
-        else:
-            self._log.warning(f"Handler {handler} already subscribed to "
-                              f"{instrument_id} <OrderBookDeltas> data.")
-
-        # Create order book
-        if not self._cache.has_order_book(instrument_id):
-            instrument = self._cache.instrument(instrument_id)
-            if instrument is None:
-                self._log.error(f"Cannot subscribe to {instrument_id} <OrderBookDeltas> data: "
-                                f"no instrument found in cache.")
-                return
-            order_book = OrderBook.create(
-                instrument=instrument,
-                level=metadata["level"],
-            )
-
-            self._cache.add_order_book(order_book)
 
         # Always re-subscribe to override previous settings
         client.subscribe_order_book_deltas(
@@ -698,346 +550,214 @@ cdef class DataEngine(Component):
             kwargs=metadata.get("kwargs"),
         )
 
+    cdef void _handle_subscribe_order_book_snapshots(
+        self,
+        MarketDataClient client,
+        InstrumentId instrument_id,
+        dict metadata,
+    ) except *:
+        Condition.not_none(client, "client")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(metadata, "metadata")
+
+        cdef int interval_ms = metadata["interval_ms"]
+        key = (instrument_id, interval_ms)
+        if key not in self._order_book_intervals:
+            self._order_book_intervals[key] = []
+            now = self._clock.utc_now()
+            start_time = now - timedelta(milliseconds=int((now.second * 1000) % interval_ms), microseconds=now.microsecond)
+            timer_name = f"OrderBookSnapshot-{instrument_id}-{interval_ms}"
+            self._clock.set_timer(
+                name=timer_name,
+                interval=timedelta(milliseconds=interval_ms),
+                start_time=start_time,
+                stop_time=None,
+                handler=self._snapshot_order_book,
+            )
+            self._log.debug(f"Set timer {timer_name}.")
+
+        # Create order book
+        if not self._cache.has_order_book(instrument_id):
+            instrument = self._cache.instrument(instrument_id)
+            if instrument is None:
+                self._log.error(
+                    f"Cannot subscribe to {instrument_id} <OrderBook> data: "
+                    f"no instrument found in cache.",
+                )
+                return
+            order_book = OrderBook.create(
+                instrument=instrument,
+                level=metadata["level"],
+            )
+
+            self._cache.add_order_book(order_book)
+            self._log.debug(f"Created {type(order_book).__name__}.")
+
+        # Always re-subscribe to override previous settings
+        client.subscribe_order_book_snapshots(
+            instrument_id=instrument_id,
+            level=metadata.get("level"),
+            depth=metadata.get("depth"),
+            kwargs=metadata.get("kwargs"),
+        )
+
     cdef void _handle_subscribe_quote_ticks(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.callable(handler, "handler")
 
-        if instrument_id not in self._quote_tick_handlers:
-            # Setup handlers
-            self._quote_tick_handlers[instrument_id] = []  # type: list[callable]
-            client.subscribe_quote_ticks(instrument_id)
-            self._log.info(f"Subscribed to {instrument_id} <QuoteTick> data.")
-
-        # Add handler for subscriber
-        if handler not in self._quote_tick_handlers[instrument_id]:
-            self._quote_tick_handlers[instrument_id].append(handler)
-            self._log.debug(f"Added {handler} for {instrument_id} <QuoteTick> data.")
-        else:
-            self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <QuoteTick> data.")
+        client.subscribe_quote_ticks(instrument_id)
 
     cdef void _handle_subscribe_trade_ticks(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.callable(handler, "handler")
 
-        if instrument_id not in self._trade_tick_handlers:
-            # Setup handlers
-            self._trade_tick_handlers[instrument_id] = []  # type: list[callable]
-            client.subscribe_trade_ticks(instrument_id)
-            self._log.info(f"Subscribed to {instrument_id} <TradeTick> data.")
-
-        # Add handler for subscriber
-        if handler not in self._trade_tick_handlers[instrument_id]:
-            self._trade_tick_handlers[instrument_id].append(handler)
-            self._log.debug(f"Added {handler} for {instrument_id} <TradeTick> data.")
-        else:
-            self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <TradeTick> data.")
+        client.subscribe_trade_ticks(instrument_id)
 
     cdef void _handle_subscribe_bars(
         self,
         MarketDataClient client,
         BarType bar_type,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
-        Condition.callable(handler, "handler")
 
-        if bar_type not in self._bar_handlers:
-            # Setup handlers
-            self._bar_handlers[bar_type] = []  # type: list[callable]
-            if bar_type.is_internal_aggregation:
-                if bar_type not in self._bar_aggregators:
-                    # Aggregation not started
-                    self._start_bar_aggregator(client, bar_type)
-            else:
-                # External aggregation
-                client.subscribe_bars(bar_type)
-            self._log.info(f"Subscribed to {bar_type} <Bar> data.")
-
-        # Add handler for subscriber
-        if handler not in self._bar_handlers[bar_type]:
-            self._bar_handlers[bar_type].append(handler)
-            self._log.debug(f"Added {handler} for {bar_type} <Bar> data.")
+        if bar_type.is_internal_aggregation and bar_type not in self._bar_aggregators:
+            # Internal aggregation
+            self._start_bar_aggregator(client, bar_type)
         else:
-            self._log.warning(f"Handler {handler} already subscribed to {bar_type} <Bar> data.")
+            # External aggregation
+            client.subscribe_bars(bar_type)
 
     cdef void _handle_subscribe_data(
         self,
         DataClient client,
         DataType data_type,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(data_type, "data_type")
-        Condition.callable(handler, "handler")
 
-        if data_type not in self._data_handlers:
-            # Setup handlers
-            try:
-                client.subscribe(data_type)
-            except NotImplementedError:
-                self._log.error(f"Cannot subscribe: {client.id.value} "
-                                f"has not implemented data type {data_type} subscriptions.")
-                return
-            self._data_handlers[data_type] = []  # type: list[callable]
-            self._log.info(f"Subscribed to {data_type} data.")
-
-        # Add handler for subscriber
-        if handler not in self._data_handlers[data_type]:
-            self._data_handlers[data_type].append(handler)
-            self._log.debug(f"Added {handler} for {data_type} data.")
-        else:
-            self._log.warning(f"Handler {handler} already subscribed to {data_type} data.")
+        try:
+            client.subscribe(data_type)
+        except NotImplementedError:
+            self._log.error(
+                f"Cannot subscribe: {client.id.value} "
+                f"has not implemented data type {data_type} subscriptions.",
+            )
+            return
 
     cdef void _handle_subscribe_instrument_status_updates(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.callable(handler, "handler")
 
-        if instrument_id not in self._status_update_handlers:
-            # Setup handlers
-            self._status_update_handlers[instrument_id] = []  # type: list[callable]
-            client.subscribe_instrument_status_updates(instrument_id)
-            self._log.info(f"Subscribed to {instrument_id} <InstrumentStatusUpdate> data.")
-
-        # Add handler for subscriber
-        if handler not in self._status_update_handlers[instrument_id]:
-            self._status_update_handlers[instrument_id].append(handler)
-            self._log.debug(f"Added {handler} for {instrument_id} <InstrumentStatusUpdate> data.")
-        else:
-            self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <InstrumentStatusUpdate> data.")
+        client.subscribe_instrument_status_updates(instrument_id)
 
     cdef void _handle_subscribe_instrument_close_prices(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.callable(handler, "handler")
 
-        if instrument_id not in self._close_price_handlers:
-            # Setup handlers
-            self._close_price_handlers[instrument_id] = []  # type: list[callable]
-            client.subscribe_instrument_status_updates(instrument_id)
-            self._log.info(f"Subscribed to {instrument_id} <InstrumentClosePrice> data.")
-
-        # Add handler for subscriber
-        if handler not in self._close_price_handlers[instrument_id]:
-            self._close_price_handlers[instrument_id].append(handler)
-            self._log.debug(f"Added {handler} for {instrument_id} <InstrumentClosePrice> data.")
-        else:
-            self._log.warning(f"Handler {handler} already subscribed to {instrument_id} <InstrumentClosePrice> data.")
+        client.subscribe_instrument_status_updates(instrument_id)
 
     cdef void _handle_unsubscribe_instrument(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.callable(handler, "handler")
 
-        if instrument_id not in self._instrument_handlers:
-            self._log.warning(f"Handler {handler} not subscribed to {instrument_id} <Instrument> data.")
-            return
+        client.unsubscribe_instrument(instrument_id)
 
-        # Remove subscribers handler
-        if handler in self._instrument_handlers[instrument_id]:
-            self._instrument_handlers[instrument_id].remove(handler)
-            self._log.debug(f"Removed handler {handler} for {instrument_id} <Instrument> data.")
-        else:
-            self._log.warning(f"Handler {handler} not subscribed to {instrument_id} <Instrument> data.")
-
-        if not self._instrument_handlers[instrument_id]:
-            # No more handlers for instrument_id
-            del self._instrument_handlers[instrument_id]
-            client.unsubscribe_instrument(instrument_id)
-            self._log.info(f"Unsubscribed from {instrument_id} <Instrument> data.")
-
-    cdef void _handle_unsubscribe_order_book(
+    cdef void _handle_unsubscribe_order_book_deltas(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
         dict metadata,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
-        Condition.callable(handler, "handler")
 
-        cdef int interval = metadata.get("interval")
-        if interval > 0:
-            # Remove interval subscribers handler
-            key = (instrument_id, interval)
-            handlers = self._order_book_intervals.get(key)
-            if not handlers:
-                self._log.warning(f"No order book snapshot handlers for {instrument_id}"
-                                  f"at {interval} second intervals.")
-                return
+        client.unsubscribe_order_book_deltas(instrument_id)
 
-            if handler not in handlers:
-                self._log.warning(f"Handler {handler} not subscribed to {instrument_id} "
-                                  f"<OrderBook> data at {interval} second intervals.")
-                return
+    cdef void _handle_unsubscribe_order_book_snapshots(
+        self,
+        MarketDataClient client,
+        InstrumentId instrument_id,
+        dict metadata,
+    ) except *:
+        Condition.not_none(client, "client")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(metadata, "metadata")
 
-            handlers.remove(handler)
-            if not handlers:
-                timer_name = f"OrderBookSnapshot-{instrument_id}-{interval}"
-                self._clock.cancel_timer(timer_name)
-                self._log.debug(f"Cancelled timer {timer_name}.")
-                del self._order_book_intervals[key]
-                self._log.info(f"Unsubscribed from {instrument_id} <OrderBook> "
-                               f"{interval} second intervals data.")
-            return
-
-        if instrument_id not in self._order_book_handlers:
-            self._log.warning(f"Handler {handler} not subscribed to {instrument_id} <OrderBook> data.")
-            return
-
-        # Remove subscribers handler
-        if handler in self._order_book_handlers[instrument_id]:
-            self._order_book_handlers[instrument_id].remove(handler)
-            self._log.debug(f"Removed handler {handler} for {instrument_id} <OrderBook> data.")
-        else:
-            self._log.warning(f"Handler {handler} not subscribed to {instrument_id} <OrderBook> data.")
-
-        if not self._order_book_handlers[instrument_id]:
-            # No more handlers for instrument_id
-            del self._order_book_handlers[instrument_id]
-            client.unsubscribe_order_book(instrument_id)
-            self._log.info(f"Unsubscribed from {instrument_id} <OrderBook> data.")
+        client.unsubscribe_order_book_snapshots(instrument_id)
 
     cdef void _handle_unsubscribe_quote_ticks(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.callable(handler, "handler")
 
-        if instrument_id not in self._quote_tick_handlers:
-            self._log.warning(f"Handler {handler} not subscribed to {instrument_id} <QuoteTick> data.")
-            return
-
-        # Remove subscribers handler
-        if handler in self._quote_tick_handlers[instrument_id]:
-            self._quote_tick_handlers[instrument_id].remove(handler)
-            self._log.debug(f"Removed handler {handler} for {instrument_id} <QuoteTick> data.")
-        else:
-            self._log.warning(f"Handler {handler} not subscribed to {instrument_id} <QuoteTick> data.")
-
-        if not self._quote_tick_handlers[instrument_id]:
-            # No more handlers for instrument_id
-            del self._quote_tick_handlers[instrument_id]
-            client.unsubscribe_quote_ticks(instrument_id)
-            self._log.info(f"Unsubscribed from {instrument_id} <QuoteTick> data.")
+        client.unsubscribe_quote_ticks(instrument_id)
 
     cdef void _handle_unsubscribe_trade_ticks(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.callable(handler, "handler")
 
-        if instrument_id not in self._trade_tick_handlers:
-            self._log.warning(f"Handler {handler} not subscribed to {instrument_id} <TradeTick> data.")
-            return
-
-        # Remove subscribers handler
-        if handler in self._trade_tick_handlers[instrument_id]:
-            self._trade_tick_handlers[instrument_id].remove(handler)
-            self._log.debug(f"Removed handler {handler} for {instrument_id} <TradeTick> data.")
-        else:
-            self._log.warning(f"Handler {handler} not subscribed to {instrument_id} <TradeTick> data.")
-
-        if not self._trade_tick_handlers[instrument_id]:
-            # No more handlers for instrument_id
-            del self._trade_tick_handlers[instrument_id]
-            client.unsubscribe_trade_ticks(instrument_id)
-            self._log.info(f"Unsubscribed from {instrument_id} <TradeTick> data.")
+        client.unsubscribe_trade_ticks(instrument_id)
 
     cdef void _handle_unsubscribe_bars(
         self,
         MarketDataClient client,
         BarType bar_type,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
-        Condition.callable(handler, "handler")
 
-        if bar_type not in self._bar_handlers:
-            self._log.warning(f"Handler {handler} not subscribed to {bar_type} <Bar> data.")
-            return
-
-        # Remove subscribers handler
-        if handler in self._bar_handlers[bar_type]:
-            self._bar_handlers[bar_type].remove(handler)
-            self._log.debug(f"Removed handler {handler} for {bar_type} <Bar> data.")
+        if bar_type.is_internal_aggregation and bar_type in self._bar_aggregators:
+            # Internal aggregation
+            self._stop_bar_aggregator(client, bar_type)
         else:
-            self._log.warning(f"Handler {handler} not subscribed to {bar_type} <Bar> data.")
-
-        if not self._bar_handlers[bar_type]:
-            # No more handlers for bar type
-            del self._bar_handlers[bar_type]
-            if bar_type.is_internal_aggregation:
-                self._stop_bar_aggregator(client, bar_type)
-            else:
-                client.unsubscribe_bars(bar_type)
-            self._log.info(f"Unsubscribed from {bar_type} <Bar> data.")
+            # External aggregation
+            client.unsubscribe_bars(bar_type)
 
     cdef void _handle_unsubscribe_data(
         self,
         DataClient client,
         DataType data_type,
-        handler: callable,
     ) except *:
         Condition.not_none(client, "client")
         Condition.not_none(data_type, "data_type")
-        Condition.callable(handler, "handler")
 
-        if data_type not in self._data_handlers:
-            self._log.warning(f"Handler {handler} not subscribed to {data_type} data.")
-            return
-
-        # Remove subscribers handler
-        if handler in self._data_handlers[data_type]:
-            self._data_handlers[data_type].remove(handler)
-            self._log.debug(f"Removed handler {handler} for {data_type} data.")
-        else:
-            self._log.warning(f"Handler {handler} not subscribed to {data_type} data.")
-
-        if not self._data_handlers[data_type]:
-            # No more handlers for data type
-            del self._data_handlers[data_type]
+        try:
             client.unsubscribe(data_type)
-            self._log.info(f"Unsubscribed from {data_type} data.")
+        except NotImplementedError:
+            self._log.error(
+                f"Cannot unsubscribe: {client.id.value} "
+                f"has not implemented data type {data_type} subscriptions.",
+            )
+            return
 
 # -- REQUEST HANDLERS ------------------------------------------------------------------------------
 
@@ -1115,106 +835,82 @@ cdef class DataEngine(Component):
             self._handle_bar(data)
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
-        elif isinstance(data, GenericData):
-            self._handle_generic_data(data)
         elif isinstance(data, StatusUpdate):
             self._handle_status_update(data)
         elif isinstance(data, InstrumentClosePrice):
             self._handle_close_price(data)
+        elif isinstance(data, GenericData):
+            self._handle_generic_data(data)
         else:
             self._log.error(f"Cannot handle data: unrecognized type {type(data)} {data}.")
 
     cdef void _handle_instrument(self, Instrument instrument) except *:
         self._cache.add_instrument(instrument)
-
-        cdef list instrument_handlers = self._instrument_handlers.get(instrument.id, [])
-        for handler in instrument_handlers:
-            handler(instrument)
+        self._msgbus.publish(
+            topic=f"data.instrument"
+                  f".{instrument.id.venue}"
+                  f".{instrument.id.symbol}",
+            msg=instrument,
+        )
 
     cdef void _handle_quote_tick(self, QuoteTick tick) except *:
         self._cache.add_quote_tick(tick)
-
-        # Send to portfolio as a priority
-        self.portfolio.update_tick(tick)
-
-        # Send to all registered tick handlers for that instrument_id
-        cdef list tick_handlers = self._quote_tick_handlers.get(tick.instrument_id, [])
-        for handler in tick_handlers:
-            handler(tick)
+        self._msgbus.publish(
+            topic=f"data.quotes"
+                  f".{tick.instrument_id.venue}"
+                  f".{tick.instrument_id.symbol}",
+            msg=tick,
+        )
 
     cdef void _handle_trade_tick(self, TradeTick tick) except *:
         self._cache.add_trade_tick(tick)
-
-        # Send to all registered tick handlers for that instrument_id
-        cdef list tick_handlers = self._trade_tick_handlers.get(tick.instrument_id, [])
-        for handler in tick_handlers:
-            handler(tick)
+        self._msgbus.publish(
+            topic=f"data.trades"
+                  f".{tick.instrument_id.venue}"
+                  f".{tick.instrument_id.symbol}",
+            msg=tick,
+        )
 
     cdef void _handle_order_book_deltas(self, OrderBookDeltas deltas) except *:
-        cdef InstrumentId instrument_id = deltas.instrument_id
-        cdef OrderBook order_book = self._cache.order_book(instrument_id)
-        if order_book is None:
-            self._log.error(f"Cannot apply `OrderBookDeltas`: "
-                            f"no book found for {deltas.instrument_id}.")
-            return
-
-        order_book.apply_deltas(deltas)
-
-        # Send to all registered order book handlers for that instrument_id
-        cdef list order_book_handlers = self._order_book_handlers.get(instrument_id, [])
-        for orderbook_handler in order_book_handlers:
-            orderbook_handler(order_book)
-
-        # Send to all registered order book delta handlers for that instrument_id
-        cdef list order_book_delta_handlers = self._order_book_delta_handlers.get(instrument_id, [])
-        for orderbook_delta_handler in order_book_delta_handlers:
-            orderbook_delta_handler(deltas)
+        self._msgbus.publish(
+            topic=f"data.book.deltas"
+                  f".{deltas.instrument_id.venue}"
+                  f".{deltas.instrument_id.symbol}",
+            msg=deltas,
+        )
 
     cdef void _handle_order_book_snapshot(self, OrderBookSnapshot snapshot) except *:
         cdef InstrumentId instrument_id = snapshot.instrument_id
         cdef OrderBook order_book = self._cache.order_book(instrument_id)
         if order_book is None:
-            self._log.error(f"Cannot apply `OrderBookSnapshot`: "
-                            f"no book found for {snapshot.instrument_id}.")
+            self._log.error(
+                f"Cannot apply `OrderBookSnapshot`: "
+                f"no book found for {snapshot.instrument_id}.",
+            )
             return
 
         order_book.apply_snapshot(snapshot)
 
-        # Send to all registered order book handlers for that instrument_id
-        cdef list order_book_handlers = self._order_book_handlers.get(instrument_id, [])
-        for handler in order_book_handlers:
-            handler(order_book)
-
-        # Send to all registered order book delta handlers for that instrument_id
-        cdef list order_book_delta_handlers = self._order_book_delta_handlers.get(instrument_id, [])
-        for orderbook_delta_handler in order_book_delta_handlers:
-            orderbook_delta_handler(snapshot)
+        self._msgbus.publish(
+            topic=f"data.book.deltas"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            msg=snapshot,
+        )
 
     cdef void _handle_bar(self, Bar bar) except *:
         self._cache.add_bar(bar)
 
-        # Send to all registered bar handlers for that bar type
-        cdef list bar_handlers = self._bar_handlers.get(bar.type, [])
-        for handler in bar_handlers:
-            handler(bar)
-
-    cdef void _handle_generic_data(self, GenericData data) except *:
-        # Send to all registered data handlers for that data type
-        cdef list handlers = self._data_handlers.get(data.data_type, [])
-        for handler in handlers:
-            handler(data)
+        self._msgbus.publish(topic=f"data.bars.{bar.type}", msg=bar)
 
     cdef void _handle_status_update(self, StatusUpdate data) except *:
-        # Send to all registered data handlers for that data type
-        cdef list status_handlers = self._status_update_handlers.get(data.instrument_id, [])
-        for handler in status_handlers:
-            handler(data)
+        self._msgbus.publish(topic=f"data.venue.status", msg=data)
 
     cdef void _handle_close_price(self, InstrumentClosePrice data) except *:
-        # Send to all registered data handlers for that data type
-        cdef list close_price_handler = self._close_price_handlers.get(data.instrument_id, [])
-        for handler in close_price_handler:
-            handler(data)
+        self._msgbus.publish(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
+
+    cdef void _handle_generic_data(self, GenericData data) except *:
+        self._msgbus.publish(topic=f"data.generic.{data.data_type}", msg=data)
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 
@@ -1313,16 +1009,17 @@ cdef class DataEngine(Component):
     cpdef void _snapshot_order_book(self, TimeEvent snap_event) except *:
         cdef tuple pieces = snap_event.name.partition('-')[2].partition('-')
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
-        cdef int interval = int(pieces[2])
-        cdef list handlers = self._order_book_intervals.get((instrument_id, interval))
-        if handlers is None:
-            self._log.error("No handlers")
-            return
+        cdef int interval_ms = int(pieces[2])
 
         cdef OrderBook order_book = self._cache.order_book(instrument_id)
         if order_book:
-            for handler in handlers:
-                handler(order_book)
+            self._msgbus.publish(
+                topic=f"data.book.snapshots"
+                      f".{instrument_id.venue}"
+                      f".{instrument_id.symbol}"
+                      f".{interval_ms}",
+                msg=order_book,
+            )
 
     cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *:
         cdef Instrument instrument = self._cache.instrument(bar_type.instrument_id)
@@ -1377,10 +1074,23 @@ cdef class DataEngine(Component):
         self._log.debug(f"Added {aggregator} for {bar_type} bars.")
 
         # Subscribe to required data
+        instrument_id = bar_type.instrument_id
         if bar_type.spec.price_type == PriceType.LAST:
-            self._handle_subscribe_trade_ticks(client, bar_type.instrument_id, aggregator.handle_trade_tick)
+            self._msgbus.subscribe(
+                topic=f"data.trades"
+                      f".{instrument_id.venue}"
+                      f".{instrument_id.symbol}",
+                handler=aggregator.handle_trade_tick,
+            )
+            self._handle_subscribe_trade_ticks(client, bar_type.instrument_id)
         else:
-            self._handle_subscribe_quote_ticks(client, bar_type.instrument_id, aggregator.handle_quote_tick)
+            self._msgbus.subscribe(
+                topic=f"data.quotes"
+                      f".{instrument_id.venue}"
+                      f".{instrument_id.symbol}",
+                handler=aggregator.handle_quote_tick,
+            )
+            self._handle_subscribe_quote_ticks(client, bar_type.instrument_id)
 
     cdef void _hydrate_aggregator(
         self,
@@ -1425,10 +1135,23 @@ cdef class DataEngine(Component):
             aggregator.stop()
 
         # Unsubscribe from update ticks
+        instrument_id = bar_type.instrument_id
         if bar_type.spec.price_type == PriceType.LAST:
-            self._handle_unsubscribe_trade_ticks(client, bar_type.instrument_id, aggregator.handle_trade_tick)
+            self._msgbus.unsubscribe(
+                topic=f"data.trades"
+                      f".{instrument_id.venue}"
+                      f".{instrument_id.symbol}",
+                handler=aggregator.handle_trade_tick,
+            )
+            self._handle_unsubscribe_trade_ticks(client, bar_type.instrument_id)
         else:
-            self._handle_unsubscribe_quote_ticks(client, bar_type.instrument_id, aggregator.handle_quote_tick)
+            self._msgbus.unsubscribe(
+                topic=f"data.quotes"
+                      f".{instrument_id.venue}"
+                      f".{instrument_id.symbol}",
+                handler=aggregator.handle_quote_tick,
+            )
+            self._handle_unsubscribe_quote_ticks(client, bar_type.instrument_id)
 
         # Remove from aggregators
         del self._bar_aggregators[bar_type]

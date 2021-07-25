@@ -594,7 +594,6 @@ class TestStubs:
     def mock_live_data_engine():
         return MockLiveDataEngine(
             loop=asyncio.get_event_loop(),
-            portfolio=TestStubs.portfolio(),
             msgbus=TestStubs.msgbus(),
             cache=TestStubs.cache(),
             clock=TestStubs.clock(),

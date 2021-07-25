@@ -74,7 +74,6 @@ class TestLiveDataEngine:
 
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -102,7 +101,6 @@ class TestLiveDataEngine:
 
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -113,7 +111,6 @@ class TestLiveDataEngine:
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
             data_type=DataType(QuoteTick),
-            handler=[].append,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -135,7 +132,6 @@ class TestLiveDataEngine:
 
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -177,7 +173,6 @@ class TestLiveDataEngine:
 
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -211,7 +206,6 @@ class TestLiveDataEngine:
 
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -278,7 +272,6 @@ class TestLiveDataEngine:
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
             data_type=DataType(QuoteTick),
-            handler=[].append,
             command_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )

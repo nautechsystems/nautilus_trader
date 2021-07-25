@@ -39,13 +39,11 @@ class TestDataMessage:
     def test_data_command_str_and_repr(self):
         # Arrange
         # Act
-        handler = [].append
         command_id = self.uuid_factory.generate()
 
         command = Subscribe(
             client_id=ClientId(BINANCE.value),
             data_type=DataType(str, {"type": "newswire"}),  # str data type is invalid
-            handler=handler,
             command_id=command_id,
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -56,7 +54,6 @@ class TestDataMessage:
             f"Subscribe("
             f"client_id=BINANCE, "
             f"data_type=<str> {{'type': 'newswire'}}, "
-            f"handler={repr(handler)}, "
             f"id={command_id})"
         ) == repr(command)
 
