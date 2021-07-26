@@ -16,153 +16,7 @@
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.msgbus.message_bus import Subscription
 from tests.test_kit.stubs import TestStubs
-
-
-class TestSubscription:
-    def test_comparisons_returns_expected(self):
-        # Arrange
-        subscriber = []
-
-        subscription1 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=0,
-        )
-
-        subscription2 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=1,
-        )
-
-        # Act, Assert
-        assert subscription1 == subscription2
-        assert subscription1 < subscription2
-        assert subscription1 <= subscription2
-        assert subscription2 > subscription1
-        assert subscription2 >= subscription1
-
-    def test_equality_when_equal_returns_true(self):
-        # Arrange
-        subscriber = []
-
-        subscription1 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=1,
-        )
-
-        subscription2 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=2,  # <-- priority does not affect equality
-        )
-
-        # Act, Assert
-        assert subscription1 == subscription2
-
-    def test_equality_when_not_equal_returns_false(self):
-        # Arrange
-        subscriber = []
-
-        subscription1 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=1,
-        )
-
-        subscription2 = Subscription(
-            topic="something",
-            handler=subscriber.append,
-            priority=2,  # <-- priority does not affect equality
-        )
-
-        # Act, Assert
-        assert subscription1 != subscription2
-
-    def test_reverse_sorting_list_of_subscribers_returns_expected_ordered_list(self):
-        # Arrange
-        subscriber = []
-
-        subscription1 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-        )
-
-        subscription2 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=5,  # <-- priority does not affect equality
-        )
-
-        subscription3 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=2,  # <-- priority does not affect equality
-        )
-
-        subscription4 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=10,  # <-- priority does not affect equality
-        )
-
-        # Act
-        sorted_list = sorted(
-            [
-                subscription1,
-                subscription2,
-                subscription3,
-                subscription4,
-            ],
-            reverse=True,
-        )
-
-        # Assert
-        assert sorted_list == [subscription4, subscription2, subscription3, subscription1]
-        assert sorted_list[0] == subscription4
-        assert sorted_list[1] == subscription2
-        assert sorted_list[2] == subscription3
-        assert sorted_list[3] == subscription1
-
-    def test_subscription_for_all(self):
-        # Arrange
-        subscriber = []
-        handler_str = str(subscriber.append)
-
-        # Act
-        subscription = Subscription(
-            topic="*",
-            handler=subscriber.append,
-        )
-
-        # Assert
-        assert str(subscription).startswith(
-            f"Subscription(topic=*, handler={handler_str}, priority=0)"
-        )
-
-    def test_str_repr(self):
-        # Arrange
-        subscriber = []
-        handler_str = str(subscriber.append)
-
-        # Act
-        subscription = Subscription(
-            topic="system_status",
-            handler=subscriber.append,
-        )
-
-        # Assert
-        assert (
-            str(subscription)
-            == f"Subscription(topic=system_status, handler={handler_str}, priority=0)"
-        )
-        assert (
-            repr(subscription)
-            == f"Subscription(topic=system_status, handler={handler_str}, priority=0)"
-        )
 
 
 class TestMessageBus:
@@ -186,7 +40,7 @@ class TestMessageBus:
 
         assert result == []
 
-    def test_channels_with_no_subscribers_returns_empty_list(self):
+    def test_topics_with_no_subscribers_returns_empty_list(self):
         # Arrange, Act
         result = self.msgbus.topics()
 
@@ -243,7 +97,7 @@ class TestMessageBus:
         # Assert
         assert "message" in endpoint
 
-    def test_subscribe_then_returns_channels_list_including_topic(self):
+    def test_subscribe_then_returns_topics_list_including_topic(self):
         # Arrange
         handler = [].append
 
@@ -279,7 +133,7 @@ class TestMessageBus:
         # Assert
         assert result == ["a"]
 
-    def test_subscribe_to_channel_returns_subscriptions_list_including_handler(self):
+    def test_subscribe_then_subscriptions_list_includes_handler(self):
         # Arrange
         handler = [].append
 
@@ -292,7 +146,7 @@ class TestMessageBus:
         assert len(result) == 1
         assert result[0].handler == handler
 
-    def test_subscribe_to_all_returns_subscriptions_list_including_handler(self):
+    def test_subscribe_to_all_then_subscriptions_list_includes_handler(self):
         # Arrange
         handler = [].append
 
@@ -320,7 +174,7 @@ class TestMessageBus:
         assert len(result) == 1
         assert result[0].handler == handler
 
-    def test_unsubscribe_from_msg_type_returns_subscriptions_list_without_handler(self):
+    def test_unsubscribe_then_handler_not_in_subscriptions_list(self):
         # Arrange
         handler = [].append
 
@@ -334,7 +188,7 @@ class TestMessageBus:
         # Assert
         assert result == []
 
-    def test_unsubscribe_from_msg_type_when_no_subscription_does_nothing(self):
+    def test_unsubscribe_when_no_subscription_does_nothing(self):
         # Arrange
         handler = [].append
 

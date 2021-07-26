@@ -16,15 +16,7 @@
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.model.identifiers cimport TraderId
-
-
-cdef class Subscription:
-    cdef readonly str topic
-    """The topic for the subscription.\n\n:returns: `str`"""
-    cdef readonly object handler
-    """The handler for the subscription.\n\n:returns: `Callable`"""
-    cdef readonly int priority
-    """The priority for the subscription.\n\n:returns: `int`"""
+from nautilus_trader.msgbus.subscription cimport Subscription
 
 
 cdef class MessageBus:
