@@ -537,8 +537,8 @@ cdef class TradingStrategy(Component):
         self._msgbus = msgbus
 
         # Required subscriptions
-        self._msgbus.subscribe(topic=f"events.order.{self.id.value}*", handler=self.handle_event)
-        self._msgbus.subscribe(topic=f"events.position.{self.id.value}*", handler=self.handle_event)
+        self._msgbus.subscribe(topic=f"events.order.{self.id.value}", handler=self.handle_event)
+        self._msgbus.subscribe(topic=f"events.position.{self.id.value}", handler=self.handle_event)
 
         self.cache = cache
         self.portfolio = portfolio  # Assigned as PortfolioFacade
@@ -1460,9 +1460,7 @@ cdef class TradingStrategy(Component):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order"
-                  f".{order.strategy_id.value}"
-                  f".{order.client_order_id.value}",
+            topic=f"events.order.{order.strategy_id.value}",
             msg=order.init_event_c(),
         )
 
@@ -1495,21 +1493,15 @@ cdef class TradingStrategy(Component):
 
         # Publish initialized events
         self._msgbus.publish_c(
-            topic=f"events.order"
-                  f".{bracket_order.entry.strategy_id.value}"
-                  f".{bracket_order.entry.client_order_id.value}",
+            topic=f"events.order.{bracket_order.entry.strategy_id.value}",
             msg=bracket_order.entry.init_event_c(),
         )
         self._msgbus.publish_c(
-            topic=f"events.order"
-                  f".{bracket_order.stop_loss.strategy_id.value}"
-                  f".{bracket_order.stop_loss.client_order_id.value}",
+            topic=f"events.order.{bracket_order.stop_loss.strategy_id.value}",
             msg=bracket_order.stop_loss.init_event_c(),
         )
         self._msgbus.publish_c(
-            topic=f"events.order"
-                  f".{bracket_order.take_profit.strategy_id.value}"
-                  f".{bracket_order.take_profit.client_order_id.value}",
+            topic=f"events.order.{bracket_order.take_profit.strategy_id.value}",
             msg=bracket_order.take_profit.init_event_c(),
         )
 
@@ -1730,9 +1722,7 @@ cdef class TradingStrategy(Component):
 
         # Publish initialized event
         self._msgbus.publish_c(
-            topic=f"events.order"
-                  f".{order.strategy_id.value}"
-                  f".{order.client_order_id.value}",
+            topic=f"events.order.{order.strategy_id.value}",
             msg=order.init_event_c(),
         )
 

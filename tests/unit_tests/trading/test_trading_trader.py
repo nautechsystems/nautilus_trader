@@ -234,7 +234,7 @@ class TestTrader:
 
         # Assert
         assert len(self.msgbus.subscriptions("events*")) == 9
-        assert "events*" in self.msgbus.channels()
+        assert "events*" in self.msgbus.topics()
         assert self.msgbus.subscriptions("events*")[-1].handler == consumer.append
 
     def test_unsubscribe_from_msgbus_topic_removes_subscription(self):
