@@ -537,8 +537,8 @@ cdef class TradingStrategy(Component):
         self._msgbus = msgbus
 
         # Required subscriptions
-        self._msgbus.subscribe(topic=f"events.order.{self.id.value}", handler=self.handle_event)
-        self._msgbus.subscribe(topic=f"events.position.{self.id.value}", handler=self.handle_event)
+        self._msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)
+        self._msgbus.subscribe(topic=f"events.position.{self.id}", handler=self.handle_event)
 
         self.cache = cache
         self.portfolio = portfolio  # Assigned as PortfolioFacade

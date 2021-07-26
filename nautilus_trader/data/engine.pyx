@@ -846,7 +846,7 @@ cdef class DataEngine(Component):
 
     cdef void _handle_instrument(self, Instrument instrument) except *:
         self._cache.add_instrument(instrument)
-        self._msgbus.publish(
+        self._msgbus.publish_c(
             topic=f"data.instrument"
                   f".{instrument.id.venue}"
                   f".{instrument.id.symbol}",
@@ -855,7 +855,7 @@ cdef class DataEngine(Component):
 
     cdef void _handle_quote_tick(self, QuoteTick tick) except *:
         self._cache.add_quote_tick(tick)
-        self._msgbus.publish(
+        self._msgbus.publish_c(
             topic=f"data.quotes"
                   f".{tick.instrument_id.venue}"
                   f".{tick.instrument_id.symbol}",
@@ -864,7 +864,7 @@ cdef class DataEngine(Component):
 
     cdef void _handle_trade_tick(self, TradeTick tick) except *:
         self._cache.add_trade_tick(tick)
-        self._msgbus.publish(
+        self._msgbus.publish_c(
             topic=f"data.trades"
                   f".{tick.instrument_id.venue}"
                   f".{tick.instrument_id.symbol}",
@@ -872,7 +872,7 @@ cdef class DataEngine(Component):
         )
 
     cdef void _handle_order_book_deltas(self, OrderBookDeltas deltas) except *:
-        self._msgbus.publish(
+        self._msgbus.publish_c(
             topic=f"data.book.deltas"
                   f".{deltas.instrument_id.venue}"
                   f".{deltas.instrument_id.symbol}",
@@ -891,7 +891,7 @@ cdef class DataEngine(Component):
 
         order_book.apply_snapshot(snapshot)
 
-        self._msgbus.publish(
+        self._msgbus.publish_c(
             topic=f"data.book.deltas"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -901,16 +901,16 @@ cdef class DataEngine(Component):
     cdef void _handle_bar(self, Bar bar) except *:
         self._cache.add_bar(bar)
 
-        self._msgbus.publish(topic=f"data.bars.{bar.type}", msg=bar)
+        self._msgbus.publish_c(topic=f"data.bars.{bar.type}", msg=bar)
 
     cdef void _handle_status_update(self, StatusUpdate data) except *:
-        self._msgbus.publish(topic=f"data.venue.status", msg=data)
+        self._msgbus.publish_c(topic=f"data.venue.status", msg=data)
 
     cdef void _handle_close_price(self, InstrumentClosePrice data) except *:
-        self._msgbus.publish(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
+        self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
 
     cdef void _handle_generic_data(self, GenericData data) except *:
-        self._msgbus.publish(topic=f"data.generic.{data.data_type}", msg=data)
+        self._msgbus.publish_c(topic=f"data.generic.{data.data_type}", msg=data)
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 
@@ -1013,7 +1013,7 @@ cdef class DataEngine(Component):
 
         cdef OrderBook order_book = self._cache.order_book(instrument_id)
         if order_book:
-            self._msgbus.publish(
+            self._msgbus.publish_c(
                 topic=f"data.book.snapshots"
                       f".{instrument_id.venue}"
                       f".{instrument_id.symbol}"

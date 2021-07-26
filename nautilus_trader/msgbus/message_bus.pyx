@@ -22,92 +22,27 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.identifiers cimport TraderId
-
-
-cdef str WILDCARD = "*"
-
-
-cdef class Subscription:
-    """
-    Represents a subscription to a particular topic.
-
-    This is an internal class intended to be used by the message bus to organize
-    topics and their subscribers.
-
-    Notes
-    -----
-    The subscription equality is determined by the topic and handler,
-    priority is not considered (and could change).
-
-    """
-
-    def __init__(
-        self,
-        str topic,
-        handler not None: Callable[[Any], None],
-        int priority=0,
-    ):
-        """
-        Initialize a new instance of the ``Subscription`` class.
-
-        Parameters
-        ----------
-        topic : str
-            The topic for the subscription. May include wildcard characters.
-        handler : Callable[[Message], None]
-            The handler for the subscription.
-        priority : int
-            The priority for the subscription.
-
-        Raises
-        ------
-        ValueError
-            If topic is not a valid string.
-        ValueError
-            If handler is not of type callable.
-        ValueError
-            If priority is negative (< 0).
-
-        """
-        Condition.valid_string(topic, "topic")
-        Condition.callable(handler, "handler")
-        Condition.not_negative_int(priority, "priority")
-
-        self.topic = topic
-        self.handler = handler
-        self.priority = priority
-
-    def __eq__(self, Subscription other) -> bool:
-        return self.topic == other.topic and self.handler == other.handler
-
-    def __lt__(self, Subscription other) -> bool:
-        return self.priority < other.priority
-
-    def __le__(self, Subscription other) -> bool:
-        return self.priority <= other.priority
-
-    def __gt__(self, Subscription other) -> bool:
-        return self.priority > other.priority
-
-    def __ge__(self, Subscription other) -> bool:
-        return self.priority >= other.priority
-
-    def __hash__(self) -> int:
-        return hash((self.topic, self.handler))
-
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"topic={self.topic}, "
-                f"handler={self.handler}, "
-                f"priority={self.priority})")
+from nautilus_trader.msgbus.wildcard cimport is_matching
 
 
 cdef class MessageBus:
     """
-    Provides a generic message bus to facilitate consumers subscribing to
-    publishing producers.
+    Provides a generic message bus to facilitate various messaging patterns.
 
-    The bus provides both a producer and consumer API.
+    The bus provides both a producer and consumer API for PUB/SUB, REQ/REP as
+    well as direct point-to-point messaging to registered endpoints.
+
+    Wildcard patterns for hierarchical topics are possible:
+     - '*' asterisk represents one or more characters in a pattern.
+     - '?' question mark represents a single character in a pattern.
+
+    The asterisk in a wildcard matches any character zero or more times. For
+    example, "comp*" matches anything beginning with "comp" which means "comp,"
+    "complete," and "computer" are all matched.
+
+    A question mark matches a single character once. For example, "c?mp" matches
+    "camp" and "comp." The question mark can also be used more than once.
+    For example, "c??p" would match both of the above examples and "coop."
     """
 
     def __init__(
@@ -182,8 +117,8 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str, optional
-            The topic filter. May include wildcard characters.
-            If None then filter is for ALL topics.
+            The topic filter. May include wildcard characters '*' and '?'.
+            If None then query is for ALL topics.
 
         Returns
         -------
@@ -191,7 +126,7 @@ cdef class MessageBus:
 
         """
         if topic is None:
-            topic = WILDCARD
+            topic = "*"  # Wildcard
         Condition.valid_string(topic, "topic")
 
         return [s for s in self._subscriptions if is_matching(s.topic, topic)]
@@ -203,7 +138,7 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str, optional
-            The topic filter. May include wildcard characters.
+            The topic filter. May include wildcard characters '*' and '?'.
             If None then query is for ALL topics.
 
         Returns
@@ -304,7 +239,7 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str
-            The topic for the subscription. May include wildcard characters.
+            The topic for the subscription. May include wildcard characters '*' and '?'.
         handler : Callable[[Any], None]
             The handler for the subscription.
         priority : int, optional
@@ -325,8 +260,8 @@ cdef class MessageBus:
         normally be needed by most users. Only assign a higher priority to the
         subscription if you are certain of what you're doing. If an inappropriate
         priority is assigned then the handler may receive messages before core
-        system components have been able to conduct the necessary calculations
-        for logically sound behaviour.
+        system components have been able to produce side effects and conduct the
+        necessary calculations for logically sound behaviour.
 
         """
         Condition.valid_string(topic, "topic")
@@ -367,7 +302,7 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str, optional
-            The topic to unsubscribe from. May include wildcard characters.
+            The topic to unsubscribe from. May include wildcard characters '*' and '?'.
         handler : Callable[[Any], None]
             The handler for the subscription.
 
@@ -411,7 +346,7 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str
-            The topic to publish on. May include wildcard characters.
+            The topic to publish on.
         msg : object
             The message to publish.
 
@@ -454,52 +389,3 @@ cdef class MessageBus:
             self._subscriptions[sub] = sorted(matches)
 
         return subs_array
-
-
-cdef inline bint is_matching(str topic, str pattern) except *:
-    """
-    Return a value indicating whether the topic matches with the pattern.
-
-    Given a topic and pattern potentially containing wildcard characters, i.e.
-    '*' and '?', where '?' can match any single character in the topic, and '*'
-    can match any number of characters including zero characters.
-
-    Parameters
-    ----------
-    topic : str
-        The topic string.
-    pattern : str
-        The pattern to match on.
-
-    Returns
-    -------
-    bool
-
-    """
-    # Get length of string and wildcard pattern
-    cdef int n = len(topic)
-    cdef int m = len(pattern)
-
-    # Create a DP lookup table
-    cdef list t = [[False for x in range(m + 1)] for y in range(n + 1)]
-
-    # If both pattern and string are empty: match
-    t[0][0] = True
-
-    # Handle empty string case (i == 0)
-    cdef int j
-    for j in range(1, m + 1):
-        if pattern[j - 1] == '*':
-            t[0][j] = t[0][j - 1]
-
-    # Build a matrix in a bottom-up manner
-    cdef int i
-    for i in range(1, n + 1):
-        for j in range(1, m + 1):
-            if pattern[j - 1] == '*':
-                t[i][j] = t[i - 1][j] or t[i][j - 1]
-            elif pattern[j - 1] == '?' or topic[i - 1] == pattern[j - 1]:
-                t[i][j] = t[i - 1][j - 1]
-
-    # Last cell stores the answer
-    return t[n][m]
