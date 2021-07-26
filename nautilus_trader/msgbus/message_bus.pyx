@@ -31,8 +31,8 @@ cdef class Subscription:
     """
     Represents a subscription to a particular topic.
 
-    This is an internal class intended to be used by the message bus to
-    organize channels and their subscribers.
+    This is an internal class intended to be used by the message bus to organize
+    topics and their subscribers.
 
     Notes
     -----
@@ -53,7 +53,7 @@ cdef class Subscription:
         Parameters
         ----------
         topic : str
-            The topic for the subscription. May include wildcard glob patterns.
+            The topic for the subscription. May include wildcard characters.
         handler : Callable[[Message], None]
             The handler for the subscription.
         priority : int
@@ -73,8 +73,7 @@ cdef class Subscription:
         Condition.callable(handler, "handler")
         Condition.not_negative_int(priority, "priority")
 
-        self._topic_str = topic
-        self.topic = topic.replace(WILDCARD, "")
+        self.topic = topic
         self.handler = handler
         self.priority = priority
 
@@ -98,7 +97,7 @@ cdef class Subscription:
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"topic={self._topic_str}, "
+                f"topic={self.topic}, "
                 f"handler={self.handler}, "
                 f"priority={self.priority})")
 
@@ -147,10 +146,9 @@ cdef class MessageBus:
         self._clock = clock
         self._log = LoggerAdapter(component=name, logger=logger)
 
-        self._endpoints = {}   # type: dict[str, Callable[[Any], None]]
-        self._channels = {}    # type: dict[str, Subscription[:]]
-        self._patterns = None  # type: Subscription[:]
-        self._patterns_len = 0
+        self._endpoints = {}      # type: dict[str, Callable[[Any], None]]
+        self._patterns = {}       # type: dict[str, Subscription[:]]
+        self._subscriptions = {}  # type: dict[Subscription, list[str]]
 
         # Counters
         self.processed_count = 0
@@ -166,29 +164,26 @@ cdef class MessageBus:
         """
         return list(self._endpoints.keys())
 
-    cpdef list channels(self):
+    cpdef list topics(self):
         """
-        Return all topic channels with active subscribers (including '*').
+        Return all topics with active subscribers.
 
         Returns
         -------
         list[str]
 
         """
-        cdef list channels = []
-        channels.extend(list(self._channels.keys()))
-        if self._patterns is not None:
-            channels.extend([s.topic + WILDCARD for s in list(self._patterns)])
-        return channels
+        return sorted(set([s.topic for s in self._subscriptions.keys()]))
 
     cpdef list subscriptions(self, str topic=None):
         """
-        Return all subscriptions for the given message type.
+        Return all subscriptions matching the given topic.
 
         Parameters
         ----------
         topic : str, optional
-            The topic filter. If None then filter is for ALL topics.
+            The topic filter. May include wildcard characters.
+            If None then filter is for ALL topics.
 
         Returns
         -------
@@ -199,18 +194,7 @@ cdef class MessageBus:
             topic = WILDCARD
         Condition.valid_string(topic, "topic")
 
-        topic = topic.replace(WILDCARD, "")
-
-        cdef list output = []
-        for sub in self._channels.get(topic, []):
-            output.append(sub)
-
-        if self._patterns is not None:
-            for sub in list(self._patterns):
-                if sub.topic.startswith(topic):
-                    output.append(sub)
-
-        return output
+        return [s for s in self._subscriptions if is_matching(s.topic, topic)]
 
     cpdef bint has_subscribers(self, str topic=None):
         """
@@ -219,17 +203,15 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str, optional
-            THe topic filter. If None then query is for ALL topics.
+            The topic filter. May include wildcard characters.
+            If None then query is for ALL topics.
 
         Returns
         -------
         bool
 
         """
-        if topic is None:
-            topic = WILDCARD
-
-        return len(self.subscriptions(topic=topic)) > 0
+        return len(self.subscriptions(topic)) > 0
 
     cpdef void register(self, str endpoint, handler: Callable[[Any], None]) except *:
         """
@@ -288,7 +270,7 @@ cdef class MessageBus:
 
         del self._endpoints[endpoint]
 
-    cpdef void send(self, str endpoint, msg) except *:
+    cpdef void send(self, str endpoint, msg: Any) except *:
         """
         Send the given message to the given endpoint address.
 
@@ -322,7 +304,7 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str
-            The topic for the subscription. May include wildcard glob patterns.
+            The topic for the subscription. May include wildcard characters.
         handler : Callable[[Any], None]
             The handler for the subscription.
         priority : int, optional
@@ -357,40 +339,26 @@ cdef class MessageBus:
             priority=priority,
         )
 
-        # Get current subscriptions for topic
-        if WILDCARD in topic:
-            self._subscribe_pattern(sub)
-        else:
-            self._subscribe_channel(sub)
-
-    cdef void _subscribe_pattern(self, Subscription sub) except *:
-        if self._patterns is None:
-            subscriptions = []
-        else:
-            subscriptions = list(self._patterns)
-
         # Check if already exists
-        if sub in subscriptions:
+        if sub in self._subscriptions:
             self._log.warning(f"{sub} already exists.")
             return
 
-        subscriptions.append(sub)
-        subscriptions = sorted(subscriptions, reverse=True)
-        self._patterns = np.ascontiguousarray(subscriptions)
-        self._patterns_len = len(subscriptions)
+        cdef list matches = []
+        cdef list patterns = list(self._patterns.keys())
+
+        cdef str pattern
+        cdef list subs
+        for pattern in patterns:
+            if is_matching(topic, pattern):
+                subs = list(self._patterns[pattern])
+                subs.append(sub)
+                self._patterns[pattern] = np.ascontiguousarray(sorted(subs, reverse=True))
+                matches.append(pattern)
+
+        self._subscriptions[sub] = sorted(matches)
+
         self._log.debug(f"Added {sub}.")
-
-    cdef void _subscribe_channel(self, Subscription sub) except *:
-        cdef list subscriptions = list(self._channels.get(sub.topic, []))
-        # Check if already exists
-        if sub in subscriptions:
-            self._log.warning(f"{sub} already exists.")
-            return
-
-        subscriptions.append(sub)
-        subscriptions = sorted(subscriptions, reverse=True)
-        self._channels[sub.topic] = np.ascontiguousarray(subscriptions)
-        self._log.info(f"Added {sub}.")
 
     cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *:
         """
@@ -399,7 +367,7 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str, optional
-            The topic to unsubscribe from. May include wildcard glob patterns.
+            The topic to unsubscribe from. May include wildcard characters.
         handler : Callable[[Any], None]
             The handler for the subscription.
 
@@ -416,50 +384,22 @@ cdef class MessageBus:
 
         cdef Subscription sub = Subscription(topic=topic, handler=handler)
 
-        # Get current subscriptions for topic
-        if WILDCARD in topic:
-            self._unsubscribe_pattern(sub)
-        else:
-            self._unsubscribe_channel(sub)
-
-    cdef void _unsubscribe_pattern(self, Subscription sub) except *:
-        if self._patterns is None:
-            subscriptions = []
-        else:
-            subscriptions = list(self._patterns)
+        cdef list patterns = self._subscriptions.get(sub)
 
         # Check if exists
-        if sub not in subscriptions:
+        if patterns is None:
             self._log.warning(f"{sub} not found.")
             return
 
-        subscriptions.remove(sub)
-        subscriptions = sorted(subscriptions, reverse=True)
-        if not subscriptions:
-            self._patterns = None
-            self._patterns_len = 0
-        else:
-            self._patterns = np.ascontiguousarray(subscriptions)
-            self._patterns_len = len(subscriptions)
+        cdef str pattern
+        for pattern in patterns:
+            subs = list(self._patterns[pattern])
+            subs.remove(sub)
+            self._patterns[pattern] = np.ascontiguousarray(sorted(subs, reverse=True))
+
+        del self._subscriptions[sub]
+
         self._log.debug(f"Removed {sub}.")
-
-    cdef void _unsubscribe_channel(self, Subscription sub) except *:
-        cdef list subscriptions = list(self._channels.get(sub.topic, []))
-
-        # Check if already exists
-        if sub not in subscriptions:
-            self._log.warning(f"{sub} not found.")
-            return
-
-        subscriptions.remove(sub)
-        self._log.debug(f"Removed {sub}.")
-
-        if not subscriptions:
-            del self._channels[sub.topic]
-            return
-
-        subscriptions = sorted(subscriptions, reverse=True)
-        self._channels[sub.topic] = np.ascontiguousarray(subscriptions)
 
     cpdef void publish(self, str topic, msg: Any) except *:
         """
@@ -471,7 +411,7 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str
-            The topic to publish on (determines the channel and matching patterns).
+            The topic to publish on. May include wildcard characters.
         msg : object
             The message to publish.
 
@@ -484,19 +424,82 @@ cdef class MessageBus:
         Condition.not_none(topic, "topic")
         Condition.not_none(msg, "msg")
 
-        cdef int i
-        cdef Subscription sub
-        cdef Subscription[:] subscriptions = self._channels.get(topic)
-        if subscriptions is not None:
-            # Send to channel subscriptions
-            for i in range(len(subscriptions)):
-                sub = subscriptions[i]
-                sub.handler(msg)
+        cdef Subscription[:] subs = self._patterns.get(topic)
+        if subs is None:
+            subs = self._resolve_subscriptions(topic)
 
-        # Check all pattern subscriptions
-        for i in range(self._patterns_len):
-            sub = self._patterns[i]
-            if topic.__contains__(sub.topic):
-                sub.handler(msg)
+        # Send to all matched subscribers
+        cdef int i
+        for i in range(len(subs)):
+            subs[i].handler(msg)
 
         self.processed_count += 1
+
+    cdef Subscription[:] _resolve_subscriptions(self, str topic):
+        cdef list subs_list = []
+        cdef Subscription existing_sub
+        for existing_sub in self._subscriptions:
+            if is_matching(topic, existing_sub.topic):
+                subs_list.append(existing_sub)
+
+        subs_list = sorted(subs_list, reverse=True)
+        cdef Subscription[:] subs_array = np.ascontiguousarray(subs_list, dtype=Subscription)
+        self._patterns[topic] = subs_array
+
+        cdef list matches
+        for sub in subs_array:
+            matches = self._subscriptions.get(sub, [])
+            if topic not in matches:
+                matches.append(topic)
+            self._subscriptions[sub] = sorted(matches)
+
+        return subs_array
+
+
+cdef inline bint is_matching(str topic, str pattern) except *:
+    """
+    Return a value indicating whether the topic matches with the pattern.
+
+    Given a topic and pattern potentially containing wildcard characters, i.e.
+    '*' and '?', where '?' can match any single character in the topic, and '*'
+    can match any number of characters including zero characters.
+
+    Parameters
+    ----------
+    topic : str
+        The topic string.
+    pattern : str
+        The pattern to match on.
+
+    Returns
+    -------
+    bool
+
+    """
+    # Get length of string and wildcard pattern
+    cdef int n = len(topic)
+    cdef int m = len(pattern)
+
+    # Create a DP lookup table
+    cdef list t = [[False for x in range(m + 1)] for y in range(n + 1)]
+
+    # If both pattern and string are empty: match
+    t[0][0] = True
+
+    # Handle empty string case (i == 0)
+    cdef int j
+    for j in range(1, m + 1):
+        if pattern[j - 1] == '*':
+            t[0][j] = t[0][j - 1]
+
+    # Build a matrix in a bottom-up manner
+    cdef int i
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            if pattern[j - 1] == '*':
+                t[i][j] = t[i - 1][j] or t[i][j - 1]
+            elif pattern[j - 1] == '?' or topic[i - 1] == pattern[j - 1]:
+                t[i][j] = t[i - 1][j - 1]
+
+    # Last cell stores the answer
+    return t[n][m]

@@ -188,7 +188,7 @@ class TestMessageBus:
 
     def test_channels_with_no_subscribers_returns_empty_list(self):
         # Arrange, Act
-        result = self.msgbus.channels()
+        result = self.msgbus.topics()
 
         assert result == []
 
@@ -251,10 +251,10 @@ class TestMessageBus:
         self.msgbus.subscribe(topic="*", handler=handler)
         self.msgbus.subscribe(topic="system", handler=handler)
 
-        result = self.msgbus.channels()
+        result = self.msgbus.topics()
 
         # Assert
-        assert result == ["system", "*"]
+        assert result == ["*", "system"]
 
     def test_has_subscribers_when_subscribers_returns_true(self):
         # Arrange, Act
@@ -274,7 +274,7 @@ class TestMessageBus:
         # Act
         self.msgbus.subscribe(topic="a", handler=handler)
 
-        result = self.msgbus.channels()
+        result = self.msgbus.topics()
 
         # Assert
         assert result == ["a"]
@@ -324,12 +324,12 @@ class TestMessageBus:
         # Arrange
         handler = [].append
 
-        self.msgbus.subscribe(topic="orders:*", handler=handler)
+        self.msgbus.subscribe(topic="events.order*", handler=handler)
 
         # Act
-        self.msgbus.unsubscribe(topic="orders:*", handler=handler)
+        self.msgbus.unsubscribe(topic="events.order*", handler=handler)
 
-        result = self.msgbus.subscriptions("orders:*")
+        result = self.msgbus.subscriptions("events.order*")
 
         # Assert
         assert result == []
@@ -413,43 +413,43 @@ class TestMessageBus:
         # Arrange
         subscriber = []
 
-        self.msgbus.subscribe(topic="Event:OrderEvent*", handler=subscriber.append)
+        self.msgbus.subscribe(topic="events.order*", handler=subscriber.append)
 
         # Act
-        self.msgbus.publish("Event:OrderEvent*", "OK!")
+        self.msgbus.publish("events.order.SCALPER-001", "ORDER")
 
         # Assert
-        assert "OK!" in subscriber
+        assert "ORDER" in subscriber
 
     def test_publish_with_none_matching_header_then_filters_from_subscriber(self):
         # Arrange
         subscriber = []
 
         self.msgbus.subscribe(
-            topic="Event:PositionEvent:*",
+            topic="events.position*",
             handler=subscriber.append,
         )
 
         # Act
-        self.msgbus.publish("Event:OrderEvent*", "OK!")
+        self.msgbus.publish("events.order*", "ORDER")
 
         # Assert
-        assert "OK!" not in subscriber
+        assert "ORDER" not in subscriber
 
     def test_publish_with_matching_subset_header_then_sends_to_subscriber(self):
         # Arrange
         subscriber = []
 
         self.msgbus.subscribe(
-            topic="order*",
+            topic="events.order.*",
             handler=subscriber.append,
         )
 
         # Act
-        self.msgbus.publish("order.S-001", "OK!")
+        self.msgbus.publish("events.order.S-001", "ORDER")
 
         # Assert
-        assert "OK!" in subscriber
+        assert "ORDER" in subscriber
 
     def test_publish_with_both_channel_and_all_sub_sends_to_subscribers(self):
         # Arrange

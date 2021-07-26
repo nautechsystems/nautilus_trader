@@ -604,7 +604,7 @@ cdef class ExecutionEngine(Component):
             return  # Published on msgbus
 
         self._msgbus.publish_c(
-            topic=f"events.order.{event.strategy_id.value}.{event.client_order_id.value}",
+            topic=f"events.order.{event.strategy_id.value}",
             msg=event,
         )
 
@@ -638,7 +638,7 @@ cdef class ExecutionEngine(Component):
 
     cdef void _handle_order_fill(self, OrderFilled fill) except *:
         self._msgbus.publish_c(
-            topic=f"events.order.{fill.strategy_id.value}.{fill.client_order_id.value}",
+            topic=f"events.order.{fill.strategy_id.value}",
             msg=fill,
         )
 
@@ -668,7 +668,7 @@ cdef class ExecutionEngine(Component):
         )
 
         self._msgbus.publish_c(
-            topic=f"events.position.{event.strategy_id.value}.{event.position_id.value}",
+            topic=f"events.position.{event.strategy_id.value}",
             msg=event,
         )
 
@@ -704,7 +704,7 @@ cdef class ExecutionEngine(Component):
             )
 
         self._msgbus.publish_c(
-            topic=f"events.position.{event.strategy_id.value}.{event.position_id.value}",
+            topic=f"events.position.{event.strategy_id.value}",
             msg=event,
         )
 
