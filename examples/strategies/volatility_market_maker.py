@@ -140,7 +140,7 @@ class VolatilityMarketMaker(TradingStrategy):
             The order book received.
 
         """
-        self.log.info(str(order_book))  # For debugging (must add a subscription)
+        # self.log.info(str(order_book))  # For debugging (must add a subscription)
         pass
 
     def on_quote_tick(self, tick: QuoteTick):
