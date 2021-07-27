@@ -25,6 +25,7 @@ from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.fsm import InvalidStateTrigger
@@ -34,6 +35,7 @@ from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
@@ -72,7 +74,10 @@ class TestTradingStrategy:
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+        )
 
         self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
@@ -1797,6 +1802,124 @@ class TestTradingStrategy:
         # Assert
         assert self.data_engine.subscribed_trade_ticks == []
         assert self.data_engine.command_count == 2
+
+    def test_subscribe_strategy_data(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        strategy.subscribe_strategy_data(data_type=Data)
+
+        # Assert
+        assert self.msgbus.has_subscribers("data.strategy.Data.*")
+
+    def test_subscribe_strategy_data_with_strategy_filter(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        strategy.subscribe_strategy_data(
+            data_type=Data,
+            strategy_id=StrategyId("Monitor-002"),
+        )
+
+        # Assert
+        assert self.msgbus.has_subscribers("data.strategy.Data.Monitor-002")
+
+    def test_unsubscribe_strategy_data(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        strategy.subscribe_strategy_data(data_type=Data)
+
+        # Act
+        strategy.unsubscribe_strategy_data(data_type=Data)
+
+        # Assert
+        assert not self.msgbus.has_subscribers("data.strategy.Data.*")
+
+    def test_unsubscribe_strategy_data_with_strategy_filter(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        strategy.subscribe_strategy_data(
+            data_type=Data,
+            strategy_id=StrategyId("Monitor-002"),
+        )
+
+        # Act
+        strategy.unsubscribe_strategy_data(
+            data_type=Data,
+            strategy_id=StrategyId("Monitor-002"),
+        )
+
+        # Assert
+        assert not self.msgbus.has_subscribers("data.strategy.Data.Monitor-002")
+
+    def test_publish_data_sends_to_subscriber(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        handler = []
+        self.msgbus.subscribe(
+            topic="data.strategy.Data.*",
+            handler=handler.append,
+        )
+
+        # Act
+        data = Data(
+            ts_event_ns=self.clock.timestamp_ns(),
+            ts_recv_ns=self.clock.timestamp_ns(),
+        )
+        strategy.publish_data(data=data)
+
+        # Assert
+        assert data in handler
 
     def test_subscribe_bars(self):
         # Arrange

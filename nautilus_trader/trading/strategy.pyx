@@ -762,8 +762,12 @@ cdef class TradingStrategy(Component):
 
         """
         Condition.not_none(client_id, "client_id")
+        Condition.not_none(data_type, "data_type")
 
-        self._msgbus.subscribe(topic=f"data.generic.{data_type}", handler=self.handle_data)
+        self._msgbus.subscribe(
+            topic=f"data.{data_type}",
+            handler=self.handle_data,
+        )
 
         cdef Subscribe command = Subscribe(
             client_id=client_id,
@@ -773,6 +777,31 @@ cdef class TradingStrategy(Component):
         )
 
         self._send_data_cmd(command)
+
+    cpdef void subscribe_strategy_data(
+        self, type data_type,
+        StrategyId strategy_id=None,
+    ) except *:
+        """
+        Subscribe to strategy data of the given data type.
+
+        Parameters
+        ----------
+        data_type : type
+            The strategy data type to subscribe to.
+        strategy_id : StrategyId, optional
+            The strategy ID filter for the subscription.
+
+        """
+        Condition.not_none(data_type, "data_type")
+
+        self._msgbus.subscribe(
+            topic=f"data.strategy.{data_type.__name__}.{strategy_id or '*'}",
+            handler=self.handle_data,
+        )
+
+        strategy_id_str = f" for {strategy_id}" if strategy_id else ""
+        self.log.info(f"Subscribed to {data_type.__name__} strategy data{strategy_id_str}.")
 
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """
@@ -1086,7 +1115,7 @@ cdef class TradingStrategy(Component):
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
 
-        self._msgbus.unsubscribe(topic=f"data.generic.{data_type}", handler=self.handle_data)
+        self._msgbus.unsubscribe(topic=f"data.{data_type}", handler=self.handle_data)
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
@@ -1096,6 +1125,31 @@ cdef class TradingStrategy(Component):
         )
 
         self._send_data_cmd(command)
+
+    cpdef void unsubscribe_strategy_data(
+        self, type data_type,
+        StrategyId strategy_id=None,
+    ) except *:
+        """
+        Unsubscribe from strategy data of the given data type.
+
+        Parameters
+        ----------
+        data_type : type
+            The strategy data type to unsubscribe from.
+        strategy_id : StrategyId, optional
+            The strategy ID filter for the subscription.
+
+        """
+        Condition.not_none(data_type, "data_type")
+
+        self._msgbus.unsubscribe(
+            topic=f"data.strategy.{data_type.__name__}.{strategy_id or '*'}",
+            handler=self.handle_data,
+        )
+
+        strategy_id_str = f" for {strategy_id}" if strategy_id else ""
+        self.log.info(f"Unsubscribed from {data_type.__name__} strategy data{strategy_id_str}.")
 
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
         """
@@ -1274,6 +1328,24 @@ cdef class TradingStrategy(Component):
         )
 
         self._send_data_cmd(command)
+        self.log.info(f"Unsubscribed from {bar_type} bar data.")
+
+    cpdef void publish_data(self, Data data) except *:
+        """
+        Publish the strategy data to the message bus.
+
+        Parameters
+        ----------
+        data : Data
+            The strategy data to publish.
+
+        """
+        Condition.not_none(data, "data")
+
+        self._msgbus.publish_c(
+            topic=f"data.strategy.{type(data).__name__}.{self.id}",
+            msg=data,
+        )
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
