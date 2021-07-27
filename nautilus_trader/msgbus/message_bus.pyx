@@ -90,7 +90,7 @@ cdef class MessageBus:
         self._endpoints = {}          # type: dict[str, Callable[[Any], None]]
         self._patterns = {}           # type: dict[str, Subscription[:]]
         self._subscriptions = {}      # type: dict[Subscription, list[str]]
-        self._correlation_index = {}  # type: dict[UUID, callable]
+        self._correlation_index = {}  # type: dict[UUID, Callable[[Any], None]]
 
         # Counters
         self.sent_count = 0

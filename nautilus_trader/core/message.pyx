@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any, Callable
+
 from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.core.uuid cimport UUID
 
@@ -200,7 +202,7 @@ cdef class Request(Message):
 
     def __init__(
         self,
-        callback not None: callable,
+        callback not None: Callable[[Any], None],
         UUID request_id not None,
         int64_t timestamp_ns,
     ):
@@ -209,7 +211,7 @@ cdef class Request(Message):
 
         Parameters
         ----------
-        callback : callable
+        callback : Callable[[Any], None]
             The callback to receive the response.
         request_id : UUID
             The request ID.
