@@ -896,7 +896,7 @@ cdef class DataEngine(Component):
         self._msgbus.publish_c(topic=f"data.venue.close_price.{data.instrument_id}", msg=data)
 
     cdef void _handle_generic_data(self, GenericData data) except *:
-        self._msgbus.publish_c(topic=f"data.generic.{data.data_type}", msg=data)
+        self._msgbus.publish_c(topic=f"data.{data.data_type}", msg=data)
 
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 

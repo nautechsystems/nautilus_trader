@@ -130,6 +130,7 @@ cdef class TradingStrategy(Component):
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_data(self, ClientId client_id, DataType data_type) except *
+    cpdef void subscribe_strategy_data(self, type data_type, StrategyId strategy_id=*) except *
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void subscribe_order_book_deltas(
         self,
@@ -152,12 +153,14 @@ cdef class TradingStrategy(Component):
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_data(self, ClientId client_id, DataType data_type) except *
+    cpdef void unsubscribe_strategy_data(self, type data_type, StrategyId strategy_id=*) except *
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, int interval_ms=*) except *
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
+    cpdef void publish_data(self, Data data) except *
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 

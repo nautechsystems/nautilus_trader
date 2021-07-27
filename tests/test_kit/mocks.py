@@ -174,6 +174,10 @@ class MockStrategy(TradingStrategy):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(data)
 
+    def on_strategy_data(self, data) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(data)
+
     def on_event(self, event) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(event)

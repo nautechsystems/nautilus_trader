@@ -449,7 +449,7 @@ class TestDataEngine:
         data_type = DataType(str, metadata={"Type": "news"})
         handler = []
 
-        self.msgbus.subscribe(topic=f"data.generic.{data_type}", handler=handler.append)
+        self.msgbus.subscribe(topic=f"data.{data_type}", handler=handler.append)
         subscribe = Subscribe(
             client_id=ClientId("QUANDL"),
             data_type=DataType(str, metadata={"Type": "news"}),
@@ -459,7 +459,7 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
-        self.msgbus.unsubscribe(topic=f"data.generic.{data_type}", handler=handler.append)
+        self.msgbus.unsubscribe(topic=f"data.{data_type}", handler=handler.append)
         unsubscribe = Unsubscribe(
             client_id=ClientId("QUANDL"),
             data_type=DataType(str, metadata={"Type": "news"}),
