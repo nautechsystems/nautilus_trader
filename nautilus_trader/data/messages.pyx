@@ -164,13 +164,13 @@ cdef class DataRequest(Request):
 
         """
         super().__init__(
+            callback,
             request_id,
             timestamp_ns,
         )
 
         self.client_id = client_id
         self.data_type = data_type
-        self.callback = callback
 
     def __str__(self) -> str:
         return f"{type(self).__name__}({self.data_type})"

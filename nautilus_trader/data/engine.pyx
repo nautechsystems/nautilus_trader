@@ -41,7 +41,6 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport RES
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport BulkTimeBarUpdater
 from nautilus_trader.data.aggregation cimport TickBarAggregator
@@ -121,12 +120,7 @@ cdef class DataEngine(Component):
 
         self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}               # type: dict[ClientId, DataClient]
-        self._correlation_index = {}     # type: dict[UUID, callable]
-
-        # OrderBook indexes
         self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[callable]]
-
-        # Aggregators
         self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
 
         # Counters
@@ -345,7 +339,6 @@ cdef class DataEngine(Component):
         for client in self._clients.values():
             client.reset()
 
-        self._correlation_index.clear()
         self._order_book_intervals.clear()
         self._bar_aggregators.clear()
 
@@ -771,13 +764,6 @@ cdef class DataEngine(Component):
                             f"no client registered for '{request.client_id}', {request}.")
             return  # No client to handle request
 
-        if request.id in self._correlation_index:
-            self._log.error(f"Cannot handle request: "
-                            f"duplicate ID {request.id} found in correlation index.")
-            return  # Do not handle duplicates
-
-        self._correlation_index[request.id] = request.callback
-
         if request.data_type.type == Instrument:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             instrument_id = request.data_type.metadata.get("instrument_id")
@@ -919,67 +905,29 @@ cdef class DataEngine(Component):
         self.response_count += 1
 
         if response.data_type.type == Instrument:
-            self._handle_instruments(response.data, response.correlation_id)
+            self._handle_instruments(response.data)
         elif response.data_type.type == QuoteTick:
-            self._handle_quote_ticks(response.data, response.correlation_id)
+            self._handle_quote_ticks(response.data)
         elif response.data_type.type == TradeTick:
-            self._handle_trade_ticks(response.data, response.correlation_id)
+            self._handle_trade_ticks(response.data)
         elif response.data_type.type == Bar:
-            self._handle_bars(
-                response.data,
-                response.data_type.metadata.get("Partial"),
-                response.correlation_id,
-            )
-        else:
-            callback = self._correlation_index.pop(response.correlation_id, None)
-            if callback is None:
-                self._log.error(f"Callback not found for correlation_id {response.correlation_id}.")
-                return
+            self._handle_bars(response.data, response.data_type.metadata.get("Partial"))
 
-            callback(response.data)
+        self._msgbus.response(response)
 
-    cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
+    cdef void _handle_instruments(self, list instruments) except *:
         cdef Instrument instrument
         for instrument in instruments:
             self._handle_instrument(instrument)
 
-        cdef callback = self._correlation_index.pop(correlation_id, None)
-        if callback is None:
-            self._log.error(f"Callback not found for correlation_id {correlation_id}.")
-            return
-
-        if callback == self._internal_update_instruments:
-            return  # Already updated
-
-        callback(instruments)
-
-    cdef void _handle_quote_ticks(self, list ticks, UUID correlation_id) except *:
+    cdef void _handle_quote_ticks(self, list ticks) except *:
         self._cache.add_quote_ticks(ticks)
 
-        cdef callback = self._correlation_index.pop(correlation_id, None)
-        if callback is None:
-            self._log.error(f"Callback not found for correlation_id {correlation_id}.")
-            return
-
-        callback(ticks)
-
-    cdef void _handle_trade_ticks(self, list ticks, UUID correlation_id) except *:
+    cdef void _handle_trade_ticks(self, list ticks) except *:
         self._cache.add_trade_ticks(ticks)
 
-        cdef callback = self._correlation_index.pop(correlation_id, None)
-        if callback is None:
-            self._log.error(f"Callback not found for correlation_id {correlation_id}.")
-            return
-
-        callback(ticks)
-
-    cdef void _handle_bars(self, list bars, Bar partial, UUID correlation_id) except *:
+    cdef void _handle_bars(self, list bars, Bar partial) except *:
         self._cache.add_bars(bars)
-
-        cdef callback = self._correlation_index.pop(correlation_id, None)
-        if callback is None:
-            self._log.error(f"Callback not found for correlation_id {correlation_id}.")
-            return
 
         cdef TimeBarAggregator aggregator
         if partial is not None:
@@ -994,8 +942,6 @@ cdef class DataEngine(Component):
                     # there may have been an immediate stop after start with the
                     # partial bar being for a now removed aggregator.
                     self._log.error("No aggregator for partial bar update.")
-
-        callback(bars)
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 

@@ -15,6 +15,9 @@
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.message import Request
+from nautilus_trader.core.message import Response
 from nautilus_trader.msgbus.message_bus import MessageBus
 from tests.test_kit.stubs import TestStubs
 
@@ -23,6 +26,7 @@ class TestMessageBus:
     def setup(self):
         # Fixture setup
         self.clock = TestClock()
+        self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
         self.trader_id = TestStubs.trader_id()
@@ -33,6 +37,14 @@ class TestMessageBus:
             clock=self.clock,
             logger=self.logger,
         )
+
+    def test_instantiate_message_bus(self):
+        # Arrange, Act, Assert
+        assert self.msgbus.trader_id == self.trader_id
+        assert self.msgbus.sent_count == 0
+        assert self.msgbus.req_count == 0
+        assert self.msgbus.res_count == 0
+        assert self.msgbus.pub_count == 0
 
     def test_endpoints_with_none_registered_returns_empty_list(self):
         # Arrange, Act
@@ -85,6 +97,7 @@ class TestMessageBus:
 
         # Assert
         assert "message" not in endpoint
+        assert self.msgbus.sent_count == 0
 
     def test_send_when_endpoint_at_address_sends_message_to_handler(self):
         # Arrange
@@ -96,6 +109,69 @@ class TestMessageBus:
 
         # Assert
         assert "message" in endpoint
+        assert self.msgbus.sent_count == 1
+
+    def test_request_when_endpoint_not_registered_logs_error(self):
+        # Arrange, Act
+        handler = []
+
+        request = Request(
+            callback=handler.append,
+            request_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        self.msgbus.request(endpoint="mailbox", request=request)
+
+        # Assert
+        assert len(handler) == 0
+        assert self.msgbus.req_count == 0
+
+    def test_response_when_no_correlation_id_logs_error(self):
+        # Arrange, Act
+        handler = []
+
+        response = Response(
+            correlation_id=self.uuid_factory.generate(),
+            response_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        self.msgbus.response(response)
+
+        # Assert
+        assert response not in handler
+        assert self.msgbus.res_count == 0
+
+    def test_request_response_when_correlation_id_registered_handles_response(self):
+        # Arrange, Act
+        endpoint = []
+        handler = []
+
+        self.msgbus.register(endpoint="mailbox", handler=endpoint.append)
+
+        correlation_id = self.uuid_factory.generate()
+        request = Request(
+            callback=handler.append,
+            request_id=correlation_id,
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        self.msgbus.request(endpoint="mailbox", request=request)
+
+        response = Response(
+            correlation_id=correlation_id,
+            response_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        self.msgbus.response(response)
+
+        # Assert
+        assert request in endpoint
+        assert response in handler
+        assert self.msgbus.req_count == 1
+        assert self.msgbus.res_count == 1
 
     def test_subscribe_then_returns_topics_list_including_topic(self):
         # Arrange
@@ -244,6 +320,7 @@ class TestMessageBus:
 
         # Assert
         assert "hello world" in subscriber
+        assert self.msgbus.pub_count == 1
 
     def test_publish_with_multiple_subscribers_sends_to_handlers(self):
         # Arrange
@@ -262,6 +339,7 @@ class TestMessageBus:
         assert "hello world" in subscriber1
         assert "hello world" in subscriber2
         assert "hello world" in subscriber3
+        assert self.msgbus.pub_count == 1
 
     def test_publish_with_header_sends_to_handler(self):
         # Arrange
@@ -274,6 +352,7 @@ class TestMessageBus:
 
         # Assert
         assert "ORDER" in subscriber
+        assert self.msgbus.pub_count == 1
 
     def test_publish_with_none_matching_header_then_filters_from_subscriber(self):
         # Arrange
@@ -289,6 +368,7 @@ class TestMessageBus:
 
         # Assert
         assert "ORDER" not in subscriber
+        assert self.msgbus.pub_count == 1
 
     def test_publish_with_matching_subset_header_then_sends_to_subscriber(self):
         # Arrange
@@ -304,6 +384,7 @@ class TestMessageBus:
 
         # Assert
         assert "ORDER" in subscriber
+        assert self.msgbus.pub_count == 1
 
     def test_publish_with_both_channel_and_all_sub_sends_to_subscribers(self):
         # Arrange
@@ -326,3 +407,4 @@ class TestMessageBus:
         # Assert
         assert "OK!" in subscriber1
         assert "OK!" in subscriber2
+        assert self.msgbus.pub_count == 1

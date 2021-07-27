@@ -21,6 +21,7 @@ import numpy as np
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.wildcard cimport is_matching
 
@@ -32,7 +33,7 @@ cdef class MessageBus:
     The bus provides both a producer and consumer API for PUB/SUB, REQ/REP as
     well as direct point-to-point messaging to registered endpoints.
 
-    Wildcard patterns for hierarchical topics are possible:
+    PUB/SUB wildcard patterns for hierarchical topics are possible:
      - '*' asterisk represents one or more characters in a pattern.
      - '?' question mark represents a single character in a pattern.
 
@@ -43,6 +44,11 @@ cdef class MessageBus:
     A question mark matches a single character once. For example, "c?mp" matches
     "camp" and "comp." The question mark can also be used more than once.
     For example, "c??p" would match both of the above examples and "coop."
+
+    Warnings
+    --------
+    This message bus is not thread-safe and must be called from the same thread
+    as the event loop.
     """
 
     def __init__(
@@ -81,12 +87,16 @@ cdef class MessageBus:
         self._clock = clock
         self._log = LoggerAdapter(component=name, logger=logger)
 
-        self._endpoints = {}      # type: dict[str, Callable[[Any], None]]
-        self._patterns = {}       # type: dict[str, Subscription[:]]
-        self._subscriptions = {}  # type: dict[Subscription, list[str]]
+        self._endpoints = {}          # type: dict[str, Callable[[Any], None]]
+        self._patterns = {}           # type: dict[str, Subscription[:]]
+        self._subscriptions = {}      # type: dict[Subscription, list[str]]
+        self._correlation_index = {}  # type: dict[UUID, callable]
 
         # Counters
-        self.processed_count = 0
+        self.sent_count = 0
+        self.req_count = 0
+        self.res_count = 0
+        self.pub_count = 0
 
     cpdef list endpoints(self):
         """
@@ -212,7 +222,7 @@ cdef class MessageBus:
         Parameters
         ----------
         endpoint : str
-            The endpoint address to send to.
+            The endpoint address to send the message to.
         msg : object
             The message to send.
 
@@ -222,10 +232,74 @@ cdef class MessageBus:
 
         handler = self._endpoints.get(endpoint)
         if handler is None:
-            self._log.error(f"Cannot send message: no endpoint registered at '{endpoint}'.")
-            return
+            self._log.error(
+                f"Cannot send message: no endpoint registered at '{endpoint}'.",
+            )
+            return  # Cannot send
 
         handler(msg)
+        self.sent_count += 1
+
+    cpdef void request(self, str endpoint, Request request) except *:
+        """
+        Handle the given request.
+
+        Will log an error if the correlation ID already exists.
+
+        Parameters
+        ----------
+        endpoint : str
+            The endpoint address to send the request to.
+        request : Request
+            The request to handle.
+
+        """
+        Condition.not_none(endpoint, "endpoint")
+        Condition.not_none(request, "request")
+
+        if request.id in self._correlation_index:
+            self._log.error(
+                f"Cannot handle request: "
+                f"duplicate ID {request.id} found in correlation index.",
+            )
+            return  # Do not handle duplicates
+
+        self._correlation_index[request.id] = request.callback
+
+        handler = self._endpoints.get(endpoint)
+        if handler is None:
+            self._log.error(
+                f"Cannot handle request: no endpoint registered at '{endpoint}'.",
+            )
+            return  # Cannot handle
+
+        handler(request)
+        self.req_count += 1
+
+    cpdef void response(self, Response response) except *:
+        """
+        Handle the given response.
+
+        Will log an error if the correlation ID is not found.
+
+        Parameters
+        ----------
+        response : Response
+            The response to handle
+
+        """
+        Condition.not_none(response, "response")
+
+        callback = self._correlation_index.pop(response.correlation_id, None)
+        if callback is None:
+            self._log.error(
+                f"Cannot handle response: "
+                f"callback not found for correlation_id {response.correlation_id}.",
+            )
+            return  # Cannot handle
+
+        callback(response)
+        self.res_count += 1
 
     cpdef void subscribe(
         self,
@@ -288,7 +362,8 @@ cdef class MessageBus:
             if is_matching(topic, pattern):
                 subs = list(self._patterns[pattern])
                 subs.append(sub)
-                self._patterns[pattern] = np.ascontiguousarray(sorted(subs, reverse=True))
+                subs = sorted(subs, reverse=True)
+                self._patterns[pattern] = np.ascontiguousarray(subs, dtype=Subscription)
                 matches.append(pattern)
 
         self._subscriptions[sub] = sorted(matches)
@@ -330,7 +405,8 @@ cdef class MessageBus:
         for pattern in patterns:
             subs = list(self._patterns[pattern])
             subs.remove(sub)
-            self._patterns[pattern] = np.ascontiguousarray(sorted(subs, reverse=True))
+            subs = sorted(subs, reverse=True)
+            self._patterns[pattern] = np.ascontiguousarray(subs, dtype=Subscription)
 
         del self._subscriptions[sub]
 
@@ -368,7 +444,7 @@ cdef class MessageBus:
         for i in range(len(subs)):
             subs[i].handler(msg)
 
-        self.processed_count += 1
+        self.pub_count += 1
 
     cdef Subscription[:] _resolve_subscriptions(self, str topic):
         cdef list subs_list = []
