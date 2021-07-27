@@ -198,12 +198,19 @@ cdef class Request(Message):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, UUID request_id not None, int64_t timestamp_ns):
+    def __init__(
+        self,
+        callback not None: callable,
+        UUID request_id not None,
+        int64_t timestamp_ns,
+    ):
         """
         Initialize a new instance of the ``Request`` class.
 
         Parameters
         ----------
+        callback : callable
+            The callback to receive the response.
         request_id : UUID
             The request ID.
         timestamp_ns : int64
@@ -211,6 +218,8 @@ cdef class Request(Message):
 
         """
         super().__init__(MessageCategory.REQUEST, request_id, timestamp_ns)
+
+        self.callback = callback
 
 
 cdef class Response(Message):

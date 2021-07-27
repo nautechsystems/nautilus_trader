@@ -25,6 +25,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
+from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.commands.trading cimport TradingCommand
@@ -213,7 +214,13 @@ cdef class TradingStrategy(Component):
     cpdef void handle_instrument_close_price(self, InstrumentClosePrice update) except *
     cpdef void handle_event(self, Event event) except *
 
-# -- INTERNAL --------------------------------------------------------------------------------------
+    cpdef void _handle_data_response(self, DataResponse response) except *
+    cpdef void _handle_quote_ticks_response(self, DataResponse response) except *
+    cpdef void _handle_trade_ticks_response(self, DataResponse response) except *
+    cpdef void _handle_bars_response(self, DataResponse response) except *
+
+# -- EGRESS ----------------------------------------------------------------------------------------
+
     cdef void _send_data_cmd(self, DataCommand command) except *
     cdef void _send_data_req(self, DataRequest request) except *
     cdef void _send_exec_cmd(self, TradingCommand command) except *

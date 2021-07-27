@@ -40,8 +40,6 @@ cdef class DataRequest(Request):
     """The data client ID for the request.\n\n:returns: `ClientId`"""
     cdef readonly DataType data_type
     """The request data type.\n\n:returns: `type`"""
-    cdef readonly object callback
-    """The callback to receive the data.\n\n:returns: `callable`"""
 
 
 cdef class DataResponse(Response):

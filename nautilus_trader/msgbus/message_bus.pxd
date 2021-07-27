@@ -15,6 +15,8 @@
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.message cimport Request
+from nautilus_trader.core.message cimport Response
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.subscription cimport Subscription
 
@@ -25,11 +27,18 @@ cdef class MessageBus:
     cdef dict _subscriptions
     cdef dict _patterns
     cdef dict _endpoints
+    cdef dict _correlation_index
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the bus.\n\n:returns: `TraderId`"""
-    cdef readonly int processed_count
-    """The count of messages process by the bus.\n\n:returns: `int32`"""
+    cdef readonly int sent_count
+    """The count of messages sent through the bus.\n\n:returns: `int`"""
+    cdef readonly int req_count
+    """The count of requests processed by the bus.\n\n:returns: `int`"""
+    cdef readonly int res_count
+    """The count of responses processed by the bus.\n\n:returns: `int`"""
+    cdef readonly int pub_count
+    """The count of messages published by the bus.\n\n:returns: `int`"""
 
     cpdef list endpoints(self)
     cpdef list topics(self)
@@ -39,6 +48,8 @@ cdef class MessageBus:
     cpdef void register(self, str endpoint, handler) except *
     cpdef void deregister(self, str endpoint, handler) except *
     cpdef void send(self, str endpoint, msg) except *
+    cpdef void request(self, str endpoint, Request request) except *
+    cpdef void response(self, Response response) except *
     cpdef void subscribe(self, str topic, handler, int priority=*) except *
     cpdef void unsubscribe(self, str topic, handler) except *
     cpdef void publish(self, str topic, msg) except *

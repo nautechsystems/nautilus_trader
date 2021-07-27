@@ -46,6 +46,7 @@ from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.data.messages cimport DataRequest
+from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.indicators.base.indicator cimport Indicator
@@ -1294,7 +1295,7 @@ cdef class TradingStrategy(Component):
         cdef DataRequest request = DataRequest(
             client_id=client_id,
             data_type=data_type,
-            callback=self.handle_data,
+            callback=self._handle_data_response,
             request_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -1338,7 +1339,7 @@ cdef class TradingStrategy(Component):
                 "from_datetime": from_datetime,
                 "to_datetime": to_datetime,
             }),
-            callback=self.handle_quote_ticks,
+            callback=self._handle_quote_ticks_response,
             request_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -1382,7 +1383,7 @@ cdef class TradingStrategy(Component):
                 "from_datetime": from_datetime,
                 "to_datetime": to_datetime,
             }),
-            callback=self.handle_trade_ticks,
+            callback=self._handle_trade_ticks_response,
             request_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -1427,7 +1428,7 @@ cdef class TradingStrategy(Component):
                 "to_datetime": to_datetime,
                 "limit": self.cache.bar_capacity,
             }),
-            callback=self.handle_bars,
+            callback=self._handle_bars_response,
             request_id=self.uuid_factory.generate(),
             timestamp_ns=self.clock.timestamp_ns(),
         )
@@ -2182,7 +2183,19 @@ cdef class TradingStrategy(Component):
                 self.log.exception(ex)
                 raise
 
-# -- INTERNAL --------------------------------------------------------------------------------------
+    cpdef void _handle_data_response(self, DataResponse response) except *:
+        self.handle_bars(response.data)
+
+    cpdef void _handle_quote_ticks_response(self, DataResponse response) except *:
+        self.handle_quote_ticks(response.data)
+
+    cpdef void _handle_trade_ticks_response(self, DataResponse response) except *:
+        self.handle_trade_ticks(response.data)
+
+    cpdef void _handle_bars_response(self, DataResponse response) except *:
+        self.handle_bars(response.data)
+
+# -- EGRESS ----------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command) except *:
         self._check_registered()
@@ -2194,7 +2207,7 @@ cdef class TradingStrategy(Component):
         self._check_registered()
         if not self.log.is_bypassed:
             self.log.info(f"{REQ}{SENT} {request}.")
-        self._msgbus.send(endpoint="DataEngine.request", msg=request)
+        self._msgbus.request(endpoint="DataEngine.request", request=request)
 
     cdef void _send_exec_cmd(self, TradingCommand command) except *:
         self._check_registered()

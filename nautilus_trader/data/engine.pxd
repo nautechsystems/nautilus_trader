@@ -16,7 +16,6 @@
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.timer cimport TimeEvent
-from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.aggregation cimport TimeBarAggregator
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
@@ -47,7 +46,6 @@ cdef class DataEngine(Component):
 
     cdef bint _use_previous_close
     cdef dict _clients
-    cdef dict _correlation_index
     cdef dict _order_book_intervals
     cdef dict _bar_aggregators
 
@@ -119,10 +117,10 @@ cdef class DataEngine(Component):
 # -- RESPONSE HANDLERS -----------------------------------------------------------------------------
 
     cdef void _handle_response(self, DataResponse response) except *
-    cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *
-    cdef void _handle_quote_ticks(self, list ticks, UUID correlation_id) except *
-    cdef void _handle_trade_ticks(self, list ticks, UUID correlation_id) except *
-    cdef void _handle_bars(self, list bars, Bar partial, UUID correlation_id) except *
+    cdef void _handle_instruments(self, list instruments) except *
+    cdef void _handle_quote_ticks(self, list ticks) except *
+    cdef void _handle_trade_ticks(self, list ticks) except *
+    cdef void _handle_bars(self, list bars, Bar partial) except *
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 

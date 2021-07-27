@@ -436,8 +436,7 @@ class TestCCXTDataClient:
         )
 
         # Act
-        self.data_engine.request(request)
-
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
         await asyncio.sleep(1)
 
         # Assert
@@ -481,14 +480,13 @@ class TestCCXTDataClient:
         )
 
         # Act
-        self.data_engine.request(request)
-
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
         await asyncio.sleep(0.3)
 
         # Assert
         assert self.data_engine.response_count == 1
         assert handler.count == 1
-        assert len(handler.get_store()[0]) == 100
+        assert len(handler.get_store()[0].data) == 100
 
         # Tear Down
         self.data_engine.stop()
