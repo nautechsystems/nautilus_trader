@@ -4,11 +4,25 @@ repos:
     rev: 5.9.2
     hooks:
       - id: isort
+        args: [
+            --combine-as,
+            --line-length=100,
+            --ensure-newline-before-comments,
+            --force-grid-wrap,
+            --force-single-line-imports,
+            --trailing-comma,
+            --multi-line=3,
+            --lines-after-imports=2,
+            --use-parentheses,
+        ]
 
   - repo: https://github.com/psf/black
-    rev: 21.6b0
+    rev: 21.7b0
     hooks:
       - id: black
+        args: [
+            --line-length=100,
+        ]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v3.4.0
@@ -56,7 +70,7 @@ repos:
             types-toml,
         ]
 
-  - repo: https://gitlab.com/PyCQA/flake8
+  - repo: https://github.com/pycqa/flake8
     rev: 3.9.2
     hooks:
       - id: flake8
