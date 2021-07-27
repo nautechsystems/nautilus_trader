@@ -115,6 +115,9 @@ cdef class ExecutionEngine(Component):
             name="ExecEngine",
         )
 
+        self._msgbus = msgbus
+        self._cache = cache
+
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]
         self._default_client = None  # type: Optional[ExecutionClient]
@@ -122,8 +125,6 @@ cdef class ExecutionEngine(Component):
             trader_id=msgbus.trader_id,
             clock=clock,
         )
-        self._msgbus = msgbus
-        self._cache = cache
 
         # Counters
         self.command_count = 0
