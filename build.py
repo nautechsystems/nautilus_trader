@@ -2,17 +2,17 @@
 
 import itertools
 import os
-from pathlib import Path
 import platform
 import shutil
 import sys
+from pathlib import Path
 from typing import List
 
+import numpy as np
 from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
 from Cython.Compiler.Version import version as cython_compiler_version
-import numpy as np
 from setuptools import Distribution
 from setuptools import Extension
 
