@@ -12,13 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import datetime
-import logging
-from typing import Dict, List
 
+import logging
+from typing import Dict
+from typing import List
+
+import pandas as pd
 from betfairlightweight import APIClient
 from betfairlightweight.filters import market_filter
-import pandas as pd
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger

@@ -15,8 +15,8 @@
 
 import asyncio
 
-from betfairlightweight import APIClient
 import orjson
+from betfairlightweight import APIClient
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.cache.cache cimport Cache

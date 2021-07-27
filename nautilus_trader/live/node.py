@@ -15,13 +15,15 @@
 
 import asyncio
 import concurrent.futures
-from datetime import timedelta
 import platform
 import signal
 import sys
 import time
-from typing import Callable, Dict, List
 import warnings
+from datetime import timedelta
+from typing import Callable
+from typing import Dict
+from typing import List
 
 import msgpack
 import redis
@@ -31,8 +33,8 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogColor
-from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.correctness import PyCondition

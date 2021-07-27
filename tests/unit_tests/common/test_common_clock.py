@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import time
 from datetime import datetime
 from datetime import timedelta
-import time
 
 import pytest
 import pytz

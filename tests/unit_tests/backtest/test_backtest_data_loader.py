@@ -1,18 +1,18 @@
 import datetime
-from decimal import Decimal
-from functools import partial
 import os
 import pathlib
 import sys
+from decimal import Decimal
+from functools import partial
 
 import fsspec.implementations.memory
-from numpy import dtype
 import orjson
 import pandas as pd
-from pandas import CategoricalDtype
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
+from numpy import dtype
+from pandas import CategoricalDtype
 
 from examples.strategies.orderbook_imbalance import OrderbookImbalance
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE

@@ -14,11 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import hashlib
 from collections import defaultdict
 from datetime import datetime
 from functools import partial
-import hashlib
-from typing import Dict, List, Optional, Set
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Set
 
 import betfairlightweight
 import orjson

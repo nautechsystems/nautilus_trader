@@ -1,15 +1,15 @@
 import copy
 import dataclasses
-from decimal import Decimal
-from functools import partial
 import pathlib
 import pickle
 import sys
+from decimal import Decimal
+from functools import partial
 from typing import Optional
 
-from dask.base import tokenize
 import pandas as pd
 import pytest
+from dask.base import tokenize
 
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.config import BacktestDataConfig

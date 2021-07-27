@@ -17,8 +17,8 @@
 This module provides a data producer for backtesting.
 """
 
-from bisect import bisect_left
 import gc
+from bisect import bisect_left
 
 import numpy as np
 import pandas as pd
