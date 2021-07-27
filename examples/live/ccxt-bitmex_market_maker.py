@@ -14,10 +14,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import timedelta
-from decimal import Decimal
 import os
 import sys
+from datetime import timedelta
+from decimal import Decimal
 
 
 sys.path.insert(

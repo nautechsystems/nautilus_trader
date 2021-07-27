@@ -21,10 +21,10 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogColor
-from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.logging import LogLevelParser
 
 
 class TestLogLevelParser:

@@ -20,8 +20,8 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
-from nautilus_trader.model.events.order import OrderCancelRejected
 from nautilus_trader.model.events.order import OrderCanceled
+from nautilus_trader.model.events.order import OrderCancelRejected
 from nautilus_trader.model.events.order import OrderDenied
 from nautilus_trader.model.events.order import OrderExpired
 from nautilus_trader.model.events.order import OrderFilled
@@ -31,8 +31,8 @@ from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderTriggered
-from nautilus_trader.model.events.order import OrderUpdateRejected
 from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events.order import OrderUpdateRejected
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened

@@ -1,11 +1,13 @@
 import dataclasses
 from functools import partial
-from typing import List, Optional, Tuple
+from typing import List
+from typing import Optional
+from typing import Tuple
 
+import pandas as pd
+from dask import delayed
 from dask.base import normalize_token
 from dask.base import tokenize
-from dask import delayed
-import pandas as pd
 
 from nautilus_trader.backtest.data_loader import DataCatalog
 from nautilus_trader.backtest.engine import BacktestEngine

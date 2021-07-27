@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Dict
+from typing import Optional
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event

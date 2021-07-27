@@ -12,24 +12,27 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from collections import defaultdict
+
 import datetime
 import hashlib
 import itertools
-from typing import List, Optional, Union
+from collections import defaultdict
+from typing import List
+from typing import Optional
+from typing import Union
 
+import orjson
+import pandas as pd
 from betfairlightweight.filters import cancel_instruction
 from betfairlightweight.filters import limit_order
 from betfairlightweight.filters import place_instruction
 from betfairlightweight.filters import replace_instruction
-import orjson
-import pandas as pd
 
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
 from nautilus_trader.adapters.betfair.common import B_BID_KINDS
 from nautilus_trader.adapters.betfair.common import B_SIDE_KINDS
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import MAX_BET_PROB
 from nautilus_trader.adapters.betfair.common import MIN_BET_PROB
 from nautilus_trader.adapters.betfair.common import N2B_SIDE

@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Callable
+from typing import Any
+from typing import Callable
 
 from nautilus_trader.core.correctness cimport Condition
 

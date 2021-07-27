@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 import os
+from datetime import datetime
 
 import pandas as pd
 import pytest

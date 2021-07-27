@@ -14,9 +14,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 import os
 import sys
+from decimal import Decimal
 
 
 sys.path.insert(

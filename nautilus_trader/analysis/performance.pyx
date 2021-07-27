@@ -16,6 +16,7 @@
 from cpython.datetime cimport date
 from cpython.datetime cimport datetime
 
+import numpy as np
 from empyrical import alpha
 from empyrical import annual_return
 from empyrical import annual_volatility
@@ -28,9 +29,10 @@ from empyrical import sharpe_ratio
 from empyrical import sortino_ratio
 from empyrical import stability_of_timeseries
 from empyrical import tail_ratio
-import numpy as np
 from numpy import float64
+
 cimport numpy as np
+
 import pandas as pd
 from scipy.stats import kurtosis
 from scipy.stats import skew

@@ -18,12 +18,12 @@ from typing import Optional
 from cpython.datetime cimport timedelta
 
 import asyncio
-from asyncio import Task
-from collections import defaultdict
 import platform
-from platform import python_version
 import sys
 import traceback
+from asyncio import Task
+from collections import defaultdict
+from platform import python_version
 
 import numpy as np
 import pandas as pd
@@ -34,8 +34,8 @@ from nautilus_trader import __version__
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition

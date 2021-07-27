@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from collections import Counter
 import os
+from collections import Counter
 
 import betfairlightweight
 import orjson

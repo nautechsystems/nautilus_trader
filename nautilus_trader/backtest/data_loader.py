@@ -13,23 +13,24 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
+import pathlib
+import re
+import warnings
 from collections import defaultdict
 from collections import namedtuple
 from io import BytesIO
 from itertools import takewhile
-import os
-import pathlib
-import re
-from typing import Callable, Generator
-import warnings
+from typing import Callable
+from typing import Generator
 
 import fsspec
 import orjson
 import pandas as pd
 import pyarrow as pa
-from pyarrow import ArrowInvalid
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
+from pyarrow import ArrowInvalid
 from tqdm import tqdm
 
 from nautilus_trader.backtest.engine import BacktestEngine

@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from base64 import b64encode
 import copy
 import sys
+from base64 import b64encode
 
 import pytest
 
@@ -40,8 +40,8 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
-from nautilus_trader.model.events.order import OrderCancelRejected
 from nautilus_trader.model.events.order import OrderCanceled
+from nautilus_trader.model.events.order import OrderCancelRejected
 from nautilus_trader.model.events.order import OrderDenied
 from nautilus_trader.model.events.order import OrderExpired
 from nautilus_trader.model.events.order import OrderFilled
@@ -51,8 +51,8 @@ from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderTriggered
-from nautilus_trader.model.events.order import OrderUpdateRejected
 from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events.order import OrderUpdateRejected
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
@@ -82,8 +82,8 @@ from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSeria
 from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
 from tests.test_kit.providers import TestInstrumentProvider
-from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
