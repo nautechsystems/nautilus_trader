@@ -391,7 +391,8 @@ cdef class Clock:
             # The call to np.asarray here looks inefficient, however its only
             # called when a timer is added or removed. This then allows the
             # construction of an efficient Timer[:] memoryview.
-            self._stack = np.ascontiguousarray(list(self._timers.values()))
+            timers = list(self._timers.values())
+            self._stack = np.ascontiguousarray(timers, dtype=Timer)
         else:
             self._stack = None
 
