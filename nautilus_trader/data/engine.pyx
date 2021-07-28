@@ -71,8 +71,6 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
-from nautilus_trader.model.orderbook.data cimport OrderBookDeltas
-from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
@@ -588,19 +586,26 @@ cdef class DataEngine(Component):
 
         # Always re-subscribe to override previous settings
         try:
+            client.subscribe_order_book_deltas(
+                instrument_id=instrument_id,
+                level=metadata.get("level"),
+                kwargs=metadata.get("kwargs"),
+            )
+        except NotImplemented:
             client.subscribe_order_book_snapshots(
                 instrument_id=instrument_id,
                 level=metadata.get("level"),
                 depth=metadata.get("depth"),
                 kwargs=metadata.get("kwargs"),
             )
-        except NotImplemented:
-            # TODO Maintain the books via deltas - Should we prefer this anyway?
-            client.subscribe_order_book_deltas(
-                instrument_id=instrument_id,
-                level=metadata.get("level"),
-                kwargs=metadata.get("kwargs"),
-            )
+
+        self._msgbus.subscribe(
+            topic=f"data.book.deltas"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self._maintain_order_book,
+            priority=10,
+        )
 
     cdef void _handle_subscribe_quote_ticks(
         self,
@@ -821,10 +826,8 @@ cdef class DataEngine(Component):
             self._handle_quote_tick(data)
         elif isinstance(data, TradeTick):
             self._handle_trade_tick(data)
-        elif isinstance(data, OrderBookDeltas):
-            self._handle_order_book_deltas(data)
-        elif isinstance(data, OrderBookSnapshot):
-            self._handle_order_book_snapshot(data)
+        elif isinstance(data, OrderBookData):
+            self._handle_order_book_data(data)
         elif isinstance(data, Bar):
             self._handle_bar(data)
         elif isinstance(data, Instrument):
@@ -847,6 +850,14 @@ cdef class DataEngine(Component):
             msg=instrument,
         )
 
+    cdef void _handle_order_book_data(self, OrderBookData data) except *:
+        self._msgbus.publish_c(
+            topic=f"data.book.deltas"
+                  f".{data.instrument_id.venue}"
+                  f".{data.instrument_id.symbol}",
+            msg=data,
+        )
+
     cdef void _handle_quote_tick(self, QuoteTick tick) except *:
         self._cache.add_quote_tick(tick)
         self._msgbus.publish_c(
@@ -863,33 +874,6 @@ cdef class DataEngine(Component):
                   f".{tick.instrument_id.venue}"
                   f".{tick.instrument_id.symbol}",
             msg=tick,
-        )
-
-    cdef void _handle_order_book_deltas(self, OrderBookDeltas deltas) except *:
-        self._msgbus.publish_c(
-            topic=f"data.book.deltas"
-                  f".{deltas.instrument_id.venue}"
-                  f".{deltas.instrument_id.symbol}",
-            msg=deltas,
-        )
-
-    cdef void _handle_order_book_snapshot(self, OrderBookSnapshot snapshot) except *:
-        cdef InstrumentId instrument_id = snapshot.instrument_id
-        cdef OrderBook order_book = self._cache.order_book(instrument_id)
-        if order_book is None:
-            self._log.error(
-                f"Cannot apply `OrderBookSnapshot`: "
-                f"no book found for {snapshot.instrument_id}.",
-            )
-            return
-
-        order_book.apply_snapshot(snapshot)
-
-        self._msgbus.publish_c(
-            topic=f"data.book.deltas"
-                  f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
-            msg=snapshot,
         )
 
     cdef void _handle_bar(self, Bar bar) except *:
@@ -946,9 +930,9 @@ cdef class DataEngine(Component):
                 aggregator.set_partial(partial)
             else:
                 if self._fsm.state == ComponentState.RUNNING:
-                    # Only log this error if the component is running as here
-                    # there may have been an immediate stop after start with the
-                    # partial bar being for a now removed aggregator.
+                    # Only log this error if the component is running, because
+                    # there may have been an immediate stop called after start
+                    # - with the partial bar being for a now removed aggregator.
                     self._log.error("No aggregator for partial bar update.")
 
 # -- INTERNAL --------------------------------------------------------------------------------------
@@ -959,6 +943,16 @@ cdef class DataEngine(Component):
         cdef Instrument instrument
         for instrument in instruments:
             self._handle_instrument(instrument)
+
+    cpdef void _maintain_order_book(self, OrderBookData data) except *:
+        cdef OrderBook order_book = self._cache.order_book(data.instrument_id)
+        if order_book is None:
+            self._log.error(
+                f"Cannot maintain book: no book found for {data.instrument_id}."
+            )
+            return
+
+        order_book.apply(data)
 
     cpdef void _snapshot_order_book(self, TimeEvent snap_event) except *:
         cdef tuple pieces = snap_event.name.partition('-')[2].partition('-')
