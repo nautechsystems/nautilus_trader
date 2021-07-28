@@ -1019,7 +1019,7 @@ cdef class Actor(Component):
 
     cpdef void publish_data(self, Data data) except *:
         """
-        Publish the data to the message bus.
+        Publish the given data to the message bus.
 
         Parameters
         ----------
