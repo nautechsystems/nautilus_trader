@@ -21,7 +21,6 @@ from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.trading.strategy import TradingStrategy
 
 
 class TestTradingNodeConfiguration:
@@ -57,10 +56,7 @@ class TestTradingNodeConfiguration:
         }
 
         # Act
-        node = TradingNode(
-            strategies=[TradingStrategy("000")],
-            config=config,
-        )
+        node = TradingNode(config=config)
 
         # Assert
         assert node is not None
@@ -99,10 +95,7 @@ class TestTradingNodeConfiguration:
         }
 
         # Act
-        node = TradingNode(
-            strategies=[TradingStrategy("000")],
-            config=config,
-        )
+        node = TradingNode(config=config)
 
         # Assert
         assert node is not None
@@ -130,10 +123,7 @@ class TestTradingNodeOperation:
             "exec_clients": {},
         }
 
-        self.node = TradingNode(
-            strategies=[TradingStrategy("000")],
-            config=config,
-        )
+        self.node = TradingNode(config=config)
 
     def test_get_event_loop_returns_a_loop(self):
         # Arrange, Act
@@ -162,7 +152,7 @@ class TestTradingNodeOperation:
         sink = []
 
         # Act
-        self.node.register_log_sink(sink.append)
+        self.node.add_log_sink(sink.append)
         self.node.build()
 
         self.node.start()

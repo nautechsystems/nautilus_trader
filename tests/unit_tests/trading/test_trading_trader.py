@@ -13,12 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import Logger
@@ -133,14 +132,8 @@ class TestTrader:
         self.data_engine.register_client(self.data_client)
         self.exec_engine.register_client(self.exec_client)
 
-        strategies = [
-            TradingStrategy("001"),
-            TradingStrategy("002"),
-        ]
-
         self.trader = Trader(
             trader_id=self.trader_id,
-            strategies=strategies,
             msgbus=self.msgbus,
             cache=self.cache,
             portfolio=self.portfolio,
@@ -152,17 +145,78 @@ class TestTrader:
         )
 
     def test_initialize_trader(self):
-        # Arrange
-        # Act
-        trader_id = self.trader.id
+        # Arrange, Act, Assert
+        assert self.trader.id == TraderId("TESTER-000")
+        assert self.trader.state == ComponentState.INITIALIZED
+        assert len(self.trader.strategy_states()) == 0
+
+    def test_add_strategy(self):
+        # Arrange, Act
+        self.trader.add_strategy(TradingStrategy("001"))
 
         # Assert
-        assert trader_id == TraderId("TESTER-000")
-        assert self.trader.state == ComponentState.INITIALIZED
-        assert len(self.trader.strategy_states()) == 2
+        assert self.trader.strategy_states() == {StrategyId("TradingStrategy-001"): "INITIALIZED"}
+
+    def test_add_strategies(self):
+        # Arrange
+        strategies = [TradingStrategy("001"), TradingStrategy("002")]
+
+        # Act
+        self.trader.add_strategies(strategies)
+
+        # Assert
+        assert self.trader.strategy_states() == {
+            StrategyId("TradingStrategy-001"): "INITIALIZED",
+            StrategyId("TradingStrategy-002"): "INITIALIZED",
+        }
+
+    def test_clear_strategies(self):
+        # Arrange
+        strategies = [TradingStrategy("001"), TradingStrategy("002")]
+        self.trader.add_strategies(strategies)
+
+        # Act
+        self.trader.clear_strategies()
+
+        # Assert
+        assert self.trader.strategy_states() == {}
+
+    def test_add_plugin(self):
+        # Arrange
+        plugin = Actor("MyPlugin-01")
+
+        # Act
+        self.trader.add_plugin(plugin)
+
+        # Assert
+        assert self.trader.plugins() == [plugin]
+
+    def test_add_plugins(self):
+        # Arrange
+        plugins = [Actor("MyPlugin-01"), Actor("MyPlugin-02")]
+
+        # Act
+        self.trader.add_plugins(plugins)
+
+        # Assert
+        assert self.trader.plugins() == plugins
+
+    def test_clear_plugins(self):
+        # Arrange
+        plugins = [Actor("MyPlugin-01"), Actor("MyPlugin-02")]
+        self.trader.add_plugins(plugins)
+
+        # Act
+        self.trader.clear_plugins()
+
+        # Assert
+        assert self.trader.plugins() == []
 
     def test_get_strategy_states(self):
         # Arrange
+        strategies = [TradingStrategy("001"), TradingStrategy("002")]
+        self.trader.add_strategies(strategies)
+
         # Act
         status = self.trader.strategy_states()
 
@@ -181,26 +235,18 @@ class TestTrader:
         ]
 
         # Act
-        self.trader.initialize_strategies(strategies, warn_no_strategies=True)
+        self.trader.add_strategies(strategies)
 
         # Assert
         assert strategies[0].id in self.trader.strategy_states()
         assert strategies[1].id in self.trader.strategy_states()
         assert len(self.trader.strategy_states()) == 2
 
-    def test_trader_detects_duplicate_identifiers(self):
-        # Arrange
-        strategies = [
-            TradingStrategy("000"),
-            TradingStrategy("000"),
-        ]
-
-        # Act
-        with pytest.raises(ValueError):
-            self.trader.initialize_strategies(strategies, True)
-
     def test_start_a_trader(self):
         # Arrange
+        strategies = [TradingStrategy("001"), TradingStrategy("002")]
+        self.trader.add_strategies(strategies)
+
         # Act
         self.trader.start()
 
@@ -213,6 +259,8 @@ class TestTrader:
 
     def test_stop_a_running_trader(self):
         # Arrange
+        strategies = [TradingStrategy("001"), TradingStrategy("002")]
+        self.trader.add_strategies(strategies)
         self.trader.start()
 
         # Act
@@ -233,7 +281,7 @@ class TestTrader:
         self.trader.subscribe("events*", consumer.append)
 
         # Assert
-        assert len(self.msgbus.subscriptions("events*")) == 9
+        assert len(self.msgbus.subscriptions("events*")) == 5
         assert "events*" in self.msgbus.topics()
         assert self.msgbus.subscriptions("events*")[-1].handler == consumer.append
 
@@ -246,4 +294,4 @@ class TestTrader:
         self.trader.unsubscribe("events*", consumer.append)
 
         # Assert
-        assert len(self.msgbus.subscriptions("events*")) == 8
+        assert len(self.msgbus.subscriptions("events*")) == 4

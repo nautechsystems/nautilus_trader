@@ -28,6 +28,7 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class Trader(Component):
@@ -51,8 +52,13 @@ cdef class Trader(Component):
 
     cpdef list strategy_ids(self)
     cpdef dict strategy_states(self)
-    cpdef void initialize_strategies(self, list strategies, bint warn_no_strategies) except *
+    cpdef list plugins(self)
+    cpdef void add_strategy(self, TradingStrategy strategy) except *
+    cpdef void add_strategies(self, list strategies) except *
     cpdef void add_plugin(self, Actor plugin) except *
+    cpdef void add_plugins(self, list plugins) except *
+    cpdef void clear_strategies(self) except *
+    cpdef void clear_plugins(self) except *
     cpdef void subscribe(self, str topic, handler: Callable[[Any], None]) except *
     cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *
     cpdef void start(self) except *

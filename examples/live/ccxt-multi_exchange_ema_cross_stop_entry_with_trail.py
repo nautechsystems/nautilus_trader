@@ -134,8 +134,12 @@ strategy2 = EMACrossStopEntryTrail(
 )
 
 # ------------------------------------------------------------------------------
-# Instantiate the node passing a list of strategies and configuration
-node = TradingNode(strategies=[strategy1, strategy2], config=config)  # type: ignore
+
+# Instantiate the node with a configuration
+node = TradingNode(config=config)  # type: ignore
+
+# Add your strategies and modules
+node.trader.add_strategies(strategies=[strategy1, strategy2])
 
 # Register your client factories with the node (can take user defined factories)
 node.add_data_client_factory("CCXT", CCXTDataClientFactory)
