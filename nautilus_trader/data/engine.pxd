@@ -35,8 +35,7 @@ from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.orderbook.data cimport OrderBookDeltas
-from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
+from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
@@ -105,8 +104,7 @@ cdef class DataEngine(Component):
 
     cdef void _handle_data(self, Data data) except *
     cdef void _handle_instrument(self, Instrument instrument) except *
-    cdef void _handle_order_book_deltas(self, OrderBookDeltas deltas) except *
-    cdef void _handle_order_book_snapshot(self, OrderBookSnapshot snapshot) except *
+    cdef void _handle_order_book_data(self, OrderBookData data) except *
     cdef void _handle_quote_tick(self, QuoteTick tick) except *
     cdef void _handle_trade_tick(self, TradeTick tick) except *
     cdef void _handle_bar(self, Bar bar) except *
@@ -125,6 +123,7 @@ cdef class DataEngine(Component):
 # -- INTERNAL --------------------------------------------------------------------------------------
 
     cpdef void _internal_update_instruments(self, list instruments) except *
+    cpdef void _maintain_order_book(self, OrderBookData data) except *
     cpdef void _snapshot_order_book(self, TimeEvent snap_event) except *
     cdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type) except *
     cdef void _hydrate_aggregator(self, MarketDataClient client, TimeBarAggregator aggregator, BarType bar_type) except *
