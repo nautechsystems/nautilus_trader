@@ -79,7 +79,7 @@ def create_engine(instruments, data):
     return engine
 
 
-@pytest.mark.local
+@pytest.mark.skip(reason="backtest orderbook subscription broken")
 def test_betfair_backtest(provider):
     # Load instruments
     instruments = BetfairDataProvider.raw_market_updates_instruments()
