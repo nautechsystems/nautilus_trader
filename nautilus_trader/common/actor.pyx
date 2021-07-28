@@ -72,7 +72,7 @@ cdef class Actor(Component):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, str name):
+    def __init__(self, str name=None):
         """
         Initialize a new instance of the ``Actor`` class.
 

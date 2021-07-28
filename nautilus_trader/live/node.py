@@ -23,7 +23,6 @@ import warnings
 from datetime import timedelta
 from typing import Callable
 from typing import Dict
-from typing import List
 
 import msgpack
 import redis
@@ -49,7 +48,6 @@ from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSeria
 from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
 from nautilus_trader.trading.portfolio import Portfolio
-from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.trader import Trader
 
 
@@ -68,32 +66,22 @@ class TradingNode:
     Provides an asynchronous network node for live trading.
     """
 
-    def __init__(
-        self,
-        strategies: List[TradingStrategy],
-        config: Dict[str, Dict[str, object]],
-    ):
+    def __init__(self, config: Dict[str, Dict[str, object]]):
         """
         Initialize a new instance of the TradingNode class.
 
         Parameters
         ----------
-        strategies : list[TradingStrategy]
-            The list of strategies to run on the trading node.
         config : dict[str, dict[str, object]]
             The configuration for the trading node.
 
         Raises
         ------
         ValueError
-            If strategies is None or empty.
-        ValueError
             If config is None or empty.
 
         """
-        PyCondition.not_none(strategies, "strategies")
         PyCondition.not_none(config, "config")
-        PyCondition.not_empty(strategies, "strategies")
         PyCondition.not_empty(config, "config")
 
         self._config = config
@@ -233,7 +221,6 @@ class TradingNode:
 
         self.trader = Trader(
             trader_id=self.trader_id,
-            strategies=strategies,
             msgbus=self._msgbus,
             cache=self._cache,
             portfolio=self.portfolio,
@@ -312,7 +299,7 @@ class TradingNode:
         """
         return self._logger
 
-    def register_log_sink(self, handler: Callable[[Dict], None]):
+    def add_log_sink(self, handler: Callable[[Dict], None]):
         """
         Register the given sink handler with the nodes logger.
 

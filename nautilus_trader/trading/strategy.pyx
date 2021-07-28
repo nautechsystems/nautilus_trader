@@ -787,7 +787,7 @@ cdef class TradingStrategy(Actor):
         """
         Handle the given tick.
 
-        Calls `on_quote_tick` if `strategy.state` is `RUNNING`.
+        Calls `on_quote_tick` if state is `RUNNING`.
 
         Parameters
         ----------
@@ -824,7 +824,7 @@ cdef class TradingStrategy(Actor):
         """
         Handle the given tick.
 
-        Calls `on_trade_tick` if `strategy.state` is `RUNNING`.
+        Calls `on_trade_tick` if state is `RUNNING`.
 
         Parameters
         ----------
@@ -861,7 +861,7 @@ cdef class TradingStrategy(Actor):
         """
         Handle the given bar data.
 
-        Calls `on_bar` if `strategy.state` is `RUNNING`.
+        Calls `on_bar` if state is `RUNNING`.
 
         Parameters
         ----------
@@ -898,7 +898,7 @@ cdef class TradingStrategy(Actor):
         """
         Handle the given event.
 
-        Calls `on_event` if `strategy.state` is `RUNNING`.
+        Calls `on_event` if state is `RUNNING`.
 
         Parameters
         ----------

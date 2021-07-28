@@ -253,7 +253,6 @@ cdef class BacktestEngine:
 
         self.trader = Trader(
             trader_id=trader_id,
-            strategies=[],  # Added in `run()`
             msgbus=self._msgbus,
             cache=self._cache,
             portfolio=self.portfolio,
@@ -262,7 +261,6 @@ cdef class BacktestEngine:
             exec_engine=self._exec_engine,
             clock=self._test_clock,
             logger=self._test_logger,
-            warn_no_strategies=False,
         )
 
         self.analyzer = PerformanceAnalyzer()
@@ -905,10 +903,7 @@ cdef class BacktestEngine:
 
         # Setup new strategies
         if strategies:
-            self.trader.initialize_strategies(
-                strategies=strategies,
-                warn_no_strategies=False,
-            )
+            self.trader.add_strategies(strategies)
 
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start_ns)
