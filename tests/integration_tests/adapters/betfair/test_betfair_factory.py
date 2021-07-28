@@ -25,7 +25,7 @@ from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientF
 
 
 @pytest.mark.asyncio()
-def test_create(mocker, data_engine, exec_engine, msgbus, cache, clock, live_logger):
+def test_create(mocker, msgbus, cache, clock, live_logger):
     config = {
         "data_client": True,
         "exec_client": True,
