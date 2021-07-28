@@ -172,6 +172,8 @@ cdef class Trader(Component):
 
     cpdef void _stop(self) except *:
         cdef TradingStrategy strategy
+        cdef Actor plugin
+
         for strategy in self._strategies:
             if strategy.state_c() == ComponentState.RUNNING:
                 strategy.stop()
