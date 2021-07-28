@@ -19,6 +19,7 @@ from typing import Callable
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.cache.cache cimport Cache
+from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
@@ -38,6 +39,7 @@ cdef class Trader(Component):
     cdef ExecutionEngine _exec_engine
     cdef ReportProvider _report_provider
     cdef list _strategies
+    cdef list _plugins
 
     cdef readonly TraderId id
     """The trader ID.\n\n:returns: `TraderId`"""
@@ -45,10 +47,12 @@ cdef class Trader(Component):
     """The traders performance analyzer.\n\n:returns: `PerformanceAnalyzer`"""
 
     cdef list strategies_c(self)
+    cdef list plugins_c(self)
 
     cpdef list strategy_ids(self)
     cpdef dict strategy_states(self)
     cpdef void initialize_strategies(self, list strategies, bint warn_no_strategies) except *
+    cpdef void add_plugin(self, Actor plugin) except *
     cpdef void subscribe(self, str topic, handler: Callable[[Any], None]) except *
     cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *
     cpdef void start(self) except *

@@ -28,6 +28,7 @@ import pandas as pd
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
+from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -109,8 +110,10 @@ cdef class Trader(Component):
         self._data_engine = data_engine
         self._risk_engine = risk_engine
         self._exec_engine = exec_engine
-        self._strategies = []
         self._report_provider = ReportProvider()
+
+        self._strategies = []
+        self._plugins = []
 
         self.id = trader_id
         self.analyzer = PerformanceAnalyzer()
@@ -126,6 +129,9 @@ cdef class Trader(Component):
 
     cdef list strategies_c(self):
         return self._strategies
+
+    cdef list plugins_c(self):
+        return self._plugins
 
     cpdef list strategy_ids(self):
         """
@@ -165,6 +171,9 @@ cdef class Trader(Component):
         for strategy in self._strategies:
             strategy.start()
 
+        for plugin in self._plugins:
+            plugin.start()
+
     cpdef void _stop(self) except *:
         cdef TradingStrategy strategy
         for strategy in self._strategies:
@@ -173,9 +182,18 @@ cdef class Trader(Component):
             else:
                 self._log.warning(f"{strategy} already stopped.")
 
+        for plugin in self._plugins:
+            if plugin.state_c() == ComponentState.RUNNING:
+                plugin.stop()
+            else:
+                self._log.warning(f"{plugin} already stopped.")
+
     cpdef void _reset(self) except *:
         for strategy in self._strategies:
             strategy.reset()
+
+        for plugin in self._plugins:
+            plugin.reset()
 
         self._portfolio.reset()
         self.analyzer.reset()
@@ -183,6 +201,9 @@ cdef class Trader(Component):
     cpdef void _dispose(self) except *:
         for strategy in self._strategies:
             strategy.dispose()
+
+        for plugin in self._plugins:
+            plugin.dispose()
 
 # --------------------------------------------------------------------------------------------------
 
@@ -251,6 +272,34 @@ cdef class Trader(Component):
             self._strategies.append(strategy)
 
             self._log.info(f"Initialized {strategy}.")
+
+    cpdef void add_plugin(self, Actor plugin) except *:
+        """
+        Add the given plugin component to the trader.
+
+        Parameters
+        ----------
+        plugin : Actor
+            The plugin component to add.
+
+        """
+        if self._fsm.state == ComponentState.RUNNING:
+            self._log.error("Cannot add plugin to a running trader.")
+            return
+
+        self._log.info(f"Initializing plugin...")
+
+        plugin.register_base(
+            trader_id=self.id,
+            msgbus=self._msgbus,
+            cache=self._cache,
+            clock=self._clock.__class__(),  # Clock per plugin
+            logger=self._log.get_logger(),
+        )
+
+        self._plugins.append(plugin)
+
+        self._log.info(f"Initialized {plugin}.")
 
     cpdef void subscribe(self, str topic, handler: Callable[[Any], None]) except *:
         """
