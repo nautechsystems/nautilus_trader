@@ -89,6 +89,12 @@ repos:
           - flake8-typing-imports
 #          - pep8-naming
         types: [python]
+        args: [
+            --max-complexity=10,
+            --max-line-length=150,
+            --statistics,
+            --ignore=C101 E203 E252 E402 D100 D101 D102 S101 S403 W503,
+        ]
       - id: flake8
         name: flake8 (cython)
         additional_dependencies:
@@ -105,3 +111,26 @@ repos:
           - flake8-typing-imports
           - pep8-naming
         types: [cython]
+        args: [
+            --max-complexity=10,
+            --max-line-length=150,
+            --statistics,
+            --ignore=C101 D100 E225 E226 E227 E252 E402 E999 W503,
+        ]
+
+# Flake8 Ignores justification
+# ---------------------
+# C101: Coding magic comment not found
+# D100: Missing docstring in public module (picks up entire test suite)
+# D101: Missing docstring in public class (picks up entire test suite)
+# D102: Missing docstring in public method (picks up entire test suite)
+# E203: whitespace before ':' (conflicts with Black)
+# E225: missing whitespace around operator (picks up cython casting)
+# E226: missing whitespace around arithmetic operator (picks up C pointers)
+# E227: missing whitespace around bitwise or shift operator (picks up C pointers)
+# E252: spaces around default argument assignment (incorrect syntax)
+# E402: module level import not at top of file (workaround to assist imports in examples)
+# E999: SyntaxError: invalid syntax (cimport seen as invalid syntax)
+# S101: Use of assert detected (use of assert normal for pytest)
+# S403: Consider possible security implications associated with pickle module (pickle ok!)
+# W503: in error will be amended by flake8 soon (https://www.flake8rules.com/rules/W503.html)
