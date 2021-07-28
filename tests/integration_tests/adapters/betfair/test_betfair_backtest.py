@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
+import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -78,6 +79,7 @@ def create_engine(instruments, data):
     return engine
 
 
+@pytest.mark.local
 def test_betfair_backtest(provider):
     # Load instruments
     instruments = BetfairDataProvider.raw_market_updates_instruments()
