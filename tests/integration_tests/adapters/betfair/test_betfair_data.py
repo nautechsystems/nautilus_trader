@@ -43,7 +43,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Local testing only")
-async def test_betfair_data_client(betfair_data_client, data_engine):
+async def test_betfair_data_client(betfair_data_client, msgbus):
     """
     Local test only, ensure we can connect to betfair and receive some market data
     """
@@ -76,20 +76,19 @@ def test_subscriptions(betfair_data_client):
     betfair_data_client.subscribe_instrument_close_prices(BetfairTestStubs.instrument_id())
 
 
-def test_market_heartbeat(betfair_data_client, data_engine):
+def test_market_heartbeat(betfair_data_client, msgbus):
     betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_HEARTBEAT())
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
-def test_market_sub_image_market_def(betfair_data_client, data_engine):
+def test_market_sub_image_market_def(betfair_data_client, msgbus):
     betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_SUB_IMAGE())
-    result = [type(event).__name__ for event in data_engine.events]
+    result = [type(event).__name__ for event in msgbus.data_engine_messages]
     expected = ["InstrumentStatusUpdate"] * 7 + ["OrderBookSnapshot"] * 7
     assert result == expected
     # Check prices are probabilities
     result = set(
         float(order[0])
-        for ob_snap in data_engine.events
+        for ob_snap in msgbus.data_engine_messages
         if isinstance(ob_snap, OrderBookSnapshot)
         for order in ob_snap.bids + ob_snap.asks
     )
@@ -112,12 +111,11 @@ def test_market_sub_image_market_def(betfair_data_client, data_engine):
     assert result == expected
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
-def test_market_sub_image_no_market_def(betfair_data_client, data_engine):
+def test_market_sub_image_no_market_def(betfair_data_client, msgbus):
     betfair_data_client._on_market_update(
         BetfairDataProvider.streaming_mcm_SUB_IMAGE_no_market_def()
     )
-    result = Counter([type(event).__name__ for event in data_engine.events])
+    result = Counter([type(event).__name__ for event in msgbus.data_engine_messages])
     expected = Counter(
         {
             "InstrumentStatusUpdate": 270,
@@ -128,79 +126,72 @@ def test_market_sub_image_no_market_def(betfair_data_client, data_engine):
     assert result == expected
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
-def test_market_resub_delta(betfair_data_client, data_engine):
+def test_market_resub_delta(betfair_data_client, msgbus):
     betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_RESUB_DELTA())
-    result = [type(event).__name__ for event in data_engine.events]
+    result = [type(event).__name__ for event in msgbus.data_engine_messages]
     expected = ["InstrumentStatusUpdate"] * 12 + ["OrderBookDeltas"] * 269
     assert result == expected
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
-def test_market_update(betfair_data_client, data_engine):
+def test_market_update(betfair_data_client, msgbus):
     betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_UPDATE())
-    result = [type(event).__name__ for event in data_engine.events]
+    result = [type(event).__name__ for event in msgbus.data_engine_messages]
     expected = ["OrderBookDeltas"] * 1
     assert result == expected
-    result = [op.type for op in data_engine.events[0].deltas]
+    result = [op.type for op in msgbus.data_engine_messages[0].deltas]
     expected = [DeltaType.UPDATE, DeltaType.DELETE]
     assert result == expected
     # Ensure order prices are coming through as probability
-    update_op = data_engine.events[0].deltas[0]
+    update_op = msgbus.data_engine_messages[0].deltas[0]
     assert update_op.order.price == 0.21277
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
-def test_market_update_md(betfair_data_client, data_engine):
+def test_market_update_md(betfair_data_client, msgbus):
     betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_UPDATE_md())
-    result = [type(event).__name__ for event in data_engine.events]
+    result = [type(event).__name__ for event in msgbus.data_engine_messages]
     expected = ["InstrumentStatusUpdate"] * 2
     assert result == expected
 
 
 @pytest.mark.skip  # We don't do anything with traded volume at this stage
-def test_market_update_tv(betfair_data_client, data_engine):
+def test_market_update_tv(betfair_data_client, msgbus):
     betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_UPDATE_tv())
-    result = [type(event).__name__ for event in data_engine.events]
+    result = [type(event).__name__ for event in msgbus.data_engine_messages]
     expected = [] * 7
     assert result == expected
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
-def test_market_update_live_image(betfair_data_client, data_engine):
+def test_market_update_live_image(betfair_data_client, msgbus):
     betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_live_IMAGE())
-    result = [type(event).__name__ for event in data_engine.events]
+    result = [type(event).__name__ for event in msgbus.data_engine_messages]
     expected = (
         ["OrderBookSnapshot"] + ["TradeTick"] * 13 + ["OrderBookSnapshot"] + ["TradeTick"] * 17
     )
     assert result == expected
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
-def test_market_update_live_update(betfair_data_client, data_engine):
+def test_market_update_live_update(betfair_data_client, msgbus):
     betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_live_UPDATE())
-    result = [type(event).__name__ for event in data_engine.events]
+    result = [type(event).__name__ for event in msgbus.data_engine_messages]
     expected = ["TradeTick", "OrderBookDeltas"]
     assert result == expected
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
 @pytest.mark.asyncio
-async def test_request_search_instruments(betfair_data_client, data_engine, uuid):
+async def test_request_search_instruments(betfair_data_client, msgbus, uuid):
     req = DataType(
         type=InstrumentSearch,
         metadata={"event_type_id": "7"},
     )
     betfair_data_client.request(req, uuid)
     await asyncio.sleep(0)
-    resp = data_engine.responses[0]
+    resp = msgbus.data_engine_responses[0]
     assert len(resp.data.instruments) == 9416
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
-def test_orderbook_repr(betfair_data_client, data_engine):
+def test_orderbook_repr(betfair_data_client, msgbus):
     betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_live_IMAGE())
-    ob_snap = data_engine.events[14]
+    ob_snap = msgbus.data_engine_messages[14]
     ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 5, 5)
     ob.apply_snapshot(ob_snap)
     print(ob.pprint())
@@ -246,7 +237,7 @@ def test_orderbook_updates(betfair_data_client):
     )
 
 
-def test_instrument_opening_events(betfair_data_client, data_engine):
+def test_instrument_opening_events(betfair_data_client, msgbus):
     updates = BetfairDataProvider.raw_market_updates()
     messages = on_market_update(
         instrument_provider=betfair_data_client.instrument_provider(), update=updates[0]
@@ -262,7 +253,7 @@ def test_instrument_opening_events(betfair_data_client, data_engine):
     )
 
 
-def test_instrument_in_play_events(betfair_data_client, data_engine):
+def test_instrument_in_play_events(betfair_data_client, msgbus):
     events = [
         msg
         for update in BetfairDataProvider.raw_market_updates()
@@ -292,7 +283,7 @@ def test_instrument_in_play_events(betfair_data_client, data_engine):
     assert result == expected
 
 
-def test_instrument_closing_events(data_engine, betfair_data_client):
+def test_instrument_closing_events(betfair_data_client, msgbus):
     updates = BetfairDataProvider.raw_market_updates()
     messages = on_market_update(
         instrument_provider=betfair_data_client.instrument_provider(),

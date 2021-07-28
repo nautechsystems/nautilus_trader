@@ -103,9 +103,8 @@ async def test_client_connect(live_logger):
     await asyncio.sleep(15)
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
 @pytest.mark.asyncio
-async def test_submit_order(mocker, cache, exec_engine, execution_client):
+async def test_submit_order(mocker, cache, msgbus, execution_client):
     cache.add_instrument(BetfairTestStubs.betting_instrument())
     mock_place_orders = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.place_orders",
@@ -114,7 +113,7 @@ async def test_submit_order(mocker, cache, exec_engine, execution_client):
     command = BetfairTestStubs.submit_order_command()
     execution_client.submit_order(command)
     await asyncio.sleep(0.1)
-    assert isinstance(exec_engine.events[0], OrderSubmitted)
+    assert isinstance(msgbus.exec_engine_events[0], OrderSubmitted)
     expected = {
         "market_id": "1.179082386",
         "customer_ref": command.id.value.replace("-", ""),
@@ -139,9 +138,8 @@ async def test_submit_order(mocker, cache, exec_engine, execution_client):
     assert result == expected
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
 @pytest.mark.asyncio
-async def test_post_order_submit_success(exec_engine, execution_client):
+async def test_post_order_submit_success(msgbus, execution_client):
     f = asyncio.Future()
     f.set_result(BetfairDataProvider.place_orders_success())
     execution_client._post_submit_order(
@@ -151,12 +149,11 @@ async def test_post_order_submit_success(exec_engine, execution_client):
         ClientOrderId("O-20210327-091154-001-001-2"),
     )
     await asyncio.sleep(0)
-    assert isinstance(exec_engine.events[0], OrderAccepted)
+    assert isinstance(msgbus.exec_engine_events[0], OrderAccepted)
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
 @pytest.mark.asyncio
-async def test_post_order_submit_error(exec_engine, execution_client):
+async def test_post_order_submit_error(msgbus, execution_client):
     f = asyncio.Future()
     f.set_result(BetfairDataProvider.place_orders_error())
     execution_client._post_submit_order(
@@ -166,12 +163,12 @@ async def test_post_order_submit_error(exec_engine, execution_client):
         ClientOrderId("O-20210327-091154-001-001-2"),
     )
     await asyncio.sleep(0)
-    assert isinstance(exec_engine.events[0], OrderRejected)
+    assert isinstance(msgbus.exec_engine_events[0], OrderRejected)
     assert execution_client
 
 
 @pytest.mark.asyncio
-async def test_update_order(mocker, cache, exec_engine, execution_client):
+async def test_update_order(mocker, cache, msgbus, execution_client):
     # Add sample order to the cache
     order = BetfairTestStubs.make_order()
     order.apply(BetfairTestStubs.event_order_submitted(order=order))
@@ -204,9 +201,8 @@ async def test_update_order(mocker, cache, exec_engine, execution_client):
     mock_replace_orders.assert_called_with(**expected)
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
 @pytest.mark.asyncio
-async def test_post_order_update_success(cache, execution_client, exec_engine):
+async def test_post_order_update_success(cache, execution_client, msgbus):
     # Add fake order to cache
     order = BetfairTestStubs.make_order()
     order.apply(BetfairTestStubs.event_order_submitted(order=order))
@@ -228,13 +224,13 @@ async def test_post_order_update_success(cache, execution_client, exec_engine):
         client_order_id,
     )
     await asyncio.sleep(0)
-    event = exec_engine.events[0]
+    event = msgbus.exec_engine_events[0]
     assert isinstance(event, OrderUpdated)
     assert event.price == Price.from_str("0.47619")
 
 
 @pytest.mark.asyncio
-async def test_update_order_fail(mocker, execution_client, exec_engine):
+async def test_update_order_fail(mocker, execution_client, msgbus):
     execution_client.update_order(BetfairTestStubs.update_order_command())
     await asyncio.sleep(0.1)
     mock_replace_orders = mocker.patch(
@@ -245,7 +241,7 @@ async def test_update_order_fail(mocker, execution_client, exec_engine):
 
 
 @pytest.mark.asyncio
-async def test_cancel_order(mocker, cache, execution_client, exec_engine):
+async def test_cancel_order(mocker, cache, execution_client, msgbus):
     cache.add_instrument(BetfairTestStubs.betting_instrument())
     mock_cancel_orders = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.cancel_orders",
@@ -263,11 +259,10 @@ async def test_cancel_order(mocker, cache, execution_client, exec_engine):
     mock_cancel_orders.assert_called_with(**expected)
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
 @pytest.mark.asyncio
-async def test_connection_account_state(execution_client, exec_engine):
+async def test_connection_account_state(execution_client, msgbus):
     await execution_client.connection_account_state()
-    assert isinstance(exec_engine.events[0], AccountState)
+    assert isinstance(msgbus.exec_engine_events[0], AccountState)
 
 
 def test_get_account_currency(execution_client):
@@ -275,10 +270,9 @@ def test_get_account_currency(execution_client):
     assert currency == GBP
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
 @pytest.mark.asyncio
 async def test_order_stream_full_image(
-    mocker, execution_client, exec_engine, order_factory, cache, logger
+    mocker, execution_client, msgbus, order_factory, cache, logger
 ):
     raw = BetfairDataProvider.streaming_ocm_FULL_IMAGE()
     setup_exec_client_and_cache(
@@ -292,21 +286,20 @@ async def test_order_stream_full_image(
     # assert
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(1)
-    assert len(exec_engine.events) == 12
+    assert len(msgbus.exec_engine_events) == 12
 
 
 @pytest.mark.asyncio
-async def test_order_stream_empty_image(execution_client, exec_engine):
+async def test_order_stream_empty_image(execution_client, msgbus):
     raw = BetfairDataProvider.streaming_ocm_EMPTY_IMAGE()
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
-    assert len(exec_engine.events) == 0
+    assert len(msgbus.exec_engine_events) == 0
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
 @pytest.mark.asyncio
 async def test_order_stream_new_full_image(
-    mocker, execution_client, exec_engine, cache, logger, order_factory
+    mocker, execution_client, msgbus, cache, logger, order_factory
 ):
     raw = BetfairDataProvider.streaming_ocm_NEW_FULL_IMAGE()
     setup_exec_client_and_cache(
@@ -318,11 +311,11 @@ async def test_order_stream_new_full_image(
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
-    assert len(exec_engine.events) == 6
+    assert len(msgbus.exec_engine_events) == 6
 
 
 @pytest.mark.asyncio
-async def test_order_stream_sub_image(mocker, execution_client, exec_engine):
+async def test_order_stream_sub_image(mocker, execution_client, msgbus):
     raw = BetfairDataProvider.streaming_ocm_SUB_IMAGE()
     mocker.patch.object(
         execution_client,
@@ -331,12 +324,13 @@ async def test_order_stream_sub_image(mocker, execution_client, exec_engine):
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0)
-    assert len(exec_engine.events) == 0  # We don't do anything with matched bets at this stage
+    assert (
+        len(msgbus.exec_engine_events) == 0
+    )  # We don't do anything with matched bets at this stage
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
 @pytest.mark.asyncio
-async def test_order_stream_update(mocker, execution_client, exec_engine, cache, logger):
+async def test_order_stream_update(mocker, execution_client, msgbus, cache, logger):
     raw = BetfairDataProvider.streaming_ocm_UPDATE()
     setup_exec_client_and_cache(
         mocker=mocker,
@@ -347,12 +341,12 @@ async def test_order_stream_update(mocker, execution_client, exec_engine, cache,
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0.1)
-    assert len(exec_engine.events) == 1
+    assert len(msgbus.exec_engine_events) == 1
 
 
 @pytest.mark.asyncio
 async def test_order_stream_cancel_after_update_doesnt_emit_event(
-    mocker, execution_client, exec_engine, cache, logger
+    mocker, execution_client, msgbus, cache, logger
 ):
     raw = BetfairDataProvider.streaming_ocm_order_update()
     setup_exec_client_and_cache(
@@ -372,12 +366,11 @@ async def test_order_stream_cancel_after_update_doesnt_emit_event(
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0.01)
-    assert len(exec_engine.events) == 0
+    assert len(msgbus.exec_engine_events) == 0
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
 @pytest.mark.asyncio
-async def test_order_stream_filled(mocker, execution_client, exec_engine, cache, logger):
+async def test_order_stream_filled(mocker, execution_client, msgbus, cache, logger):
     raw = BetfairDataProvider.streaming_ocm_FILLED()
     setup_exec_client_and_cache(
         mocker=mocker,
@@ -388,15 +381,14 @@ async def test_order_stream_filled(mocker, execution_client, exec_engine, cache,
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0.01)
-    assert len(exec_engine.events) == 2
-    event = exec_engine.events[0]
+    assert len(msgbus.exec_engine_events) == 2
+    event = msgbus.exec_engine_events[0]
     assert isinstance(event, OrderFilled)
     assert event.last_px == Price(0.90909, precision=5)
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
 @pytest.mark.asyncio
-async def test_order_stream_mixed(mocker, execution_client, exec_engine, cache, logger):
+async def test_order_stream_mixed(mocker, execution_client, msgbus, cache, logger):
     raw = BetfairDataProvider.streaming_ocm_MIXED()
     setup_exec_client_and_cache(
         mocker=mocker,
@@ -407,7 +399,7 @@ async def test_order_stream_mixed(mocker, execution_client, exec_engine, cache, 
     )
     execution_client.handle_order_stream_update(raw=raw)
     await asyncio.sleep(0.5)
-    events = exec_engine.events
+    events = msgbus.exec_engine_events
     assert len(events) == 5
     assert isinstance(events[0], OrderFilled) and events[0].venue_order_id.value == "229430281341"
     assert isinstance(events[1], AccountState)
@@ -451,9 +443,8 @@ async def test_generate_trades_list(mocker, execution_client):
     assert result
 
 
-@pytest.mark.skip(reason="cs couldn't fix")
 @pytest.mark.asyncio
-async def test_duplicate_execution_id(mocker, execution_client, exec_engine, cache, logger):
+async def test_duplicate_execution_id(mocker, execution_client, msgbus, cache, logger):
     mocker.patch.object(
         execution_client,
         "venue_order_id_to_client_order_id",
@@ -494,13 +485,13 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine, cac
             exec_client=execution_client,
             cache=cache,
             logger=logger,
-            raw=raw,
+            raw=orjson.dumps(raw),
         )
         execution_client.handle_order_stream_update(raw=orjson.dumps(raw))
         await asyncio.sleep(0.3)
 
     # Assert
-    events = exec_engine.events
+    events = msgbus.exec_engine_events
     assert isinstance(events[0], OrderAccepted)
     assert isinstance(events[1], OrderAccepted)
     # First order example, partial fill followed by remainder canceled
@@ -522,7 +513,7 @@ async def test_duplicate_execution_id(mocker, execution_client, exec_engine, cac
 
 @pytest.mark.asyncio
 @pytest.mark.skip(reason="Not implemented yet")
-async def test_betfair_account_states(cache, execution_client, exec_engine):
+async def test_betfair_account_states(cache, execution_client, msgbus):
     # Setup
     balance = cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
     expected = {
@@ -539,7 +530,7 @@ async def test_betfair_account_states(cache, execution_client, exec_engine):
 
     # Order accepted - expect balance to drop by exposure
     order_accepted = BetfairTestStubs.event_order_accepted(order=order)
-    exec_engine._handle_event(order_accepted)
+    msgbus._handle_event(order_accepted)
     await asyncio.sleep(0.1)
     balance = cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
     expected = {
@@ -553,9 +544,9 @@ async def test_betfair_account_states(cache, execution_client, exec_engine):
 
     # Cancel the order, balance should return
     cancelled = BetfairTestStubs.event_order_canceled(order=order)
-    exec_engine._handle_event(cancelled)
+    msgbus._handle_event(cancelled)
     await asyncio.sleep(0.1)
-    balance = exec_engine.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
+    balance = execution_client.engine.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
     expected = {
         "type": "AccountBalance",
         "currency": "GBP",

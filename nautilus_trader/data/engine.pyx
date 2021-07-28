@@ -587,12 +587,20 @@ cdef class DataEngine(Component):
             self._log.debug(f"Created {type(order_book).__name__}.")
 
         # Always re-subscribe to override previous settings
-        client.subscribe_order_book_snapshots(
-            instrument_id=instrument_id,
-            level=metadata.get("level"),
-            depth=metadata.get("depth"),
-            kwargs=metadata.get("kwargs"),
-        )
+        try:
+            client.subscribe_order_book_snapshots(
+                instrument_id=instrument_id,
+                level=metadata.get("level"),
+                depth=metadata.get("depth"),
+                kwargs=metadata.get("kwargs"),
+            )
+        except NotImplemented:
+            # TODO Maintain the books via deltas - Should we prefer this anyway?
+            client.subscribe_order_book_deltas(
+                instrument_id=instrument_id,
+                level=metadata.get("level"),
+                kwargs=metadata.get("kwargs"),
+            )
 
     cdef void _handle_subscribe_quote_ticks(
         self,
