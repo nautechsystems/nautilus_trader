@@ -244,10 +244,9 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    cpdef void subscribe_order_book_snapshots(
+    cpdef void subscribe_order_book_deltas(
         self, InstrumentId instrument_id,
         BookLevel level,
-        int depth=0,
         dict kwargs=None,
     ) except *:
         """
@@ -299,9 +298,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._log.info(f"Sending subscribe for market_ids {self._subscribed_market_ids}")
         await self._stream.send_subscription_message(market_ids=list(self._subscribed_market_ids))
         self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBookData> data.")
-
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:
-        self.subscribe_order_book_snapshots(instrument_id=instrument_id, level=level, kwargs=kwargs)
 
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         pass  # Subscribed as part of orderbook
