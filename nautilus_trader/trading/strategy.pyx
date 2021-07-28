@@ -832,10 +832,10 @@ cdef class TradingStrategy(Component):
         self._send_data_cmd(command)
 
     cpdef void subscribe_order_book_deltas(
-            self,
-            InstrumentId instrument_id,
-            BookLevel level=BookLevel.L2,
-            dict kwargs=None,
+        self,
+        InstrumentId instrument_id,
+        BookLevel level=BookLevel.L2,
+        dict kwargs=None,
     ) except *:
         """
         Subscribe to the order book deltas stream, being a snapshot then deltas
@@ -884,13 +884,9 @@ cdef class TradingStrategy(Component):
         """
         Subscribe to `OrderBook` snapshots for the given instrument ID.
 
-        The `DataEngine` will only maintain one order book stream for each
-        instrument. Because of this - the level, depth and kwargs for the stream
-        will be set as per the last subscription request (this will also affect
-        all subscribers).
-
-        If interval is not specified then will receive every order book update.
-        Alternatively specify periodic snapshot intervals in seconds.
+        The `DataEngine` will only maintain one order book for each instrument.
+        Because of this - the level, depth and kwargs for the stream will be set
+        as per the last subscription request (this will also affect all subscribers).
 
         Parameters
         ----------
