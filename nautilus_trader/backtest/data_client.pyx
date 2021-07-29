@@ -32,7 +32,6 @@ from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
@@ -658,54 +657,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             return
 
         # Do nothing else for backtest
+
 # -- REQUESTS --------------------------------------------------------------------------------------
-
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:
-        """
-        Request the instrument for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the request.
-        correlation_id : UUID
-            The correlation ID for the request.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(correlation_id, "correlation_id")
-
-        if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(
-                f"Cannot request instrument for {instrument_id} "
-                f"(not connected).",
-            )
-            return
-
-        cdef Instrument instrument = self._cache.instrument(instrument_id)
-
-        if instrument is None:
-            self._log.warning(f"No instrument found for {instrument_id}.")
-            return
-
-        self._handle_instruments([instrument], correlation_id)
-
-    cpdef void request_instruments(self, UUID correlation_id) except *:
-        """
-        Request all instruments.
-
-        Parameters
-        ----------
-        correlation_id : UUID
-            The correlation ID for the request.
-
-        """
-        Condition.not_none(correlation_id, "correlation_id")
-
-        # Just return all instruments in the cache for this venue
-        cdef list instruments = self._cache.instruments(Venue(self.id.value))
-
-        self._handle_instruments(instruments, correlation_id)
 
     cpdef void request_quote_ticks(
         self,

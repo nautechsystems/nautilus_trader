@@ -781,14 +781,7 @@ cdef class DataEngine(Component):
                             f"no client registered for '{request.client_id}', {request}.")
             return  # No client to handle request
 
-        if request.data_type.type == Instrument:
-            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
-            instrument_id = request.data_type.metadata.get("instrument_id")
-            if instrument_id:
-                client.request_instrument(instrument_id, request.id)
-            else:
-                client.request_instruments(request.id)
-        elif request.data_type.type == QuoteTick:
+        if request.data_type.type == QuoteTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_quote_ticks(
                 request.data_type.metadata.get("instrument_id"),
