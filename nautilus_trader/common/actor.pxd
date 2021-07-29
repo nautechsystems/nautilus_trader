@@ -45,11 +45,12 @@ from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class Actor(Component):
-    cdef MessageBus _msgbus
-    cdef CacheFacade _cache
-
     cdef readonly TraderId trader_id
     """The trader ID associated with the actor.\n\n:returns: `TraderId`"""
+    cdef readonly MessageBus msgbus
+    """The message bus for the actor.\n\n:returns: `MessageBus`"""
+    cdef readonly CacheFacade cache
+    """The read-only cache for the actor.\n\n:returns: `CacheFacade`"""
 
     cdef void _check_registered(self) except *
 
@@ -86,7 +87,8 @@ cdef class Actor(Component):
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_data(self, ClientId client_id, DataType data_type) except *
-    cpdef void subscribe_strategy_data(self, type data_type, StrategyId strategy_id=*) except *
+    cpdef void subscribe_strategy_data(self, type data_type=*, StrategyId strategy_id=*) except *
+    cpdef void subscribe_instruments(self, Venue venue) except *
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void subscribe_order_book_deltas(
         self,
@@ -110,6 +112,7 @@ cdef class Actor(Component):
     cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_data(self, ClientId client_id, DataType data_type) except *
     cpdef void unsubscribe_strategy_data(self, type data_type, StrategyId strategy_id=*) except *
+    cpdef void unsubscribe_instruments(self, Venue venue) except *
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, int interval_ms=*) except *

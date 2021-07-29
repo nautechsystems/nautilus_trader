@@ -216,6 +216,22 @@ class TestCCXTDataClient:
         await self.data_engine.get_run_queue_task()
 
     @pytest.mark.asyncio
+    async def test_subscribe_instruments(self):
+        # Arrange
+        self.data_engine.start()  # Also starts client
+        await asyncio.sleep(0.3)  # Allow engine message queue to start
+
+        # Act
+        self.client.subscribe_instruments()
+
+        # Assert
+        assert len(self.client.subscribed_instruments) == 1236
+
+        # Tear Down
+        self.data_engine.stop()
+        await self.data_engine.get_run_queue_task()
+
+    @pytest.mark.asyncio
     async def test_subscribe_instrument(self):
         # Arrange
         self.data_engine.start()  # Also starts client
@@ -280,6 +296,24 @@ class TestCCXTDataClient:
 
         # Assert
         assert bar_type in self.client.subscribed_bars
+
+        # Tear Down
+        self.data_engine.stop()
+        await self.data_engine.get_run_queue_task()
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe_instruments(self):
+        # Arrange
+        self.data_engine.start()  # Also starts client
+        await asyncio.sleep(0.3)  # Allow engine message queue to start
+
+        self.client.subscribe_instruments()
+
+        # Act
+        self.client.unsubscribe_instruments()
+
+        # Assert
+        assert len(self.client.subscribed_instruments) == 0
 
         # Tear Down
         self.data_engine.stop()

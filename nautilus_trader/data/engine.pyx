@@ -520,9 +520,11 @@ cdef class DataEngine(Component):
         InstrumentId instrument_id,
     ) except *:
         Condition.not_none(client, "client")
-        Condition.not_none(instrument_id, "instrument_id")
 
-        client.subscribe_instrument(instrument_id)
+        if instrument_id is None:
+            client.subscribe_instruments()
+        else:
+            client.subscribe_instrument(instrument_id)
 
     cdef void _handle_subscribe_order_book_deltas(
         self,
@@ -685,9 +687,11 @@ cdef class DataEngine(Component):
         InstrumentId instrument_id,
     ) except *:
         Condition.not_none(client, "client")
-        Condition.not_none(instrument_id, "instrument_id")
 
-        client.unsubscribe_instrument(instrument_id)
+        if instrument_id is None:
+            client.unsubscribe_instruments()
+        else:
+            client.unsubscribe_instrument(instrument_id)
 
     cdef void _handle_unsubscribe_order_book_deltas(
         self,

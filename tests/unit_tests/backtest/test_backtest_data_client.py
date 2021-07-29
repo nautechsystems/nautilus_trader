@@ -103,6 +103,16 @@ class TestBacktestDataClient:
         # Assert
         assert True  # No exceptions raised
 
+    def test_subscribe_instruments(self):
+        # Arrange
+        # Act
+        self.client.subscribe_instruments()
+        self.client.connect()
+        self.client.subscribe_instruments()
+
+        # Assert
+        assert True  # No exceptions raised
+
     def test_subscribe_instrument(self):
         # Arrange
         # Act
@@ -139,6 +149,16 @@ class TestBacktestDataClient:
         self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
         self.client.connect()
         self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
+
+        # Assert
+        assert True  # No exceptions raised
+
+    def test_unsubscribe_instruments(self):
+        # Arrange
+        # Act
+        self.client.unsubscribe_instruments()
+        self.client.connect()
+        self.client.unsubscribe_instruments()
 
         # Assert
         assert True  # No exceptions raised

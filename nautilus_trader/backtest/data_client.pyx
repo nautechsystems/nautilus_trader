@@ -228,6 +228,12 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         """
         self._log.info(f"Connecting...")
 
+        # Return all instruments in the cache for this venue
+        cdef list instruments = self._cache.instruments(Venue(self.id.value))
+
+        for instrument in instruments:
+            self._handle_data(instrument)
+
         self.is_connected = True
         self._log.info(f"Connected.")
 
@@ -262,6 +268,19 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._log.info(f"Disposed.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef void subscribe_instruments(self) except *:
+        """
+        Subscribe to `Instrument` data for the venue.
+
+        """
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(
+                f"Cannot subscribe to instruments (not connected).",
+            )
+            return
+
+        # Do nothing else for backtest
 
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """
@@ -450,6 +469,19 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             self._log.error(
                 f"Cannot subscribe to trade ticks for {instrument_id} "
                 f"(not connected).",
+            )
+            return
+
+        # Do nothing else for backtest
+
+    cpdef void unsubscribe_instruments(self) except *:
+        """
+        Unsubscribe from `Instrument` data for the venue.
+
+        """
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(
+                f"Cannot unsubscribe from instruments (not connected).",
             )
             return
 

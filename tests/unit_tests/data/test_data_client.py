@@ -243,6 +243,13 @@ class TestMarketDataClient:
         with pytest.raises(NotImplementedError):
             self.client.dispose()
 
+    def test_subscribe_instruments_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(NotImplementedError):
+            self.client.subscribe_instruments()
+
     def test_subscribe_instrument_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
