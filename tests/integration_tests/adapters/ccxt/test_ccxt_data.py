@@ -394,42 +394,6 @@ class TestCCXTDataClient:
         await self.data_engine.get_run_queue_task()
 
     @pytest.mark.asyncio
-    async def test_request_instrument(self):
-        # Arrange
-        self.data_engine.start()
-        await asyncio.sleep(0.5)  # Allow engine message queue to start
-
-        # Act
-        self.client.request_instrument(BTCUSDT, uuid4())
-        await asyncio.sleep(0.5)
-
-        # Assert
-        # Instruments additionally requested on start
-        assert self.data_engine.response_count == 1
-
-        # Tear Down
-        self.data_engine.stop()
-        await self.data_engine.get_run_queue_task()
-
-    @pytest.mark.asyncio
-    async def test_request_instruments(self):
-        # Arrange
-        self.data_engine.start()  # Also starts client
-        await asyncio.sleep(0.5)  # Allow engine message queue to start
-
-        # Act
-        self.client.request_instruments(uuid4())
-        await asyncio.sleep(0.5)
-
-        # Assert
-        # Instruments additionally requested on start
-        assert self.data_engine.response_count == 1
-
-        # Tear Down
-        self.data_engine.stop()
-        await self.data_engine.get_run_queue_task()
-
-    @pytest.mark.asyncio
     async def test_request_quote_ticks(self):
         # Arrange
         self.data_engine.start()  # Also starts client

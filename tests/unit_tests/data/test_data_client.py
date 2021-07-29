@@ -320,20 +320,6 @@ class TestMarketDataClient:
         with pytest.raises(NotImplementedError):
             self.client.unsubscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
 
-    def test_request_instrument_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.request_instrument(None, None)
-
-    def test_request_instruments_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.request_instruments(None)
-
     def test_request_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
@@ -460,14 +446,6 @@ class TestMarketDataClient:
 
         # Assert
         assert self.data_engine.data_count == 1
-
-    def test_handle_instruments_sends_to_data_engine(self):
-        # Arrange
-        # Act
-        self.client._handle_instruments_py([], self.uuid_factory.generate())
-
-        # Assert
-        assert self.data_engine.response_count == 1
 
     def test_handle_quote_ticks_sends_to_data_engine(self):
         # Arrange

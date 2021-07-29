@@ -203,26 +203,6 @@ class TestBacktestDataClient:
         # Assert
         assert True  # No exceptions raised
 
-    def test_request_instrument(self):
-        # Arrange
-        # Act
-        self.client.request_instrument(USDJPY_SIM.id, uuid4())
-        self.client.connect()
-        self.client.request_instrument(USDJPY_SIM.id, uuid4())
-
-        # Assert
-        assert True  # No exceptions raised
-
-    def test_request_instruments(self):
-        # Arrange
-        # Act
-        self.client.request_instruments(uuid4())
-        self.client.connect()
-        self.client.request_instruments(uuid4())
-
-        # Assert
-        assert True  # No exceptions raised
-
     def test_request_quote_ticks(self):
         # Arrange
         # Act

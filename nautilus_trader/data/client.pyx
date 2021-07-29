@@ -36,7 +36,6 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
@@ -320,14 +319,6 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void request_instruments(self, UUID correlation_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -365,8 +356,6 @@ cdef class MarketDataClient(DataClient):
 
     # Convenient pure Python wrappers for the data handlers. Often Python methods
     # involving threads or the event loop don't work with cpdef methods.
-    def _handle_instruments_py(self, list instruments, UUID correlation_id):
-        self._handle_instruments(instruments, correlation_id)
 
     def _handle_quote_ticks_py(self, InstrumentId instrument_id, list ticks, UUID correlation_id):
         self._handle_quote_ticks(instrument_id, ticks, correlation_id)
@@ -378,18 +367,6 @@ cdef class MarketDataClient(DataClient):
         self._handle_bars(bar_type, bars, partial, correlation_id)
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
-
-    cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
-        cdef DataResponse response = DataResponse(
-            client_id=self.id,
-            data_type=DataType(Instrument),
-            data=instruments,
-            correlation_id=correlation_id,
-            response_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
-        )
-
-        self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
     cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(

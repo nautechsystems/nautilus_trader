@@ -512,37 +512,6 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:
-        """
-        Request the instrument for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the request.
-        correlation_id : UUID
-            The correlation ID for the request.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(correlation_id, "correlation_id")
-
-        self._loop.create_task(self._request_instrument(instrument_id, correlation_id))
-
-    cpdef void request_instruments(self, UUID correlation_id) except *:
-        """
-        Request all instruments.
-
-        Parameters
-        ----------
-        correlation_id : UUID
-            The correlation ID for the request.
-
-        """
-        Condition.not_none(correlation_id, "correlation_id")
-
-        self._loop.create_task(self._request_instruments(correlation_id))
-
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -573,8 +542,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._log.warning("`request_quote_ticks` was called when not supported "
-                          "by the exchange.")
+        self._log.warning(
+            "`request_quote_ticks` was called when not supported by the exchange.",
+        )
 
     cpdef void request_trade_ticks(
         self,
@@ -606,9 +576,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Condition.not_none(correlation_id, "correlation_id")
 
         if to_datetime is not None:
-            self._log.warning(f"`request_trade_ticks` was called with a `to_datetime` "
-                              f"argument of {to_datetime} when not supported by the exchange "
-                              f"(will use `limit` of {limit}).")
+            self._log.warning(
+                f"`request_trade_ticks` was called with a `to_datetime` "
+                f"argument of {to_datetime} when not supported by the exchange "
+                f"(will use `limit` of {limit}).")
 
         self._loop.create_task(self._request_trade_ticks(
             instrument_id,

@@ -92,8 +92,6 @@ cdef class MarketDataClient(DataClient):
 
 # -- REQUEST HANDLERS ------------------------------------------------------------------------------
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *
-    cpdef void request_instruments(self, UUID correlation_id) except *
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -121,7 +119,6 @@ cdef class MarketDataClient(DataClient):
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *
     cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *
     cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *
     cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *
