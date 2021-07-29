@@ -42,6 +42,7 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -264,6 +265,17 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
+    cpdef void subscribe_instruments(self) except *:
+        """
+        Subscribe to `Instrument` data for the venue.
+
+        """
+        cdef list instruments = self._cache.instruments(Venue(self.id.value))
+
+        for instrument in instruments:
+            if instrument not in self._subscribed_instruments:
+                self._subscribed_instruments.add(instrument.id)
+
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """
         Subscribe to `Instrument` data for the given instrument ID.
@@ -392,6 +404,13 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         self._subscribed_bars[bar_type] = task
 
         self._log.info(f"Subscribed to {bar_type} <Bar> data.")
+
+    cpdef void unsubscribe_instruments(self) except *:
+        """
+        Unsubscribe from `Instrument` data for the venue.
+
+        """
+        self._subscribed_instruments.clear()
 
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
         """

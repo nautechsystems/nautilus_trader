@@ -51,8 +51,6 @@ cdef class TradingStrategy(Actor):
     """The trading strategies UUID factory.\n\n:returns: `UUIDFactory`"""
     cdef readonly LoggerAdapter log
     """The trading strategies logger adapter.\n\n:returns: `LoggerAdapter`"""
-    cdef readonly CacheFacade cache
-    """The read-only cache for the strategy.\n\n:returns: `CacheFacade`"""
     cdef readonly PortfolioFacade portfolio
     """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
     cdef readonly OrderFactory order_factory

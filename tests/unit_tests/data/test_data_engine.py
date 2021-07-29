@@ -548,6 +548,51 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.data_count == 4
 
+    def test_execute_subscribe_instruments_then_adds_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            data_type=DataType(Instrument),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        assert self.data_engine.command_count == 1
+
+    def test_execute_unsubscribe_instruments_then_removes_handler(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.connect()
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            data_type=DataType(Instrument),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        unsubscribe = Unsubscribe(
+            client_id=ClientId(BINANCE.value),
+            data_type=DataType(Instrument),
+            command_id=self.uuid_factory.generate(),
+            timestamp_ns=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        assert self.data_engine.subscribed_instruments == []
+
     def test_execute_subscribe_instrument_then_adds_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)

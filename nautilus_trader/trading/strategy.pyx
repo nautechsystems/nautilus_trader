@@ -235,7 +235,6 @@ cdef class TradingStrategy(Actor):
 
         self.clock = self._clock
         self.log = self._log
-        self.cache = cache
         self.portfolio = portfolio  # Assigned as PortfolioFacade
 
         self.order_factory = OrderFactory(
@@ -255,8 +254,8 @@ cdef class TradingStrategy(Actor):
         self.log.info(f"Set ClientOrderIdGenerator count to {order_id_count}.")
 
         # Required subscriptions
-        self._msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)
-        self._msgbus.subscribe(topic=f"events.position.{self.id}", handler=self.handle_event)
+        self.msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)
+        self.msgbus.subscribe(topic=f"events.position.{self.id}", handler=self.handle_event)
 
     cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator) except *:
         """
@@ -440,7 +439,7 @@ cdef class TradingStrategy(Actor):
         """
         Condition.not_none(data, "data")
 
-        self._msgbus.publish_c(
+        self.msgbus.publish_c(
             topic=f"data.strategy.{type(data).__name__}.{self.id}",
             msg=data,
         )
@@ -470,7 +469,7 @@ cdef class TradingStrategy(Actor):
         Condition.not_none(self.trader_id, "self.trader_id")
 
         # Publish initialized event
-        self._msgbus.publish_c(
+        self.msgbus.publish_c(
             topic=f"events.order.{order.strategy_id.value}",
             msg=order.init_event_c(),
         )
@@ -503,15 +502,15 @@ cdef class TradingStrategy(Actor):
         Condition.not_none(self.trader_id, "self.trader_id")
 
         # Publish initialized events
-        self._msgbus.publish_c(
+        self.msgbus.publish_c(
             topic=f"events.order.{bracket_order.entry.strategy_id.value}",
             msg=bracket_order.entry.init_event_c(),
         )
-        self._msgbus.publish_c(
+        self.msgbus.publish_c(
             topic=f"events.order.{bracket_order.stop_loss.strategy_id.value}",
             msg=bracket_order.stop_loss.init_event_c(),
         )
-        self._msgbus.publish_c(
+        self.msgbus.publish_c(
             topic=f"events.order.{bracket_order.take_profit.strategy_id.value}",
             msg=bracket_order.take_profit.init_event_c(),
         )
@@ -600,9 +599,9 @@ cdef class TradingStrategy(Actor):
             return  # Cannot send command
 
         if (
-                order.is_completed_c()
-                or order.is_pending_update_c()
-                or order.is_pending_cancel_c()
+            order.is_completed_c()
+            or order.is_pending_update_c()
+            or order.is_pending_cancel_c()
         ):
             self.log.warning(
                 f"Cannot update order: state is {order.state_string_c()}, {order}.",
@@ -732,7 +731,7 @@ cdef class TradingStrategy(Actor):
         )
 
         # Publish initialized event
-        self._msgbus.publish_c(
+        self.msgbus.publish_c(
             topic=f"events.order.{order.strategy_id.value}",
             msg=order.init_event_c(),
         )
@@ -930,4 +929,4 @@ cdef class TradingStrategy(Actor):
         self._check_registered()
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
-        self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
+        self.msgbus.send(endpoint="RiskEngine.execute", msg=command)

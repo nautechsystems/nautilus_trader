@@ -167,19 +167,19 @@ cdef class Trader(Component):
         for strategy in self._strategies:
             strategy.start()
 
+        cdef Actor plugin
         for plugin in self._plugins:
             plugin.start()
 
     cpdef void _stop(self) except *:
         cdef TradingStrategy strategy
-        cdef Actor plugin
-
         for strategy in self._strategies:
             if strategy.state_c() == ComponentState.RUNNING:
                 strategy.stop()
             else:
                 self._log.warning(f"{strategy} already stopped.")
 
+        cdef Actor plugin
         for plugin in self._plugins:
             if plugin.state_c() == ComponentState.RUNNING:
                 plugin.stop()
@@ -187,9 +187,11 @@ cdef class Trader(Component):
                 self._log.warning(f"{plugin} already stopped.")
 
     cpdef void _reset(self) except *:
+        cdef TradingStrategy strategy
         for strategy in self._strategies:
             strategy.reset()
 
+        cdef Actor plugin
         for plugin in self._plugins:
             plugin.reset()
 
@@ -197,9 +199,11 @@ cdef class Trader(Component):
         self.analyzer.reset()
 
     cpdef void _dispose(self) except *:
+        cdef TradingStrategy strategy
         for strategy in self._strategies:
             strategy.dispose()
 
+        cdef Actor plugin
         for plugin in self._plugins:
             plugin.dispose()
 

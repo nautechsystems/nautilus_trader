@@ -1671,6 +1671,50 @@ class TestTradingStrategy:
         assert self.data_engine.command_count == 2
 
     @pytest.mark.skip(reason="implement")
+    def test_subscribe_instruments(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        strategy.subscribe_instruments(Venue("SIM"))
+
+        # Assert
+        # Assert  # TODO(cs): Implement DataEngine subscription queries
+        # expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        assert self.data_engine.command_count == 1
+
+    # @pytest.mark.skip(reason="implement")
+    def test_unsubscribe_instruments(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        strategy.unsubscribe_instruments(Venue("SIM"))
+
+        # Assert
+        # Assert  # TODO(cs): Implement DataEngine subscription queries
+        # expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        assert self.data_engine.command_count == 1
+
+    @pytest.mark.skip(reason="implement")
     def test_subscribe_instrument(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
