@@ -465,6 +465,14 @@ class BetfairDataProvider:
         return orjson.loads((TEST_PATH / "list_current_orders_empty.json").read_bytes())
 
     @staticmethod
+    def streaming_market_definition():
+        return (TEST_PATH / "streaming_market_definition.json").read_bytes()
+
+    @staticmethod
+    def streaming_market_definition_runner_removed():
+        return (TEST_PATH / "streaming_market_definition_runner_removed.json").read_bytes()
+
+    @staticmethod
     def streaming_ocm_FULL_IMAGE():
         return (TEST_PATH / "streaming_ocm_FULL_IMAGE.json").read_bytes()
 
