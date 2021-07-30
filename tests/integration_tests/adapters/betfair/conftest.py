@@ -126,9 +126,7 @@ def msgbus(clock, live_logger):
             self.exec_engine_events = []
             self.register(endpoint="DataEngine.process", handler=self.data_engine_messages.append)
             self.register(endpoint="DataEngine.response", handler=self.data_engine_responses.append)
-            self.register(
-                endpoint="ExecutionEngine.process", handler=self.exec_engine_events.append
-            )
+            self.register(endpoint="ExecEngine.process", handler=self.exec_engine_events.append)
 
     return MockMessageBus(
         trader_id=BetfairTestStubs.trader_id(),

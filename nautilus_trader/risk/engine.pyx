@@ -361,7 +361,7 @@ cdef class RiskEngine(Component):
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
-            self._msgbus.send(endpoint="ExecutionEngine.execute", msg=command)
+            self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
             return
 
         # Get instrument for order
@@ -501,7 +501,7 @@ cdef class RiskEngine(Component):
                     return  # Denied
 
         # All checks passed: send for execution
-        self._msgbus.send(endpoint="ExecutionEngine.execute", msg=command)
+        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
         ########################################################################
@@ -515,7 +515,7 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         # All checks passed: send for execution
-        self._msgbus.send(endpoint="ExecutionEngine.execute", msg=command)
+        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
 
@@ -677,7 +677,7 @@ cdef class RiskEngine(Component):
             timestamp_ns=self._clock.timestamp_ns(),
         )
 
-        self._msgbus.send(endpoint="ExecutionEngine.process", msg=denied)
+        self._msgbus.send(endpoint="ExecEngine.process", msg=denied)
 
     cdef void _deny_bracket_order(self, BracketOrder bracket_order, str reason) except *:
         self._deny_order(order=bracket_order.entry, reason=reason)
@@ -712,7 +712,7 @@ cdef class RiskEngine(Component):
         self._order_throttler.send(command)
 
     cpdef _send_command(self, TradingCommand command):
-        self._msgbus.send(endpoint="ExecutionEngine.execute", msg=command)
+        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

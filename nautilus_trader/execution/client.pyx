@@ -856,7 +856,7 @@ cdef class ExecutionClient:
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
     cdef void _handle_event(self, Event event) except *:
-        self._msgbus.send(endpoint="ExecutionEngine.process", msg=event)
+        self._msgbus.send(endpoint="ExecEngine.process", msg=event)
 
     cdef list _calculate_balances(self, OrderFilled fill):
         # Determine any position
