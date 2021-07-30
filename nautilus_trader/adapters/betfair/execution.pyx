@@ -18,10 +18,7 @@ import hashlib
 from collections import defaultdict
 from datetime import datetime
 from functools import partial
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Set
+from typing import Dict, List, Optional, Set
 
 import betfairlightweight
 import orjson

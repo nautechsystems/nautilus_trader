@@ -15,8 +15,7 @@
 
 import itertools
 from itertools import repeat
-from typing import Dict
-from typing import List
+from typing import Dict, List
 
 from nautilus_trader.model.enums import BookLevelParser
 from nautilus_trader.model.enums import DeltaType

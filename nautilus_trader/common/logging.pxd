@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable
-from typing import Dict
+from typing import Callable, Dict
 
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta

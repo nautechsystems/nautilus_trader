@@ -1,8 +1,6 @@
 import dataclasses
 from functools import partial
-from typing import List
-from typing import Optional
-from typing import Tuple
+from typing import List, Optional, Tuple
 
 import pandas as pd
 from dask import delayed
