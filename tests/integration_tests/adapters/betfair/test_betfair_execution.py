@@ -24,6 +24,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -104,32 +105,64 @@ async def test_client_connect(live_logger):
 
 
 @pytest.mark.asyncio
-async def test_submit_order(mocker, cache, msgbus, execution_client):
+@pytest.mark.parametrize(
+    "time_in_force, order, orderType, orderKey, order_kw",
+    [
+        (
+            TimeInForce.GTC,
+            None,
+            "LIMIT",
+            "limitOrder",
+            {"persistenceType": "PERSIST", "size": 10.0, "minFillSize": 0, "price": 3.05},
+        ),
+        (
+            TimeInForce.OC,
+            None,
+            "LIMIT_ON_CLOSE",
+            "limitOnCloseOrder",
+            {"price": 3.05, "liability": 10.0},
+        ),
+        (
+            TimeInForce.OC,
+            BetfairTestStubs.market_on_close_order(),
+            "MARKET_ON_CLOSE",
+            "marketOnCloseOrder",
+            {"liability": 10.0},
+        ),
+    ],
+)
+async def test_submit_order(
+    mocker,
+    cache,
+    msgbus,
+    execution_client,
+    time_in_force,
+    order,
+    orderType,
+    orderKey,
+    order_kw,
+):
     cache.add_instrument(BetfairTestStubs.betting_instrument())
     mock_place_orders = mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.place_orders",
         return_value=BetfairDataProvider.place_orders_success(),
     )
-    command = BetfairTestStubs.submit_order_command()
+    command = BetfairTestStubs.submit_order_command(time_in_force=time_in_force, order=order)
     execution_client.submit_order(command)
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.2)
     assert isinstance(msgbus.exec_engine_events[0], OrderSubmitted)
+
     expected = {
         "market_id": "1.179082386",
         "customer_ref": command.id.value.replace("-", ""),
         "customer_strategy_ref": "S-001",
         "instructions": [
             {
-                "orderType": "LIMIT",
+                "orderType": orderType,
                 "selectionId": "50214",
                 "side": "BACK",
                 "handicap": "",
-                "limitOrder": {
-                    "price": 3.05,
-                    "persistenceType": "PERSIST",
-                    "size": 10.0,
-                    "minFillSize": 0,
-                },
+                orderKey: order_kw,
                 "customerOrderRef": "O-20210410-022422-001-001-S",
             }
         ],
