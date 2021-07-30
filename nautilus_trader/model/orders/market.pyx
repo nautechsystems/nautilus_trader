@@ -39,6 +39,7 @@ cdef set _MARKET_ORDER_VALID_TIF = {
     TimeInForce.IOC,
     TimeInForce.FOK,
     TimeInForce.FAK,
+    TimeInForce.OC,
 }
 
 

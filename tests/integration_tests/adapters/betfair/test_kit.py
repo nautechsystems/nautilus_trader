@@ -48,6 +48,7 @@ from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
+from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
@@ -274,26 +275,46 @@ class BetfairTestStubs(TestStubs):
         return order
 
     @staticmethod
-    def submit_order_command():
+    def limit_order(time_in_force=TimeInForce.GTC):
+        return LimitOrder(
+            trader_id=BetfairTestStubs.trader_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
+            instrument_id=BetfairTestStubs.instrument_id(),
+            client_order_id=ClientOrderId(
+                f"O-20210410-022422-001-001-{BetfairTestStubs.strategy_id().value}"
+            ),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=Price(0.33, precision=5),
+            time_in_force=time_in_force,
+            expire_time=None,
+            init_id=BetfairTestStubs.uuid(),
+            timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
+        )
+
+    @staticmethod
+    def market_on_close_order():
+        return MarketOrder(
+            trader_id=BetfairTestStubs.trader_id(),
+            strategy_id=BetfairTestStubs.strategy_id(),
+            instrument_id=BetfairTestStubs.instrument_id(),
+            client_order_id=ClientOrderId(
+                f"O-20210410-022422-001-001-{BetfairTestStubs.strategy_id().value}"
+            ),
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            time_in_force=TimeInForce.OC,
+            init_id=BetfairTestStubs.uuid(),
+            timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
+        )
+
+    @staticmethod
+    def submit_order_command(time_in_force=TimeInForce.GTC, order=None):
         return SubmitOrder(
             trader_id=BetfairTestStubs.trader_id(),
             strategy_id=BetfairTestStubs.strategy_id(),
             position_id=BetfairTestStubs.position_id(),
-            order=LimitOrder(
-                trader_id=BetfairTestStubs.trader_id(),
-                strategy_id=BetfairTestStubs.strategy_id(),
-                instrument_id=BetfairTestStubs.instrument_id(),
-                client_order_id=ClientOrderId(
-                    f"O-20210410-022422-001-001-{BetfairTestStubs.strategy_id().value}"
-                ),
-                order_side=OrderSide.BUY,
-                quantity=Quantity.from_int(10),
-                price=Price(0.33, precision=5),
-                time_in_force=TimeInForce.GTC,
-                expire_time=None,
-                init_id=BetfairTestStubs.uuid(),
-                timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
-            ),
+            order=order or BetfairTestStubs.limit_order(time_in_force=time_in_force),
             command_id=BetfairTestStubs.uuid(),
             timestamp_ns=BetfairTestStubs.clock().timestamp_ns(),
         )
