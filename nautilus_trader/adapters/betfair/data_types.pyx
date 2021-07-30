@@ -12,22 +12,26 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.model.orderbook.data cimport OrderBookDelta
 
 
-cpdef enum TimeInForce:
-    DAY = 1,
-    GTC = 2,  # Good till Canceled
-    IOC = 3,  # Immediate or Cancel
-    FOK = 4,  # Fill or Kill
-    FAK = 5,  # Fill and Kill
-    GTD = 6,  # Good till Date
-    OC = 7,   # On Close
+cpdef enum SubscriptionStatus:
+    UNSUBSCRIBED = 0
+    PENDING_STARTUP = 1
+    RUNNING = 2
 
 
-cdef class TimeInForceParser:
+class InstrumentSearch(Data):
+    def __init__(
+        self,
+        instruments,
+        ts_event_ns,
+        ts_recv_ns,
+    ):
+        super().__init__(ts_event_ns, ts_recv_ns)
+        self.instruments = instruments
 
-    @staticmethod
-    cdef str to_str(int value)
 
-    @staticmethod
-    cdef TimeInForce from_str(str value) except *
+cdef class BPSOrderBookDelta(OrderBookDelta):
+    pass

@@ -24,7 +24,9 @@ from typing import Union
 import orjson
 import pandas as pd
 from betfairlightweight.filters import cancel_instruction
+from betfairlightweight.filters import limit_on_close_order
 from betfairlightweight.filters import limit_order
+from betfairlightweight.filters import market_on_close_order
 from betfairlightweight.filters import place_instruction
 from betfairlightweight.filters import replace_instruction
 
@@ -39,6 +41,7 @@ from nautilus_trader.adapters.betfair.common import N2B_SIDE
 from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
+from nautilus_trader.adapters.betfair.data_types import BPSOrderBookDelta
 from nautilus_trader.adapters.betfair.util import hash_json
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.common.uuid import UUIDFactory
@@ -60,6 +63,7 @@ from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -108,41 +112,63 @@ def parse_betfair_timestamp(pt):
     return pt * MILLIS_TO_NANOS
 
 
+def make_order(order: Order):
+    if isinstance(order, LimitOrder):
+        price = determine_order_price(order)
+        price = float(probability_to_price(probability=price, side=order.side))
+        if order.time_in_force != TimeInForce.OC:
+            return {
+                "order_type": "LIMIT",
+                "limit_order": limit_order(
+                    price=price,
+                    size=float(order.quantity),
+                    min_fill_size=0,
+                    persistence_type="PERSIST",
+                    time_in_force=N2B_TIME_IN_FORCE[order.time_in_force],
+                ),
+            }
+        else:
+            return {
+                "order_type": "LIMIT_ON_CLOSE",
+                "limit_on_close_order": limit_on_close_order(
+                    price=price, liability=float(order.quantity)
+                ),
+            }
+    elif isinstance(order, MarketOrder) and order.time_in_force == TimeInForce.OC:
+        return {
+            "order_type": "MARKET_ON_CLOSE",
+            "market_on_close_order": market_on_close_order(liability=float(order.quantity)),
+        }
+
+
 def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
     """
     Convert a SubmitOrder command into the data required by betfairlightweight
     """
 
-    order = command.order  # type Order
-    price = determine_order_price(order)
+    order = make_order(command.order)
 
-    return {
+    place_order = {
         "market_id": instrument.market_id,
         # Used to de-dupe orders on betfair server side
         "customer_ref": command.id.value.replace("-", ""),
         "customer_strategy_ref": command.strategy_id.value[:15],
         "instructions": [
             place_instruction(
-                order_type="LIMIT",
+                **order,
                 selection_id=instrument.selection_id,
-                side=N2B_SIDE[order.side],
+                side=N2B_SIDE[command.order.side],
                 handicap=instrument.selection_handicap,
-                limit_order=limit_order(
-                    size=float(order.quantity),
-                    price=float(probability_to_price(probability=price, side=order.side)),
-                    persistence_type="PERSIST",
-                    time_in_force=N2B_TIME_IN_FORCE[order.time_in_force],
-                    min_fill_size=0,
-                ),
                 # Remove the strategy name from customer_order_ref; it has a limited size and we don't control what
                 # length the strategy might be or what characters users might append
                 customer_order_ref=make_custom_order_ref(
-                    client_order_id=order.client_order_id,
+                    client_order_id=command.order.client_order_id,
                     strategy_id=command.strategy_id,
                 ),
             )
         ],
     }
+    return place_order
 
 
 def order_update_to_betfair(
@@ -260,6 +286,15 @@ def _handle_market_snapshot(selection, instrument, ts_event_ns, ts_recv_ns):
                 ts_recv_ns=ts_recv_ns,
             )
         )
+    if "spb" in selection or "spl" in selection:
+        updates.extend(
+            _handle_bsp_updates(
+                runner=selection,
+                instrument=instrument,
+                ts_event_ns=ts_event_ns,
+                ts_recv_ns=ts_recv_ns,
+            )
+        )
 
     return updates
 
@@ -288,6 +323,27 @@ def _handle_market_trades(
         )
         trade_ticks.append(tick)
     return trade_ticks
+
+
+def _handle_bsp_updates(runner, instrument, ts_event_ns, ts_recv_ns):
+    updates = []
+    for side in ("spb", "spl"):
+        for upd in runner.get(side, []):
+            price, volume = upd
+            delta = BPSOrderBookDelta(
+                instrument_id=instrument.id,
+                level=BookLevel.L2,
+                delta_type=DeltaType.DELETE if volume == 0 else DeltaType.UPDATE,
+                order=Order(
+                    price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
+                    size=Quantity(volume, precision=8),
+                    side=B2N_MARKET_STREAM_SIDE[side],
+                ),
+                ts_event_ns=ts_event_ns,
+                ts_recv_ns=ts_recv_ns,
+            )
+            updates.append(delta)
+    return updates
 
 
 def _handle_book_updates(runner, instrument, ts_event_ns, ts_recv_ns):
@@ -348,11 +404,18 @@ def _handle_market_close(runner, instrument, timestamp_ns):
     return [close_price]
 
 
-def _handle_instrument_status(market, instrument, timestamp_ns):
+def _handle_instrument_status(market, runner, instrument, timestamp_ns):
     market_def = market.get("marketDefinition", {})
     if "status" not in market_def:
         return []
-    if market_def["status"] == "OPEN" and not market_def["inPlay"]:
+    if runner.get("status") == "REMOVED":
+        status = InstrumentStatusUpdate(
+            instrument_id=instrument.id,
+            status=InstrumentStatus.CLOSED,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
+        )
+    elif market_def["status"] == "OPEN" and not market_def["inPlay"]:
         status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.PRE_OPEN,
@@ -399,7 +462,7 @@ def _handle_market_runners_status(instrument_provider, market, timestamp_ns):
             continue
         updates.extend(
             _handle_instrument_status(
-                market=market, instrument=instrument, timestamp_ns=timestamp_ns
+                market=market, runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
             )
         )
         if market["marketDefinition"].get("status") == "CLOSED":
@@ -509,6 +572,15 @@ def build_market_update_messages(
             if "trd" in runner:
                 updates.extend(
                     _handle_market_trades(
+                        runner=runner,
+                        instrument=instrument,
+                        ts_event_ns=ts_event_ns,
+                        ts_recv_ns=ts_recv_ns,
+                    )
+                )
+            if "spb" in runner or "spl" in runner:
+                updates.extend(
+                    _handle_bsp_updates(
                         runner=runner,
                         instrument=instrument,
                         ts_event_ns=ts_event_ns,

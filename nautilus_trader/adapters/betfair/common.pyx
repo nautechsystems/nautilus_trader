@@ -54,6 +54,8 @@ B2N_MARKET_STREAM_SIDE = {
     "atl": OrderSide.BUY,  # Available to Lay / Buy order
     "batl": OrderSide.BUY,  # Best available to Lay / Buy order
     "bdatl": OrderSide.BUY,  # Best display available to Lay / Buy order
+    "spb": OrderSide.BUY,  # Starting Price Back
+    "spl": OrderSide.SELL,  # Starting Price Back
 }
 
 B_BID_KINDS = ("atb", "batb", "bdatb")
