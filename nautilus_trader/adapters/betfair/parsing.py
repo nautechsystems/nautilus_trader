@@ -17,9 +17,7 @@ import datetime
 import hashlib
 import itertools
 from collections import defaultdict
-from typing import List
-from typing import Optional
-from typing import Union
+from typing import List, Optional, Union
 
 import orjson
 import pandas as pd

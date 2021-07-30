@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any
-from typing import Callable
+from typing import Any, Callable
 
 import cython
 import numpy as np

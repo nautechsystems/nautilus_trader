@@ -13,9 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable
-from typing import Dict
-from typing import Optional
+from typing import Callable, Dict, Optional
 
 import pyarrow as pa
 

@@ -15,9 +15,7 @@
 
 import inspect
 from datetime import datetime
-from typing import Dict
-from typing import List
-from typing import Optional
+from typing import Dict, List, Optional
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.cache.database import CacheDatabase

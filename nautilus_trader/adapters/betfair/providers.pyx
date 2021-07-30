@@ -14,8 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import logging
-from typing import Dict
-from typing import List
+from typing import Dict, List
 
 import pandas as pd
 from betfairlightweight import APIClient

@@ -21,8 +21,7 @@ from collections import defaultdict
 from collections import namedtuple
 from io import BytesIO
 from itertools import takewhile
-from typing import Callable
-from typing import Generator
+from typing import Callable, Generator
 
 import fsspec
 import orjson

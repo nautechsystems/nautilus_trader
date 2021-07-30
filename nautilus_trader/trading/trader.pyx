@@ -21,8 +21,7 @@ A running instance could be either a test/backtest or live implementation - the
 `Trader` will operate in the same way.
 """
 
-from typing import Any
-from typing import Callable
+from typing import Any, Callable
 
 import pandas as pd
 

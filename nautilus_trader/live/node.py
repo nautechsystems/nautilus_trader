@@ -21,8 +21,7 @@ import sys
 import time
 import warnings
 from datetime import timedelta
-from typing import Callable
-from typing import Dict
+from typing import Callable, Dict
 
 import msgpack
 import redis
