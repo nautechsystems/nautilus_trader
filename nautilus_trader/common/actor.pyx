@@ -56,6 +56,7 @@ from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -72,23 +73,22 @@ cdef class Actor(Component):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, str name=None):
+    def __init__(self, ComponentId component_id=None):
         """
         Initialize a new instance of the ``Actor`` class.
 
         Parameters
         ----------
-        name : str, optional
-            The customized name for the component. If None is passed then the
-            name will be taken from `type(self).__name__`.
+        component_id : ComponentId, optional
+            The component ID. If None is passed then the identifier will be
+            taken from `type(self).__name__`.
 
         """
-
         cdef Clock clock = LiveClock()
         super().__init__(
             clock=clock,
             logger=Logger(clock=clock),
-            name=name,
+            component_id=component_id,
             log_initialized=False,
         )
 

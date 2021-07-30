@@ -65,6 +65,7 @@ from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
@@ -112,7 +113,7 @@ cdef class ExecutionEngine(Component):
         super().__init__(
             clock=clock,
             logger=logger,
-            name="ExecEngine",
+            component_id=ComponentId("ExecEngine"),
         )
 
         self._msgbus = msgbus
