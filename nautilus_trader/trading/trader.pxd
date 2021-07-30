@@ -23,7 +23,6 @@ from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
@@ -40,34 +39,34 @@ cdef class Trader(Component):
     cdef ExecutionEngine _exec_engine
     cdef ReportProvider _report_provider
     cdef list _strategies
-    cdef list _plugins
+    cdef list _components
 
-    cdef readonly TraderId id
-    """The trader ID.\n\n:returns: `TraderId`"""
     cdef readonly PerformanceAnalyzer analyzer
     """The traders performance analyzer.\n\n:returns: `PerformanceAnalyzer`"""
 
     cdef list strategies_c(self)
-    cdef list plugins_c(self)
+    cdef list components_c(self)
 
     cpdef list strategy_ids(self)
+    cpdef list component_ids(self)
     cpdef dict strategy_states(self)
-    cpdef list plugins(self)
+    cpdef dict component_states(self)
+    cpdef list components(self)
     cpdef void add_strategy(self, TradingStrategy strategy) except *
     cpdef void add_strategies(self, list strategies) except *
-    cpdef void add_plugin(self, Actor plugin) except *
-    cpdef void add_plugins(self, list plugins) except *
+    cpdef void add_component(self, Actor component) except *
+    cpdef void add_components(self, list component) except *
     cpdef void clear_strategies(self) except *
-    cpdef void clear_plugins(self) except *
+    cpdef void clear_components(self) except *
     cpdef void subscribe(self, str topic, handler: Callable[[Any], None]) except *
     cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *
     cpdef void start(self) except *
     cpdef void stop(self) except *
-    cpdef void check_residuals(self) except *
     cpdef void save(self) except *
     cpdef void load(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
+    cpdef void check_residuals(self) except *
     cpdef object generate_orders_report(self)
     cpdef object generate_order_fills_report(self)
     cpdef object generate_positions_report(self)

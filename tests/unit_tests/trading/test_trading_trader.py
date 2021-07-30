@@ -28,6 +28,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -181,36 +182,42 @@ class TestTrader:
         # Assert
         assert self.trader.strategy_states() == {}
 
-    def test_add_plugin(self):
+    def test_add_component(self):
         # Arrange
-        plugin = Actor("MyPlugin-01")
+        component = Actor(ComponentId("MyPlugin-01"))
 
         # Act
-        self.trader.add_plugin(plugin)
+        self.trader.add_component(component)
 
         # Assert
-        assert self.trader.plugins() == [plugin]
+        assert self.trader.components() == [component]
 
     def test_add_plugins(self):
         # Arrange
-        plugins = [Actor("MyPlugin-01"), Actor("MyPlugin-02")]
+        plugins = [
+            Actor(ComponentId("MyPlugin-01")),
+            Actor(ComponentId("MyPlugin-02")),
+        ]
 
         # Act
-        self.trader.add_plugins(plugins)
+        self.trader.add_components(plugins)
 
         # Assert
-        assert self.trader.plugins() == plugins
+        assert self.trader.components() == plugins
 
     def test_clear_plugins(self):
         # Arrange
-        plugins = [Actor("MyPlugin-01"), Actor("MyPlugin-02")]
-        self.trader.add_plugins(plugins)
+        plugins = [
+            Actor(ComponentId("MyPlugin-01")),
+            Actor(ComponentId("MyPlugin-02")),
+        ]
+        self.trader.add_components(plugins)
 
         # Act
-        self.trader.clear_plugins()
+        self.trader.clear_components()
 
         # Assert
-        assert self.trader.plugins() == []
+        assert self.trader.components() == []
 
     def test_get_strategy_states(self):
         # Arrange

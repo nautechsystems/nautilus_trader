@@ -182,11 +182,61 @@ cdef class InstrumentId(Identifier):
         return InstrumentId.from_str_c(value)
 
 
-cdef class TraderId(Identifier):
+cdef class ComponentId(Identifier):
+    """
+    Represents a valid component ID.
+
+    The name must be unique at the trader level.
+    """
+
+    def __init__(self, str value):
+        """
+        Initialize a new instance of the ``ComponentId`` class.
+
+        Parameters
+        ----------
+        value : str
+            The component ID value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
+        """
+        super().__init__(value)
+
+
+cdef class ClientId(ComponentId):
+    """
+    Represents a system client ID.
+
+    The ID value must be unique per data or execution engine.
+    """
+
+    def __init__(self, str value):
+        """
+        Initialize a new instance of the ``ClientId`` class.
+
+        Parameters
+        ----------
+        value : str
+            The client ID value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
+        """
+        super().__init__(value)
+
+
+cdef class TraderId(ComponentId):
     """
     Represents a valid trader ID.
 
-    The name and tag combination ID value must be unique at the fund level.
+    The name and tag combination ID value must be unique at the firm level.
     """
 
     def __init__(self, str value):
@@ -228,7 +278,7 @@ cdef class TraderId(Identifier):
         return self.value.partition("-")[2]
 
 
-cdef class StrategyId(Identifier):
+cdef class StrategyId(ComponentId):
     """
     Represents a valid strategy ID.
 
@@ -278,7 +328,7 @@ cdef class AccountId(Identifier):
     """
     Represents a valid account ID.
 
-    The issuer and ID combination must be unique at the fund level.
+    The issuer and ID combination must be unique at the firm level.
     """
 
     def __init__(self, str issuer, str number):
@@ -339,36 +389,11 @@ cdef class AccountId(Identifier):
         return AccountId.from_str_c(value)
 
 
-cdef class ClientId(Identifier):
-    """
-    Represents a system client ID.
-
-    The ID value must be unique per data or execution engine.
-    """
-
-    def __init__(self, str value):
-        """
-        Initialize a new instance of the ``ClientId`` class.
-
-        Parameters
-        ----------
-        value : str
-            The client ID value.
-
-        Raises
-        ------
-        ValueError
-            If value is not a valid string.
-
-        """
-        super().__init__(value)
-
-
 cdef class ClientOrderId(Identifier):
     """
     Represents a valid client order ID.
 
-    The ID value must be unique at the fund level.
+    The ID value must be unique at the firm level.
     """
 
     def __init__(self, str value):

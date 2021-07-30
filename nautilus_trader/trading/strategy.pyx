@@ -101,10 +101,7 @@ cdef class TradingStrategy(Actor):
 
         cdef StrategyId strategy_id = StrategyId(f"{type(self).__name__}-{order_id_tag}")
 
-        super().__init__(name=strategy_id.value)
-
-        # Identifiers
-        self.id = strategy_id
+        super().__init__(component_id=strategy_id)
 
         # Indicators
         self._indicators = []             # type: list[Indicator]
