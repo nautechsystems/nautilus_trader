@@ -348,11 +348,18 @@ def _handle_market_close(runner, instrument, timestamp_ns):
     return [close_price]
 
 
-def _handle_instrument_status(market, instrument, timestamp_ns):
+def _handle_instrument_status(market, runner, instrument, timestamp_ns):
     market_def = market.get("marketDefinition", {})
     if "status" not in market_def:
         return []
-    if market_def["status"] == "OPEN" and not market_def["inPlay"]:
+    if runner.get("status") == "REMOVED":
+        status = InstrumentStatusUpdate(
+            instrument_id=instrument.id,
+            status=InstrumentStatus.CLOSED,
+            ts_event_ns=timestamp_ns,
+            ts_recv_ns=timestamp_ns,
+        )
+    elif market_def["status"] == "OPEN" and not market_def["inPlay"]:
         status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.PRE_OPEN,
@@ -399,7 +406,7 @@ def _handle_market_runners_status(instrument_provider, market, timestamp_ns):
             continue
         updates.extend(
             _handle_instrument_status(
-                market=market, instrument=instrument, timestamp_ns=timestamp_ns
+                market=market, runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
             )
         )
         if market["marketDefinition"].get("status") == "CLOSED":
