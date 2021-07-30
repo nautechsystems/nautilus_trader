@@ -509,6 +509,10 @@ class BetfairDataProvider:
         return (TEST_PATH / "streaming_ocm_DUPLICATE_EXECUTION.json").read_bytes()
 
     @staticmethod
+    def streaming_mcm_BSP():
+        return (TEST_PATH / "streaming_mcm_BSP.json").read_bytes()
+
+    @staticmethod
     def streaming_mcm_HEARTBEAT():
         return (TEST_PATH / "streaming_mcm_HEARTBEAT.json").read_bytes()
 

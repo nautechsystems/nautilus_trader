@@ -36,22 +36,12 @@ from nautilus_trader.model.instruments.betting cimport BettingInstrument
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.parsing import on_market_update
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
-
-
-class InstrumentSearch(Data):
-    def __init__(
-        self,
-        instruments,
-        ts_event_ns,
-        ts_recv_ns,
-    ):
-        super().__init__(ts_event_ns, ts_recv_ns)
-        self.instruments = instruments
 
 
 # Notes

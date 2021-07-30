@@ -39,6 +39,7 @@ from nautilus_trader.adapters.betfair.common import N2B_SIDE
 from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
+from nautilus_trader.adapters.betfair.data_types import BPSOrderBookDelta
 from nautilus_trader.adapters.betfair.util import hash_json
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.common.uuid import UUIDFactory
@@ -260,6 +261,15 @@ def _handle_market_snapshot(selection, instrument, ts_event_ns, ts_recv_ns):
                 ts_recv_ns=ts_recv_ns,
             )
         )
+    if "spb" in selection or "spl" in selection:
+        updates.extend(
+            _handle_bsp_updates(
+                runner=selection,
+                instrument=instrument,
+                ts_event_ns=ts_event_ns,
+                ts_recv_ns=ts_recv_ns,
+            )
+        )
 
     return updates
 
@@ -288,6 +298,27 @@ def _handle_market_trades(
         )
         trade_ticks.append(tick)
     return trade_ticks
+
+
+def _handle_bsp_updates(runner, instrument, ts_event_ns, ts_recv_ns):
+    updates = []
+    for side in ("spb", "spl"):
+        for upd in runner.get(side, []):
+            price, volume = upd
+            delta = BPSOrderBookDelta(
+                instrument_id=instrument.id,
+                level=BookLevel.L2,
+                delta_type=DeltaType.DELETE if volume == 0 else DeltaType.UPDATE,
+                order=Order(
+                    price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
+                    size=Quantity(volume, precision=8),
+                    side=B2N_MARKET_STREAM_SIDE[side],
+                ),
+                ts_event_ns=ts_event_ns,
+                ts_recv_ns=ts_recv_ns,
+            )
+            updates.append(delta)
+    return updates
 
 
 def _handle_book_updates(runner, instrument, ts_event_ns, ts_recv_ns):
@@ -516,6 +547,15 @@ def build_market_update_messages(
             if "trd" in runner:
                 updates.extend(
                     _handle_market_trades(
+                        runner=runner,
+                        instrument=instrument,
+                        ts_event_ns=ts_event_ns,
+                        ts_recv_ns=ts_recv_ns,
+                    )
+                )
+            if "spb" in runner or "spl" in runner:
+                updates.extend(
+                    _handle_bsp_updates(
                         runner=runner,
                         instrument=instrument,
                         ts_event_ns=ts_event_ns,

@@ -25,6 +25,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data import on_market_update
+from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClosePrice
@@ -174,6 +175,28 @@ def test_market_update_live_update(betfair_data_client, msgbus):
     betfair_data_client._on_market_update(BetfairDataProvider.streaming_mcm_live_UPDATE())
     result = [type(event).__name__ for event in msgbus.data_engine_messages]
     expected = ["TradeTick", "OrderBookDeltas"]
+    assert result == expected
+
+
+def test_market_bsp(betfair_data_client, msgbus):
+    # Setup
+    raw = orjson.loads(BetfairDataProvider.streaming_mcm_BSP())
+    provider = betfair_data_client.instrument_provider()
+    for mc in raw[0]["mc"]:
+        market_def = {**mc["marketDefinition"], "marketId": mc["id"]}
+        instruments = make_instruments(market_definition=market_def, currency="GBP")
+        provider.add_instruments(instruments)
+
+    for update in raw:
+        betfair_data_client._on_market_update(orjson.dumps(update))
+    result = Counter([type(event).__name__ for event in msgbus.data_engine_messages])
+    expected = {
+        "TradeTick": 1645,
+        "InstrumentStatusUpdate": 976,
+        "OrderBookSnapshot": 903,
+        "BPSOrderBookDelta": 643,
+        "OrderBookDeltas": 545,
+    }
     assert result == expected
 
 
