@@ -67,6 +67,7 @@ from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
@@ -110,7 +111,7 @@ cdef class DataEngine(Component):
         super().__init__(
             clock=clock,
             logger=logger,
-            name="DataEngine",
+            component_id=ComponentId("DataEngine"),
         )
 
         self._msgbus = msgbus
