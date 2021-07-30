@@ -12,22 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from nautilus_trader.model.orderbook.data cimport OrderBookDelta
 
 
-cpdef enum TimeInForce:
-    DAY = 1,
-    GTC = 2,  # Good till Canceled
-    IOC = 3,  # Immediate or Cancel
-    FOK = 4,  # Fill or Kill
-    FAK = 5,  # Fill and Kill
-    GTD = 6,  # Good till Date
-    OC = 7,   # On Close
-
-
-cdef class TimeInForceParser:
-
-    @staticmethod
-    cdef str to_str(int value)
-
-    @staticmethod
-    cdef TimeInForce from_str(str value) except *
+cdef class BPSOrderBookDelta(OrderBookDelta):
+    pass
