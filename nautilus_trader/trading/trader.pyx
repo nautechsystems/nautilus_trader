@@ -36,6 +36,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
@@ -96,7 +97,11 @@ cdef class Trader(Component):
             If strategies list contains a type other than TradingStrategy.
 
         """
-        super().__init__(clock, logger)
+        super().__init__(
+            clock=clock,
+            logger=logger,
+            component_id=trader_id,
+        )
 
         self._msgbus = msgbus
         self._cache = cache
@@ -107,16 +112,15 @@ cdef class Trader(Component):
         self._report_provider = ReportProvider()
 
         self._strategies = []
-        self._plugins = []
+        self._components = []
 
-        self.id = trader_id
         self.analyzer = PerformanceAnalyzer()
 
     cdef list strategies_c(self):
         return self._strategies
 
-    cdef list plugins_c(self):
-        return self._plugins
+    cdef list components_c(self):
+        return self._components
 
     cpdef list strategy_ids(self):
         """
@@ -129,13 +133,24 @@ cdef class Trader(Component):
         """
         return sorted([strategy.id for strategy in self._strategies])
 
+    cpdef list component_ids(self):
+        """
+        Return the custom component IDs loaded in the trader.
+
+        Returns
+        -------
+        list[ComponentId]
+
+        """
+        return sorted([component.id for component in self._components])
+
     cpdef dict strategy_states(self):
         """
         Return the traders strategy states.
 
         Returns
         -------
-        dict[StrategyId, bool]
+        dict[StrategyId, str]
 
         """
         cdef dict states = {}
@@ -145,16 +160,32 @@ cdef class Trader(Component):
 
         return states
 
-    cpdef list plugins(self):
+    cpdef dict component_states(self):
         """
-        Return the plugins loaded in the trader.
+        Return the traders custom component states.
+
+        Returns
+        -------
+        dict[ComponentId, str]
+
+        """
+        cdef dict states = {}
+        cdef Actor component
+        for component in self._components:
+            states[component.id] = component.state_string_c()
+
+        return states
+
+    cpdef list components(self):
+        """
+        Return the custom components loaded in the trader.
 
         Returns
         -------
         list[Actor]
 
         """
-        return self._plugins.copy()
+        return self._components.copy()
 
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
@@ -167,9 +198,9 @@ cdef class Trader(Component):
         for strategy in self._strategies:
             strategy.start()
 
-        cdef Actor plugin
-        for plugin in self._plugins:
-            plugin.start()
+        cdef Actor component
+        for component in self._components:
+            component.start()
 
     cpdef void _stop(self) except *:
         cdef TradingStrategy strategy
@@ -179,21 +210,21 @@ cdef class Trader(Component):
             else:
                 self._log.warning(f"{strategy} already stopped.")
 
-        cdef Actor plugin
-        for plugin in self._plugins:
-            if plugin.state_c() == ComponentState.RUNNING:
-                plugin.stop()
+        cdef Actor component
+        for component in self._components:
+            if component.state_c() == ComponentState.RUNNING:
+                component.stop()
             else:
-                self._log.warning(f"{plugin} already stopped.")
+                self._log.warning(f"{component} already stopped.")
 
     cpdef void _reset(self) except *:
         cdef TradingStrategy strategy
         for strategy in self._strategies:
             strategy.reset()
 
-        cdef Actor plugin
-        for plugin in self._plugins:
-            plugin.reset()
+        cdef Actor component
+        for component in self._components:
+            component.reset()
 
         self._portfolio.reset()
         self.analyzer.reset()
@@ -203,9 +234,9 @@ cdef class Trader(Component):
         for strategy in self._strategies:
             strategy.dispose()
 
-        cdef Actor plugin
-        for plugin in self._plugins:
-            plugin.dispose()
+        cdef Actor component
+        for component in self._components:
+            component.dispose()
 
 # --------------------------------------------------------------------------------------------------
 
@@ -272,55 +303,66 @@ cdef class Trader(Component):
         for strategy in strategies:
             self.add_strategy(strategy)
 
-    cpdef void add_plugin(self, Actor plugin) except *:
+    cpdef void add_component(self, Actor component) except *:
         """
-        Add the given plugin component to the trader.
+        Add the given custom component to the trader.
 
         Parameters
         ----------
-        plugin : Actor
-            The plugin component to add and register.
+        component : Actor
+            The custom component to add and register.
+
+        Raises
+        ------
+        KeyError
+            If component.id already exists in the trader.
+        ValueError
+            If component.state is `RUNNING` or `DISPOSED`.
 
         """
+        Condition.not_in(component, self._components, "component", "components")
+        Condition.true(component.state_c() != ComponentState.RUNNING, "component.state_c() was RUNNING")
+        Condition.true(component.state_c() != ComponentState.DISPOSED, "component.state_c() was DISPOSED")
+
         if self._fsm.state == ComponentState.RUNNING:
-            self._log.error("Cannot add plugin to a running trader.")
+            self._log.error("Cannot add component to a running trader.")
             return
 
-        # Wire plugin into trader
-        plugin.register_base(
+        # Wire component into trader
+        component.register_base(
             trader_id=self.id,
             msgbus=self._msgbus,
             cache=self._cache,
-            clock=self._clock.__class__(),  # Clock per plugin
+            clock=self._clock.__class__(),  # Clock per component
             logger=self._log.get_logger(),
         )
 
-        self._plugins.append(plugin)
+        self._components.append(component)
 
-        self._log.info(f"Registered {plugin}.")
+        self._log.info(f"Registered {component}.")
 
-    cpdef void add_plugins(self, list plugins: [Actor]) except *:
+    cpdef void add_components(self, list components: [Actor]) except *:
         """
-        Add the given plugin components to the trader.
+        Add the given custom components to the trader.
 
         Parameters
         ----------
-        plugins : list[TradingStrategies]
-            The plugin components to add and register.
+        components : list[TradingStrategies]
+            The custom components to add and register.
 
         Raises
         ------
         ValueError
-            If strategies is None or empty.
+            If components is None or empty.
         TypeError
-            If strategies contains a type other than TradingStrategy.
+            If components contains a type other than Actor.
 
         """
-        Condition.not_empty(plugins, "plugins")
-        Condition.list_type(plugins, Actor, "plugins")
+        Condition.not_empty(components, "components")
+        Condition.list_type(components, Actor, "components")
 
-        for plugin in plugins:
-            self.add_plugin(plugin)
+        for component in components:
+            self.add_component(component)
 
     cpdef void clear_strategies(self) except *:
         """
@@ -341,9 +383,9 @@ cdef class Trader(Component):
 
         self._strategies.clear()
 
-    cpdef void clear_plugins(self) except *:
+    cpdef void clear_components(self) except *:
         """
-        Dispose and clear all plugins held by the trader.
+        Dispose and clear all custom components held by the trader.
 
         Raises
         ------
@@ -352,13 +394,13 @@ cdef class Trader(Component):
 
         """
         if self._fsm.state == ComponentState.RUNNING:
-            self._log.error("Cannot clear the strategies of a running trader.")
+            self._log.error("Cannot clear the components of a running trader.")
             return
 
-        for plugin in self._plugins:
-            plugin.dispose()
+        for component in self._components:
+            component.dispose()
 
-        self._plugins.clear()
+        self._components.clear()
 
     cpdef void subscribe(self, str topic, handler: Callable[[Any], None]) except *:
         """
@@ -388,12 +430,6 @@ cdef class Trader(Component):
         """
         self._msgbus.unsubscribe(topic=topic, handler=handler)
 
-    cpdef void check_residuals(self) except *:
-        """
-        Check for residual business objects such as working orders or open positions.
-        """
-        self._exec_engine.check_residuals()
-
     cpdef void save(self) except *:
         """
         Save all strategy states to the execution cache.
@@ -407,6 +443,12 @@ cdef class Trader(Component):
         """
         for strategy in self._strategies:
             self._cache.load_strategy(strategy)
+
+    cpdef void check_residuals(self) except *:
+        """
+        Check for residual business objects such as working orders or open positions.
+        """
+        self._exec_engine.check_residuals()
 
     cpdef object generate_orders_report(self):
         """

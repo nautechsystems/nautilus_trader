@@ -25,7 +25,6 @@ from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -43,8 +42,6 @@ cdef class TradingStrategy(Actor):
     cdef dict _indicators_for_trades
     cdef dict _indicators_for_bars
 
-    cdef readonly StrategyId id
-    """The trading strategies ID.\n\n:returns: `StrategyId`"""
     cdef readonly Clock clock
     """The trading strategies clock.\n\n:returns: `Clock`"""
     cdef readonly UUIDFactory uuid_factory

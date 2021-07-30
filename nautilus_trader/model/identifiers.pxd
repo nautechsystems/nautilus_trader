@@ -40,11 +40,19 @@ cdef class InstrumentId(Identifier):
     cdef InstrumentId from_str_c(str value)
 
 
-cdef class TraderId(Identifier):
+cdef class ComponentId(Identifier):
+    pass
+
+
+cdef class ClientId(ComponentId):
+    pass
+
+
+cdef class TraderId(ComponentId):
     cpdef str get_tag(self)
 
 
-cdef class StrategyId(Identifier):
+cdef class StrategyId(ComponentId):
     cpdef str get_tag(self)
 
 
@@ -56,10 +64,6 @@ cdef class AccountId(Identifier):
 
     @staticmethod
     cdef AccountId from_str_c(str value)
-
-
-cdef class ClientId(Identifier):
-    pass
 
 
 cdef class ClientOrderId(Identifier):
