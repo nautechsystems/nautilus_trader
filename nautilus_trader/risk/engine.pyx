@@ -405,7 +405,7 @@ cdef class RiskEngine(Component):
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
-            self._exec_engine.execute(command)
+            self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
             return
 
         # Get instrument for orders
