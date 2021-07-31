@@ -19,16 +19,20 @@ from nautilus_trader.core.uuid cimport UUID
 
 
 cpdef enum MessageCategory:
-    STRING = 1,
-    COMMAND = 2,
-    DOCUMENT = 3,
-    EVENT = 4,
-    REQUEST = 5,
-    RESPONSE = 6,
+    COMMAND = 1,
+    DOCUMENT = 2,
+    EVENT = 3,
+    REQUEST = 4,
+    RESPONSE = 5,
 
 
-cpdef str message_category_to_str(int value)
-cpdef MessageCategory message_category_from_str(str value)
+cdef class MessageCategoryParser:
+
+    @staticmethod
+    cdef str to_str(int value)
+
+    @staticmethod
+    cdef MessageCategory from_str(str value) except *
 
 
 cdef class Message:
