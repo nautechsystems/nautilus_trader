@@ -778,7 +778,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.PENDING_CANCEL
-        assert not order.is_inflight
+        assert order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert not order.is_pending_update
@@ -825,7 +825,7 @@ class TestOrders:
 
         # Assert
         assert order.state == OrderState.PENDING_UPDATE
-        assert not order.is_inflight
+        assert order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert order.is_pending_update
