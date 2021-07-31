@@ -403,9 +403,9 @@ cdef class Order:
         If the order is in-flight (order request sent to the trading venue).
 
         An order is considered in-flight when its state is either:
-         - `SUBMITTED`.
-         - `PENDING_CANCEL`.
-         - `PENDING_UPDATE`.
+        - `SUBMITTED`.
+        - `PENDING_CANCEL`.
+        - `PENDING_UPDATE`.
 
         Returns
         -------
@@ -421,11 +421,11 @@ cdef class Order:
         If the order is open/working at the trading venue.
 
         An order is considered working when its state is either:
-         - `ACCEPTED`
-         - `TRIGGERED`
-         - `PENDING_CANCEL`
-         - `PENDING_UPDATE`
-         - `PARTIALLY_FILLED`
+        - `ACCEPTED`
+        - `TRIGGERED`
+        - `PENDING_CANCEL`
+        - `PENDING_UPDATE`
+        - `PARTIALLY_FILLED`
 
         Returns
         -------
@@ -468,12 +468,12 @@ cdef class Order:
 
         An order is considered completed when its state can no longer change.
         The possible states of completed orders include:
-         - `INVALID`
-         - `DENIED`
-         - `REJECTED`
-         - `CANCELED`
-         - `EXPIRED`
-         - `FILLED`
+        - `INVALID`
+        - `DENIED`
+        - `REJECTED`
+        - `CANCELED`
+        - `EXPIRED`
+        - `FILLED`
 
         Returns
         -------

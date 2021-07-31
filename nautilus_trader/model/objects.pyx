@@ -322,8 +322,8 @@ cdef class Quantity(BaseDecimal):
         -------
         Quantity
 
-        Warning
-        -------
+        Warnings
+        --------
         The decimal precision will be inferred from the number of digits
         following the '.' point (if no point then precision zero).
 

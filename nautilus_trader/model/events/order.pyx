@@ -59,7 +59,7 @@ cdef class OrderEvent(Event):
         int64_t ts_init,
     ):
         """
-        Initialize a new instance of the ``OrderEvent` base class.
+        Initialize a new instance of the ``OrderEvent`` base class.
 
         Parameters
         ----------

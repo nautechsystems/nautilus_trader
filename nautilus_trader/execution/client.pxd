@@ -72,7 +72,7 @@ cdef class ExecutionClient:
     cdef readonly Currency base_currency
     """The clients account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or None"""
     cdef readonly bint calculate_account_state
-    """If the account state is calculated on order fill.\n\n:returns: `bool"""
+    """If the account state is calculated on order fill.\n\n:returns: `bool`"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 
