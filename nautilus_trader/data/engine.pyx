@@ -1027,6 +1027,7 @@ cdef class DataEngine(Component):
                       f".{instrument_id.venue}"
                       f".{instrument_id.symbol}",
                 handler=aggregator.handle_trade_tick,
+                priority=5,
             )
             self._handle_subscribe_trade_ticks(client, bar_type.instrument_id)
         else:
@@ -1035,6 +1036,7 @@ cdef class DataEngine(Component):
                       f".{instrument_id.venue}"
                       f".{instrument_id.symbol}",
                 handler=aggregator.handle_quote_tick,
+                priority=5,
             )
             self._handle_subscribe_quote_ticks(client, bar_type.instrument_id)
 
