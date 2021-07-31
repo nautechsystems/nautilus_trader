@@ -6,8 +6,6 @@ install:
 build: nautilus_trader
 	poetry run python build.py
 
-clean-build: clean build
-
 clean:
 	rm -rf .mypy_cache
 	rm -rf .nox
@@ -26,6 +24,11 @@ clean:
 	find . -name '*.o' -exec rm {} +
 	rm -f coverage.xml
 	rm -f dump.rdb
+
+clean-build: clean build
+
+build-docs:
+	poetry run sphinx-build docs/source docs/build
 
 pre-commit:
 	pre-commit run --all-files
