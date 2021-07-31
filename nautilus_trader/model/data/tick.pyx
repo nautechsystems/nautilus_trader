@@ -80,13 +80,13 @@ cdef class QuoteTick(Tick):
         instrument_id : InstrumentId
             The quotes instrument ID.
         bid : Price
-            The best bid price.
+            The top of book bid price.
         ask : Price
-            The best ask price.
+            The top of book ask price.
         bid_size : Quantity
-            The size at the best bid.
+            The top of book bid size.
         ask_size : Quantity
-            The size at the best ask.
+            The top of book ask size.
         ts_event: int64
             The UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init: int64
@@ -243,11 +243,11 @@ cdef class TradeTick(Tick):
         instrument_id : InstrumentId
             The trade instrument ID.
         price : Price
-            The price of the trade.
+            The traded price.
         size : Quantity
-            The size of the trade.
+            The traded size.
         aggressor_side : AggressorSide
-            The aggressor side of the trade.
+            The trade aggressor side.
         match_id : str
             The trade match ID.
         ts_event: int64
