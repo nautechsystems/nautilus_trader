@@ -73,10 +73,10 @@ cdef class Order:
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType type
     """The order type.\n\n:returns: `OrderType`"""
-    cdef readonly Quantity quantity
-    """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly TimeInForce time_in_force
     """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    cdef readonly Quantity quantity
+    """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity filled_qty
     """The order total filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly object avg_px
