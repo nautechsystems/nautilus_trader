@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import json
 
 from libc.stdint cimport int64_t
 
@@ -25,10 +24,6 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-
-from nautilus_trader.model.c_enums.asset_class import AssetClassParser
-from nautilus_trader.model.c_enums.asset_type import AssetTypeParser
-from nautilus_trader.model.objects import Money
 
 
 cdef class Equity(Instrument):
@@ -73,9 +68,9 @@ cdef class Equity(Instrument):
         lot_size : Quantity
             The rounded lot unit size (standard/board).
         ts_event: int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
+            The UNIX timestamp (nanoseconds) when the instrument update occurred.
         ts_init: int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            The UNIX timestamp (nanoseconds) when the instrument object was initialized.
 
         Raises
         ------

@@ -46,7 +46,7 @@ cdef class StatusUpdate(Data):
         Parameters
         ----------
         ts_event : int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
+            The UNIX timestamp (nanoseconds) when the status update event occurred.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 
@@ -74,7 +74,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
         status : VenueStatus
             The venue status.
         ts_event : int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
+            The UNIX timestamp (nanoseconds) when the status update event occurred.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 
@@ -165,7 +165,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         status : InstrumentStatus
             The instrument status.
         ts_event : int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
+            The UNIX timestamp (nanoseconds) when the status update event occurred.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 
@@ -259,7 +259,7 @@ cdef class InstrumentClosePrice(Data):
         close_type : InstrumentCloseType
             The type of closing price.
         ts_event : int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
+            The UNIX timestamp (nanoseconds) when the close price event occurred.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 

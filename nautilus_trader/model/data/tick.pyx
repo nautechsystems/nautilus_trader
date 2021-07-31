@@ -47,7 +47,7 @@ cdef class Tick(Data):
         instrument_id : InstrumentId
             The ticks instrument ID.
         ts_event: int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
+            The UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 
@@ -88,7 +88,7 @@ cdef class QuoteTick(Tick):
         ask_size : Quantity
             The size at the best ask.
         ts_event: int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
+            The UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init: int64
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 
@@ -251,7 +251,7 @@ cdef class TradeTick(Tick):
         match_id : str
             The trade match ID.
         ts_event: int64
-            The UNIX timestamp (nanoseconds) when the data event occurred.
+            The UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init: int64
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 
