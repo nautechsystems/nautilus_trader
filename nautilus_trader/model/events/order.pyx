@@ -76,9 +76,9 @@ cdef class OrderEvent(Event):
         event_id : UUID
             The event ID.
         ts_event : int64
-            The UNIX timestamp (nanoseconds) when the event occurred.
+            The UNIX timestamp (nanoseconds) when the order event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the message object was initialized.
+            The UNIX timestamp (nanoseconds) when the event object was initialized.
 
         """
         super().__init__(event_id, ts_event, ts_init)
