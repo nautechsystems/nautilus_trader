@@ -95,15 +95,6 @@ Index
 .. toctree::
     :glob:
     :maxdepth: 2
-    :caption: User Guide
-    :hidden:
-
-    user_guide/backtesting
-    user_guide/framework
-
-.. toctree::
-    :glob:
-    :maxdepth: 2
     :caption: API Reference
     :hidden:
 
