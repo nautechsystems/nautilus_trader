@@ -18,9 +18,8 @@ import pytest
 from nautilus_trader.core.message import Document
 from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageCategory
+from nautilus_trader.core.message import MessageCategoryParser
 from nautilus_trader.core.message import Response
-from nautilus_trader.core.message import message_category_from_str
-from nautilus_trader.core.message import message_category_to_str
 from nautilus_trader.core.uuid import uuid4
 
 
@@ -102,7 +101,6 @@ class TestMessage:
     @pytest.mark.parametrize(
         "category, expected",
         [
-            [MessageCategory.STRING, "STRING"],
             [MessageCategory.COMMAND, "COMMAND"],
             [MessageCategory.DOCUMENT, "DOCUMENT"],
             [MessageCategory.EVENT, "EVENT"],
@@ -113,7 +111,7 @@ class TestMessage:
     def test_message_category_to_str(self, category, expected):
         # Arrange
         # Act
-        result = message_category_to_str(category)
+        result = MessageCategoryParser.to_str_py(category)
 
         # Assert
         assert result == expected
@@ -121,7 +119,6 @@ class TestMessage:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["STRING", MessageCategory.STRING],
             ["COMMAND", MessageCategory.COMMAND],
             ["DOCUMENT", MessageCategory.DOCUMENT],
             ["EVENT", MessageCategory.EVENT],
@@ -132,7 +129,7 @@ class TestMessage:
     def test_message_category_from_str(self, string, expected):
         # Arrange
         # Act
-        result = message_category_from_str(string)
+        result = MessageCategoryParser.from_str_py(string)
 
         # Assert
         assert result == expected
