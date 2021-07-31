@@ -208,7 +208,7 @@ class TestStubs:
         instrument_id=None, bid=None, ask=None, bid_volume=None, ask_volume=None
     ) -> QuoteTick:
         return QuoteTick(
-            instrument_id=instrument_id if instrument_id is not None else TestStubs.usdjpy_id(),
+            instrument_id=instrument_id or TestStubs.usdjpy_id(),
             bid=bid or Price.from_str("90.002"),
             ask=ask or Price.from_str("90.005"),
             bid_size=bid_volume or Quantity.from_int(1_000_000),
@@ -220,7 +220,7 @@ class TestStubs:
     @staticmethod
     def quote_tick_5decimal(instrument_id=None, bid=None, ask=None) -> QuoteTick:
         return QuoteTick(
-            instrument_id=instrument_id if instrument_id is not None else TestStubs.audusd_id(),
+            instrument_id=instrument_id or TestStubs.audusd_id(),
             bid=bid or Price.from_str("1.00001"),
             ask=ask or Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1_000_000),
@@ -467,7 +467,7 @@ class TestStubs:
             order_side=order.side,
             order_type=order.type,
             last_qty=last_qty,
-            last_px=order.price if last_px is None else last_px,
+            last_px=last_px or order.price,
             currency=instrument.quote_currency,
             commission=commission,
             liquidity_side=liquidity_side,
