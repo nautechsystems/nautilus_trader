@@ -27,7 +27,7 @@ clean:
 
 clean-build: clean build
 
-build-docs:
+docs:
 	poetry run sphinx-build docs/source docs/build
 
 pre-commit:
