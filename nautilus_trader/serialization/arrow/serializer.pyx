@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable, Dict, Optional
+from typing import Callable, Optional
 
 import pyarrow as pa
 
@@ -27,30 +27,38 @@ from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.data cimport OrderBookData
+from nautilus_trader.serialization.base cimport _OBJECT_FROM_DICT_MAP
+from nautilus_trader.serialization.base cimport _OBJECT_TO_DICT_MAP
 
 from nautilus_trader.serialization.arrow.implementations import account_state
 from nautilus_trader.serialization.arrow.implementations import order_book
 from nautilus_trader.serialization.arrow.implementations import order_events
 from nautilus_trader.serialization.arrow.implementations import position_events
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
-from nautilus_trader.serialization.base import get_from_dict
-from nautilus_trader.serialization.base import get_to_dict
 
 
-_PARQUET_OBJECT_TO_DICT_MAP: Dict[type, object] = {}
-_PARQUET_OBJECT_FROM_DICT_MAP: Dict[type, object] = {}
-_chunk = {}
-_partition_keys = {}
-_schemas = {}
+cdef dict _PARQUET_TO_DICT_MAP = {}    # type: dict[type, object]
+cdef dict _PARQUET_FROM_DICT_MAP = {}  # type: dict[type, object]
+cdef dict _PARTITION_KEYS = {}
+cdef dict _SCHEMAS = {}
+cdef set _CHUNK = set()
+
+
+def get_partition_keys():
+    return _PARTITION_KEYS
+
+
+def get_schemas():
+    return _SCHEMAS
 
 
 def register_parquet(
-    cls_type,
+    type cls,
     serializer: Optional[Callable] = None,
     deserializer: Optional[Callable] = None,
     schema: Optional[pa.Schema] = None,
-    partition_keys=None,
-    chunk=None,
+    tuple partition_keys=None,
+    bint chunk=False,
     **kwargs,
 ):
     """
@@ -58,7 +66,7 @@ def register_parquet(
 
     Parameters
     ----------
-    cls_type : type
+    cls : type
         The type to register serialization for.
     serializer : Optional[Callable]
         The callable to serialize instances of type `cls_type` to something parquet can write.
@@ -69,75 +77,75 @@ def register_parquet(
         (i.e. if certain values may be missing in the first chunk).
     partition_keys : tuple, optional
         The partition key for data written to parquet (typically an ID).
-    chunk : bool
+    chunk : bool, optional
         Whether to group objects by timestamp and operate together (Used for complex objects where
         we write each object as multiple rows in parquet, ie OrderBook or AccountState).
 
     """
-    Condition.type(cls_type, type, "cls_type")
     Condition.type_or_none(serializer, Callable, "serializer")
     Condition.type_or_none(deserializer, Callable, "deserializer")
     Condition.type_or_none(schema, pa.Schema, "schema")
     Condition.type_or_none(partition_keys, tuple, "partition_keys")
 
-    cls_name = cls_type
-
     # secret kwarg that allows overriding an existing (de)serialization method.
     if not kwargs.get("force", False):
         if serializer is not None:
             assert (
-                cls_name not in _PARQUET_OBJECT_TO_DICT_MAP
-            ), f"Serializer already exists for {cls_name}: {_PARQUET_OBJECT_TO_DICT_MAP[cls_name]}"
+                cls not in _PARQUET_TO_DICT_MAP
+            ), f"Serializer already exists for {cls}: {_PARQUET_TO_DICT_MAP[cls]}"
         if deserializer is not None:
             assert (
-                cls_name not in _PARQUET_OBJECT_FROM_DICT_MAP
-            ), f"Deserializer already exists for {cls_name}: {_PARQUET_OBJECT_TO_DICT_MAP[cls_name]}"
+                cls not in _PARQUET_FROM_DICT_MAP
+            ), f"Deserializer already exists for {cls}: {_PARQUET_TO_DICT_MAP[cls]}"
 
     if serializer is not None:
-        _PARQUET_OBJECT_TO_DICT_MAP[cls_name] = serializer
+        _PARQUET_TO_DICT_MAP[cls] = serializer
     if deserializer is not None:
-        _PARQUET_OBJECT_FROM_DICT_MAP[cls_name] = deserializer
-    if chunk is not None:
-        _chunk[cls_name] = chunk
+        _PARQUET_FROM_DICT_MAP[cls] = deserializer
     if partition_keys is not None:
-        _partition_keys[cls_name] = partition_keys
+        _PARTITION_KEYS[cls] = partition_keys
     if schema is not None:
-        _schemas[cls_name] = schema
+        _SCHEMAS[cls] = schema
+    if chunk:
+        _CHUNK.add(cls)
 
 
-def _serialize(obj):
-    if isinstance(obj, GenericData):
-        obj = obj.data
-    name = obj.__class__
-    if name in _PARQUET_OBJECT_TO_DICT_MAP:
-        return _PARQUET_OBJECT_TO_DICT_MAP[name](obj)
-    elif get_to_dict(name.__name__) is not None:
-        return get_to_dict(name.__name__)(obj)
-    else:
-        try:
-            return obj.__class__.to_dict(obj)
-        except (AttributeError, NotImplementedError):
-            e = (
-                f"object {type(obj)} cannot be serialized by `arrow.core._serialize`, register a serialization "
-                f"method via `arrow.core.register_parquet()`"
+cdef class ParquetSerializer:
+    """
+    Provides an object serializer for the `Parquet` specification.
+    """
+
+    @staticmethod
+    def serialize(obj):
+        if isinstance(obj, GenericData):
+            obj = obj.data
+        cdef type cls = type(obj)
+
+        delegate = _PARQUET_TO_DICT_MAP.get(cls)
+        if delegate is None:
+            delegate = _OBJECT_TO_DICT_MAP.get(cls.__name__)
+        if delegate is None:
+            raise TypeError(
+                f"Cannot serialize object `{cls}`. Please register a "
+                f"serialization method via `arrow.serializer.register_parquet()`"
             )
-            raise TypeError(e)
 
+        return delegate(obj)
 
-def _deserialize(cls, chunk):
-    name = cls
-    if not isinstance(chunk, list):
-        chunk = [chunk]
-    if name in _PARQUET_OBJECT_FROM_DICT_MAP:
-        if _chunk.get(name, False):
-            return _PARQUET_OBJECT_FROM_DICT_MAP[name](chunk)
-        else:
-            return [_PARQUET_OBJECT_FROM_DICT_MAP[name](c) for c in chunk]
-    elif get_from_dict(name.__name__) is not None:
-        return [get_from_dict(name.__name__)(c) for c in chunk]
-    raise TypeError(
-        f"class {name} cannot be deserialized by arrow._deserialize, register a method via `register()`"
-    )
+    @staticmethod
+    def deserialize(type cls, chunk):
+        delegate = _PARQUET_FROM_DICT_MAP.get(cls)
+        if delegate is None:
+            delegate = _OBJECT_FROM_DICT_MAP.get(cls.__name__)
+        if delegate is None:
+            raise TypeError(
+                f"Cannot deserialize object `{cls}`. Please register a "
+                f"deserialization method via `arrow.serializer.register_parquet()`"
+            )
+
+        if not isinstance(chunk, list):
+            chunk = [chunk]
+        return [delegate(c) for c in chunk]
 
 
 # TODO (bm) - Implement for IPC / streaming. See https://arrow.apache.org/docs/python/ipc.html
@@ -163,7 +171,7 @@ def _deserialize(cls, chunk):
 #     sink = pa.BufferOutputStream()
 #
 #     writer = pa.ipc.new_stream(sink, batch.schema)
-#     return msgpack.packb(message)
+#     return None
 #
 # @staticmethod
 # def from_arrow(message_bytes: bytes):
@@ -182,12 +190,12 @@ def _deserialize(cls, chunk):
 #     """
 #     Condition.not_none(message_bytes, "message_bytes")
 #
-#     return msgpack.unpackb(message_bytes)
+#     return None
 
 
-"""
-Objects requiring special handling in parquet
-"""
+#################################################
+# Objects requiring special handling in parquet
+#################################################
 
 for cls in OrderBookData.__subclasses__():
     register_parquet(

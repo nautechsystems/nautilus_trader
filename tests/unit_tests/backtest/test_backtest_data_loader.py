@@ -50,7 +50,7 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.serialization.arrow.core import register_parquet
+from nautilus_trader.serialization.arrow.serializer import register_parquet
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs

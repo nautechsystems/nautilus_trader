@@ -155,13 +155,6 @@ cpdef inline void register_serializable_object(
     _OBJECT_FROM_DICT_MAP[obj.__name__] = from_dict
 
 
-cpdef inline object get_to_dict(str obj_name):
-    return _OBJECT_TO_DICT_MAP.get(obj_name)
-
-cpdef inline object get_from_dict(str obj_name):
-    return _OBJECT_FROM_DICT_MAP.get(obj_name)
-
-
 cdef class InstrumentSerializer:
     """
     The abstract base class for all instrument serializers.

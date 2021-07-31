@@ -44,10 +44,9 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.serialization.arrow.core import _deserialize
-from nautilus_trader.serialization.arrow.core import _partition_keys
-from nautilus_trader.serialization.arrow.core import _schemas
-from nautilus_trader.serialization.arrow.core import _serialize
+from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
+from nautilus_trader.serialization.arrow.serializer import get_partition_keys
+from nautilus_trader.serialization.arrow.serializer import get_schemas
 
 
 NewFile = namedtuple("NewFile", "name")
@@ -58,6 +57,9 @@ category_attributes = {
     "OrderBookDelta": ["instrument_id", "type", "level", "delta_type", "order_size"],
 }
 NAUTILUS_TS_COLUMNS = ("ts_event", "ts_init")
+
+_PARTITION_KEYS = get_partition_keys()
+_SCHEMAS = get_schemas()
 
 
 class ByteParser:
@@ -442,8 +444,8 @@ class DataCatalog:
 
     @staticmethod
     def _determine_partition_cols(cls, instrument_id):
-        if _partition_keys.get(cls) is not None:
-            return list(_partition_keys[cls])
+        if _PARTITION_KEYS.get(cls) is not None:
+            return list(_PARTITION_KEYS[cls])
         elif instrument_id is not None:
             return ["instrument_id"]
         return
@@ -472,7 +474,7 @@ class DataCatalog:
             cls = type_conv.get(type(obj), type(obj))
             if isinstance(obj, GenericData):
                 cls = obj.data_type.type
-            for data in maybe_list(_serialize(obj)):
+            for data in maybe_list(ParquetSerializer.serialize(obj)):
                 instrument_id = data.get("instrument_id", None)
                 if instrument_id not in tables[cls]:
                     tables[cls][instrument_id] = []
@@ -528,7 +530,7 @@ class DataCatalog:
                         break
 
                 df, mappings = clean_partition_cols(df, partition_cols, cls)
-                schema = _schemas.get(cls)
+                schema = _SCHEMAS.get(cls)
                 table = pa.Table.from_pandas(df, schema=schema)
                 metadata_collector = []
                 pq.write_to_dataset(
@@ -571,11 +573,11 @@ class DataCatalog:
 
     def setup_engine(
         self,
-        engine: "BacktestEngine",  # noqa: F821
+        engine: BacktestEngine,
         instruments,
         chunk_size=None,
         **kwargs,
-    ) -> "BacktestEngine":  # noqa: F821
+    ) -> BacktestEngine:
         """
         Load data into a backtest engine.
 
@@ -773,7 +775,7 @@ class DataCatalog:
     def _make_objects(df, cls):
         if df is None:
             return []
-        return _deserialize(cls=cls, chunk=df.to_dict("records"))
+        return ParquetSerializer.deserialize(cls=cls, chunk=df.to_dict("records"))
 
     def instruments(
         self,
