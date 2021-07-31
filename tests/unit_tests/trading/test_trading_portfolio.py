@@ -249,8 +249,8 @@ class TestPortfolio:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
         self.exec_engine.process(account_state)
 
@@ -353,8 +353,8 @@ class TestPortfolio:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -427,8 +427,8 @@ class TestPortfolio:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -477,8 +477,8 @@ class TestPortfolio:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -583,8 +583,8 @@ class TestPortfolio:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -657,8 +657,8 @@ class TestPortfolio:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -731,8 +731,8 @@ class TestPortfolio:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -811,8 +811,8 @@ class TestPortfolio:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -864,8 +864,8 @@ class TestPortfolio:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -936,8 +936,8 @@ class TestPortfolio:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -1044,8 +1044,8 @@ class TestPortfolio:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -1131,8 +1131,8 @@ class TestPortfolio:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -1204,8 +1204,8 @@ class TestPortfolio:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)

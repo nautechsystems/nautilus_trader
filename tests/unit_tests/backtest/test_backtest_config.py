@@ -56,8 +56,8 @@ def data_loader():
                 ask=Price.from_str(str(r[2])),
                 bid_size=Quantity.from_int(1_000_000),
                 ask_size=Quantity.from_int(1_000_000),
-                ts_event_ns=ts,
-                ts_recv_ns=ts,
+                ts_event=ts,
+                ts_init=ts,
             )
             yield tick
 
@@ -208,7 +208,7 @@ def test_backtest_config_pickle(backtest_config):
 def test_tokenization(backtest_config):
     # All inputs to dask delayed functions must be deterministically tokenizable
     required = [
-        (backtest_config.instruments, "13ffe6e1ca1d94a1fe33de7e2a053aa4"),
+        (backtest_config.instruments, "cc57fd760292e5ada6c2f56247e1d292"),
         (backtest_config.venues, "70b12a5d8ef1300bc8db494f8378df77"),
     ]
     for inputs, value in required:

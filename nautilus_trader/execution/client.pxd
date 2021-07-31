@@ -98,7 +98,7 @@ cdef class ExecutionClient:
         self,
         list balances,
         bint reported,
-        int64_t ts_updated_ns,
+        int64_t ts_event,
         dict info=*,
     ) except *
     cpdef void generate_order_submitted(
@@ -106,7 +106,7 @@ cdef class ExecutionClient:
         StrategyId strategy_id,
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
-        int64_t ts_submitted_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_rejected(
         self,
@@ -114,7 +114,7 @@ cdef class ExecutionClient:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         str reason,
-        int64_t ts_rejected_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_accepted(
         self,
@@ -122,15 +122,15 @@ cdef class ExecutionClient:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_accepted_ns,
+        int64_t ts_event,
     ) except *
-    cpdef void generate_order_pending_replace(
+    cpdef void generate_order_pending_update(
         self,
         StrategyId strategy_id,
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_pending_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_pending_cancel(
         self,
@@ -138,7 +138,7 @@ cdef class ExecutionClient:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_pending_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_update_rejected(
         self,
@@ -147,7 +147,7 @@ cdef class ExecutionClient:
         ClientOrderId client_order_id,
         str response_to,
         str reason,
-        int64_t ts_rejected_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_cancel_rejected(
         self,
@@ -156,7 +156,7 @@ cdef class ExecutionClient:
         ClientOrderId client_order_id,
         str response_to,
         str reason,
-        int64_t ts_rejected_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_updated(
         self,
@@ -167,7 +167,7 @@ cdef class ExecutionClient:
         Quantity quantity,
         Price price,
         Price trigger,
-        int64_t ts_updated_ns,
+        int64_t ts_event,
         bint venue_order_id_modified=*,
     ) except *
     cpdef void generate_order_canceled(
@@ -176,7 +176,7 @@ cdef class ExecutionClient:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_canceled_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_triggered(
         self,
@@ -184,7 +184,7 @@ cdef class ExecutionClient:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_triggered_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_expired(
         self,
@@ -192,7 +192,7 @@ cdef class ExecutionClient:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_expired_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_filled(
         self,
@@ -209,7 +209,7 @@ cdef class ExecutionClient:
         Currency quote_currency,
         Money commission,
         LiquiditySide liquidity_side,
-        int64_t ts_filled_ns,
+        int64_t ts_event,
     ) except *
 
 # --------------------------------------------------------------------------------------------------

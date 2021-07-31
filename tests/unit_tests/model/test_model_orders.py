@@ -148,7 +148,7 @@ class TestOrders:
                 Quantity.from_int(100000),
                 price=Price.from_str("1.00000"),
                 init_id=uuid4(),
-                timestamp_ns=0,
+                ts_init=0,
                 time_in_force=TimeInForce.GTD,
                 expire_time=None,
             )
@@ -166,7 +166,7 @@ class TestOrders:
                 price=Price.from_str("1.00001"),
                 trigger=Price.from_str("1.00000"),
                 init_id=uuid4(),
-                timestamp_ns=0,
+                ts_init=0,
                 time_in_force=TimeInForce.GTD,
                 expire_time=None,
             )
@@ -214,8 +214,8 @@ class TestOrders:
         assert not order.is_sell
         assert not order.is_passive
         assert order.is_aggressive
-        assert order.ts_filled_ns == 0
-        assert order.last_event.timestamp_ns == 0
+        assert order.ts_last == 0
+        assert order.last_event.ts_init == 0
         assert isinstance(order.init_event, OrderInitialized)
 
     def test_initialize_sell_market_order(self):
@@ -237,7 +237,7 @@ class TestOrders:
         assert not order.is_completed
         assert not order.is_buy
         assert order.is_sell
-        assert order.ts_filled_ns == 0
+        assert order.ts_last == 0
         assert isinstance(order.init_event, OrderInitialized)
 
     def test_order_equality(self):
@@ -294,13 +294,13 @@ class TestOrders:
             "type": "MARKET",
             "side": "BUY",
             "quantity": "100000",
-            "timestamp_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
-            "ts_filled_ns": 0,
             "avg_px": None,
             "slippage": "0",
             "state": "INITIALIZED",
+            "ts_last": 0,
+            "ts_init": 0,
         }
 
     def test_initialize_limit_order(self):
@@ -357,16 +357,16 @@ class TestOrders:
             "price": "1.00000",
             "liquidity_side": "NONE",
             "expire_time_ns": 0,
-            "timestamp_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
-            "ts_filled_ns": 0,
             "avg_px": None,
             "slippage": "0",
             "state": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
             "is_hidden": False,
+            "ts_last": 0,
+            "ts_init": 0,
         }
 
     def test_initialize_limit_order_with_expire_time(self):
@@ -444,14 +444,14 @@ class TestOrders:
             "price": "1.00000",
             "liquidity_side": "NONE",
             "expire_time_ns": 0,
-            "timestamp_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
-            "ts_filled_ns": 0,
             "avg_px": None,
             "slippage": "0",
             "state": "INITIALIZED",
             "is_reduce_only": False,
+            "ts_last": 0,
+            "ts_init": 0,
         }
 
     def test_initialize_stop_limit_order(self):
@@ -511,16 +511,16 @@ class TestOrders:
             "price": "1.00000",
             "liquidity_side": "NONE",
             "expire_time_ns": 0,
-            "timestamp_ns": 0,
             "time_in_force": "GTC",
             "filled_qty": "0",
-            "ts_filled_ns": 0,
             "avg_px": None,
             "slippage": "0",
             "state": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
             "is_hidden": False,
+            "ts_last": 0,
+            "ts_init": 0,
         }
 
     def test_bracket_order_equality(self):
@@ -855,8 +855,8 @@ class TestOrders:
             Quantity.from_int(120000),
             Price.from_str("1.00001"),
             None,
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -896,8 +896,8 @@ class TestOrders:
             Quantity.from_int(120000),
             Price.from_str("1.00001"),
             None,
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -938,7 +938,7 @@ class TestOrders:
         assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
-        assert order.ts_filled_ns == 0
+        assert order.ts_last == 0
 
     def test_apply_order_filled_event_to_market_order(self):
         # Arrange
@@ -970,7 +970,7 @@ class TestOrders:
         assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
-        assert order.ts_filled_ns == 0
+        assert order.ts_last == 0
 
     def test_apply_partial_fill_events_to_market_order_results_in_partially_filled(
         self,
@@ -1017,7 +1017,7 @@ class TestOrders:
         assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
-        assert order.ts_filled_ns == 0
+        assert order.ts_last == 0
 
     def test_apply_filled_events_to_market_order_results_in_filled(self):
         # Arrange
@@ -1073,7 +1073,7 @@ class TestOrders:
         assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
-        assert order.ts_filled_ns == 0
+        assert order.ts_last == 0
 
     def test_apply_order_filled_event_to_buy_limit_order(self):
         # Arrange
@@ -1103,8 +1103,8 @@ class TestOrders:
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.MAKER,
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -1120,7 +1120,7 @@ class TestOrders:
         assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
-        assert order.ts_filled_ns == 0
+        assert order.ts_last == 0
 
     def test_apply_order_partially_filled_event_to_buy_limit_order(self):
         # Arrange
@@ -1150,8 +1150,8 @@ class TestOrders:
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.MAKER,
-            1_000_000_000,
             uuid4(),
+            1_000_000_000,
             1_000_000_000,
         )
 
@@ -1167,4 +1167,4 @@ class TestOrders:
         assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
-        assert order.ts_filled_ns == 1_000_000_000, order.ts_filled_ns
+        assert order.ts_last == 1_000_000_000, order.ts_last

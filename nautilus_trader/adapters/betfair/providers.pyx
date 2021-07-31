@@ -264,8 +264,8 @@ def make_instruments(market_definition, currency):
             selection_handicap=parse_handicap(runner.get("hc", runner.get("handicap"))),
             currency=currency,
             # TODO - Add the provider, use clock
-            ts_event_ns=unix_timestamp_ns(),  # TODO(bm): Duplicate timestamps for now
-            ts_recv_ns=unix_timestamp_ns(),
+            ts_event=unix_timestamp_ns(),  # TODO(bm): Duplicate timestamps for now
+            ts_init=unix_timestamp_ns(),
             # info=market_definition,  # TODO We should probably store a copy of the raw input data
         )
         instruments.append(instrument)

@@ -48,8 +48,8 @@ NAUTILUS_PARQUET_SCHEMA = {
             "size": pa.string(),
             "aggressor_side": pa.dictionary(pa.int8(), pa.string()),
             "match_id": pa.string(),
-            "ts_event_ns": pa.int64(),
-            "ts_recv_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         },
         metadata={"type": "TradeTick"},
     ),
@@ -60,8 +60,8 @@ NAUTILUS_PARQUET_SCHEMA = {
             "bid_size": pa.string(),
             "ask": pa.string(),
             "ask_size": pa.string(),
-            "ts_event_ns": pa.int64(),
-            "ts_recv_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         },
         metadata={"type": "QuoteTick"},
     ),
@@ -86,16 +86,16 @@ NAUTILUS_PARQUET_SCHEMA = {
             "selection_id": pa.string(),
             "selection_name": pa.string(),
             "selection_handicap": pa.string(),
-            "ts_recv_ns": pa.int64(),
-            "ts_event_ns": pa.int64(),
+            "ts_init": pa.int64(),
+            "ts_event": pa.int64(),
         },
         metadata={"type": "BettingInstrument"},
     ),
     OrderBookData: pa.schema(
         {
             "instrument_id": pa.string(),
-            "ts_event_ns": pa.int64(),
-            "ts_recv_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
             "delta_type": pa.string(),
             "order_side": pa.string(),
             "order_price": pa.float64(),
@@ -120,16 +120,16 @@ NAUTILUS_PARQUET_SCHEMA = {
             "reported": pa.bool_(),
             "info": pa.string(),
             "event_id": pa.string(),
-            "ts_updated_ns": pa.int64(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     InstrumentStatusUpdate: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "status": pa.dictionary(pa.int8(), pa.string()),
-            "ts_event_ns": pa.int64(),
-            "ts_recv_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     OrderInitialized: pa.schema(
@@ -143,7 +143,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "quantity": pa.float64(),
             "time_in_force": pa.dictionary(pa.int8(), pa.string()),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_init": pa.int64(),
             # Options fields
             # "options": pa.string(),
             "post_only": pa.bool_(),
@@ -161,7 +161,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "client_order_id": pa.string(),
             "reason": pa.dictionary(pa.int8(), pa.string()),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     OrderSubmitted: pa.schema(
@@ -171,9 +171,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
-            "ts_submitted_ns": pa.int64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     OrderAccepted: pa.schema(
@@ -184,9 +184,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "account_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
-            "ts_accepted_ns": pa.int64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     OrderRejected: pa.schema(
@@ -197,9 +197,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "account_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "reason": pa.dictionary(pa.int8(), pa.string()),
-            "ts_rejected_ns": pa.int64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     OrderPendingCancel: pa.schema(
@@ -210,9 +210,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "account_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
-            "ts_pending_ns": pa.int64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     OrderCanceled: pa.schema(
@@ -223,9 +223,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "account_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
-            "ts_canceled_ns": pa.int64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     OrderCancelRejected: pa.schema(
@@ -238,9 +238,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "venue_order_id": pa.string(),
             "response_to": pa.string(),
             "reason": pa.string(),
-            "ts_rejected_ns": pa.int64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     OrderExpired: pa.schema(
@@ -251,9 +251,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "account_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
-            "ts_expired_ns": pa.int64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     OrderTriggered: pa.schema(
@@ -264,9 +264,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "account_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
-            "ts_triggered_ns": pa.int64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     OrderPendingUpdate: pa.schema(
@@ -277,9 +277,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "account_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
-            "ts_pending_ns": pa.int64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     OrderUpdateRejected: pa.schema(
@@ -292,9 +292,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "venue_order_id": pa.string(),
             "response_to": pa.dictionary(pa.int8(), pa.string()),
             "reason": pa.dictionary(pa.int8(), pa.string()),
-            "ts_rejected_ns": pa.int64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     OrderUpdated: pa.schema(
@@ -307,9 +307,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "venue_order_id": pa.string(),
             "price": pa.float64(),
             "trigger": pa.float64(),
-            "ts_updated_ns": pa.int64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     OrderFilled: pa.schema(
@@ -328,9 +328,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             "currency": pa.string(),
             "commission": pa.string(),
             "liquidity_side": pa.string(),
-            "ts_filled_ns": pa.int64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
             "info": pa.string(),
         }
     ),
@@ -344,10 +344,10 @@ NAUTILUS_PARQUET_SCHEMA = {
             "net_qty": pa.float64(),
             "quantity": pa.float64(),
             "peak_qty": pa.float64(),
-            "ts_opened_ns": pa.int64(),
             "avg_px_open": pa.float64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     PositionChanged: pa.schema(
@@ -360,10 +360,11 @@ NAUTILUS_PARQUET_SCHEMA = {
             "net_qty": pa.float64(),
             "quantity": pa.float64(),
             "peak_qty": pa.float64(),
-            "ts_opened_ns": pa.int64(),
             "avg_px_open": pa.float64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_opened": pa.int64(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
     PositionClosed: pa.schema(
@@ -376,12 +377,13 @@ NAUTILUS_PARQUET_SCHEMA = {
             "net_qty": pa.float64(),
             "quantity": pa.float64(),
             "peak_qty": pa.float64(),
-            "ts_opened_ns": pa.int64(),
             "avg_px_open": pa.float64(),
             "avg_px_close": pa.float64(),
             "realized_pnl": pa.float64(),
             "event_id": pa.string(),
-            "timestamp_ns": pa.int64(),
+            "ts_opened": pa.int64(),
+            "ts_closed": pa.int64(),
+            "ts_init": pa.int64(),
         }
     ),
 }

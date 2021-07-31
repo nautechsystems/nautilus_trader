@@ -666,7 +666,7 @@ cdef class ExecutionEngine(Component):
             position=position,
             fill=fill,
             event_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._msgbus.publish_c(
@@ -695,14 +695,14 @@ cdef class ExecutionEngine(Component):
                 position=position,
                 fill=fill,
                 event_id=self._uuid_factory.generate(),
-                timestamp_ns=self._clock.timestamp_ns(),
+                ts_init=self._clock.timestamp_ns(),
             )
         else:
             event = PositionChanged.create_c(
                 position=position,
                 fill=fill,
                 event_id=self._uuid_factory.generate(),
-                timestamp_ns=self._clock.timestamp_ns(),
+                ts_init=self._clock.timestamp_ns(),
             )
 
         self._msgbus.publish_c(
@@ -739,9 +739,9 @@ cdef class ExecutionEngine(Component):
             currency=fill.currency,
             commission=Money(fill.commission * fill_percent1, fill.commission.currency),
             liquidity_side=fill.liquidity_side,
-            ts_filled_ns=fill.ts_filled_ns,
             event_id=fill.id,
-            timestamp_ns=fill.timestamp_ns,
+            ts_event=fill.ts_event,
+            ts_init=fill.ts_init,
         )
 
         # Close original position
@@ -770,9 +770,9 @@ cdef class ExecutionEngine(Component):
             currency=fill.currency,
             commission=Money(fill.commission * fill_percent2, fill.commission.currency),
             liquidity_side=fill.liquidity_side,
-            ts_filled_ns=fill.ts_filled_ns,
             event_id=self._uuid_factory.generate(),  # New event ID
-            timestamp_ns=fill.timestamp_ns,
+            ts_event=fill.ts_event,
+            ts_init=fill.ts_init,
         )
 
         # Open flipped position

@@ -337,8 +337,8 @@ class TestTradingStrategy:
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
             currency=EUR,
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -779,8 +779,8 @@ class TestTradingStrategy:
                     impact=NewsImpact.HIGH,
                     name="Unemployment Rate",
                     currency=USD,
-                    ts_event_ns=0,
-                    ts_recv_ns=0,
+                    ts_event=0,
+                    ts_init=0,
                 ),
             )
 
@@ -1460,8 +1460,8 @@ class TestTradingStrategy:
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
             currency=USD,
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -1488,8 +1488,8 @@ class TestTradingStrategy:
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
             currency=USD,
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -1957,8 +1957,8 @@ class TestTradingStrategy:
 
         # Act
         data = Data(
-            ts_event_ns=self.clock.timestamp_ns(),
-            ts_recv_ns=self.clock.timestamp_ns(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
         strategy.publish_data(data=data)
 

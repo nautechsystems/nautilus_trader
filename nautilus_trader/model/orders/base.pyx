@@ -149,13 +149,13 @@ cdef class Order:
         self.side = init.side
         self.type = init.type
         self.quantity = init.quantity
-        self.timestamp_ns = init.timestamp_ns
         self.time_in_force = init.time_in_force
         self.filled_qty = Quantity.zero_c(precision=0)
-        self.ts_filled_ns = 0
         self.avg_px = None  # Can be None
         self.slippage = Decimal()
         self.init_id = init.id
+        self.ts_last = 0  # No fills yet
+        self.ts_init = init.ts_init
 
     def __eq__(self, Order other) -> bool:
         return self.client_order_id.value == other.client_order_id.value
@@ -677,7 +677,7 @@ cdef class PassiveOrder(Order):
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         UUID init_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
         dict options not None,
     ):
         """
@@ -707,8 +707,8 @@ cdef class PassiveOrder(Order):
             The order expiry time - applicable to GTD orders only.
         init_id : UUID
             The order initialization event ID.
-        timestamp_ns : int64
-            The order initialization timestamp.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the order was initialized.
         options : dict
             The order options.
 
@@ -742,7 +742,7 @@ cdef class PassiveOrder(Order):
             quantity=quantity,
             time_in_force=time_in_force,
             event_id=init_id,
-            timestamp_ns=timestamp_ns,
+            ts_init=ts_init,
             options=options,
         )
 
@@ -803,7 +803,7 @@ cdef class PassiveOrder(Order):
         self.execution_id = fill.execution_id
         self.liquidity_side = fill.liquidity_side
         self.filled_qty = Quantity(self.filled_qty + fill.last_qty, fill.last_qty.precision)
-        self.ts_filled_ns = fill.ts_filled_ns
+        self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
         self._set_slippage()
 

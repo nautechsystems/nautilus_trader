@@ -109,8 +109,8 @@ class TestInstrument:
             "margin_maint": "0",
             "maker_fee": "0.001",
             "taker_fee": "0.001",
-            "ts_event_ns": 0,
-            "ts_recv_ns": 0,
+            "ts_event": 0,
+            "ts_init": 0,
             "info": None,
         }
 
@@ -139,8 +139,8 @@ class TestInstrument:
             "margin_maint": "0",
             "maker_fee": "0.001",
             "taker_fee": "0.001",
-            "ts_event_ns": 0,
-            "ts_recv_ns": 0,
+            "ts_event": 0,
+            "ts_init": 0,
             "info": None,
         }
 
@@ -177,8 +177,8 @@ class TestInstrument:
             "margin_maint": "0.0035",
             "maker_fee": "-0.00025",
             "taker_fee": "0.00075",
-            "ts_event_ns": 0,
-            "ts_recv_ns": 0,
+            "ts_event": 0,
+            "ts_init": 0,
             "info": None,
         }
 

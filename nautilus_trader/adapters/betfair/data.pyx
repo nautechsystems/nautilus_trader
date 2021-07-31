@@ -221,8 +221,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             now = self._clock.timestamp_ns()
             search = InstrumentSearch(
                 instruments=instruments,
-                ts_event_ns=now,
-                ts_recv_ns=now,
+                ts_event=now,
+                ts_init=now,
             )
             self._handle_data_response(
                 data_type=data_type,

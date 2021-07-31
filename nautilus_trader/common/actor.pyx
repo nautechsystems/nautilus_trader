@@ -462,7 +462,7 @@ cdef class Actor(Component):
             client_id=client_id,
             data_type=data_type,
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -520,7 +520,7 @@ cdef class Actor(Component):
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -546,7 +546,7 @@ cdef class Actor(Component):
             client_id=ClientId(venue.value),
             data_type=DataType(Instrument),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -588,7 +588,7 @@ cdef class Actor(Component):
                 "kwargs": kwargs,
             }),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -651,7 +651,7 @@ cdef class Actor(Component):
                 "kwargs": kwargs,
             }),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -679,7 +679,7 @@ cdef class Actor(Component):
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -707,7 +707,7 @@ cdef class Actor(Component):
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -733,7 +733,7 @@ cdef class Actor(Component):
             client_id=ClientId(bar_type.instrument_id.venue.value),
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -759,7 +759,7 @@ cdef class Actor(Component):
             client_id=ClientId(venue.value),
             data_type=DataType(VenueStatusUpdate, metadata={"name": venue.value}),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -785,7 +785,7 @@ cdef class Actor(Component):
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(InstrumentStatusUpdate, metadata={"instrument_id": instrument_id}),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -811,7 +811,7 @@ cdef class Actor(Component):
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(InstrumentClosePrice, metadata={"instrument_id": instrument_id}),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -837,7 +837,7 @@ cdef class Actor(Component):
             client_id=client_id,
             data_type=data_type,
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -889,7 +889,7 @@ cdef class Actor(Component):
             client_id=ClientId(venue.value),
             data_type=DataType(Instrument),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -917,7 +917,7 @@ cdef class Actor(Component):
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(Instrument, metadata={"instrument_id": instrument_id}),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -945,7 +945,7 @@ cdef class Actor(Component):
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(OrderBookData, metadata={"instrument_id": instrument_id}),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -985,7 +985,7 @@ cdef class Actor(Component):
                 "interval_ms": interval_ms,
             }),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -1013,7 +1013,7 @@ cdef class Actor(Component):
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -1041,7 +1041,7 @@ cdef class Actor(Component):
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -1067,7 +1067,7 @@ cdef class Actor(Component):
             client_id=ClientId(bar_type.instrument_id.venue.value),
             data_type=DataType(Bar, metadata={"bar_type": bar_type}),
             command_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
@@ -1112,7 +1112,7 @@ cdef class Actor(Component):
             data_type=data_type,
             callback=self._handle_data_response,
             request_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_req(request)
@@ -1156,7 +1156,7 @@ cdef class Actor(Component):
             }),
             callback=self._handle_quote_ticks_response,
             request_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_req(request)
@@ -1200,7 +1200,7 @@ cdef class Actor(Component):
             }),
             callback=self._handle_trade_ticks_response,
             request_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_req(request)
@@ -1245,7 +1245,7 @@ cdef class Actor(Component):
             }),
             callback=self._handle_bars_response,
             request_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_req(request)
@@ -1505,7 +1505,7 @@ cdef class Actor(Component):
             self._log.error(f"Received <Bar[{length}]> data for unknown bar type.")
             return  # TODO: Strategy shouldn't receive zero bars
 
-        if length > 0 and first.ts_recv_ns > last.ts_recv_ns:
+        if length > 0 and first.ts_init > last.ts_init:
             raise RuntimeError(f"cannot handle <Bar[{length}]> data: incorrectly sorted")
 
         for i in range(length):

@@ -57,7 +57,7 @@ category_attributes = {
     "TradeTick": ["instrument_id", "type", "aggressor_side"],
     "OrderBookDelta": ["instrument_id", "type", "level", "delta_type", "order_size"],
 }
-NAUTILUS_TS_COLUMNS = ("ts_event_ns", "ts_recv_ns", "timestamp_ns")
+NAUTILUS_TS_COLUMNS = ("ts_event", "ts_init")
 
 
 class ByteParser:
@@ -100,7 +100,7 @@ class TextParser(ByteParser):
             The context manager for preprocessing (cleaning log lines) of lines
             before json.loads is called. Nautilus objects are returned to the
             context manager for any post-processing also (for example, setting
-            the `ts_recv_ns`).
+            the `ts_init`).
         instrument_provider_update : Callable , optional
             An optional hook/callable to update instrument provider before
             data is passed to `line_parser` (in many cases instruments need to
@@ -631,7 +631,7 @@ class DataCatalog:
     #     """
     #     # TODO - look at dask.dataframe.aggregate_row_groups for chunking solution
     #     dataset = query(instrument_ids=instrument_ids, filters=filters, return_dataset=True)
-    #     ts_column_idx = ds.schema.names.index('ts_recv_ns')
+    #     ts_column_idx = ds.schema.names.index('ts_init')
     #     for piece in ds.pieces:
     #         meta = piece.get_metadata()
     #         for i in range(meta.num_row_groups):
@@ -717,7 +717,7 @@ class DataCatalog:
         instrument_ids=None,
         start=None,
         end=None,
-        ts_column="ts_event_ns",
+        ts_column="ts_event",
         raise_on_empty=True,
     ):
         filters = [filter_expr] if filter_expr is not None else []
@@ -830,7 +830,7 @@ class DataCatalog:
             filter_expr=filter_expr,
             **kwargs,
         )
-        df = df.sort_values(["instrument_id", "ts_event_ns"]).drop_duplicates(
+        df = df.sort_values(["instrument_id", "ts_event"]).drop_duplicates(
             subset=[c for c in df.columns if c not in ("event_id",)], keep="last"
         )
         if not as_nautilus:

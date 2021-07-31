@@ -192,7 +192,7 @@ class TestLiveExecutionClient:
             venue_order_id=VenueOrderId("1"),
             order_state=OrderState.FILLED,
             filled_qty=Quantity.from_int(100000),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -245,7 +245,7 @@ class TestLiveExecutionClient:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.REJECTED,
             filled_qty=Quantity.zero(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -298,7 +298,7 @@ class TestLiveExecutionClient:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.EXPIRED,
             filled_qty=Quantity.zero(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -351,7 +351,7 @@ class TestLiveExecutionClient:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.CANCELED,
             filled_qty=Quantity.zero(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -406,7 +406,7 @@ class TestLiveExecutionClient:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.CANCELED,
             filled_qty=Quantity.zero(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -461,7 +461,7 @@ class TestLiveExecutionClient:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.FILLED,
             filled_qty=Quantity.from_int(100000),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -516,7 +516,7 @@ class TestLiveExecutionClient:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.FILLED,
             filled_qty=Quantity.from_int(100000),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act

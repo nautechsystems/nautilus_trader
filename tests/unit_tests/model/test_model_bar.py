@@ -349,8 +349,8 @@ class TestBar:
             "low": "1.00002",
             "close": "1.00003",
             "volume": "100000",
-            "ts_event_ns": 0,
-            "ts_recv_ns": 0,
+            "ts_event": 0,
+            "ts_init": 0,
         }
 
     def test_from_dict_returns_expected_bar(self):

@@ -89,10 +89,10 @@ class MyData(Data):
     def __init__(
         self,
         value,
-        ts_event_ns=0,
-        timestamp_ns=0,
+        ts_event=0,
+        ts_init=0,
     ):
-        super().__init__(ts_event_ns, timestamp_ns)
+        super().__init__(ts_event, ts_init)
         self.value = value
 
 
@@ -186,8 +186,8 @@ class TestStubs:
             low_price=Price.from_str("1.00001"),
             close_price=Price.from_str("1.00003"),
             volume=Quantity.from_int(1_000_000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -199,8 +199,8 @@ class TestStubs:
             low_price=Price.from_str("90.001"),
             close_price=Price.from_str("90.003"),
             volume=Quantity.from_int(1_000_000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -213,8 +213,8 @@ class TestStubs:
             ask=ask or Price.from_str("90.005"),
             bid_size=bid_volume or Quantity.from_int(1_000_000),
             ask_size=ask_volume or Quantity.from_int(1_000_000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -225,8 +225,8 @@ class TestStubs:
             ask=ask or Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1_000_000),
             ask_size=Quantity.from_int(1_000_000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -239,8 +239,8 @@ class TestStubs:
             size=quantity or Quantity.from_int(100000),
             aggressor_side=aggressor_side or AggressorSide.BUY,
             match_id="123456",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -301,8 +301,8 @@ class TestStubs:
             level=level,
             bids=[(float(bid_price - i), float(bid_volume * (1 + i))) for i in range(bid_levels)],
             asks=[(float(ask_price + i), float(ask_volume * (1 + i))) for i in range(ask_levels)],
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -348,8 +348,8 @@ class TestStubs:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -360,9 +360,9 @@ class TestStubs:
             instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
-            ts_submitted_ns=0,
+            ts_event=0,
             event_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -376,9 +376,9 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
-            ts_accepted_ns=0,
+            ts_event=0,
             event_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -390,9 +390,9 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             reason="ORDER_REJECTED",
-            ts_rejected_ns=0,
+            ts_event=0,
             event_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -404,9 +404,9 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            ts_pending_ns=0,
+            ts_event=0,
             event_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -418,9 +418,9 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            ts_pending_ns=0,
+            ts_event=0,
             event_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -471,9 +471,9 @@ class TestStubs:
             currency=instrument.quote_currency,
             commission=commission,
             liquidity_side=liquidity_side,
-            ts_filled_ns=ts_filled_ns,
+            ts_event=ts_filled_ns,
             event_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -485,9 +485,9 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            ts_canceled_ns=0,
+            ts_event=0,
             event_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -499,9 +499,9 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            ts_expired_ns=0,
+            ts_event=0,
             event_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -513,9 +513,9 @@ class TestStubs:
             account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            ts_triggered_ns=0,
+            ts_event=0,
             event_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -524,7 +524,7 @@ class TestStubs:
             position=position,
             fill=position.last_event,
             event_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -533,7 +533,7 @@ class TestStubs:
             position=position,
             fill=position.last_event,
             event_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -542,7 +542,7 @@ class TestStubs:
             position=position,
             fill=position.last_event,
             event_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
     @staticmethod

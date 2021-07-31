@@ -184,7 +184,7 @@ class TestOrderSerializer:
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -207,7 +207,7 @@ class TestOrderSerializer:
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -231,7 +231,7 @@ class TestOrderSerializer:
             time_in_force=TimeInForce.GTC,
             expire_time=None,
             init_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -255,7 +255,7 @@ class TestOrderSerializer:
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -449,8 +449,8 @@ class TestMsgPackEventSerializer:
             balances=[AccountBalance(USD, Money(1525000, USD), Money(0, USD), Money(1525000, USD))],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=1_000_000_000,
+            ts_event=0,
+            ts_init=1_000_000_000,
         )
 
         # Act
@@ -477,8 +477,8 @@ class TestMsgPackEventSerializer:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=1_000_000_000,
+            ts_event=0,
+            ts_init=1_000_000_000,
         )
 
         # Act
@@ -633,8 +633,8 @@ class TestMsgPackEventSerializer:
             AUDUSD_SIM.id,
             self.account_id,
             ClientOrderId("O-123456"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -654,8 +654,8 @@ class TestMsgPackEventSerializer:
             self.account_id,
             ClientOrderId("O-123456"),
             VenueOrderId("B-123456"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -675,8 +675,8 @@ class TestMsgPackEventSerializer:
             self.account_id,
             ClientOrderId("O-123456"),
             "ORDER_ID_INVALID",
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -696,8 +696,8 @@ class TestMsgPackEventSerializer:
             self.account_id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -717,8 +717,8 @@ class TestMsgPackEventSerializer:
             self.account_id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -738,8 +738,8 @@ class TestMsgPackEventSerializer:
             self.account_id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -761,8 +761,8 @@ class TestMsgPackEventSerializer:
             VenueOrderId("1"),
             "RESPONSE",
             "ORDER_DOES_NOT_EXIST",
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -784,8 +784,8 @@ class TestMsgPackEventSerializer:
             VenueOrderId("1"),
             "RESPONSE",
             "ORDER_DOES_NOT_EXIST",
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -808,8 +808,8 @@ class TestMsgPackEventSerializer:
             Quantity(100000, precision=0),
             Price(0.80010, precision=5),
             Price(0.80050, precision=5),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -829,8 +829,8 @@ class TestMsgPackEventSerializer:
             self.account_id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -850,8 +850,8 @@ class TestMsgPackEventSerializer:
             self.account_id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -880,8 +880,8 @@ class TestMsgPackEventSerializer:
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.MAKER,
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -910,8 +910,8 @@ class TestMsgPackEventSerializer:
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.TAKER,
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -1079,8 +1079,8 @@ class TestParquetSerializer:
             level=BookLevel.L2,
             delta_type=DeltaType.CLEAR,
             order=None,
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         serialized = _serialize(delta)
@@ -1091,8 +1091,8 @@ class TestParquetSerializer:
             instrument_id=TestStubs.audusd_id(),
             level=BookLevel.L2,
             deltas=[delta],
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
         assert deserialized == expected
         self.catalog._write_chunks([delta])
@@ -1100,8 +1100,8 @@ class TestParquetSerializer:
     def test_serialize_and_deserialize_order_book_deltas(self):
         kw = {
             "instrument_id": "AUD/USD.SIM",
-            "ts_event_ns": 0,
-            "ts_recv_ns": 0,
+            "ts_event": 0,
+            "ts_init": 0,
             "level": "L2",
         }
         deltas = OrderBookDeltas(
@@ -1129,8 +1129,8 @@ class TestParquetSerializer:
                     }
                 ),
             ],
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         serialized = _serialize(deltas)
@@ -1143,8 +1143,8 @@ class TestParquetSerializer:
     def test_serialize_and_deserialize_order_book_deltas_grouped(self):
         kw = {
             "instrument_id": "AUD/USD.SIM",
-            "ts_event_ns": 0,
-            "ts_recv_ns": 0,
+            "ts_event": 0,
+            "ts_init": 0,
             "level": "L2",
         }
         deltas = [
@@ -1181,8 +1181,8 @@ class TestParquetSerializer:
             instrument_id=TestStubs.audusd_id(),
             level=BookLevel.L2,
             deltas=[OrderBookDelta.from_dict({**kw, **d}) for d in deltas],
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         serialized = _serialize(deltas)

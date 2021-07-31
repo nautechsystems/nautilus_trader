@@ -252,7 +252,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         cdef ExecutionMassStatus mass_status = ExecutionMassStatus(
             client_id=self.id,
             account_id=self.account_id,
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         if not active_orders:
@@ -271,7 +271,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 exec_reports = await self.generate_exec_reports(
                     venue_order_id=order.venue_order_id,
                     symbol=order.instrument_id.symbol,
-                    since=nanos_to_unix_dt(nanos=order.timestamp_ns),
+                    since=nanos_to_unix_dt(nanos=order.ts_init),
                 )
                 mass_status.add_exec_reports(order.venue_order_id, exec_reports)
 
@@ -338,7 +338,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 order.instrument_id,
                 report.client_order_id,
                 "unknown",
-                report.timestamp_ns,
+                report.ts_init,
             )
             return True
         elif report.order_state == OrderState.EXPIRED:
@@ -348,7 +348,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 order.instrument_id,
                 report.client_order_id,
                 report.venue_order_id,
-                report.timestamp_ns,
+                report.ts_init,
             )
             return True
         elif report.order_state == OrderState.CANCELED:
@@ -358,7 +358,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 order.instrument_id,
                 report.client_order_id,
                 report.venue_order_id,
-                report.timestamp_ns,
+                report.ts_init,
             )
             return True
         elif report.order_state == OrderState.ACCEPTED:
@@ -369,7 +369,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                     order.instrument_id,
                     report.client_order_id,
                     report.venue_order_id,
-                    report.timestamp_ns,
+                    report.ts_init,
                 )
             return True
 
@@ -410,7 +410,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 quote_currency=instrument.quote_currency,
                 commission=exec_report.commission,
                 liquidity_side=exec_report.liquidity_side,
-                ts_filled_ns=exec_report.ts_filled_ns,
+                ts_event=exec_report.ts_event,
             )
 
         return True

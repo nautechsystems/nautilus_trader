@@ -197,13 +197,13 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         ]
         result = await asyncio.gather(*aws)
         account_details, account_funds = result
-        timestamp_ns = self._clock.timestamp_ns()
+        timestamp = self._clock.timestamp_ns()
         account_state = betfair_account_to_account_state(
             account_detail=account_details,
             account_funds=account_funds,
             event_id=self._uuid_factory.generate(),
-            ts_updated_ns=timestamp_ns,
-            timestamp_ns=timestamp_ns,
+            ts_event=timestamp,
+            ts_init=timestamp,
         )
         self._handle_event(account_state)
 
@@ -227,7 +227,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,
             client_order_id=command.order.client_order_id,
-            ts_submitted_ns=self._clock.timestamp_ns(),
+            ts_event=self._clock.timestamp_ns(),
         )
         self._log.debug(f"Generated _generate_order_submitted")
 
@@ -265,7 +265,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 instrument_id=instrument_id,
                 client_order_id=client_order_id,
                 reason=reason,
-                ts_rejected_ns=self._clock.timestamp_ns(),
+                ts_event=self._clock.timestamp_ns(),
             )
             return
         bet_id = resp['instructionReports'][0]['betId']
@@ -276,17 +276,17 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=VenueOrderId(bet_id),
-            ts_accepted_ns=self._clock.timestamp_ns(),
+            ts_event=self._clock.timestamp_ns(),
         )
 
     cpdef void update_order(self, UpdateOrder command) except *:
         self._log.debug(f"Received update_order {command}")
-        self.generate_order_pending_replace(
+        self.generate_order_pending_update(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
             client_order_id=command.client_order_id,
             venue_order_id=command.venue_order_id,
-            ts_pending_ns=self._clock.timestamp_ns(),
+            ts_event=self._clock.timestamp_ns(),
         )
         f = self._loop.run_in_executor(None, self._update_order, command)  # type: asyncio.Future
         self._log.debug(f"future: {f}")
@@ -344,7 +344,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 instrument_id=instrument_id,
                 client_order_id=client_order_id,
                 reason=reason,
-                ts_rejected_ns=self._clock.timestamp_ns(),
+                ts_event=self._clock.timestamp_ns(),
             )
             return
         # Check the venue_order_id that has been deleted currently exists on our order
@@ -363,7 +363,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             quantity=Quantity(instructions["instruction"]['limitOrder']["size"], precision=4),
             price=price_to_probability(instructions["instruction"]['limitOrder']["price"]),
             trigger=None,  # Not applicable for Betfair
-            ts_updated_ns=self._clock.timestamp_ns(),
+            ts_event=self._clock.timestamp_ns(),
             venue_order_id_modified=True,
         )
 
@@ -374,7 +374,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             instrument_id=command.instrument_id,
             client_order_id=command.client_order_id,
             venue_order_id=command.venue_order_id,
-            ts_pending_ns=self._clock.timestamp_ns(),
+            ts_event=self._clock.timestamp_ns(),
         )
         instrument = self._cache.instrument(command.instrument_id)
         kw = order_cancel_to_betfair(command=command, instrument=instrument)
@@ -453,7 +453,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                 instrument_id=instrument.id,
                                 client_order_id=client_order_id,
                                 venue_order_id=venue_order_id,
-                                ts_accepted_ns=millis_to_nanos(order_update["pd"]),
+                                ts_event=millis_to_nanos(order_update["pd"]),
                             )
 
                         # Check for any portion executed
@@ -475,7 +475,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     quote_currency=instrument.quote_currency,
                                     commission=Money(0, self.get_account_currency()),
                                     liquidity_side=LiquiditySide.NONE,
-                                    ts_filled_ns=millis_to_nanos(order_update["md"]),
+                                    ts_event=millis_to_nanos(order_update["md"]),
                                 )
                                 self.published_executions[client_order_id].append(execution_id)
 
@@ -500,7 +500,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     # avg_px=order['avp'],
                                     commission=Money(0, self.get_account_currency()),
                                     liquidity_side=LiquiditySide.TAKER,  # TODO - Fix this?
-                                    ts_filled_ns=millis_to_nanos(order_update['md']),
+                                    ts_event=millis_to_nanos(order_update['md']),
                                 )
                                 self.published_executions[client_order_id].append(execution_id)
 
@@ -517,7 +517,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     instrument_id=instrument.id,
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
-                                    ts_canceled_ns=millis_to_nanos(order_update.get("cd") or order_update.get("ld") or order_update.get('md')),
+                                    ts_event=millis_to_nanos(order_update.get("cd") or order_update.get("ld") or order_update.get('md')),
                                 )
                         # Market order will not be in self.published_executions
                         if client_order_id in self.published_executions:

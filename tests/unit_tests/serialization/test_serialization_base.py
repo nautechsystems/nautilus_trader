@@ -74,7 +74,7 @@ class TestSerializationBase:
             client_id=ClientId("SIM"),
             data_type=DataType(QuoteTick),
             command_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         serializer = CommandSerializer()

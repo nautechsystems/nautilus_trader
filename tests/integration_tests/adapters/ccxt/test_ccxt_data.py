@@ -430,7 +430,7 @@ class TestCCXTDataClient:
             ),
             callback=handler.store,
             request_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -474,7 +474,7 @@ class TestCCXTDataClient:
             ),
             callback=handler.store,
             request_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act

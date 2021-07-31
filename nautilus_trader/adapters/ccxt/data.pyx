@@ -685,8 +685,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                         level=level,
                         bids=list(bids),
                         asks=list(asks),
-                        ts_event_ns=self._ccxt_to_timestamp_ns(millis=timestamp_ms),
-                        ts_recv_ns=self._clock.timestamp_ns(),
+                        ts_event=self._ccxt_to_timestamp_ns(millis=timestamp_ms),
+                        ts_init=self._clock.timestamp_ns(),
                     )
 
                     self._handle_data(snapshot)
@@ -785,8 +785,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double best_ask,
         double best_bid_size,
         double best_ask_size,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
         int price_precision,
         int size_precision,
     ) except *:
@@ -796,8 +796,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Price(best_ask, price_precision),
             Quantity(best_bid_size, size_precision),
             Quantity(best_ask_size, size_precision),
-            ts_event_ns,
-            ts_recv_ns,
+            ts_event,
+            ts_init,
         )
 
         self._handle_data(tick)
@@ -852,8 +852,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double amount,
         str aggressor_side,
         str match_id,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
         int price_precision,
         int size_precision,
     ) except *:
@@ -863,8 +863,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Quantity(amount, size_precision),
             AggressorSideParser.from_str(aggressor_side.upper()),
             match_id,
-            ts_event_ns,
-            ts_recv_ns,
+            ts_event,
+            ts_init,
         )
 
         self._handle_data(tick)
@@ -944,8 +944,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double low_price,
         double close_price,
         double volume,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
         int price_precision,
         int size_precision,
     ) except *:
@@ -956,8 +956,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Price(low_price, price_precision),
             Price(close_price, price_precision),
             Quantity(volume, size_precision),
-            ts_event_ns,
-            ts_recv_ns,
+            ts_event,
+            ts_init,
         )
 
         self._handle_data(bar)

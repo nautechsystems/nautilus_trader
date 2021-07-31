@@ -59,8 +59,8 @@ cdef class BettingInstrument(Instrument):
         str selection_name not None,
         str selection_handicap not None,
         str currency not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         assert event_open_date.tzinfo is not None
         assert market_start_time.tzinfo is not None
@@ -113,8 +113,8 @@ cdef class BettingInstrument(Instrument):
             margin_maint=Decimal(1),
             maker_fee=Decimal(0),
             taker_fee=Decimal(0),
-            ts_event_ns=ts_event_ns,
-            ts_recv_ns=ts_recv_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
             info=dict(),  # TODO - Add raw response?
         )
 
@@ -150,8 +150,8 @@ cdef class BettingInstrument(Instrument):
             "selection_name": obj.selection_name,
             "selection_handicap": obj.selection_handicap,
             "currency": obj.quote_currency.code,
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod

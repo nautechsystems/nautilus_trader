@@ -390,7 +390,7 @@ class TestLiveExecutionEngine:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.ACCEPTED,
             filled_qty=Quantity.zero(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         self.client.add_order_status_report(report)
@@ -444,7 +444,7 @@ class TestLiveExecutionEngine:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.CANCELED,
             filled_qty=Quantity.zero(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         self.client.add_order_status_report(report)
@@ -498,7 +498,7 @@ class TestLiveExecutionEngine:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.EXPIRED,
             filled_qty=Quantity.zero(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         self.client.add_order_status_report(report)
@@ -552,7 +552,7 @@ class TestLiveExecutionEngine:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.PARTIALLY_FILLED,
             filled_qty=Quantity.from_int(70000),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         trade1 = ExecutionReport(
@@ -563,8 +563,8 @@ class TestLiveExecutionEngine:
             last_px=Price.from_str("1.00000"),
             commission=Money(5.00, USD),
             liquidity_side=LiquiditySide.MAKER,
-            ts_filled_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         trade2 = ExecutionReport(
@@ -575,8 +575,8 @@ class TestLiveExecutionEngine:
             last_px=Price.from_str("1.00000"),
             commission=Money(2.00, USD),
             liquidity_side=LiquiditySide.MAKER,
-            ts_filled_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.client.add_order_status_report(report)
@@ -631,7 +631,7 @@ class TestLiveExecutionEngine:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.FILLED,
             filled_qty=Quantity.from_int(100000),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         trade1 = ExecutionReport(
@@ -642,8 +642,8 @@ class TestLiveExecutionEngine:
             last_px=Price.from_str("1.00000"),
             commission=Money(5.00, USD),
             liquidity_side=LiquiditySide.MAKER,
-            ts_filled_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         trade2 = ExecutionReport(
@@ -654,8 +654,8 @@ class TestLiveExecutionEngine:
             last_px=Price.from_str("1.00000"),
             commission=Money(2.00, USD),
             liquidity_side=LiquiditySide.MAKER,
-            ts_filled_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.client.add_order_status_report(report)

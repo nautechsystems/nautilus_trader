@@ -61,7 +61,7 @@ class TestBarBuilder:
         # Assert
         assert not builder.use_previous_close
         assert not builder.initialized
-        assert builder.last_timestamp_ns == 0
+        assert builder.ts_last == 0
         assert builder.count == 0
 
     def test_str_repr(self):
@@ -86,8 +86,8 @@ class TestBarBuilder:
             low_price=Price.from_str("1.00000"),
             close_price=Price.from_str("1.00002"),
             volume=Quantity.from_str("1"),
-            ts_event_ns=1_000_000_000,
-            ts_recv_ns=1_000_000_000,
+            ts_event=1_000_000_000,
+            ts_init=1_000_000_000,
         )
 
         # Act
@@ -101,8 +101,8 @@ class TestBarBuilder:
         assert bar.low == Price.from_str("1.00000")
         assert bar.close == Price.from_str("1.00002")
         assert bar.volume == Quantity.from_str("1")
-        assert bar.ts_recv_ns == 1_000_000_000
-        assert builder.last_timestamp_ns == 1_000_000_000
+        assert bar.ts_init == 1_000_000_000
+        assert builder.ts_last == 1_000_000_000
 
     def test_set_partial_when_already_set_does_not_update(self):
         # Arrange
@@ -116,8 +116,8 @@ class TestBarBuilder:
             low_price=Price.from_str("1.00000"),
             close_price=Price.from_str("1.00002"),
             volume=Quantity.from_str("1"),
-            ts_event_ns=1_000_000_000,
-            ts_recv_ns=1_000_000_000,
+            ts_event=1_000_000_000,
+            ts_init=1_000_000_000,
         )
 
         partial_bar2 = Bar(
@@ -127,8 +127,8 @@ class TestBarBuilder:
             low_price=Price.from_str("2.00000"),
             close_price=Price.from_str("2.00002"),
             volume=Quantity.from_str("2"),
-            ts_event_ns=1_000_000_000,
-            ts_recv_ns=3_000_000_000,
+            ts_event=1_000_000_000,
+            ts_init=3_000_000_000,
         )
 
         # Act
@@ -143,8 +143,8 @@ class TestBarBuilder:
         assert bar.low == Price.from_str("1.00000")
         assert bar.close == Price.from_str("1.00002")
         assert bar.volume == Quantity.from_str("1")
-        assert bar.ts_recv_ns == 4_000_000_000
-        assert builder.last_timestamp_ns == 1_000_000_000
+        assert bar.ts_init == 4_000_000_000
+        assert builder.ts_last == 1_000_000_000
 
     def test_single_update_results_in_expected_properties(self):
         # Arrange
@@ -156,7 +156,7 @@ class TestBarBuilder:
 
         # Assert
         assert builder.initialized
-        assert builder.last_timestamp_ns == 0
+        assert builder.ts_last == 0
         assert builder.count == 1
 
     def test_single_update_when_timestamp_less_than_last_update_ignores(self):
@@ -170,7 +170,7 @@ class TestBarBuilder:
 
         # Assert
         assert builder.initialized
-        assert builder.last_timestamp_ns == 1_000
+        assert builder.ts_last == 1_000
         assert builder.count == 1
 
     def test_multiple_updates_correctly_increments_count(self):
@@ -220,8 +220,8 @@ class TestBarBuilder:
         assert bar.low == Price.from_str("1.00000")
         assert bar.close == Price.from_str("1.00000")
         assert bar.volume == Quantity.from_str("4.0")
-        assert bar.ts_recv_ns == 1_000_000_000
-        assert builder.last_timestamp_ns == 1_000_000_000
+        assert bar.ts_init == 1_000_000_000
+        assert builder.ts_last == 1_000_000_000
         assert builder.count == 0
 
     def test_build_with_previous_close(self):
@@ -267,8 +267,8 @@ class TestTickBarAggregator:
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -297,8 +297,8 @@ class TestTickBarAggregator:
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id="123456",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -327,8 +327,8 @@ class TestTickBarAggregator:
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick2 = QuoteTick(
@@ -337,8 +337,8 @@ class TestTickBarAggregator:
             ask=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick3 = QuoteTick(
@@ -347,8 +347,8 @@ class TestTickBarAggregator:
             ask=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -384,8 +384,8 @@ class TestTickBarAggregator:
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id="123456",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick2 = TradeTick(
@@ -394,8 +394,8 @@ class TestTickBarAggregator:
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id="123457",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick3 = TradeTick(
@@ -404,8 +404,8 @@ class TestTickBarAggregator:
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id="123458",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -513,8 +513,8 @@ class TestVolumeBarAggregator:
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(3000),
             ask_size=Quantity.from_int(2000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -543,8 +543,8 @@ class TestVolumeBarAggregator:
             size=Quantity.from_int(1),
             aggressor_side=AggressorSide.BUY,
             match_id="123456",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -573,8 +573,8 @@ class TestVolumeBarAggregator:
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(3000),
             ask_size=Quantity.from_int(2000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick2 = QuoteTick(
@@ -583,8 +583,8 @@ class TestVolumeBarAggregator:
             ask=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(4000),
             ask_size=Quantity.from_int(2000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick3 = QuoteTick(
@@ -593,8 +593,8 @@ class TestVolumeBarAggregator:
             ask=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(3000),
             ask_size=Quantity.from_int(2000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -630,8 +630,8 @@ class TestVolumeBarAggregator:
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
             match_id="123456",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick2 = TradeTick(
@@ -640,8 +640,8 @@ class TestVolumeBarAggregator:
             size=Quantity.from_int(4000),
             aggressor_side=AggressorSide.BUY,
             match_id="123457",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick3 = TradeTick(
@@ -650,8 +650,8 @@ class TestVolumeBarAggregator:
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
             match_id="123458",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -687,8 +687,8 @@ class TestVolumeBarAggregator:
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(2000),
             ask_size=Quantity.from_int(2000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick2 = QuoteTick(
@@ -697,8 +697,8 @@ class TestVolumeBarAggregator:
             ask=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(3000),
             ask_size=Quantity.from_int(3000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick3 = QuoteTick(
@@ -707,8 +707,8 @@ class TestVolumeBarAggregator:
             ask=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(25000),
             ask_size=Quantity.from_int(25000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -754,8 +754,8 @@ class TestVolumeBarAggregator:
             size=Quantity.from_int(2000),
             aggressor_side=AggressorSide.BUY,
             match_id="123456",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick2 = TradeTick(
@@ -764,8 +764,8 @@ class TestVolumeBarAggregator:
             size=Quantity.from_int(3000),
             aggressor_side=AggressorSide.BUY,
             match_id="123457",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick3 = TradeTick(
@@ -774,8 +774,8 @@ class TestVolumeBarAggregator:
             size=Quantity.from_int(25000),
             aggressor_side=AggressorSide.BUY,
             match_id="123458",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -893,8 +893,8 @@ class TestTestValueBarAggre:
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(3000),
             ask_size=Quantity.from_int(2000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -924,8 +924,8 @@ class TestTestValueBarAggre:
             size=Quantity.from_str("3.5"),
             aggressor_side=AggressorSide.BUY,
             match_id="123456",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -955,8 +955,8 @@ class TestTestValueBarAggre:
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(20000),
             ask_size=Quantity.from_int(20000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick2 = QuoteTick(
@@ -965,8 +965,8 @@ class TestTestValueBarAggre:
             ask=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(60000),
             ask_size=Quantity.from_int(20000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick3 = QuoteTick(
@@ -975,8 +975,8 @@ class TestTestValueBarAggre:
             ask=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(30500),
             ask_size=Quantity.from_int(20000),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -1013,8 +1013,8 @@ class TestTestValueBarAggre:
             size=Quantity.from_str("3000.00"),
             aggressor_side=AggressorSide.BUY,
             match_id="123456",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick2 = TradeTick(
@@ -1023,8 +1023,8 @@ class TestTestValueBarAggre:
             size=Quantity.from_str("4000.00"),
             aggressor_side=AggressorSide.BUY,
             match_id="123457",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick3 = TradeTick(
@@ -1033,8 +1033,8 @@ class TestTestValueBarAggre:
             size=Quantity.from_str("5000.00"),
             aggressor_side=AggressorSide.BUY,
             match_id="123458",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -1215,8 +1215,8 @@ class TestTimeBarAggregator:
             ask=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick2 = QuoteTick(
@@ -1225,8 +1225,8 @@ class TestTimeBarAggregator:
             ask=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         tick3 = QuoteTick(
@@ -1235,8 +1235,8 @@ class TestTimeBarAggregator:
             ask=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
-            ts_event_ns=2 * 60 * 1_000_000_000,  # 2 minutes in nanoseconds
-            ts_recv_ns=2 * 60 * 1_000_000_000,  # 2 minutes in nanoseconds
+            ts_event=2 * 60 * 1_000_000_000,  # 2 minutes in nanoseconds
+            ts_init=2 * 60 * 1_000_000_000,  # 2 minutes in nanoseconds
         )
 
         # Act
@@ -1251,7 +1251,7 @@ class TestTimeBarAggregator:
         assert Price.from_str("1.000025") == bar_store.get_store()[0].low
         assert Price.from_str("1.000035") == bar_store.get_store()[0].close
         assert Quantity.from_int(2) == bar_store.get_store()[0].volume
-        assert 60_000_000_000 == bar_store.get_store()[0].ts_recv_ns
+        assert 60_000_000_000 == bar_store.get_store()[0].ts_init
 
 
 class TestBulkTickBarBuilder:

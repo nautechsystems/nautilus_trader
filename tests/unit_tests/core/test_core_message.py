@@ -32,25 +32,25 @@ class TestMessage:
         message1 = Message(
             category=MessageCategory.COMMAND,
             message_id=uuid,
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         message2 = Message(
             category=MessageCategory.COMMAND,
             message_id=uuid,
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         message3 = Message(
             category=MessageCategory.DOCUMENT,  # Different message type
             message_id=uuid,
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         message4 = Message(
             category=MessageCategory.DOCUMENT,
             message_id=uuid4(),  # Different UUID
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -64,7 +64,7 @@ class TestMessage:
         # Arrange
         message = Document(
             document_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -76,13 +76,13 @@ class TestMessage:
         uuid = uuid4()
         message = Document(
             document_id=uuid,
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
         # Assert
-        assert str(message) == f"Document(id={uuid}, timestamp=0)"
-        assert str(message) == f"Document(id={uuid}, timestamp=0)"
+        assert str(message) == f"Document(id={uuid}, ts_init=0)"
+        assert str(message) == f"Document(id={uuid}, ts_init=0)"
 
     def test_response_message_str_and_repr(self):
         # Arrange
@@ -91,13 +91,13 @@ class TestMessage:
         message = Response(
             correlation_id=uuid_corr,
             response_id=uuid_id,
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
         # Assert
-        assert str(message) == f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=0)"
-        assert str(message) == f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=0)"
+        assert str(message) == f"Response(correlation_id={uuid_corr}, id={uuid_id}, ts_init=0)"
+        assert str(message) == f"Response(correlation_id={uuid_corr}, id={uuid_id}, ts_init=0)"
 
     @pytest.mark.parametrize(
         "category, expected",

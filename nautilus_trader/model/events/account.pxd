@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
-
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.currency cimport Currency
@@ -34,8 +32,6 @@ cdef class AccountState(Event):
     """If the state is reported from the exchange (otherwise system calculated).\n\n:returns: `bool`"""
     cdef readonly dict info
     """The additional implementation specific account information.\n\n:returns: `dict[str, object]`"""
-    cdef readonly int64_t ts_updated_ns
-    """The UNIX timestamp (nanoseconds) when the account was updated.\n\n:returns: `int64`"""
 
     @staticmethod
     cdef AccountState from_dict_c(dict values)

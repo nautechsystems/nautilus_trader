@@ -263,7 +263,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             venue_order_id=order.venue_order_id,
             order_state=state,
             filled_qty=filled_qty,
-            timestamp_ns=millis_to_nanos(millis=response["timestamp"]),
+            ts_init=millis_to_nanos(millis=response["timestamp"]),
         )
 
     async def generate_exec_reports(
@@ -343,8 +343,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 last_px=Price(fill["price"], instrument.price_precision),
                 commission=self._parse_commission(fill),
                 liquidity_side=LiquiditySide.TAKER if fill["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
-                ts_filled_ns=millis_to_nanos(millis=fill["timestamp"]),
-                timestamp_ns=self._clock.timestamp_ns(),
+                ts_event=millis_to_nanos(millis=fill["timestamp"]),
+                ts_init=self._clock.timestamp_ns(),
             )
             reports.append(report)
 
@@ -540,7 +540,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            ts_submitted_ns=self._clock.timestamp_ns(),
+            ts_event=self._clock.timestamp_ns(),
         )
 
         try:
@@ -559,7 +559,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 reason=str(ex),
-                ts_rejected_ns=self._clock.timestamp_ns(),
+                ts_event=self._clock.timestamp_ns(),
             )
 
     async def _cancel_order(self, ClientOrderId client_order_id):
@@ -577,7 +577,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            ts_pending_ns=self._clock.timestamp_ns(),
+            ts_event=self._clock.timestamp_ns(),
         )
 
         try:
@@ -650,7 +650,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self.generate_account_state(
             balances=balances,
             reported=True,
-            ts_updated_ns=update_ns,
+            ts_event=update_ns,
         )
 
     cdef void _on_order_status(self, dict event) except *:
@@ -741,7 +741,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             quote_currency=instrument.quote_currency,
             commission=self._parse_commission(event),
             liquidity_side=LiquiditySide.TAKER if event["takerOrMaker"] == "taker" else LiquiditySide.MAKER,
-            ts_filled_ns=(millis_to_nanos(millis=event["timestamp"])),
+            ts_event=(millis_to_nanos(millis=event["timestamp"])),
         )
 
     cdef Money _parse_commission(self, dict event):
@@ -868,7 +868,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
             instrument_id=order.instrument_id,
             strategy_id=order.strategy_id,
             client_order_id=order.client_order_id,
-            ts_submitted_ns=self._clock.timestamp_ns(),
+            ts_event=self._clock.timestamp_ns(),
         )
 
         try:
@@ -887,7 +887,7 @@ cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 reason=str(ex),
-                ts_rejected_ns=self._clock.timestamp_ns(),
+                ts_event=self._clock.timestamp_ns(),
             )
 
 
@@ -989,7 +989,7 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
             instrument_id=order.instrument_id,
             strategy_id=order.strategy_id,
             client_order_id=order.client_order_id,
-            ts_submitted_ns=self._clock.timestamp_ns(),
+            ts_event=self._clock.timestamp_ns(),
         )
 
         try:
@@ -1008,5 +1008,5 @@ cdef class BitmexCCXTExecutionClient(CCXTExecutionClient):
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
                 reason=str(ex),
-                ts_rejected_ns=self._clock.timestamp_ns(),
+                ts_event=self._clock.timestamp_ns(),
             )

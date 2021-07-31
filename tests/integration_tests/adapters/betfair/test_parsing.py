@@ -92,13 +92,12 @@ def test_order_cancel_to_betfair(betting_instrument):
 def test_account_statement(betfair_client, uuid, clock):
     detail = betfair_client.account.get_account_details()
     funds = betfair_client.account.get_account_funds()
-    timestamp_ns = clock.timestamp_ns()
     result = betfair_account_to_account_state(
         account_detail=detail,
         account_funds=funds,
         event_id=uuid,
-        ts_updated_ns=timestamp_ns,
-        timestamp_ns=timestamp_ns,
+        ts_event=clock.timestamp_ns(),
+        ts_init=clock.timestamp_ns(),
     )
     expected = AccountState(
         account_id=AccountId(issuer="BETFAIR", number="Testy-McTest"),
@@ -108,8 +107,8 @@ def test_account_statement(betfair_client, uuid, clock):
         balances=[AccountBalance(GBP, Money(1000.0, GBP), Money(0.00, GBP), Money(1000.0, GBP))],
         info={"funds": funds, "detail": detail},
         event_id=uuid,
-        ts_updated_ns=result.timestamp_ns,
-        timestamp_ns=result.timestamp_ns,
+        ts_event=result.ts_event,
+        ts_init=result.ts_init,
     )
     assert result == expected
 

@@ -76,8 +76,8 @@ class TestDataType:
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
             currency=USD,
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
         generic_data = GenericData(data_type, data)
 

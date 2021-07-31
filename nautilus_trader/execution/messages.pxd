@@ -38,8 +38,8 @@ cdef class OrderStatusReport:
     """The reported order state at the exchange.\n\n:returns: `OrderState`"""
     cdef readonly Quantity filled_qty
     """The reported filled quantity.\n\n:returns: `Quantity`"""
-    cdef readonly int64_t timestamp_ns
-    """The UNIX timestamp (nanoseconds) of the report.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the report was initialized.\n\n:returns: `int64`"""
 
 
 cdef class PositionStatusReport:
@@ -49,8 +49,8 @@ cdef class PositionStatusReport:
     """The reported position side at the exchange.\n\n:returns: `PositionSide`"""
     cdef readonly Quantity qty
     """The reported position quantity at the exchange.\n\n:returns: `Quantity`"""
-    cdef readonly int64_t timestamp_ns
-    """The UNIX timestamp (nanoseconds) of the report.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the report was initialized.\n\n:returns: `int64`"""
 
 
 cdef class ExecutionReport:
@@ -68,10 +68,10 @@ cdef class ExecutionReport:
     """The reported commission.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
     """The reported liquidity side.\n\n:returns: `LiquiditySide`"""
-    cdef readonly int64_t ts_filled_ns
-    """The UNIX timestamp (nanoseconds) of the execution.\n\n:returns: `LiquiditySide`"""
-    cdef readonly int64_t timestamp_ns
-    """The UNIX timestamp (nanoseconds) of the report.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_event
+    """The UNIX timestamp (nanoseconds) when the execution event occurred.\n\n:returns: `LiquiditySide`"""
+    cdef readonly int64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the report was initialized.\n\n:returns: `int64`"""
 
 
 cdef class ExecutionMassStatus:
@@ -83,8 +83,8 @@ cdef class ExecutionMassStatus:
     """The client ID for the report.\n\n:returns: `ClientId`"""
     cdef readonly AccountId account_id
     """The account ID for the report.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t timestamp_ns
-    """The UNIX timestamp (nanoseconds) of the report.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the report was initialized.\n\n:returns: `int64`"""
 
     cpdef dict order_reports(self)
     cpdef dict exec_reports(self)

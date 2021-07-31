@@ -168,7 +168,7 @@ class TestRiskEngine:
             strategy_id=StrategyId("SCALPER-001"),
             instrument_id=AUDUSD_SIM.id,
             command_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(random)
@@ -176,8 +176,9 @@ class TestRiskEngine:
     def test_given_random_event_then_logs_and_continues(self):
         # Arrange
         random = Event(
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
+            event_id=self.uuid_factory.generate(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.exec_engine.process(random)

@@ -36,8 +36,8 @@ cdef class Tick(Data):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``Tick`` class.
@@ -46,13 +46,13 @@ cdef class Tick(Data):
         ----------
         instrument_id : InstrumentId
             The ticks instrument ID.
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns : int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(ts_event_ns, ts_recv_ns)
+        super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id
 
@@ -69,8 +69,8 @@ cdef class QuoteTick(Tick):
         Price ask not None,
         Quantity bid_size not None,
         Quantity ask_size not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``QuoteTick`` class.
@@ -87,13 +87,13 @@ cdef class QuoteTick(Tick):
             The size at the best bid.
         ask_size : Quantity
             The size at the best ask.
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(instrument_id, ts_event_ns, ts_recv_ns)
+        super().__init__(instrument_id, ts_event, ts_init)
 
         self.bid = bid
         self.ask = ask
@@ -112,7 +112,7 @@ cdef class QuoteTick(Tick):
                 f"{self.ask},"
                 f"{self.bid_size},"
                 f"{self.ask_size},"
-                f"{self.ts_event_ns}")
+                f"{self.ts_event}")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -126,8 +126,8 @@ cdef class QuoteTick(Tick):
             ask=Price.from_str_c(values["ask"]),
             bid_size=Quantity.from_str_c(values["bid_size"]),
             ask_size=Quantity.from_str_c(values["ask_size"]),
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -140,8 +140,8 @@ cdef class QuoteTick(Tick):
             "ask": str(obj.ask),
             "bid_size": str(obj.bid_size),
             "ask_size": str(obj.ask_size),
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod
@@ -232,8 +232,8 @@ cdef class TradeTick(Tick):
         Quantity size not None,
         AggressorSide aggressor_side,
         str match_id not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``TradeTick`` class.
@@ -250,10 +250,10 @@ cdef class TradeTick(Tick):
             The aggressor side of the trade.
         match_id : str
             The trade match ID.
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Raises
         ------
@@ -262,7 +262,7 @@ cdef class TradeTick(Tick):
 
         """
         Condition.valid_string(match_id, "match_id")
-        super().__init__(instrument_id, ts_event_ns, ts_recv_ns)
+        super().__init__(instrument_id, ts_event, ts_init)
 
         self.price = price
         self.size = size
@@ -281,7 +281,7 @@ cdef class TradeTick(Tick):
                 f"{self.size},"
                 f"{AggressorSideParser.to_str(self.aggressor_side)},"
                 f"{self.match_id},"
-                f"{self.ts_event_ns}")
+                f"{self.ts_event}")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -295,8 +295,8 @@ cdef class TradeTick(Tick):
             size=Quantity.from_str_c(values["size"]),
             aggressor_side=AggressorSideParser.from_str(values["aggressor_side"]),
             match_id=values["match_id"],
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -309,8 +309,8 @@ cdef class TradeTick(Tick):
             "size": str(obj.size),
             "aggressor_side": AggressorSideParser.to_str(obj.aggressor_side),
             "match_id": obj.match_id,
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod
