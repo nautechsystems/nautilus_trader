@@ -45,7 +45,7 @@ class TestDataMessage:
             client_id=ClientId(BINANCE.value),
             data_type=DataType(str, {"type": "newswire"}),  # str data type is invalid
             command_id=command_id,
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Assert
@@ -76,7 +76,7 @@ class TestDataMessage:
             ),
             callback=handler,
             request_id=request_id,
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Assert
@@ -109,7 +109,7 @@ class TestDataMessage:
             data=[],
             correlation_id=correlation_id,
             response_id=response_id,
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Assert

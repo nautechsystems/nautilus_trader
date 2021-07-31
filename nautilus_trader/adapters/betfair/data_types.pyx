@@ -26,10 +26,10 @@ class InstrumentSearch(Data):
     def __init__(
         self,
         instruments,
-        ts_event_ns,
-        ts_recv_ns,
+        ts_event,
+        ts_init,
     ):
-        super().__init__(ts_event_ns, ts_recv_ns)
+        super().__init__(ts_event, ts_init)
         self.instruments = instruments
 
 

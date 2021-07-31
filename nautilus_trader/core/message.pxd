@@ -36,8 +36,8 @@ cdef class Message:
     """The message category.\n\n:returns: `MessageCategory`"""
     cdef readonly UUID id
     """The message ID.\n\n:returns: `UUID`"""
-    cdef readonly int64_t timestamp_ns
-    """The UNIX timestamp (nanoseconds) of message initialization.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
 
 
 cdef class Command(Message):
@@ -49,7 +49,8 @@ cdef class Document(Message):
 
 
 cdef class Event(Message):
-    pass
+    cdef readonly int64_t ts_event
+    """The UNIX timestamp (nanoseconds) when the event occurred.\n\n:returns: `int64`"""
 
 
 cdef class Request(Message):

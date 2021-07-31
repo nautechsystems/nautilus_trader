@@ -46,8 +46,8 @@ def serialize(data: OrderBookData):
                     level=data.level,
                     order=None,
                     delta_type=DeltaType.CLEAR,
-                    ts_event_ns=data.ts_event_ns,
-                    ts_recv_ns=data.ts_recv_ns,
+                    ts_event=data.ts_event,
+                    ts_init=data.ts_init,
                 ),
                 cls=OrderBookSnapshot,
             )
@@ -61,8 +61,8 @@ def serialize(data: OrderBookData):
                     OrderBookDelta(
                         instrument_id=data.instrument_id,
                         level=data.level,
-                        ts_event_ns=data.ts_event_ns,
-                        ts_recv_ns=data.ts_recv_ns,
+                        ts_event=data.ts_event,
+                        ts_init=data.ts_init,
                         order=Order(price=price, size=volume, side=side),
                         delta_type=DeltaType.ADD,
                     ),
@@ -99,8 +99,8 @@ def _build_order_book_snapshot(values):
             for order in values[1:]
             if order["order_side"] == "SELL"
         ],
-        ts_event_ns=values[1]["ts_event_ns"],
-        ts_recv_ns=values[1]["ts_recv_ns"],
+        ts_event=values[1]["ts_event"],
+        ts_init=values[1]["ts_init"],
     )
 
 
@@ -109,13 +109,13 @@ def _build_order_book_deltas(values):
         instrument_id=InstrumentId.from_str(values[0]["instrument_id"]),
         level=BookLevelParser.from_str_py(values[0]["level"]),
         deltas=[OrderBookDelta.from_dict(v) for v in values],
-        ts_event_ns=values[0]["ts_event_ns"],
-        ts_recv_ns=values[0]["ts_recv_ns"],
+        ts_event=values[0]["ts_event"],
+        ts_init=values[0]["ts_init"],
     )
 
 
 def _sort_func(x):
-    return x["instrument_id"], x["ts_event_ns"]
+    return x["instrument_id"], x["ts_event"]
 
 
 def deserialize(data: List[Dict]):
@@ -127,4 +127,4 @@ def deserialize(data: List[Dict]):
             results.append(_build_order_book_snapshot(values=chunk))
         elif len(chunk) >= 1:  # type: ignore
             results.append(_build_order_book_deltas(values=chunk))
-    return sorted(results, key=lambda x: x.ts_event_ns)
+    return sorted(results, key=lambda x: x.ts_event)

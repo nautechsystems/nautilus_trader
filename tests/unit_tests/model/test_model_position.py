@@ -140,8 +140,8 @@ class TestPosition:
             "net_qty": "100000",
             "quantity": "100000",
             "peak_qty": "100000",
-            "ts_opened_ns": 0,
-            "ts_closed_ns": 0,
+            "ts_opened": 0,
+            "ts_closed": 0,
             "duration_ns": 0,
             "avg_px_open": "1.00001",
             "avg_px_close": "None",
@@ -185,7 +185,7 @@ class TestPosition:
         assert position.peak_qty == Quantity.from_int(100000)
         assert position.entry == OrderSide.BUY
         assert position.side == PositionSide.LONG
-        assert position.ts_opened_ns == 0
+        assert position.ts_opened == 0
         assert position.duration_ns == 0
         assert position.avg_px_open == Decimal("1.00001")
         assert position.event_count == 1
@@ -232,7 +232,7 @@ class TestPosition:
         assert position.quantity == Quantity.from_int(100000)
         assert position.peak_qty == Quantity.from_int(100000)
         assert position.side == PositionSide.SHORT
-        assert position.ts_opened_ns == 0
+        assert position.ts_opened == 0
         assert position.avg_px_open == Decimal("1.00001")
         assert position.event_count == 1
         assert position.execution_ids == [ExecutionId("E-19700101-000000-000-001-1")]
@@ -276,7 +276,7 @@ class TestPosition:
         assert position.quantity == Quantity.from_int(50000)
         assert position.peak_qty == Quantity.from_int(50000)
         assert position.side == PositionSide.LONG
-        assert position.ts_opened_ns == 0
+        assert position.ts_opened == 0
         assert position.avg_px_open == Decimal("1.00001")
         assert position.event_count == 1
         assert position.is_long
@@ -329,7 +329,7 @@ class TestPosition:
         # Assert
         assert position.quantity == Quantity.from_int(100000)
         assert position.side == PositionSide.SHORT
-        assert position.ts_opened_ns == 0
+        assert position.ts_opened == 0
         assert position.avg_px_open == Decimal("1.000015")
         assert position.event_count == 2
         assert not position.is_long
@@ -381,8 +381,8 @@ class TestPosition:
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.TAKER,
-            2_000_000_000,
             uuid4(),
+            2_000_000_000,
             0,
         )
 
@@ -395,11 +395,11 @@ class TestPosition:
         assert position.is_opposite_side(fill2.side)
         assert position.quantity == Quantity.zero()
         assert position.side == PositionSide.FLAT
-        assert position.ts_opened_ns == 1_000_000_000
+        assert position.ts_opened == 1_000_000_000
         assert position.duration_ns == 1_000_000_000
         assert position.avg_px_open == Decimal("1.00001")
         assert position.event_count == 2
-        assert position.ts_closed_ns == 2_000_000_000
+        assert position.ts_closed == 2_000_000_000
         assert position.avg_px_close == Decimal("1.00011")
         assert not position.is_long
         assert not position.is_short
@@ -466,11 +466,11 @@ class TestPosition:
         # Assert
         assert position.quantity == Quantity.zero()
         assert position.side == PositionSide.FLAT
-        assert position.ts_opened_ns == 0
+        assert position.ts_opened == 0
         assert position.avg_px_open == Decimal("1.0")
         assert position.event_count == 3
         assert position.client_order_ids == [order1.client_order_id, order2.client_order_id]
-        assert position.ts_closed_ns == 0
+        assert position.ts_closed == 0
         assert position.avg_px_close == Decimal("1.00002")
         assert not position.is_long
         assert not position.is_short
@@ -520,7 +520,7 @@ class TestPosition:
         # Assert
         assert position.quantity == Quantity.zero()
         assert position.side == PositionSide.FLAT
-        assert position.ts_opened_ns == 0
+        assert position.ts_opened == 0
         assert position.avg_px_open == Decimal("1.0")
         assert position.event_count == 2
         assert position.client_order_ids == [order1.client_order_id, order2.client_order_id]
@@ -528,7 +528,7 @@ class TestPosition:
             ExecutionId("E-19700101-000000-000-001-1"),
             ExecutionId("E-19700101-000000-000-001-2"),
         ]
-        assert position.ts_closed_ns == 0
+        assert position.ts_closed == 0
         assert position.avg_px_close == Decimal("1.0")
         assert not position.is_long
         assert not position.is_short
@@ -597,7 +597,7 @@ class TestPosition:
         # Assert
         assert position.quantity == Quantity.zero()
         assert position.side == PositionSide.FLAT
-        assert position.ts_opened_ns == 0
+        assert position.ts_opened == 0
         assert position.avg_px_open == Decimal("1.000005")
         assert position.event_count == 3
         assert position.client_order_ids == [
@@ -605,7 +605,7 @@ class TestPosition:
             order2.client_order_id,
             order3.client_order_id,
         ]
-        assert position.ts_closed_ns == 0
+        assert position.ts_closed == 0
         assert position.avg_px_close == Decimal("1.0001")
         assert not position.is_long
         assert not position.is_short

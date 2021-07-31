@@ -184,8 +184,8 @@ def test_data_loader_csv(catalog):
                 ask=Price.from_str(str(r["ask"])),
                 bid_size=Quantity.from_int(1_000_000),
                 ask_size=Quantity.from_int(1_000_000),
-                ts_event_ns=ts,
-                ts_recv_ns=ts,
+                ts_event=ts,
+                ts_init=ts,
             )
             yield tick
 
@@ -271,8 +271,8 @@ def test_data_catalog_dataset_types(loaded_catalog):
         "size": "DataType",
         "aggressor_side": "DictionaryType",
         "match_id": "DataType",
-        "ts_event_ns": "DataType",
-        "ts_recv_ns": "DataType",
+        "ts_event": "DataType",
+        "ts_init": "DataType",
     }
     assert schema == expected
 
@@ -332,8 +332,8 @@ def test_partition_key_correctly_remapped(catalog):
         ask=Price(11, 1),
         bid_size=Quantity(10, 1),
         ask_size=Quantity(10, 1),
-        ts_recv_ns=0,
-        ts_event_ns=0,
+        ts_init=0,
+        ts_event=0,
     )
     catalog._write_chunks(chunk=[instrument, tick])
     df = catalog.quote_ticks()
@@ -364,8 +364,8 @@ def test_data_catalog_parquet_dtypes(loaded_catalog):
         "match_id": dtype("O"),
         "price": dtype("float64"),
         "size": dtype("float64"),
-        "ts_event_ns": dtype("int64"),
-        "ts_recv_ns": dtype("int64"),
+        "ts_event": dtype("int64"),
+        "ts_init": dtype("int64"),
     }
     assert result == expected
 
@@ -389,7 +389,7 @@ def _news_event_to_dict(self):
         "name": self.name,
         "impact": self.impact,
         "currency": self.currency,
-        "ts_event_ns": self.ts_event_ns,
+        "ts_event": self.ts_event,
     }
 
 
@@ -398,8 +398,8 @@ def _news_event_from_dict(data):
 
 
 class NewsEvent(Data):
-    def __init__(self, name, impact, currency, ts_event_ns):
-        super().__init__(ts_event_ns=ts_event_ns, ts_recv_ns=ts_event_ns)
+    def __init__(self, name, impact, currency, ts_event):
+        super().__init__(ts_event=ts_event, ts_init=ts_event)
         self.name = name
         self.impact = impact
         self.currency = currency
@@ -420,7 +420,7 @@ def test_data_loader_generic_data(catalog):
                 name=row["Name"],
                 impact=row["Impact"],
                 currency=row["Currency"],
-                ts_event_ns=millis_to_nanos(pd.Timestamp(row["Start"]).timestamp()),
+                ts_event=millis_to_nanos(pd.Timestamp(row["Start"]).timestamp()),
             )
 
     loader = DataLoader(
@@ -462,8 +462,8 @@ def test_data_catalog_append(catalog):
             margin_maint=Decimal(1.0),
             maker_fee=Decimal(1.0),
             taker_fee=Decimal(1.0),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
         objects.append(instrument)
     catalog._write_chunks(chunk=objects[:3])
@@ -486,7 +486,7 @@ def test_catalog_invalid_partition_key(catalog):
                 name=row["Name"],
                 impact=row["Impact"],
                 currency=row["Currency"],
-                ts_event_ns=millis_to_nanos(pd.Timestamp(row["Start"]).timestamp()),
+                ts_event=millis_to_nanos(pd.Timestamp(row["Start"]).timestamp()),
             )
 
     loader = DataLoader(

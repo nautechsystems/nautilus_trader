@@ -302,8 +302,9 @@ class TestExecutionEngine:
     def test_given_random_event_logs_and_continues(self):
         # Arrange
         random = Event(
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
+            event_id=self.uuid_factory.generate(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.exec_engine.process(random)
@@ -994,8 +995,8 @@ class TestExecutionEngine:
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
-            self.clock.timestamp_ns(),
             self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
         )
 
@@ -1047,8 +1048,8 @@ class TestExecutionEngine:
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             VenueOrderId("RANDOM_001"),  # Also a random order id the engine won't find
-            self.clock.timestamp_ns(),
             self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
         )
 
@@ -1098,8 +1099,8 @@ class TestExecutionEngine:
             self.account_id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
-            self.clock.timestamp_ns(),
             self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
         )
 
@@ -1931,9 +1932,9 @@ class TestExecutionEngine:
             quantity=order.quantity,
             price=order.price,
             trigger=None,
-            ts_updated_ns=self.clock.timestamp_ns(),
+            ts_event=self.clock.timestamp_ns(),
             event_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
         self.exec_engine.process(order_updated)
 

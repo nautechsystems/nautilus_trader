@@ -74,9 +74,9 @@ cdef class PositionEvent(Event):
     """The realized PnL for the position (including commissions).\n\n:returns: `Money`"""
     cdef readonly Money unrealized_pnl
     """The unrealized PnL for the position (including commissions).\n\n:returns: `Money`"""
-    cdef readonly int64_t ts_opened_ns
+    cdef readonly int64_t ts_opened
     """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_closed_ns
+    cdef readonly int64_t ts_closed
     """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `int64`"""
     cdef readonly int64_t duration_ns
     """The total open duration (nanoseconds).\n\n:returns: `int64`"""
@@ -89,7 +89,7 @@ cdef class PositionOpened(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID event_id,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     )
 
     @staticmethod
@@ -106,7 +106,7 @@ cdef class PositionChanged(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID event_id,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     )
 
     @staticmethod
@@ -123,7 +123,7 @@ cdef class PositionClosed(PositionEvent):
         Position position,
         OrderFilled fill,
         UUID event_id,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     )
 
     @staticmethod

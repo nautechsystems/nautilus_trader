@@ -112,7 +112,7 @@ class TestLiveDataEngine:
             client_id=ClientId(BINANCE.value),
             data_type=DataType(QuoteTick),
             command_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -153,7 +153,7 @@ class TestLiveDataEngine:
             ),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -186,7 +186,7 @@ class TestLiveDataEngine:
             data=[],
             correlation_id=self.uuid_factory.generate(),
             response_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -273,7 +273,7 @@ class TestLiveDataEngine:
             client_id=ClientId(BINANCE.value),
             data_type=DataType(QuoteTick),
             command_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -306,7 +306,7 @@ class TestLiveDataEngine:
             ),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -331,7 +331,7 @@ class TestLiveDataEngine:
             data=[],
             correlation_id=self.uuid_factory.generate(),
             response_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act

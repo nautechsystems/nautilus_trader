@@ -314,7 +314,7 @@ cdef class BacktestEngine:
         # Add data
         self._generic_data = sorted(
             self._generic_data + data,
-            key=lambda x: x.ts_recv_ns,
+            key=lambda x: x.ts_init,
         )
 
         self._log.info(f"Added {len(data)} GenericData points.")
@@ -347,7 +347,7 @@ cdef class BacktestEngine:
         # Add data
         self._data = sorted(
             self._data + data,
-            key=lambda x: x.ts_recv_ns,
+            key=lambda x: x.ts_init,
         )
 
         self._log.info(f"Added {len(data)} Data.")
@@ -405,7 +405,7 @@ cdef class BacktestEngine:
         # Add data
         self._order_book_data = sorted(
             self._order_book_data + data,
-            key=lambda x: x.ts_recv_ns,
+            key=lambda x: x.ts_init,
         )
 
         self._log.info(f"Added {len(data)} {instrument_id} OrderBookData elements (total: {len(self._order_book_data)}).")
@@ -917,13 +917,13 @@ cdef class BacktestEngine:
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self._data_producer.has_data:
             data = self._data_producer.next()
-            self._advance_time(data.ts_recv_ns)
+            self._advance_time(data.ts_init)
             if isinstance(data, OrderBookData):
                 self._exchanges[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, Tick):
                 self._exchanges[data.instrument_id.venue].process_tick(data)
             self._data_engine.process(data)
-            self._process_modules(data.ts_recv_ns)
+            self._process_modules(data.ts_init)
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
@@ -942,7 +942,7 @@ cdef class BacktestEngine:
         for strategy in self.trader.strategies_c():
             time_events += strategy.clock.advance_time(now_ns)
         for event_handler in sorted(time_events):
-            self._test_clock.set_time(event_handler.event.event_timestamp_ns)
+            self._test_clock.set_time(event_handler.event.ts_event)
             event_handler.handle()
         self._test_clock.set_time(now_ns)
 

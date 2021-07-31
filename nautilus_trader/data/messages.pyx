@@ -31,7 +31,7 @@ cdef class DataCommand(Command):
         ClientId client_id not None,
         DataType data_type not None,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initializes a new instance of the `DataCommand`` class.
@@ -44,11 +44,11 @@ cdef class DataCommand(Command):
             The data type for the command.
         command_id : UUID
             The command ID.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the command.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the command object was initialized.
 
         """
-        super().__init__(command_id, timestamp_ns)
+        super().__init__(command_id, ts_init)
 
         self.client_id = client_id
         self.data_type = data_type
@@ -73,7 +73,7 @@ cdef class Subscribe(DataCommand):
         ClientId client_id not None,
         DataType data_type not None,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``Subscribe`` class.
@@ -86,15 +86,15 @@ cdef class Subscribe(DataCommand):
             The data type for the subscription.
         command_id : UUID
             The command ID.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the command.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the command object was initialized.
 
         """
         super().__init__(
             client_id,
             data_type,
             command_id,
-            timestamp_ns,
+            ts_init,
         )
 
 
@@ -108,7 +108,7 @@ cdef class Unsubscribe(DataCommand):
         ClientId client_id not None,
         DataType data_type not None,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``Unsubscribe`` class.
@@ -121,15 +121,15 @@ cdef class Unsubscribe(DataCommand):
             The data type to unsubscribe from.
         command_id : UUID
             The command ID.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the command.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the command object was initialized.
 
         """
         super().__init__(
             client_id,
             data_type,
             command_id,
-            timestamp_ns,
+            ts_init,
         )
 
 
@@ -144,7 +144,7 @@ cdef class DataRequest(Request):
         DataType data_type not None,
         callback not None: callable,
         UUID request_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``DataRequest`` class.
@@ -159,14 +159,14 @@ cdef class DataRequest(Request):
             The callback to receive the data.
         request_id : UUID
             The request ID.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the request.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the request object was initialized.
 
         """
         super().__init__(
             callback,
             request_id,
-            timestamp_ns,
+            ts_init,
         )
 
         self.client_id = client_id
@@ -195,7 +195,7 @@ cdef class DataResponse(Response):
         data not None,
         UUID correlation_id not None,
         UUID response_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``DataResponse`` class.
@@ -212,14 +212,14 @@ cdef class DataResponse(Response):
             The correlation ID.
         response_id : UUID
             The response ID.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the response.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the response object was initialized.
 
         """
         super().__init__(
             correlation_id,
             response_id,
-            timestamp_ns,
+            ts_init,
         )
 
         self.client_id = client_id

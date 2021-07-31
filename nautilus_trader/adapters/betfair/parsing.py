@@ -205,8 +205,8 @@ def betfair_account_to_account_state(
     account_detail,
     account_funds,
     event_id,
-    ts_updated_ns,
-    timestamp_ns,
+    ts_event,
+    ts_init,
     account_id="001",
 ) -> AccountState:
     currency = Currency.from_str(account_detail["currencyCode"])
@@ -228,8 +228,8 @@ def betfair_account_to_account_state(
         ],
         info={"funds": account_funds, "detail": account_detail},
         event_id=event_id,
-        ts_updated_ns=ts_updated_ns,
-        timestamp_ns=timestamp_ns,
+        ts_event=ts_event,
+        ts_init=ts_init,
     )
 
 
@@ -242,7 +242,7 @@ def betfair_execution_id(uo) -> ExecutionId:
     return ExecutionId(hsh)
 
 
-def _handle_market_snapshot(selection, instrument, ts_event_ns, ts_recv_ns):
+def _handle_market_snapshot(selection, instrument, ts_event, ts_init):
     updates = []
     # Check we only have one of [best bets / depth bets / all bets]
     bid_keys = [k for k in B_BID_KINDS if k in selection] or ["atb"]
@@ -271,8 +271,8 @@ def _handle_market_snapshot(selection, instrument, ts_event_ns, ts_recv_ns):
             instrument_id=instrument.id,
             bids=[(price_to_probability(p, OrderSide.BUY), v) for p, v in asks],
             asks=[(price_to_probability(p, OrderSide.SELL), v) for p, v in bids],
-            ts_event_ns=ts_event_ns,
-            ts_recv_ns=ts_recv_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
         updates.append(snapshot)
     if "trd" in selection:
@@ -280,8 +280,8 @@ def _handle_market_snapshot(selection, instrument, ts_event_ns, ts_recv_ns):
             _handle_market_trades(
                 runner=selection,
                 instrument=instrument,
-                ts_event_ns=ts_event_ns,
-                ts_recv_ns=ts_recv_ns,
+                ts_event=ts_event,
+                ts_init=ts_init,
             )
         )
     if "spb" in selection or "spl" in selection:
@@ -289,8 +289,8 @@ def _handle_market_snapshot(selection, instrument, ts_event_ns, ts_recv_ns):
             _handle_bsp_updates(
                 runner=selection,
                 instrument=instrument,
-                ts_event_ns=ts_event_ns,
-                ts_recv_ns=ts_recv_ns,
+                ts_event=ts_event,
+                ts_init=ts_init,
             )
         )
 
@@ -300,8 +300,8 @@ def _handle_market_snapshot(selection, instrument, ts_event_ns, ts_recv_ns):
 def _handle_market_trades(
     runner,
     instrument,
-    ts_event_ns,
-    ts_recv_ns,
+    ts_event,
+    ts_init,
 ):
     trade_ticks = []
     for price, volume in runner.get("trd", []):
@@ -309,21 +309,21 @@ def _handle_market_trades(
             continue
         # Betfair doesn't publish trade ids, so we make our own
         # TODO - should we use clk here for ID instead of the hash?
-        trade_id = hash_json(data=(ts_event_ns, price, volume))
+        trade_id = hash_json(data=(ts_event, price, volume))
         tick = TradeTick(
             instrument_id=instrument.id,
             price=price_to_probability(price, force=True),  # Already wrapping in Price
             size=Quantity(volume, precision=4),
             aggressor_side=AggressorSide.UNKNOWN,
             match_id=trade_id,
-            ts_event_ns=ts_event_ns,
-            ts_recv_ns=ts_recv_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
         trade_ticks.append(tick)
     return trade_ticks
 
 
-def _handle_bsp_updates(runner, instrument, ts_event_ns, ts_recv_ns):
+def _handle_bsp_updates(runner, instrument, ts_event, ts_init):
     updates = []
     for side in ("spb", "spl"):
         for upd in runner.get(side, []):
@@ -337,14 +337,14 @@ def _handle_bsp_updates(runner, instrument, ts_event_ns, ts_recv_ns):
                     size=Quantity(volume, precision=8),
                     side=B2N_MARKET_STREAM_SIDE[side],
                 ),
-                ts_event_ns=ts_event_ns,
-                ts_recv_ns=ts_recv_ns,
+                ts_event=ts_event,
+                ts_init=ts_init,
             )
             updates.append(delta)
     return updates
 
 
-def _handle_book_updates(runner, instrument, ts_event_ns, ts_recv_ns):
+def _handle_book_updates(runner, instrument, ts_event, ts_init):
     deltas = []
     for side in B_SIDE_KINDS:
         for upd in runner.get(side, []):
@@ -363,8 +363,8 @@ def _handle_book_updates(runner, instrument, ts_event_ns, ts_recv_ns):
                         size=Quantity(volume, precision=8),
                         side=B2N_MARKET_STREAM_SIDE[side],
                     ),
-                    ts_event_ns=ts_event_ns,
-                    ts_recv_ns=ts_recv_ns,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
                 )
             )
     if deltas:
@@ -372,37 +372,37 @@ def _handle_book_updates(runner, instrument, ts_event_ns, ts_recv_ns):
             level=BookLevel.L2,
             instrument_id=instrument.id,
             deltas=deltas,
-            ts_event_ns=ts_event_ns,
-            ts_recv_ns=ts_recv_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
         return [ob_update]
     else:
         return []
 
 
-def _handle_market_close(runner, instrument, timestamp_ns):
+def _handle_market_close(runner, instrument, ts_event, ts_init):
     if runner["status"] in ("LOSER", "REMOVED"):
         close_price = InstrumentClosePrice(
             instrument_id=instrument.id,
             close_price=Price(0.0, precision=4),
             close_type=InstrumentCloseType.EXPIRED,
-            ts_event_ns=timestamp_ns,
-            ts_recv_ns=timestamp_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
     elif runner["status"] in ("WINNER", "PLACED"):
         close_price = InstrumentClosePrice(
             instrument_id=instrument.id,
             close_price=Price(1.0, precision=4),
             close_type=InstrumentCloseType.EXPIRED,
-            ts_event_ns=timestamp_ns,
-            ts_recv_ns=timestamp_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
     else:
         raise ValueError(f"Unknown runner close status: {runner['status']}")
     return [close_price]
 
 
-def _handle_instrument_status(market, runner, instrument, timestamp_ns):
+def _handle_instrument_status(market, runner, instrument, ts_event, ts_init):
     market_def = market.get("marketDefinition", {})
     if "status" not in market_def:
         return []
@@ -410,43 +410,43 @@ def _handle_instrument_status(market, runner, instrument, timestamp_ns):
         status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.CLOSED,
-            ts_event_ns=timestamp_ns,
-            ts_recv_ns=timestamp_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
     elif market_def["status"] == "OPEN" and not market_def["inPlay"]:
         status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.PRE_OPEN,
-            ts_event_ns=timestamp_ns,
-            ts_recv_ns=timestamp_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
     elif market_def["status"] == "OPEN" and market_def["inPlay"]:
         status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.OPEN,
-            ts_event_ns=timestamp_ns,
-            ts_recv_ns=timestamp_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
     elif market_def["status"] == "SUSPENDED":
         status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.PAUSE,
-            ts_event_ns=timestamp_ns,
-            ts_recv_ns=timestamp_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
     elif market_def["status"] == "CLOSED":
         status = InstrumentStatusUpdate(
             instrument_id=instrument.id,
             status=InstrumentStatus.CLOSED,
-            ts_event_ns=timestamp_ns,
-            ts_recv_ns=timestamp_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
     else:
         raise ValueError("Unknown market status")
     return [status]
 
 
-def _handle_market_runners_status(instrument_provider, market, timestamp_ns):
+def _handle_market_runners_status(instrument_provider, market, ts_event, ts_init):
     updates = []
 
     for runner in market.get("marketDefinition", {}).get("runners", []):
@@ -460,13 +460,20 @@ def _handle_market_runners_status(instrument_provider, market, timestamp_ns):
             continue
         updates.extend(
             _handle_instrument_status(
-                market=market, runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
+                market=market,
+                runner=runner,
+                instrument=instrument,
+                ts_event=ts_event,
+                ts_init=ts_init,
             )
         )
         if market["marketDefinition"].get("status") == "CLOSED":
             updates.extend(
                 _handle_market_close(
-                    runner=runner, instrument=instrument, timestamp_ns=timestamp_ns
+                    runner=runner,
+                    instrument=instrument,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
                 )
             )
     return updates
@@ -476,15 +483,16 @@ def build_market_snapshot_messages(
     instrument_provider, raw
 ) -> List[Union[OrderBookSnapshot, InstrumentStatusUpdate]]:
     updates = []
-    ts_event_ns = parse_betfair_timestamp(raw["pt"])
-    timestamp_ns = parse_betfair_timestamp(raw["pt"])  # TODO(bm): Could call clock.ts_recv_ns()
+    ts_event = parse_betfair_timestamp(raw["pt"])
+
     for market in raw.get("mc", []):
         # Instrument Status
         updates.extend(
             _handle_market_runners_status(
                 instrument_provider=instrument_provider,
                 market=market,
-                timestamp_ns=timestamp_ns,
+                ts_event=ts_event,
+                ts_init=ts_event,
             )
         )
 
@@ -507,8 +515,8 @@ def build_market_snapshot_messages(
                         _handle_market_snapshot(
                             selection=selection,
                             instrument=instrument,
-                            ts_event_ns=ts_event_ns,
-                            ts_recv_ns=timestamp_ns,
+                            ts_event=ts_event,
+                            ts_init=ts_event,
                         )
                     )
     return updates
@@ -517,8 +525,8 @@ def build_market_snapshot_messages(
 def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
     per_instrument_deltas = defaultdict(list)
     level = one(set(deltas.level for deltas in all_deltas))
-    ts_event_ns = one(set(deltas.ts_event_ns for deltas in all_deltas))
-    ts_recv_ns = one(set(deltas.ts_recv_ns for deltas in all_deltas))
+    ts_event = one(set(deltas.ts_event for deltas in all_deltas))
+    ts_init = one(set(deltas.ts_init for deltas in all_deltas))
 
     for deltas in all_deltas:
         per_instrument_deltas[deltas.instrument_id].extend(deltas.deltas)
@@ -527,8 +535,8 @@ def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
             instrument_id=instrument_id,
             deltas=deltas,
             level=level,
-            ts_event_ns=ts_event_ns,
-            ts_recv_ns=ts_recv_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
         for instrument_id, deltas in per_instrument_deltas.items()
     ]
@@ -539,14 +547,15 @@ def build_market_update_messages(
 ) -> List[Union[OrderBookDelta, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice]]:
     updates = []
     book_updates = []
-    ts_event_ns = parse_betfair_timestamp(raw["pt"])
-    ts_recv_ns = parse_betfair_timestamp(raw["pt"])  # TODO(bm): Could call self._clock.ts_recv_ns()
+    ts_event = parse_betfair_timestamp(raw["pt"])
+
     for market in raw.get("mc", []):
         updates.extend(
             _handle_market_runners_status(
                 instrument_provider=instrument_provider,
                 market=market,
-                timestamp_ns=ts_event_ns,
+                ts_event=ts_event,
+                ts_init=ts_event,
             )
         )
         for runner in market.get("rc", []):
@@ -563,8 +572,8 @@ def build_market_update_messages(
                 _handle_book_updates(
                     runner=runner,
                     instrument=instrument,
-                    ts_event_ns=ts_event_ns,
-                    ts_recv_ns=ts_recv_ns,
+                    ts_event=ts_event,
+                    ts_init=ts_event,
                 )
             )
             if "trd" in runner:
@@ -572,8 +581,8 @@ def build_market_update_messages(
                     _handle_market_trades(
                         runner=runner,
                         instrument=instrument,
-                        ts_event_ns=ts_event_ns,
-                        ts_recv_ns=ts_recv_ns,
+                        ts_event=ts_event,
+                        ts_init=ts_event,
                     )
                 )
             if "spb" in runner or "spl" in runner:
@@ -581,8 +590,8 @@ def build_market_update_messages(
                     _handle_bsp_updates(
                         runner=runner,
                         instrument=instrument,
-                        ts_event_ns=ts_event_ns,
-                        ts_recv_ns=ts_recv_ns,
+                        ts_event=ts_event,
+                        ts_init=ts_event,
                     )
                 )
     if book_updates:
@@ -610,7 +619,7 @@ async def generate_order_status_report(self, order) -> Optional[OrderStatusRepor
             venue_order_id=VenueOrderId(),
             order_state=OrderState(),
             filled_qty=Quantity.zero(),
-            timestamp_ns=SECS_TO_NANOS * pd.Timestamp(order["timestamp"]).timestamp(),
+            ts_init=SECS_TO_NANOS * pd.Timestamp(order["timestamp"]).timestamp(),
         )
         for order in self.client().betting.list_current_orders()["currentOrders"]
     ]
@@ -626,7 +635,7 @@ async def generate_trades_list(
         self._log.warn(f"Found no existing order for {venue_order_id}")
         return []
     fill = filled["clearedOrders"][0]
-    timestamp_ns = SECS_TO_NANOS * pd.Timestamp(fill["lastMatchedDate"]).timestamp()
+    ts_event = SECS_TO_NANOS * pd.Timestamp(fill["lastMatchedDate"]).timestamp()
     return [
         ExecutionReport(
             client_order_id=self.venue_order_id_to_client_order_id[venue_order_id],
@@ -638,8 +647,8 @@ async def generate_trades_list(
             last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Possibly incorrect precision
             commission=None,  # Can be None
             liquidity_side=LiquiditySide.NONE,
-            ts_filled_ns=timestamp_ns,
-            timestamp_ns=timestamp_ns,
+            ts_event=ts_event,
+            ts_init=ts_event,
         )
     ]
 

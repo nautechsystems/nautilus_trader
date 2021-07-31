@@ -733,7 +733,7 @@ class TestSimulatedExchange:
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=VenueOrderId("001"),
             command_id=self.uuid_factory.generate(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -754,7 +754,7 @@ class TestSimulatedExchange:
             price=Price.from_str("110.000"),
             trigger=None,
             command_id=self.uuid_factory.generate(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act

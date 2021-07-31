@@ -61,4 +61,4 @@ def deserialize(data: List[Dict]):
     ):
         chunk = list(chunk)  # type: ignore
         results.append(_deserialize(values=chunk))
-    return sorted(results, key=lambda x: x.timestamp_ns)
+    return sorted(results, key=lambda x: x.ts_init)

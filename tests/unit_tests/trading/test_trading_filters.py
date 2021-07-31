@@ -244,7 +244,7 @@ class TestEconomicNewsEventFilter:
 
         # Act
         event = news_filter.prev_event(datetime(2015, 5, 10, 12, 0, tzinfo=pytz.utc))
-        assert event.ts_event_ns == 1431088200000000000
+        assert event.ts_event == 1431088200000000000
 
     def test_prev_event_given_valid_date_returns_expected_news_event(self):
         # Arrange
@@ -256,4 +256,4 @@ class TestEconomicNewsEventFilter:
 
         # Act
         event = news_filter.prev_event(datetime(2017, 8, 10, 15, 0, tzinfo=pytz.utc))
-        assert event.ts_event_ns == 1501849800000000000
+        assert event.ts_event == 1501849800000000000

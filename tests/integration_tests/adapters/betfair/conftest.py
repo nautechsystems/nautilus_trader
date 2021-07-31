@@ -201,8 +201,8 @@ def betfair_account_state(betfair_client, uuid):
         account_detail=details,
         account_funds=funds,
         event_id=uuid,
-        ts_updated_ns=0,
-        timestamp_ns=0,
+        ts_event=0,
+        ts_init=0,
     )
 
 

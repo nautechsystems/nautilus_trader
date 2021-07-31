@@ -118,7 +118,7 @@ class TestMessageBus:
         request = Request(
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.msgbus.request(endpoint="mailbox", request=request)
@@ -134,7 +134,7 @@ class TestMessageBus:
         response = Response(
             correlation_id=self.uuid_factory.generate(),
             response_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.msgbus.response(response)
@@ -154,7 +154,7 @@ class TestMessageBus:
         request = Request(
             callback=handler.append,
             request_id=correlation_id,
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.msgbus.request(endpoint="mailbox", request=request)
@@ -162,7 +162,7 @@ class TestMessageBus:
         response = Response(
             correlation_id=correlation_id,
             response_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.msgbus.response(response)

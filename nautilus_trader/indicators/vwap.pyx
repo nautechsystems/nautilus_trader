@@ -52,7 +52,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         self.update_raw(
             bar.close.as_double(),
             bar.volume.as_double(),
-            nanos_to_unix_dt(nanos=bar.ts_recv_ns),
+            nanos_to_unix_dt(nanos=bar.ts_init),
         )
 
     cpdef void update_raw(

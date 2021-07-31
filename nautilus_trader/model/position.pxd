@@ -78,11 +78,13 @@ cdef class Position:
     """The position base currency (if applicable).\n\n:returns: `Currency` or None"""
     cdef readonly Currency cost_currency
     """The position cost currency (for PnL).\n\n:returns: `Currency`"""
-    cdef readonly int64_t timestamp_ns
-    """The position initialization UNIX timestamp (nanoseconds).\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_opened_ns
+    cdef readonly int64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the position was initialized.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_opened
     """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_closed_ns
+    cdef readonly int64_t ts_last
+    """The UNIX timestamp (nanoseconds) when the last fill occurred.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_closed
     """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `int64`"""
     cdef readonly int64_t duration_ns
     """The total open duration (nanoseconds).\n\n:returns: `int64`"""

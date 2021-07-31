@@ -674,7 +674,7 @@ cdef class RiskEngine(Component):
             client_order_id=order.client_order_id,
             reason=reason,
             event_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         self._msgbus.send(endpoint="ExecEngine.process", msg=denied)

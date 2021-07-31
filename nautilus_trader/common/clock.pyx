@@ -656,10 +656,9 @@ cdef class LiveClock(Clock):
             )
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *:
-        cdef int64_t timestamp_ns = self.timestamp_ns()
         cdef TimeEvent event = timer.pop_event(
             event_id=self._uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_init=self.timestamp_ns(),
         )
 
         timer.iterate_next_time(self.timestamp_ns())

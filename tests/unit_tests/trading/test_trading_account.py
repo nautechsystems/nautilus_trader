@@ -101,8 +101,8 @@ class TestAccount:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -137,8 +137,8 @@ class TestAccount:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -189,8 +189,8 @@ class TestAccount:
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -258,8 +258,8 @@ class TestAccount:
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -290,8 +290,8 @@ class TestAccount:
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -331,8 +331,8 @@ class TestAccount:
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -374,8 +374,8 @@ class TestAccount:
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -413,8 +413,8 @@ class TestAccount:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         account = Account(event)
@@ -454,8 +454,8 @@ class TestAccount:
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         account = Account(event)
@@ -487,8 +487,8 @@ class TestAccount:
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         account = Account(event)
@@ -520,8 +520,8 @@ class TestAccount:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         account = Account(event)
@@ -559,8 +559,8 @@ class TestAccount:
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         account = Account(event)
@@ -592,8 +592,8 @@ class TestAccount:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         account = Account(event)
@@ -637,8 +637,8 @@ class TestAccount:
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         account = Account(event)
@@ -678,8 +678,8 @@ class TestAccount:
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         account = Account(event)
@@ -737,8 +737,8 @@ class TestAccount:
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         account = Account(event)
@@ -796,8 +796,8 @@ class TestAccount:
             ],
             info={},  # No default currency set
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         account = Account(event)
