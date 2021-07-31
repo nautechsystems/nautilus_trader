@@ -28,13 +28,13 @@ cdef class Tick(Data):
 
 cdef class QuoteTick(Tick):
     cdef readonly Price bid
-    """The tick top of book bid price.\n\n:returns: `Price`"""
+    """The top of book bid price.\n\n:returns: `Price`"""
     cdef readonly Price ask
-    """The tick top of book ask price.\n\n:returns: `Price`"""
+    """The top of book ask price.\n\n:returns: `Price`"""
     cdef readonly Quantity bid_size
-    """The tick top of book bid size.\n\n:returns: `Quantity`"""
+    """The top of book bid size.\n\n:returns: `Quantity`"""
     cdef readonly Quantity ask_size
-    """The tick top of book ask size.\n\n:returns: `Quantity`"""
+    """The top of book ask size.\n\n:returns: `Quantity`"""
 
     @staticmethod
     cdef QuoteTick from_dict_c(dict values)
@@ -47,13 +47,13 @@ cdef class QuoteTick(Tick):
 
 cdef class TradeTick(Tick):
     cdef readonly Price price
-    """The tick traded price.\n\n:returns: `Price`"""
+    """The traded price.\n\n:returns: `Price`"""
     cdef readonly Quantity size
-    """The tick traded size.\n\n:returns: `Quantity`"""
+    """The traded size.\n\n:returns: `Quantity`"""
     cdef readonly AggressorSide aggressor_side
-    """The tick aggressor side.\n\n:returns: `AggressorSide`"""
+    """The trade aggressor side.\n\n:returns: `AggressorSide`"""
     cdef readonly str match_id
-    """The tick trade match ID.\n\n:returns: `str`"""
+    """The trade match ID.\n\n:returns: `str`"""
 
     @staticmethod
     cdef TradeTick from_dict_c(dict values)
