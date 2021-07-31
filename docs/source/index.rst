@@ -99,9 +99,6 @@ Index
     :hidden:
 
     user_guide/backtesting
-    user_guide/writing_strategies
-    user_guide/writing_indicators
-    user_guide/deploying_live
     user_guide/framework
 
 .. toctree::
