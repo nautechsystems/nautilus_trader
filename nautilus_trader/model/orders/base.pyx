@@ -219,7 +219,11 @@ cdef class Order:
         return self.type == OrderType.MARKET
 
     cdef bint is_inflight_c(self) except *:
-        return self._fsm.state == OrderState.SUBMITTED
+        return (
+            self._fsm.state == OrderState.SUBMITTED
+            or self._fsm.state == OrderState.PENDING_CANCEL
+            or self._fsm.state == OrderState.PENDING_UPDATE
+        )
 
     cdef bint is_working_c(self) except *:
         return (
@@ -396,9 +400,12 @@ cdef class Order:
     @property
     def is_inflight(self):
         """
-        If the order is in-flight (has been submitted to the trading venue).
+        If the order is in-flight (order request sent to the trading venue).
 
-        An order is considered submitted when its state is `SUBMITTED`.
+        An order is considered in-flight when its state is either:
+         - `SUBMITTED`.
+         - `PENDING_CANCEL`.
+         - `PENDING_UPDATE`.
 
         Returns
         -------

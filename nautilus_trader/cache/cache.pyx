@@ -1979,7 +1979,7 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all inflight client order IDs with the given query filters.
+        Return all in-flight client order IDs with the given query filters.
 
         Parameters
         ----------
@@ -2484,7 +2484,7 @@ cdef class Cache(CacheFacade):
 
     cpdef bint is_order_inflight(self, ClientOrderId client_order_id) except *:
         """
-        Return a value indicating whether an order with the given ID is inflight.
+        Return a value indicating whether an order with the given ID is in-flight.
 
         Parameters
         ----------
@@ -2568,7 +2568,7 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ) except *:
         """
-        Return the count of inflight orders with the given query filters.
+        Return the count of in-flight orders with the given query filters.
 
         Parameters
         ----------
