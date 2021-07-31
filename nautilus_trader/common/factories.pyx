@@ -16,7 +16,6 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
@@ -45,7 +44,7 @@ cdef class OrderFactory:
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        Clock clock=None,
+        Clock clock not None,
         int initial_count=0,
     ):
         """
@@ -68,8 +67,6 @@ cdef class OrderFactory:
             If initial_count is negative (< 0).
 
         """
-        if clock is None:
-            clock = LiveClock()
         Condition.not_negative_int(initial_count, "initial_count")
 
         self._clock = clock
