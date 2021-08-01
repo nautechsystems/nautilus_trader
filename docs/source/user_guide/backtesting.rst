@@ -1,4 +1,0 @@
-Backtesting
-===========
-
-**work in progress**

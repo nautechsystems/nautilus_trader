@@ -5,7 +5,6 @@
 # NautilusTrader
 
 ![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
-![docs-build](https://img.shields.io/netlify/b89a9b0d-d308-4dd3-9a3e-e9c0845ef175?label=docs)
 [![codacy-quality](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 ![pypi-pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
