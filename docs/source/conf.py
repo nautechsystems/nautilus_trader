@@ -14,8 +14,6 @@ import os
 import sys
 from typing import List
 
-from nautilus_trader import __version__
-
 
 sys.path.insert(0, os.path.abspath("../.."))
 
@@ -24,7 +22,7 @@ sys.path.insert(0, os.path.abspath("../.."))
 project = "NautilusTrader"
 copyright = "2015-2021, Nautech Systems Pty Ltd."
 author = "Nautech Systems"
-version = __version__
+version = "latest"
 release = version
 
 
