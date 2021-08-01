@@ -50,6 +50,7 @@ pytz = "^2021.1"
 redis = "^3.5.3"
 scipy = "1.6.1"  # Pinned at 1.6.1 due Python 3.7.9
 tabulate = "^0.8.9"
+toml = "^0.10.2"
 tqdm = "^4.62.0"
 uvloop = { version = "^0.15.3", markers = "sys_platform != 'win32'" }
 bokeh = { version = "^2.3.2", optional = true }
