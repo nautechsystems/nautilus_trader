@@ -53,7 +53,7 @@ cdef class OrderEvent(Event):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
+        VenueOrderId venue_order_id,  # Can be None
         UUID event_id not None,
         int64_t ts_event,
         int64_t ts_init,
@@ -149,7 +149,7 @@ cdef class OrderInitialized(OrderEvent):
             strategy_id,
             instrument_id,
             client_order_id,
-            VenueOrderId.null_c(),  # Pending assignment by venue
+            None,  # Pending assignment by venue
             event_id,
             ts_init,  # Timestamp of initialization the same
             ts_init,  # Timestamp of initialization the same
@@ -298,7 +298,7 @@ cdef class OrderDenied(OrderEvent):
             strategy_id,
             instrument_id,
             client_order_id,
-            VenueOrderId.null_c(),  # Never assigned
+            None,  # Never assigned
             event_id,
             ts_init,  # Timestamp of initialization the same
             ts_init,  # Timestamp of initialization the same
@@ -424,7 +424,7 @@ cdef class OrderSubmitted(OrderEvent):
             strategy_id,
             instrument_id,
             client_order_id,
-            VenueOrderId.null_c(),  # Pending accepted
+            None,  # Pending accepted
             event_id,
             ts_event,
             ts_init,
@@ -557,13 +557,7 @@ cdef class OrderAccepted(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
@@ -711,7 +705,7 @@ cdef class OrderRejected(OrderEvent):
             strategy_id,
             instrument_id,
             client_order_id,
-            VenueOrderId.null_c(),  # Not assigned on rejection
+            None,  # Not assigned on rejection
             event_id,
             ts_event,
             ts_init,
@@ -724,7 +718,6 @@ cdef class OrderRejected(OrderEvent):
         return (f"{type(self).__name__}("
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"reason='{self.reason}', "
                 f"ts_event={self.ts_event})")
@@ -735,7 +728,6 @@ cdef class OrderRejected(OrderEvent):
                 f"strategy_id={self.strategy_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"reason='{self.reason}', "
                 f"event_id={self.id}, "
@@ -844,13 +836,7 @@ cdef class OrderCanceled(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
@@ -986,13 +972,7 @@ cdef class OrderExpired(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
@@ -1128,13 +1108,7 @@ cdef class OrderTriggered(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
@@ -1271,13 +1245,7 @@ cdef class OrderPendingUpdate(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
@@ -1414,13 +1382,7 @@ cdef class OrderPendingCancel(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
@@ -1889,13 +1851,7 @@ cdef class OrderUpdated(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
@@ -2020,7 +1976,7 @@ cdef class OrderFilled(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         ExecutionId execution_id not None,
-        PositionId position_id not None,
+        PositionId position_id,  # Can be None (if not previous position)
         OrderSide order_side,
         OrderType order_type,
         Quantity last_qty not None,
@@ -2080,12 +2036,9 @@ cdef class OrderFilled(OrderEvent):
         Raises
         ------
         ValueError
-            If venue_order_id has a 'NULL' value.
-        ValueError
             If last_qty is not positive (> 0).
 
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         Condition.positive(last_qty, "last_qty")
         if info is None:
             info = {}
@@ -2119,7 +2072,7 @@ cdef class OrderFilled(OrderEvent):
                 f"venue_order_id={self.venue_order_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"execution_id={self.execution_id.value}, "
-                f"position_id={self.position_id.value}, "
+                f"position_id={self.position_id}, "
                 f"side={OrderSideParser.to_str(self.side)}"
                 f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
                 f"type={OrderTypeParser.to_str(self.type)}, "
@@ -2137,7 +2090,7 @@ cdef class OrderFilled(OrderEvent):
                 f"venue_order_id={self.venue_order_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"execution_id={self.execution_id.value}, "
-                f"position_id={self.position_id.value}, "
+                f"position_id={self.position_id}, "
                 f"side={OrderSideParser.to_str(self.side)}"
                 f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
                 f"type={OrderTypeParser.to_str(self.type)}, "
@@ -2151,6 +2104,7 @@ cdef class OrderFilled(OrderEvent):
     @staticmethod
     cdef OrderFilled from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str position_id_str = values["position_id"]
         return OrderFilled(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -2159,7 +2113,7 @@ cdef class OrderFilled(OrderEvent):
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             execution_id=ExecutionId(values["execution_id"]),
-            position_id=PositionId(values["position_id"]),
+            position_id=PositionId(position_id_str) if position_id_str is not None else None,
             order_side=OrderSideParser.from_str(values["order_side"]),
             order_type=OrderTypeParser.from_str(values["order_type"]),
             last_qty=Quantity.from_str_c(values["last_qty"]),
@@ -2185,7 +2139,7 @@ cdef class OrderFilled(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "execution_id": obj.execution_id.value,
-            "position_id": obj.position_id.value,
+            "position_id": obj.position_id.value if obj.position_id else None,
             "order_side": OrderSideParser.to_str(obj.side),
             "order_type": OrderTypeParser.to_str(obj.type),
             "last_qty": str(obj.last_qty),

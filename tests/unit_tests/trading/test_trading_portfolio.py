@@ -374,8 +374,8 @@ class TestPortfolio:
             Price.from_str("25000.00"),
         )
 
-        self.cache.add_order(order1, PositionId.null())
-        self.cache.add_order(order2, PositionId.null())
+        self.cache.add_order(order1, position_id=None)
+        self.cache.add_order(order2, position_id=None)
 
         # Push states to ACCEPTED
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -441,7 +441,7 @@ class TestPortfolio:
             Price.from_str("0.5"),
         )
 
-        self.cache.add_order(order1, PositionId.null())
+        self.cache.add_order(order1, position_id=None)
 
         # Push states to ACCEPTED
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -496,8 +496,8 @@ class TestPortfolio:
             Quantity.from_str("10.50000000"),
         )
 
-        self.cache.add_order(order1, PositionId.null())
-        self.cache.add_order(order2, PositionId.null())
+        self.cache.add_order(order1, position_id=None)
+        self.cache.add_order(order2, position_id=None)
 
         # Push states to ACCEPTED
         order1.apply(TestStubs.event_order_submitted(order1))
@@ -823,7 +823,7 @@ class TestPortfolio:
             Quantity.from_int(100),
         )
 
-        self.cache.add_order(order, PositionId.null())
+        self.cache.add_order(order, position_id=None)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
@@ -979,8 +979,8 @@ class TestPortfolio:
             Quantity.from_int(100000),
         )
 
-        self.cache.add_order(order1, PositionId.null())
-        self.cache.add_order(order2, PositionId.null())
+        self.cache.add_order(order1, position_id=None)
+        self.cache.add_order(order2, position_id=None)
 
         fill1 = TestStubs.event_order_filled(
             order1,

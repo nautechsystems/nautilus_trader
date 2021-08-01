@@ -16,8 +16,6 @@
 from nautilus_trader.core.correctness cimport Condition
 
 
-cdef str _NULL_ID = "NULL"
-
 cdef class Identifier:
     """
     The abstract base class for all identifiers.
@@ -67,12 +65,6 @@ cdef class Identifier:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self.value}')"
-
-    cdef bint is_null(self) except *:
-        return self.value == _NULL_ID
-
-    cdef bint not_null(self) except *:
-        return self.value != _NULL_ID
 
 
 cdef class Symbol(Identifier):
@@ -260,10 +252,7 @@ cdef class TraderId(ComponentId):
             If value is not a valid string containing a hyphen.
 
         """
-        Condition.true(
-            value == _NULL_ID or "-" in value,
-            "ID incorrectly formatted (did not contain '-' hyphen)",
-        )
+        Condition.true("-" in value, "ID incorrectly formatted (did not contain '-' hyphen)")
         super().__init__(value)
 
     cpdef str get_tag(self):
@@ -306,10 +295,7 @@ cdef class StrategyId(ComponentId):
             If value is not a valid string containing a hyphen.
 
         """
-        Condition.true(
-            value == _NULL_ID or "-" in value,
-            "ID incorrectly formatted (did not contain '-' hyphen)",
-        )
+        Condition.true("-" in value, "ID incorrectly formatted (did not contain '-' hyphen)")
         super().__init__(value)
 
     cpdef str get_tag(self):
@@ -448,8 +434,6 @@ cdef class ClientOrderLinkId(Identifier):
         super().__init__(value)
 
 
-cdef VenueOrderId _NULL_ORDER_ID = VenueOrderId(_NULL_ID)
-
 cdef class VenueOrderId(Identifier):
     """
     Represents a valid venue order ID.
@@ -477,24 +461,6 @@ cdef class VenueOrderId(Identifier):
         """
         super().__init__(value)
 
-    @staticmethod
-    cdef VenueOrderId null_c():
-        return _NULL_ORDER_ID
-
-    @staticmethod
-    def null():
-        """
-        Return an order ID with a 'NULL' value.
-
-        Returns
-        -------
-        VenueOrderId
-
-        """
-        return _NULL_ORDER_ID
-
-
-cdef PositionId _NULL_POSITION_ID = PositionId(_NULL_ID)
 
 cdef class PositionId(Identifier):
     """
@@ -522,22 +488,6 @@ cdef class PositionId(Identifier):
 
         """
         super().__init__(value)
-
-    @staticmethod
-    cdef PositionId null_c():
-        return _NULL_POSITION_ID
-
-    @staticmethod
-    def null():
-        """
-        Return a position ID with a 'NULL' value.
-
-        Returns
-        -------
-        PositionId
-
-        """
-        return _NULL_POSITION_ID
 
 
 cdef class ExecutionId(Identifier):

@@ -489,7 +489,7 @@ cdef class SimulatedExchange:
     cpdef void handle_submit_order(self, SubmitOrder command) except *:
         Condition.not_none(command, "command")
 
-        if command.position_id.not_null():
+        if command.position_id is not None:
             self._position_index[command.order.client_order_id] = command.position_id
 
         self._generate_order_submitted(command.order)
@@ -528,6 +528,7 @@ cdef class SimulatedExchange:
                 command.strategy_id,
                 command.instrument_id,
                 command.client_order_id,
+                command.venue_order_id,
                 "cancel order",
                 f"{repr(command.client_order_id)} not found",
             )
@@ -543,6 +544,7 @@ cdef class SimulatedExchange:
                 command.strategy_id,
                 command.instrument_id,
                 command.client_order_id,
+                command.venue_order_id,
                 "update order",
                 f"{repr(command.client_order_id)} not found",
             )
@@ -700,6 +702,7 @@ cdef class SimulatedExchange:
         StrategyId strategy_id,
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
         str response,
         str reason,
     ) except *:
@@ -708,6 +711,7 @@ cdef class SimulatedExchange:
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
             response_to=response,
             reason=reason,
             ts_event=self._clock.timestamp_ns(),
@@ -718,6 +722,7 @@ cdef class SimulatedExchange:
         StrategyId strategy_id,
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
         str response,
         str reason,
     ) except *:
@@ -726,6 +731,7 @@ cdef class SimulatedExchange:
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
             response_to=response,
             reason=reason,
             ts_event=self._clock.timestamp_ns(),
@@ -869,6 +875,7 @@ cdef class SimulatedExchange:
                     order.strategy_id,
                     order.instrument_id,
                     order.client_order_id,
+                    order.venue_order_id,
                     "update order",
                     f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order "
                     f"new limit px of {price} would have been a TAKER: "
@@ -894,6 +901,7 @@ cdef class SimulatedExchange:
                 order.strategy_id,
                 order.instrument_id,
                 order.client_order_id,
+                order.venue_order_id,
                 "update order",
                 f"STOP {OrderSideParser.to_str(order.side)} order "
                 f"new stop px of {price} was in the market: "
@@ -918,6 +926,7 @@ cdef class SimulatedExchange:
                     order.strategy_id,
                     order.instrument_id,
                     order.client_order_id,
+                    order.venue_order_id,
                     "update order",
                     f"STOP_LIMIT {OrderSideParser.to_str(order.side)} order "
                     f"new stop px trigger of {price} was in the market: "
@@ -933,6 +942,7 @@ cdef class SimulatedExchange:
                         order.strategy_id,
                         order.instrument_id,
                         order.client_order_id,
+                        order.venue_order_id,
                         "update order",
                         f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order  "
                         f"new limit px of {price} would have been a TAKER: "
@@ -1158,7 +1168,7 @@ cdef class SimulatedExchange:
 
         # Determine position_id
         cdef PositionId position_id = order.position_id
-        if OMSType.HEDGING and position_id.is_null():
+        if OMSType.HEDGING and position_id is None:
             position_id = self.cache.position_id(order.client_order_id)
             if position_id is None:
                 # Generate a position ID
@@ -1176,7 +1186,7 @@ cdef class SimulatedExchange:
 
         # Determine any position
         cdef Position position = None
-        if position_id.not_null():
+        if position_id is not None:
             position = self.cache.position(position_id)
         # *** position could be None here ***
 
@@ -1193,9 +1203,9 @@ cdef class SimulatedExchange:
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id if order.venue_order_id.not_null() else self._generate_venue_order_id(order.instrument_id),
+            venue_order_id=order.venue_order_id or self._generate_venue_order_id(order.instrument_id),
             execution_id=self._generate_execution_id(),
-            position_id=PositionId.null_c() if self.oms_type == OMSType.NETTING else position_id,
+            position_id=None if self.oms_type == OMSType.NETTING else position_id,
             order_side=order.side,
             order_type=order.type,
             last_qty=last_qty,

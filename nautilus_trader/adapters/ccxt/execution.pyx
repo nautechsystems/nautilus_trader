@@ -219,15 +219,19 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         """
         self._log.info(f"Generating OrderStatusReport for {repr(order.venue_order_id)}...")
 
-        if order.venue_order_id.is_null():
-            self._log.error(f"Cannot reconcile state for {repr(order.client_order_id)}, "
-                            f"VenueOrderId was 'NULL'.")
+        if order.venue_order_id is None:
+            self._log.error(
+                f"Cannot reconcile state for {repr(order.client_order_id)}, "
+                f"VenueOrderId was None.",
+            )
             return None  # Cannot generate state report
 
         cdef Instrument instrument = self._instrument_provider.find(order.instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot reconcile state for {repr(order.client_order_id)}, "
-                            f"instrument for {order.instrument_id} not found.")
+            self._log.error(
+                f"Cannot reconcile state for {repr(order.client_order_id)}, "
+                f"instrument for {order.instrument_id} not found.",
+            )
             return None  # Cannot generate state report
 
         try:

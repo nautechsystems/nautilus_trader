@@ -82,7 +82,7 @@ cdef class SubmitOrder(TradingCommand):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        PositionId position_id not None,
+        PositionId position_id,  # Can be None
         Order order not None,
         UUID command_id not None,
         int64_t ts_init,
@@ -96,8 +96,8 @@ cdef class SubmitOrder(TradingCommand):
             The trader ID for the command.
         strategy_id : StrategyId
             The strategy ID for the command.
-        position_id : PositionId
-            The position ID for the command (can be NULL).
+        position_id : PositionId, optional
+            The position ID for the command.
         order : Order
             The order to submit.
         command_id : UUID
@@ -121,7 +121,7 @@ cdef class SubmitOrder(TradingCommand):
         return (f"{type(self).__name__}("
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.order.client_order_id.value}, "
-                f"position_id={self.position_id.value}, "
+                f"position_id={self.position_id}, "
                 f"order={self.order.status_string_c()})")
 
     def __repr__(self) -> str:
@@ -130,7 +130,7 @@ cdef class SubmitOrder(TradingCommand):
                 f"strategy_id={self.strategy_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.order.client_order_id.value}, "
-                f"position_id={self.position_id.value}, "
+                f"position_id={self.position_id}, "
                 f"order={self.order.status_string_c()}, "
                 f"command_id={self.id}, "
                 f"ts_init={self.ts_init})")

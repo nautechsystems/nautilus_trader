@@ -18,9 +18,6 @@ cdef class Identifier:
     cdef readonly str value
     """The ID value.\n\n:returns: `str`"""
 
-    cdef bint is_null(self) except *
-    cdef bint not_null(self) except *
-
 
 cdef class Symbol(Identifier):
     pass
@@ -75,15 +72,11 @@ cdef class ClientOrderLinkId(Identifier):
 
 
 cdef class VenueOrderId(Identifier):
-
-    @staticmethod
-    cdef VenueOrderId null_c()
+    pass
 
 
 cdef class PositionId(Identifier):
-
-    @staticmethod
-    cdef PositionId null_c()
+    pass
 
 
 cdef class ExecutionId(Identifier):

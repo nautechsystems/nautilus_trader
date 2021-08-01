@@ -505,9 +505,9 @@ cdef class ExecutionEngine(Component):
 
     cdef void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
         # Cache all orders
-        self._cache.add_order(command.bracket_order.entry, PositionId.null_c())
-        self._cache.add_order(command.bracket_order.stop_loss, PositionId.null_c())
-        self._cache.add_order(command.bracket_order.take_profit, PositionId.null_c())
+        self._cache.add_order(command.bracket_order.entry, position_id=None)
+        self._cache.add_order(command.bracket_order.stop_loss, position_id=None)
+        self._cache.add_order(command.bracket_order.take_profit, position_id=None)
 
         # Send to execution client
         client.submit_bracket_order(command)
@@ -611,7 +611,7 @@ cdef class ExecutionEngine(Component):
         )
 
     cdef void _confirm_position_id(self, OrderFilled fill) except *:
-        if fill.position_id.not_null():
+        if fill.position_id is not None:
             # Already assigned to fill
             return
 

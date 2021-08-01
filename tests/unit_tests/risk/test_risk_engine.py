@@ -36,6 +36,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.bracket import BracketOrder
@@ -208,7 +209,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -244,7 +245,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -317,7 +318,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -353,7 +354,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -389,7 +390,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -426,7 +427,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -462,7 +463,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -498,7 +499,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -534,7 +535,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -571,7 +572,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -612,7 +613,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -653,7 +654,7 @@ class TestRiskEngine:
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -671,7 +672,7 @@ class TestRiskEngine:
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -717,7 +718,7 @@ class TestRiskEngine:
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -735,7 +736,7 @@ class TestRiskEngine:
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -775,7 +776,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1107,7 +1108,7 @@ class TestRiskEngine:
         submit = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1118,7 +1119,7 @@ class TestRiskEngine:
             strategy.id,
             order.instrument_id,
             order.client_order_id,
-            order.venue_order_id,
+            VenueOrderId("1"),
             order.quantity,
             Price.from_str("1.00010"),
             None,
@@ -1161,7 +1162,7 @@ class TestRiskEngine:
         submit = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1172,7 +1173,7 @@ class TestRiskEngine:
             strategy.id,
             order.instrument_id,
             order.client_order_id,
-            order.venue_order_id,
+            VenueOrderId("1"),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )

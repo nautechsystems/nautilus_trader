@@ -354,7 +354,7 @@ cdef class RiskEngine(Component):
 
         # Check position exists
         cdef Position position
-        if command.position_id.not_null():
+        if command.position_id is not None:
             position = self._cache.position(command.position_id)
             if position is None:
                 self._deny_command(
@@ -674,7 +674,7 @@ cdef class RiskEngine(Component):
             return
 
         if not self._cache.order_exists(order.client_order_id):
-            self._cache.add_order(order, PositionId.null_c())
+            self._cache.add_order(order, position_id=None)
 
         # Generate event
         cdef OrderDenied denied = OrderDenied(
