@@ -28,15 +28,15 @@ jobs:
         run: python -m pip install --upgrade pip setuptools poetry
 
       # Export package requirements
-      - name: Export package dependencies
+      - name: Export package requirements
         run: poetry export --extras docs --without-hashes -f requirements.txt > requirements.txt
 
       # Install package dependencies
       - name: Install package dependencies
         run: pip install -r requirements.txt
 
-      # Install docs dependencies
-      - name: Install docs dependencies
+      # Install extra docs dependencies
+      - name: Install extra docs dependencies
         run: pip install toml numpydoc sphinx sphinx-rtd-theme
 
       # Build project
@@ -54,4 +54,5 @@ jobs:
           REPO: self
           BRANCH: gh-pages
           FOLDER: docs/build
+          SQUASH_HISTORY: false
           GITHUB_TOKEN: ${{ secrets.GHPAGES_ACCESS }}
