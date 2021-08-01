@@ -51,6 +51,7 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
@@ -351,13 +352,24 @@ cdef class RiskEngine(Component):
                 reason=f"Duplicate {repr(command.order.client_order_id)}")
             return  # Denied
 
-        # Check position exists
-        if command.position_id.not_null() and not self._cache.position_exists(command.position_id):
-            self._deny_command(
-                command=command,
-                reason=f"{repr(command.position_id)} does not exist",
-            )
-            return  # Denied
+        # Check position
+        cdef Position position
+        if command.position_id.not_null():
+            # Check position exists
+            if command.position_id.not_null():
+                position = self._cache.position(command.position_id)
+                if position is None:
+                    self._deny_command(
+                        command=command,
+                        reason=f"{repr(command.position_id)} does not exist",
+                    )
+                    return  # Denied
+                if position.is_closed_c():
+                    self._deny_command(
+                        command=command,
+                        reason=f"{repr(command.position_id)} already closed",
+                    )
+                    return  # Denied
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling

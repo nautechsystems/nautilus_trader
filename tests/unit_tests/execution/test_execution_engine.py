@@ -1881,6 +1881,91 @@ class TestExecutionEngine:
         assert self.cache.positions_open_count() == 1
         assert self.cache.positions_closed_count() == 1
 
+    def test_flip_position_on_flat_position_then_filled_reuse_position_id(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+        )
+
+        order2 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        order3 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        submit_order1 = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            PositionId.null(),
+            order1,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        position_id = PositionId("P-19700101-000000-000-001-1")
+
+        self.risk_engine.execute(submit_order1)
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_accepted(order1))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id=position_id)
+        )
+
+        submit_order2 = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            position_id,
+            order2,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        submit_order3 = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            position_id,
+            order3,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        position = self.cache.position(position_id)
+
+        self.risk_engine.execute(submit_order2)
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+        self.exec_engine.process(TestStubs.event_order_accepted(order2))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id=position_id)
+        )
+        assert position.net_qty == 0
+
+        # Reuse same position_id
+        self.risk_engine.execute(submit_order3)
+
+        # Assert
+        assert order3.state == OrderState.DENIED
+
     def test_handle_updated_order_event(self):
         # Arrange
         self.exec_engine.start()
