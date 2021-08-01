@@ -96,11 +96,18 @@ The documentation for the latest version of the package can be found at:
 
 ## Integrations
 
-[See the integrations documentation](https://docs.nautilustrader.io/integrations)
+NautilusTrader is designed to work with modular adapters which provide integrations with data
+publishers and/or trading venues (exchanges/brokers).
+
+See the [integrations](https://docs.nautilustrader.io/integrations) documentation for further details.
 
 ## Installation
 
-[See the installation guide](https://docs.nautilustrader.io/getting-started/installation)
+To install the latest binary wheel (or sdist package) from PyPI:
+
+    pip install -U nautilus_trader
+
+Refer to the [installation guide](https://docs.nautilustrader.io/getting-started/installation) for further details.
 
 ## Examples
 
