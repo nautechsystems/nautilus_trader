@@ -15,13 +15,7 @@
 
 import os
 import pathlib
-import re
-import warnings
 from collections import defaultdict
-from collections import namedtuple
-from io import BytesIO
-from itertools import takewhile
-from typing import Callable, Generator
 
 import fsspec
 import orjson
@@ -30,10 +24,8 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from pyarrow import ArrowInvalid
-from tqdm import tqdm
 
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
@@ -44,335 +36,19 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.serialization.arrow.schema import category_attributes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_partition_keys
 from nautilus_trader.serialization.arrow.serializer import get_schemas
-
-
-NewFile = namedtuple("NewFile", "name")
-EOStream = namedtuple("EOStream", "")
-GENERIC_DATA_PREFIX = "genericdata_"
-category_attributes = {
-    "TradeTick": ["instrument_id", "type", "aggressor_side"],
-    "OrderBookDelta": ["instrument_id", "type", "level", "delta_type", "order_size"],
-}
-NAUTILUS_TS_COLUMNS = ("ts_event", "ts_init")
-
-_PARTITION_KEYS = get_partition_keys()
-_SCHEMAS = get_schemas()
-
-
-class ByteParser:
-    """
-    The base class for all byte string parsers.
-    """
-
-    def __init__(
-        self,
-        instrument_provider_update: Callable = None,
-    ):
-        """
-        Initialize a new instance of the ``ByteParser`` class.
-        """
-        self.instrument_provider_update = instrument_provider_update
-
-    def read(self, stream: Generator, instrument_provider=None) -> Generator:
-        raise NotImplementedError
-
-
-class TextParser(ByteParser):
-    """
-    Provides parsing of byte strings to Nautilus objects.
-    """
-
-    def __init__(
-        self,
-        parser: Callable,
-        line_preprocessor: Callable = None,
-        instrument_provider_update: Callable = None,
-    ):
-        """
-        Initialize a new instance of the ``TextParser`` class.
-
-        Parameters
-        ----------
-        parser : Callable
-            The handler which takes byte strings and yields Nautilus objects.
-        line_preprocessor : Callable, optional
-            The context manager for preprocessing (cleaning log lines) of lines
-            before json.loads is called. Nautilus objects are returned to the
-            context manager for any post-processing also (for example, setting
-            the `ts_init`).
-        instrument_provider_update : Callable , optional
-            An optional hook/callable to update instrument provider before
-            data is passed to `line_parser` (in many cases instruments need to
-            be known ahead of parsing).
-        """
-        super().__init__(instrument_provider_update=instrument_provider_update)
-
-        self.parser = parser
-        self.line_preprocessor = line_preprocessor or identity
-        self.state = None
-
-    def on_new_file(self, new_file):
-        pass
-
-    def read(self, stream: Generator, instrument_provider=None) -> Generator:  # noqa: C901
-        raw = b""
-        fn = None
-        for chunk in stream:
-            if isinstance(chunk, NewFile):
-                # New file, yield any remaining data, reset bytes
-                assert not raw, f"Data remaining at end of file: {fn}"
-                fn = chunk.name
-                raw = b""
-                self.on_new_file(chunk)
-                yield chunk
-                continue
-            elif isinstance(chunk, EOStream):
-                yield chunk
-                return
-            elif chunk is None:
-                yield
-                continue
-            if chunk == b"":
-                # This is probably EOF? Append a newline to ensure we emit the previous line
-                chunk = b"\n"
-            raw += chunk
-            process, raw = raw.rsplit(b"\n", maxsplit=1)
-            if process:
-                for x in self.process_chunk(chunk=process, instrument_provider=instrument_provider):
-                    try:
-                        x, self.state = x
-                    except TypeError as e:
-                        if not e.args[0].startswith("cannot unpack non-iterable"):
-                            raise e
-                    yield x
-
-    def process_chunk(self, chunk, instrument_provider):
-        for line in map(self.line_preprocessor, chunk.split(b"\n")):
-            if self.instrument_provider_update is not None:
-                # Check the user hasn't accidentally used a generator here also
-                r = self.instrument_provider_update(instrument_provider, line)
-                if isinstance(r, Generator):
-                    raise Exception(
-                        f"{self.instrument_provider_update} func should not be generator"
-                    )
-            yield from self.parser(line, state=self.state)
-
-
-class CSVParser(TextParser):
-    """
-    Provides parsing of CSV formatted bytes strings to Nautilus objects.
-    """
-
-    def __init__(
-        self,
-        parser: Callable,
-        line_preprocessor=None,
-        instrument_provider_update=None,
-    ):
-        """
-        Initialize a new instance of the ``CSVParser`` class.
-
-        Parameters
-        ----------
-        parser : callable
-            The handler which takes byte strings and yields Nautilus objects.
-        line_preprocessor : callable
-            Optional handler to clean log lines prior to processing by `parser`
-        instrument_provider_update
-            Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
-
-        """
-        super().__init__(
-            parser=parser,
-            line_preprocessor=line_preprocessor,
-            instrument_provider_update=instrument_provider_update,
-        )
-        self.header = None
-
-    def on_new_file(self, new_file):
-        self.header = None
-
-    def process_chunk(self, chunk, instrument_provider):
-        if self.header is None:
-            header, chunk = chunk.split(b"\n", maxsplit=1)
-            self.header = header.decode().split(",")
-        df = pd.read_csv(BytesIO(chunk), names=self.header)
-        if self.instrument_provider_update is not None:
-            self.instrument_provider_update(instrument_provider, df)
-        yield from self.parser(df, state=self.state)
-
-
-class ParquetParser(ByteParser):
-    """
-    Provides parsing of parquet specification bytes to Nautilus objects.
-    """
-
-    def __init__(
-        self,
-        data_type: str,
-        parser: Callable = None,
-        instrument_provider_update=None,
-    ):
-        """
-        Initialize a new instance of the ``ParquetParser`` class.
-
-        Parameters
-        ----------
-        data_type : One of `quote_ticks`, `trade_ticks`
-            The wrangler which takes pandas dataframes (from parquet) and yields Nautilus objects.
-        instrument_provider_update
-            Optional hook to call before `parser` for the purpose of loading instruments into the InstrumentProvider
-
-        """
-        data_types = ("quote_ticks", "trade_ticks")
-        assert data_type in data_types, f"data_type must be one of {data_types}"
-        super().__init__(
-            instrument_provider_update=instrument_provider_update,
-        )
-        self.parser = parser
-        self.filename = None
-        self.data_type = data_type
-
-    def read(self, stream: Generator, instrument_provider=None) -> Generator:
-        for chunk in stream:
-            if isinstance(chunk, NewFile):
-                self.filename = chunk.name
-                if self.instrument_provider_update is not None:
-                    self.instrument_provider_update(instrument_provider, chunk)
-                yield chunk
-            elif isinstance(chunk, EOStream):
-                self.filename = None
-                yield chunk
-                return
-            elif chunk is None:
-                yield
-            elif isinstance(chunk, bytes):
-                if len(chunk):
-                    df = pd.read_parquet(BytesIO(chunk))
-                    if self.instrument_provider_update is not None:
-                        self.instrument_provider_update(
-                            instrument_provider=instrument_provider,
-                            df=df,
-                            filename=self.filename,
-                        )
-                    yield from self.parser(data_type=self.data_type, df=df, filename=self.filename)
-            else:
-                raise TypeError
-
-
-class DataLoader:
-    """
-    Provides general data loading functionality.
-
-    Discover files and stream bytes of data from a local or remote filesystems.
-    """
-
-    def __init__(
-        self,
-        path: str,
-        parser: ByteParser,
-        fs_protocol="file",
-        glob_pattern="**",
-        progress=False,
-        chunk_size=-1,
-        compression="infer",
-        instrument_provider=None,
-        file_filter: Callable = None,
-    ):
-        """
-        Initialize a new instance of the ``DataLoader`` class.
-
-        Parameters
-        ----------
-        path : str
-            The resolvable path; a file, folder, or a remote location via fsspec.
-        parser : ByteParser
-            The parser subclass which can convert bytes into Nautilus objects.
-        fs_protocol : str
-            The fsspec protocol; allows remote access - defaults to `file`.
-        glob_pattern : str
-            The glob pattern to search for files.
-        progress : bool
-            If progress should be shown when loading individual files.
-        chunk_size : int
-            The chunk size (in bytes) for processing data, -1 for no limit (will chunk per file).
-        compression : bool
-            If compression is used. Defaults to 'infer' by file extension.
-        instrument_provider : InstrumentProvider
-            The instrument provider for the loader.
-        file_filter: callable
-            Optional filter to apply to file list (if glob_pattern is not enough)
-        """
-        self._path = path
-        self.parser = parser
-        self.fs_protocol = fs_protocol
-        if progress and tqdm is None:
-            warnings.warn(
-                "tqdm not installed, can't use progress. Install tqdm extra with `pip install nautilus_trader[tqdm]`"
-            )
-            progress = False
-        self.progress = progress
-        self.chunk_size = chunk_size
-        self.compression = compression
-        self.glob_pattern = glob_pattern
-        self.fs = fsspec.filesystem(self.fs_protocol)
-        self.instrument_provider = instrument_provider
-        self.file_filter = file_filter or identity
-        self.path = sorted(self._resolve_path(path=self._path))
-
-    def _resolve_path(self, path: str):
-        if self.fs.isfile(path):
-            return [path]
-        # We have a directory
-        if not path.endswith("/"):
-            path += "/"
-        if self.fs.isdir(path):
-            files = self.fs.glob(f"{path}{self.glob_pattern}")
-            assert files, f"Found no files with path={str(path)}, glob={self.glob_pattern}"
-            return [f for f in files if self.fs.isfile(f)]
-        else:
-            raise ValueError("path argument must be str and a valid directory or file")
-
-    def stream_bytes(self, progress=False):
-        path = self.path if not progress else tqdm(self.path)
-        for fn in filter(self.file_filter, path):
-            with fsspec.open(f"{self.fs_protocol}://{fn}", compression=self.compression) as f:
-                yield NewFile(fn)
-                data = 1
-                while data:
-                    try:
-                        data = f.read(self.chunk_size)
-                    except OSError as e:
-                        print(f"ERR file: {fn} ({e}), skipping")
-                        break
-                    yield data
-                    yield None  # this is a chunk
-        yield EOStream()
-
-    def run(self, progress=False):
-        stream = self.parser.read(
-            stream=self.stream_bytes(progress=progress),
-            instrument_provider=self.instrument_provider,
-        )
-        while 1:
-            chunk = list(takewhile(lambda x: x is not None, stream))
-            if chunk and isinstance(chunk[-1], EOStream):
-                break
-            if not chunk:
-                continue
-            # TODO (bm): shithacks - We need a better way to generate instruments?
-            if self.instrument_provider is not None:
-                # Find any instrument status updates, if we have some, emit instruments first
-                instruments = [
-                    self.instrument_provider.find(s.instrument_id)
-                    for s in chunk
-                    if isinstance(s, InstrumentStatusUpdate)
-                ]
-                chunk = instruments + chunk
-            yield chunk
+from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
+from nautilus_trader.serialization.arrow.util import camel_to_snake_case
+from nautilus_trader.serialization.arrow.util import class_to_filename
+from nautilus_trader.serialization.arrow.util import clean_key
+from nautilus_trader.serialization.arrow.util import clean_partition_cols
+from nautilus_trader.serialization.arrow.util import is_nautilus_class
+from nautilus_trader.serialization.arrow.util import maybe_list
+from nautilus_trader.serialization.data_loader import DataLoader
+from nautilus_trader.serialization.data_loader.parsers import NewFile
 
 
 class DataCatalog:
@@ -395,6 +71,8 @@ class DataCatalog:
         self.fs = fsspec.filesystem(fs_protocol)
         self.path = pathlib.Path(path)
         self._processed_files_fn = str(self.path / ".processed_raw_files.json")
+        self._partition_keys = get_partition_keys()
+        self._schemas = get_schemas()
 
     @classmethod
     def from_env(cls):
@@ -442,10 +120,9 @@ class DataCatalog:
         else:
             return []
 
-    @staticmethod
-    def _determine_partition_cols(cls, instrument_id):
-        if _PARTITION_KEYS.get(cls) is not None:
-            return list(_PARTITION_KEYS[cls])
+    def _determine_partition_cols(self, cls, instrument_id):
+        if self._partition_keys.get(cls) is not None:
+            return list(self._partition_keys[cls])
         elif instrument_id is not None:
             return ["instrument_id"]
         return
@@ -530,7 +207,7 @@ class DataCatalog:
                         break
 
                 df, mappings = clean_partition_cols(df, partition_cols, cls)
-                schema = _SCHEMAS.get(cls)
+                schema = self._schemas.get(cls)
                 table = pa.Table.from_pandas(df, schema=schema)
                 metadata_collector = []
                 pq.write_to_dataset(
@@ -801,9 +478,6 @@ class DataCatalog:
                     raise_on_empty=False,
                     **kwargs,
                 )
-                df = df.drop_duplicates(
-                    [c for c in df.columns if c not in NAUTILUS_TS_COLUMNS], keep="last"
-                )
                 dfs.append(df)
             except ArrowInvalid as e:
                 # If we're using a `filter_expr` here, there's a good chance this error is using a filter that is
@@ -918,27 +592,13 @@ class DataCatalog:
 
     def list_partitions(self, cls_type):
         assert isinstance(cls_type, type), "`cls_type` should be type, ie TradeTick"
-        prefix = GENERIC_DATA_PREFIX if is_custom_data(cls_type) else ""
+        prefix = GENERIC_DATA_PREFIX if not is_nautilus_class(cls_type) else ""
         name = prefix + camel_to_snake_case(cls_type.__name__)
         dataset = pq.ParquetDataset(self.path / f"{name}.parquet", filesystem=self.fs)
         partitions = {}
         for level in dataset.partitions.levels:
             partitions[level.name] = level.keys
         return partitions
-
-
-def camel_to_snake_case(s):
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
-
-
-def parse_timestamp(t):
-    return int(pd.Timestamp(t).timestamp() * 1e9)
-
-
-def maybe_list(obj):
-    if isinstance(obj, dict):
-        return [obj]
-    return obj
 
 
 def combine_filters(*filters):
@@ -952,74 +612,3 @@ def combine_filters(*filters):
         for f in filters[1:]:
             expr = expr & f
         return expr
-
-
-def is_custom_data(cls):
-    is_nautilus_paths = cls.__module__.startswith("nautilus_trader.")
-    if not is_nautilus_paths:
-        # This object is defined outside of nautilus, definitely custom
-        return True
-    else:
-        is_data_subclass = issubclass(cls, Data)
-        is_nautilus_builtin = any(
-            (cls.__module__.startswith(p) for p in ("nautilus_trader.model",))
-        )
-        return is_data_subclass and not is_nautilus_builtin
-
-
-def identity(x):
-    return x
-
-
-INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
-
-
-def clean_partition_cols(df, partition_cols=None, cls=None):
-    mappings = {}
-    for col in partition_cols or []:
-        values = list(map(str, df[col].unique()))
-        invalid_values = {val for val in values if any(x in val for x in INVALID_WINDOWS_CHARS)}
-        if invalid_values:
-            if col == "instrument_id":
-                # We have control over how instrument_ids are retrieved from the cache, so we can do this replacement
-                val_map = {k: clean_key(k) for k in values}
-                mappings[col] = val_map
-                df.loc[:, col] = df[col].map(val_map)
-
-            else:
-                # We would be arbitrarily replacing values here which could break queries, we should not do this.
-                raise ValueError(
-                    f"Some values in partition column [{col}] contain invalid characters: {invalid_values}"
-                )
-    if partition_cols:
-        assert all([c in df.columns for c in partition_cols]), f"Missing col for {cls}"
-    return df, mappings
-
-
-def clean_key(s):
-    for ch in INVALID_WINDOWS_CHARS:
-        if ch in s:
-            s = s.replace(ch, "-")
-    return s
-
-
-def class_to_filename(cls):
-    name = f"{camel_to_snake_case(cls.__name__)}"
-    if is_custom_data(cls):
-        name = f"{GENERIC_DATA_PREFIX}{camel_to_snake_case(cls.__name__)}"
-    return name
-
-
-# TODO - https://github.com/leonidessaguisagjr/filehash ?
-# def get_digest(fs, path):
-#     h = hashlib.sha256()
-#
-#     with fs.open(path, 'rb') as file:
-#         while True:
-#             # Reading is buffered, so we can read smaller chunks.
-#             chunk = file.read(h.block_size)
-#             if not chunk:
-#                 break
-#             h.update(chunk)
-#
-#     return h.hexdigest()

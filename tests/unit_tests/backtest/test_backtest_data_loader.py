@@ -19,14 +19,6 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
-from nautilus_trader.backtest.data_loader import CSVParser
-from nautilus_trader.backtest.data_loader import DataCatalog
-from nautilus_trader.backtest.data_loader import DataLoader
-from nautilus_trader.backtest.data_loader import ParquetParser
-from nautilus_trader.backtest.data_loader import TextParser
-from nautilus_trader.backtest.data_loader import is_custom_data
-from nautilus_trader.backtest.data_loader import parse_timestamp
-from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.data.wrangling import QuoteTickDataWrangler
@@ -51,6 +43,12 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.serialization.arrow.serializer import register_parquet
+from nautilus_trader.serialization.arrow.util import is_nautilus_class
+from nautilus_trader.serialization.catalog.core import DataCatalog
+from nautilus_trader.serialization.catalog.loader import DataLoader
+from nautilus_trader.serialization.catalog.parsers import CSVParser
+from nautilus_trader.serialization.catalog.parsers import ParquetParser
+from nautilus_trader.serialization.catalog.parsers import TextParser
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -95,9 +93,9 @@ def loaded_catalog(catalog, data_loader):
 
 
 def test_is_custom_data():
-    assert not is_custom_data(OrderBookData)
-    assert not is_custom_data(TradeTick)
-    assert is_custom_data(pd.DataFrame)
+    assert not is_nautilus_class(OrderBookData)
+    assert not is_nautilus_class(TradeTick)
+    assert is_nautilus_class(pd.DataFrame)
 
 
 @pytest.mark.parametrize(
@@ -203,13 +201,6 @@ def test_data_loader_csv(catalog):
     catalog.import_from_data_loader(loader=loader)
     data = catalog.quote_ticks()
     assert len(data) == 1000
-
-
-def test_parse_timestamp():
-    assert parse_timestamp(1580453644855000064) == 1580453644855000064
-    assert parse_timestamp("2020-01-31T06:54:04.855000064+10:00") == 1580417644855000064
-    assert parse_timestamp("2020-01-31 06:54:04.855000064") == 1580453644855000064
-    assert parse_timestamp("2020-01-31") == 1580428800000000000
 
 
 def test_data_catalog_from_env():

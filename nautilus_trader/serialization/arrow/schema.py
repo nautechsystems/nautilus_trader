@@ -388,4 +388,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     ),
 }
 
-# SCHEMA_TO_TYPE = {v.metadata[b"type"]: k for k, v in TYPE_TO_SCHEMA.items()}
+category_attributes = {
+    "TradeTick": ["instrument_id", "type", "aggressor_side"],
+    "OrderBookDelta": ["instrument_id", "type", "level", "delta_type"],
+}
