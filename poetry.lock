@@ -1266,13 +1266,13 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytes
 betfair = ["betfairlightweight"]
 ccxt = ["ccxt"]
 distributed = ["distributed", "bokeh"]
-docs = []
+docs = ["numpydoc"]
 ib = ["ib_insync"]
 
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "80a49fd007960448b1abb388a4958b3da547efe350b827a864c6b6f598c9098f"
+content-hash = "a1f540c85d017e4fa9f8a7c02f1e8e4a92b31f0798d7d8770493677a8bbfc342"
 
 [metadata.files]
 aiodns = [
