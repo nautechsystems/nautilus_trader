@@ -78,7 +78,7 @@ sphinx-rtd-theme = { version = "^0.5.1", optional = true }
 betfair = ["betfairlightweight"]
 ccxt = ["ccxt"]
 distributed = ["distributed", "bokeh"]
-docs = ["sphinx", "sphinx-rtd-theme"]
+docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]
 ib = ["ib_insync"]
 
 
