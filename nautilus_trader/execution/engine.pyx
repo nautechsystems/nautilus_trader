@@ -676,7 +676,7 @@ cdef class ExecutionEngine(Component):
 
     cdef void _update_position(self, Position position, OrderFilled fill) except *:
         # Check for flip
-        if position.is_opposite_side(fill.side) and fill.last_qty > position.quantity:
+        if position.is_opposite_side(fill.side) and 0 < position.quantity < fill.last_qty:
             self._flip_position(position, fill)
             return  # Handled in flip
 
