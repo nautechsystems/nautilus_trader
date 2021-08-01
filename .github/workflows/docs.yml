@@ -29,11 +29,11 @@ jobs:
 
       # Export package dependencies
       - name: Install package dependencies and build
-        run: poetry export -f requirements.txt > requirements.txt
+        run: poetry export --without-hashes -f requirements.txt > requirements.txt
 
       # Install package dependencies
       - name: Install docs dependencies
-        run: pip download -r requirements.txt
+        run: pip install -r requirements.txt
 
       # Build project
       - name: Install package dependencies and build
