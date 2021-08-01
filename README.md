@@ -5,7 +5,6 @@
 # NautilusTrader
 
 ![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
-[![build-docs](https://readthedocs.org/projects/nautilus-trader/badge/?version=latest)](https://nautilus-trader.readthedocs.io/en/latest/?badge=latest)
 [![codacy-quality](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 ![pypi-pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
@@ -170,11 +169,13 @@ Installation from source requires Cython to compile the Python C extensions.
         cd nautilus_trader
         pip install .
 
+#### Extras
 Also, the following optional dependency 'extras' are separately available for installation.
-- `betfair` for the Betfair adapter.
-- `ccxt` for the CCXT Pro adapter.
-- `docs` for building the documentation.
-- `ib` for the Interactive Brokers adapter.
+- `betfair` - packages required for the Betfair adapter.
+- `ccxt` - packages required for the CCXT adapter.
+- `distributed` - packages for using dask distributed in backtests.
+- `docs` - packages required to build the documentation.
+- `ib` - packages required for the Interactive Brokers adapter.
 
 For example, to install including the `ccxt` extra using pip:
 
