@@ -27,16 +27,20 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools poetry
 
-      # Export package dependencies
-      - name: Install package dependencies and build
-        run: poetry export --without-hashes -f requirements.txt > requirements.txt
+      # Export package requirements
+      - name: Export package dependencies
+        run: poetry export --extras docs --without-hashes -f requirements.txt > requirements.txt
 
       # Install package dependencies
-      - name: Install docs dependencies
+      - name: Install package dependencies
         run: pip install -r requirements.txt
 
+      # Install docs dependencies
+      - name: Install docs dependencies
+        run: pip install toml numpydoc sphinx sphinx-rtd-theme
+
       # Build project
-      - name: Install package dependencies and build
+      - name: Build project
         run: python build.py
 
       # Build docs
