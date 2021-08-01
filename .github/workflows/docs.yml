@@ -27,13 +27,17 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools poetry
 
-      # Install package dependencies and build
+      # Install package dependencies
       - name: Install package dependencies and build
         run: python -m pip install .[docs]
 
       # Install docs dependencies
       - name: Install docs dependencies
         run: python -m pip install toml numpydoc sphinx sphinx-rtd-theme
+
+      # Build project
+      - name: Install package dependencies and build
+        run: python build.py
 
       # Build docs
       - name: Build docs
