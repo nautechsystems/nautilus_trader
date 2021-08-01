@@ -35,7 +35,6 @@ from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -227,7 +226,7 @@ class TestLiveExecutionClient:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -280,7 +279,7 @@ class TestLiveExecutionClient:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -333,7 +332,7 @@ class TestLiveExecutionClient:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -386,7 +385,7 @@ class TestLiveExecutionClient:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -441,7 +440,7 @@ class TestLiveExecutionClient:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -498,7 +497,7 @@ class TestLiveExecutionClient:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),

@@ -35,7 +35,6 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -319,8 +318,7 @@ class TestCache:
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
         assert order in self.cache.orders()
-        assert self.cache.venue_order_id(order.client_order_id) == VenueOrderId.null()
-        assert self.cache.client_order_id(order.venue_order_id) is None
+        assert self.cache.venue_order_id(order.client_order_id) is None
 
     def test_load_order(self):
         # Arrange

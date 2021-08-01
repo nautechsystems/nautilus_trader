@@ -67,7 +67,7 @@ cdef class OrderStatusReport:
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"client_order_id={self.client_order_id}, "
+                f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id}, "
                 f"order_state={OrderStateParser.to_str(self.order_state)}, "
                 f"filled_qty={self.filled_qty}, "
@@ -165,9 +165,9 @@ cdef class ExecutionReport:
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"client_order_id={self.client_order_id}, "
+                f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id}, "
-                f"id={self.id}, "
+                f"id={self.id.value}, "
                 f"last_qty={self.last_qty}, "
                 f"last_px={self.last_px}, "
                 f"commission={self.commission.to_str()}, "

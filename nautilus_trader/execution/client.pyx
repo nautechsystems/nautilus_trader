@@ -465,6 +465,7 @@ cdef class ExecutionClient:
         StrategyId strategy_id,  # Can be None
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
         str response_to,
         str reason,
         int64_t ts_event,
@@ -481,6 +482,8 @@ cdef class ExecutionClient:
             The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
+        venue_order_id : VenueOrderId
+            The venue order ID.
         response_to : str
             The order update rejected response.
         reason : str
@@ -489,13 +492,6 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order update rejection event occurred.
 
         """
-        cdef VenueOrderId venue_order_id = None
-        cdef Order order = self._cache.order(client_order_id)
-        if order is not None:
-            venue_order_id = order.venue_order_id
-        else:
-            venue_order_id = VenueOrderId.null_c()
-
         # Generate event
         cdef OrderUpdateRejected update_rejected = OrderUpdateRejected(
             trader_id=self.trader_id,
@@ -518,6 +514,7 @@ cdef class ExecutionClient:
         StrategyId strategy_id,  # Can be None
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
         str response_to,
         str reason,
         int64_t ts_event,
@@ -534,6 +531,8 @@ cdef class ExecutionClient:
             The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
+        venue_order_id : VenueOrderId
+            The venue order ID.
         response_to : str
             The order cancel rejected response.
         reason : str
@@ -542,13 +541,6 @@ cdef class ExecutionClient:
             The UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
 
         """
-        cdef VenueOrderId venue_order_id = None
-        cdef Order order = self._cache.order(client_order_id)
-        if order is not None:
-            venue_order_id = order.venue_order_id
-        else:
-            venue_order_id = VenueOrderId.null_c()
-
         # Generate event
         cdef OrderCancelRejected cancel_rejected = OrderCancelRejected(
             trader_id=self.trader_id,
@@ -823,7 +815,7 @@ cdef class ExecutionClient:
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             execution_id=execution_id,
-            position_id=position_id or PositionId.null_c(),  # If 'NULL' then assigned in engine
+            position_id=position_id,
             order_side=order_side,
             order_type=order_type,
             last_qty=last_qty,
@@ -861,7 +853,7 @@ cdef class ExecutionClient:
     cdef list _calculate_balances(self, OrderFilled fill):
         # Determine any position
         cdef PositionId position_id = fill.position_id
-        if fill.position_id.is_null():
+        if fill.position_id is None:
             # Check for open positions
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
@@ -874,7 +866,7 @@ cdef class ExecutionClient:
 
         # Determine any position
         cdef Position position = None
-        if position_id.not_null():
+        if position_id is not None:
             position = self._cache.position(position_id)
         # *** position could still be None here ***
 

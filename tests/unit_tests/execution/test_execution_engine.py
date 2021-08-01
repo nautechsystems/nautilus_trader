@@ -332,7 +332,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -370,7 +370,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -441,7 +441,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -735,7 +735,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -771,7 +771,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -808,7 +808,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -872,7 +872,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -924,7 +924,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -978,7 +978,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1031,7 +1031,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1082,7 +1082,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1135,7 +1135,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1192,7 +1192,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1244,7 +1244,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1312,7 +1312,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1323,9 +1323,7 @@ class TestExecutionEngine:
         # Act
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
-        self.exec_engine.process(
-            TestStubs.event_order_filled(order, AUDUSD_SIM, position_id=PositionId.null())
-        )
+        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
         expected_id = PositionId("P-19700101-000000-000-001-1")  # Generated inside engine
 
@@ -1372,7 +1370,7 @@ class TestExecutionEngine:
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1446,7 +1444,7 @@ class TestExecutionEngine:
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1536,7 +1534,7 @@ class TestExecutionEngine:
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy1.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1545,7 +1543,7 @@ class TestExecutionEngine:
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy2.id,
-            PositionId.null(),
+            None,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1648,7 +1646,7 @@ class TestExecutionEngine:
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy1.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1668,7 +1666,7 @@ class TestExecutionEngine:
         submit_order3 = SubmitOrder(
             self.trader_id,
             strategy2.id,
-            PositionId.null(),
+            None,
             order3,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1752,7 +1750,7 @@ class TestExecutionEngine:
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1831,7 +1829,7 @@ class TestExecutionEngine:
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1905,7 +1903,7 @@ class TestExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),

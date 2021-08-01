@@ -149,7 +149,7 @@ cdef class StopLimitOrder(PassiveOrder):
         self.is_hidden = hidden
 
     def __repr__(self) -> str:
-        cdef str id_string = f", id={self.venue_order_id.value})" if self.venue_order_id.not_null() else ")"
+        cdef str id_string = f", id={self.venue_order_id.value})" if self.venue_order_id is not None else ")"
         return (f"{type(self).__name__}("
                 f"{self.status_string_c()}, "
                 f"trigger={self.trigger}, "
@@ -171,8 +171,8 @@ cdef class StopLimitOrder(PassiveOrder):
             "strategy_id": self.strategy_id.value,
             "instrument_id": self.instrument_id.value,
             "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "position_id": self.position_id.value,
+            "venue_order_id": self.venue_order_id.value if self.venue_order_id else None,
+            "position_id": self.position_id if self.position_id else None,
             "account_id": self.account_id.value if self.account_id else None,
             "execution_id": self.execution_id.value if self.execution_id else None,
             "type": OrderTypeParser.to_str(self.type),
