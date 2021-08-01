@@ -474,7 +474,7 @@ cdef class TradingStrategy(Actor):
         cdef SubmitOrder command = SubmitOrder(
             self.trader_id,
             self.id,
-            position_id if position_id is not None else PositionId.null_c(),
+            position_id or PositionId.null_c(),
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
