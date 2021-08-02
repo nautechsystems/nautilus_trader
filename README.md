@@ -194,7 +194,7 @@ The following account types are available for both live and backtest environment
 
 ## Development
 
-[See the developer guides](https://docs.nautilustrader.io/developer-guides)
+See the [developer guides](https://docs.nautilustrader.io/developer-guides) for further information.
 
 ## Contributing
 
