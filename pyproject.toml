@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.126.0"
+version = "1.126.1"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -54,7 +54,7 @@ uvloop = { version = "^0.15.3", markers = "sys_platform != 'win32'" }
 bokeh = { version = "^2.3.2", optional = true }
 betfairlightweight = {extras = ["speed"], version = "^2.12.1", optional = true}
 distributed = { version = "^2021.7.1", optional = true }
-ccxt = { version = "^1.54.24", optional = true }
+ccxt = { version = "^1.54.25", optional = true }
 ib_insync = { version = "^0.9.66", optional = true }
 
 [tool.poetry.dev-dependencies]

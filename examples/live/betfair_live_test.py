@@ -49,7 +49,7 @@ config = {
         "level_stdout": "DBG",
     },
     "database": {
-        "type": "memory",
+        "type": "in-memory",
     },
     "data_engine": {},
     "risk_engine": {},
@@ -91,7 +91,10 @@ strategy = BetfairTestStrategy(
 )
 
 # Instantiate the node passing a list of strategies and configuration
-node = TradingNode(strategies=[strategy], config=config)  # type: ignore
+node = TradingNode(config=config)  # type: ignore
+
+# Add your strategies and modules
+node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user defined factories)
 node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
