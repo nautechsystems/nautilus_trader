@@ -84,7 +84,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef void add_positions(self, list positions) except *:
         """
-        Add end of day positions data to the analyzer.
+        Add positions data to the analyzer.
 
         Parameters
         ----------
@@ -101,7 +101,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef void add_trade(self, PositionId position_id, Money realized_pnl) except *:
         """
-        Handle the transaction associated with the given account event.
+        Add trade data to the analyzer.
 
         Parameters
         ----------

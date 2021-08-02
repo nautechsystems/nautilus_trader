@@ -73,6 +73,10 @@ cdef class Symbol(Identifier):
     instrument.
 
     The ID value must be unique for a trading venue.
+
+    References
+    ----------
+    https://en.wikipedia.org/wiki/Ticker_symbol
     """
 
     def __init__(self, str value):
@@ -178,7 +182,7 @@ cdef class ComponentId(Identifier):
     """
     Represents a valid component ID.
 
-    The name must be unique at the trader level.
+    The ID value must be unique at the trader level.
     """
 
     def __init__(self, str value):
@@ -203,7 +207,7 @@ cdef class ClientId(ComponentId):
     """
     Represents a system client ID.
 
-    The ID value must be unique per data or execution engine.
+    The ID value must be unique at the trader level.
     """
 
     def __init__(self, str value):
@@ -314,7 +318,7 @@ cdef class AccountId(Identifier):
     """
     Represents a valid account ID.
 
-    The issuer and ID combination must be unique at the firm level.
+    The issuer and number ID combination must be unique at the firm level.
     """
 
     def __init__(self, str issuer, str number):
@@ -404,7 +408,7 @@ cdef class ClientOrderLinkId(Identifier):
     """
     Represents a valid client order link ID.
 
-    The ID value must be unique at the account level.
+    The ID value must be unique for a trading venue.
 
     Permits order originators to tie together groups of orders in which trades
     resulting from orders are associated for a specific purpose, for example the
