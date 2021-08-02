@@ -1,14 +1,56 @@
 # NautilusTrader 1.126.0 Beta - Release Notes
 
+This release sees the completion of the initial implementation of the 
+`MessageBus`, with data now being handled by PUB/SUB patterns, along with the 
+additions of point-to-point and REQ/REP messaging functionality.
+
+An `Actor` base class has been abstracted from `TradingStrategy` which allows
+custom components to be added to a `Trader` which aren't necessarily trading 
+strategies, opening up further possibilities for extending NautilusTrader with 
+custom functionality.
+
+For the sake of simplicity and to favour more idiomatic Python, the null object
+pattern is no longer utilized for handling identifiers. This has removed a layer
+of 'logical indirection' in certain parts of the codebase, and allows for simpler 
+code.
+
+An order is now considered 'in-flight' if it is actively pending a state 
+transition i.e. in the `SUBMITTED`,`PENDING_UPDATE` or `PENDING_CANCEL` states.
+
+It is now a well established convention that all integer based timestamps are 
+expressed in UNIX nanoseconds, therefore the `_ns` postfix has now been dropped. 
+For clarity - time periods/intervals/objects where the units may not be obvious 
+have retained the `_ns` postfix.
+
+The opportunity was identified to unify the parameter naming for the concept
+of object instantiation by renaming `timestamp_ns` and `ts_recv_ns` to `ts_init`.
+Along the same lines, the timestamps for both event and data occurrence have 
+been standardized to `ts_event`.
+
+It is acknowledged that the frequent name changes and modifications to core 
+concepts may be frustrating, however whilst still in a beta phase - we're taking 
+the opportunity to lay a solid foundation for this project to continue to growth 
+in the years ahead.
 
 ## Breaking Changes
-None
+- Renamed `timestamp_ns` to `ts_init`.
+- Renamed `ts_recv_ns` to `ts_event`.
+- Renamed various event timestamp parameters to `ts_event`.
+- Removed null object methods on identifiers.
 
 ## Enhancements
-- Added logger sink registration.
+- Added `Actor` component base class.
+- Added `MessageBus.register()`.
+- Added `MessageBus.send()`.
+- Added `MessageBus.request()`.
+- Added `MessageBus.response()`.
+- Added `Trader.add_component()`.
+- Added `Trader.add_components()`.
+- Added `Trader.add_log_sink()`.
 
 ## Fixes
-None
+- Various Betfair adapter patches and fixes.
+- `ExecutionEngine` position flip logic in certain edge cases.
 
 ---
 
