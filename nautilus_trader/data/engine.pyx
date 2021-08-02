@@ -594,7 +594,7 @@ cdef class DataEngine(Component):
                 level=metadata.get("level"),
                 kwargs=metadata.get("kwargs"),
             )
-        except NotImplemented:
+        except NotImplementedError:
             client.subscribe_order_book_snapshots(
                 instrument_id=instrument_id,
                 level=metadata.get("level"),
