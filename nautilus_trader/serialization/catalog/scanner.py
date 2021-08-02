@@ -17,11 +17,15 @@ from concurrent.futures import as_completed
 from typing import Callable, List
 
 import fsspec
+import orjson
 from tqdm import tqdm
 
 from nautilus_trader.serialization.arrow.util import identity
 from nautilus_trader.serialization.catalog.parsers import EOStream
 from nautilus_trader.serialization.catalog.parsers import NewFile
+
+
+PROCESSED_FILES_FN = ".processed_raw_files.json"
 
 
 def _resolve_path(fs, path: str, glob_pattern):
@@ -76,6 +80,10 @@ def _scan_threaded(
     """
     executor = executor or ThreadPoolExecutor()
     file_filter = file_filter or identity
+    existing_files = _load_processed_raw_files(
+        fs=fs,
+    )
+
     futures = []
     with executor as client:
         for path in paths:
@@ -134,7 +142,27 @@ def scan(
         fs=fs,
         paths=paths,
         chunk_size=chunk_size,
+        progress=progress,
         file_filter=file_filter,
         executor=executor,
         compression=compression,
     )
+
+
+def _save_processed_raw_files(
+    fs: fsspec.AbstractFileSystem, files: List[str], _processed_files_fn: str
+):
+    # TODO(bm): We should save a hash of the contents alongside the filename to check for changes
+    # load existing
+    existing = _load_processed_raw_files(fs=fs, _processed_files_fn=_processed_files_fn)
+    new = set(files + existing)
+    with fs.open(_processed_files_fn, "wb") as f:
+        return f.write(orjson.dumps(sorted(new)))
+
+
+def _load_processed_raw_files(fs: fsspec.AbstractFileSystem, _processed_files_fn: str):
+    if fs.exists(_processed_files_fn):
+        with fs.open(_processed_files_fn, "rb") as f:
+            return orjson.loads(f.read())
+    else:
+        return []

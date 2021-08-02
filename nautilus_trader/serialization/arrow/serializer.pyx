@@ -30,6 +30,7 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.serialization.base cimport _OBJECT_FROM_DICT_MAP
 from nautilus_trader.serialization.base cimport _OBJECT_TO_DICT_MAP
 
+from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.serialization.arrow.implementations import account_state
 from nautilus_trader.serialization.arrow.implementations import order_book
 from nautilus_trader.serialization.arrow.implementations import order_events
@@ -41,6 +42,7 @@ cdef dict _PARQUET_TO_DICT_MAP = {}    # type: dict[type, object]
 cdef dict _PARQUET_FROM_DICT_MAP = {}  # type: dict[type, object]
 cdef dict _PARTITION_KEYS = {}
 cdef dict _SCHEMAS = {}
+cdef dict _CLS_TO_TABLE = {} # type: dict[type, type]
 cdef set _CHUNK = set()
 
 
@@ -59,6 +61,7 @@ def register_parquet(
     schema: Optional[pa.Schema] = None,
     tuple partition_keys=None,
     bint chunk=False,
+    type table=None,
     **kwargs,
 ):
     """
@@ -80,12 +83,15 @@ def register_parquet(
     chunk : bool, optional
         Whether to group objects by timestamp and operate together (Used for complex objects where
         we write each object as multiple rows in parquet, ie OrderBook or AccountState).
-
+    table : type, optional
+        Optional table override for `cls`. Used if `cls` is going to be transformed and stored in a table other than
+        its own. (for example, OrderBookSnapshots are stored as OrderBookDeltas, so we use table=OrderBookDeltas)
     """
     Condition.type_or_none(serializer, Callable, "serializer")
     Condition.type_or_none(deserializer, Callable, "deserializer")
     Condition.type_or_none(schema, pa.Schema, "schema")
     Condition.type_or_none(partition_keys, tuple, "partition_keys")
+    Condition.type_or_none(table, type, "table")
 
     # secret kwarg that allows overriding an existing (de)serialization method.
     if not kwargs.get("force", False):
@@ -108,6 +114,7 @@ def register_parquet(
         _SCHEMAS[cls] = schema
     if chunk:
         _CHUNK.add(cls)
+    _CLS_TO_TABLE[cls] = table or cls
 
 
 cdef class ParquetSerializer:
@@ -148,50 +155,6 @@ cdef class ParquetSerializer:
         return [delegate(c) for c in chunk]
 
 
-# TODO (bm) - Implement for IPC / streaming. See https://arrow.apache.org/docs/python/ipc.html
-# @staticmethod
-# def to_arrow(message: bytes):
-#     """
-#     Serialize the given message to `MessagePack` specification bytes.
-#
-#     Parameters
-#     ----------
-#     message : dict
-#         The message to serialize.
-#
-#     Returns
-#     -------
-#     bytes
-#
-#     """
-#     Condition.not_none(message, "message")
-#
-#     batch = pa.record_batch(data, names=['f0', 'f1', 'f2'])
-#
-#     sink = pa.BufferOutputStream()
-#
-#     writer = pa.ipc.new_stream(sink, batch.schema)
-#     return None
-#
-# @staticmethod
-# def from_arrow(message_bytes: bytes):
-#     """
-#     Deserialize the given `MessagePack` specification bytes to a dictionary.
-#
-#     Parameters
-#     ----------
-#     message_bytes : bytes
-#         The message bytes to deserialize.
-#
-#     Returns
-#     -------
-#     dict[str, object]
-#
-#     """
-#     Condition.not_none(message_bytes, "message_bytes")
-#
-#     return None
-
 
 #################################################
 # Objects requiring special handling in parquet
@@ -199,9 +162,11 @@ cdef class ParquetSerializer:
 
 for cls in OrderBookData.__subclasses__():
     register_parquet(
-        cls,
+        cls=cls,
         serializer=order_book.serialize,
-        deserializer=order_book.deserialize, chunk=True,
+        deserializer=order_book.deserialize,
+        table=OrderBookDelta,
+        chunk=True,
     )
 
 for cls in Instrument.__subclasses__():

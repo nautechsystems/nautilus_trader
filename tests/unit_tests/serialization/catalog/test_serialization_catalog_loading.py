@@ -74,6 +74,7 @@ def test_loader(executor):
     files = scan(path=TEST_DATA_DIR, glob_pattern="truefx*.csv", chunk_size=100000)
     parser = CSVParser(parser=parse_csv)
     data = read_files(files, parser=parser, executor=executor)
+    assert len(data) == 1
 
 
 def test_data_loader_json_betting_parser():
