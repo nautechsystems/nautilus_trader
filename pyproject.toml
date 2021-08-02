@@ -54,7 +54,7 @@ uvloop = { version = "^0.15.3", markers = "sys_platform != 'win32'" }
 bokeh = { version = "^2.3.2", optional = true }
 betfairlightweight = {extras = ["speed"], version = "^2.12.1", optional = true}
 distributed = { version = "^2021.7.1", optional = true }
-ccxt = { version = "^1.53.56", optional = true }
+ccxt = { version = "^1.54.24", optional = true }
 ib_insync = { version = "^0.9.66", optional = true }
 
 [tool.poetry.dev-dependencies]
