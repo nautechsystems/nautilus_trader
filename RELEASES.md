@@ -1,3 +1,20 @@
+# NautilusTrader 1.126.1 Beta - Release Notes
+
+This is a patch release which fixes a bug involving `NotImplementedError` 
+exception handling when subscribing to order book deltas when not supported by 
+a client. This bug affected CCXT order book subscriptions.
+
+## Breaking Changes
+None
+
+## Enhancements
+None
+
+## Fixes
+- Fix `DataEngine` order book subscription handling.
+
+---
+
 # NautilusTrader 1.126.0 Beta - Release Notes
 
 This release sees the completion of the initial implementation of the 
