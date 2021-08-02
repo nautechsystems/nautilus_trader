@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import time
 from datetime import datetime
 from datetime import timedelta
-import time
 
 import pytest
 import pytz
@@ -193,22 +193,14 @@ class TestTestClock:
         # Assert
         assert self.clock.timer_names() == [name]
         assert len(events) == 4
-        assert events[0].event.event_timestamp_ns == 100_000_000
-        assert events[1].event.event_timestamp_ns == 200_000_000
-        assert events[2].event.event_timestamp_ns == 300_000_000
-        assert events[3].event.event_timestamp_ns == 400_000_000
-        assert events[0].event.event_timestamp == datetime(
-            1970, 1, 1, 0, 0, 0, 100000, tzinfo=pytz.utc
-        )
-        assert events[1].event.event_timestamp == datetime(
-            1970, 1, 1, 0, 0, 0, 200000, tzinfo=pytz.utc
-        )
-        assert events[2].event.event_timestamp == datetime(
-            1970, 1, 1, 0, 0, 0, 300000, tzinfo=pytz.utc
-        )
-        assert events[3].event.event_timestamp == datetime(
-            1970, 1, 1, 0, 0, 0, 400000, tzinfo=pytz.utc
-        )
+        assert events[0].event.ts_event == 100_000_000
+        assert events[1].event.ts_event == 200_000_000
+        assert events[2].event.ts_event == 300_000_000
+        assert events[3].event.ts_event == 400_000_000
+        assert events[0].event.timestamp == datetime(1970, 1, 1, 0, 0, 0, 100000, tzinfo=pytz.utc)
+        assert events[1].event.timestamp == datetime(1970, 1, 1, 0, 0, 0, 200000, tzinfo=pytz.utc)
+        assert events[2].event.timestamp == datetime(1970, 1, 1, 0, 0, 0, 300000, tzinfo=pytz.utc)
+        assert events[3].event.timestamp == datetime(1970, 1, 1, 0, 0, 0, 400000, tzinfo=pytz.utc)
 
     def test_set_timer(self):
         # Arrange

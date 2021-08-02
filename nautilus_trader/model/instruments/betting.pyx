@@ -59,8 +59,8 @@ cdef class BettingInstrument(Instrument):
         str selection_name not None,
         str selection_handicap not None,
         str currency not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         assert event_open_date.tzinfo is not None
         assert market_start_time.tzinfo is not None
@@ -77,14 +77,14 @@ cdef class BettingInstrument(Instrument):
         self.event_id = event_id
         self.event_name = event_name
         self.event_country_code = event_country_code
-        self.event_open_date = event_open_date
+        self.event_open_date = pd.Timestamp(event_open_date).tz_convert("UTC").to_pydatetime()
 
         # Market Info e.g. Match odds / Handicap
         self.betting_type = betting_type
         self.market_id = market_id
         self.market_type = market_type
         self.market_name = market_name
-        self.market_start_time = market_start_time
+        self.market_start_time = pd.Timestamp(market_start_time).tz_convert("UTC").to_pydatetime()
 
         # Selection/Runner (individual selection/runner) e.g. (LA Lakers)
         self.selection_id = selection_id
@@ -113,21 +113,25 @@ cdef class BettingInstrument(Instrument):
             margin_maint=Decimal(1),
             maker_fee=Decimal(0),
             taker_fee=Decimal(0),
-            ts_event_ns=ts_event_ns,
-            ts_recv_ns=ts_recv_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
             info=dict(),  # TODO - Add raw response?
         )
 
     @staticmethod
     cdef BettingInstrument from_dict_c(dict values):
         Condition.not_none(values, "values")
-        return BettingInstrument(**values)
+        data = values.copy()
+        data['event_open_date'] = pd.Timestamp(data['event_open_date'])
+        data['market_start_time'] = pd.Timestamp(data['market_start_time'])
+        return BettingInstrument(**{k: v for k, v in data.items() if k not in ('instrument_id',)})
 
     @staticmethod
     cdef dict to_dict_c(BettingInstrument obj):
         Condition.not_none(obj, "obj")
         return {
             "type": "BettingInstrument",
+            "instrument_id": obj.id.value,
             "venue_name": obj.id.venue.value,
             "event_type_id": obj.event_type_id,
             "event_type_name": obj.event_type_name,
@@ -136,18 +140,18 @@ cdef class BettingInstrument(Instrument):
             "event_id": obj.event_id,
             "event_name": obj.event_name,
             "event_country_code": obj.event_country_code,
-            "event_open_date": obj.event_open_date,
+            "event_open_date": obj.event_open_date.isoformat(),
             "betting_type": obj.betting_type,
             "market_id": obj.market_id,
             "market_name": obj.market_name,
-            "market_start_time": obj.market_start_time,
+            "market_start_time": obj.market_start_time.isoformat(),
             "market_type": obj.market_type,
             "selection_id": obj.selection_id,
             "selection_name": obj.selection_name,
             "selection_handicap": obj.selection_handicap,
             "currency": obj.quote_currency.code,
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod

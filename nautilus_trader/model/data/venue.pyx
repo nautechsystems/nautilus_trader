@@ -37,21 +37,21 @@ cdef class StatusUpdate(Data):
 
     def __init__(
         self,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``StatusUpdate`` base class.
 
         Parameters
         ----------
-        ts_event_ns : int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns : int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event : int64
+            The UNIX timestamp (nanoseconds) when the status update event occurred.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(ts_event_ns, ts_recv_ns)
+        super().__init__(ts_event, ts_init)
 
 
 cdef class VenueStatusUpdate(StatusUpdate):
@@ -63,8 +63,8 @@ cdef class VenueStatusUpdate(StatusUpdate):
         self,
         Venue venue,
         VenueStatus status,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``VenueStatusUpdate`` class.
@@ -73,13 +73,13 @@ cdef class VenueStatusUpdate(StatusUpdate):
         ----------
         status : VenueStatus
             The venue status.
-        ts_event_ns : int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns : int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event : int64
+            The UNIX timestamp (nanoseconds) when the status update event occurred.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(ts_event_ns, ts_recv_ns)
+        super().__init__(ts_event, ts_init)
         self.venue = venue
         self.status = status
 
@@ -100,8 +100,8 @@ cdef class VenueStatusUpdate(StatusUpdate):
         return VenueStatusUpdate(
             venue=Venue(values["venue"]),
             status=VenueStatusParser.from_str(values["status"]),
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -111,8 +111,8 @@ cdef class VenueStatusUpdate(StatusUpdate):
             "type": "VenueStatusUpdate",
             "venue": obj.venue.value,
             "status": VenueStatusParser.to_str(obj.status),
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod
@@ -154,8 +154,8 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         self,
         InstrumentId instrument_id,
         InstrumentStatus status,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``InstrumentStatusUpdate`` class.
@@ -164,13 +164,13 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         ----------
         status : InstrumentStatus
             The instrument status.
-        ts_event_ns : int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns : int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event : int64
+            The UNIX timestamp (nanoseconds) when the status update event occurred.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(ts_event_ns, ts_recv_ns,)
+        super().__init__(ts_event, ts_init,)
         self.instrument_id = instrument_id
         self.status = status
 
@@ -191,8 +191,8 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         return InstrumentStatusUpdate(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             status=InstrumentStatusParser.from_str(values["status"]),
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -202,8 +202,8 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
             "type": "InstrumentStatusUpdate",
             "instrument_id": obj.instrument_id.value,
             "status": InstrumentStatusParser.to_str(obj.status),
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod
@@ -246,8 +246,8 @@ cdef class InstrumentClosePrice(Data):
         InstrumentId instrument_id not None,
         Price close_price not None,
         InstrumentCloseType close_type,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``InstrumentClosePrice`` class.
@@ -258,13 +258,13 @@ cdef class InstrumentClosePrice(Data):
             The closing price for the instrument.
         close_type : InstrumentCloseType
             The type of closing price.
-        ts_event_ns : int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns : int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event : int64
+            The UNIX timestamp (nanoseconds) when the close price event occurred.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(ts_event_ns, ts_recv_ns,)
+        super().__init__(ts_event, ts_init,)
         self.instrument_id = instrument_id
         self.close_price = close_price
         self.close_type = close_type
@@ -288,8 +288,8 @@ cdef class InstrumentClosePrice(Data):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             close_price=Price.from_str_c(values["close_price"]),
             close_type=InstrumentCloseTypeParser.from_str(values["close_type"]),
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -300,8 +300,8 @@ cdef class InstrumentClosePrice(Data):
             "instrument_id": obj.instrument_id.value,
             "close_price": str(obj.close_price),
             "close_type": InstrumentCloseTypeParser.to_str(obj.close_type),
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod

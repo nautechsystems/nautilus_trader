@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
+
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -30,8 +32,11 @@ cdef class TradingNodeBuilder:
 
     def __init__(
         self,
+        loop not None: asyncio.AbstractEventLoop,
         LiveDataEngine data_engine not None,
         LiveExecutionEngine exec_engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         LiveLogger logger not None,
         LoggerAdapter log not None,
@@ -41,10 +46,16 @@ cdef class TradingNodeBuilder:
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the clients.
         data_engine : LiveDataEngine
             The data engine for the trading node.
         exec_engine : LiveExecutionEngine
             The execution engine for the trading node.
+        msgbus : MessageBus
+            The message bus for the trading node.
+        cache : Cache
+            The cache for building clients.
         clock : LiveClock
             The clock for building clients.
         logger : LiveLogger
@@ -53,9 +64,13 @@ cdef class TradingNodeBuilder:
             The trading nodes logger.
 
         """
+        self._msgbus = msgbus
+        self._cache = cache
         self._clock = clock
         self._logger = logger
         self._log = log
+
+        self._loop = loop
         self._data_engine = data_engine
         self._exec_engine = exec_engine
 
@@ -142,9 +157,11 @@ cdef class TradingNodeBuilder:
             factory = self._data_factories[pieces[0]]
 
             client = factory.create(
+                loop=self._loop,
                 name=name,
                 config=options,
-                engine=self._data_engine,
+                msgbus=self._msgbus,
+                cache=self._cache,
                 clock=self._clock,
                 logger=self._logger,
             )
@@ -171,9 +188,11 @@ cdef class TradingNodeBuilder:
             factory = self._exec_factories[pieces[0]]
 
             client = factory.create(
+                loop=self._loop,
                 name=name,
                 config=options,
-                engine=self._exec_engine,
+                msgbus=self._msgbus,
+                cache=self._cache,
                 clock=self._clock,
                 logger=self._logger,
             )

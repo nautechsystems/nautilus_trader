@@ -36,6 +36,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.bracket import BracketOrder
@@ -64,6 +65,7 @@ class TestRiskEngine:
         self.venue = Venue("SIM")
 
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -78,14 +80,13 @@ class TestRiskEngine:
         )
 
         self.data_engine = DataEngine(
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -93,7 +94,7 @@ class TestRiskEngine:
         )
 
         self.risk_engine = RiskEngine(
-            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -106,7 +107,8 @@ class TestRiskEngine:
             account_id=self.account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -115,7 +117,7 @@ class TestRiskEngine:
         self.exec_engine.register_client(self.exec_client)
 
         # Prepare data
-        self.exec_engine.cache.add_instrument(AUDUSD_SIM)
+        self.cache.add_instrument(AUDUSD_SIM)
 
     def test_trading_state_after_instantiation_returns_active(self):
         # Arrange, Act
@@ -167,7 +169,7 @@ class TestRiskEngine:
             strategy_id=StrategyId("SCALPER-001"),
             instrument_id=AUDUSD_SIM.id,
             command_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.risk_engine.execute(random)
@@ -175,8 +177,9 @@ class TestRiskEngine:
     def test_given_random_event_then_logs_and_continues(self):
         # Arrange
         random = Event(
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
+            event_id=self.uuid_factory.generate(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.exec_engine.process(random)
@@ -189,13 +192,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -207,7 +209,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -226,13 +228,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -244,7 +245,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -265,13 +266,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -301,13 +301,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -319,7 +318,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -337,13 +336,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -356,7 +354,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -374,13 +372,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -393,7 +390,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -411,13 +408,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.stop_limit(
@@ -431,7 +427,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -449,13 +445,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -468,7 +463,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -486,13 +481,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -505,7 +499,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -523,13 +517,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.limit(
@@ -542,7 +535,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -562,13 +555,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -580,7 +572,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -598,19 +590,18 @@ class TestRiskEngine:
 
         # Initialize market
         quote = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
-        self.exec_engine.cache.add_quote_tick(quote)
+        self.cache.add_quote_tick(quote)
 
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -622,7 +613,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -640,19 +631,18 @@ class TestRiskEngine:
 
         # Initialize market
         quote = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
-        self.exec_engine.cache.add_quote_tick(quote)
+        self.cache.add_quote_tick(quote)
 
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -664,7 +654,7 @@ class TestRiskEngine:
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -682,7 +672,7 @@ class TestRiskEngine:
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -705,19 +695,18 @@ class TestRiskEngine:
 
         # Initialize market
         quote = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
-        self.exec_engine.cache.add_quote_tick(quote)
+        self.cache.add_quote_tick(quote)
 
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order1 = strategy.order_factory.market(
@@ -729,7 +718,7 @@ class TestRiskEngine:
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -747,7 +736,7 @@ class TestRiskEngine:
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -770,13 +759,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -788,7 +776,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -811,13 +799,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         entry = strategy.order_factory.market(
@@ -853,13 +840,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         entry = strategy.order_factory.market(
@@ -896,13 +882,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         entry1 = strategy.order_factory.market(
@@ -980,13 +965,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         entry1 = strategy.order_factory.market(
@@ -1064,13 +1048,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         entry = strategy.order_factory.market(
@@ -1107,13 +1090,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.stop_market(
@@ -1126,7 +1108,7 @@ class TestRiskEngine:
         submit = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1137,7 +1119,7 @@ class TestRiskEngine:
             strategy.id,
             order.instrument_id,
             order.client_order_id,
-            order.venue_order_id,
+            VenueOrderId("1"),
             order.quantity,
             Price.from_str("1.00010"),
             None,
@@ -1163,13 +1145,12 @@ class TestRiskEngine:
 
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            self.clock,
-            self.logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         order = strategy.order_factory.market(
@@ -1181,7 +1162,7 @@ class TestRiskEngine:
         submit = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1192,7 +1173,7 @@ class TestRiskEngine:
             strategy.id,
             order.instrument_id,
             order.client_order_id,
-            order.venue_order_id,
+            VenueOrderId("1"),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )

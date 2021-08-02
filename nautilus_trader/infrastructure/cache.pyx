@@ -99,7 +99,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         cdef int port = int(config["port"])
         Condition.valid_string(host, "host")
         Condition.in_range_int(port, 0, 65535, "port")
-        super().__init__(trader_id, logger)
+        super().__init__(logger)
 
         # Database keys
         self._key_trader      = f"{_TRADER}-{trader_id.value}"        # noqa

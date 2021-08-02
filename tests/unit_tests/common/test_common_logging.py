@@ -21,10 +21,10 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogColor
-from nautilus_trader.common.logging import LogLevel
-from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.logging import LogLevelParser
 
 
 class TestLogLevelParser:
@@ -155,6 +155,28 @@ class TestLoggerTests:
 
         # Assert
         assert True  # No exceptions raised
+
+    def test_register_sink_sends_records_to_sink(self):
+        # Arrange
+        sink = []
+        logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
+        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
+
+        # Act
+        logger.register_sink(sink.append)
+        logger_adapter.info("A log event", annotations={"tag": "risk"})
+
+        # Assert
+        assert sink[0] == {
+            "color": 0,
+            "component": "TEST_LOGGER",
+            "level": "INF",
+            "msg": "A log event",
+            "system_id": f"{logger.system_id}",
+            "tag": "risk",
+            "timestamp": 0,
+            "trader_id": "",
+        }
 
 
 class TestLiveLogger:

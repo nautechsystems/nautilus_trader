@@ -23,13 +23,13 @@ from nautilus_trader.adapters.ccxt.data import CCXTDataClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.core.type import DataType
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
@@ -64,12 +64,13 @@ async def async_magic():
 class TestCCXTDataClient:
     def setup(self):
         # Fixture Setup
-        self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
-        self.trader_id = TestStubs.trader_id()
-
         self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
+
+        self.clock = LiveClock()
+        self.uuid_factory = UUIDFactory()
+
+        self.trader_id = TestStubs.trader_id()
 
         # Setup logging
         self.logger = LiveLogger(
@@ -78,6 +79,7 @@ class TestCCXTDataClient:
         )
 
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -93,7 +95,7 @@ class TestCCXTDataClient:
 
         self.data_engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -125,8 +127,10 @@ class TestCCXTDataClient:
         self.mock_ccxt.fetch_trades = fetch_trades
 
         self.client = CCXTDataClient(
+            loop=self.loop,
             client=self.mock_ccxt,
-            engine=self.data_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -212,6 +216,22 @@ class TestCCXTDataClient:
         await self.data_engine.get_run_queue_task()
 
     @pytest.mark.asyncio
+    async def test_subscribe_instruments(self):
+        # Arrange
+        self.data_engine.start()  # Also starts client
+        await asyncio.sleep(0.3)  # Allow engine message queue to start
+
+        # Act
+        self.client.subscribe_instruments()
+
+        # Assert
+        assert len(self.client.subscribed_instruments) == 1236
+
+        # Tear Down
+        self.data_engine.stop()
+        await self.data_engine.get_run_queue_task()
+
+    @pytest.mark.asyncio
     async def test_subscribe_instrument(self):
         # Arrange
         self.data_engine.start()  # Also starts client
@@ -239,7 +259,7 @@ class TestCCXTDataClient:
 
         # Assert
         assert ETHUSDT in self.client.subscribed_quote_ticks
-        assert self.data_engine.cache.has_quote_ticks(ETHUSDT)
+        assert self.cache.has_quote_ticks(ETHUSDT)
 
         # Tear Down
         self.data_engine.stop()
@@ -257,7 +277,7 @@ class TestCCXTDataClient:
 
         # Assert
         assert ETHUSDT in self.client.subscribed_trade_ticks
-        assert self.data_engine.cache.has_trade_ticks(ETHUSDT)
+        assert self.cache.has_trade_ticks(ETHUSDT)
 
         # Tear Down
         self.data_engine.stop()
@@ -276,6 +296,24 @@ class TestCCXTDataClient:
 
         # Assert
         assert bar_type in self.client.subscribed_bars
+
+        # Tear Down
+        self.data_engine.stop()
+        await self.data_engine.get_run_queue_task()
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe_instruments(self):
+        # Arrange
+        self.data_engine.start()  # Also starts client
+        await asyncio.sleep(0.3)  # Allow engine message queue to start
+
+        self.client.subscribe_instruments()
+
+        # Act
+        self.client.unsubscribe_instruments()
+
+        # Assert
+        assert len(self.client.subscribed_instruments) == 0
 
         # Tear Down
         self.data_engine.stop()
@@ -356,42 +394,6 @@ class TestCCXTDataClient:
         await self.data_engine.get_run_queue_task()
 
     @pytest.mark.asyncio
-    async def test_request_instrument(self):
-        # Arrange
-        self.data_engine.start()
-        await asyncio.sleep(0.5)  # Allow engine message queue to start
-
-        # Act
-        self.client.request_instrument(BTCUSDT, uuid4())
-        await asyncio.sleep(0.5)
-
-        # Assert
-        # Instruments additionally requested on start
-        assert self.data_engine.response_count == 1
-
-        # Tear Down
-        self.data_engine.stop()
-        await self.data_engine.get_run_queue_task()
-
-    @pytest.mark.asyncio
-    async def test_request_instruments(self):
-        # Arrange
-        self.data_engine.start()  # Also starts client
-        await asyncio.sleep(0.5)  # Allow engine message queue to start
-
-        # Act
-        self.client.request_instruments(uuid4())
-        await asyncio.sleep(0.5)
-
-        # Assert
-        # Instruments additionally requested on start
-        assert self.data_engine.response_count == 1
-
-        # Tear Down
-        self.data_engine.stop()
-        await self.data_engine.get_run_queue_task()
-
-    @pytest.mark.asyncio
     async def test_request_quote_ticks(self):
         # Arrange
         self.data_engine.start()  # Also starts client
@@ -428,12 +430,11 @@ class TestCCXTDataClient:
             ),
             callback=handler.store,
             request_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
-        self.data_engine.send(request)
-
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
         await asyncio.sleep(1)
 
         # Assert
@@ -473,18 +474,17 @@ class TestCCXTDataClient:
             ),
             callback=handler.store,
             request_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
-        self.data_engine.send(request)
-
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
         await asyncio.sleep(0.3)
 
         # Assert
         assert self.data_engine.response_count == 1
         assert handler.count == 1
-        assert len(handler.get_store()[0]) == 100
+        assert len(handler.get_store()[0].data) == 100
 
         # Tear Down
         self.data_engine.stop()

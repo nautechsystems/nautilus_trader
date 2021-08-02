@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import bz2
-from decimal import Decimal
 import os
+from decimal import Decimal
 from typing import List
 
 import orjson
@@ -148,10 +148,8 @@ class TestDataProvider:
                         size=Quantity(d["trade"]["volume"], 4),
                         aggressor_side=d["trade"]["side"],
                         match_id=(d["trade"]["trade_id"]),
-                        ts_event_ns=millis_to_nanos(
-                            pd.Timestamp(d["remote_timestamp"]).timestamp()
-                        ),
-                        ts_recv_ns=millis_to_nanos(
+                        ts_event=millis_to_nanos(pd.Timestamp(d["remote_timestamp"]).timestamp()),
+                        ts_init=millis_to_nanos(
                             pd.Timestamp(
                                 d["remote_timestamp"]
                             ).timestamp()  # TODO(cs): Hardcoded identical for now
@@ -277,8 +275,8 @@ class TestInstrumentProvider:
             margin_maint=Decimal(),
             maker_fee=Decimal("0.001"),
             taker_fee=Decimal("0.001"),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -313,8 +311,8 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.35"),
             maker_fee=Decimal("0.0001"),
             taker_fee=Decimal("0.0001"),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -349,8 +347,8 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0"),
             maker_fee=Decimal("0.0010"),
             taker_fee=Decimal("0.0010"),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -386,8 +384,8 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.0035"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -423,8 +421,8 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.007"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -487,8 +485,8 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.03"),
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -512,6 +510,6 @@ class TestInstrumentProvider:
             selection_id="50214",
             selection_name="Kansas City Chiefs",
             currency="GBP",
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )

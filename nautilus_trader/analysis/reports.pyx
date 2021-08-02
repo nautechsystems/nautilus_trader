@@ -80,15 +80,8 @@ cdef class ReportProvider:
             return pd.DataFrame()
 
         report = pd.DataFrame(data=filled_orders).set_index("client_order_id").sort_index()
-        report["timestamp_ns"] = [nanos_to_unix_dt(row) for row in report["timestamp_ns"]]
-        report["ts_filled_ns"] = [nanos_to_unix_dt(row) for row in report["ts_filled_ns"]]
-        report.rename(
-            columns={
-                "timestamp_ns": "timestamp",
-                "ts_filled_ns": "ts_filled",
-            },
-            inplace=True,
-        )
+        report["ts_last"] = [nanos_to_unix_dt(row) for row in report["ts_last"]]
+        report["ts_init"] = [nanos_to_unix_dt(row) for row in report["ts_init"]]
 
         return report
 
@@ -115,24 +108,16 @@ cdef class ReportProvider:
         if not trades:
             return pd.DataFrame()
 
-        sort = ["ts_opened_ns", "ts_closed_ns", "position_id"]
+        sort = ["ts_opened", "ts_closed", "position_id"]
         report = pd.DataFrame(data=trades).set_index("position_id").sort_values(sort)
         del report["net_qty"]
         del report["quantity"]
         del report["quote_currency"]
         del report["base_currency"]
         del report["cost_currency"]
-        report["ts_opened_ns"] = [nanos_to_unix_dt(row) for row in report["ts_opened_ns"]]
-        report["ts_closed_ns"] = [nanos_to_unix_dt(row) for row in report["ts_closed_ns"]]
+        report["ts_opened"] = [nanos_to_unix_dt(row) for row in report["ts_opened"]]
+        report["ts_closed"] = [nanos_to_unix_dt(row) for row in report["ts_closed"]]
         report["duration_ns"] = [nanos_to_timedelta(row) for row in report["duration_ns"]]
-        report.rename(
-            columns={
-                "ts_opened_ns": "ts_opened",
-                "ts_closed_ns": "ts_closed",
-                "duration_ns": "duration",
-            },
-            inplace=True,
-        )
 
         return report
 
@@ -162,10 +147,9 @@ cdef class ReportProvider:
         if not account_states:
             return pd.DataFrame()
 
-        report = pd.DataFrame(data=account_states).set_index("ts_updated_ns").sort_index()
+        report = pd.DataFrame(data=account_states).set_index("ts_event").sort_index()
         report.index = [nanos_to_unix_dt(row) for row in report.index]
-        report.index.rename("timestamp", inplace=True)
-        del report["timestamp_ns"]
+        del report["ts_init"]
         del report["type"]
         del report["event_id"]
 

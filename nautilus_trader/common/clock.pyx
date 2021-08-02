@@ -391,7 +391,8 @@ cdef class Clock:
             # The call to np.asarray here looks inefficient, however its only
             # called when a timer is added or removed. This then allows the
             # construction of an efficient Timer[:] memoryview.
-            self._stack = np.ascontiguousarray(list(self._timers.values()))
+            timers = list(self._timers.values())
+            self._stack = np.ascontiguousarray(timers, dtype=Timer)
         else:
             self._stack = None
 
@@ -655,10 +656,9 @@ cdef class LiveClock(Clock):
             )
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *:
-        cdef int64_t timestamp_ns = self.timestamp_ns()
         cdef TimeEvent event = timer.pop_event(
             event_id=self._uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_init=self.timestamp_ns(),
         )
 
         timer.iterate_next_time(self.timestamp_ns())

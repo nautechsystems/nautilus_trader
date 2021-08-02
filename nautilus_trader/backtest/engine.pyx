@@ -32,9 +32,9 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
-from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport log_memory
 from nautilus_trader.common.logging cimport nautilus_header
 from nautilus_trader.common.timer cimport TimeEventHandler
@@ -197,6 +197,7 @@ cdef class BacktestEngine:
             cache_db.flush()
 
         self._msgbus = MessageBus(
+            trader_id=trader_id,
             clock=self._test_clock,
             logger=self._test_logger,
         )
@@ -225,7 +226,7 @@ cdef class BacktestEngine:
         config_data["use_previous_close"] = False  # Ensure bars match historical data
 
         self._data_engine = DataEngine(
-            portfolio=self.portfolio,
+            msgbus=self._msgbus,
             cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
@@ -233,7 +234,6 @@ cdef class BacktestEngine:
         )
 
         self._exec_engine = ExecutionEngine(
-            trader_id=trader_id,
             msgbus=self._msgbus,
             cache=self.cache,
             clock=self._test_clock,
@@ -243,7 +243,7 @@ cdef class BacktestEngine:
         self._exec_engine.load_cache()
 
         self._risk_engine = RiskEngine(
-            exec_engine=self._exec_engine,
+            portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self.cache,
             clock=self._test_clock,
@@ -253,15 +253,14 @@ cdef class BacktestEngine:
 
         self.trader = Trader(
             trader_id=trader_id,
-            strategies=[],  # Added in `run()`
             msgbus=self._msgbus,
+            cache=self._cache,
             portfolio=self.portfolio,
             data_engine=self._data_engine,
             risk_engine=self._risk_engine,
             exec_engine=self._exec_engine,
             clock=self._test_clock,
             logger=self._test_logger,
-            warn_no_strategies=False,
         )
 
         self.analyzer = PerformanceAnalyzer()
@@ -315,7 +314,7 @@ cdef class BacktestEngine:
         # Add data
         self._generic_data = sorted(
             self._generic_data + data,
-            key=lambda x: x.ts_recv_ns,
+            key=lambda x: x.ts_init,
         )
 
         self._log.info(f"Added {len(data)} GenericData points.")
@@ -348,7 +347,7 @@ cdef class BacktestEngine:
         # Add data
         self._data = sorted(
             self._data + data,
-            key=lambda x: x.ts_recv_ns,
+            key=lambda x: x.ts_init,
         )
 
         self._log.info(f"Added {len(data)} Data.")
@@ -395,7 +394,7 @@ cdef class BacktestEngine:
         Condition.list_type(data, OrderBookData, "data")
         cdef InstrumentId instrument_id = data[0].instrument_id
         Condition.true(
-            instrument_id in self._data_engine.cache.instrument_ids(),
+            instrument_id in self._cache.instrument_ids(),
             "Instrument for given data not found in the data cache. "
             "Please call `add_instrument()` before adding related data.",
         )
@@ -406,7 +405,7 @@ cdef class BacktestEngine:
         # Add data
         self._order_book_data = sorted(
             self._order_book_data + data,
-            key=lambda x: x.ts_recv_ns,
+            key=lambda x: x.ts_init,
         )
 
         self._log.info(f"Added {len(data)} {instrument_id} OrderBookData elements (total: {len(self._order_book_data)}).")
@@ -440,7 +439,7 @@ cdef class BacktestEngine:
         Condition.type(data, pd.DataFrame, "data")
         Condition.false(data.empty, "data was empty")
         Condition.true(
-            instrument_id in self._data_engine.cache.instrument_ids(),
+            instrument_id in self._cache.instrument_ids(),
             "Instrument for given data not found in the data cache. "
             "Please call `add_instrument()` before adding related data.",
         )
@@ -515,7 +514,7 @@ cdef class BacktestEngine:
         Condition.type(data, pd.DataFrame, "data")
         Condition.false(data.empty, "data was empty")
         Condition.true(
-            instrument_id in self._data_engine.cache.instrument_ids(),
+            instrument_id in self._cache.instrument_ids(),
             "Instrument for given data not found in the data cache. "
             "Please call `add_instrument()` before adding related data.",
         )
@@ -594,7 +593,7 @@ cdef class BacktestEngine:
         Condition.true(price_type != PriceType.LAST, "price_type was PriceType.LAST")
         Condition.false(data.empty, "data was empty")
         Condition.true(
-            instrument_id in self._data_engine.cache.instrument_ids(),
+            instrument_id in self._cache.instrument_ids(),
             "Instrument for given data not found in the data cache. "
             "Please call `add_instrument()` before adding related data.",
         )
@@ -707,9 +706,9 @@ cdef class BacktestEngine:
             base_currency=base_currency,
             starting_balances=starting_balances,
             is_frozen_account=is_frozen_account,
-            instruments=self._data_engine.cache.instruments(venue),
+            instruments=self._cache.instruments(venue),
             modules=modules,
-            cache=self._exec_engine.cache,
+            cache=self._cache,
             fill_model=fill_model,
             exchange_order_book_level=order_book_level,
             clock=self._test_clock,
@@ -724,7 +723,8 @@ cdef class BacktestEngine:
             account_id=AccountId(venue.value, "001"),
             account_type=account_type,
             base_currency=base_currency,
-            engine=self._exec_engine,
+            msgbus=self._msgbus,
+            cache=self._cache,
             clock=self._test_clock,
             logger=self._test_logger,
             is_frozen_account=is_frozen_account,
@@ -837,7 +837,7 @@ cdef class BacktestEngine:
         if self._data_producer is None:
             self._data_producer = BacktestDataProducer(
                 logger=self._test_logger,
-                instruments=self._data_engine.cache.instruments(),
+                instruments=self._cache.instruments(),
                 generic_data=self._generic_data,
                 order_book_data=self._order_book_data,
                 quote_ticks=self._quote_ticks,
@@ -895,7 +895,7 @@ cdef class BacktestEngine:
         # Prepare instruments
         for instrument in self._data_producer.instruments():
             self._data_engine.process(instrument)
-            self._exec_engine.cache.add_instrument(instrument)
+            self._cache.add_instrument(instrument)
 
         self._log.info("=================================================================")
         self._log.info("BACKTEST")
@@ -903,10 +903,7 @@ cdef class BacktestEngine:
 
         # Setup new strategies
         if strategies:
-            self.trader.initialize_strategies(
-                strategies=strategies,
-                warn_no_strategies=False,
-            )
+            self.trader.add_strategies(strategies)
 
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start_ns)
@@ -920,13 +917,13 @@ cdef class BacktestEngine:
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         while self._data_producer.has_data:
             data = self._data_producer.next()
-            self._advance_time(data.ts_recv_ns)
+            self._advance_time(data.ts_init)
             if isinstance(data, OrderBookData):
                 self._exchanges[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, Tick):
                 self._exchanges[data.instrument_id.venue].process_tick(data)
             self._data_engine.process(data)
-            self._process_modules(data.ts_recv_ns)
+            self._process_modules(data.ts_init)
             self.iteration += 1
         # ---------------------------------------------------------------------#
 
@@ -945,7 +942,7 @@ cdef class BacktestEngine:
         for strategy in self.trader.strategies_c():
             time_events += strategy.clock.advance_time(now_ns)
         for event_handler in sorted(time_events):
-            self._test_clock.set_time(event_handler.event.event_timestamp_ns)
+            self._test_clock.set_time(event_handler.event.ts_event)
             event_handler.handle()
         self._test_clock.set_time(now_ns)
 
@@ -998,8 +995,8 @@ cdef class BacktestEngine:
             self._log.info(f"Execution resolution: {resolution}")
         self._log.info(f"Iterations: {self.iteration:,}")
         self._log.info(f"Total events: {self._exec_engine.event_count:,}")
-        self._log.info(f"Total orders: {self._exec_engine.cache.orders_total_count():,}")
-        self._log.info(f"Total positions: {self._exec_engine.cache.positions_total_count():,}")
+        self._log.info(f"Total orders: {self.cache.orders_total_count():,}")
+        self._log.info(f"Total positions: {self.cache.positions_total_count():,}")
 
         if not self._run_analysis:
             return
@@ -1037,7 +1034,7 @@ cdef class BacktestEngine:
 
             # Find all positions for exchange venue
             positions = []
-            for position in self._exec_engine.cache.positions():
+            for position in self.cache.positions():
                 if position.instrument_id.venue == exchange.id:
                     positions.append(position)
 
@@ -1061,7 +1058,8 @@ cdef class BacktestEngine:
         if client_id not in self._data_engine.registered_clients:
             client = BacktestDataClient(
                 client_id=client_id,
-                engine=self._data_engine,
+                msgbus=self._msgbus,
+                cache=self._cache,
                 clock=self._test_clock,
                 logger=self._test_logger,
             )
@@ -1073,7 +1071,8 @@ cdef class BacktestEngine:
         if client_id not in self._data_engine.registered_clients:
             client = BacktestMarketDataClient(
                 client_id=client_id,
-                engine=self._data_engine,
+                msgbus=self._msgbus,
+                cache=self._cache,
                 clock=self._test_clock,
                 logger=self._test_logger,
             )

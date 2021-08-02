@@ -41,8 +41,8 @@ cdef class AccountState(Event):
         list balances not None,
         dict info not None,
         UUID event_id not None,
-        int64_t ts_updated_ns,
-        int64_t timestamp_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``AccountState`` class.
@@ -63,14 +63,14 @@ cdef class AccountState(Event):
             The additional implementation specific account information.
         event_id : UUID
             The event ID.
-        ts_updated_ns : int64
-            The UNIX timestamp (nanoseconds) when the account was updated.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the event initialization.
+        ts_event : int64
+            The UNIX timestamp (nanoseconds) when the account state event occurred.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the event object was initialized.
 
         """
         Condition.not_empty(balances, "balances")
-        super().__init__(event_id, timestamp_ns)
+        super().__init__(event_id, ts_event, ts_init)
 
         self.account_id = account_id
         self.account_type = account_type
@@ -78,7 +78,6 @@ cdef class AccountState(Event):
         self.balances = balances
         self.is_reported = reported
         self.info = info
-        self.ts_updated_ns = ts_updated_ns
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -101,8 +100,8 @@ cdef class AccountState(Event):
             balances=[AccountBalance.from_dict(b) for b in orjson.loads(values["balances"])],
             info=orjson.loads(values["info"]),
             event_id=UUID.from_str_c(values["event_id"]),
-            ts_updated_ns=values["ts_updated_ns"],
-            timestamp_ns=values["timestamp_ns"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -117,8 +116,8 @@ cdef class AccountState(Event):
             "reported": obj.is_reported,
             "info": orjson.dumps(obj.info),
             "event_id": obj.id.value,
-            "ts_updated_ns": obj.ts_updated_ns,
-            "timestamp_ns": obj.timestamp_ns,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod

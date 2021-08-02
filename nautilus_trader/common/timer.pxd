@@ -24,10 +24,8 @@ from nautilus_trader.core.uuid cimport UUID
 cdef class TimeEvent(Event):
     cdef readonly str name
     """The time events unique name.\n\n:returns: `str`"""
-    cdef readonly datetime event_timestamp
+    cdef readonly datetime timestamp
     """The events timestamp (UTC).\n\n:returns: `datetime`"""
-    cdef readonly int64_t event_timestamp_ns
-    """The UNIX timestamp (nanoseconds) of the event.\n\n:returns: `int64`"""
 
 
 cdef class TimeEventHandler:
@@ -35,7 +33,7 @@ cdef class TimeEventHandler:
     cdef readonly TimeEvent event
     """The handlers event.\n\n:returns: `TimeEvent`"""
 
-    cdef void handle(self) except *
+    cpdef void handle(self) except *
 
 
 cdef class Timer:
@@ -54,7 +52,7 @@ cdef class Timer:
     cdef readonly bint is_expired
     """If the timer is expired.\n\n:returns: `bool`"""
 
-    cpdef TimeEvent pop_event(self, UUID event_id, int64_t timestamp_ns)
+    cpdef TimeEvent pop_event(self, UUID event_id, int64_t ts_init)
     cpdef void iterate_next_time(self, int64_t to_time_ns) except *
     cpdef void cancel(self) except *
 

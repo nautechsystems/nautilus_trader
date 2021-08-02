@@ -22,12 +22,12 @@ as all abstract methods are implemented.
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data.bar cimport BarType
@@ -36,7 +36,7 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class DataClient:
@@ -49,7 +49,8 @@ cdef class DataClient:
     def __init__(
         self,
         ClientId client_id not None,
-        DataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         Clock clock not None,
         Logger logger not None,
         dict config=None,
@@ -61,19 +62,14 @@ cdef class DataClient:
         ----------
         client_id : ClientId
             The data client ID.
-        engine : DataEngine
-            The data engine to connect to the client.
+        msgbus : MessageBus
+            The message bus for the client.
         clock : Clock
-            The clock for the component.
+            The clock for the client.
         logger : Logger
-            The logger for the component.
+            The logger for the client.
         config : dict[str, object], optional
             The configuration options.
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
 
         """
         if config is None:
@@ -85,7 +81,8 @@ cdef class DataClient:
             component=config.get("name", f"DataClient-{client_id.value}"),
             logger=logger,
         )
-        self._engine = engine
+        self._msgbus = msgbus
+        self._cache = cache
         self._config = config
 
         self.id = client_id
@@ -139,7 +136,7 @@ cdef class DataClient:
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cdef void _handle_data(self, Data data) except *:
-        self._engine.process(data)
+        self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
     cdef void _handle_data_response(self, DataType data_type, Data data, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
@@ -148,10 +145,10 @@ cdef class DataClient:
             data=data,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
-        self._engine.receive(response)
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
 
 cdef class MarketDataClient(DataClient):
@@ -164,7 +161,8 @@ cdef class MarketDataClient(DataClient):
     def __init__(
         self,
         ClientId client_id not None,
-        DataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         Clock clock not None,
         Logger logger not None,
         dict config=None,
@@ -176,19 +174,22 @@ cdef class MarketDataClient(DataClient):
         ----------
         client_id : ClientId
             The data client ID (normally the venue).
-        engine : DataEngine
-            The data engine to connect to the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : Clock
-            The clock for the component.
+            The clock for the client.
         logger : Logger
-            The logger for the component.
+            The logger for the client.
         config : dict[str, object], optional
             The configuration options.
 
         """
         super().__init__(
             client_id=client_id,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             config=config,
@@ -232,15 +233,19 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef void subscribe_instruments(self) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, BookLevel level, int depth=0, dict kwargs=None) except *:
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:
+    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookLevel level, int depth=0, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -268,15 +273,19 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef void unsubscribe_instruments(self) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -307,14 +316,6 @@ cdef class MarketDataClient(DataClient):
 # -- REQUESTS --------------------------------------------------------------------------------------
 
     cpdef void request(self, DataType datatype, UUID correlation_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void request_instruments(self, UUID correlation_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -355,8 +356,6 @@ cdef class MarketDataClient(DataClient):
 
     # Convenient pure Python wrappers for the data handlers. Often Python methods
     # involving threads or the event loop don't work with cpdef methods.
-    def _handle_instruments_py(self, list instruments, UUID correlation_id):
-        self._handle_instruments(instruments, correlation_id)
 
     def _handle_quote_ticks_py(self, InstrumentId instrument_id, list ticks, UUID correlation_id):
         self._handle_quote_ticks(instrument_id, ticks, correlation_id)
@@ -369,18 +368,6 @@ cdef class MarketDataClient(DataClient):
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *:
-        cdef DataResponse response = DataResponse(
-            client_id=self.id,
-            data_type=DataType(Instrument),
-            data=instruments,
-            correlation_id=correlation_id,
-            response_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
-        )
-
-        self._engine.receive(response)
-
     cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
@@ -388,10 +375,10 @@ cdef class MarketDataClient(DataClient):
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
-        self._engine.receive(response)
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
     cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
@@ -400,10 +387,10 @@ cdef class MarketDataClient(DataClient):
             data=ticks,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
-        self._engine.receive(response)
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
     cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
         cdef DataResponse response = DataResponse(
@@ -412,7 +399,7 @@ cdef class MarketDataClient(DataClient):
             data=bars,
             correlation_id=correlation_id,
             response_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
-        self._engine.receive(response)
+        self._msgbus.send(endpoint="DataEngine.response", msg=response)

@@ -39,6 +39,7 @@ cdef set _MARKET_ORDER_VALID_TIF = {
     TimeInForce.IOC,
     TimeInForce.FOK,
     TimeInForce.FAK,
+    TimeInForce.OC,
 }
 
 
@@ -63,7 +64,7 @@ cdef class MarketOrder(Order):
         Quantity quantity not None,
         TimeInForce time_in_force,
         UUID init_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``MarketOrder`` class.
@@ -84,8 +85,8 @@ cdef class MarketOrder(Order):
             The order quantity (> 0).
         init_id : UUID
             The order initialization event ID.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the order initialization.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the order was initialized.
 
         Raises
         ------
@@ -108,7 +109,7 @@ cdef class MarketOrder(Order):
             quantity=quantity,
             time_in_force=time_in_force,
             event_id=init_id,
-            timestamp_ns=timestamp_ns,
+            ts_init=ts_init,
             options={},
         )
 
@@ -128,20 +129,20 @@ cdef class MarketOrder(Order):
             "strategy_id": self.strategy_id.value,
             "instrument_id": self.instrument_id.value,
             "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "position_id": self.position_id.value,
+            "venue_order_id": self.venue_order_id.value if self.venue_order_id else None,
+            "position_id": self.position_id.value if self.position_id else None,
             "account_id": self.account_id.value if self.account_id else None,
             "execution_id": self.execution_id.value if self.execution_id else None,
             "type": OrderTypeParser.to_str(self.type),
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
-            "timestamp_ns": self.timestamp_ns,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
-            "ts_filled_ns": self.ts_filled_ns,
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "slippage": str(self.slippage),
             "state": self._fsm.state_string_c(),
+            "ts_last": self.ts_last,
+            "ts_init": self.ts_init,
         }
 
     @staticmethod
@@ -176,7 +177,7 @@ cdef class MarketOrder(Order):
             quantity=init.quantity,
             time_in_force=init.time_in_force,
             init_id=init.id,
-            timestamp_ns=init.timestamp_ns,
+            ts_init=init.ts_init,
         )
 
     cdef str status_string_c(self):
@@ -194,5 +195,5 @@ cdef class MarketOrder(Order):
         self._execution_ids.append(fill.execution_id)
         self.execution_id = fill.execution_id
         self.filled_qty = Quantity(self.filled_qty + fill.last_qty, fill.last_qty.precision)
-        self.ts_filled_ns = fill.ts_filled_ns
+        self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)

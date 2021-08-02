@@ -339,8 +339,8 @@ cdef class NewsEvent(Data):
         impact: NewsImpact,
         str name,
         Currency currency,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
 
@@ -352,13 +352,13 @@ cdef class NewsEvent(Data):
             The name of the economic news event.
         currency : Currency
             The currency the economic news event is expected to affect.
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when originally occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the news event occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(ts_event_ns, ts_recv_ns)
+        super().__init__(ts_event, ts_init)
 
         self.impact = impact
         self.name = name

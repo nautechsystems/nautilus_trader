@@ -114,11 +114,11 @@ cdef class IBInstrumentProvider(InstrumentProvider):
         self._instruments[instrument_id] = instrument
 
     cdef Instrument _parse_instrument(
-            self,
-            AssetType asset_type,
-            InstrumentId instrument_id,
-            dict details,
-            object contract_details
+        self,
+        AssetType asset_type,
+        InstrumentId instrument_id,
+        dict details,
+        object contract_details
     ):
         if asset_type == AssetType.FUTURE:
             Condition.is_in("asset_class", details, "asset_class", "details")
@@ -167,8 +167,8 @@ cdef class IBInstrumentProvider(InstrumentProvider):
             trading_hours=details.tradingHours,
             liquid_hours=details.liquidHours,
             last_trade_time=details.lastTradeTime,
-            ts_event_ns=timestamp,
-            ts_recv_ns=timestamp,
+            ts_event=timestamp,
+            ts_init=timestamp,
         )
 
         return future
@@ -195,7 +195,7 @@ cdef class IBInstrumentProvider(InstrumentProvider):
             time_zone_id=details.timeZoneId,
             trading_hours=details.tradingHours,
             last_trade_time=details.lastTradeTime,
-            ts_event_ns=timestamp,
-            ts_recv_ns=timestamp,
+            ts_event=timestamp,
+            ts_init=timestamp,
         )
         return equity

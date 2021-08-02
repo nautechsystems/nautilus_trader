@@ -19,16 +19,20 @@ from nautilus_trader.core.uuid cimport UUID
 
 
 cpdef enum MessageCategory:
-    STRING = 1,
-    COMMAND = 2,
-    DOCUMENT = 3,
-    EVENT = 4,
-    REQUEST = 5,
-    RESPONSE = 6,
+    COMMAND = 1,
+    DOCUMENT = 2,
+    EVENT = 3,
+    REQUEST = 4,
+    RESPONSE = 5,
 
 
-cpdef str message_category_to_str(int value)
-cpdef MessageCategory message_category_from_str(str value)
+cdef class MessageCategoryParser:
+
+    @staticmethod
+    cdef str to_str(int value)
+
+    @staticmethod
+    cdef MessageCategory from_str(str value) except *
 
 
 cdef class Message:
@@ -36,8 +40,8 @@ cdef class Message:
     """The message category.\n\n:returns: `MessageCategory`"""
     cdef readonly UUID id
     """The message ID.\n\n:returns: `UUID`"""
-    cdef readonly int64_t timestamp_ns
-    """The UNIX timestamp (nanoseconds) of message initialization.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
 
 
 cdef class Command(Message):
@@ -49,11 +53,13 @@ cdef class Document(Message):
 
 
 cdef class Event(Message):
-    pass
+    cdef readonly int64_t ts_event
+    """The UNIX timestamp (nanoseconds) when the event occurred.\n\n:returns: `int64`"""
 
 
 cdef class Request(Message):
-    pass
+    cdef readonly object callback
+    """The callback for the response.\n\n:returns: `callable`"""
 
 
 cdef class Response(Message):

@@ -13,17 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 import inspect
+from datetime import datetime
 from typing import Dict, List, Optional
 
+from nautilus_trader.cache.cache import Cache
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.core.type import DataType
 from nautilus_trader.core.uuid import UUID
 from nautilus_trader.data.client import MarketDataClient
-from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
@@ -35,6 +34,7 @@ from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -42,11 +42,11 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.strategy import TradingStrategy
 
@@ -174,6 +174,10 @@ class MockStrategy(TradingStrategy):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(data)
 
+    def on_strategy_data(self, data) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(data)
+
     def on_event(self, event) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(event)
@@ -271,7 +275,8 @@ class MockMarketDataClient(MarketDataClient):
     def __init__(
         self,
         client_id: ClientId,
-        engine: DataEngine,
+        msgbus: MessageBus,
+        cache: Cache,
         clock: Clock,
         logger: Logger,
     ):
@@ -282,17 +287,18 @@ class MockMarketDataClient(MarketDataClient):
         ----------
         client_id : ClientId
             The client ID.
-        engine : DataEngine
-            The data engine to connect to the client.
+        msgbus : MessageBus
+            The message bus for the client.
         clock : Clock
-            The clock for the component.
+            The clock for the client.
         logger : Logger
-            The logger for the component.
+            The logger for the client.
 
         """
         super().__init__(
             client_id=client_id,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
         )
@@ -348,7 +354,10 @@ class MockMarketDataClient(MarketDataClient):
     def unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def unsubscribe_order_book(self, instrument_id: InstrumentId) -> None:
+    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     # -- REQUESTS ----------------------------------------------------------------------------------
@@ -407,7 +416,8 @@ class MockExecutionClient(ExecutionClient):
         account_id,
         account_type,
         base_currency,
-        engine,
+        msgbus,
+        cache,
         clock,
         logger,
     ):
@@ -426,12 +436,14 @@ class MockExecutionClient(ExecutionClient):
             The account type for the client.
         base_currency : Currency, optional
             The account base currency for the client. Use ``None`` for multi-currency accounts.
-        engine : ExecutionEngine
-            The execution engine for the component.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client
         clock : Clock
-            The clock for the component.
+            The clock for the client.
         logger : Logger
-            The logger for the component.
+            The logger for the client.
 
         """
         super().__init__(
@@ -440,7 +452,8 @@ class MockExecutionClient(ExecutionClient):
             account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
         )
@@ -494,13 +507,15 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
     def __init__(
         self,
+        loop,
         client_id,
         venue_type,
         account_id,
         account_type,
         base_currency,
-        engine,
         instrument_provider,
+        msgbus,
+        cache,
         clock,
         logger,
     ):
@@ -519,24 +534,28 @@ class MockLiveExecutionClient(LiveExecutionClient):
             The account type for the client.
         base_currency : Currency, optional
             The account base currency for the client. Use ``None`` for multi-currency accounts.
-        engine : ExecutionEngine
-            The execution engine for the component.
         instrument_provider : InstrumentProvider
             The instrument provider for the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : Clock
-            The clock for the component.
+            The clock for the client.
         logger : Logger
-            The logger for the component.
+            The logger for the client.
 
         """
         super().__init__(
+            loop=loop,
             client_id=client_id,
             venue_type=venue_type,
             account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,
-            engine=engine,
             instrument_provider=instrument_provider,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
         )
@@ -608,19 +627,17 @@ class MockCacheDatabase(CacheDatabase):
     Provides a mock cache database for testing.
     """
 
-    def __init__(self, trader_id: TraderId, logger: Logger):
+    def __init__(self, logger: Logger):
         """
         Initialize a new instance of the ``MockCacheDatabase`` class.
 
         Parameters
         ----------
-        trader_id : TraderId
-            The trader ID to associate with the database.
         logger : Logger
             The logger for the database.
 
         """
-        super().__init__(trader_id, logger)
+        super().__init__(logger)
 
         self.currencies = {}  # type: dict[str, Currency]
         self.instruments = {}  # type: dict[InstrumentId, Instrument]
@@ -703,7 +720,7 @@ class MockLiveDataEngine(LiveDataEngine):
     def __init__(
         self,
         loop,
-        portfolio,
+        msgbus,
         cache,
         clock,
         logger,
@@ -711,7 +728,7 @@ class MockLiveDataEngine(LiveDataEngine):
     ):
         super().__init__(
             loop=loop,
-            portfolio=portfolio,
+            msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
@@ -738,7 +755,6 @@ class MockLiveExecutionEngine(LiveExecutionEngine):
     def __init__(
         self,
         loop,
-        trader_id,
         msgbus,
         cache,
         clock,
@@ -747,7 +763,6 @@ class MockLiveExecutionEngine(LiveExecutionEngine):
     ):
         super().__init__(
             loop=loop,
-            trader_id=trader_id,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -771,7 +786,7 @@ class MockLiveRiskEngine(LiveRiskEngine):
     def __init__(
         self,
         loop,
-        exec_engine,
+        portfolio,
         msgbus,
         cache,
         clock,
@@ -780,7 +795,7 @@ class MockLiveRiskEngine(LiveRiskEngine):
     ):
         super().__init__(
             loop=loop,
-            exec_engine=exec_engine,
+            portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

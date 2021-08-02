@@ -17,19 +17,18 @@ from decimal import Decimal
 
 from cpython.datetime cimport timedelta
 
-from nautilus_trader.cache.cache cimport Cache
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
+from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_state cimport OrderState
@@ -42,6 +41,7 @@ from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -51,7 +51,9 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class RiskEngine(Component):
@@ -76,9 +78,9 @@ cdef class RiskEngine(Component):
 
     def __init__(
         self,
-        ExecutionEngine exec_engine not None,
+        PortfolioFacade portfolio not None,
         MessageBus msgbus not None,
-        Cache cache not None,
+        CacheFacade cache not None,
         Clock clock not None,
         Logger logger not None,
         dict config=None,
@@ -88,12 +90,12 @@ cdef class RiskEngine(Component):
 
         Parameters
         ----------
-        exec_engine : ExecutionEngine
-            The execution engine for the engine.
+        portfolio : PortfolioFacade
+            The portfolio for the engine.
         msgbus : MessageBus
             The message bus for the engine.
-        cache : Cache
-            The cache for the engine.
+        cache : CacheFacade
+            The read-only cache for the engine.
         clock : Clock
             The clock for the engine.
         logger : Logger
@@ -107,14 +109,13 @@ cdef class RiskEngine(Component):
         super().__init__(
             clock=clock,
             logger=logger,
-            name="RiskEngine",
+            component_id=ComponentId("RiskEngine"),
         )
 
+        self._portfolio = portfolio
         self._msgbus = msgbus
-        self._exec_engine = exec_engine
+        self._cache = cache
 
-        self.trader_id = exec_engine.trader_id
-        self.cache = cache
         self.trading_state = TradingState.ACTIVE  # Start active by default
         self.is_bypassed = config.get("bypass", False)
         self._log_state()
@@ -153,9 +154,12 @@ cdef class RiskEngine(Component):
         # Configure
         self._initialize_risk_checks(config)
 
+        # Register endpoints
+        self._msgbus.register(endpoint="RiskEngine.execute", handler=self.execute)
+
         # Required subscriptions
-        self._msgbus.subscribe(topic="events.order*", handler=self._handle_event)
-        self._msgbus.subscribe(topic="events.position*", handler=self._handle_event)
+        self._msgbus.subscribe(topic="events.order*", handler=self._handle_event, priority=10)
+        self._msgbus.subscribe(topic="events.position*", handler=self._handle_event, priority=10)
 
     cdef void _initialize_risk_checks(self, dict config) except *:
         cdef dict max_notional_config = config.get("max_notional_per_order", {})
@@ -349,20 +353,29 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         # Check position exists
-        if command.position_id.not_null() and not self.cache.position_exists(command.position_id):
-            self._deny_command(
-                command=command,
-                reason=f"{repr(command.position_id)} does not exist",
-            )
-            return  # Denied
+        cdef Position position
+        if command.position_id is not None:
+            position = self._cache.position(command.position_id)
+            if position is None:
+                self._deny_command(
+                    command=command,
+                    reason=f"{repr(command.position_id)} does not exist",
+                )
+                return  # Denied
+            if position.is_closed_c():
+                self._deny_command(
+                    command=command,
+                    reason=f"{repr(command.position_id)} already closed",
+                )
+                return  # Denied
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
-            self._exec_engine.execute(command)
+            self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
             return
 
         # Get instrument for order
-        cdef Instrument instrument = self._exec_engine.cache.instrument(command.order.instrument_id)
+        cdef Instrument instrument = self._cache.instrument(command.order.instrument_id)
         if instrument is None:
             self._deny_command(
                 command=command,
@@ -402,11 +415,11 @@ cdef class RiskEngine(Component):
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
-            self._exec_engine.execute(command)
+            self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
             return
 
         # Get instrument for orders
-        cdef Instrument instrument = self._exec_engine.cache.instrument(command.instrument_id)
+        cdef Instrument instrument = self._cache.instrument(command.instrument_id)
         if instrument is None:
             self._deny_command(
                 command=command,
@@ -430,7 +443,7 @@ cdef class RiskEngine(Component):
         ########################################################################
         # Validate command
         ########################################################################
-        if self.cache.is_order_completed(command.client_order_id):
+        if self._cache.is_order_completed(command.client_order_id):
             self._deny_command(
                 command=command,
                 reason=f"{repr(command.client_order_id)} already completed",
@@ -438,7 +451,7 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         # Get instrument for orders
-        cdef Instrument instrument = self._exec_engine.cache.instrument(command.instrument_id)
+        cdef Instrument instrument = self._cache.instrument(command.instrument_id)
         if instrument is None:
             self._deny_command(
                 command=command,
@@ -467,7 +480,7 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         # Get order relating to update
-        cdef Order order = self.cache.order(command.client_order_id)
+        cdef Order order = self._cache.order(command.client_order_id)
         if order is None:
             self._deny_command(
                 command=command,
@@ -498,13 +511,13 @@ cdef class RiskEngine(Component):
                     return  # Denied
 
         # All checks passed: send for execution
-        self._exec_engine.execute(command)
+        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
     cdef void _handle_cancel_order(self, CancelOrder command) except *:
         ########################################################################
         # Validate command
         ########################################################################
-        if self.cache.is_order_completed(command.client_order_id):
+        if self._cache.is_order_completed(command.client_order_id):
             self._deny_command(
                 command=command,
                 reason=f"{repr(command.client_order_id)} already completed",
@@ -512,12 +525,12 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         # All checks passed: send for execution
-        self._exec_engine.execute(command)
+        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
 
     cdef bint _check_order_id(self, Order order) except *:
-        if order is None or not self.cache.order_exists(order.client_order_id):
+        if order is None or not self._cache.order_exists(order.client_order_id):
             return True  # Check passed
         else:
             return False  # Check failed (duplicate ID)
@@ -580,7 +593,7 @@ cdef class RiskEngine(Component):
 
         if order.type == OrderType.MARKET:
             # Determine entry price
-            last = self.cache.quote_tick(instrument.id)
+            last = self._cache.quote_tick(instrument.id)
             if last is None:
                 self._deny_order(
                     order=order,
@@ -660,8 +673,8 @@ cdef class RiskEngine(Component):
             # Already denied or duplicated (INITIALIZED -> DENIED only valid state transition)
             return
 
-        if not self.cache.order_exists(order.client_order_id):
-            self.cache.add_order(order, PositionId.null_c())
+        if not self._cache.order_exists(order.client_order_id):
+            self._cache.add_order(order, position_id=None)
 
         # Generate event
         cdef OrderDenied denied = OrderDenied(
@@ -671,10 +684,10 @@ cdef class RiskEngine(Component):
             client_order_id=order.client_order_id,
             reason=reason,
             event_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
-        self._exec_engine.process(denied)
+        self._msgbus.send(endpoint="ExecEngine.process", msg=denied)
 
     cdef void _deny_bracket_order(self, BracketOrder bracket_order, str reason) except *:
         self._deny_order(order=bracket_order.entry, reason=reason)
@@ -709,7 +722,7 @@ cdef class RiskEngine(Component):
         self._order_throttler.send(command)
 
     cpdef _send_command(self, TradingCommand command):
-        self._exec_engine.execute(command)
+        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 

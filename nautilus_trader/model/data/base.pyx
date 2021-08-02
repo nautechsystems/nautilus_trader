@@ -15,8 +15,6 @@
 
 from libc.stdint cimport int64_t
 
-from nautilus_trader.core.type cimport DataType
-
 
 cdef class Data:
     """
@@ -25,27 +23,74 @@ cdef class Data:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, int64_t ts_event_ns, int64_t ts_recv_ns):
+    def __init__(self, int64_t ts_event, int64_t ts_init):
         """
         Initialize a new instance of the ``Data`` class.
 
         Parameters
         ----------
-        ts_event_ns : int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns : int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event : int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
         # Design-time invariant: correct ordering of timestamps
-        assert ts_recv_ns >= ts_event_ns
-        self.ts_event_ns = ts_event_ns
-        self.ts_recv_ns = ts_recv_ns
+        assert ts_event <= ts_init
+        self.ts_event = ts_event
+        self.ts_init = ts_init
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"ts_event_ns={self.ts_event_ns}, "
-                f"ts_recv_ns{self.ts_recv_ns})")
+                f"ts_event={self.ts_event}, "
+                f"ts_init{self.ts_init})")
+
+
+cdef class DataType:
+    """
+    Represents a data type including metadata.
+    """
+
+    def __init__(self, type type not None, dict metadata=None):    # noqa (shadows built-in type)
+        """
+        Initialize a new instance of the ``DataType`` class.
+
+        Parameters
+        ----------
+        type : type
+            The ``Data`` type of the data.
+        metadata : dict
+            The data types metadata.
+
+        Raises
+        ------
+        TypeError
+            If metadata contains a key or value which is not hashable.
+        Warnings
+        --------
+        This class may be used as a key in hash maps throughout the system, thus
+        the key and value contents of metadata must themselves be hashable.
+
+        """
+        if metadata is None:
+            metadata = {}
+
+        self._key = frozenset(metadata.items())
+        self._hash = hash((self.type, self._key))  # Assign hash for improved time complexity
+        self.type = type
+        self.metadata = metadata
+
+    def __eq__(self, DataType other) -> bool:
+        return self.type == other.type and self._key == other._key  # noqa
+
+    def __hash__(self) -> int:
+        return self._hash
+
+    def __str__(self) -> str:
+        return f"<{self.type.__name__}> {self.metadata}"
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(type={self.type.__name__}, metadata={self.metadata})"
 
 
 cdef class GenericData(Data):
@@ -69,6 +114,6 @@ cdef class GenericData(Data):
             The data object to wrap.
 
         """
-        super().__init__(data.ts_event_ns, data.ts_recv_ns)
+        super().__init__(data.ts_event, data.ts_init)
         self.data_type = data_type
         self.data = data

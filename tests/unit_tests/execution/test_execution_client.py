@@ -32,7 +32,6 @@ from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -60,6 +59,7 @@ class TestExecutionClient:
         self.account_id = TestStubs.account_id()
 
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -74,7 +74,6 @@ class TestExecutionClient:
         )
 
         self.exec_engine = ExecutionEngine(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -89,7 +88,8 @@ class TestExecutionClient:
             account_id=TestStubs.account_id(),
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -111,7 +111,8 @@ class TestExecutionClient:
             account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -146,7 +147,7 @@ class TestExecutionClient:
         command = SubmitOrder(
             self.trader_id,
             order.strategy_id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),

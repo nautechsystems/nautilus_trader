@@ -32,12 +32,12 @@ https://docs.python.org/3.9/library/decimal.html
 
 import decimal
 
-from cpython.object cimport PyObject_RichCompareBool
 from cpython.object cimport Py_EQ
 from cpython.object cimport Py_GE
 from cpython.object cimport Py_GT
 from cpython.object cimport Py_LE
 from cpython.object cimport Py_LT
+from cpython.object cimport PyObject_RichCompareBool
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -322,8 +322,8 @@ cdef class Quantity(BaseDecimal):
         -------
         Quantity
 
-        Warning
-        -------
+        Warnings
+        --------
         The decimal precision will be inferred from the number of digits
         following the '.' point (if no point then precision zero).
 

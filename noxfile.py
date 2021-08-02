@@ -4,7 +4,7 @@ import nox
 from nox.sessions import Session
 
 
-ALL_EXTRAS = "betfair ccxt docs ib"
+ALL_EXTRAS = "betfair ccxt distributed docs ib"
 
 
 # Ensure everything runs within Poetry venvs
@@ -53,13 +53,6 @@ def coverage(session: Session) -> None:
     """Run with test coverage."""
     _setup_poetry(session, "--extras", ALL_EXTRAS, env={"PROFILING_MODE": "true"})
     _run_coverage(session)
-
-
-@nox.session
-def build_docs(session: Session) -> None:
-    """Build documentation."""
-    _setup_poetry(session, "--extras", "docs")
-    session.run("poetry", "run", "sphinx-build", "docs/source", "docs/build")
 
 
 @nox.session

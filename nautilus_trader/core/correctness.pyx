@@ -19,7 +19,6 @@ to help ensure software correctness.
 """
 
 from cpython.object cimport PyCallable_Check
-from libc.stdint cimport int64_t
 
 
 cdef class Condition:

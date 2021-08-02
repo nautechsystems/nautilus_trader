@@ -16,8 +16,8 @@
 import pytest
 
 from nautilus_trader.cache.base import CacheFacade
-from nautilus_trader.core.type import DataType
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
@@ -76,8 +76,8 @@ class TestDataType:
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
             currency=USD,
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
         generic_data = GenericData(data_type, data)
 

@@ -21,7 +21,6 @@ from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.trading.strategy import TradingStrategy
 
 
 class TestTradingNodeConfiguration:
@@ -57,10 +56,7 @@ class TestTradingNodeConfiguration:
         }
 
         # Act
-        node = TradingNode(
-            strategies=[TradingStrategy("000")],
-            config=config,
-        )
+        node = TradingNode(config=config)
 
         # Assert
         assert node is not None
@@ -99,10 +95,7 @@ class TestTradingNodeConfiguration:
         }
 
         # Act
-        node = TradingNode(
-            strategies=[TradingStrategy("000")],
-            config=config,
-        )
+        node = TradingNode(config=config)
 
         # Assert
         assert node is not None
@@ -130,30 +123,43 @@ class TestTradingNodeOperation:
             "exec_clients": {},
         }
 
-        self.node = TradingNode(
-            strategies=[TradingStrategy("000")],
-            config=config,
-        )
+        self.node = TradingNode(config=config)
 
     def test_get_event_loop_returns_a_loop(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         loop = self.node.get_event_loop()
 
         # Assert
         assert isinstance(loop, asyncio.AbstractEventLoop)
 
     def test_add_data_client_factory(self):
+        # Arrange, # Act
         self.node.add_data_client_factory("CCXT", CCXTDataClientFactory)
         self.node.build()
 
         # TODO(cs): Assert existence of client
 
     def test_add_exec_client_factory(self):
+        # Arrange, # Act
         self.node.add_exec_client_factory("CCXT", CCXTExecutionClientFactory)
         self.node.build()
 
         # TODO(cs): Assert existence of client
+
+    @pytest.mark.asyncio
+    async def test_register_log_sink(self):
+        # Arrange
+        sink = []
+
+        # Act
+        self.node.add_log_sink(sink.append)
+        self.node.build()
+
+        self.node.start()
+        await asyncio.sleep(1)
+
+        # Assert: Log record received
+        assert sink[-1]["system_id"] == self.node.system_id.value
 
     @pytest.mark.asyncio
     async def test_start(self):

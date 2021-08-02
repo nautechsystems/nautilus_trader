@@ -21,12 +21,12 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.core.type import DataType
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -48,11 +48,17 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 class TestLiveDataEngine:
     def setup(self):
         # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
+
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -66,12 +72,9 @@ class TestLiveDataEngine:
             logger=self.logger,
         )
 
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -91,9 +94,14 @@ class TestLiveDataEngine:
 
     def test_message_qsize_at_max_blocks_on_put_data_command(self):
         # Arrange
+        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
+        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
+        self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
+        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -103,9 +111,8 @@ class TestLiveDataEngine:
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
             data_type=DataType(QuoteTick),
-            handler=[].append,
             command_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -118,9 +125,14 @@ class TestLiveDataEngine:
 
     def test_message_qsize_at_max_blocks_on_send_request(self):
         # Arrange
+        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
+        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
+        self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
+        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -141,12 +153,12 @@ class TestLiveDataEngine:
             ),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
-        self.engine.send(request)
-        self.engine.send(request)
+        self.engine.request(request)
+        self.engine.request(request)
 
         # Assert
         assert self.engine.message_qsize() == 1
@@ -154,9 +166,14 @@ class TestLiveDataEngine:
 
     def test_message_qsize_at_max_blocks_on_receive_response(self):
         # Arrange
+        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
+        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
+        self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
+        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -169,12 +186,12 @@ class TestLiveDataEngine:
             data=[],
             correlation_id=self.uuid_factory.generate(),
             response_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
-        self.engine.receive(response)
-        self.engine.receive(response)  # Add over max size
+        self.engine.response(response)
+        self.engine.response(response)  # Add over max size
 
         # Assert
         assert self.engine.message_qsize() == 1
@@ -182,9 +199,14 @@ class TestLiveDataEngine:
 
     def test_data_qsize_at_max_blocks_on_put_data(self):
         # Arrange
+        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
+        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
+        self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
+        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -250,9 +272,8 @@ class TestLiveDataEngine:
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
             data_type=DataType(QuoteTick),
-            handler=[].append,
             command_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -285,11 +306,11 @@ class TestLiveDataEngine:
             ),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
-        self.engine.send(request)
+        self.engine.request(request)
         await asyncio.sleep(0.1)
 
         # Assert
@@ -310,11 +331,11 @@ class TestLiveDataEngine:
             data=[],
             correlation_id=self.uuid_factory.generate(),
             response_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
-        self.engine.receive(response)
+        self.engine.response(response)
         await asyncio.sleep(0.1)
 
         # Assert

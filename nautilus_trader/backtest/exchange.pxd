@@ -150,6 +150,7 @@ cdef class SimulatedExchange:
         StrategyId strategy_id,
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
         str response,
         str reason,
     ) except *
@@ -158,6 +159,7 @@ cdef class SimulatedExchange:
         StrategyId strategy_id,
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
         str response,
         str reason,
     ) except *

@@ -15,10 +15,10 @@
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.core.type import DataType
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -39,15 +39,13 @@ class TestDataMessage:
     def test_data_command_str_and_repr(self):
         # Arrange
         # Act
-        handler = [].append
         command_id = self.uuid_factory.generate()
 
         command = Subscribe(
             client_id=ClientId(BINANCE.value),
             data_type=DataType(str, {"type": "newswire"}),  # str data type is invalid
-            handler=handler,
             command_id=command_id,
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Assert
@@ -56,7 +54,6 @@ class TestDataMessage:
             f"Subscribe("
             f"client_id=BINANCE, "
             f"data_type=<str> {{'type': 'newswire'}}, "
-            f"handler={repr(handler)}, "
             f"id={command_id})"
         ) == repr(command)
 
@@ -79,7 +76,7 @@ class TestDataMessage:
             ),
             callback=handler,
             request_id=request_id,
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Assert
@@ -112,7 +109,7 @@ class TestDataMessage:
             data=[],
             correlation_id=correlation_id,
             response_id=response_id,
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Assert

@@ -2,17 +2,17 @@
 
 import itertools
 import os
-from pathlib import Path
 import platform
 import shutil
 import sys
+from pathlib import Path
 from typing import List
 
+import numpy as np
 from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
 from Cython.Compiler.Version import version as cython_compiler_version
-import numpy as np
 from setuptools import Distribution
 from setuptools import Extension
 
@@ -174,11 +174,13 @@ if __name__ == "__main__":
     # “64-bitness” of the current interpreter, it is more reliable to query the
     # sys.maxsize attribute:
     bits = "64-bit" if sys.maxsize > 2 ** 32 else "32-bit"
-    print(f"System: {platform.system()} {bits}")
-    print(f"Python: {platform.python_version()}")
-    print(f"Cython: {cython_compiler_version}")
-    print(f"NumPy:  {np.__version__}")
+    print("Project: nautilus_trader")
+    print(f"System:  {platform.system()} {bits}")
+    print(f"Python:  {platform.python_version()}")
+    print(f"Cython:  {cython_compiler_version}")
+    print(f"NumPy:   {np.__version__}")
     print("")
+
     print("Starting build...")
     print(f"DEBUG_MODE={DEBUG_MODE}")
     print(f"PROFILING_MODE={PROFILING_MODE}")
@@ -188,4 +190,4 @@ if __name__ == "__main__":
     print("")
 
     build({})
-    print("Build completed\n")
+    print("Build completed: nautilus_trader\n")

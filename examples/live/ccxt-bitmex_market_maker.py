@@ -14,10 +14,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import timedelta
-from decimal import Decimal
 import os
 import sys
+from datetime import timedelta
+from decimal import Decimal
 
 
 sys.path.insert(
@@ -106,8 +106,11 @@ strategy = VolatilityMarketMaker(
     order_id_tag="001",
 )
 
-# Instantiate the node passing a list of strategies and configuration
-node = TradingNode(strategies=[strategy], config=config)  # type: ignore
+# Instantiate the node with a configuration
+node = TradingNode(config=config)  # type: ignore
+
+# Add your strategies and modules
+node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user defined factories)
 node.add_data_client_factory("CCXT", CCXTDataClientFactory)

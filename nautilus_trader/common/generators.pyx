@@ -86,7 +86,7 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
         strategy_id : StrategyId
             The strategy ID for the generator.
         clock : Clock
-            The clock for the component.
+            The clock for the generator.
         initial_count : int
             The initial count for the generator.
 

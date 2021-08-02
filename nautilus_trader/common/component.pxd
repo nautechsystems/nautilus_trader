@@ -20,6 +20,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.fsm cimport FiniteStateMachine
+from nautilus_trader.model.identifiers cimport ComponentId
 
 
 cdef class ComponentFSMFactory:
@@ -34,7 +35,8 @@ cdef class Component:
     cdef LoggerAdapter _log
     cdef FiniteStateMachine _fsm
 
-    cdef readonly str name
+    cdef readonly ComponentId id
+    """The components ID.\n\n:returns: `ComponentId`"""
 
     cdef ComponentState state_c(self) except *
     cdef str state_string_c(self)

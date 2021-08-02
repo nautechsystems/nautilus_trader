@@ -16,7 +16,7 @@
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
-from nautilus_trader.core.type cimport DataType
+from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
 
 
@@ -25,8 +25,6 @@ cdef class DataCommand(Command):
     """The data client ID for the command.\n\n:returns: `ClientId`"""
     cdef readonly DataType data_type
     """The command data type.\n\n:returns: `type`"""
-    cdef readonly object handler
-    """The handler for the command.\n\n:returns: `callable`"""
 
 
 cdef class Subscribe(DataCommand):
@@ -42,8 +40,6 @@ cdef class DataRequest(Request):
     """The data client ID for the request.\n\n:returns: `ClientId`"""
     cdef readonly DataType data_type
     """The request data type.\n\n:returns: `type`"""
-    cdef readonly object callback
-    """The callback to receive the data.\n\n:returns: `callable`"""
 
 
 cdef class DataResponse(Response):

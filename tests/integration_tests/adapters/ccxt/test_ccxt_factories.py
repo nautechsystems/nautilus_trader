@@ -34,12 +34,13 @@ from tests.test_kit.stubs import TestStubs
 class TestCCXTDataClientFactory:
     def setup(self):
         # Fixture Setup
-        self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
-        self.trader_id = TestStubs.trader_id()
-
         self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
+
+        self.clock = LiveClock()
+        self.uuid_factory = UUIDFactory()
+
+        self.trader_id = TestStubs.trader_id()
 
         self.logger = LiveLogger(
             loop=self.loop,
@@ -47,6 +48,7 @@ class TestCCXTDataClientFactory:
         )
 
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -62,7 +64,7 @@ class TestCCXTDataClientFactory:
 
         self.data_engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -70,7 +72,6 @@ class TestCCXTDataClientFactory:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -95,9 +96,11 @@ class TestCCXTDataClientFactory:
 
         # Act
         data_client = CCXTDataClientFactory.create(
+            loop=self.loop,
             name="CCXT-BINANCE",
             config=config,
-            engine=self.data_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             client_cls=client_cls,
@@ -111,12 +114,13 @@ class TestCCXTDataClientFactory:
 class TestCCXTExecClientFactory:
     def setup(self):
         # Fixture Setup
-        self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
-        self.trader_id = TestStubs.trader_id()
-
         self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
+
+        self.clock = LiveClock()
+        self.uuid_factory = UUIDFactory()
+
+        self.trader_id = TestStubs.trader_id()
 
         self.logger = LiveLogger(
             loop=self.loop,
@@ -124,6 +128,7 @@ class TestCCXTExecClientFactory:
         )
 
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -139,7 +144,7 @@ class TestCCXTExecClientFactory:
 
         self.data_engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -147,7 +152,6 @@ class TestCCXTExecClientFactory:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -172,9 +176,11 @@ class TestCCXTExecClientFactory:
 
         # Act
         client = CCXTExecutionClientFactory.create(
+            loop=self.loop,
             name="CCXT-BINANCE",
             config=config,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             client_cls=client_cls,

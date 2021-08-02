@@ -19,11 +19,11 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.serialization.base cimport _OBJECT_FROM_DICT_MAP
+from nautilus_trader.serialization.base cimport _OBJECT_TO_DICT_MAP
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
 from nautilus_trader.serialization.base cimport InstrumentSerializer
-from nautilus_trader.serialization.base cimport _OBJECT_FROM_DICT_MAP
-from nautilus_trader.serialization.base cimport _OBJECT_TO_DICT_MAP
 
 
 cdef class MsgPackInstrumentSerializer(InstrumentSerializer):

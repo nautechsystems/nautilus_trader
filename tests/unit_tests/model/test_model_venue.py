@@ -35,8 +35,8 @@ class TestVenue:
         update = VenueStatusUpdate(
             venue=Venue("BINANCE"),
             status=VenueStatus.OPEN,
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act, Assert
@@ -48,8 +48,8 @@ class TestVenue:
         update = InstrumentStatusUpdate(
             instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
             status=InstrumentStatus.PAUSE,
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act, Assert
@@ -64,8 +64,8 @@ class TestVenue:
             instrument_id=InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
             close_price=Price(100.0, precision=0),
             close_type=InstrumentCloseType.EXPIRED,
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act, Assert

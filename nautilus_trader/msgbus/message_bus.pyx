@@ -21,94 +21,39 @@ import numpy as np
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-
-
-cdef str WILDCARD = "*"
-
-
-cdef class Subscription:
-    """
-    Represents a subscription to a particular topic.
-
-    This is an internal class intended to be used by the message bus to
-    organize channels and their subscribers.
-
-    Notes
-    -----
-    The subscription equality is determined by the topic and handler,
-    priority is not considered (and could change).
-
-    """
-
-    def __init__(
-        self,
-        str topic,
-        handler not None: Callable[[Any], None],
-        int priority=0,
-    ):
-        """
-        Initialize a new instance of the ``Subscription`` class.
-
-        Parameters
-        ----------
-        topic : str
-            The topic for the subscription. May include wildcard glob patterns.
-        handler : Callable[[Message], None]
-            The handler for the subscription.
-        priority : int
-            The priority for the subscription.
-
-        Raises
-        ------
-        ValueError
-            If topic is not a valid string.
-        ValueError
-            If priority is negative (< 0).
-
-        """
-        Condition.valid_string(topic, "topic")
-        Condition.not_negative_int(priority, "priority")
-
-        self._topic_str = topic
-        self.topic = topic.replace(WILDCARD, "")
-        self.handler = handler
-        self.priority = priority
-
-    def __eq__(self, Subscription other) -> bool:
-        return self.topic == other.topic and self.handler == other.handler
-
-    def __lt__(self, Subscription other) -> bool:
-        return self.priority < other.priority
-
-    def __le__(self, Subscription other) -> bool:
-        return self.priority <= other.priority
-
-    def __gt__(self, Subscription other) -> bool:
-        return self.priority > other.priority
-
-    def __ge__(self, Subscription other) -> bool:
-        return self.priority >= other.priority
-
-    def __hash__(self) -> int:
-        return hash((self.topic, self.handler))
-
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"topic={self._topic_str}, "
-                f"handler={self.handler}, "
-                f"priority={self.priority})")
+from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.msgbus.wildcard cimport is_matching
 
 
 cdef class MessageBus:
     """
-    Provides a generic message bus to facilitate consumers subscribing to
-    publishing producers.
+    Provides a generic message bus to facilitate various messaging patterns.
 
-    The bus provides both a producer and consumer API.
+    The bus provides both a producer and consumer API for PUB/SUB, REQ/REP as
+    well as direct point-to-point messaging to registered endpoints.
+
+    PUB/SUB wildcard patterns for hierarchical topics are possible:
+     - '*' asterisk represents one or more characters in a pattern.
+     - '?' question mark represents a single character in a pattern.
+
+    The asterisk in a wildcard matches any character zero or more times. For
+    example, "comp*" matches anything beginning with "comp" which means "comp,"
+    "complete," and "computer" are all matched.
+
+    A question mark matches a single character once. For example, "c?mp" matches
+    "camp" and "comp." The question mark can also be used more than once.
+    For example, "c??p" would match both of the above examples and "coop."
+
+    Warnings
+    --------
+    This message bus is not thread-safe and must be called from the same thread
+    as the event loop.
     """
 
     def __init__(
         self,
+        TraderId trader_id not None,
         Clock clock not None,
         Logger logger not None,
         str name=None,
@@ -118,6 +63,8 @@ cdef class MessageBus:
 
         Parameters
         ----------
+        trader_id : TraderId
+            The trader ID associated with the message bus.
         clock : Clock
             The clock for the message bus.
         logger : Logger
@@ -135,60 +82,224 @@ cdef class MessageBus:
             name = "MessageBus"
         Condition.valid_string(name, "name")
 
+        self.trader_id = trader_id
+
         self._clock = clock
         self._log = LoggerAdapter(component=name, logger=logger)
 
-        self._channels = {}    # type: dict[str, Subscription[:]]
-        self._patterns = None  # type: Subscription[:]
-        self._patterns_len = 0
+        self._endpoints = {}          # type: dict[str, Callable[[Any], None]]
+        self._patterns = {}           # type: dict[str, Subscription[:]]
+        self._subscriptions = {}      # type: dict[Subscription, list[str]]
+        self._correlation_index = {}  # type: dict[UUID, Callable[[Any], None]]
 
         # Counters
-        self.processed_count = 0
+        self.sent_count = 0
+        self.req_count = 0
+        self.res_count = 0
+        self.pub_count = 0
 
-    cpdef list channels(self):
+    cpdef list endpoints(self):
         """
-        Return all topic channels with active subscribers (including '*').
+        Return all endpoint addresses registered with the message bus.
 
         Returns
         -------
         list[str]
 
         """
-        cdef list channels = []
-        channels.extend(list(self._channels.keys()))
-        if self._patterns is not None:
-            channels.extend([s.topic + WILDCARD for s in list(self._patterns)])
-        return channels
+        return list(self._endpoints.keys())
 
-    cpdef list subscriptions(self, str topic):
+    cpdef list topics(self):
         """
-        Return all subscriptions for the given message type.
+        Return all topics with active subscribers.
+
+        Returns
+        -------
+        list[str]
+
+        """
+        return sorted(set([s.topic for s in self._subscriptions.keys()]))
+
+    cpdef list subscriptions(self, str topic=None):
+        """
+        Return all subscriptions matching the given topic.
 
         Parameters
         ----------
-        topic : str
-            The topic filter.
-            If None then will return subscriptions for ALL messages.
+        topic : str, optional
+            The topic filter. May include wildcard characters '*' and '?'.
+            If None then query is for ALL topics.
 
         Returns
         -------
         list[Subscription]
 
         """
+        if topic is None:
+            topic = "*"  # Wildcard
         Condition.valid_string(topic, "topic")
 
-        topic = topic.replace(WILDCARD, "")
+        return [s for s in self._subscriptions if is_matching(s.topic, topic)]
 
-        cdef list output = []
-        for sub in self._channels.get(topic, []):
-            output.append(sub)
+    cpdef bint has_subscribers(self, str topic=None):
+        """
+        If the message bus has subscribers for the give topic.
 
-        if self._patterns is not None:
-            for sub in list(self._patterns):
-                if sub.topic.startswith(topic):
-                    output.append(sub)
+        Parameters
+        ----------
+        topic : str, optional
+            The topic filter. May include wildcard characters '*' and '?'.
+            If None then query is for ALL topics.
 
-        return output
+        Returns
+        -------
+        bool
+
+        """
+        return len(self.subscriptions(topic)) > 0
+
+    cpdef void register(self, str endpoint, handler: Callable[[Any], None]) except *:
+        """
+        Register the given handler to receive messages at the endpoint address.
+
+        Parameters
+        ----------
+        endpoint : str
+            The endpoint address to register.
+        handler : Callable[[Any], None]
+            The handler for the registration.
+
+        Raises
+        ------
+        ValueError
+            If endpoint is not a valid string.
+        ValueError
+            If handler is not of type callable.
+        KeyError
+            If endpoint already registered.
+
+        """
+        Condition.valid_string(endpoint, "endpoint")
+        Condition.callable(handler, "handler")
+        Condition.not_in(endpoint, self._endpoints, "endpoint", "self._endpoints")
+
+        self._endpoints[endpoint] = handler
+
+    cpdef void deregister(self, str endpoint, handler: Callable[[Any], None]) except *:
+        """
+        De-register the given handler from the endpoint address.
+
+        Parameters
+        ----------
+        endpoint : str
+            The endpoint address to deregister.
+        handler : Callable[[Any], None]
+            The handler for the de-registration.
+
+        Raises
+        ------
+        ValueError
+            If endpoint is not a valid string.
+        ValueError
+            If handler is not of type callable.
+        KeyError
+            If endpoint is not registered.
+        ValueError
+            If handler is not registered at the endpoint.
+
+        """
+        Condition.valid_string(endpoint, "endpoint")
+        Condition.callable(handler, "handler")
+        Condition.is_in(endpoint, self._endpoints, "endpoint", "self._endpoints")
+        Condition.equal(handler, self._endpoints[endpoint], "handler", "self._endpoints[endpoint]")
+
+        del self._endpoints[endpoint]
+
+    cpdef void send(self, str endpoint, msg: Any) except *:
+        """
+        Send the given message to the given endpoint address.
+
+        Parameters
+        ----------
+        endpoint : str
+            The endpoint address to send the message to.
+        msg : object
+            The message to send.
+
+        """
+        Condition.not_none(endpoint, "endpoint")
+        Condition.not_none(msg, "msg")
+
+        handler = self._endpoints.get(endpoint)
+        if handler is None:
+            self._log.error(
+                f"Cannot send message: no endpoint registered at '{endpoint}'.",
+            )
+            return  # Cannot send
+
+        handler(msg)
+        self.sent_count += 1
+
+    cpdef void request(self, str endpoint, Request request) except *:
+        """
+        Handle the given request.
+
+        Will log an error if the correlation ID already exists.
+
+        Parameters
+        ----------
+        endpoint : str
+            The endpoint address to send the request to.
+        request : Request
+            The request to handle.
+
+        """
+        Condition.not_none(endpoint, "endpoint")
+        Condition.not_none(request, "request")
+
+        if request.id in self._correlation_index:
+            self._log.error(
+                f"Cannot handle request: "
+                f"duplicate ID {request.id} found in correlation index.",
+            )
+            return  # Do not handle duplicates
+
+        self._correlation_index[request.id] = request.callback
+
+        handler = self._endpoints.get(endpoint)
+        if handler is None:
+            self._log.error(
+                f"Cannot handle request: no endpoint registered at '{endpoint}'.",
+            )
+            return  # Cannot handle
+
+        handler(request)
+        self.req_count += 1
+
+    cpdef void response(self, Response response) except *:
+        """
+        Handle the given response.
+
+        Will log an error if the correlation ID is not found.
+
+        Parameters
+        ----------
+        response : Response
+            The response to handle
+
+        """
+        Condition.not_none(response, "response")
+
+        callback = self._correlation_index.pop(response.correlation_id, None)
+        if callback is None:
+            self._log.error(
+                f"Cannot handle response: "
+                f"callback not found for correlation_id {response.correlation_id}.",
+            )
+            return  # Cannot handle
+
+        callback(response)
+        self.res_count += 1
 
     cpdef void subscribe(
         self,
@@ -197,18 +308,25 @@ cdef class MessageBus:
         int priority=0,
     ) except *:
         """
-        Subscribe to the given message type.
+        Subscribe to the given message topic with the given callback handler.
 
         Parameters
         ----------
-        topic : MessageType
-            The message type to subscribe to. If "*" then subscribes to ALL messages.
+        topic : str
+            The topic for the subscription. May include wildcard characters '*' and '?'.
         handler : Callable[[Any], None]
             The handler for the subscription.
-        priority : int
+        priority : int, optional
             The priority for the subscription. Determines the ordering of
             handlers receiving messages being processed, higher priority
             handlers will receive messages prior to lower priority handlers.
+
+        Raises
+        ------
+        ValueError
+            If topic is not a valid string.
+        ValueError
+            If handler is not of type callable.
 
         Warnings
         --------
@@ -216,12 +334,12 @@ cdef class MessageBus:
         normally be needed by most users. Only assign a higher priority to the
         subscription if you are certain of what you're doing. If an inappropriate
         priority is assigned then the handler may receive messages before core
-        system components have been able to conduct the necessary calculations
-        for logically sound behaviour.
+        system components have been able to produce side effects and conduct the
+        necessary calculations for logically sound behaviour.
 
         """
         Condition.valid_string(topic, "topic")
-        Condition.not_none(handler, "handler")
+        Condition.callable(handler, "handler")
 
         # Create subscription
         cdef Subscription sub = Subscription(
@@ -230,102 +348,69 @@ cdef class MessageBus:
             priority=priority,
         )
 
-        # Get current subscriptions for topic
-        if WILDCARD in topic:
-            self._subscribe_pattern(sub)
-        else:
-            self._subscribe_channel(sub)
-
-    cdef void _subscribe_pattern(self, Subscription sub) except *:
-        if self._patterns is None:
-            subscriptions = []
-        else:
-            subscriptions = list(self._patterns)
-
         # Check if already exists
-        if sub in subscriptions:
+        if sub in self._subscriptions:
             self._log.warning(f"{sub} already exists.")
             return
 
-        subscriptions.append(sub)
-        subscriptions = sorted(subscriptions, reverse=True)
-        self._patterns = np.ascontiguousarray(subscriptions)
-        self._patterns_len = len(subscriptions)
+        cdef list matches = []
+        cdef list patterns = list(self._patterns.keys())
+
+        cdef str pattern
+        cdef list subs
+        for pattern in patterns:
+            if is_matching(topic, pattern):
+                subs = list(self._patterns[pattern])
+                subs.append(sub)
+                subs = sorted(subs, reverse=True)
+                self._patterns[pattern] = np.ascontiguousarray(subs, dtype=Subscription)
+                matches.append(pattern)
+
+        self._subscriptions[sub] = sorted(matches)
+
         self._log.debug(f"Added {sub}.")
-
-    cdef void _subscribe_channel(self, Subscription sub) except *:
-        cdef list subscriptions = list(self._channels.get(sub.topic, []))
-        # Check if already exists
-        if sub in subscriptions:
-            self._log.warning(f"{sub} already exists.")
-            return
-
-        subscriptions.append(sub)
-        subscriptions = sorted(subscriptions, reverse=True)
-        self._channels[sub.topic] = np.ascontiguousarray(subscriptions)
-        self._log.info(f"Added {sub}.")
 
     cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *:
         """
-        Unsubscribe the handler from the given message type.
+        Unsubscribe the given callback handler from the given message topic.
 
         Parameters
         ----------
         topic : str, optional
-            The topic to unsubscribe from. If "*" then unsubscribes from ALL messages.
+            The topic to unsubscribe from. May include wildcard characters '*' and '?'.
         handler : Callable[[Any], None]
             The handler for the subscription.
 
+        Raises
+        ------
+        ValueError
+            If topic is not a valid string.
+        ValueError
+            If handler is not of type callable.
+
         """
         Condition.valid_string(topic, "topic")
-        Condition.not_none(handler, "handler")
+        Condition.callable(handler, "handler")
 
         cdef Subscription sub = Subscription(topic=topic, handler=handler)
 
-        # Get current subscriptions for topic
-        if WILDCARD in topic:
-            self._unsubscribe_pattern(sub)
-        else:
-            self._unsubscribe_channel(sub)
-
-    cdef void _unsubscribe_pattern(self, Subscription sub) except *:
-        if self._patterns is None:
-            subscriptions = []
-        else:
-            subscriptions = list(self._patterns)
+        cdef list patterns = self._subscriptions.get(sub)
 
         # Check if exists
-        if sub not in subscriptions:
+        if patterns is None:
             self._log.warning(f"{sub} not found.")
             return
 
-        subscriptions.remove(sub)
-        subscriptions = sorted(subscriptions, reverse=True)
-        if not subscriptions:
-            self._patterns = None
-            self._patterns_len = 0
-        else:
-            self._patterns = np.ascontiguousarray(subscriptions)
-            self._patterns_len = len(subscriptions)
+        cdef str pattern
+        for pattern in patterns:
+            subs = list(self._patterns[pattern])
+            subs.remove(sub)
+            subs = sorted(subs, reverse=True)
+            self._patterns[pattern] = np.ascontiguousarray(subs, dtype=Subscription)
+
+        del self._subscriptions[sub]
+
         self._log.debug(f"Removed {sub}.")
-
-    cdef void _unsubscribe_channel(self, Subscription sub) except *:
-        cdef list subscriptions = list(self._channels.get(sub.topic, []))
-
-        # Check if already exists
-        if sub not in subscriptions:
-            self._log.warning(f"{sub} not found.")
-            return
-
-        subscriptions.remove(sub)
-        self._log.debug(f"Removed {sub}.")
-
-        if not subscriptions:
-            del self._channels[sub.topic]
-            return
-
-        subscriptions = sorted(subscriptions, reverse=True)
-        self._channels[sub.topic] = np.ascontiguousarray(subscriptions)
 
     cpdef void publish(self, str topic, msg: Any) except *:
         """
@@ -337,7 +422,7 @@ cdef class MessageBus:
         Parameters
         ----------
         topic : str
-            The topic to publish on (determines the channel and matching patterns).
+            The topic to publish on.
         msg : object
             The message to publish.
 
@@ -350,18 +435,33 @@ cdef class MessageBus:
         Condition.not_none(topic, "topic")
         Condition.not_none(msg, "msg")
 
-        cdef Subscription sub
-        cdef Subscription[:] subscriptions = self._channels.get(topic)
-        if subscriptions is not None:
-            # Send to channel subscriptions
-            for i in range(len(subscriptions)):
-                sub = subscriptions[i]
-                sub.handler(msg)
+        cdef Subscription[:] subs = self._patterns.get(topic)
+        if subs is None:
+            subs = self._resolve_subscriptions(topic)
 
-        # Check all pattern subscriptions
-        for i in range(self._patterns_len):
-            sub = self._patterns[i]
-            if topic.__contains__(sub.topic):
-                sub.handler(msg)
+        # Send to all matched subscribers
+        cdef int i
+        for i in range(len(subs)):
+            subs[i].handler(msg)
 
-        self.processed_count += 1
+        self.pub_count += 1
+
+    cdef Subscription[:] _resolve_subscriptions(self, str topic):
+        cdef list subs_list = []
+        cdef Subscription existing_sub
+        for existing_sub in self._subscriptions:
+            if is_matching(topic, existing_sub.topic):
+                subs_list.append(existing_sub)
+
+        subs_list = sorted(subs_list, reverse=True)
+        cdef Subscription[:] subs_array = np.ascontiguousarray(subs_list, dtype=Subscription)
+        self._patterns[topic] = subs_array
+
+        cdef list matches
+        for sub in subs_array:
+            matches = self._subscriptions.get(sub, [])
+            if topic not in matches:
+                matches.append(topic)
+            self._subscriptions[sub] = sorted(matches)
+
+        return subs_array
