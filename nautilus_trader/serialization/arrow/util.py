@@ -56,13 +56,13 @@ def is_nautilus_class(cls):
     is_nautilus_paths = cls.__module__.startswith("nautilus_trader.")
     if not is_nautilus_paths:
         # This object is defined outside of nautilus, definitely custom
-        return True
+        return False
     else:
         is_data_subclass = issubclass(cls, Data)
         is_nautilus_builtin = any(
             (cls.__module__.startswith(p) for p in ("nautilus_trader.model",))
         )
-        return is_data_subclass and not is_nautilus_builtin
+        return is_data_subclass and is_nautilus_builtin
 
 
 def clean_partition_cols(df, partition_cols=None, cls=None):
@@ -102,7 +102,7 @@ def clean_key(s):
 
 
 def camel_to_snake_case(s):
-    return re.sub(r"((?<=[a-z0-9])[A-Z]|(?!^)[A-Z](?=[a-z]))", "_", s).lower()
+    return re.sub(r"((?<=[a-z0-9])[A-Z]|(?!^)[A-Z](?=[a-z]))", r"_\1", s).lower()
 
 
 def class_to_filename(cls):

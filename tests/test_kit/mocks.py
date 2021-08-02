@@ -14,6 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
+from concurrent.futures import Executor
+from concurrent.futures import Future
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -811,3 +813,19 @@ class MockLiveRiskEngine(LiveRiskEngine):
 
     def process(self, event):
         self.events.append(event)
+
+
+class SyncExecutor(Executor):
+    def submit(self, fn, *args, **kwargs):  # pylint: disable=arguments-differ
+        """Immediately invokes `fn(*args, **kwargs)` and returns a future
+        with the result (or exception)."""
+
+        future = Future()
+
+        try:
+            result = fn(*args, **kwargs)
+            future.set_result(result)
+        except Exception as e:
+            future.set_exception(e)
+
+        return future

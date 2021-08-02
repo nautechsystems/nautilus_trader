@@ -1,4 +1,3 @@
-import datetime
 import os
 import pathlib
 import sys
@@ -14,8 +13,6 @@ import pytest
 from numpy import dtype
 from pandas import CategoricalDtype
 
-from examples.strategies.orderbook_imbalance import OrderbookImbalance
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
@@ -24,32 +21,24 @@ from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model import currencies
-from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookLevel
-from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.currency import CurrencySpot
-from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.serialization.arrow.serializer import register_parquet
-from nautilus_trader.serialization.arrow.util import is_nautilus_class
 from nautilus_trader.serialization.catalog.core import DataCatalog
-from nautilus_trader.serialization.catalog.loader import DataLoader
+from nautilus_trader.serialization.catalog.loading import read_files
 from nautilus_trader.serialization.catalog.parsers import CSVParser
 from nautilus_trader.serialization.catalog.parsers import ParquetParser
 from nautilus_trader.serialization.catalog.parsers import TextParser
+from nautilus_trader.serialization.catalog.scanner import scan
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import SyncExecutor
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -59,63 +48,32 @@ TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 
 
-@pytest.fixture(scope="function")
-def data_loader():
-    instrument_provider = BetfairInstrumentProvider.from_instruments([])
-    parser = TextParser(
-        parser=lambda x, state: on_market_update(
-            instrument_provider=instrument_provider, update=orjson.loads(x)
-        ),
-        instrument_provider_update=historical_instrument_provider_loader,
-    )
-    return DataLoader(
-        path=TEST_DATA_DIR,
-        parser=parser,
-        glob_pattern="1.166564490*",
-        instrument_provider=instrument_provider,
-    )
+@pytest.fixture
+def executor():
+    return SyncExecutor()
 
 
-@pytest.fixture(scope="function")
-def catalog(data_loader):
-    catalog = DataCatalog(path="/", fs_protocol="memory")
-    try:
-        catalog.fs.rm("/", recursive=True)
-    except FileNotFoundError:
-        pass
-    return catalog
+class CSVWrangler:
+    pass
 
 
-@pytest.fixture(scope="function")
-def loaded_catalog(catalog, data_loader):
-    catalog.import_from_data_loader(data_loader)
-    return catalog
+def test_loader(executor):
+    def parse_csv(data, state=None):
+        if data is None:
+            return
+        data.loc[:, "timestamp"] = pd.to_datetime(data["timestamp"])
+        wrangler = QuoteTickDataWrangler(
+            instrument=TestInstrumentProvider.default_fx_ccy(
+                "AUD/USD"
+            ),  # Normally we would properly parse this
+            data_quotes=data.set_index("timestamp"),
+        )
+        wrangler.pre_process(0)
+        return wrangler.build_ticks()
 
-
-def test_is_custom_data():
-    assert not is_nautilus_class(OrderBookData)
-    assert not is_nautilus_class(TradeTick)
-    assert is_nautilus_class(pd.DataFrame)
-
-
-@pytest.mark.parametrize(
-    "glob, num_files",
-    [
-        ("**.json", 3),
-        ("**.txt", 1),
-        ("**.parquet", 2),
-        ("**.csv", 11),
-    ],
-)
-def test_data_loader_paths(glob, num_files):
-    d = DataLoader(path=TEST_DATA_DIR, parser=TextParser(parser=len), glob_pattern=glob)
-    assert len(d.path) == num_files
-
-
-def test_data_loader_stream():
-    loader = DataLoader(path=TEST_DATA_DIR, parser=None, glob_pattern="1.166564490.bz2")
-    raw = list(loader.stream_bytes())
-    assert len(raw) == 6
+    files = scan(path=TEST_DATA_DIR, glob_pattern="truefx*.csv", chunk_size=100000)
+    parser = CSVParser(parser=parse_csv)
+    data = read_files(files, parser=parser, executor=executor)
 
 
 def test_data_loader_json_betting_parser():
@@ -215,20 +173,6 @@ def test_data_catalog_from_env():
     assert str(c.path) == "/data"
 
 
-def test_data_catalog_instruments_df(loaded_catalog):
-    instruments = loaded_catalog.instruments()
-    assert len(instruments) == 2
-
-
-def test_data_catalog_instruments_filtered_df(loaded_catalog):
-    instrument_id = (
-        "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,237491,0.0.BETFAIR"
-    )
-    instruments = loaded_catalog.instruments(instrument_ids=[instrument_id])
-    assert len(instruments) == 1
-    assert instruments["instrument_id"].iloc[0] == instrument_id
-
-
 def test_data_catalog_instruments_no_partition(loaded_catalog):
     ds = pq.ParquetDataset(
         path_or_paths=str(loaded_catalog.path / "betting_instrument.parquet/"),
@@ -236,11 +180,6 @@ def test_data_catalog_instruments_no_partition(loaded_catalog):
     )
     partitions = ds.partitions
     assert not partitions.levels
-
-
-def test_data_catalog_instruments_as_nautilus(loaded_catalog):
-    instruments = loaded_catalog.instruments(as_nautilus=True)
-    assert all(isinstance(ins, BettingInstrument) for ins in instruments)
 
 
 def test_data_catalog_metadata(loaded_catalog):
@@ -315,25 +254,6 @@ def test_data_catalog_parquet():
     assert len(catalog.trade_ticks(instrument_ids=["BTC/USDT.BINANCE"])) == 2001
 
 
-def test_partition_key_correctly_remapped(catalog):
-    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-    tick = QuoteTick(
-        instrument_id=instrument.id,
-        bid=Price(10, 1),
-        ask=Price(11, 1),
-        bid_size=Quantity(10, 1),
-        ask_size=Quantity(10, 1),
-        ts_init=0,
-        ts_event=0,
-    )
-    catalog._write_chunks(chunk=[instrument, tick])
-    df = catalog.quote_ticks()
-    assert len(df) == 1
-    # Ensure we "unmap" the keys that we write the partition filenames as;
-    # this instrument_id should be AUD/USD not AUD-USD
-    assert df.iloc[0]["instrument_id"] == instrument.id.value
-
-
 def test_data_catalog_filter(loaded_catalog):
     assert len(loaded_catalog.order_book_deltas()) == 2384
     assert (
@@ -341,8 +261,11 @@ def test_data_catalog_filter(loaded_catalog):
     )
 
 
-def test_data_catalog_parquet_dtypes(loaded_catalog):
-    result = loaded_catalog.trade_ticks().dtypes.to_dict()
+def test_data_catalog_parquet_dtypes():
+    # Write trade ticks
+
+    # TODO - fix
+    result = pd.read_parquet(fn).dtypes.to_dict()
     expected = {
         "aggressor_side": CategoricalDtype(categories=["UNKNOWN"], ordered=False),
         "instrument_id": CategoricalDtype(
@@ -361,46 +284,31 @@ def test_data_catalog_parquet_dtypes(loaded_catalog):
     assert result == expected
 
 
-def test_data_catalog_query_filtered(loaded_catalog):
-    ticks = loaded_catalog.trade_ticks()
-    assert len(ticks) == 312
-
-    ticks = loaded_catalog.trade_ticks(start="2019-12-20 20:56:18")
-    assert len(ticks) == 123
-
-    ticks = loaded_catalog.trade_ticks(start=1576875378384999936)
-    assert len(ticks) == 123
-
-    ticks = loaded_catalog.trade_ticks(start=datetime.datetime(2019, 12, 20, 20, 56, 18))
-    assert len(ticks) == 123
-
-
-def _news_event_to_dict(self):
-    return {
-        "name": self.name,
-        "impact": self.impact,
-        "currency": self.currency,
-        "ts_event": self.ts_event,
-    }
-
-
-def _news_event_from_dict(data):
-    return NewsEvent(**data)
-
-
-class NewsEvent(Data):
-    def __init__(self, name, impact, currency, ts_event):
-        super().__init__(ts_event=ts_event, ts_init=ts_event)
-        self.name = name
-        self.impact = impact
-        self.currency = currency
-
-
 def test_data_loader_generic_data(catalog):
+    class NewsEvent(Data):
+        def __init__(self, name, impact, currency, ts_event):
+            super().__init__(ts_event=ts_event, ts_init=ts_event)
+            self.name = name
+            self.impact = impact
+            self.currency = currency
+
+        @staticmethod
+        def to_dict(self):
+            return {
+                "name": self.name,
+                "impact": self.impact,
+                "currency": self.currency,
+                "ts_event": self.ts_event,
+            }
+
+        @staticmethod
+        def from_dict(data):
+            return NewsEvent(**data)
+
     register_parquet(
         NewsEvent,
-        _news_event_to_dict,
-        _news_event_from_dict,
+        NewsEvent.to_dict,
+        NewsEvent.from_dict,
         partition_keys=("currency",),
         force=True,
     )
@@ -487,52 +395,3 @@ def test_catalog_invalid_partition_key(catalog):
     )
     with pytest.raises(ValueError):
         catalog.import_from_data_loader(loader=loader)
-
-
-def test_data_catalog_backtest_data_no_filter(loaded_catalog):
-    data = loaded_catalog.load_backtest_data()
-    assert len(sum(data.values(), [])) == 2323
-
-
-def test_data_catalog_backtest_data_filtered(loaded_catalog):
-    instruments = loaded_catalog.instruments(as_nautilus=True)
-    engine = BacktestEngine(bypass_logging=True)
-    engine = loaded_catalog.setup_engine(
-        engine=engine,
-        instruments=[instruments[1]],
-        start_timestamp=1576869877788000000,
-    )
-    engine.add_venue(
-        venue=BETFAIR_VENUE,
-        venue_type=VenueType.EXCHANGE,
-        account_type=AccountType.CASH,
-        base_currency=GBP,
-        oms_type=OMSType.NETTING,
-        starting_balances=[Money(10000, GBP)],
-        order_book_level=BookLevel.L2,
-    )
-    engine.run()
-    # Total events 1045
-    assert engine.iteration == 600
-
-
-@pytest.mark.skip(reason="flaky")
-def test_data_catalog_backtest_run(loaded_catalog):
-    instruments = loaded_catalog.instruments(as_nautilus=True)
-    engine = BacktestEngine(bypass_logging=True)
-    engine = loaded_catalog.setup_engine(engine=engine, instruments=[instruments[1]])
-    engine.add_venue(
-        venue=BETFAIR_VENUE,
-        venue_type=VenueType.EXCHANGE,
-        account_type=AccountType.CASH,
-        base_currency=GBP,
-        oms_type=OMSType.NETTING,
-        starting_balances=[Money(10000, GBP)],
-        order_book_level=BookLevel.L2,
-    )
-    strategy = OrderbookImbalance(
-        instrument=instruments[1], max_trade_size=Decimal("50"), order_id_tag="OI"
-    )
-    engine.run(strategies=[strategy])
-    positions = engine.trader.generate_positions_report()
-    assert positions["realized_points"].astype(float).sum() == -0.00462297183247178
