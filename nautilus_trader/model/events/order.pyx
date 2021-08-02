@@ -1976,7 +1976,7 @@ cdef class OrderFilled(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         ExecutionId execution_id not None,
-        PositionId position_id,  # Can be None (if not previous position)
+        PositionId position_id,  # Can be None
         OrderSide order_side,
         OrderType order_type,
         Quantity last_qty not None,
@@ -2008,7 +2008,7 @@ cdef class OrderFilled(OrderEvent):
             The venue order ID.
         execution_id : ExecutionId
             The execution ID.
-        position_id : PositionId
+        position_id : PositionId, optional
             The position ID associated with the order.
         order_side : OrderSide
             The execution order side.

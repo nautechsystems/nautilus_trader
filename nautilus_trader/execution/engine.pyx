@@ -587,9 +587,6 @@ cdef class ExecutionEngine(Component):
             )
 
         if isinstance(event, OrderFilled):
-            # The StrategyId needs to be confirmed prior to the PositionId.
-            # This is in case there is no PositionId currently assigned and one
-            # must be generated.
             self._confirm_position_id(event)
 
         try:
@@ -611,15 +608,24 @@ cdef class ExecutionEngine(Component):
         )
 
     cdef void _confirm_position_id(self, OrderFilled fill) except *:
-        if fill.position_id is not None:
-            # Already assigned to fill
-            return
+        if fill.position_id is None:
+            # Fetch ID from cache (assumed to be source of truth)
+            fill.position_id = self._cache.position_id(fill.client_order_id)
 
-        # Fetch ID from cache
-        cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
-        if position_id is not None:
-            # Assign ID to fill
-            fill.position_id = position_id
+        cdef Position position = None
+        if fill.position_id is not None:
+            position = self._cache.position(fill.position_id)
+            if position is not None:
+                if position.is_closed_c():
+                    self._log.warning(
+                        f"Position for {repr(fill.position_id)} already closed.",
+                    )
+                    # Generate and assign new position ID
+                    fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
+                    self._log.info(
+                        f"Generated new position ID {fill.position_id}.",
+                        color=LogColor.GREEN,
+                    )
             return
 
         # Check for open positions
@@ -632,6 +638,7 @@ cdef class ExecutionEngine(Component):
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
             return
 
+        # Determine position ID for net position
         # Invariant (design-time)
         assert len(positions_open) == 1, "more than one position for unassigned position_id"
 
@@ -675,8 +682,8 @@ cdef class ExecutionEngine(Component):
         )
 
     cdef void _update_position(self, Position position, OrderFilled fill) except *:
-        # Check for flip
-        if position.is_opposite_side(fill.side) and 0 < position.quantity < fill.last_qty:
+        # Check for flip (last_qty guaranteed to be positive)
+        if position.is_opposite_side(fill.side) and fill.last_qty > position.quantity:
             self._flip_position(position, fill)
             return  # Handled in flip
 
@@ -718,8 +725,9 @@ cdef class ExecutionEngine(Component):
             difference = Quantity(abs(position.quantity - fill.last_qty), position.size_precision)
 
         # Split commission between two positions
-        fill_percent1: Decimal = position.quantity / fill.last_qty
-        fill_percent2: Decimal = Decimal(1) - fill_percent1
+        fill_percent: Decimal = position.quantity / fill.last_qty
+        cdef Money commission1 = Money(fill.commission * fill_percent, fill.commission.currency)
+        cdef Money commission2 = Money(fill.commission - commission1, fill.commission.currency)
 
         cdef OrderFilled fill_split1 = None
         # Split fill to close original position
@@ -737,7 +745,7 @@ cdef class ExecutionEngine(Component):
             last_qty=position.quantity,  # Fill original position quantity remaining
             last_px=fill.last_px,
             currency=fill.currency,
-            commission=Money(fill.commission * fill_percent1, fill.commission.currency),
+            commission=commission1,
             liquidity_side=fill.liquidity_side,
             event_id=fill.id,
             ts_event=fill.ts_event,
@@ -746,12 +754,6 @@ cdef class ExecutionEngine(Component):
 
         # Close original position
         self._update_position(position, fill_split1)
-
-        # Generate position ID for flipped position
-        cdef PositionId position_id_flip = self._pos_id_generator.generate(
-            strategy_id=fill.strategy_id,
-            flipped=True,
-        )
 
         # Generate order fill for flipped position
         cdef OrderFilled fill_split2 = OrderFilled(
@@ -762,13 +764,13 @@ cdef class ExecutionEngine(Component):
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
-            position_id=position_id_flip,
+            position_id=PositionId(position.id.value + "F"),
             order_side=fill.side,
             order_type=fill.type,
             last_qty=difference,  # Fill difference from original as above
             last_px=fill.last_px,
             currency=fill.currency,
-            commission=Money(fill.commission * fill_percent2, fill.commission.currency),
+            commission=commission2,
             liquidity_side=fill.liquidity_side,
             event_id=self._uuid_factory.generate(),  # New event ID
             ts_event=fill.ts_event,
