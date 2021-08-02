@@ -17,6 +17,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
 from nautilus_trader.data.engine import DataEngine
@@ -64,7 +65,10 @@ class TestExecutionEngine:
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.DEBUG,
+        )
 
         self.trader_id = TestStubs.trader_id()
         self.strategy_id = TestStubs.strategy_id()
@@ -1566,7 +1570,7 @@ class TestExecutionEngine:
             TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id=position2_id)
         )
 
-        # Assert
+        # # Assert
         assert self.cache.position_exists(position1_id)
         assert self.cache.position_exists(position2_id)
         assert self.cache.is_position_open(position1_id)
