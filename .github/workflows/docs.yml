@@ -47,6 +47,14 @@ jobs:
       - name: Build docs
         run: sphinx-build docs/source docs/build
 
+      # Add nojeckyll
+      - name: Add nojeckyll
+        run: touch docs/build/.nojekyll
+
+      # Add CNAME
+      - name: Add CNAME
+        run: echo "api.nautilustrader.io" >> docs/build/CNAME
+
       # Publish API docs
       - name: Publish API docs
         uses: s0/git-publish-subdir-action@develop
