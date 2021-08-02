@@ -291,8 +291,8 @@ cdef class Bar(Data):
         Price low_price not None,
         Price close_price not None,
         Quantity volume not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
         bint check=False,
     ):
         """
@@ -312,10 +312,10 @@ cdef class Bar(Data):
             The bars close price.
         volume : Quantity
             The bars volume.
-        ts_event_ns : int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event : int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
         check : bool
             If bar parameters should be checked valid.
 
@@ -333,7 +333,7 @@ cdef class Bar(Data):
             Condition.true(high_price >= low_price, 'high_price was < low_price')
             Condition.true(high_price >= close_price, 'high_price was < close_price')
             Condition.true(low_price <= close_price, 'low_price was > close_price')
-        super().__init__(ts_event_ns, ts_recv_ns)
+        super().__init__(ts_event, ts_init)
 
         self.type = bar_type
         self.open = open_price
@@ -350,7 +350,7 @@ cdef class Bar(Data):
         return hash(frozenset(Bar.to_dict_c(self)))
 
     def __str__(self) -> str:
-        return f"{self.type},{self.open},{self.high},{self.low},{self.close},{self.volume},{self.ts_event_ns}"
+        return f"{self.type},{self.open},{self.high},{self.low},{self.close},{self.volume},{self.ts_event}"
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
@@ -365,8 +365,8 @@ cdef class Bar(Data):
             low_price=Price.from_str_c(values["low"]),
             close_price=Price.from_str_c(values["close"]),
             volume=Quantity.from_str_c(values["volume"]),
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -380,8 +380,8 @@ cdef class Bar(Data):
             "low": str(obj.low),
             "close": str(obj.close),
             "volume": str(obj.volume),
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod

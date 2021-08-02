@@ -91,7 +91,7 @@ cdef class Component:
         self,
         Clock clock not None,
         Logger logger not None,
-        str name=None,  # Do not reorder (default arg)
+        ComponentId component_id=None,
         bint log_initialized=True,
     ):
         """
@@ -103,33 +103,31 @@ cdef class Component:
             The clock for the component.
         logger : Logger
             The logger for the component.
-        name : str, optional
-            The customized name for the component. If None is passed then the
-            name will be taken from `type(self).__name__`.
+        component_id : ComponentId, optional
+            The component ID. If None is passed then the identifier will be
+            taken from `type(self).__name__`.
         log_initialized : bool
             If the initial state should be logged.
 
         """
-        if name is None:
-            name = type(self).__name__
-        else:
-            Condition.valid_string(name, "name")
+        if component_id is None:
+            component_id = ComponentId(type(self).__name__)
 
-        self.name = name
+        self.id = component_id
 
         self._clock = clock
         self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(component=name, logger=logger)
+        self._log = LoggerAdapter(component=self.id.value, logger=logger)
         self._fsm = ComponentFSMFactory.create()
 
         if log_initialized:
             self._log.info(f"state={self._fsm.state_string_c()}...")
 
     def __str__(self) -> str:
-        return self.name
+        return self.id.value
 
     def __repr__(self) -> str:
-        return self.name
+        return self.id.value
 
     cdef ComponentState state_c(self) except *:
         return <ComponentState>self._fsm.state
@@ -157,7 +155,7 @@ cdef class Component:
     cdef void _change_logger(self, Logger logger) except *:
         Condition.not_none(logger, "logger")
 
-        self._log = LoggerAdapter(component=self.name, logger=logger)
+        self._log = LoggerAdapter(component=self.id.value, logger=logger)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 

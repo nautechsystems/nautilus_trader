@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from enum import Enum
 
 import numpy as np
 
@@ -53,6 +54,8 @@ B2N_MARKET_STREAM_SIDE = {
     "atl": OrderSide.BUY,  # Available to Lay / Buy order
     "batl": OrderSide.BUY,  # Best available to Lay / Buy order
     "bdatl": OrderSide.BUY,  # Best display available to Lay / Buy order
+    "spb": OrderSide.BUY,  # Starting Price Back
+    "spl": OrderSide.SELL,  # Starting Price Back
 }
 
 B_BID_KINDS = ("atb", "batb", "bdatb")
@@ -76,6 +79,8 @@ def parse_prob(p):
 
 
 def invert_price(p):
+    if p is None:
+        return
     return parse_price(1 / (1 - (1 / p))) / 100
 
 
@@ -212,3 +217,13 @@ EVENT_TYPE_TO_NAME = {
     "4339": "Greyhound Racing",
     "2378961": "Politics",
 }
+
+
+class HistoricalSportType(Enum):
+    HORSE_RACING = "Horse Racing"
+    SOCCER = "Soccer"
+    TENNIS = "Tennis"
+    CRICKET = "Cricket"
+    GOLF = "Golf"
+    GREYHOUND_RACING = "Greyhound Racing"
+    OTHER_SPORTS = "Other Sports"

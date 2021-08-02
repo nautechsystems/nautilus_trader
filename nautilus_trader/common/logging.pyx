@@ -18,12 +18,12 @@ from typing import Optional
 from cpython.datetime cimport timedelta
 
 import asyncio
-from asyncio import Task
-from collections import defaultdict
 import platform
-from platform import python_version
 import sys
 import traceback
+from asyncio import Task
+from collections import defaultdict
+from platform import python_version
 
 import numpy as np
 import pandas as pd
@@ -34,8 +34,8 @@ from nautilus_trader import __version__
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
@@ -110,7 +110,6 @@ cdef class Logger:
         TraderId trader_id=None,
         UUID system_id=None,
         LogLevel level_stdout=LogLevel.INFO,
-        LogLevel level_raw=LogLevel.DEBUG,
         bint bypass=False,
     ):
         """
@@ -126,8 +125,6 @@ cdef class Logger:
             The systems unique instantiation ID.
         level_stdout : LogLevel
             The minimum log level for logging messages to stdout.
-        level_raw : LogLevel
-            The minimum log level for the raw log record sink.
         bypass : bool
             If the logger should be bypassed.
 
@@ -136,11 +133,31 @@ cdef class Logger:
             system_id = UUIDFactory().generate()
         self._clock = clock
         self._log_level_stdout = level_stdout
-        self._log_level_raw = level_raw
+        self._sinks = []
 
         self.trader_id = trader_id
         self.system_id = system_id
         self.is_bypassed = bypass
+
+    cpdef void register_sink(self, handler: Callable[[Dict], None]) except *:
+        """
+        Register the given sink handler with the logger.
+
+        Parameters
+        ----------
+        handler : Callable[[Dict], None]
+            The sink handler to register.
+
+        Raises
+        ------
+        KeyError
+            If handler already registered.
+
+        """
+        Condition.not_none(handler, "handler")
+        Condition.not_in(handler, self._sinks, "handler", "self._sinks")
+
+        self._sinks.append(handler)
 
     cdef void change_clock_c(self, Clock clock) except *:
         """
@@ -200,8 +217,9 @@ cdef class Logger:
         elif level >= self._log_level_stdout:
             sys.stdout.write(f"{self._format_record(level, color, record)}\n")
 
-        if level >= self._log_level_raw:
-            pass  # TODO: Raw sink out - str(record)
+        if self._sinks:
+            for handler in self._sinks:
+                handler(record)
 
     cdef str _format_record(
         self,
@@ -494,7 +512,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"CPU architecture: {platform.processor()}")
     try:
         cpu_freq_str = f"@ {int(psutil.cpu_freq()[2])} MHz"
-    except NotImplementedError:
+    except (TypeError, NotImplementedError):
         cpu_freq_str = None
     logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
     logger.info(f"OS: {platform.platform()}")
@@ -543,7 +561,6 @@ cdef class LiveLogger(Logger):
         TraderId trader_id=None,
         UUID system_id=None,
         LogLevel level_stdout=LogLevel.INFO,
-        LogLevel level_raw=LogLevel.DEBUG,
         bint bypass=False,
         int maxsize=10000,
     ):
@@ -562,8 +579,6 @@ cdef class LiveLogger(Logger):
             The systems unique instantiation ID.
         level_stdout : LogLevel
             The minimum log level for logging messages to stdout.
-        level_raw : LogLevel
-            The minimum log level for the raw log record sink.
         bypass : bool
             If the logger should be bypassed.
         maxsize : int, optional
@@ -575,7 +590,6 @@ cdef class LiveLogger(Logger):
             trader_id=trader_id,
             system_id=system_id,
             level_stdout=level_stdout,
-            level_raw=level_raw,
             bypass=bypass,
         )
 

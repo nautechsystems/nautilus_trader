@@ -115,8 +115,8 @@ class TestQuoteTickDataWrangler:
         assert ticks[0].ask == Price.from_str("0.67070")
         assert ticks[0].bid_size == Quantity.from_str("1000000")
         assert ticks[0].ask_size == Quantity.from_str("1000000")
-        assert ticks[0].ts_recv_ns == 1580398089820000000
-        assert ticks[99999].ts_recv_ns == 1580504394500999936
+        assert ticks[0].ts_init == 1580398089820000000
+        assert ticks[99999].ts_init == 1580504394500999936
 
     def test_build_ticks_with_bar_data(self):
         # Arrange
@@ -139,7 +139,7 @@ class TestQuoteTickDataWrangler:
         assert ticks[0].ask == Price.from_str("91.717")
         assert ticks[0].bid_size == Quantity.from_str("1000000")
         assert ticks[0].ask_size == Quantity.from_str("1000000")
-        assert ticks[0].ts_recv_ns == 1359676799700000000
+        assert ticks[0].ts_init == 1359676799700000000
 
 
 class TestTradeTickDataWrangler:
@@ -189,7 +189,7 @@ class TestTradeTickDataWrangler:
         assert ticks[0].size == Quantity.from_str("2.67900")
         assert ticks[0].aggressor_side == AggressorSide.SELL
         assert ticks[0].match_id == "148568980"
-        assert ticks[0].ts_recv_ns == 1597399200223000064
+        assert ticks[0].ts_init == 1597399200223000064
 
 
 class TestBarDataWrangler:
@@ -332,4 +332,4 @@ class TestTardisTradeDataWrangler:
         assert ticks[0].size == Quantity.from_str("0.132000")
         assert ticks[0].aggressor_side == AggressorSide.BUY
         assert ticks[0].match_id == "42377944"
-        assert ticks[0].ts_recv_ns == 1582329602418379008
+        assert ticks[0].ts_init == 1582329602418379008

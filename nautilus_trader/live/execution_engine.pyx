@@ -35,7 +35,6 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 
@@ -49,7 +48,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     def __init__(
         self,
         loop not None: asyncio.AbstractEventLoop,
-        TraderId trader_id not None,
         MessageBus msgbus not None,
         Cache cache not None,
         LiveClock clock not None,
@@ -63,8 +61,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the engine.
-        trader_id : TraderId
-            The trader ID for the engine.
         msgbus : MessageBus
             The message bus for the engine.
         cache : Cache
@@ -80,7 +76,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         if config is None:
             config = {}
         super().__init__(
-            trader_id=trader_id,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -93,17 +88,6 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         self._run_queue_task = None
         self.is_running = False
-
-    def get_event_loop(self) -> asyncio.AbstractEventLoop:
-        """
-        Return the internal event loop for the engine.
-
-        Returns
-        -------
-        asyncio.AbstractEventLoop
-
-        """
-        return self._loop
 
     def get_run_queue_task(self) -> asyncio.Task:
         """
@@ -157,7 +141,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         Condition.positive(timeout_secs, "timeout_secs")
         cdef dict active_orders = {
-            order.client_order_id: order for order in self.cache.orders() if not order.is_completed_c()
+            order.client_order_id: order for order in self._cache.orders() if not order.is_completed_c()
         }  # type: dict[ClientOrderId, Order]
 
         if not active_orders:

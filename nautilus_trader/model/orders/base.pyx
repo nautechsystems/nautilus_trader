@@ -37,8 +37,8 @@ from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events.order cimport OrderAccepted
-from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderCanceled
+from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderExpired
@@ -49,8 +49,8 @@ from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
-from nautilus_trader.model.events.order cimport OrderUpdateRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.events.order cimport OrderUpdateRejected
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -118,14 +118,7 @@ cdef class Order:
         init : OrderInitialized
             The order initialized event.
 
-        Raises
-        ------
-        ValueError
-            If event.strategy_id has a 'NULL' value.
-
         """
-        Condition.true(init.strategy_id.not_null(), f"init.strategy_id.value was 'NULL'")
-
         self._events = [init]     # type: list[OrderEvent]
         self._execution_ids = []  # type: list[ExecutionId]
         self._fsm = FiniteStateMachine(
@@ -141,21 +134,21 @@ cdef class Order:
         self.strategy_id = init.strategy_id
         self.instrument_id = init.instrument_id
         self.client_order_id = init.client_order_id
-        self.venue_order_id = VenueOrderId.null_c()
-        self.position_id = PositionId.null_c()
-        self.account_id = None    # Can be None
+        self.venue_order_id = None  # Can be None
+        self.position_id = None  # Can be None
+        self.account_id = None  # Can be None
         self.execution_id = None  # Can be None
 
         self.side = init.side
         self.type = init.type
         self.quantity = init.quantity
-        self.timestamp_ns = init.timestamp_ns
         self.time_in_force = init.time_in_force
         self.filled_qty = Quantity.zero_c(precision=0)
-        self.ts_filled_ns = 0
         self.avg_px = None  # Can be None
         self.slippage = Decimal()
         self.init_id = init.id
+        self.ts_last = 0  # No fills yet
+        self.ts_init = init.ts_init
 
     def __eq__(self, Order other) -> bool:
         return self.client_order_id.value == other.client_order_id.value
@@ -164,12 +157,11 @@ cdef class Order:
         return hash(self.client_order_id.value)
 
     def __repr__(self) -> str:
-        cdef str id_string = f", venue_order_id={self.venue_order_id.value}" if self.venue_order_id.not_null() else ""
         return (f"{type(self).__name__}("
                 f"{self.status_string_c()}, "
                 f"state={self._fsm.state_string_c()}, "
-                f"client_order_id={self.client_order_id.value}"
-                f"{id_string})")
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id})")
 
     cpdef dict to_dict(self):
         """
@@ -219,7 +211,11 @@ cdef class Order:
         return self.type == OrderType.MARKET
 
     cdef bint is_inflight_c(self) except *:
-        return self._fsm.state == OrderState.SUBMITTED
+        return (
+            self._fsm.state == OrderState.SUBMITTED
+            or self._fsm.state == OrderState.PENDING_CANCEL
+            or self._fsm.state == OrderState.PENDING_UPDATE
+        )
 
     cdef bint is_working_c(self) except *:
         return (
@@ -396,9 +392,12 @@ cdef class Order:
     @property
     def is_inflight(self):
         """
-        If the order is in-flight (has been submitted to the trading venue).
+        If the order is in-flight (order request sent to the trading venue).
 
-        An order is considered submitted when its state is `SUBMITTED`.
+        An order is considered in-flight when its state is either:
+        - `SUBMITTED`.
+        - `PENDING_CANCEL`.
+        - `PENDING_UPDATE`.
 
         Returns
         -------
@@ -414,11 +413,11 @@ cdef class Order:
         If the order is open/working at the trading venue.
 
         An order is considered working when its state is either:
-         - `ACCEPTED`
-         - `TRIGGERED`
-         - `PENDING_CANCEL`
-         - `PENDING_UPDATE`
-         - `PARTIALLY_FILLED`
+        - `ACCEPTED`
+        - `TRIGGERED`
+        - `PENDING_CANCEL`
+        - `PENDING_UPDATE`
+        - `PARTIALLY_FILLED`
 
         Returns
         -------
@@ -461,12 +460,12 @@ cdef class Order:
 
         An order is considered completed when its state can no longer change.
         The possible states of completed orders include:
-         - `INVALID`
-         - `DENIED`
-         - `REJECTED`
-         - `CANCELED`
-         - `EXPIRED`
-         - `FILLED`
+        - `INVALID`
+        - `DENIED`
+        - `REJECTED`
+        - `CANCELED`
+        - `EXPIRED`
+        - `FILLED`
 
         Returns
         -------
@@ -552,7 +551,7 @@ cdef class Order:
         ValueError
             If self.client_order_id is not equal to event.client_order_id.
         ValueError
-            If self.venue_order_id and event.venue_order_id are both not 'NULL', and are not equal.
+            If self.venue_order_id and event.venue_order_id are both not None, and are not equal.
         InvalidStateTrigger
             If event is not a valid trigger from the current order.state.
         KeyError
@@ -561,8 +560,8 @@ cdef class Order:
         """
         Condition.not_none(event, "event")
         Condition.equal(event.client_order_id, self.client_order_id, "event.client_order_id", "self.client_order_id")
-        if self.venue_order_id.not_null() and event.venue_order_id.not_null() and not isinstance(event, OrderUpdated):
-            Condition.equal(event.venue_order_id, self.venue_order_id, "event.venue_order_id", "self.venue_order_id")
+        if self.venue_order_id is not None and event.venue_order_id is not None and not isinstance(event, OrderUpdated):
+            Condition.equal(self.venue_order_id, event.venue_order_id, "self.venue_order_id", "event.venue_order_id")
 
         # Handle event (FSM can raise InvalidStateTrigger)
         if isinstance(event, OrderDenied):
@@ -605,7 +604,7 @@ cdef class Order:
             self._triggered(event)
         elif isinstance(event, OrderFilled):
             # Check identifiers
-            if self.venue_order_id.is_null():
+            if self.venue_order_id is None:
                 self.venue_order_id = event.venue_order_id
             else:
                 Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")
@@ -677,7 +676,7 @@ cdef class PassiveOrder(Order):
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         UUID init_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
         dict options not None,
     ):
         """
@@ -707,8 +706,8 @@ cdef class PassiveOrder(Order):
             The order expiry time - applicable to GTD orders only.
         init_id : UUID
             The order initialization event ID.
-        timestamp_ns : int64
-            The order initialization timestamp.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the order was initialized.
         options : dict
             The order options.
 
@@ -742,7 +741,7 @@ cdef class PassiveOrder(Order):
             quantity=quantity,
             time_in_force=time_in_force,
             event_id=init_id,
-            timestamp_ns=timestamp_ns,
+            ts_init=ts_init,
             options=options,
         )
 
@@ -803,7 +802,7 @@ cdef class PassiveOrder(Order):
         self.execution_id = fill.execution_id
         self.liquidity_side = fill.liquidity_side
         self.filled_qty = Quantity(self.filled_qty + fill.last_qty, fill.last_qty.precision)
-        self.ts_filled_ns = fill.ts_filled_ns
+        self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
         self._set_slippage()
 

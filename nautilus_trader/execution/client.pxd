@@ -15,11 +15,11 @@
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -38,11 +38,13 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.trading.account cimport Account
 
 
@@ -50,12 +52,15 @@ cdef class ExecutionClient:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
-    cdef ExecutionEngine _engine
+    cdef MessageBus _msgbus
+    cdef Cache _cache
     cdef Account _account
     cdef dict _config
 
     cdef readonly ClientId id
     """The clients ID.\n\n:returns: `ClientId`"""
+    cdef readonly TraderId trader_id
+    """The trader ID associated with the client.\n\n:returns: `TraderId`"""
     cdef readonly Venue venue
     """The clients venue ID (if not multi-venue brokerage).\n\n:returns: `Venue` or None"""
     cdef readonly VenueType venue_type
@@ -67,7 +72,7 @@ cdef class ExecutionClient:
     cdef readonly Currency base_currency
     """The clients account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or None"""
     cdef readonly bint calculate_account_state
-    """If the account state is calculated on order fill.\n\n:returns: `bool"""
+    """If the account state is calculated on order fill.\n\n:returns: `bool`"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 
@@ -93,7 +98,7 @@ cdef class ExecutionClient:
         self,
         list balances,
         bint reported,
-        int64_t ts_updated_ns,
+        int64_t ts_event,
         dict info=*,
     ) except *
     cpdef void generate_order_submitted(
@@ -101,7 +106,7 @@ cdef class ExecutionClient:
         StrategyId strategy_id,
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
-        int64_t ts_submitted_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_rejected(
         self,
@@ -109,7 +114,7 @@ cdef class ExecutionClient:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         str reason,
-        int64_t ts_rejected_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_accepted(
         self,
@@ -117,15 +122,15 @@ cdef class ExecutionClient:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_accepted_ns,
+        int64_t ts_event,
     ) except *
-    cpdef void generate_order_pending_replace(
+    cpdef void generate_order_pending_update(
         self,
         StrategyId strategy_id,
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_pending_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_pending_cancel(
         self,
@@ -133,25 +138,27 @@ cdef class ExecutionClient:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_pending_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_update_rejected(
         self,
         StrategyId strategy_id,
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
         str response_to,
         str reason,
-        int64_t ts_rejected_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_cancel_rejected(
         self,
         StrategyId strategy_id,
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
         str response_to,
         str reason,
-        int64_t ts_rejected_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_updated(
         self,
@@ -162,7 +169,7 @@ cdef class ExecutionClient:
         Quantity quantity,
         Price price,
         Price trigger,
-        int64_t ts_updated_ns,
+        int64_t ts_event,
         bint venue_order_id_modified=*,
     ) except *
     cpdef void generate_order_canceled(
@@ -171,7 +178,7 @@ cdef class ExecutionClient:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_canceled_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_triggered(
         self,
@@ -179,7 +186,7 @@ cdef class ExecutionClient:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_triggered_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_expired(
         self,
@@ -187,7 +194,7 @@ cdef class ExecutionClient:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        int64_t ts_expired_ns,
+        int64_t ts_event,
     ) except *
     cpdef void generate_order_filled(
         self,
@@ -204,7 +211,7 @@ cdef class ExecutionClient:
         Currency quote_currency,
         Money commission,
         LiquiditySide liquidity_side,
-        int64_t ts_filled_ns,
+        int64_t ts_event,
     ) except *
 
 # --------------------------------------------------------------------------------------------------

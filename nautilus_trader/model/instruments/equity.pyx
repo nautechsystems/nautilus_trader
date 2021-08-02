@@ -47,8 +47,8 @@ cdef class Equity(Instrument):
         str time_zone_id not None,
         str trading_hours not None,
         str last_trade_time not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``Equity`` class.
@@ -67,10 +67,10 @@ cdef class Equity(Instrument):
             The contract value multiplier (determines tick value).
         lot_size : Quantity
             The rounded lot unit size (standard/board).
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the instrument update occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the instrument object was initialized.
 
         Raises
         ------
@@ -106,8 +106,8 @@ cdef class Equity(Instrument):
             margin_maint=Decimal(),
             maker_fee=Decimal(),
             taker_fee=Decimal(),
-            ts_event_ns=ts_event_ns,
-            ts_recv_ns=ts_recv_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
             info={},
         )
 
@@ -119,3 +119,19 @@ cdef class Equity(Instrument):
         self.time_zone_id = time_zone_id
         self.trading_hours = trading_hours
         self.last_trade_time = last_trade_time
+
+    @staticmethod
+    def from_dict(dict values) -> Instrument:
+        return Instrument.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(Instrument obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return Instrument.to_dict_c(obj)

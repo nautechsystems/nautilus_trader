@@ -54,18 +54,18 @@ async def async_magic():
 class TestBitmexExecutionClient:
     def setup(self):
         # Fixture Setup
-        self.clock = LiveClock()
-        self.uuid_factory = UUIDFactory()
-        self.trader_id = TestStubs.trader_id()
-        self.account_id = AccountId(BITMEX.value, "001")
-
         self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
 
-        # Setup logging
+        self.clock = LiveClock()
+        self.uuid_factory = UUIDFactory()
         self.logger = LiveLogger(loop=self.loop, clock=self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+        self.account_id = AccountId(BITMEX.value, "001")
+
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -81,7 +81,6 @@ class TestBitmexExecutionClient:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -114,9 +113,11 @@ class TestBitmexExecutionClient:
         self.mock_ccxt.watch_balance = watch_balance
 
         self.client = BitmexCCXTExecutionClient(
+            loop=self.loop,
             client=self.mock_ccxt,
             account_id=self.account_id,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )

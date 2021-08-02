@@ -17,6 +17,7 @@ import asyncio
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LogColor
@@ -40,6 +41,7 @@ from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class LiveExecutionClientFactory:
@@ -52,6 +54,7 @@ cdef class LiveExecutionClientFactory:
         str name not None,
         dict config not None,
         LiveExecutionEngine engine not None,
+        Cache cache not None,
         LiveClock clock not None,
         LiveLogger logger not None,
         client_cls=None,
@@ -67,6 +70,8 @@ cdef class LiveExecutionClientFactory:
             The configuration for the client.
         engine : LiveDataEngine
             The engine for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
             The clock for the client.
         logger : LiveLogger
@@ -92,13 +97,15 @@ cdef class LiveExecutionClient(ExecutionClient):
 
     def __init__(
         self,
+        loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
         VenueType venue_type,
         AccountId account_id not None,
         AccountType account_type,
         Currency base_currency,  # Can be None
-        LiveExecutionEngine engine not None,
         InstrumentProvider instrument_provider not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict config=None,
@@ -108,6 +115,8 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
         client_id : ClientId
             The client ID.
         venue_type : VenueType
@@ -118,10 +127,12 @@ cdef class LiveExecutionClient(ExecutionClient):
             The account type for the client.
         base_currency : Currency, optional
             The account base currency for the client. Use ``None`` for multi-currency accounts.
-        engine : LiveDataEngine
-            The data engine for the client.
         instrument_provider : InstrumentProvider
             The instrument provider for the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
             The clock for the client.
         logger : Logger
@@ -136,13 +147,14 @@ cdef class LiveExecutionClient(ExecutionClient):
             account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             config=config,
         )
 
-        self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
+        self._loop = loop
         self._instrument_provider = instrument_provider
 
     cpdef void reset(self) except *:
@@ -240,7 +252,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         cdef ExecutionMassStatus mass_status = ExecutionMassStatus(
             client_id=self.id,
             account_id=self.account_id,
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
         if not active_orders:
@@ -259,7 +271,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 exec_reports = await self.generate_exec_reports(
                     venue_order_id=order.venue_order_id,
                     symbol=order.instrument_id.symbol,
-                    since=nanos_to_unix_dt(nanos=order.timestamp_ns),
+                    since=nanos_to_unix_dt(nanos=order.ts_init),
                 )
                 mass_status.add_exec_reports(order.venue_order_id, exec_reports)
 
@@ -304,7 +316,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             Condition.equal(report.client_order_id, order.client_order_id, "report.client_order_id", "order.client_order_id")
             Condition.equal(report.venue_order_id, order.venue_order_id, "report.venue_order_id", "order.venue_order_id")
         else:
-            order = self._engine.cache.order(report.client_order_id)
+            order = self._cache.order(report.client_order_id)
             if order is None:
                 self._log.error(
                     f"Cannot reconcile state for {repr(report.venue_order_id)}, "
@@ -326,7 +338,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 order.instrument_id,
                 report.client_order_id,
                 "unknown",
-                report.timestamp_ns,
+                report.ts_init,
             )
             return True
         elif report.order_state == OrderState.EXPIRED:
@@ -336,7 +348,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 order.instrument_id,
                 report.client_order_id,
                 report.venue_order_id,
-                report.timestamp_ns,
+                report.ts_init,
             )
             return True
         elif report.order_state == OrderState.CANCELED:
@@ -346,7 +358,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 order.instrument_id,
                 report.client_order_id,
                 report.venue_order_id,
-                report.timestamp_ns,
+                report.ts_init,
             )
             return True
         elif report.order_state == OrderState.ACCEPTED:
@@ -357,7 +369,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                     order.instrument_id,
                     report.client_order_id,
                     report.venue_order_id,
-                    report.timestamp_ns,
+                    report.ts_init,
                 )
             return True
 
@@ -398,7 +410,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 quote_currency=instrument.quote_currency,
                 commission=exec_report.commission,
                 liquidity_side=exec_report.liquidity_side,
-                ts_filled_ns=exec_report.ts_filled_ns,
+                ts_event=exec_report.ts_event,
             )
 
         return True

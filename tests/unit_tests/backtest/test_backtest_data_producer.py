@@ -18,7 +18,7 @@ import pandas as pd
 from nautilus_trader.backtest.data_producer import BacktestDataProducer
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.core.type import DataType
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BarAggregation
@@ -58,8 +58,8 @@ class TestBacktestDataProducer:
             level=BookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         data_type = DataType(MyData, metadata={"news_wire": "hacks"})
@@ -87,8 +87,8 @@ class TestBacktestDataProducer:
             level=BookLevel.L2,
             bids=[[1551.15, 0.51], [1581.00, 1.20]],
             asks=[[1553.15, 1.51], [1583.00, 2.20]],
-            ts_event_ns=1_000_000,
-            ts_recv_ns=1_000_000,
+            ts_event=1_000_000,
+            ts_init=1_000_000,
         )
 
         producer = BacktestDataProducer(
@@ -107,7 +107,7 @@ class TestBacktestDataProducer:
             streamed_data.append(producer.next())  # noqa (own method)
 
         # Assert
-        timestamps = [x.ts_recv_ns for x in streamed_data]
+        timestamps = [x.ts_init for x in streamed_data]
         assert timestamps == [0, 0, 500000, 1000000, 1000000, 2000000]
         assert producer.min_timestamp_ns == 0
         assert producer.max_timestamp_ns == 2_000_000
@@ -132,7 +132,7 @@ class TestBacktestDataProducer:
         next_data = producer.next()  # noqa (own method)
 
         # Assert
-        assert next_data.ts_recv_ns == 1359676799800000000
+        assert next_data.ts_init == 1359676799800000000
         assert next_data.instrument_id == USDJPY_SIM.id
         assert str(next_data.bid) == "91.715"
         assert str(next_data.ask) == "91.717"
@@ -147,8 +147,8 @@ class TestBacktestDataProducer:
                 **example.to_dict(example),
                 **{
                     "instrument_id": instrument.id.value,
-                    "ts_recv_ns": 1620394867930000000,
-                    "ts_event_ns": 1620394867930000000,
+                    "ts_init": 1620394867930000000,
+                    "ts_event": 1620394867930000000,
                 },
             }
         )

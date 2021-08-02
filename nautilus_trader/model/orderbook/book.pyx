@@ -92,7 +92,7 @@ cdef class OrderBook:
             price_precision=price_precision,
             size_precision=size_precision,
         )
-        self.last_update_timestamp_ns = 0
+        self.ts_last = 0
 
     @staticmethod
     def create(
@@ -257,7 +257,7 @@ cdef class OrderBook:
             )
             self.update(order=order)
 
-        self.last_update_timestamp_ns = snapshot.ts_recv_ns
+        self.ts_last = snapshot.ts_init
 
     cpdef void apply(self, OrderBookData data) except *:
         """
@@ -330,7 +330,7 @@ cdef class OrderBook:
         elif delta.type == DeltaType.DELETE:
             self.delete(order=delta.order)
 
-        self.last_update_timestamp_ns = delta.ts_recv_ns
+        self.ts_last = delta.ts_init
 
     cdef void _add(self, Order order) except *:
         if order.side == OrderSide.BUY:
@@ -361,18 +361,6 @@ cdef class OrderBook:
         if best_bid is None or best_ask is None:
             return
         assert best_bid < best_ask, f"Orders in cross [{best_bid} @ {best_ask}]"
-
-    @property
-    def timestamp_ns(self):
-        """
-        The UNIX timestamp (nanoseconds) of the last update.
-
-        Returns
-        -------
-        int64
-
-        """
-        return self.last_update_timestamp_ns
 
     cpdef int trade_side(self, TradeTick trade):
         """
@@ -480,7 +468,7 @@ cdef class OrderBook:
         return (
             f"{type(self).__name__}\n"
             f"instrument: {self.instrument_id}\n"
-            f"timestamp: {pd.Timestamp(self.last_update_timestamp_ns)}\n\n"
+            f"timestamp: {pd.Timestamp(self.ts_last)}\n\n"
             f"{self.pprint()}"
         )
 

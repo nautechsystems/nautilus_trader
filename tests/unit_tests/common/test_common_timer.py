@@ -45,10 +45,10 @@ class TestTimeEvent:
         # Act
         # Assert
         assert str(event) == (
-            f"TimeEvent(name=EVENT, id={uuid}, " f"event_timestamp=1970-01-01T00:00:00.000Z)"
+            f"TimeEvent(name=EVENT, id={uuid}, " f"timestamp=1970-01-01T00:00:00.000Z)"
         )
         assert repr(event) == (
-            f"TimeEvent(name=EVENT, id={uuid}, " f"event_timestamp=1970-01-01T00:00:00.000Z)"
+            f"TimeEvent(name=EVENT, id={uuid}, " f"timestamp=1970-01-01T00:00:00.000Z)"
         )
 
 
@@ -88,11 +88,11 @@ class TestTimeEventHandler:
         # Assert
         assert str(handler) == (
             f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}, "
-            f"event_timestamp=1970-01-01T00:00:00.000Z))"
+            f"timestamp=1970-01-01T00:00:00.000Z))"
         )
         assert repr(handler) == (
             f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}, "
-            f"event_timestamp=1970-01-01T00:00:00.000Z))"
+            f"timestamp=1970-01-01T00:00:00.000Z))"
         )
 
     def test_sort(self):

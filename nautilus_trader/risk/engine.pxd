@@ -15,12 +15,11 @@
 
 from decimal import Decimal
 
-from nautilus_trader.cache.cache cimport Cache
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
@@ -28,25 +27,22 @@ from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class RiskEngine(Component):
+    cdef PortfolioFacade _portfolio
     cdef MessageBus _msgbus
-    cdef ExecutionEngine _exec_engine
+    cdef CacheFacade _cache
     cdef dict _max_notional_per_order
     cdef Throttler _order_throttler
 
-    cdef readonly TraderId trader_id
-    """The trader ID associated with the engine.\n\n:returns: `TraderId`"""
-    cdef readonly Cache cache
-    """The engines cache.\n\n:returns: `CacheFacade`"""
     cdef readonly TradingState trading_state
     """The current trading state for the engine.\n\n:returns: `TradingState`"""
     cdef readonly bint is_bypassed

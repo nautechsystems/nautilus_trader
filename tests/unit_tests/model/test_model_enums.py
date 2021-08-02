@@ -936,6 +936,7 @@ class TestTimeInForce:
             [TimeInForce.FOK, "FOK"],
             [TimeInForce.FAK, "FAK"],
             [TimeInForce.GTD, "GTD"],
+            [TimeInForce.OC, "OC"],
         ],
     )
     def test_time_in_force_to_str(self, enum, expected):
@@ -955,6 +956,7 @@ class TestTimeInForce:
             ["FOK", TimeInForce.FOK],
             ["FAK", TimeInForce.FAK],
             ["GTD", TimeInForce.GTD],
+            ["OC", TimeInForce.OC],
         ],
     )
     def test_time_in_force_from_str(self, string, expected):

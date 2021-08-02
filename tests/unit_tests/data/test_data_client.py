@@ -18,12 +18,12 @@ import pytest
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.core.type import DataType
 from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -55,7 +55,10 @@ class TestDataClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -70,7 +73,7 @@ class TestDataClient:
         )
 
         self.data_engine = DataEngine(
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -80,7 +83,8 @@ class TestDataClient:
 
         self.client = DataClient(
             client_id=ClientId("TEST_PROVIDER"),
-            engine=self.data_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -141,8 +145,8 @@ class TestDataClient:
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
             currency=USD,
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
         generic_data = GenericData(data_type, data)
 
@@ -159,8 +163,8 @@ class TestDataClient:
             impact=NewsImpact.HIGH,
             name="Unemployment Rate",
             currency=USD,
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -177,7 +181,10 @@ class TestMarketDataClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -192,7 +199,7 @@ class TestMarketDataClient:
         )
 
         self.data_engine = DataEngine(
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -202,7 +209,8 @@ class TestMarketDataClient:
 
         self.client = MarketDataClient(
             client_id=ClientId(self.venue.value),
-            engine=self.data_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -235,6 +243,13 @@ class TestMarketDataClient:
         with pytest.raises(NotImplementedError):
             self.client.dispose()
 
+    def test_subscribe_instruments_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(NotImplementedError):
+            self.client.subscribe_instruments()
+
     def test_subscribe_instrument_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
@@ -247,7 +262,7 @@ class TestMarketDataClient:
         # Act
         # Assert
         with pytest.raises(NotImplementedError):
-            self.client.subscribe_order_book(AUDUSD_SIM.id, 2, 0)
+            self.client.subscribe_order_book_snapshots(AUDUSD_SIM.id, 2, 0)
 
     def test_subscribe_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
@@ -282,7 +297,7 @@ class TestMarketDataClient:
         # Act
         # Assert
         with pytest.raises(NotImplementedError):
-            self.client.unsubscribe_order_book(AUDUSD_SIM.id)
+            self.client.unsubscribe_order_book_snapshots(AUDUSD_SIM.id)
 
     def test_unsubscribe_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
@@ -304,20 +319,6 @@ class TestMarketDataClient:
         # Assert
         with pytest.raises(NotImplementedError):
             self.client.unsubscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
-
-    def test_request_instrument_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.request_instrument(None, None)
-
-    def test_request_instruments_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.request_instruments(None)
 
     def test_request_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
@@ -363,8 +364,8 @@ class TestMarketDataClient:
             level=BookLevel.L2,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -379,8 +380,8 @@ class TestMarketDataClient:
             instrument_id=ETHUSDT_BINANCE.id,
             level=BookLevel.L2,
             deltas=[],
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -445,14 +446,6 @@ class TestMarketDataClient:
 
         # Assert
         assert self.data_engine.data_count == 1
-
-    def test_handle_instruments_sends_to_data_engine(self):
-        # Arrange
-        # Act
-        self.client._handle_instruments_py([], self.uuid_factory.generate())
-
-        # Assert
-        assert self.data_engine.response_count == 1
 
     def test_handle_quote_ticks_sends_to_data_engine(self):
         # Arrange

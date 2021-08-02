@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
-
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -80,8 +78,6 @@ cdef class OrderDenied(OrderEvent):
 cdef class OrderSubmitted(OrderEvent):
     cdef readonly AccountId account_id
     """The account ID associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t ts_submitted_ns
-    """The order submitted time.\n\n:returns: `int64`"""
 
     @staticmethod
     cdef OrderSubmitted from_dict_c(dict values)
@@ -93,8 +89,6 @@ cdef class OrderSubmitted(OrderEvent):
 cdef class OrderAccepted(OrderEvent):
     cdef readonly AccountId account_id
     """The account ID associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t ts_accepted_ns
-    """The UNIX timestamp (nanoseconds) when the order was accepted.\n\n:returns: `int64`"""
 
     @staticmethod
     cdef OrderAccepted from_dict_c(dict values)
@@ -108,8 +102,6 @@ cdef class OrderRejected(OrderEvent):
     """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly str reason
     """The reason the order was rejected.\n\n:returns: `str`"""
-    cdef readonly int64_t ts_rejected_ns
-    """The UNIX timestamp (nanoseconds) when the order was rejected.\n\n:returns: `int64`"""
 
     @staticmethod
     cdef OrderRejected from_dict_c(dict values)
@@ -121,8 +113,6 @@ cdef class OrderRejected(OrderEvent):
 cdef class OrderCanceled(OrderEvent):
     cdef readonly AccountId account_id
     """The account ID associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t ts_canceled_ns
-    """The UNIX timestamp (nanoseconds) when the order was canceled.\n\n:returns: `int64`"""
 
     @staticmethod
     cdef OrderCanceled from_dict_c(dict values)
@@ -134,8 +124,6 @@ cdef class OrderCanceled(OrderEvent):
 cdef class OrderExpired(OrderEvent):
     cdef readonly AccountId account_id
     """The account ID associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t ts_expired_ns
-    """The UNIX timestamp (nanoseconds) when the order expired.\n\n:returns: `int64`"""
 
     @staticmethod
     cdef OrderExpired from_dict_c(dict values)
@@ -147,8 +135,6 @@ cdef class OrderExpired(OrderEvent):
 cdef class OrderTriggered(OrderEvent):
     cdef readonly AccountId account_id
     """The account ID associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t ts_triggered_ns
-    """The UNIX timestamp (nanoseconds) when the order was triggered.\n\n:returns: `int64`"""
 
     @staticmethod
     cdef OrderTriggered from_dict_c(dict values)
@@ -160,8 +146,6 @@ cdef class OrderTriggered(OrderEvent):
 cdef class OrderPendingUpdate(OrderEvent):
     cdef readonly AccountId account_id
     """The account ID associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t ts_pending_ns
-    """The timestamp from which the replace was pending.\n\n:returns: `int64`"""
 
     @staticmethod
     cdef OrderPendingUpdate from_dict_c(dict values)
@@ -173,8 +157,6 @@ cdef class OrderPendingUpdate(OrderEvent):
 cdef class OrderPendingCancel(OrderEvent):
     cdef readonly AccountId account_id
     """The account ID associated with the event.\n\n:returns: `AccountId`"""
-    cdef readonly int64_t ts_pending_ns
-    """The timestamp from which the cancel was pending.\n\n:returns: `int64`"""
 
     @staticmethod
     cdef OrderPendingCancel from_dict_c(dict values)
@@ -190,8 +172,6 @@ cdef class OrderUpdateRejected(OrderEvent):
     """The update rejection response to.\n\n:returns: `str`"""
     cdef readonly str reason
     """The reason for order update rejection.\n\n:returns: `str`"""
-    cdef readonly int64_t ts_rejected_ns
-    """The UNIX timestamp (nanoseconds) when the update was rejected.\n\n:returns: `int64`"""
 
     @staticmethod
     cdef OrderUpdateRejected from_dict_c(dict values)
@@ -207,8 +187,6 @@ cdef class OrderCancelRejected(OrderEvent):
     """The cancel rejection response to.\n\n:returns: `str`"""
     cdef readonly str reason
     """The reason for order cancel rejection.\n\n:returns: `str`"""
-    cdef readonly int64_t ts_rejected_ns
-    """The UNIX timestamp (nanoseconds) when the cancel was rejected.\n\n:returns: `int64`"""
 
     @staticmethod
     cdef OrderCancelRejected from_dict_c(dict values)
@@ -226,8 +204,6 @@ cdef class OrderUpdated(OrderEvent):
     """The orders current price.\n\n:returns: `Price`"""
     cdef readonly Price trigger
     """The orders current price.\n\n:returns: `Price` or None"""
-    cdef readonly int64_t ts_updated_ns
-    """The UNIX timestamp (nanoseconds) when the order was updated.\n\n:returns: `int64`"""
 
     @staticmethod
     cdef OrderUpdated from_dict_c(dict values)
@@ -257,8 +233,6 @@ cdef class OrderFilled(OrderEvent):
     """The commission generated from the fill.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
     """The liquidity side of the event (MAKER or TAKER).\n\n:returns: `LiquiditySide`"""
-    cdef readonly int64_t ts_filled_ns
-    """The UNIX timestamp (nanoseconds) when the order was filled.\n\n:returns: `int64`"""
     cdef readonly dict info
     """The additional fill information.\n\n:returns: `dict[str, object]`"""
 

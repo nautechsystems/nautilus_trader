@@ -42,8 +42,8 @@ cdef class OrderBook:
     """The order books bids.\n\n:returns: `Ladder`"""
     cdef readonly Ladder asks
     """The order books asks.\n\n:returns: `Ladder`"""
-    cdef readonly int64_t last_update_timestamp_ns
-    """The UNIX timestamp (nanoseconds) of the last update.\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_last
+    """The UNIX timestamp (nanoseconds) when the order book was last updated.\n\n:returns: `int64`"""
 
     cpdef void add(self, Order order) except *
     cpdef void update(self, Order order) except *

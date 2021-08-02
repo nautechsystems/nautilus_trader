@@ -20,13 +20,15 @@ from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport UpdateOrder
+from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderAccepted
-from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderCanceled
+from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
@@ -36,8 +38,8 @@ from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
-from nautilus_trader.model.events.order cimport OrderUpdateRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.events.order cimport OrderUpdateRejected
 from nautilus_trader.model.events.position cimport PositionChanged
 from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionOpened
@@ -48,6 +50,7 @@ from nautilus_trader.model.instruments.currency cimport CurrencySpot
 
 
 # Default mappings for Nautilus objects
+
 _OBJECT_TO_DICT_MAP = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
     SubmitBracketOrder.__name__: SubmitBracketOrder.to_dict_c,
@@ -78,6 +81,7 @@ _OBJECT_TO_DICT_MAP = {
     TradeTick.__name__: TradeTick.to_dict_c,
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.to_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.to_dict_c,
+    InstrumentClosePrice.__name__: InstrumentClosePrice.to_dict_c,
 }
 
 
@@ -110,8 +114,10 @@ _OBJECT_FROM_DICT_MAP = {
     CryptoSwap.__name__: CryptoSwap.from_dict_c,
     CurrencySpot.__name__: CurrencySpot.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,
+    QuoteTick.__name__: QuoteTick.from_dict_c,
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.from_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.from_dict_c,
+    InstrumentClosePrice.__name__: InstrumentClosePrice.from_dict_c,
 }
 
 

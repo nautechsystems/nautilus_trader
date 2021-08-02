@@ -21,7 +21,7 @@ from betfairlightweight.filters import streaming_order_filter
 
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.data.socket import SocketClient
+from nautilus_trader.network.socket import SocketClient
 
 
 HOST = "stream-api.betfair.com"

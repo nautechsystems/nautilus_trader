@@ -15,9 +15,9 @@
 
 import pytest
 
-from nautilus_trader.core.type import DataType
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.messages import Subscribe
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.serialization.base import CommandSerializer
@@ -73,9 +73,8 @@ class TestSerializationBase:
         command = Subscribe(
             client_id=ClientId("SIM"),
             data_type=DataType(QuoteTick),
-            handler=[].append,
             command_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         serializer = CommandSerializer()

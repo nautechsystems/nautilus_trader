@@ -38,7 +38,7 @@ class TestSerializationPerformance(PerformanceHarness):
         self.venue = Venue("SIM")
         self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
-        self.serializer = MsgPackCommandSerializer()
+
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
             strategy_id=StrategyId("S-001"),
@@ -59,6 +59,8 @@ class TestSerializationPerformance(PerformanceHarness):
             uuid4(),
             0,
         )
+
+        self.serializer = MsgPackCommandSerializer()
 
     @pytest.fixture(autouse=True)
     @pytest.mark.benchmark(disable_gc=True, warmup=True)

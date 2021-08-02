@@ -35,7 +35,6 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -59,61 +58,60 @@ BTCUSD_BINANCE = TestInstrumentProvider.btcusdt_binance()
 class TestCache:
     def setup(self):
         # Fixture Setup
-        clock = TestClock()
-        logger = Logger(clock)
+        self.clock = TestClock()
+        self.logger = Logger(self.clock)
 
         self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
 
         self.msgbus = MessageBus(
-            clock=clock,
-            logger=logger,
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.cache = Cache(
             database=None,
-            logger=logger,
+            logger=self.logger,
         )
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.data_engine = DataEngine(
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.risk_engine = RiskEngine(
-            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register(
-            self.trader_id,
-            self.msgbus,
-            self.portfolio,
-            self.data_engine,
-            self.risk_engine,
-            clock,
-            logger,
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
     def test_cache_currencies_with_no_currencies(self):
@@ -320,8 +318,7 @@ class TestCache:
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
         assert order in self.cache.orders()
-        assert self.cache.venue_order_id(order.client_order_id) == VenueOrderId.null()
-        assert self.cache.client_order_id(order.venue_order_id) is None
+        assert self.cache.venue_order_id(order.client_order_id) is None
 
     def test_load_order(self):
         # Arrange
@@ -1037,8 +1034,6 @@ class TestExecutionCacheIntegrityCheck:
             modules=[],
         )
 
-        self.cache = self.engine.get_exec_engine().cache
-
     def test_exec_cache_check_integrity_when_cache_cleared_fails(self):
         # Arrange
         strategy = EMACross(
@@ -1053,11 +1048,11 @@ class TestExecutionCacheIntegrityCheck:
         self.engine.run(strategies=[strategy])
 
         # Remove data
-        self.cache.clear_cache()
+        self.engine.cache.clear_cache()
 
         # Act
         # Assert
-        assert not self.cache.check_integrity()
+        assert not self.engine.cache.check_integrity()
 
     def test_exec_cache_check_integrity_when_index_cleared_fails(self):
         # Arrange
@@ -1073,8 +1068,8 @@ class TestExecutionCacheIntegrityCheck:
         self.engine.run(strategies=[strategy])
 
         # Clear index
-        self.cache.clear_index()
+        self.engine.cache.clear_index()
 
         # Act
         # Assert
-        assert not self.cache.check_integrity()
+        assert not self.engine.cache.check_integrity()

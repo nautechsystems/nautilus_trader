@@ -28,9 +28,11 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -365,6 +367,7 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         self.trade_size = trade_size
         self.instrument_status: Optional[InstrumentStatus] = None
         self.close_price: Optional[InstrumentClosePrice] = None
+        self.book: Optional[OrderBook] = None
 
     def on_start(self):
         """Actions to be performed on strategy start."""
@@ -374,12 +377,15 @@ class OrderBookImbalanceStrategy(TradingStrategy):
             self.stop()
             return
 
+        # Create orderbook
+        self.book = OrderBook.create(instrument=self.instrument, level=BookLevel.L2)
+
         # Subscribe to live data
-        self.subscribe_order_book(self.instrument_id)
+        self.subscribe_order_book_deltas(self.instrument_id)
         self.subscribe_instrument_status_updates(self.instrument_id)
         self.subscribe_instrument_close_prices(self.instrument_id)
 
-    def on_order_book(self, order_book: OrderBook):
+    def on_order_book_delta(self, data: OrderBookData):
         """
         Actions to be performed when the strategy is running and receives an order book.
 
@@ -389,8 +395,9 @@ class OrderBookImbalanceStrategy(TradingStrategy):
             The order book received.
 
         """
-        bid_qty = order_book.best_bid_qty()
-        ask_qty = order_book.best_ask_qty()
+        self.book.apply(data)
+        bid_qty = self.book.best_bid_qty()
+        ask_qty = self.book.best_ask_qty()
         if bid_qty and ask_qty:
             imbalance = bid_qty / (bid_qty + ask_qty)
             if imbalance > 0.90:
@@ -456,4 +463,4 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         Cleanup any resources used by the strategy here.
 
         """
-        self.unsubscribe_order_book(self.instrument_id)
+        self.subscribe_order_book_snapshots(self.instrument_id)

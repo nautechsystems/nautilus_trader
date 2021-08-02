@@ -55,8 +55,8 @@ cdef class CryptoSwap(Instrument):
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
         dict info=None,
     ):
         """
@@ -102,10 +102,10 @@ cdef class CryptoSwap(Instrument):
             The fee rate for liquidity makers as a percentage of order value.
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
         info : dict[str, object], optional
             The additional instrument information.
 
@@ -161,8 +161,8 @@ cdef class CryptoSwap(Instrument):
             margin_maint=margin_maint,
             maker_fee=maker_fee,
             taker_fee=taker_fee,
-            ts_event_ns=ts_event_ns,
-            ts_recv_ns=ts_recv_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
             info=info,
         )
 
@@ -214,8 +214,8 @@ cdef class CryptoSwap(Instrument):
             margin_maint=Decimal(values["margin_maint"]),
             maker_fee=Decimal(values["maker_fee"]),
             taker_fee=Decimal(values["taker_fee"]),
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
             info=orjson.loads(info) if info is not None else None,
         )
 
@@ -243,8 +243,8 @@ cdef class CryptoSwap(Instrument):
             "margin_maint": str(obj.margin_maint),
             "maker_fee": str(obj.maker_fee),
             "taker_fee": str(obj.taker_fee),
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
             "info": orjson.dumps(obj.info) if obj.info is not None else None,
         }
 

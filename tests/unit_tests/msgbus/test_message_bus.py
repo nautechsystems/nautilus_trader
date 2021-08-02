@@ -15,182 +15,165 @@
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.message import Request
+from nautilus_trader.core.message import Response
 from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.msgbus.message_bus import Subscription
-
-
-class TestSubscription:
-    def test_comparisons_returns_expected(self):
-        # Arrange
-        subscriber = []
-
-        subscription1 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=0,
-        )
-
-        subscription2 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=1,
-        )
-
-        # Act, Assert
-        assert subscription1 == subscription2
-        assert subscription1 < subscription2
-        assert subscription1 <= subscription2
-        assert subscription2 > subscription1
-        assert subscription2 >= subscription1
-
-    def test_equality_when_equal_returns_true(self):
-        # Arrange
-        subscriber = []
-
-        subscription1 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=1,
-        )
-
-        subscription2 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=2,  # <-- priority does not affect equality
-        )
-
-        # Act, Assert
-        assert subscription1 == subscription2
-
-    def test_equality_when_not_equal_returns_false(self):
-        # Arrange
-        subscriber = []
-
-        subscription1 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=1,
-        )
-
-        subscription2 = Subscription(
-            topic="something",
-            handler=subscriber.append,
-            priority=2,  # <-- priority does not affect equality
-        )
-
-        # Act, Assert
-        assert subscription1 != subscription2
-
-    def test_reverse_sorting_list_of_subscribers_returns_expected_ordered_list(self):
-        # Arrange
-        subscriber = []
-
-        subscription1 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-        )
-
-        subscription2 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=5,  # <-- priority does not affect equality
-        )
-
-        subscription3 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=2,  # <-- priority does not affect equality
-        )
-
-        subscription4 = Subscription(
-            topic="*",
-            handler=subscriber.append,
-            priority=10,  # <-- priority does not affect equality
-        )
-
-        # Act
-        sorted_list = sorted(
-            [
-                subscription1,
-                subscription2,
-                subscription3,
-                subscription4,
-            ],
-            reverse=True,
-        )
-
-        # Assert
-        assert sorted_list == [subscription4, subscription2, subscription3, subscription1]
-        assert sorted_list[0] == subscription4
-        assert sorted_list[1] == subscription2
-        assert sorted_list[2] == subscription3
-        assert sorted_list[3] == subscription1
-
-    def test_subscription_for_all(self):
-        # Arrange
-        subscriber = []
-        handler_str = str(subscriber.append)
-
-        # Act
-        subscription = Subscription(
-            topic="*",
-            handler=subscriber.append,
-        )
-
-        # Assert
-        assert str(subscription).startswith(
-            f"Subscription(topic=*, handler={handler_str}, priority=0)"
-        )
-
-    def test_str_repr(self):
-        # Arrange
-        subscriber = []
-        handler_str = str(subscriber.append)
-
-        # Act
-        subscription = Subscription(
-            topic="system_status",
-            handler=subscriber.append,
-        )
-
-        # Assert
-        assert (
-            str(subscription)
-            == f"Subscription(topic=system_status, handler={handler_str}, priority=0)"
-        )
-        assert (
-            repr(subscription)
-            == f"Subscription(topic=system_status, handler={handler_str}, priority=0)"
-        )
+from tests.test_kit.stubs import TestStubs
 
 
 class TestMessageBus:
     def setup(self):
         # Fixture setup
         self.clock = TestClock()
+        self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
+
+        self.trader_id = TestStubs.trader_id()
 
         self.handler = []
         self.msgbus = MessageBus(
-            name="TestBus",
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
 
-    def test_channels_with_no_subscribers_returns_empty_list(self):
+    def test_instantiate_message_bus(self):
+        # Arrange, Act, Assert
+        assert self.msgbus.trader_id == self.trader_id
+        assert self.msgbus.sent_count == 0
+        assert self.msgbus.req_count == 0
+        assert self.msgbus.res_count == 0
+        assert self.msgbus.pub_count == 0
+
+    def test_endpoints_with_none_registered_returns_empty_list(self):
         # Arrange, Act
-        result = self.msgbus.channels()
+        result = self.msgbus.endpoints()
+
+        assert result == []
+
+    def test_topics_with_no_subscribers_returns_empty_list(self):
+        # Arrange, Act
+        result = self.msgbus.topics()
 
         assert result == []
 
     def test_subscriptions_with_no_subscribers_returns_empty_list(self):
         # Arrange, Act
-        result = self.msgbus.subscriptions("*")
+        result = self.msgbus.subscriptions()
 
         # Assert
         assert result == []
 
-    def test_subscribe_to_msg_type_returns_channels_list_including_msg_type(self):
+    def test_has_subscribers_with_no_subscribers_returns_false(self):
+        # Arrange, Act, Assert
+        assert not self.msgbus.has_subscribers()
+
+    def test_register_adds_endpoint(self):
+        # Arrange
+        endpoint = []
+
+        # Act
+        self.msgbus.register("mailbox", endpoint.append)
+
+        # Assert
+        assert self.msgbus.endpoints() == ["mailbox"]
+
+    def test_deregister_removes_endpoint(self):
+        # Arrange
+        endpoint = []
+        self.msgbus.register("mailbox", endpoint.append)
+
+        # Act
+        self.msgbus.deregister("mailbox", endpoint.append)
+
+        # Assert
+        assert self.msgbus.endpoints() == []
+
+    def test_send_when_no_endpoint_at_address_logs_error(self):
+        # Arrange, Act
+        endpoint = []
+        self.msgbus.send("mailbox", "message")
+
+        # Assert
+        assert "message" not in endpoint
+        assert self.msgbus.sent_count == 0
+
+    def test_send_when_endpoint_at_address_sends_message_to_handler(self):
+        # Arrange
+        endpoint = []
+        self.msgbus.register("mailbox", endpoint.append)
+
+        # Act
+        self.msgbus.send("mailbox", "message")
+
+        # Assert
+        assert "message" in endpoint
+        assert self.msgbus.sent_count == 1
+
+    def test_request_when_endpoint_not_registered_logs_error(self):
+        # Arrange, Act
+        handler = []
+
+        request = Request(
+            callback=handler.append,
+            request_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.msgbus.request(endpoint="mailbox", request=request)
+
+        # Assert
+        assert len(handler) == 0
+        assert self.msgbus.req_count == 0
+
+    def test_response_when_no_correlation_id_logs_error(self):
+        # Arrange, Act
+        handler = []
+
+        response = Response(
+            correlation_id=self.uuid_factory.generate(),
+            response_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.msgbus.response(response)
+
+        # Assert
+        assert response not in handler
+        assert self.msgbus.res_count == 0
+
+    def test_request_response_when_correlation_id_registered_handles_response(self):
+        # Arrange, Act
+        endpoint = []
+        handler = []
+
+        self.msgbus.register(endpoint="mailbox", handler=endpoint.append)
+
+        correlation_id = self.uuid_factory.generate()
+        request = Request(
+            callback=handler.append,
+            request_id=correlation_id,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.msgbus.request(endpoint="mailbox", request=request)
+
+        response = Response(
+            correlation_id=correlation_id,
+            response_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.msgbus.response(response)
+
+        # Assert
+        assert request in endpoint
+        assert response in handler
+        assert self.msgbus.req_count == 1
+        assert self.msgbus.res_count == 1
+
+    def test_subscribe_then_returns_topics_list_including_topic(self):
         # Arrange
         handler = [].append
 
@@ -198,10 +181,19 @@ class TestMessageBus:
         self.msgbus.subscribe(topic="*", handler=handler)
         self.msgbus.subscribe(topic="system", handler=handler)
 
-        result = self.msgbus.channels()
+        result = self.msgbus.topics()
 
         # Assert
-        assert result == ["system", "*"]
+        assert result == ["*", "system"]
+
+    def test_has_subscribers_when_subscribers_returns_true(self):
+        # Arrange, Act
+        self.msgbus.subscribe(topic="*", handler=[].append)
+        self.msgbus.subscribe(topic="system", handler=[].append)
+
+        # Assert
+        assert self.msgbus.has_subscribers()
+        assert self.msgbus.has_subscribers(topic="system")
 
     def test_subscribe_when_handler_already_subscribed_does_not_add_subscription(self):
         # Arrange
@@ -212,12 +204,12 @@ class TestMessageBus:
         # Act
         self.msgbus.subscribe(topic="a", handler=handler)
 
-        result = self.msgbus.channels()
+        result = self.msgbus.topics()
 
         # Assert
         assert result == ["a"]
 
-    def test_subscribe_to_channel_returns_subscriptions_list_including_handler(self):
+    def test_subscribe_then_subscriptions_list_includes_handler(self):
         # Arrange
         handler = [].append
 
@@ -230,7 +222,7 @@ class TestMessageBus:
         assert len(result) == 1
         assert result[0].handler == handler
 
-    def test_subscribe_to_all_returns_subscriptions_list_including_handler(self):
+    def test_subscribe_to_all_then_subscriptions_list_includes_handler(self):
         # Arrange
         handler = [].append
 
@@ -258,21 +250,21 @@ class TestMessageBus:
         assert len(result) == 1
         assert result[0].handler == handler
 
-    def test_unsubscribe_from_msg_type_returns_subscriptions_list_without_handler(self):
+    def test_unsubscribe_then_handler_not_in_subscriptions_list(self):
         # Arrange
         handler = [].append
 
-        self.msgbus.subscribe(topic="orders:*", handler=handler)
+        self.msgbus.subscribe(topic="events.order*", handler=handler)
 
         # Act
-        self.msgbus.unsubscribe(topic="orders:*", handler=handler)
+        self.msgbus.unsubscribe(topic="events.order*", handler=handler)
 
-        result = self.msgbus.subscriptions("orders:*")
+        result = self.msgbus.subscriptions("events.order*")
 
         # Assert
         assert result == []
 
-    def test_unsubscribe_from_msg_type_when_no_subscription_does_nothing(self):
+    def test_unsubscribe_when_no_subscription_does_nothing(self):
         # Arrange
         handler = [].append
 
@@ -328,6 +320,7 @@ class TestMessageBus:
 
         # Assert
         assert "hello world" in subscriber
+        assert self.msgbus.pub_count == 1
 
     def test_publish_with_multiple_subscribers_sends_to_handlers(self):
         # Arrange
@@ -346,48 +339,52 @@ class TestMessageBus:
         assert "hello world" in subscriber1
         assert "hello world" in subscriber2
         assert "hello world" in subscriber3
+        assert self.msgbus.pub_count == 1
 
     def test_publish_with_header_sends_to_handler(self):
         # Arrange
         subscriber = []
 
-        self.msgbus.subscribe(topic="Event:OrderEvent*", handler=subscriber.append)
+        self.msgbus.subscribe(topic="events.order*", handler=subscriber.append)
 
         # Act
-        self.msgbus.publish("Event:OrderEvent*", "OK!")
+        self.msgbus.publish("events.order.SCALPER-001", "ORDER")
 
         # Assert
-        assert "OK!" in subscriber
+        assert "ORDER" in subscriber
+        assert self.msgbus.pub_count == 1
 
     def test_publish_with_none_matching_header_then_filters_from_subscriber(self):
         # Arrange
         subscriber = []
 
         self.msgbus.subscribe(
-            topic="Event:PositionEvent:*",
+            topic="events.position*",
             handler=subscriber.append,
         )
 
         # Act
-        self.msgbus.publish("Event:OrderEvent*", "OK!")
+        self.msgbus.publish("events.order*", "ORDER")
 
         # Assert
-        assert "OK!" not in subscriber
+        assert "ORDER" not in subscriber
+        assert self.msgbus.pub_count == 1
 
     def test_publish_with_matching_subset_header_then_sends_to_subscriber(self):
         # Arrange
         subscriber = []
 
         self.msgbus.subscribe(
-            topic="order*",
+            topic="events.order.*",
             handler=subscriber.append,
         )
 
         # Act
-        self.msgbus.publish("order.S-001", "OK!")
+        self.msgbus.publish("events.order.S-001", "ORDER")
 
         # Assert
-        assert "OK!" in subscriber
+        assert "ORDER" in subscriber
+        assert self.msgbus.pub_count == 1
 
     def test_publish_with_both_channel_and_all_sub_sends_to_subscribers(self):
         # Arrange
@@ -410,3 +407,4 @@ class TestMessageBus:
         # Assert
         assert "OK!" in subscriber1
         assert "OK!" in subscriber2
+        assert self.msgbus.pub_count == 1

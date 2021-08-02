@@ -15,13 +15,13 @@
 
 import asyncio
 import concurrent.futures
-from datetime import timedelta
 import platform
 import signal
 import sys
 import time
-from typing import Dict, List
 import warnings
+from datetime import timedelta
+from typing import Callable, Dict
 
 import msgpack
 import redis
@@ -31,8 +31,8 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogColor
-from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.correctness import PyCondition
@@ -47,7 +47,6 @@ from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSeria
 from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
 from nautilus_trader.trading.portfolio import Portfolio
-from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.trader import Trader
 
 
@@ -66,32 +65,22 @@ class TradingNode:
     Provides an asynchronous network node for live trading.
     """
 
-    def __init__(
-        self,
-        strategies: List[TradingStrategy],
-        config: Dict[str, Dict[str, object]],
-    ):
+    def __init__(self, config: Dict[str, Dict[str, object]]):
         """
         Initialize a new instance of the TradingNode class.
 
         Parameters
         ----------
-        strategies : list[TradingStrategy]
-            The list of strategies to run on the trading node.
         config : dict[str, dict[str, object]]
             The configuration for the trading node.
 
         Raises
         ------
         ValueError
-            If strategies is None or empty.
-        ValueError
             If config is None or empty.
 
         """
-        PyCondition.not_none(strategies, "strategies")
         PyCondition.not_none(config, "config")
-        PyCondition.not_empty(strategies, "strategies")
         PyCondition.not_empty(config, "config")
 
         self._config = config
@@ -182,11 +171,12 @@ class TradingNode:
             )
 
         self._msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self._clock,
             logger=self._logger,
         )
 
-        cache = Cache(
+        self._cache = Cache(
             database=cache_db,
             logger=self._logger,
             config=config_cache,
@@ -194,15 +184,15 @@ class TradingNode:
 
         self.portfolio = Portfolio(
             msgbus=self._msgbus,
-            cache=cache,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
         )
 
         self._data_engine = LiveDataEngine(
             loop=self._loop,
-            portfolio=self.portfolio,
-            cache=cache,
+            msgbus=self._msgbus,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
             config=config_data,
@@ -210,9 +200,8 @@ class TradingNode:
 
         self._exec_engine = LiveExecutionEngine(
             loop=self._loop,
-            trader_id=self.trader_id,
             msgbus=self._msgbus,
-            cache=cache,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
             config=config_exec,
@@ -221,9 +210,9 @@ class TradingNode:
 
         self._risk_engine = LiveRiskEngine(
             loop=self._loop,
-            exec_engine=self._exec_engine,
+            portfolio=self.portfolio,
             msgbus=self._msgbus,
-            cache=cache,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
             config=config_risk,
@@ -231,8 +220,8 @@ class TradingNode:
 
         self.trader = Trader(
             trader_id=self.trader_id,
-            strategies=strategies,
             msgbus=self._msgbus,
+            cache=self._cache,
             portfolio=self.portfolio,
             data_engine=self._data_engine,
             risk_engine=self._risk_engine,
@@ -245,8 +234,11 @@ class TradingNode:
             self.trader.load()
 
         self._builder = TradingNodeBuilder(
+            loop=self._loop,
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
+            msgbus=self._msgbus,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
             log=self._log,
@@ -306,7 +298,24 @@ class TradingNode:
         """
         return self._logger
 
-    def add_data_client_factory(self, name, factory):
+    def add_log_sink(self, handler: Callable[[Dict], None]):
+        """
+        Register the given sink handler with the nodes logger.
+
+        Parameters
+        ----------
+        handler : Callable[[Dict], None]
+            The sink handler to register.
+
+        Raises
+        ------
+        KeyError
+            If handler already registered.
+
+        """
+        self._logger.register_sink(handler=handler)
+
+    def add_data_client_factory(self, name: str, factory):
         """
         Add the given data client factory to the node.
 
@@ -327,7 +336,7 @@ class TradingNode:
         """
         self._builder.add_data_client_factory(name, factory)
 
-    def add_exec_client_factory(self, name, factory):
+    def add_exec_client_factory(self, name: str, factory):
         """
         Add the given execution client factory to the node.
 
@@ -551,7 +560,7 @@ class TradingNode:
             self._log.info("Portfolio initialized.", color=LogColor.GREEN)
 
             # Update portfolio
-            for account in self._exec_engine.cache.accounts():
+            for account in self._cache.accounts():
                 self.portfolio.register_account(account)
 
             # Start trader and strategies

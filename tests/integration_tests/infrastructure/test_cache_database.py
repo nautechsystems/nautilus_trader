@@ -65,9 +65,11 @@ class TestRedisCacheDatabase:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(self.clock)
+
         self.trader_id = TestStubs.trader_id()
 
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -82,7 +84,7 @@ class TestRedisCacheDatabase:
         )
 
         self.data_engine = DataEngine(
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -90,7 +92,6 @@ class TestRedisCacheDatabase:
         )
 
         self.exec_engine = ExecutionEngine(
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -98,7 +99,7 @@ class TestRedisCacheDatabase:
         )
 
         self.risk_engine = RiskEngine(
-            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -108,10 +109,9 @@ class TestRedisCacheDatabase:
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -345,10 +345,9 @@ class TestRedisCacheDatabase:
         strategy = MockStrategy(TestStubs.bartype_btcusdt_binance_100tick_last())
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -705,4 +704,4 @@ class TestExecutionCacheWithRedisDatabaseTests:
 
         # Act
         # Assert
-        assert self.engine.get_exec_engine().cache.check_integrity()
+        assert self.engine.cache.check_integrity()

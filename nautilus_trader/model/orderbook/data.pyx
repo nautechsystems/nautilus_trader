@@ -39,8 +39,8 @@ cdef class OrderBookData(Data):
         self,
         InstrumentId instrument_id not None,
         BookLevel level,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``OrderBookData`` class.
@@ -51,13 +51,13 @@ cdef class OrderBookData(Data):
             The instrument ID for the book.
         level : BookLevel
             The order book level (L1, L2, L3).
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(ts_event_ns, ts_recv_ns)
+        super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id
         self.level = level
@@ -74,8 +74,8 @@ cdef class OrderBookSnapshot(OrderBookData):
         BookLevel level,
         list bids not None,
         list asks not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``OrderBookSnapshot`` class.
@@ -90,13 +90,13 @@ cdef class OrderBookSnapshot(OrderBookData):
             The bids for the snapshot.
         asks : list
             The asks for the snapshot.
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
+        super().__init__(instrument_id, level, ts_event, ts_init)
 
         self.bids = bids
         self.asks = asks
@@ -113,7 +113,7 @@ cdef class OrderBookSnapshot(OrderBookData):
                 f"level={BookLevelParser.to_str(self.level)}, "
                 f"bids={self.bids}, "
                 f"asks={self.asks}, "
-                f"ts_recv_ns={self.ts_recv_ns})")
+                f"ts_init={self.ts_init})")
 
     @staticmethod
     cdef OrderBookSnapshot from_dict_c(dict values):
@@ -123,8 +123,8 @@ cdef class OrderBookSnapshot(OrderBookData):
             level=BookLevelParser.from_str(values["level"]),
             bids=orjson.loads(values["bids"]),
             asks=orjson.loads(values["asks"]),
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -136,8 +136,8 @@ cdef class OrderBookSnapshot(OrderBookData):
             "level": BookLevelParser.to_str(obj.level),
             "bids": orjson.dumps(obj.bids),
             "asks": orjson.dumps(obj.asks),
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod
@@ -180,8 +180,8 @@ cdef class OrderBookDeltas(OrderBookData):
         InstrumentId instrument_id not None,
         BookLevel level,
         list deltas not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``OrderBookDeltas`` class.
@@ -194,13 +194,13 @@ cdef class OrderBookDeltas(OrderBookData):
             The order book level (L1, L2, L3).
         deltas : list[OrderBookDelta]
             The list of order book changes.
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
+        super().__init__(instrument_id, level, ts_event, ts_init)
 
         self.deltas = deltas
 
@@ -215,7 +215,7 @@ cdef class OrderBookDeltas(OrderBookData):
                 f"'{self.instrument_id}', "
                 f"level={BookLevelParser.to_str(self.level)}, "
                 f"{self.deltas}, "
-                f"ts_recv_ns={self.ts_recv_ns})")
+                f"ts_init={self.ts_init})")
 
     @staticmethod
     cdef OrderBookDeltas from_dict_c(dict values):
@@ -224,8 +224,8 @@ cdef class OrderBookDeltas(OrderBookData):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             level=BookLevelParser.from_str(values["level"]),
             deltas=[OrderBookDelta.from_dict_c(d) for d in orjson.loads(values["deltas"])],
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -236,8 +236,8 @@ cdef class OrderBookDeltas(OrderBookData):
             "instrument_id": obj.instrument_id.value,
             "level": BookLevelParser.to_str(obj.level),
             "deltas": orjson.dumps([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod
@@ -281,8 +281,8 @@ cdef class OrderBookDelta(OrderBookData):
         BookLevel level,
         DeltaType delta_type,
         Order order,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``OrderBookDelta`` class.
@@ -297,13 +297,13 @@ cdef class OrderBookDelta(OrderBookData):
             The type of change (ADD, UPDATED, DELETE, CLEAR).
         order : Order
             The order to apply.
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
+        super().__init__(instrument_id, level, ts_event, ts_init)
 
         self.type = delta_type
         self.order = order
@@ -320,7 +320,7 @@ cdef class OrderBookDelta(OrderBookData):
                 f"level={BookLevelParser.to_str(self.level)}, "
                 f"delta_type={DeltaTypeParser.to_str(self.type)}, "
                 f"order={self.order}, "
-                f"ts_recv_ns={self.ts_recv_ns})")
+                f"ts_init={self.ts_init})")
 
     @staticmethod
     cdef OrderBookDelta from_dict_c(dict values):
@@ -337,8 +337,8 @@ cdef class OrderBookDelta(OrderBookData):
             level=BookLevelParser.from_str(values["level"]),
             delta_type=DeltaTypeParser.from_str(values["delta_type"]),
             order=order,
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -353,8 +353,8 @@ cdef class OrderBookDelta(OrderBookData):
             "order_size": obj.order.size if obj.order else None,
             "order_side": OrderSideParser.to_str(obj.order.side) if obj.order else None,
             "order_id": obj.order.id if obj.order else None,
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod

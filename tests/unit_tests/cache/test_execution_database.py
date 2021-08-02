@@ -44,10 +44,7 @@ class TestCacheDatabase:
             clock=TestClock(),
         )
 
-        self.database = CacheDatabase(
-            trader_id=self.trader_id,
-            logger=self.logger,
-        )
+        self.database = CacheDatabase(logger=self.logger)
 
     def test_flush_when_not_implemented_raises_exception(self):
         with pytest.raises(NotImplementedError):

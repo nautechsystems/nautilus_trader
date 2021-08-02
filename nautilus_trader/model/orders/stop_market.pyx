@@ -61,7 +61,7 @@ cdef class StopMarketOrder(PassiveOrder):
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         UUID init_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
         bint reduce_only=False,
     ):
         """
@@ -89,8 +89,8 @@ cdef class StopMarketOrder(PassiveOrder):
             The order expiry time.
         init_id : UUID
             The order initialization event ID.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the order initialization.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the order was initialized.
         reduce_only : bool, optional
             If the order will only reduce an open position.
 
@@ -114,7 +114,7 @@ cdef class StopMarketOrder(PassiveOrder):
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=init_id,
-            timestamp_ns=timestamp_ns,
+            ts_init=ts_init,
             options={"reduce_only": reduce_only},
         )
 
@@ -134,8 +134,8 @@ cdef class StopMarketOrder(PassiveOrder):
             "strategy_id": self.strategy_id.value,
             "instrument_id": self.instrument_id.value,
             "client_order_id": self.client_order_id.value,
-            "venue_order_id": self.venue_order_id.value,
-            "position_id": self.position_id.value,
+            "venue_order_id": self.venue_order_id if self.venue_order_id else None,
+            "position_id": self.position_id.value if self.position_id else None,
             "account_id": self.account_id.value if self.account_id else None,
             "execution_id": self.execution_id.value if self.execution_id else None,
             "type": OrderTypeParser.to_str(self.type),
@@ -144,14 +144,14 @@ cdef class StopMarketOrder(PassiveOrder):
             "price": str(self.price),
             "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
             "expire_time_ns": self.expire_time_ns,
-            "timestamp_ns": self.timestamp_ns,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
-            "ts_filled_ns": self.ts_filled_ns,
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "slippage": str(self.slippage),
             "state": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
+            "ts_init": self.ts_init,
+            "ts_last": self.ts_last,
         }
 
     @staticmethod
@@ -188,6 +188,6 @@ cdef class StopMarketOrder(PassiveOrder):
             time_in_force=init.time_in_force,
             expire_time=maybe_nanos_to_unix_dt(init.options.get("expire_time")),
             init_id=init.id,
-            timestamp_ns=init.timestamp_ns,
+            ts_init=init.ts_init,
             reduce_only=init.options["reduce_only"],
         )

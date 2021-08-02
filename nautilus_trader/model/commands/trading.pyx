@@ -43,7 +43,7 @@ cdef class TradingCommand(Command):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``TradingCommand`` class.
@@ -58,11 +58,11 @@ cdef class TradingCommand(Command):
             The instrument ID for the command.
         command_id : UUID
             The commands ID.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the command.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the command object was initialized.
 
         """
-        super().__init__(command_id, timestamp_ns)
+        super().__init__(command_id, ts_init)
 
         self.trader_id = trader_id
         self.strategy_id = strategy_id
@@ -82,10 +82,10 @@ cdef class SubmitOrder(TradingCommand):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        PositionId position_id not None,
+        PositionId position_id,  # Can be None
         Order order not None,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``SubmitOrder`` class.
@@ -96,14 +96,14 @@ cdef class SubmitOrder(TradingCommand):
             The trader ID for the command.
         strategy_id : StrategyId
             The strategy ID for the command.
-        position_id : PositionId
-            The position ID for the command (can be NULL).
+        position_id : PositionId, optional
+            The position ID for the command.
         order : Order
             The order to submit.
         command_id : UUID
             The commands ID.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the command.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the command object was initialized.
 
         """
         super().__init__(
@@ -111,7 +111,7 @@ cdef class SubmitOrder(TradingCommand):
             strategy_id=strategy_id,
             instrument_id=order.instrument_id,
             command_id=command_id,
-            timestamp_ns=timestamp_ns,
+            ts_init=ts_init,
         )
 
         self.position_id = position_id
@@ -121,7 +121,7 @@ cdef class SubmitOrder(TradingCommand):
         return (f"{type(self).__name__}("
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.order.client_order_id.value}, "
-                f"position_id={self.position_id.value}, "
+                f"position_id={self.position_id}, "
                 f"order={self.order.status_string_c()})")
 
     def __repr__(self) -> str:
@@ -130,10 +130,10 @@ cdef class SubmitOrder(TradingCommand):
                 f"strategy_id={self.strategy_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.order.client_order_id.value}, "
-                f"position_id={self.position_id.value}, "
+                f"position_id={self.position_id}, "
                 f"order={self.order.status_string_c()}, "
                 f"command_id={self.id}, "
-                f"timestamp_ns={self.timestamp_ns})")
+                f"ts_init={self.ts_init})")
 
     @staticmethod
     cdef SubmitOrder from_dict_c(dict values):
@@ -146,7 +146,7 @@ cdef class SubmitOrder(TradingCommand):
             position_id=position_id,
             order=OrderUnpacker.unpack_c(orjson.loads(values["order"])),
             command_id=UUID.from_str_c(values["command_id"]),
-            timestamp_ns=values["timestamp_ns"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -159,7 +159,7 @@ cdef class SubmitOrder(TradingCommand):
             "position_id": obj.position_id.value if obj.position_id is not None else None,
             "order": orjson.dumps(OrderInitialized.to_dict_c(obj.order.init_event_c())),
             "command_id": obj.id.value,
-            "timestamp_ns": obj.timestamp_ns,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod
@@ -207,7 +207,7 @@ cdef class SubmitBracketOrder(TradingCommand):
         StrategyId strategy_id not None,
         BracketOrder bracket_order not None,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``SubmitBracketOrder`` class.
@@ -222,8 +222,8 @@ cdef class SubmitBracketOrder(TradingCommand):
             The bracket order to submit.
         command_id : UUID
             The command ID.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the command.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the command object was initialized.
 
         """
         super().__init__(
@@ -231,7 +231,7 @@ cdef class SubmitBracketOrder(TradingCommand):
             strategy_id=strategy_id,
             instrument_id=bracket_order.instrument_id,
             command_id=command_id,
-            timestamp_ns=timestamp_ns,
+            ts_init=ts_init,
         )
 
         self.bracket_order = bracket_order
@@ -254,7 +254,7 @@ cdef class SubmitBracketOrder(TradingCommand):
                 f"stop_loss={self.bracket_order.stop_loss.status_string_c()}, "
                 f"take_profit={self.bracket_order.take_profit.status_string_c()}, "
                 f"command_id={self.id}, "
-                f"timestamp_ns={self.timestamp_ns})")
+                f"ts_init={self.ts_init})")
 
     @staticmethod
     cdef SubmitBracketOrder from_dict_c(dict values):
@@ -269,7 +269,7 @@ cdef class SubmitBracketOrder(TradingCommand):
             strategy_id=StrategyId(values["strategy_id"]),
             bracket_order=bracket_order,
             command_id=UUID.from_str_c(values["command_id"]),
-            timestamp_ns=values["timestamp_ns"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -283,7 +283,7 @@ cdef class SubmitBracketOrder(TradingCommand):
             "stop_loss": orjson.dumps(OrderInitialized.to_dict_c(obj.bracket_order.stop_loss.init_event_c())),
             "take_profit": orjson.dumps(OrderInitialized.to_dict_c(obj.bracket_order.take_profit.init_event_c())),
             "command_id": obj.id.value,
-            "timestamp_ns": obj.timestamp_ns,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod
@@ -336,7 +336,7 @@ cdef class UpdateOrder(TradingCommand):
         Price price,  # Can be None
         Price trigger,  # Can be None
         UUID command_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``UpdateOrder`` class.
@@ -361,8 +361,8 @@ cdef class UpdateOrder(TradingCommand):
             The trigger price for the order update.
         command_id : UUID
             The command ID.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the command.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the command object was initialized.
 
         """
         super().__init__(
@@ -370,7 +370,7 @@ cdef class UpdateOrder(TradingCommand):
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             command_id=command_id,
-            timestamp_ns=timestamp_ns,
+            ts_init=ts_init,
         )
 
         self.client_order_id = client_order_id
@@ -399,7 +399,7 @@ cdef class UpdateOrder(TradingCommand):
                 f"price={self.price}, "
                 f"trigger={self.trigger}, "
                 f"command_id={self.id}, "
-                f"timestamp_ns={self.timestamp_ns})")
+                f"ts_init={self.ts_init})")
 
     @staticmethod
     cdef UpdateOrder from_dict_c(dict values):
@@ -417,7 +417,7 @@ cdef class UpdateOrder(TradingCommand):
             price=Price.from_str_c(p) if p is not None else None,
             trigger=Price.from_str_c(t) if t is not None else None,
             command_id=UUID.from_str_c(values["command_id"]),
-            timestamp_ns=values["timestamp_ns"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -434,7 +434,7 @@ cdef class UpdateOrder(TradingCommand):
             "price": str(obj.price) if obj.price is not None else None,
             "trigger": str(obj.trigger) if obj.trigger is not None else None,
             "command_id": obj.id.value,
-            "timestamp_ns": obj.timestamp_ns,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod
@@ -484,7 +484,7 @@ cdef class CancelOrder(TradingCommand):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``CancelOrder`` class.
@@ -503,8 +503,8 @@ cdef class CancelOrder(TradingCommand):
             The venue order ID to cancel.
         command_id : UUID
             The command ID.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the command.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the command object was initialized.
 
         """
         super().__init__(
@@ -512,7 +512,7 @@ cdef class CancelOrder(TradingCommand):
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             command_id=command_id,
-            timestamp_ns=timestamp_ns,
+            ts_init=ts_init,
         )
 
         self.client_order_id = client_order_id
@@ -532,7 +532,7 @@ cdef class CancelOrder(TradingCommand):
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
                 f"command_id={self.id}, "
-                f"timestamp_ns={self.timestamp_ns})")
+                f"ts_init={self.ts_init})")
 
     @staticmethod
     cdef CancelOrder from_dict_c(dict values):
@@ -544,7 +544,7 @@ cdef class CancelOrder(TradingCommand):
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             command_id=UUID.from_str_c(values["command_id"]),
-            timestamp_ns=values["timestamp_ns"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -558,7 +558,7 @@ cdef class CancelOrder(TradingCommand):
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "command_id": obj.id.value,
-            "timestamp_ns": obj.timestamp_ns,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod

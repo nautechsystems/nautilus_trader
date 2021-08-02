@@ -51,8 +51,8 @@ cdef class Future(Instrument):
         str trading_hours not None,
         str liquid_hours not None,
         str last_trade_time not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``Future`` class.
@@ -69,10 +69,10 @@ cdef class Future(Instrument):
             The price decimal precision.
         price_increment : Decimal
             The minimum price increment (tick size).
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Raises
         ------
@@ -108,8 +108,8 @@ cdef class Future(Instrument):
             margin_maint=Decimal(),
             maker_fee=Decimal(),
             taker_fee=Decimal(),
-            ts_event_ns=ts_event_ns,
-            ts_recv_ns=ts_recv_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
             info={},
         )
 
@@ -124,3 +124,19 @@ cdef class Future(Instrument):
         self.trading_hours = trading_hours
         self.liquid_hours = liquid_hours
         self.last_trade_time = last_trade_time
+
+    @staticmethod
+    def from_dict(dict values) -> Instrument:
+        return Instrument.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(Instrument obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return Instrument.to_dict_c(obj)

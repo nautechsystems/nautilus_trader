@@ -37,7 +37,6 @@ from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -61,6 +60,9 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 class TestLiveExecutionEngine:
     def setup(self):
         # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
+
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
@@ -79,10 +81,8 @@ class TestLiveExecutionEngine:
             clock=self.clock,
         )
 
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
         self.msgbus = MessageBus(
+            trader_id=self.trader_id,
             clock=self.clock,
             logger=self.logger,
         )
@@ -98,7 +98,7 @@ class TestLiveExecutionEngine:
 
         self.data_engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -106,7 +106,6 @@ class TestLiveExecutionEngine:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -115,7 +114,7 @@ class TestLiveExecutionEngine:
 
         self.risk_engine = LiveRiskEngine(
             loop=self.loop,
-            exec_engine=self.exec_engine,
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -127,13 +126,15 @@ class TestLiveExecutionEngine:
         self.instrument_provider.add(GBPUSD_SIM)
 
         self.client = MockLiveExecutionClient(
+            loop=self.loop,
             client_id=ClientId(SIM.value),
             venue_type=VenueType.ECN,
             account_id=TestStubs.account_id(),
             account_type=AccountType.CASH,
             base_currency=USD,
-            engine=self.exec_engine,
             instrument_provider=self.instrument_provider,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -156,19 +157,14 @@ class TestLiveExecutionEngine:
         assert True  # No exceptions raised
         self.exec_engine.stop()
 
-    def test_get_event_loop_returns_expected_loop(self):
-        # Arrange
-        # Act
-        loop = self.exec_engine.get_event_loop()
-
-        # Assert
-        assert loop == self.loop
-
     def test_message_qsize_at_max_blocks_on_put_command(self):
         # Arrange
+        # Deregister test fixture ExecutionEngine from msgbus)
+        self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
+        self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)
+
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -179,10 +175,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -196,7 +191,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -212,9 +207,12 @@ class TestLiveExecutionEngine:
 
     def test_message_qsize_at_max_blocks_on_put_event(self):
         # Arrange
+        # Deregister test fixture ExecutionEngine from msgbus)
+        self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
+        self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)
+
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            trader_id=self.trader_id,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -225,10 +223,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -242,7 +239,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -297,10 +294,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -314,7 +310,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -339,10 +335,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -362,10 +357,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -380,7 +374,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -395,7 +389,7 @@ class TestLiveExecutionEngine:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.ACCEPTED,
             filled_qty=Quantity.zero(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         self.client.add_order_status_report(report)
@@ -417,10 +411,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -435,7 +428,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -450,7 +443,7 @@ class TestLiveExecutionEngine:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.CANCELED,
             filled_qty=Quantity.zero(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         self.client.add_order_status_report(report)
@@ -472,10 +465,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -490,7 +482,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -505,7 +497,7 @@ class TestLiveExecutionEngine:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.EXPIRED,
             filled_qty=Quantity.zero(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         self.client.add_order_status_report(report)
@@ -527,10 +519,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -545,7 +536,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -560,7 +551,7 @@ class TestLiveExecutionEngine:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.PARTIALLY_FILLED,
             filled_qty=Quantity.from_int(70000),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         trade1 = ExecutionReport(
@@ -571,8 +562,8 @@ class TestLiveExecutionEngine:
             last_px=Price.from_str("1.00000"),
             commission=Money(5.00, USD),
             liquidity_side=LiquiditySide.MAKER,
-            ts_filled_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         trade2 = ExecutionReport(
@@ -583,8 +574,8 @@ class TestLiveExecutionEngine:
             last_px=Price.from_str("1.00000"),
             commission=Money(2.00, USD),
             liquidity_side=LiquiditySide.MAKER,
-            ts_filled_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.client.add_order_status_report(report)
@@ -607,10 +598,9 @@ class TestLiveExecutionEngine:
         strategy = TradingStrategy(order_id_tag="001")
         strategy.register(
             trader_id=self.trader_id,
-            msgbus=self.msgbus,
             portfolio=self.portfolio,
-            data_engine=self.data_engine,
-            risk_engine=self.risk_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -625,7 +615,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -640,7 +630,7 @@ class TestLiveExecutionEngine:
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
             order_state=OrderState.FILLED,
             filled_qty=Quantity.from_int(100000),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         trade1 = ExecutionReport(
@@ -651,8 +641,8 @@ class TestLiveExecutionEngine:
             last_px=Price.from_str("1.00000"),
             commission=Money(5.00, USD),
             liquidity_side=LiquiditySide.MAKER,
-            ts_filled_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         trade2 = ExecutionReport(
@@ -663,8 +653,8 @@ class TestLiveExecutionEngine:
             last_px=Price.from_str("1.00000"),
             commission=Money(2.00, USD),
             liquidity_side=LiquiditySide.MAKER,
-            ts_filled_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.client.add_order_status_report(report)

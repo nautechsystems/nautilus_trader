@@ -52,14 +52,14 @@ cdef class Position:
         ValueError
             If instrument.id is not equal to fill.instrument_id.
         ValueError
-            If event.position_id has a 'NULL' value.
+            If event.position_id is None.
         ValueError
-            If event.strategy_id has a 'NULL' value.
+            If event.strategy_id is None.
 
         """
         Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")
-        Condition.true(fill.position_id.not_null(), "event.position_id.value was 'NULL'")
-        Condition.true(fill.strategy_id.not_null(), "event.strategy_id.value was 'NULL'")
+        Condition.not_none(fill.position_id, "fill.position_id")
+        Condition.not_none(fill.strategy_id, "fill.position_id")
 
         self._events = []         # type: list[OrderFilled]
         self._execution_ids = []  # type: list[ExecutionId]
@@ -81,9 +81,10 @@ cdef class Position:
         self.net_qty = Decimal()
         self.quantity = Quantity.zero_c(precision=instrument.size_precision)
         self.peak_qty = Quantity.zero_c(precision=instrument.size_precision)
-        self.timestamp_ns = fill.ts_filled_ns
-        self.ts_opened_ns = fill.ts_filled_ns
-        self.ts_closed_ns = 0
+        self.ts_init = fill.ts_init
+        self.ts_opened = fill.ts_event
+        self.ts_last = fill.ts_event
+        self.ts_closed = 0
         self.duration_ns = 0
         self.avg_px_open = fill.last_px.as_decimal()
         self.avg_px_close = None  # Can be None
@@ -130,8 +131,8 @@ cdef class Position:
             "net_qty": str(self.net_qty),
             "quantity": str(self.quantity),
             "peak_qty": str(self.peak_qty),
-            "ts_opened_ns": self.ts_opened_ns,
-            "ts_closed_ns": self.ts_closed_ns,
+            "ts_opened": self.ts_opened,
+            "ts_closed": self.ts_closed,
             "duration_ns": self.duration_ns,
             "avg_px_open": str(self.avg_px_open),
             "avg_px_close": str(self.avg_px_close),
@@ -439,8 +440,10 @@ cdef class Position:
             self.side = PositionSide.SHORT
         else:
             self.side = PositionSide.FLAT
-            self.ts_closed_ns = fill.ts_filled_ns
-            self.duration_ns = self.ts_closed_ns - self.ts_opened_ns
+            self.ts_closed = fill.ts_event
+            self.duration_ns = self.ts_closed - self.ts_opened
+
+        self.ts_last = fill.ts_event
 
     cpdef Money notional_value(self, Price last):
         """

@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+import asyncio
 import os
 
 import pytest
@@ -28,7 +30,7 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
@@ -116,7 +118,18 @@ def logger(live_logger):
 
 @pytest.fixture()
 def msgbus(clock, live_logger):
-    return MessageBus(
+    class MockMessageBus(MessageBus):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.data_engine_messages = []
+            self.data_engine_responses = []
+            self.exec_engine_events = []
+            self.register(endpoint="DataEngine.process", handler=self.data_engine_messages.append)
+            self.register(endpoint="DataEngine.response", handler=self.data_engine_responses.append)
+            self.register(endpoint="ExecEngine.process", handler=self.exec_engine_events.append)
+
+    return MockMessageBus(
+        trader_id=BetfairTestStubs.trader_id(),
         clock=clock,
         logger=live_logger,
     )
@@ -171,16 +184,6 @@ def uuid():
 
 
 @pytest.fixture()
-def data_engine(event_loop, clock, live_logger, portfolio):
-    return BetfairTestStubs.mock_live_data_engine()
-
-
-@pytest.fixture()
-def exec_engine(event_loop, clock, live_logger, portfolio, trader_id):
-    return BetfairTestStubs.mock_live_exec_engine()
-
-
-@pytest.fixture()
 def risk_engine(event_loop, clock, live_logger, portfolio, trader_id):
     return BetfairTestStubs.mock_live_risk_engine()
 
@@ -198,8 +201,8 @@ def betfair_account_state(betfair_client, uuid):
         account_detail=details,
         account_funds=funds,
         event_id=uuid,
-        ts_updated_ns=0,
-        timestamp_ns=0,
+        ts_event=0,
+        ts_init=0,
     )
 
 
@@ -223,37 +226,45 @@ def betfair_market_socket():
 
 @pytest.fixture()
 async def execution_client(
-    betfair_client, account_id, exec_engine, clock, live_logger, betfair_account_state
+    betfair_client,
+    account_id,
+    msgbus,
+    cache,
+    clock,
+    live_logger,
+    betfair_account_state,
 ) -> BetfairExecutionClient:
     client = BetfairExecutionClient(
+        loop=asyncio.get_event_loop(),
         client=betfair_client,
         account_id=account_id,
-        base_currency=AUD,
-        engine=exec_engine,
+        base_currency=GBP,
+        msgbus=msgbus,
+        cache=cache,
         clock=clock,
         logger=live_logger,
         market_filter={},
         load_instruments=False,
     )
     client.instrument_provider().load_all()
-    exec_engine.register_client(client)
-    exec_engine.cache.add_account(account=Account(betfair_account_state))
+    cache.add_account(account=Account(betfair_account_state))
     for instrument in client.instrument_provider().list_instruments():
-        exec_engine.cache.add_instrument(instrument)
+        cache.add_instrument(instrument)
     return client
 
 
 @pytest.fixture()
-def betfair_data_client(betfair_client, data_engine, clock, live_logger):
+def betfair_data_client(betfair_client, msgbus, cache, clock, live_logger):
     client = BetfairDataClient(
+        loop=asyncio.get_event_loop(),
         client=betfair_client,
-        engine=data_engine,
+        msgbus=msgbus,
+        cache=cache,
         clock=clock,
         logger=live_logger,
         market_filter={},
         load_instruments=True,
     )
-    data_engine.register_client(client)
     return client
 
 
