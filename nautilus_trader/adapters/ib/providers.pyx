@@ -114,11 +114,11 @@ cdef class IBInstrumentProvider(InstrumentProvider):
         self._instruments[instrument_id] = instrument
 
     cdef Instrument _parse_instrument(
-            self,
-            AssetType asset_type,
-            InstrumentId instrument_id,
-            dict details,
-            object contract_details
+        self,
+        AssetType asset_type,
+        InstrumentId instrument_id,
+        dict details,
+        object contract_details
     ):
         if asset_type == AssetType.FUTURE:
             Condition.is_in("asset_class", details, "asset_class", "details")
