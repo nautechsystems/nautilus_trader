@@ -646,7 +646,11 @@ cdef class ExecutionEngine(Component):
         if position is None:  # No position open
             self._open_position(fill)
         else:
-            self._update_position(position, fill)
+            if position.is_open_c():
+                self._update_position(position, fill)
+            else:
+                fill.position_id = PositionId(fill.position_id.value + "F")
+                self._open_position(fill)
 
     cdef void _open_position(self, OrderFilled fill) except *:
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
