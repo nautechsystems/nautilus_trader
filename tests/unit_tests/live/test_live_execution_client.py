@@ -195,7 +195,9 @@ class TestLiveExecutionClient:
         )
 
         # Act
-        result = await self.client.reconcile_state(report, order=None)  # <- order won't be in cache
+        result = await self.client.reconcile_state(
+            report, order=None
+        )  # <- order won't be in the cache
 
         # Assert
         assert not result
