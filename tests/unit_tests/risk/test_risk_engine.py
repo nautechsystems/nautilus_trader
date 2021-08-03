@@ -283,7 +283,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId("009"),  # <-- not in cache
+            PositionId("009"),  # <-- not in the cache
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -310,7 +310,7 @@ class TestRiskEngine:
         )
 
         order = strategy.order_factory.market(
-            GBPUSD_SIM.id,  # <-- not in cache
+            GBPUSD_SIM.id,  # <-- not in the cache
             OrderSide.BUY,
             Quantity.from_int(100000),
         )
