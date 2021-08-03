@@ -555,7 +555,7 @@ cdef class ExecutionEngine(Component):
         cdef Order order = self._cache.order(event.client_order_id)
         if order is None:
             self._log.warning(
-                f"{repr(event.client_order_id)} was not found in cache "
+                f"{repr(event.client_order_id)} was not found in the cache "
                 f"for {repr(event.venue_order_id)} to apply {event}."
             )
 
@@ -565,7 +565,7 @@ cdef class ExecutionEngine(Component):
                 self._log.error(
                     f"Cannot apply event to any order: "
                     f"{repr(event.client_order_id)} and {repr(event.venue_order_id)} "
-                    f"not found in cache."
+                    f"not found in the cache."
                 )
                 return  # Cannot process event further
 
@@ -574,14 +574,14 @@ cdef class ExecutionEngine(Component):
             if order is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
-                    f"order for {repr(client_order_id)} not found in cache."
+                    f"order for {repr(client_order_id)} not found in the cache."
                 )
                 return  # Cannot process event further
 
             # Set the correct ClientOrderId for the event
             event.client_order_id = client_order_id
             self._log.info(
-                f"{repr(client_order_id)} was found in cache and "
+                f"{repr(client_order_id)} was found in the cache and "
                 f"applying event to order with {repr(order.venue_order_id)}.",
                 color=LogColor.GREEN,
             )
@@ -608,24 +608,15 @@ cdef class ExecutionEngine(Component):
         )
 
     cdef void _confirm_position_id(self, OrderFilled fill) except *:
-        if fill.position_id is None:
-            # Fetch ID from cache (assumed to be source of truth)
-            fill.position_id = self._cache.position_id(fill.client_order_id)
-
-        cdef Position position = None
         if fill.position_id is not None:
-            position = self._cache.position(fill.position_id)
-            if position is not None:
-                if position.is_closed_c():
-                    self._log.warning(
-                        f"Position for {repr(fill.position_id)} already closed.",
-                    )
-                    # Generate and assign new position ID
-                    fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
-                    self._log.info(
-                        f"Generated new position ID {fill.position_id}.",
-                        color=LogColor.GREEN,
-                    )
+            # Already assigned
+            return
+
+        # Fetch ID from cache
+        cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
+        if position_id is not None:
+            # Assign position ID to fill
+            fill.position_id = position_id
             return
 
         # Check for open positions
@@ -755,6 +746,12 @@ cdef class ExecutionEngine(Component):
         # Close original position
         self._update_position(position, fill_split1)
 
+        # Generate position ID for flipped position
+        cdef PositionId position_id_flip = self._pos_id_generator.generate(
+            strategy_id=fill.strategy_id,
+            flipped=True,
+        )
+
         # Generate order fill for flipped position
         cdef OrderFilled fill_split2 = OrderFilled(
             trader_id=fill.trader_id,
@@ -764,7 +761,7 @@ cdef class ExecutionEngine(Component):
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
-            position_id=PositionId(position.id.value + "F"),
+            position_id=position_id_flip,
             order_side=fill.side,
             order_type=fill.type,
             last_qty=difference,  # Fill difference from original as above
