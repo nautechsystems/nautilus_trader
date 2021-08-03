@@ -484,7 +484,7 @@ cdef class RiskEngine(Component):
         if order is None:
             self._deny_command(
                 command=command,
-                reason=f"{command.client_order_id} not found in cache",
+                reason=f"{command.client_order_id} not found in the cache",
             )
             return  # Denied
 

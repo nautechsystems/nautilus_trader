@@ -320,7 +320,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             if order is None:
                 self._log.error(
                     f"Cannot reconcile state for {repr(report.venue_order_id)}, "
-                    f"cannot find order in cache.")
+                    f"cannot find order in the cache.")
                 return False  # Cannot reconcile state
 
         if order.is_completed_c():
