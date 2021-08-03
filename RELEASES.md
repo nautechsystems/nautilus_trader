@@ -1,3 +1,17 @@
+# NautilusTrader 1.127.0 Beta - Release Notes
+
+
+## Breaking Changes
+None
+
+## Enhancements
+None
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.126.1 Beta - Release Notes
 
 This is a patch release which fixes a bug involving `NotImplementedError` 
