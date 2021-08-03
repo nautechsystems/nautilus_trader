@@ -26,17 +26,23 @@ from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.orderbook.data import OrderBookData
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
+from tests.test_kit.strategies import MarketMaker
+from tests.test_kit.strategies import OrderBookImbalanceStrategy
 
 
 class TestBacktestAcceptanceTestsUSDJPYWit:
@@ -377,3 +383,113 @@ class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQ:
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == Money(
             999843.73560000, USDT
         )
+
+
+class TestBacktestAcceptanceTestsOrderBookImbalance:
+    def setup(self):
+        # Fixture Setup
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            run_analysis=False,
+        )
+
+        self.venue = Venue("BETFAIR")
+
+        data = TestDataProvider.betfair_feed_parsed(
+            market_id="1.166811431.bz2", folder="data/betfair"
+        )
+        instruments = [d for d in data if isinstance(d, BettingInstrument)]
+
+        for instrument in instruments[:1]:
+            self.engine.add_instrument(instrument)
+            trade_ticks = [
+                d for d in data if isinstance(d, TradeTick) and d.instrument_id == instrument.id
+            ]
+            order_book_deltas = [
+                d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
+            ]
+            self.engine.add_trade_tick_objects(instrument.id, trade_ticks)
+            self.engine.add_order_book_data(order_book_deltas)
+            self.instrument = instrument
+        self.engine.add_venue(
+            venue=self.venue,
+            venue_type=VenueType.EXCHANGE,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            oms_type=OMSType.NETTING,
+            starting_balances=[Money(10000, GBP)],
+            order_book_level=BookLevel.L2,
+        )
+
+    def teardown(self):
+        self.engine.dispose()
+
+    def test_run_order_book_imbalance(self):
+        # Arrange
+        strategy = OrderBookImbalanceStrategy(
+            instrument_id=self.instrument.id,
+            trade_size=Decimal(10),
+        )
+
+        # Act
+        self.engine.run(strategies=[strategy])
+
+        # Assert
+        assert self.engine.iteration == 9319
+        expected = Money("14611.96", GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == expected
+
+
+class TestBacktestAcceptanceTestsMarketMaking:
+    def setup(self):
+        # Fixture Setup
+        self.engine = BacktestEngine(
+            bypass_logging=True,
+            run_analysis=False,
+        )
+
+        self.venue = Venue("BETFAIR")
+
+        data = TestDataProvider.betfair_feed_parsed(
+            market_id="1.166811431.bz2", folder="data/betfair"
+        )
+        instruments = [d for d in data if isinstance(d, BettingInstrument)]
+
+        for instrument in instruments[:1]:
+            self.engine.add_instrument(instrument)
+            trade_ticks = [
+                d for d in data if isinstance(d, TradeTick) and d.instrument_id == instrument.id
+            ]
+            order_book_deltas = [
+                d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
+            ]
+            self.engine.add_trade_tick_objects(instrument.id, trade_ticks)
+            self.engine.add_order_book_data(order_book_deltas)
+            self.instrument = instrument
+        self.engine.add_venue(
+            venue=self.venue,
+            venue_type=VenueType.EXCHANGE,
+            account_type=AccountType.CASH,
+            base_currency=None,
+            oms_type=OMSType.NETTING,
+            starting_balances=[Money(10000, GBP)],
+            order_book_level=BookLevel.L2,
+        )
+
+    def teardown(self):
+        self.engine.dispose()
+
+    def test_run_market_maker(self):
+        # Arrange
+        strategy = MarketMaker(
+            instrument_id=self.instrument.id,
+            trade_size=Decimal(10),
+            max_size=Decimal(30),
+        )
+
+        # Act
+        self.engine.run(strategies=[strategy])
+
+        # Assert
+        assert self.engine.iteration == 9319
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money("3510.46", GBP)
