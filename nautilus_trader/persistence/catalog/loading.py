@@ -1,4 +1,6 @@
 from collections import defaultdict
+from concurrent.futures import Executor
+from concurrent.futures import Future
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
 from typing import Callable, List
@@ -9,16 +11,16 @@ from tqdm import tqdm
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.persistence.catalog.core import DataCatalog
+from nautilus_trader.persistence.catalog.parsers import ByteParser
+from nautilus_trader.persistence.catalog.parsers import NewFile
+from nautilus_trader.persistence.catalog.scanner import ChunkedFile
 from nautilus_trader.serialization.arrow.serializer import _CLS_TO_TABLE
 from nautilus_trader.serialization.arrow.serializer import _PARTITION_KEYS
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import class_to_filename
 from nautilus_trader.serialization.arrow.util import clean_key
 from nautilus_trader.serialization.arrow.util import maybe_list
-from nautilus_trader.serialization.catalog.core import DataCatalog
-from nautilus_trader.serialization.catalog.parsers import ByteParser
-from nautilus_trader.serialization.catalog.parsers import NewFile
-from nautilus_trader.serialization.catalog.scanner import ChunkedFile
 
 
 # TODO - Add callable for writing chunk filename
@@ -51,7 +53,7 @@ def split_chunk_tables(chunk: List[object], processed_files=None, processed_raw_
     Split a chunk (list of nautilus objects) into a dict of their respective tables
     """
     # Split objects into their respective tables
-    tables = defaultdict(dict)
+    tables = defaultdict(dict)  # type: ignore
     skip_file = False
     for obj in chunk:
         if skip_file:
@@ -83,7 +85,7 @@ def table_to_dataframes(path, tables):
             if df.empty:
                 continue
 
-            partition_cols = _determine_partition_cols(cls=cls, instrument_id=ins_id)
+            # partition_cols = _determine_partition_cols(cls=cls, instrument_id=ins_id)
 
             df = df.sort_values("ts_init")
             # df = df.astype({k: "category" for k in category_attributes.get(cls.__name__, [])})
@@ -159,13 +161,13 @@ def read_files(
     files: List[ChunkedFile],
     parser: Callable,
     progress=True,
-    executor=None,
+    executor: Executor = None,
     instrument_provider=None,
 ):
     executor = executor or ThreadPoolExecutor()
 
     # Submit files for processing
-    futures = []
+    futures: List[Future] = []
     with executor as client:
         for f in files:
             futures.append(client.submit(_parse, f=f, parser=parser))
@@ -173,10 +175,10 @@ def read_files(
     # Gather results
     if progress:
         futures = tqdm(futures)
-    for f in as_completed(futures):
-        chunk = f.result()
+    for fut in as_completed(futures):
+        chunk = fut.result()
         chunk = preprocess_instrument_provider(chunk=chunk, instrument_provider=instrument_provider)
-        write_chunk(chunk)
+        # write_chunk(chunk)
 
 
 def _determine_partition_cols(cls: type, instrument_id: str = None):

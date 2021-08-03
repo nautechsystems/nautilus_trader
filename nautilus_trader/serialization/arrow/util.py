@@ -22,17 +22,17 @@ INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
 GENERIC_DATA_PREFIX = "genericdata_"
 
 
-def list_dicts_to_dict_lists(dicts):
+def list_dicts_to_dict_lists(dicts, keys=None):
     """
     Convert a list of dictionaries into a dictionary of lists
     """
     result = {}
     for d in dicts:
-        for k, v in d.items():
+        for k in keys or d:
             if k not in result:
-                result[k] = [v]
+                result[k] = [d.get(k)]
             else:
-                result[k].append(v)
+                result[k].append(d.get(k))
     return result
 
 

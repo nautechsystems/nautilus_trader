@@ -15,12 +15,10 @@
 
 import os
 import pathlib
-from collections import defaultdict
 
 import fsspec
 import orjson
 import pandas as pd
-import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from pyarrow import ArrowInvalid
@@ -33,10 +31,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.serialization.arrow.schema import category_attributes
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_partition_keys
 from nautilus_trader.serialization.arrow.serializer import get_schemas
@@ -44,13 +39,7 @@ from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
 from nautilus_trader.serialization.arrow.util import class_to_filename
 from nautilus_trader.serialization.arrow.util import clean_key
-from nautilus_trader.serialization.arrow.util import clean_partition_cols
 from nautilus_trader.serialization.arrow.util import is_nautilus_class
-from nautilus_trader.serialization.arrow.util import maybe_list
-
-
-# from nautilus_trader.serialization.data_loader import DataLoader
-# from nautilus_trader.serialization.data_loader.parsers import NewFile
 
 
 class DataCatalog:

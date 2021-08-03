@@ -42,7 +42,7 @@ cdef dict _PARQUET_TO_DICT_MAP = {}    # type: dict[type, object]
 cdef dict _PARQUET_FROM_DICT_MAP = {}  # type: dict[type, object]
 cdef dict _PARTITION_KEYS = {}
 cdef dict _SCHEMAS = {}
-cdef dict _CLS_TO_TABLE = {} # type: dict[type, type]
+cdef dict _CLS_TO_TABLE = {}  # type: dict[type, type]
 cdef set _CHUNK = set()
 
 
@@ -153,7 +153,6 @@ cdef class ParquetSerializer:
         if not isinstance(chunk, list):
             chunk = [chunk]
         return [delegate(c) for c in chunk]
-
 
 
 #################################################

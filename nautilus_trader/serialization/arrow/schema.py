@@ -38,9 +38,6 @@ from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
 NAUTILUS_PARQUET_SCHEMA = {
@@ -390,8 +387,3 @@ NAUTILUS_PARQUET_SCHEMA = {
         }
     ),
 }
-
-# category_attributes = {
-#     "TradeTick": ["instrument_id", "type", "aggressor_side"],
-#     "OrderBookDelta": ["instrument_id", "type", "level", "delta_type"],
-# }

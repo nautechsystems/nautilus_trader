@@ -36,7 +36,7 @@ def test_camel_to_snake_case(s, expected):
 @pytest.mark.parametrize(
     "s, expected",
     [
-        ("Instrument\ID:hello", "Instrument-ID-hello"),
+        ("Instrument\\ID:hello", "Instrument-ID-hello"),
     ],
 )
 def test_clean_key(s, expected):

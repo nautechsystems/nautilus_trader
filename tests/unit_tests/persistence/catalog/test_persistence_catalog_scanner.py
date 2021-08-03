@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-from nautilus_trader.serialization.catalog.scanner import scan
+from nautilus_trader.persistence.catalog.scanner import scan
 from tests.test_kit import PACKAGE_ROOT
 
 
@@ -30,7 +30,7 @@ def test_scan_chunks():
     # Total size 17338
     files = scan(path=TEST_DATA_DIR, glob_pattern="1.166564490.bz2", chunk_size=50000)
     raw = list(files[0].iter_chunks())
-    assert len(raw) == 5
+    assert len(raw) == 7
 
 
 def test_scan_file_filter():

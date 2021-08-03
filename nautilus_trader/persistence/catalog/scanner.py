@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import pathlib
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
 from typing import Callable, List
@@ -20,9 +21,9 @@ import fsspec
 import orjson
 from tqdm import tqdm
 
+from nautilus_trader.persistence.catalog.parsers import EOStream
+from nautilus_trader.persistence.catalog.parsers import NewFile
 from nautilus_trader.serialization.arrow.util import identity
-from nautilus_trader.serialization.catalog.parsers import EOStream
-from nautilus_trader.serialization.catalog.parsers import NewFile
 
 
 PROCESSED_FILES_FN = ".processed_raw_files.json"
@@ -43,11 +44,12 @@ def _resolve_path(fs, path: str, glob_pattern):
 
 
 class ChunkedFile(fsspec.core.OpenFile):
-    def __init__(self, fs, path, chunk_size: int, **kwargs):
+    def __init__(self, fs: fsspec.AbstractFileSystem, path: str, chunk_size: int, **kwargs):
         """
         A subclass of fsspec.OpenFile than can be read in chunks
         """
         super().__init__(fs=fs, path=path, **kwargs)
+        self.name = pathlib.Path(path).name
         self.chunk_size = chunk_size
 
     def iter_chunks(self):
@@ -55,7 +57,7 @@ class ChunkedFile(fsspec.core.OpenFile):
             f.seek(0, 2)
             end = f.tell()
             f.seek(0)
-            yield NewFile(f.name)
+            yield NewFile(self.name)
             while f.tell() < end:
                 chunk = f.read(self.chunk_size)
                 yield chunk
@@ -80,9 +82,9 @@ def _scan_threaded(
     """
     executor = executor or ThreadPoolExecutor()
     file_filter = file_filter or identity
-    existing_files = _load_processed_raw_files(
-        fs=fs,
-    )
+    # existing_files = _load_processed_raw_files(
+    #     fs=fs,
+    # )
 
     futures = []
     with executor as client:
