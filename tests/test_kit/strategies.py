@@ -18,6 +18,7 @@ from decimal import Decimal
 from typing import Dict, Optional
 
 from nautilus_trader.common.logging import LogColor
+from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.order_side import OrderSide
@@ -29,8 +30,12 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.events.position import PositionChanged
+from nautilus_trader.model.events.position import PositionClosed
+from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -456,11 +461,101 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         self.cancel_all_orders(self.instrument_id)
         self.flatten_all_positions(self.instrument_id)
 
-    def on_dispose(self):
-        """
-        Actions to be performed when the strategy is disposed.
 
-        Cleanup any resources used by the strategy here.
+class MarketMaker(TradingStrategy):
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        trade_size: Decimal,
+        max_size: Decimal,
+        extra_id_tag: str = "",
+    ):
+        """
+        Initialize a new instance of the ``MarketMaker`` class.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the strategy.
+        trade_size : Decimal
+            The position size per trade.
+        extra_id_tag : str
+            An additional order ID tag.
 
         """
-        self.subscribe_order_book_snapshots(self.instrument_id)
+        if extra_id_tag is None:
+            extra_id_tag = ""
+        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag)
+        self.instrument_id = instrument_id
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
+        self.trade_size = trade_size
+        self.max_size = max_size
+        self._book: Optional[OrderBook] = None
+        self._mid: Optional[Decimal] = None
+        self._adj = Decimal(0)
+
+    def on_start(self):
+        self.instrument = self.cache.instrument(self.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.stop()
+            return
+
+        # Create orderbook
+        self._book = OrderBook.create(instrument=self.instrument, level=BookLevel.L2)
+
+        # Subscribe to live data
+        self.subscribe_order_book_deltas(self.instrument_id)
+
+    def on_order_book_delta(self, data: OrderBookData):
+        self._book.apply(data)
+        bid_price = self._book.best_ask_price()
+        ask_price = self._book.best_ask_price()
+        if bid_price and ask_price:
+            mid = (bid_price + ask_price) / 2
+            if mid != self._mid:
+                self.cancel_all_orders(self.instrument_id)
+                self._mid = Decimal(mid)
+                val = self._mid + self._adj
+                self.buy(price=val * Decimal(1.01))
+                self.sell(price=val * Decimal(0.99))
+
+    def on_event(self, event: Event):
+        if isinstance(event, (PositionOpened, PositionChanged)):
+            self._adj = (event.net_qty / self.max_size) * Decimal(0.01)
+        elif isinstance(event, PositionClosed):
+            self._adj = Decimal(0)
+
+    def buy(self, price: Decimal):
+        """
+        Users simple buy method (example).
+        """
+        order = self.order_factory.limit(
+            instrument_id=self.instrument_id,
+            order_side=OrderSide.BUY,
+            price=Price(price, precision=self.instrument.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+        )
+
+        self.submit_order(order)
+
+    def sell(self, price: Decimal):
+        """
+        Users simple sell method (example).
+        """
+        order = self.order_factory.limit(
+            instrument_id=self.instrument_id,
+            order_side=OrderSide.SELL,
+            price=Price(price, precision=self.instrument.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+        )
+
+        self.submit_order(order)
+
+    def on_stop(self):
+        """
+        Actions to be performed when the strategy is stopped.
+
+        """
+        self.cancel_all_orders(self.instrument_id)
+        self.flatten_all_positions(self.instrument_id)
