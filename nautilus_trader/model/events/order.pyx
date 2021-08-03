@@ -71,7 +71,7 @@ cdef class OrderEvent(Event):
             The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
-        venue_order_id : VenueOrderId
+        venue_order_id : VenueOrderId, optional
             The venue order ID.
         event_id : UUID
             The event ID.
