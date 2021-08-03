@@ -576,7 +576,7 @@ cdef class DataEngine(Component):
             if instrument is None:
                 self._log.error(
                     f"Cannot subscribe to {instrument_id} <OrderBook> data: "
-                    f"no instrument found in cache.",
+                    f"no instrument found in the cache.",
                 )
                 return
             order_book = OrderBook.create(
