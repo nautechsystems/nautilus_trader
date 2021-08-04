@@ -23,6 +23,7 @@ from tqdm import tqdm
 
 from nautilus_trader.persistence.catalog.parsers import EOStream
 from nautilus_trader.persistence.catalog.parsers import NewFile
+from nautilus_trader.persistence.util import get_catalog_fs
 from nautilus_trader.serialization.arrow.util import identity
 
 
@@ -115,6 +116,7 @@ def scan(
     compression: str = "infer",
     file_filter: Callable = None,
     executor=None,
+    skip_already_processed=True,
 ) -> List[ChunkedFile]:
     """
     Scan `path` using `glob_pattern` and generate a list files to be loaded into the data catalog.
@@ -137,9 +139,14 @@ def scan(
         Optional filter to apply to file list (if glob_pattern is not enough)
     executor: concurrent.futures.Executor
         Optional: pass an executor instance
+    skip_already_processed: bool
+        Skip already processed files according to `load_processed_raw_files`
     """
     fs = fsspec.filesystem(fs_protocol)
     paths = _resolve_path(fs=fs, path=path, glob_pattern=glob_pattern)
+    if skip_already_processed:
+        existing = load_processed_raw_files()
+        paths = [p for p in paths if str(p) not in existing]
     return _scan_threaded(
         fs=fs,
         paths=paths,
@@ -151,20 +158,19 @@ def scan(
     )
 
 
-def _save_processed_raw_files(
-    fs: fsspec.AbstractFileSystem, files: List[str], _processed_files_fn: str
-):
-    # TODO(bm): We should save a hash of the contents alongside the filename to check for changes
-    # load existing
-    existing = _load_processed_raw_files(fs=fs, _processed_files_fn=_processed_files_fn)
+# TODO(bm): We should save a hash of the contents alongside the filename to check for changes
+def save_processed_raw_files(files: List[str]):
+    fs = get_catalog_fs()
+    existing = load_processed_raw_files()
     new = set(files + existing)
-    with fs.open(_processed_files_fn, "wb") as f:
+    with fs.open(PROCESSED_FILES_FN, "wb") as f:
         return f.write(orjson.dumps(sorted(new)))
 
 
-def _load_processed_raw_files(fs: fsspec.AbstractFileSystem, _processed_files_fn: str):
-    if fs.exists(_processed_files_fn):
-        with fs.open(_processed_files_fn, "rb") as f:
+def load_processed_raw_files():
+    fs = get_catalog_fs()
+    if fs.exists(PROCESSED_FILES_FN):
+        with fs.open(PROCESSED_FILES_FN, "rb") as f:
             return orjson.loads(f.read())
     else:
         return []

@@ -1,8 +1,10 @@
 import pathlib
 import sys
+from unittest.mock import patch
 
 import pytest
 
+from nautilus_trader.persistence.catalog.scanner import load_processed_raw_files
 from nautilus_trader.persistence.catalog.scanner import scan
 from tests.test_kit import PACKAGE_ROOT
 
@@ -39,3 +41,14 @@ def test_scan_file_filter():
 
     files = scan(path=TEST_DATA_DIR, glob_pattern="*jpy*.csv")
     assert len(files) == 3
+
+
+@patch("nautilus_trader.persistence.catalog.scanner.load_processed_raw_files")
+def test_scan_processed(mock_load_processed_raw_files):
+    mock_load_processed_raw_files.return_value = [
+        TEST_DATA_DIR + "/truefx-audusd-ticks.csv",
+        TEST_DATA_DIR + "/news_events.csv",
+        TEST_DATA_DIR + "/tardis_trades.csv",
+    ]
+    files = scan(path=TEST_DATA_DIR, glob_pattern="*.csv")
+    assert len(files) == 8

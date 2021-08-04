@@ -46,12 +46,16 @@ cdef dict _CLS_TO_TABLE = {}  # type: dict[type, type]
 cdef set _CHUNK = set()
 
 
-def get_partition_keys():
-    return _PARTITION_KEYS
+def get_partition_keys(cls: type):
+    return _PARTITION_KEYS.get(cls)
 
 
-def get_schemas():
-    return _SCHEMAS
+def get_schema(cls: type):
+    return _SCHEMAS[cls]
+
+
+def get_cls_table(cls: type):
+    return _CLS_TO_TABLE.get(cls, cls)
 
 
 def register_parquet(

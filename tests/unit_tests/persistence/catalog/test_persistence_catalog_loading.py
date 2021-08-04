@@ -33,14 +33,14 @@ from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 # from nautilus_trader.model.objects import Quantity
 # from nautilus_trader.serialization.arrow.serializer import register_parquet
 # from nautilus_trader.persistence.catalog.core import DataCatalog
-from nautilus_trader.persistence.catalog.loading import read_files
+from nautilus_trader.persistence.catalog.loading import process_files
 from nautilus_trader.persistence.catalog.parsers import CSVParser
 
 # from nautilus_trader.persistence.catalog.parsers import ParquetParser
 # from nautilus_trader.persistence.catalog.parsers import TextParser
 from nautilus_trader.persistence.catalog.scanner import scan
+from nautilus_trader.persistence.util import SyncExecutor
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.mocks import SyncExecutor
 from tests.test_kit.providers import TestInstrumentProvider
 
 
@@ -81,7 +81,7 @@ def test_loader(executor):
 
     files = scan(path=TEST_DATA_DIR, glob_pattern="truefx*.csv", chunk_size=100000)
     parser = CSVParser(parser=parse_csv)
-    data = read_files(files, parser=parser, executor=executor)
+    data = process_files(files, parser=parser, executor=executor)
     assert len(data) == 1
 
 
