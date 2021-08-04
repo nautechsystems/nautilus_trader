@@ -119,7 +119,7 @@ These can run through your IDE, or from the command line:
 ## Data Types
 
 The following market data types can be requested historically, and also subscribed to as live streams
-when available from an exchange/broker, and implemented in an integrations adapter.
+when available from a data publisher, and implemented in an integrations adapter.
 
 - `OrderBookDelta`
 - `OrderBookDeltas` (L1/L2/L3)

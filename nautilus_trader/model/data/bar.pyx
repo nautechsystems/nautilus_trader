@@ -207,7 +207,7 @@ cdef class BarType:
             If bars are aggregated internally by the platform. If True the
             `DataEngine` will subscribe to the necessary ticks and aggregate
             bars accordingly. Else if False then bars will be subscribed to
-            directly from the exchange/broker.
+            directly from the data publisher.
 
         Notes
         -----

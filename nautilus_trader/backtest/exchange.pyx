@@ -499,7 +499,7 @@ cdef class SimulatedExchange:
         Condition.not_none(command, "command")
 
         self._log.error("bracket orders are currently broken in this version.")
-        cdef PositionId position_id = self._generate_position_id(command.bracket_order.entry.instrument_id)
+        cdef PositionId position_id = self._generate_venue_position_id(command.bracket_order.entry.instrument_id)
 
         cdef list bracket_orders = [command.bracket_order.stop_loss]
         self._position_oco_orders[position_id] = []
@@ -565,7 +565,7 @@ cdef class SimulatedExchange:
             for instrument_id, book in self._books.items() if book.best_ask_price()
         }
 
-    cdef PositionId _generate_position_id(self, InstrumentId instrument_id):
+    cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id):
         cdef int pos_count = self._symbol_pos_count.get(instrument_id, 0)
         pos_count += 1
         self._symbol_pos_count[instrument_id] = pos_count
@@ -1171,8 +1171,8 @@ cdef class SimulatedExchange:
         if OMSType.HEDGING and position_id is None:
             position_id = self.cache.position_id(order.client_order_id)
             if position_id is None:
-                # Generate a position ID
-                position_id = self._generate_position_id(order.instrument_id)
+                # Generate a venue position ID
+                position_id = self._generate_venue_position_id(order.instrument_id)
         elif OMSType.NETTING:
             # Check for open positions
             positions_open = self.cache.positions_open(
@@ -1204,8 +1204,8 @@ cdef class SimulatedExchange:
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id or self._generate_venue_order_id(order.instrument_id),
+            venue_position_id=None if self.oms_type == OMSType.NETTING else position_id,  # noqa
             execution_id=self._generate_execution_id(),
-            position_id=None if self.oms_type == OMSType.NETTING else position_id,
             order_side=order.side,
             order_type=order.type,
             last_qty=last_qty,

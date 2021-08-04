@@ -270,7 +270,7 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        strategy_id : StrategyId, optional
+        strategy_id : StrategyId
             The strategy ID associated with the event.
         instrument_id : InstrumentId
             The instrument ID.
@@ -284,8 +284,8 @@ cdef class ExecutionClient:
         cdef OrderSubmitted submitted = OrderSubmitted(
             trader_id=self._msgbus.trader_id,
             strategy_id=strategy_id,
-            instrument_id=instrument_id,
             account_id=self.account_id,
+            instrument_id=instrument_id,
             client_order_id=client_order_id,
             event_id=self._uuid_factory.generate(),
             ts_event=ts_event,
@@ -307,7 +307,7 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        strategy_id : StrategyId, optional
+        strategy_id : StrategyId
             The strategy ID associated with the event.
         instrument_id : InstrumentId
             The instrument ID.
@@ -323,8 +323,8 @@ cdef class ExecutionClient:
         cdef OrderRejected rejected = OrderRejected(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            instrument_id=instrument_id,
             account_id=self.account_id,
+            instrument_id=instrument_id,
             client_order_id=client_order_id,
             reason=reason,
             event_id=self._uuid_factory.generate(),
@@ -347,7 +347,7 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        strategy_id : StrategyId, optional
+        strategy_id : StrategyId
             The strategy ID associated with the event.
         instrument_id : InstrumentId
             The instrument ID.
@@ -363,8 +363,8 @@ cdef class ExecutionClient:
         cdef OrderAccepted accepted = OrderAccepted(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            instrument_id=instrument_id,
             account_id=self.account_id,
+            instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             event_id=self._uuid_factory.generate(),
@@ -387,7 +387,7 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        strategy_id : StrategyId, optional
+        strategy_id : StrategyId
             The strategy ID associated with the event.
         instrument_id : InstrumentId
             The instrument ID.
@@ -403,8 +403,8 @@ cdef class ExecutionClient:
         cdef OrderPendingUpdate pending_replace = OrderPendingUpdate(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            instrument_id=instrument_id,
             account_id=self.account_id,
+            instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             event_id=self._uuid_factory.generate(),
@@ -427,7 +427,7 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        strategy_id : StrategyId, optional
+        strategy_id : StrategyId
             The strategy ID associated with the event.
         instrument_id : InstrumentId
             The instrument ID.
@@ -443,8 +443,8 @@ cdef class ExecutionClient:
         cdef OrderPendingCancel pending_cancel = OrderPendingCancel(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            instrument_id=instrument_id,
             account_id=self.account_id,
+            instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             event_id=self._uuid_factory.generate(),
@@ -469,7 +469,7 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        strategy_id : StrategyId, optional
+        strategy_id : StrategyId
             The strategy ID associated with the event.
         instrument_id : InstrumentId
             The instrument ID.
@@ -489,8 +489,8 @@ cdef class ExecutionClient:
         cdef OrderUpdateRejected update_rejected = OrderUpdateRejected(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            instrument_id=instrument_id,
             account_id=self.account_id,
+            instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             response_to=response_to,
@@ -517,7 +517,7 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        strategy_id : StrategyId, optional
+        strategy_id : StrategyId
             The strategy ID associated with the event.
         instrument_id : InstrumentId
             The instrument ID.
@@ -537,8 +537,8 @@ cdef class ExecutionClient:
         cdef OrderCancelRejected cancel_rejected = OrderCancelRejected(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            instrument_id=instrument_id,
             account_id=self.account_id,
+            instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             response_to=response_to,
@@ -567,7 +567,7 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        strategy_id : StrategyId, optional
+        strategy_id : StrategyId
             The strategy ID associated with the event.
         instrument_id : InstrumentId
             The instrument ID.
@@ -626,7 +626,7 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        strategy_id : StrategyId, optional
+        strategy_id : StrategyId
             The strategy ID associated with the event.
         instrument_id : InstrumentId
             The instrument ID.
@@ -642,8 +642,8 @@ cdef class ExecutionClient:
         cdef OrderCanceled canceled = OrderCanceled(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            instrument_id=instrument_id,
             account_id=self.account_id,
+            instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             event_id=self._uuid_factory.generate(),
@@ -666,7 +666,7 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        strategy_id : StrategyId, optional
+        strategy_id : StrategyId
             The strategy ID associated with the event.
         instrument_id : InstrumentId
             The instrument ID.
@@ -682,8 +682,8 @@ cdef class ExecutionClient:
         cdef OrderTriggered triggered = OrderTriggered(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            instrument_id=instrument_id,
             account_id=self.account_id,
+            instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             event_id=self._uuid_factory.generate(),
@@ -706,7 +706,7 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        strategy_id : StrategyId, optional
+        strategy_id : StrategyId
             The strategy ID associated with the event.
         instrument_id : InstrumentId
             The instrument ID.
@@ -722,8 +722,8 @@ cdef class ExecutionClient:
         cdef OrderExpired expired = OrderExpired(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            instrument_id=instrument_id,
             account_id=self.account_id,
+            instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             event_id=self._uuid_factory.generate(),
@@ -739,8 +739,8 @@ cdef class ExecutionClient:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
+        PositionId venue_position_id,  # Can be None
         ExecutionId execution_id,
-        PositionId position_id,  # Can be None
         OrderSide order_side,
         OrderType order_type,
         Quantity last_qty,
@@ -755,7 +755,7 @@ cdef class ExecutionClient:
 
         Parameters
         ----------
-        strategy_id : StrategyId, optional
+        strategy_id : StrategyId
             The strategy ID associated with the event.
         instrument_id : InstrumentId
             The instrument ID.
@@ -765,10 +765,11 @@ cdef class ExecutionClient:
             The venue order ID.
         execution_id : ExecutionId
             The execution ID.
-        position_id : PositionId
-            The position ID associated with the order. If the trading venue has
-            assigned a position ID / ticket then pass that here, otherwise pass
-            `None` and the execution engine will handle position ID resolution.
+        venue_position_id : PositionId, optional
+            The venue position ID associated with the order. If the trading
+            venue has assigned a position ID / ticket then pass that here,
+            otherwise pass `None` and the execution engine OMS will handle
+            position ID resolution.
         order_side : OrderSide
             The execution order side.
         order_type : OrderType
@@ -804,12 +805,12 @@ cdef class ExecutionClient:
         cdef OrderFilled fill = OrderFilled(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
-            instrument_id=instrument_id,
             account_id=self.account_id,
+            instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
             execution_id=execution_id,
-            position_id=position_id,
+            position_id=venue_position_id,
             order_side=order_side,
             order_type=order_type,
             last_qty=last_qty,

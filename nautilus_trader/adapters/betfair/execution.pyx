@@ -465,8 +465,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     instrument_id=instrument.id,
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
+                                    venue_position_id=None,  # Can be None
                                     execution_id=execution_id,
-                                    position_id=order.position_id,
                                     order_side=B2N_ORDER_STREAM_SIDE[order_update["side"]],
                                     order_type=OrderType.LIMIT,
                                     last_qty=Quantity(order_update["sm"], instrument.size_precision),
@@ -490,8 +490,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                                     instrument_id=instrument.id,
                                     client_order_id=client_order_id,
                                     venue_order_id=venue_order_id,
+                                    venue_position_id=None,  # Can be None
                                     execution_id=execution_id,
-                                    position_id=order.position_id,
                                     order_side=B2N_ORDER_STREAM_SIDE[order_update["side"]],
                                     order_type=OrderType.LIMIT,
                                     last_qty=Quantity(order_update["sm"], instrument.size_precision),

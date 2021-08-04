@@ -640,11 +640,10 @@ async def generate_trades_list(
         ExecutionReport(
             client_order_id=self.venue_order_id_to_client_order_id[venue_order_id],
             venue_order_id=VenueOrderId(fill["betId"]),
+            venue_position_id=None,  # Can be None
             execution_id=ExecutionId(fill["lastMatchedDate"]),
-            last_qty=Quantity.from_str(
-                str(fill["sizeSettled"])
-            ),  # TODO: Possibly incorrect precision
-            last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Possibly incorrect precision
+            last_qty=Quantity.from_str(str(fill["sizeSettled"])),  # TODO: Incorrect precision?
+            last_px=Price.from_str(str(fill["priceMatched"])),  # TODO: Incorrect precision?
             commission=None,  # Can be None
             liquidity_side=LiquiditySide.NONE,
             ts_event=ts_event,

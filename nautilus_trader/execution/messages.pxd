@@ -23,6 +23,7 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -58,6 +59,8 @@ cdef class ExecutionReport:
     """The client order ID for the report.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The reported venue order ID.\n\n:returns: `VenueOrderId`"""
+    cdef readonly PositionId venue_position_id
+    """The reported venue position ID.\n\n:returns: `PositionId` or None"""
     cdef readonly ExecutionId id
     """The reported execution ID.\n\n:returns: `ExecutionId`"""
     cdef readonly Quantity last_qty
