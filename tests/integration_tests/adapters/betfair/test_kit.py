@@ -243,8 +243,8 @@ class BetfairTestStubs(TestStubs):
         submitted = OrderSubmitted(
             trader_id=BetfairTestStubs.trader_id(),
             strategy_id=BetfairTestStubs.strategy_id(),
-            instrument_id=BetfairTestStubs.instrument_id(),
             account_id=BetfairTestStubs.account_id(),
+            instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=order.client_order_id,
             event_id=BetfairTestStubs.uuid(),
             ts_event=ts_event,
@@ -263,8 +263,8 @@ class BetfairTestStubs(TestStubs):
         accepted = OrderAccepted(
             trader_id=BetfairTestStubs.trader_id(),
             strategy_id=BetfairTestStubs.strategy_id(),
-            instrument_id=BetfairTestStubs.instrument_id(),
             account_id=BetfairTestStubs.account_id(),
+            instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId(venue_order_id),
             event_id=BetfairTestStubs.uuid(),

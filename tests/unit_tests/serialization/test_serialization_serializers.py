@@ -630,8 +630,8 @@ class TestMsgPackEventSerializer:
         event = OrderSubmitted(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             uuid4(),
             0,
@@ -650,8 +650,8 @@ class TestMsgPackEventSerializer:
         event = OrderAccepted(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("B-123456"),
             uuid4(),
@@ -671,8 +671,8 @@ class TestMsgPackEventSerializer:
         event = OrderRejected(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             "ORDER_ID_INVALID",
             uuid4(),
@@ -692,8 +692,8 @@ class TestMsgPackEventSerializer:
         event = OrderPendingCancel(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             uuid4(),
@@ -713,8 +713,8 @@ class TestMsgPackEventSerializer:
         event = OrderPendingUpdate(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             uuid4(),
@@ -734,8 +734,8 @@ class TestMsgPackEventSerializer:
         event = OrderCanceled(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             uuid4(),
@@ -755,8 +755,8 @@ class TestMsgPackEventSerializer:
         event = OrderUpdateRejected(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             "RESPONSE",
@@ -778,8 +778,8 @@ class TestMsgPackEventSerializer:
         event = OrderCancelRejected(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             "RESPONSE",
@@ -801,8 +801,8 @@ class TestMsgPackEventSerializer:
         event = OrderUpdated(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             Quantity(100000, precision=0),
@@ -825,8 +825,8 @@ class TestMsgPackEventSerializer:
         event = OrderExpired(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             uuid4(),
@@ -846,8 +846,8 @@ class TestMsgPackEventSerializer:
         event = OrderTriggered(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             uuid4(),
@@ -867,8 +867,8 @@ class TestMsgPackEventSerializer:
         event = OrderFilled(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             ExecutionId("E123456"),
@@ -897,8 +897,8 @@ class TestMsgPackEventSerializer:
         event = OrderFilled(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             ExecutionId("E123456"),

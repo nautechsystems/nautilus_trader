@@ -729,8 +729,8 @@ cdef class ExecutionEngine(Component):
         fill_split1 = OrderFilled(
             trader_id=fill.trader_id,
             strategy_id=fill.strategy_id,
-            instrument_id=fill.instrument_id,
             account_id=fill.account_id,
+            instrument_id=fill.instrument_id,
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
@@ -760,8 +760,8 @@ cdef class ExecutionEngine(Component):
         cdef OrderFilled fill_split2 = OrderFilled(
             trader_id=fill.trader_id,
             strategy_id=fill.strategy_id,
-            instrument_id=fill.instrument_id,
             account_id=fill.account_id,
+            instrument_id=fill.instrument_id,
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,

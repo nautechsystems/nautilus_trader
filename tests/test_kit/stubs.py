@@ -357,8 +357,8 @@ class TestStubs:
         return OrderSubmitted(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             ts_event=0,
             event_id=uuid4(),
@@ -372,8 +372,8 @@ class TestStubs:
         return OrderAccepted(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
             ts_event=0,
@@ -386,8 +386,8 @@ class TestStubs:
         return OrderRejected(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             reason="ORDER_REJECTED",
             ts_event=0,
@@ -400,8 +400,8 @@ class TestStubs:
         return OrderPendingUpdate(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,
@@ -414,8 +414,8 @@ class TestStubs:
         return OrderPendingCancel(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,
@@ -458,8 +458,8 @@ class TestStubs:
         return OrderFilled(
             trader_id=TestStubs.trader_id(),
             strategy_id=strategy_id,
-            instrument_id=instrument.id,
             account_id=TestStubs.account_id(),
+            instrument_id=instrument.id,
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
             execution_id=execution_id,
@@ -481,8 +481,8 @@ class TestStubs:
         return OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,
@@ -495,8 +495,8 @@ class TestStubs:
         return OrderExpired(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,
@@ -509,8 +509,8 @@ class TestStubs:
         return OrderTriggered(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,

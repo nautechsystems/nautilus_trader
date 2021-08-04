@@ -94,7 +94,7 @@ the message bus, please see the related issue for further details on this enhanc
 
 Another notable feature is the introduction of the order 'in-flight' concept, 
 which is a submitted order which has not yet been acknowledged by the 
-exchange/broker. Several properties on `Order`, and methods on `Cache`, now exist
+trading venue. Several properties on `Order`, and methods on `Cache`, now exist
 to support this.
 
 The `Throttler` has been refactored and optimized further. There has also been

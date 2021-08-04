@@ -848,8 +848,8 @@ class TestOrders:
         updated = OrderUpdated(
             order.trader_id,
             order.strategy_id,
-            order.instrument_id,
             order.account_id,
+            order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
             Quantity.from_int(120000),
@@ -889,8 +889,8 @@ class TestOrders:
         updated = OrderUpdated(
             order.trader_id,
             order.strategy_id,
-            order.instrument_id,
             order.account_id,
+            order.instrument_id,
             order.client_order_id,
             VenueOrderId("2"),
             Quantity.from_int(120000),
@@ -1090,8 +1090,8 @@ class TestOrders:
         filled = OrderFilled(
             order.trader_id,
             order.strategy_id,
-            order.instrument_id,
             order.account_id,
+            order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
             ExecutionId("E-1"),
@@ -1137,8 +1137,8 @@ class TestOrders:
         partially = OrderFilled(
             order.trader_id,
             order.strategy_id,
-            order.instrument_id,
             order.account_id,
+            order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
             ExecutionId("E-1"),

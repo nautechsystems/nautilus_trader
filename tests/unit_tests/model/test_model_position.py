@@ -368,8 +368,8 @@ class TestPosition:
         fill2 = OrderFilled(
             self.trader_id,
             StrategyId("S-001"),
-            order.instrument_id,
             self.account_id,
+            order.instrument_id,
             order.client_order_id,
             VenueOrderId("2"),
             ExecutionId("E2"),

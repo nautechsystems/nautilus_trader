@@ -128,7 +128,7 @@ cdef class SimulatedExchange:
 
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
-    cdef PositionId _generate_position_id(self, InstrumentId instrument_id)
+    cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id)
     cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
     cdef ExecutionId _generate_execution_id(self)
 

@@ -557,6 +557,7 @@ class TestLiveExecutionEngine:
         trade1 = ExecutionReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),
+            venue_position_id=None,
             execution_id=ExecutionId("1"),
             last_qty=Quantity.from_int(50000),
             last_px=Price.from_str("1.00000"),
@@ -569,6 +570,7 @@ class TestLiveExecutionEngine:
         trade2 = ExecutionReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),
+            venue_position_id=None,
             execution_id=ExecutionId("2"),
             last_qty=Quantity.from_int(20000),
             last_px=Price.from_str("1.00000"),
@@ -637,6 +639,7 @@ class TestLiveExecutionEngine:
             execution_id=ExecutionId("1"),
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),
+            venue_position_id=None,
             last_qty=Quantity.from_int(50000),
             last_px=Price.from_str("1.00000"),
             commission=Money(5.00, USD),
@@ -649,6 +652,7 @@ class TestLiveExecutionEngine:
             execution_id=ExecutionId("2"),
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),
+            venue_position_id=None,
             last_qty=Quantity.from_int(50000),
             last_px=Price.from_str("1.00000"),
             commission=Money(2.00, USD),
