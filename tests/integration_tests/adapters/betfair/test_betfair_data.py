@@ -194,7 +194,7 @@ def test_market_bsp(betfair_data_client, msgbus):
         "TradeTick": 1645,
         "InstrumentStatusUpdate": 976,
         "OrderBookSnapshot": 903,
-        "BPSOrderBookDelta": 643,
+        "BSPOrderBookDelta": 643,
         "OrderBookDeltas": 545,
     }
     assert result == expected

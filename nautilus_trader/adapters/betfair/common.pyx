@@ -54,8 +54,8 @@ B2N_MARKET_STREAM_SIDE = {
     "atl": OrderSide.BUY,  # Available to Lay / Buy order
     "batl": OrderSide.BUY,  # Best available to Lay / Buy order
     "bdatl": OrderSide.BUY,  # Best display available to Lay / Buy order
-    "spb": OrderSide.BUY,  # Starting Price Back
-    "spl": OrderSide.SELL,  # Starting Price Back
+    "spb": OrderSide.SELL,  # Starting Price Back
+    "spl": OrderSide.BUY,  # Starting Price LAY
 }
 
 B_BID_KINDS = ("atb", "batb", "bdatb")
@@ -75,7 +75,7 @@ def parse_price(p):
 
 
 def parse_prob(p):
-    return str(round(p, 5))
+    return str(round(p, 5)).ljust(7, '0')
 
 
 def invert_price(p):

@@ -253,7 +253,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             resp = f.result()
             self._log.debug(f"resp: {resp}")
         except Exception as e:
-            self._log.error(f"_post_submit_order: {e}")
+            self._log.error(f"_post_submit_order strategy_id={strategy_id}, client_order_id={client_order_id} exception={e}")
             return
         assert len(resp['instructionReports']) == 1, "Should only be a single order"
 

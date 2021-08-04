@@ -12,37 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from nautilus_trader.model.data.base cimport Data
-from nautilus_trader.model.orderbook.data cimport OrderBookDelta
 
-from nautilus_trader.serialization.base import register_serializable_object
+from nautilus_trader.model.data.venue import InstrumentClosePrice
 
 
-cpdef enum SubscriptionStatus:
-    UNSUBSCRIBED = 0
-    PENDING_STARTUP = 1
-    RUNNING = 2
-
-
-class InstrumentSearch(Data):
-    def __init__(
-        self,
-        instruments,
-        ts_event,
-        ts_init,
-    ):
-        super().__init__(ts_event, ts_init)
-        self.instruments = instruments
-
-
-cdef class BSPOrderBookDelta(OrderBookDelta):
-    @staticmethod
-    def from_dict(dict values):
-        return BSPOrderBookDelta.from_dict_c(values)
-
-    @staticmethod
-    def to_dict(BSPOrderBookDelta obj):
-        return BSPOrderBookDelta.to_dict_c(obj)
-
-
-register_serializable_object(BSPOrderBookDelta, BSPOrderBookDelta.to_dict, BSPOrderBookDelta.from_dict)
+def serialize(price: InstrumentClosePrice):
+    result = price.to_dict(price)
+    result["close_price"] = price.close_price.as_double()
+    return result
