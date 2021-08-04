@@ -148,7 +148,7 @@ class TextParser(ByteParser):
                     yield x
 
     def process_chunk(self, chunk, instrument_provider):
-        for line in map(self.line_preprocessor, chunk.split(b"\n")):
+        for line in filter(None, map(self.line_preprocessor, chunk.split(b"\n"))):
             if self.instrument_provider_update is not None:
                 # Check the user hasn't accidentally used a generator here also
                 r = self.instrument_provider_update(instrument_provider, line)
@@ -406,7 +406,7 @@ class DataCatalog:
     # ---- Loading data ---------------------------------------------------------------------------------------- #
 
     def import_from_data_loader(
-        self, loader: DataLoader, append_only=False, progress=False, **kwargs
+        self, loader: DataLoader, append_only=False, progress=True, **kwargs
     ):
         """
         Load data from a DataLoader instance into the backtest catalogue.
@@ -926,7 +926,14 @@ class DataCatalog:
 
 
 def camel_to_snake_case(s):
-    return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
+    """
+    >>> camel_to_snake_case("TradeTick")
+    'trade_tick'
+
+    >>> camel_to_snake_case("BSPOrderBook")
+    'bsp_order_book'
+    """
+    return re.sub(r"((?<=[a-z0-9])[A-Z]|(?!^)[A-Z](?=[a-z]))", r"_\1", s).lower()
 
 
 def parse_timestamp(t):
