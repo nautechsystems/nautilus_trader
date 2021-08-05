@@ -33,6 +33,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
@@ -1084,6 +1085,153 @@ class TestRiskEngine:
 
     # -- UPDATE ORDER TESTS ----------------------------------------------------------------------------
 
+    def test_update_order_when_no_order_found_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        update = UpdateOrder(
+            self.trader_id,
+            strategy.id,
+            AUDUSD_SIM.id,
+            ClientOrderId("invalid"),
+            VenueOrderId("1"),
+            Quantity.from_int(100000),
+            Price.from_str("1.00010"),
+            None,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(update)
+
+        # Assert
+        assert self.exec_client.calls == ["connect"]
+        assert self.risk_engine.command_count == 1
+        assert self.exec_engine.command_count == 0
+
+    def test_update_order_when_already_completed_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00010"),
+        )
+
+        submit = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            None,
+            order,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit)
+
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_accepted(order))
+        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
+
+        update = UpdateOrder(
+            self.trader_id,
+            strategy.id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("1"),
+            order.quantity,
+            Price.from_str("1.00010"),
+            None,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(update)
+
+        # Assert
+        assert self.exec_client.calls == ["connect", "submit_order"]
+        assert self.risk_engine.command_count == 2
+        assert self.exec_engine.command_count == 1
+
+    def test_update_order_when_in_flight_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00010"),
+        )
+
+        submit = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            None,
+            order,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit)
+
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+
+        update = UpdateOrder(
+            self.trader_id,
+            strategy.id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("1"),
+            order.quantity,
+            Price.from_str("1.00010"),
+            None,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(update)
+
+        # Assert
+        assert self.exec_client.calls == ["connect", "submit_order"]
+        assert self.risk_engine.command_count == 2
+        assert self.exec_engine.command_count == 1
+
     def test_update_order_with_default_settings_then_sends_to_client(self):
         # Arrange
         self.exec_engine.start()
@@ -1138,6 +1286,143 @@ class TestRiskEngine:
         assert self.exec_engine.command_count == 2
 
     # -- CANCEL ORDER TESTS ----------------------------------------------------------------------------
+
+    def test_cancel_order_when_order_does_not_exist_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        cancel = CancelOrder(
+            self.trader_id,
+            strategy.id,
+            AUDUSD_SIM.id,
+            ClientOrderId("1"),
+            VenueOrderId("1"),
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(cancel)
+
+        # Assert
+        assert self.exec_client.calls == ["connect"]
+        assert self.risk_engine.command_count == 1
+        assert self.exec_engine.command_count == 0
+
+    def test_cancel_order_when_already_completed_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        submit = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            None,
+            order,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit)
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_rejected(order))
+
+        cancel = CancelOrder(
+            self.trader_id,
+            strategy.id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("1"),
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(cancel)
+
+        # Assert
+        assert self.exec_client.calls == ["connect", "submit_order"]
+        assert self.risk_engine.command_count == 2
+        assert self.exec_engine.command_count == 1
+
+    def test_cancel_order_when_already_pending_cancel_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        submit = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            None,
+            order,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        cancel = CancelOrder(
+            self.trader_id,
+            strategy.id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("1"),
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit)
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_accepted(order))
+
+        self.risk_engine.execute(cancel)
+        self.exec_engine.process(TestStubs.event_order_pending_cancel(order))
+
+        # Act
+        self.risk_engine.execute(cancel)
+
+        # Assert
+        assert self.exec_client.calls == ["connect", "submit_order", "cancel_order"]
+        assert self.risk_engine.command_count == 3
+        assert self.exec_engine.command_count == 2
 
     def test_cancel_order_with_default_settings_then_sends_to_client(self):
         # Arrange
