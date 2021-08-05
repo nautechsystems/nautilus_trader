@@ -929,7 +929,7 @@ cdef class SimulatedExchange:
                     order.venue_order_id,
                     "update order",
                     f"STOP_LIMIT {OrderSideParser.to_str(order.side)} order "
-                    f"new stop px trigger of {price} was in the market: "
+                    f"new trigger stop px of {price} was in the market: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
                 )
