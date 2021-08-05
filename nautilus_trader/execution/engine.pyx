@@ -505,9 +505,9 @@ cdef class ExecutionEngine(Component):
 
     cdef void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
         # Cache all orders
-        self._cache.add_order(command.bracket_order.entry, PositionId.null_c())
-        self._cache.add_order(command.bracket_order.stop_loss, PositionId.null_c())
-        self._cache.add_order(command.bracket_order.take_profit, PositionId.null_c())
+        self._cache.add_order(command.bracket_order.entry, position_id=None)
+        self._cache.add_order(command.bracket_order.stop_loss, position_id=None)
+        self._cache.add_order(command.bracket_order.take_profit, position_id=None)
 
         # Send to execution client
         client.submit_bracket_order(command)
@@ -555,7 +555,7 @@ cdef class ExecutionEngine(Component):
         cdef Order order = self._cache.order(event.client_order_id)
         if order is None:
             self._log.warning(
-                f"{repr(event.client_order_id)} was not found in cache "
+                f"{repr(event.client_order_id)} was not found in the cache "
                 f"for {repr(event.venue_order_id)} to apply {event}."
             )
 
@@ -565,7 +565,7 @@ cdef class ExecutionEngine(Component):
                 self._log.error(
                     f"Cannot apply event to any order: "
                     f"{repr(event.client_order_id)} and {repr(event.venue_order_id)} "
-                    f"not found in cache."
+                    f"not found in the cache."
                 )
                 return  # Cannot process event further
 
@@ -574,22 +574,19 @@ cdef class ExecutionEngine(Component):
             if order is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
-                    f"order for {repr(client_order_id)} not found in cache."
+                    f"order for {repr(client_order_id)} not found in the cache."
                 )
                 return  # Cannot process event further
 
             # Set the correct ClientOrderId for the event
             event.client_order_id = client_order_id
             self._log.info(
-                f"{repr(client_order_id)} was found in cache and "
+                f"{repr(client_order_id)} was found in the cache and "
                 f"applying event to order with {repr(order.venue_order_id)}.",
                 color=LogColor.GREEN,
             )
 
         if isinstance(event, OrderFilled):
-            # The StrategyId needs to be confirmed prior to the PositionId.
-            # This is in case there is no PositionId currently assigned and one
-            # must be generated.
             self._confirm_position_id(event)
 
         try:
@@ -611,14 +608,14 @@ cdef class ExecutionEngine(Component):
         )
 
     cdef void _confirm_position_id(self, OrderFilled fill) except *:
-        if fill.position_id.not_null():
-            # Already assigned to fill
+        if fill.position_id is not None:
+            # Already assigned
             return
 
         # Fetch ID from cache
         cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
         if position_id is not None:
-            # Assign ID to fill
+            # Assign position ID to fill
             fill.position_id = position_id
             return
 
@@ -632,6 +629,7 @@ cdef class ExecutionEngine(Component):
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
             return
 
+        # Determine position ID for net position
         # Invariant (design-time)
         assert len(positions_open) == 1, "more than one position for unassigned position_id"
 
@@ -648,7 +646,11 @@ cdef class ExecutionEngine(Component):
         if position is None:  # No position open
             self._open_position(fill)
         else:
-            self._update_position(position, fill)
+            if position.is_open_c():
+                self._update_position(position, fill)
+            else:
+                fill.position_id = PositionId(fill.position_id.value + "F")
+                self._open_position(fill)
 
     cdef void _open_position(self, OrderFilled fill) except *:
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
@@ -675,7 +677,7 @@ cdef class ExecutionEngine(Component):
         )
 
     cdef void _update_position(self, Position position, OrderFilled fill) except *:
-        # Check for flip
+        # Check for flip (last_qty guaranteed to be positive)
         if position.is_opposite_side(fill.side) and fill.last_qty > position.quantity:
             self._flip_position(position, fill)
             return  # Handled in flip
@@ -718,16 +720,17 @@ cdef class ExecutionEngine(Component):
             difference = Quantity(abs(position.quantity - fill.last_qty), position.size_precision)
 
         # Split commission between two positions
-        fill_percent1: Decimal = position.quantity / fill.last_qty
-        fill_percent2: Decimal = Decimal(1) - fill_percent1
+        fill_percent: Decimal = position.quantity / fill.last_qty
+        cdef Money commission1 = Money(fill.commission * fill_percent, fill.commission.currency)
+        cdef Money commission2 = Money(fill.commission - commission1, fill.commission.currency)
 
         cdef OrderFilled fill_split1 = None
         # Split fill to close original position
         fill_split1 = OrderFilled(
             trader_id=fill.trader_id,
             strategy_id=fill.strategy_id,
-            instrument_id=fill.instrument_id,
             account_id=fill.account_id,
+            instrument_id=fill.instrument_id,
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
@@ -737,7 +740,7 @@ cdef class ExecutionEngine(Component):
             last_qty=position.quantity,  # Fill original position quantity remaining
             last_px=fill.last_px,
             currency=fill.currency,
-            commission=Money(fill.commission * fill_percent1, fill.commission.currency),
+            commission=commission1,
             liquidity_side=fill.liquidity_side,
             event_id=fill.id,
             ts_event=fill.ts_event,
@@ -757,8 +760,8 @@ cdef class ExecutionEngine(Component):
         cdef OrderFilled fill_split2 = OrderFilled(
             trader_id=fill.trader_id,
             strategy_id=fill.strategy_id,
-            instrument_id=fill.instrument_id,
             account_id=fill.account_id,
+            instrument_id=fill.instrument_id,
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
@@ -768,7 +771,7 @@ cdef class ExecutionEngine(Component):
             last_qty=difference,  # Fill difference from original as above
             last_px=fill.last_px,
             currency=fill.currency,
-            commission=Money(fill.commission * fill_percent2, fill.commission.currency),
+            commission=commission2,
             liquidity_side=fill.liquidity_side,
             event_id=self._uuid_factory.generate(),  # New event ID
             ts_event=fill.ts_event,

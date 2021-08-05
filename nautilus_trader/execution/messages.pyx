@@ -67,7 +67,7 @@ cdef class OrderStatusReport:
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"client_order_id={self.client_order_id}, "
+                f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id}, "
                 f"order_state={OrderStateParser.to_str(self.order_state)}, "
                 f"filled_qty={self.filled_qty}, "
@@ -122,6 +122,7 @@ cdef class ExecutionReport:
         self,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
+        PositionId venue_position_id,  # Can be None
         ExecutionId execution_id not None,
         Quantity last_qty not None,
         Price last_px not None,
@@ -139,6 +140,11 @@ cdef class ExecutionReport:
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID.
+        venue_position_id : PositionId, optional
+            The venue position ID associated with the order. If the trading
+            venue has assigned a position ID / ticket then pass that here,
+            otherwise pass `None` and the execution engine OMS will handle
+            position ID resolution.
         execution_id : ExecutionId
             The execution ID for the trade.
         last_qty : Quantity
@@ -155,6 +161,7 @@ cdef class ExecutionReport:
         """
         self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
+        self.venue_position_id = venue_position_id
         self.id = execution_id
         self.last_qty = last_qty
         self.last_px = last_px
@@ -165,9 +172,10 @@ cdef class ExecutionReport:
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"client_order_id={self.client_order_id}, "
+                f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id}, "
-                f"id={self.id}, "
+                f"venue_position_id={self.venue_position_id}, "
+                f"id={self.id.value}, "
                 f"last_qty={self.last_qty}, "
                 f"last_px={self.last_px}, "
                 f"commission={self.commission.to_str()}, "

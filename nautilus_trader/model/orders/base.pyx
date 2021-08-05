@@ -118,14 +118,7 @@ cdef class Order:
         init : OrderInitialized
             The order initialized event.
 
-        Raises
-        ------
-        ValueError
-            If event.strategy_id has a 'NULL' value.
-
         """
-        Condition.true(init.strategy_id.not_null(), f"init.strategy_id.value was 'NULL'")
-
         self._events = [init]     # type: list[OrderEvent]
         self._execution_ids = []  # type: list[ExecutionId]
         self._fsm = FiniteStateMachine(
@@ -141,9 +134,9 @@ cdef class Order:
         self.strategy_id = init.strategy_id
         self.instrument_id = init.instrument_id
         self.client_order_id = init.client_order_id
-        self.venue_order_id = VenueOrderId.null_c()
-        self.position_id = PositionId.null_c()
-        self.account_id = None    # Can be None
+        self.venue_order_id = None  # Can be None
+        self.position_id = None  # Can be None
+        self.account_id = None  # Can be None
         self.execution_id = None  # Can be None
 
         self.side = init.side
@@ -164,12 +157,11 @@ cdef class Order:
         return hash(self.client_order_id.value)
 
     def __repr__(self) -> str:
-        cdef str id_string = f", venue_order_id={self.venue_order_id.value}" if self.venue_order_id.not_null() else ""
         return (f"{type(self).__name__}("
                 f"{self.status_string_c()}, "
                 f"state={self._fsm.state_string_c()}, "
-                f"client_order_id={self.client_order_id.value}"
-                f"{id_string})")
+                f"client_order_id={self.client_order_id.value}, "
+                f"venue_order_id={self.venue_order_id})")
 
     cpdef dict to_dict(self):
         """
@@ -559,7 +551,7 @@ cdef class Order:
         ValueError
             If self.client_order_id is not equal to event.client_order_id.
         ValueError
-            If self.venue_order_id and event.venue_order_id are both not 'NULL', and are not equal.
+            If self.venue_order_id and event.venue_order_id are both not None, and are not equal.
         InvalidStateTrigger
             If event is not a valid trigger from the current order.state.
         KeyError
@@ -568,8 +560,8 @@ cdef class Order:
         """
         Condition.not_none(event, "event")
         Condition.equal(event.client_order_id, self.client_order_id, "event.client_order_id", "self.client_order_id")
-        if self.venue_order_id.not_null() and event.venue_order_id.not_null() and not isinstance(event, OrderUpdated):
-            Condition.equal(event.venue_order_id, self.venue_order_id, "event.venue_order_id", "self.venue_order_id")
+        if self.venue_order_id is not None and event.venue_order_id is not None and not isinstance(event, OrderUpdated):
+            Condition.equal(self.venue_order_id, event.venue_order_id, "self.venue_order_id", "event.venue_order_id")
 
         # Handle event (FSM can raise InvalidStateTrigger)
         if isinstance(event, OrderDenied):
@@ -612,7 +604,7 @@ cdef class Order:
             self._triggered(event)
         elif isinstance(event, OrderFilled):
             # Check identifiers
-            if self.venue_order_id.is_null():
+            if self.venue_order_id is None:
                 self.venue_order_id = event.venue_order_id
             else:
                 Condition.not_in(event.execution_id, self._execution_ids, "event.execution_id", "self._execution_ids")

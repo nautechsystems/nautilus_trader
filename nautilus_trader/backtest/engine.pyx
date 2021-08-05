@@ -386,7 +386,7 @@ cdef class BacktestEngine:
         ValueError
             If data is empty.
         ValueError
-            If instrument_id is not contained in the data cache.
+            If instrument_id is not found in the cache.
 
         """
         Condition.not_none(data, "data")
@@ -395,7 +395,7 @@ cdef class BacktestEngine:
         cdef InstrumentId instrument_id = data[0].instrument_id
         Condition.true(
             instrument_id in self._cache.instrument_ids(),
-            "Instrument for given data not found in the data cache. "
+            "Instrument for given data not found in the cache. "
             "Please call `add_instrument()` before adding related data.",
         )
 
@@ -431,7 +431,7 @@ cdef class BacktestEngine:
         ValueError
             If data is empty.
         ValueError
-            If instrument_id is not contained in the data cache.
+            If instrument_id is not found in the cache.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -440,7 +440,7 @@ cdef class BacktestEngine:
         Condition.false(data.empty, "data was empty")
         Condition.true(
             instrument_id in self._cache.instrument_ids(),
-            "Instrument for given data not found in the data cache. "
+            "Instrument for given data not found in the cache. "
             "Please call `add_instrument()` before adding related data.",
         )
 
@@ -506,7 +506,7 @@ cdef class BacktestEngine:
         ValueError
             If data is empty.
         ValueError
-            If instrument_id is not contained in the data cache.
+            If instrument_id is not found in the cache.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -515,7 +515,7 @@ cdef class BacktestEngine:
         Condition.false(data.empty, "data was empty")
         Condition.true(
             instrument_id in self._cache.instrument_ids(),
-            "Instrument for given data not found in the data cache. "
+            "Instrument for given data not found in the cache. "
             "Please call `add_instrument()` before adding related data.",
         )
 
@@ -594,7 +594,7 @@ cdef class BacktestEngine:
         Condition.false(data.empty, "data was empty")
         Condition.true(
             instrument_id in self._cache.instrument_ids(),
-            "Instrument for given data not found in the data cache. "
+            "Instrument for given data not found in the cache. "
             "Please call `add_instrument()` before adding related data.",
         )
 

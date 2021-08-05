@@ -263,11 +263,11 @@ class TestOrders:
         assert isinstance(hash(order), int)
         assert (
             str(order)
-            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
+            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
         )
         assert (
             repr(order)
-            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
+            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
         )
 
     def test_market_order_to_dict(self):
@@ -287,8 +287,8 @@ class TestOrders:
             "strategy_id": "S-001",
             "instrument_id": "AUD/USD.SIM",
             "client_order_id": "O-19700101-000000-000-001-1",
-            "venue_order_id": "NULL",
-            "position_id": "NULL",
+            "venue_order_id": None,
+            "position_id": None,
             "account_id": None,
             "execution_id": None,
             "type": "MARKET",
@@ -322,11 +322,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
         )
         assert (
             repr(order)
-            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
         )
 
     def test_limit_order_to_dict(self):
@@ -347,8 +347,8 @@ class TestOrders:
             "strategy_id": "S-001",
             "instrument_id": "AUD/USD.SIM",
             "client_order_id": "O-19700101-000000-000-001-1",
-            "venue_order_id": "NULL",
-            "position_id": "NULL",
+            "venue_order_id": None,
+            "position_id": None,
             "account_id": None,
             "execution_id": None,
             "type": "LIMIT",
@@ -409,11 +409,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
+            == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
         )
         assert (
             repr(order)
-            == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
+            == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
         )
 
     def test_stop_market_order_to_dict(self):
@@ -434,8 +434,8 @@ class TestOrders:
             "strategy_id": "S-001",
             "instrument_id": "AUD/USD.SIM",
             "client_order_id": "O-19700101-000000-000-001-1",
-            "venue_order_id": "NULL",
-            "position_id": "NULL",
+            "venue_order_id": None,
+            "position_id": None,
             "account_id": None,
             "execution_id": None,
             "type": "STOP_MARKET",
@@ -500,8 +500,8 @@ class TestOrders:
             "strategy_id": "S-001",
             "instrument_id": "AUD/USD.SIM",
             "client_order_id": "O-19700101-000000-000-001-1",
-            "venue_order_id": "NULL",
-            "position_id": "NULL",
+            "venue_order_id": None,
+            "position_id": None,
             "account_id": None,
             "execution_id": None,
             "type": "STOP_LIMIT",
@@ -609,13 +609,13 @@ class TestOrders:
         assert str(bracket_order) == (
             "BracketOrder(id=BO-19700101-000000-000-001-1, "
             "EntryMarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, "
-            "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1), "
+            "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None), "
             "SL=0.99990, TP=1.00010)"
         )
         assert repr(bracket_order) == (
             "BracketOrder(id=BO-19700101-000000-000-001-1, "
             "EntryMarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, "
-            "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1), "
+            "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None), "
             "SL=0.99990, TP=1.00010)"
         )
 
@@ -848,8 +848,8 @@ class TestOrders:
         updated = OrderUpdated(
             order.trader_id,
             order.strategy_id,
-            order.instrument_id,
             order.account_id,
+            order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
             Quantity.from_int(120000),
@@ -889,8 +889,8 @@ class TestOrders:
         updated = OrderUpdated(
             order.trader_id,
             order.strategy_id,
-            order.instrument_id,
             order.account_id,
+            order.instrument_id,
             order.client_order_id,
             VenueOrderId("2"),
             Quantity.from_int(120000),
@@ -1090,8 +1090,8 @@ class TestOrders:
         filled = OrderFilled(
             order.trader_id,
             order.strategy_id,
-            order.instrument_id,
             order.account_id,
+            order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
             ExecutionId("E-1"),
@@ -1137,8 +1137,8 @@ class TestOrders:
         partially = OrderFilled(
             order.trader_id,
             order.strategy_id,
-            order.instrument_id,
             order.account_id,
+            order.instrument_id,
             order.client_order_id,
             VenueOrderId("1"),
             ExecutionId("E-1"),

@@ -52,14 +52,14 @@ cdef class Position:
         ValueError
             If instrument.id is not equal to fill.instrument_id.
         ValueError
-            If event.position_id has a 'NULL' value.
+            If event.position_id is None.
         ValueError
-            If event.strategy_id has a 'NULL' value.
+            If event.strategy_id is None.
 
         """
         Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")
-        Condition.true(fill.position_id.not_null(), "event.position_id.value was 'NULL'")
-        Condition.true(fill.strategy_id.not_null(), "event.strategy_id.value was 'NULL'")
+        Condition.not_none(fill.position_id, "fill.position_id")
+        Condition.not_none(fill.strategy_id, "fill.position_id")
 
         self._events = []         # type: list[OrderFilled]
         self._execution_ids = []  # type: list[ExecutionId]

@@ -219,15 +219,19 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         """
         self._log.info(f"Generating OrderStatusReport for {repr(order.venue_order_id)}...")
 
-        if order.venue_order_id.is_null():
-            self._log.error(f"Cannot reconcile state for {repr(order.client_order_id)}, "
-                            f"VenueOrderId was 'NULL'.")
+        if order.venue_order_id is None:
+            self._log.error(
+                f"Cannot reconcile state for {repr(order.client_order_id)}, "
+                f"VenueOrderId was None.",
+            )
             return None  # Cannot generate state report
 
         cdef Instrument instrument = self._instrument_provider.find(order.instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot reconcile state for {repr(order.client_order_id)}, "
-                            f"instrument for {order.instrument_id} not found.")
+            self._log.error(
+                f"Cannot reconcile state for {repr(order.client_order_id)}, "
+                f"instrument for {order.instrument_id} not found.",
+            )
             return None  # Cannot generate state report
 
         try:
@@ -338,6 +342,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             report = ExecutionReport(
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
+                venue_position_id=None,  # Can be None
                 execution_id=ExecutionId(str(fill["id"])),
                 last_qty=Quantity(fill["amount"], instrument.size_precision),
                 last_px=Price(fill["price"], instrument.price_precision),
@@ -732,8 +737,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
+            venue_position_id=None,  # Can be None
             execution_id=ExecutionId(event["id"]),
-            position_id=None,  # Assigned in engine
             order_side=order.side,
             order_type=order.type,
             last_qty=Quantity(event["amount"], instrument.size_precision),

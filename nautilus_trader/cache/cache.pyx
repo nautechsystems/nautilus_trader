@@ -631,16 +631,15 @@ cdef class Cache(CacheFacade):
             self._index_venue_orders[order.instrument_id.venue].add(client_order_id)
 
             # 2: Build _index_order_ids -> {VenueOrderId, ClientOrderId}
-            if order.venue_order_id.not_null():
+            if order.venue_order_id is not None:
                 self._index_order_ids[order.venue_order_id] = order.client_order_id
 
             # 3: Build _index_order_position -> {ClientOrderId, PositionId}
-            if order.position_id.not_null():
+            if order.position_id is not None:
                 self._index_order_position[client_order_id] = order.position_id
 
             # 4: Build _index_order_strategy -> {ClientOrderId, StrategyId}
-            if order.strategy_id.not_null():
-                self._index_order_strategy[client_order_id] = order.strategy_id
+            self._index_order_strategy[client_order_id] = order.strategy_id
 
             # 5: Build _index_instrument_orders -> {InstrumentId, {ClientOrderId}}
             if order.instrument_id not in self._index_instrument_orders:
@@ -697,7 +696,7 @@ cdef class Cache(CacheFacade):
             self._index_instrument_positions[position.instrument_id].add(position_id)
 
             # 5: Build _index_strategy_positions -> {StrategyId, {PositionId}}
-            if position.strategy_id.not_null() and position.strategy_id not in self._index_strategy_positions:
+            if position.strategy_id is not None and position.strategy_id not in self._index_strategy_positions:
                 self._index_strategy_positions[position.strategy_id] = set()
             self._index_strategy_positions[position.strategy_id].add(position.id)
 
@@ -1103,7 +1102,6 @@ cdef class Cache(CacheFacade):
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(position_id, "position_id")
         Condition.not_in(order.client_order_id, self._orders, "order.client_order_id", "cached_orders")
         Condition.not_in(order.client_order_id, self._index_orders, "order.client_order_id", "index_orders")
         Condition.not_in(order.client_order_id, self._index_order_position, "order.client_order_id", "index_order_position")
@@ -1134,21 +1132,20 @@ cdef class Cache(CacheFacade):
         else:
             strategy_orders.add(order.client_order_id)
 
-        cdef str position_id_str = f", {position_id.value}" if position_id.not_null() else ""
-        self._log.debug(f"Added Order(id={order.client_order_id.value}{position_id_str}).")
-
         # Update database
         if self._database is not None:
             self._database.add_order(order)  # Logs
 
-        if position_id.is_null():
-            return  # Do not index the NULL id
-        self.add_position_id(
-            position_id,
-            order.instrument_id.venue,
-            order.client_order_id,
-            order.strategy_id,
-        )
+        if position_id is not None:
+            self.add_position_id(
+                position_id,
+                order.instrument_id.venue,
+                order.client_order_id,
+                order.strategy_id,
+            )
+
+        cdef str position_id_str = f", {position_id.value}" if position_id is not None else ""
+        self._log.debug(f"Added Order(id={order.client_order_id.value}{position_id_str}).")
 
     cpdef void add_position_id(
         self,
@@ -1286,7 +1283,7 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(order, "order")
 
-        if order.venue_order_id.not_null():
+        if order.venue_order_id is not None:
             # Assumes order_id does not change
             self._index_order_ids[order.venue_order_id] = order.client_order_id
 
@@ -2272,7 +2269,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Order object in cache " + str(ex))
+            self._log.error("Cannot find Order object in the cache " + str(ex))
 
     cpdef list orders_working(
         self,
@@ -2302,7 +2299,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Order object in cache " + str(ex))
+            self._log.error("Cannot find Order object in the cache " + str(ex))
 
     cpdef list orders_completed(
         self,
@@ -2332,7 +2329,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Order object in cache " + str(ex))
+            self._log.error("Cannot find Order object in the cache " + str(ex))
 
 # -- POSITION QUERIES ------------------------------------------------------------------------------
 
@@ -2401,7 +2398,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._positions[position_id] for position_id in position_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
+            self._log.error("Cannot find Position object in the cache " + str(ex))
 
     cpdef list positions_open(
         self,
@@ -2431,7 +2428,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._positions[position_id] for position_id in position_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
+            self._log.error("Cannot find Position object in the cache " + str(ex))
 
     cpdef list positions_closed(
         self,
@@ -2461,7 +2458,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._positions[position_id] for position_id in position_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
+            self._log.error("Cannot find Position object in the cache " + str(ex))
 
     cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
         """

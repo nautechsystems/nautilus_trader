@@ -37,7 +37,6 @@ from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ExecutionId
-from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -192,7 +191,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -240,7 +239,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -311,7 +310,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -375,7 +374,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -429,7 +428,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -483,7 +482,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -537,7 +536,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -558,6 +557,7 @@ class TestLiveExecutionEngine:
         trade1 = ExecutionReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),
+            venue_position_id=None,
             execution_id=ExecutionId("1"),
             last_qty=Quantity.from_int(50000),
             last_px=Price.from_str("1.00000"),
@@ -570,6 +570,7 @@ class TestLiveExecutionEngine:
         trade2 = ExecutionReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),
+            venue_position_id=None,
             execution_id=ExecutionId("2"),
             last_qty=Quantity.from_int(20000),
             last_px=Price.from_str("1.00000"),
@@ -616,7 +617,7 @@ class TestLiveExecutionEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -638,6 +639,7 @@ class TestLiveExecutionEngine:
             execution_id=ExecutionId("1"),
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),
+            venue_position_id=None,
             last_qty=Quantity.from_int(50000),
             last_px=Price.from_str("1.00000"),
             commission=Money(5.00, USD),
@@ -650,6 +652,7 @@ class TestLiveExecutionEngine:
             execution_id=ExecutionId("2"),
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),
+            venue_position_id=None,
             last_qty=Quantity.from_int(50000),
             last_px=Price.from_str("1.00000"),
             commission=Money(2.00, USD),

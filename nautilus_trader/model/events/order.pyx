@@ -33,7 +33,6 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
@@ -51,9 +50,10 @@ cdef class OrderEvent(Event):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
+        AccountId account_id,  # Can be None
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        VenueOrderId venue_order_id not None,
+        VenueOrderId venue_order_id,  # Can be None
         UUID event_id not None,
         int64_t ts_event,
         int64_t ts_init,
@@ -67,11 +67,13 @@ cdef class OrderEvent(Event):
             The trader ID.
         strategy_id : StrategyId
             The strategy ID.
+        account_id : AccountId, optional
+            The account ID.
         instrument_id : InstrumentId
             The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
-        venue_order_id : VenueOrderId
+        venue_order_id : VenueOrderId, optional
             The venue order ID.
         event_id : UUID
             The event ID.
@@ -85,6 +87,7 @@ cdef class OrderEvent(Event):
 
         self.trader_id = trader_id
         self.strategy_id = strategy_id
+        self.account_id = account_id
         self.instrument_id = instrument_id
         self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
@@ -147,9 +150,10 @@ cdef class OrderInitialized(OrderEvent):
         super().__init__(
             trader_id,
             strategy_id,
+            None,  # Pending assignment by system
             instrument_id,
             client_order_id,
-            VenueOrderId.null_c(),  # Pending assignment by venue
+            None,  # Pending assignment by venue
             event_id,
             ts_init,  # Timestamp of initialization the same
             ts_init,  # Timestamp of initialization the same
@@ -296,9 +300,10 @@ cdef class OrderDenied(OrderEvent):
         super().__init__(
             trader_id,
             strategy_id,
+            None,  # Never assigned
             instrument_id,
             client_order_id,
-            VenueOrderId.null_c(),  # Never assigned
+            None,  # Never assigned
             event_id,
             ts_init,  # Timestamp of initialization the same
             ts_init,  # Timestamp of initialization the same
@@ -389,8 +394,8 @@ cdef class OrderSubmitted(OrderEvent):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         UUID event_id not None,
         int64_t ts_event,
@@ -405,10 +410,10 @@ cdef class OrderSubmitted(OrderEvent):
             The trader ID.
         strategy_id : StrategyId
             The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
         account_id : AccountId
             The account ID.
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         event_id : UUID
@@ -422,9 +427,10 @@ cdef class OrderSubmitted(OrderEvent):
         super().__init__(
             trader_id,
             strategy_id,
+            account_id,
             instrument_id,
             client_order_id,
-            VenueOrderId.null_c(),  # Pending accepted
+            None,  # Pending accepted
             event_id,
             ts_event,
             ts_init,
@@ -434,18 +440,18 @@ cdef class OrderSubmitted(OrderEvent):
 
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"ts_event={self.ts_event})")
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"event_id={self.id}, "
                 f"ts_event={self.ts_event}, "
                 f"ts_init={self.ts_init})")
@@ -456,8 +462,8 @@ cdef class OrderSubmitted(OrderEvent):
         return OrderSubmitted(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             event_id=UUID.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
@@ -471,8 +477,8 @@ cdef class OrderSubmitted(OrderEvent):
             "type": "OrderSubmitted",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
             "account_id": obj.account_id.value,
+            "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
@@ -525,8 +531,8 @@ cdef class OrderAccepted(OrderEvent):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID event_id not None,
@@ -542,10 +548,10 @@ cdef class OrderAccepted(OrderEvent):
             The trader ID.
         strategy_id : StrategyId
             The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
         account_id : AccountId
             The account ID.
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -557,16 +563,11 @@ cdef class OrderAccepted(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
+            account_id,
             instrument_id,
             client_order_id,
             venue_order_id,
@@ -575,24 +576,22 @@ cdef class OrderAccepted(OrderEvent):
             ts_init,
         )
 
-        self.account_id = account_id
-
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"ts_event={self.ts_event})")
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"event_id={self.id}, "
                 f"ts_event={self.ts_event}, "
                 f"ts_init={self.ts_init})")
@@ -603,8 +602,8 @@ cdef class OrderAccepted(OrderEvent):
         return OrderAccepted(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             event_id=UUID.from_str_c(values["event_id"]),
@@ -619,8 +618,8 @@ cdef class OrderAccepted(OrderEvent):
             "type": "OrderAccepted",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
             "account_id": obj.account_id.value,
+            "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "event_id": obj.id.value,
@@ -667,8 +666,8 @@ cdef class OrderRejected(OrderEvent):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         str reason not None,
         UUID event_id not None,
@@ -684,10 +683,10 @@ cdef class OrderRejected(OrderEvent):
             The trader ID.
         strategy_id : StrategyId
             The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
         account_id : AccountId
             The account ID.
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         reason : datetime
@@ -709,9 +708,10 @@ cdef class OrderRejected(OrderEvent):
         super().__init__(
             trader_id,
             strategy_id,
+            account_id,
             instrument_id,
             client_order_id,
-            VenueOrderId.null_c(),  # Not assigned on rejection
+            None,  # Not assigned on rejection
             event_id,
             ts_event,
             ts_init,
@@ -722,10 +722,9 @@ cdef class OrderRejected(OrderEvent):
 
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"reason='{self.reason}', "
                 f"ts_event={self.ts_event})")
 
@@ -733,10 +732,9 @@ cdef class OrderRejected(OrderEvent):
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"reason='{self.reason}', "
                 f"event_id={self.id}, "
                 f"ts_event={self.ts_event}, "
@@ -748,8 +746,8 @@ cdef class OrderRejected(OrderEvent):
         return OrderRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             reason=values["reason"],
             event_id=UUID.from_str_c(values["event_id"]),
@@ -764,8 +762,8 @@ cdef class OrderRejected(OrderEvent):
             "type": "OrderRejected",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
             "account_id": obj.account_id.value,
+            "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "reason": obj.reason,
             "event_id": obj.id.value,
@@ -812,8 +810,8 @@ cdef class OrderCanceled(OrderEvent):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID event_id not None,
@@ -829,10 +827,10 @@ cdef class OrderCanceled(OrderEvent):
             The trader ID.
         strategy_id : StrategyId
             The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
         account_id : AccountId
             The account ID.
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -844,16 +842,11 @@ cdef class OrderCanceled(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
+            account_id,
             instrument_id,
             client_order_id,
             venue_order_id,
@@ -862,24 +855,22 @@ cdef class OrderCanceled(OrderEvent):
             ts_init,
         )
 
-        self.account_id = account_id
-
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"ts_event={self.ts_event})")
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"event_id={self.id}, "
                 f"ts_event={self.ts_event}, "
                 f"ts_init={self.ts_init})")
@@ -890,8 +881,8 @@ cdef class OrderCanceled(OrderEvent):
         return OrderCanceled(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             event_id=UUID.from_str_c(values["event_id"]),
@@ -906,8 +897,8 @@ cdef class OrderCanceled(OrderEvent):
             "type": "OrderCanceled",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
             "account_id": obj.account_id.value,
+            "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "event_id": obj.id.value,
@@ -954,8 +945,8 @@ cdef class OrderExpired(OrderEvent):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID event_id not None,
@@ -971,10 +962,10 @@ cdef class OrderExpired(OrderEvent):
             The trader ID.
         strategy_id : StrategyId
             The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
         account_id : AccountId
             The account ID.
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -986,16 +977,11 @@ cdef class OrderExpired(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
+            account_id,
             instrument_id,
             client_order_id,
             venue_order_id,
@@ -1004,24 +990,22 @@ cdef class OrderExpired(OrderEvent):
             ts_init,
         )
 
-        self.account_id = account_id
-
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"ts_event={self.ts_event})")
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"event_id={self.id}, "
                 f"ts_event={self.ts_event}, "
                 f"ts_init={self.ts_init})")
@@ -1032,8 +1016,8 @@ cdef class OrderExpired(OrderEvent):
         return OrderExpired(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             event_id=UUID.from_str_c(values["event_id"]),
@@ -1048,8 +1032,8 @@ cdef class OrderExpired(OrderEvent):
             "type": "OrderExpired",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
             "account_id": obj.account_id.value,
+            "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "event_id": obj.id.value,
@@ -1096,8 +1080,8 @@ cdef class OrderTriggered(OrderEvent):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID event_id not None,
@@ -1113,10 +1097,10 @@ cdef class OrderTriggered(OrderEvent):
             The trader ID.
         strategy_id : StrategyId
             The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
         account_id : AccountId
             The account ID.
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -1128,16 +1112,11 @@ cdef class OrderTriggered(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
+            account_id,
             instrument_id,
             client_order_id,
             venue_order_id,
@@ -1150,20 +1129,20 @@ cdef class OrderTriggered(OrderEvent):
 
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"ts_event={self.ts_event})")
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"event_id={self.id}, "
                 f"ts_event={self.ts_event}, "
                 f"ts_init={self.ts_init})")
@@ -1174,8 +1153,8 @@ cdef class OrderTriggered(OrderEvent):
         return OrderTriggered(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             event_id=UUID.from_str_c(values["event_id"]),
@@ -1190,8 +1169,8 @@ cdef class OrderTriggered(OrderEvent):
             "type": "OrderTriggered",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
             "account_id": obj.account_id.value,
+            "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "event_id": obj.id.value,
@@ -1239,8 +1218,8 @@ cdef class OrderPendingUpdate(OrderEvent):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID event_id not None,
@@ -1256,10 +1235,10 @@ cdef class OrderPendingUpdate(OrderEvent):
             The trader ID.
         strategy_id : StrategyId
             The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
         account_id : AccountId
             The account ID.
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -1271,16 +1250,11 @@ cdef class OrderPendingUpdate(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
+            account_id,
             instrument_id,
             client_order_id,
             venue_order_id,
@@ -1289,24 +1263,22 @@ cdef class OrderPendingUpdate(OrderEvent):
             ts_init,
         )
 
-        self.account_id = account_id
-
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"ts_event={self.ts_event})")
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"event_id={self.id}, "
                 f"ts_event={self.ts_event}, "
                 f"ts_init={self.ts_init})")
@@ -1317,8 +1289,8 @@ cdef class OrderPendingUpdate(OrderEvent):
         return OrderPendingUpdate(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             event_id=UUID.from_str_c(values["event_id"]),
@@ -1333,8 +1305,8 @@ cdef class OrderPendingUpdate(OrderEvent):
             "type": "OrderPendingUpdate",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
             "account_id": obj.account_id.value,
+            "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "event_id": obj.id.value,
@@ -1382,8 +1354,8 @@ cdef class OrderPendingCancel(OrderEvent):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         UUID event_id not None,
@@ -1399,10 +1371,10 @@ cdef class OrderPendingCancel(OrderEvent):
             The trader ID.
         strategy_id : StrategyId
             The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
         account_id : AccountId
             The account ID.
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -1414,16 +1386,11 @@ cdef class OrderPendingCancel(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
+            account_id,
             instrument_id,
             client_order_id,
             venue_order_id,
@@ -1432,24 +1399,22 @@ cdef class OrderPendingCancel(OrderEvent):
             ts_init,
         )
 
-        self.account_id = account_id
-
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"ts_event={self.ts_event})")
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"event_id={self.id}, "
                 f"ts_event={self.ts_event}, "
                 f"ts_init={self.ts_init})")
@@ -1460,8 +1425,8 @@ cdef class OrderPendingCancel(OrderEvent):
         return OrderPendingCancel(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             event_id=UUID.from_str_c(values["event_id"]),
@@ -1476,8 +1441,8 @@ cdef class OrderPendingCancel(OrderEvent):
             "type": "OrderPendingCancel",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
             "account_id": obj.account_id.value,
+            "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "event_id": obj.id.value,
@@ -1525,8 +1490,8 @@ cdef class OrderUpdateRejected(OrderEvent):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         str response_to not None,
@@ -1544,10 +1509,10 @@ cdef class OrderUpdateRejected(OrderEvent):
             The trader ID.
         strategy_id : StrategyId
             The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
         account_id : AccountId
             The account ID.
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -1576,6 +1541,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         super().__init__(
             trader_id,
             strategy_id,
+            account_id,
             instrument_id,
             client_order_id,
             venue_order_id,
@@ -1584,16 +1550,15 @@ cdef class OrderUpdateRejected(OrderEvent):
             ts_init,
         )
 
-        self.account_id = account_id
         self.response_to = response_to
         self.reason = reason
 
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"response_to={self.response_to}, "
                 f"reason={self.reason}, "
                 f"ts_event={self.ts_event})")
@@ -1602,10 +1567,10 @@ cdef class OrderUpdateRejected(OrderEvent):
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"response_to={self.response_to}, "
                 f"reason={self.reason}, "
                 f"event_id={self.id}, "
@@ -1618,8 +1583,8 @@ cdef class OrderUpdateRejected(OrderEvent):
         return OrderUpdateRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             response_to=values["response_to"],
@@ -1635,9 +1600,9 @@ cdef class OrderUpdateRejected(OrderEvent):
         return {
             "type": "OrderUpdateRejected",
             "trader_id": obj.trader_id.value,
+            "account_id": obj.account_id.value,
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
-            "account_id": obj.account_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "response_to": obj.response_to,
@@ -1687,8 +1652,8 @@ cdef class OrderCancelRejected(OrderEvent):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         str response_to not None,
@@ -1706,10 +1671,10 @@ cdef class OrderCancelRejected(OrderEvent):
             The trader ID.
         strategy_id : StrategyId
             The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
         account_id : AccountId
             The account ID.
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -1738,6 +1703,7 @@ cdef class OrderCancelRejected(OrderEvent):
         super().__init__(
             trader_id,
             strategy_id,
+            account_id,
             instrument_id,
             client_order_id,
             venue_order_id,
@@ -1746,16 +1712,15 @@ cdef class OrderCancelRejected(OrderEvent):
             ts_init,
         )
 
-        self.account_id = account_id
         self.response_to = response_to
         self.reason = reason
 
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"response_to={self.response_to}, "
                 f"reason={self.reason}, "
                 f"ts_event={self.ts_event})")
@@ -1764,10 +1729,10 @@ cdef class OrderCancelRejected(OrderEvent):
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"response_to={self.response_to}, "
                 f"reason={self.reason}, "
                 f"event_id={self.id}, "
@@ -1780,8 +1745,8 @@ cdef class OrderCancelRejected(OrderEvent):
         return OrderCancelRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             response_to=values["response_to"],
@@ -1798,8 +1763,8 @@ cdef class OrderCancelRejected(OrderEvent):
             "type": "OrderCancelRejected",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
             "account_id": obj.account_id.value,
+            "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "response_to": obj.response_to,
@@ -1848,8 +1813,8 @@ cdef class OrderUpdated(OrderEvent):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         Quantity quantity not None,
@@ -1868,10 +1833,10 @@ cdef class OrderUpdated(OrderEvent):
             The trader ID.
         strategy_id : StrategyId
             The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
         account_id : AccountId
             The account ID.
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
@@ -1889,16 +1854,11 @@ cdef class OrderUpdated(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
 
-        Raises
-        ------
-        ValueError
-            If venue_order_id has a 'NULL' value.
-
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         super().__init__(
             trader_id,
             strategy_id,
+            account_id,
             instrument_id,
             client_order_id,
             venue_order_id,
@@ -1907,17 +1867,16 @@ cdef class OrderUpdated(OrderEvent):
             ts_init,
         )
 
-        self.account_id = account_id
         self.quantity = quantity
         self.price = price
         self.trigger = trigger
 
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"quantity={self.quantity.to_str()}, "
                 f"price={self.price}, "
                 f"trigger={self.trigger}, "
@@ -1927,10 +1886,10 @@ cdef class OrderUpdated(OrderEvent):
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"quantity={self.quantity.to_str()}, "
                 f"price={self.price}, "
                 f"trigger={self.trigger}, "
@@ -1945,8 +1904,8 @@ cdef class OrderUpdated(OrderEvent):
         return OrderUpdated(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             quantity=Quantity.from_str_c(values["quantity"]),
@@ -1964,8 +1923,8 @@ cdef class OrderUpdated(OrderEvent):
             "type": "OrderUpdated",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
             "account_id": obj.account_id.value,
+            "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "quantity": str(obj.quantity),
@@ -2015,12 +1974,12 @@ cdef class OrderFilled(OrderEvent):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        InstrumentId instrument_id not None,
         AccountId account_id not None,
+        InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         ExecutionId execution_id not None,
-        PositionId position_id not None,
+        PositionId position_id,  # Can be None
         OrderSide order_side,
         OrderType order_type,
         Quantity last_qty not None,
@@ -2042,18 +2001,18 @@ cdef class OrderFilled(OrderEvent):
             The trader ID.
         strategy_id : StrategyId
             The strategy ID.
-        instrument_id : InstrumentId
-            The instrument ID.
         account_id : AccountId
             The account ID.
+        instrument_id : InstrumentId
+            The instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID.
         execution_id : ExecutionId
             The execution ID.
-        position_id : PositionId
-            The position ID associated with the order.
+        position_id : PositionId, optional
+            The position ID associated with the order fill.
         order_side : OrderSide
             The execution order side.
         order_side : OrderType
@@ -2080,18 +2039,16 @@ cdef class OrderFilled(OrderEvent):
         Raises
         ------
         ValueError
-            If venue_order_id has a 'NULL' value.
-        ValueError
             If last_qty is not positive (> 0).
 
         """
-        Condition.true(venue_order_id.not_null(), "venue_order_id was 'NULL'")
         Condition.positive(last_qty, "last_qty")
         if info is None:
             info = {}
         super().__init__(
             trader_id,
             strategy_id,
+            account_id,
             instrument_id,
             client_order_id,
             venue_order_id,
@@ -2100,7 +2057,6 @@ cdef class OrderFilled(OrderEvent):
             ts_init,
         )
 
-        self.account_id = account_id
         self.execution_id = execution_id
         self.position_id = position_id
         self.side = order_side
@@ -2114,12 +2070,12 @@ cdef class OrderFilled(OrderEvent):
 
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"execution_id={self.execution_id.value}, "
-                f"position_id={self.position_id.value}, "
+                f"position_id={self.position_id}, "
                 f"side={OrderSideParser.to_str(self.side)}"
                 f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
                 f"type={OrderTypeParser.to_str(self.type)}, "
@@ -2132,12 +2088,12 @@ cdef class OrderFilled(OrderEvent):
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
+                f"account_id={self.account_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"account_id={self.account_id.value}, "
                 f"execution_id={self.execution_id.value}, "
-                f"position_id={self.position_id.value}, "
+                f"position_id={self.position_id}, "
                 f"side={OrderSideParser.to_str(self.side)}"
                 f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
                 f"type={OrderTypeParser.to_str(self.type)}, "
@@ -2151,15 +2107,16 @@ cdef class OrderFilled(OrderEvent):
     @staticmethod
     cdef OrderFilled from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str position_id_str = values["position_id"]
         return OrderFilled(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             execution_id=ExecutionId(values["execution_id"]),
-            position_id=PositionId(values["position_id"]),
+            position_id=PositionId(position_id_str) if position_id_str is not None else None,
             order_side=OrderSideParser.from_str(values["order_side"]),
             order_type=OrderTypeParser.from_str(values["order_type"]),
             last_qty=Quantity.from_str_c(values["last_qty"]),
@@ -2180,12 +2137,12 @@ cdef class OrderFilled(OrderEvent):
             "type": "OrderFilled",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
-            "instrument_id": obj.instrument_id.value,
             "account_id": obj.account_id.value,
+            "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "execution_id": obj.execution_id.value,
-            "position_id": obj.position_id.value,
+            "position_id": obj.position_id.value if obj.position_id else None,
             "order_side": OrderSideParser.to_str(obj.side),
             "order_type": OrderTypeParser.to_str(obj.type),
             "last_qty": str(obj.last_qty),

@@ -32,9 +32,9 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -167,7 +167,7 @@ class TestBacktestExecClientTests:
         command = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -221,7 +221,7 @@ class TestBacktestExecClientTests:
             self.order_factory.strategy_id,
             order.instrument_id,
             order.client_order_id,
-            order.venue_order_id,
+            VenueOrderId("1"),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -246,7 +246,7 @@ class TestBacktestExecClientTests:
             order.strategy_id,
             order.instrument_id,
             order.client_order_id,
-            order.venue_order_id,
+            VenueOrderId("1"),
             Quantity.from_int(100),
             Price.from_str("1010.00"),
             None,

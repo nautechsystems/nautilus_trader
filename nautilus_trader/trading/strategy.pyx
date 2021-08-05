@@ -474,7 +474,7 @@ cdef class TradingStrategy(Actor):
         cdef SubmitOrder command = SubmitOrder(
             self.trader_id,
             self.id,
-            position_id if position_id is not None else PositionId.null_c(),
+            position_id,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -638,7 +638,7 @@ cdef class TradingStrategy(Actor):
         Condition.not_none(order, "order")
         Condition.not_none(self.trader_id, "self.trader_id")
 
-        if order.venue_order_id.is_null():
+        if order.venue_order_id is None:
             self.log.error(
                 f"Cannot cancel order: no venue_order_id assigned yet, {order}.",
             )

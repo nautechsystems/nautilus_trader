@@ -51,6 +51,7 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
+from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
@@ -352,12 +353,21 @@ cdef class RiskEngine(Component):
             return  # Denied
 
         # Check position exists
-        if command.position_id.not_null() and not self._cache.position_exists(command.position_id):
-            self._deny_command(
-                command=command,
-                reason=f"{repr(command.position_id)} does not exist",
-            )
-            return  # Denied
+        cdef Position position
+        if command.position_id is not None:
+            position = self._cache.position(command.position_id)
+            if position is None:
+                self._deny_command(
+                    command=command,
+                    reason=f"{repr(command.position_id)} does not exist",
+                )
+                return  # Denied
+            if position.is_closed_c():
+                self._deny_command(
+                    command=command,
+                    reason=f"{repr(command.position_id)} already closed",
+                )
+                return  # Denied
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
@@ -474,7 +484,7 @@ cdef class RiskEngine(Component):
         if order is None:
             self._deny_command(
                 command=command,
-                reason=f"{command.client_order_id} not found in cache",
+                reason=f"{command.client_order_id} not found in the cache",
             )
             return  # Denied
 
@@ -664,7 +674,7 @@ cdef class RiskEngine(Component):
             return
 
         if not self._cache.order_exists(order.client_order_id):
-            self._cache.add_order(order, PositionId.null_c())
+            self._cache.add_order(order, position_id=None)
 
         # Generate event
         cdef OrderDenied denied = OrderDenied(

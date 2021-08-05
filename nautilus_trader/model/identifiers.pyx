@@ -16,8 +16,6 @@
 from nautilus_trader.core.correctness cimport Condition
 
 
-cdef str _NULL_ID = "NULL"
-
 cdef class Identifier:
     """
     The abstract base class for all identifiers.
@@ -68,12 +66,6 @@ cdef class Identifier:
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{self.value}')"
 
-    cdef bint is_null(self) except *:
-        return self.value == _NULL_ID
-
-    cdef bint not_null(self) except *:
-        return self.value != _NULL_ID
-
 
 cdef class Symbol(Identifier):
     """
@@ -81,6 +73,10 @@ cdef class Symbol(Identifier):
     instrument.
 
     The ID value must be unique for a trading venue.
+
+    References
+    ----------
+    https://en.wikipedia.org/wiki/Ticker_symbol
     """
 
     def __init__(self, str value):
@@ -103,8 +99,7 @@ cdef class Symbol(Identifier):
 
 cdef class Venue(Identifier):
     """
-    Represents a valid trading venue ID for a tradeable financial market
-    instrument.
+    Represents a valid trading venue ID.
     """
 
     def __init__(self, str name):
@@ -114,7 +109,7 @@ cdef class Venue(Identifier):
         Parameters
         ----------
         name : str
-            The venue name ID value.
+            The venue ID value.
 
         Raises
         ------
@@ -186,7 +181,7 @@ cdef class ComponentId(Identifier):
     """
     Represents a valid component ID.
 
-    The name must be unique at the trader level.
+    The ID value must be unique at the trader level.
     """
 
     def __init__(self, str value):
@@ -211,7 +206,7 @@ cdef class ClientId(ComponentId):
     """
     Represents a system client ID.
 
-    The ID value must be unique per data or execution engine.
+    The ID value must be unique at the trader level.
     """
 
     def __init__(self, str value):
@@ -260,10 +255,7 @@ cdef class TraderId(ComponentId):
             If value is not a valid string containing a hyphen.
 
         """
-        Condition.true(
-            value == _NULL_ID or "-" in value,
-            "ID incorrectly formatted (did not contain '-' hyphen)",
-        )
+        Condition.true("-" in value, "ID incorrectly formatted (did not contain '-' hyphen)")
         super().__init__(value)
 
     cpdef str get_tag(self):
@@ -306,10 +298,7 @@ cdef class StrategyId(ComponentId):
             If value is not a valid string containing a hyphen.
 
         """
-        Condition.true(
-            value == _NULL_ID or "-" in value,
-            "ID incorrectly formatted (did not contain '-' hyphen)",
-        )
+        Condition.true("-" in value, "ID incorrectly formatted (did not contain '-' hyphen)")
         super().__init__(value)
 
     cpdef str get_tag(self):
@@ -328,7 +317,7 @@ cdef class AccountId(Identifier):
     """
     Represents a valid account ID.
 
-    The issuer and ID combination must be unique at the firm level.
+    The issuer and number ID combination must be unique at the firm level.
     """
 
     def __init__(self, str issuer, str number):
@@ -338,7 +327,7 @@ cdef class AccountId(Identifier):
         Parameters
         ----------
         issuer : str
-            The account issuer (exchange/broker) ID value.
+            The account issuer (trading venue) ID value.
         number : str
             The account 'number' ID value.
 
@@ -391,7 +380,7 @@ cdef class AccountId(Identifier):
 
 cdef class ClientOrderId(Identifier):
     """
-    Represents a valid client order ID.
+    Represents a valid client order ID (assigned by the Nautilus system).
 
     The ID value must be unique at the firm level.
     """
@@ -416,9 +405,9 @@ cdef class ClientOrderId(Identifier):
 
 cdef class ClientOrderLinkId(Identifier):
     """
-    Represents a valid client order link ID.
+    Represents a valid client order link ID (assigned by the Nautilus system).
 
-    The ID value must be unique at the account level.
+    The ID value must be unique for a trading venue.
 
     Permits order originators to tie together groups of orders in which trades
     resulting from orders are associated for a specific purpose, for example the
@@ -448,11 +437,9 @@ cdef class ClientOrderLinkId(Identifier):
         super().__init__(value)
 
 
-cdef VenueOrderId _NULL_ORDER_ID = VenueOrderId(_NULL_ID)
-
 cdef class VenueOrderId(Identifier):
     """
-    Represents a valid venue order ID.
+    Represents a valid venue order ID (assigned by a trading venue).
     """
 
     def __init__(self, str value):
@@ -469,32 +456,9 @@ cdef class VenueOrderId(Identifier):
         ValueError
             If value is not a valid string.
 
-        References
-        ----------
-        Null Object Pattern
-        https://deviq.com/null-object-pattern/
-
         """
         super().__init__(value)
 
-    @staticmethod
-    cdef VenueOrderId null_c():
-        return _NULL_ORDER_ID
-
-    @staticmethod
-    def null():
-        """
-        Return an order ID with a 'NULL' value.
-
-        Returns
-        -------
-        VenueOrderId
-
-        """
-        return _NULL_ORDER_ID
-
-
-cdef PositionId _NULL_POSITION_ID = PositionId(_NULL_ID)
 
 cdef class PositionId(Identifier):
     """
@@ -515,29 +479,8 @@ cdef class PositionId(Identifier):
         ValueError
             If value is not a valid string.
 
-        References
-        ----------
-        Null Object Pattern
-        https://deviq.com/null-object-pattern/
-
         """
         super().__init__(value)
-
-    @staticmethod
-    cdef PositionId null_c():
-        return _NULL_POSITION_ID
-
-    @staticmethod
-    def null():
-        """
-        Return a position ID with a 'NULL' value.
-
-        Returns
-        -------
-        PositionId
-
-        """
-        return _NULL_POSITION_ID
 
 
 cdef class ExecutionId(Identifier):

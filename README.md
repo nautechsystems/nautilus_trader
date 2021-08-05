@@ -5,7 +5,7 @@
 # NautilusTrader
 
 ![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
-![docs-build](https://img.shields.io/netlify/b89a9b0d-d308-4dd3-9a3e-e9c0845ef175?label=docs)
+![docs](https://github.com/nautechsystems/nautilus_trader/workflows/docs/badge.svg)
 [![codacy-quality](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 ![pypi-pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
@@ -96,89 +96,18 @@ The documentation for the latest version of the package can be found at:
 
 ## Integrations
 
-| Logo | ID | Status |
-|:---:|:---:|:---:|
-| [![interactive-brokers](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ib-logo.png?raw=true)](https://interactivebrokers.com) | IB | ![status](https://img.shields.io/badge/Integration-in_progress-orange) |
-| [![ccxtpro](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ccxtpro-logo.png?raw=true)](https://ccxt.pro/) | CCXT-`exchange_id` | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
-| [![binance](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/binance-logo.png?raw=true)](https://www.binance.com/) | BINANCE | ![status](https://img.shields.io/badge/Integration-planned-gray) |
-| [![bitmex](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/bitmex-logo.png?raw=true)](https://www.bitmex.com/) | BITMEX | ![status](https://img.shields.io/badge/Integration-planned-gray) |
-| [![betfair](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/betfair-logo.png?raw=true)](https://www.betfair.com/) | BETFAIR | ![status](https://img.shields.io/badge/Integration-testing-yellow) |
+NautilusTrader is designed to work with modular adapters which provide integrations with data
+publishers and/or trading venues (exchanges/brokers).
 
-CCXT Pro is an algorithmic crypto-trading library which currently includes
-integrations to 27 crypto exchanges https://github.com/ccxt/ccxt.
-
-The adapter requires the `ccxtpro` package, which in turn requires a license.
-See https://ccxt.pro for more information.
-
-| CCXT Pro advanced execution clients |
-|:---:|
-| BINANCE |
-| BITMEX |
-
-Advanced execution clients include additional order management options such as
-`post_only`, `hidden`, `reduce_only`, and all the `TimeInForce` options. These
-advanced execution clients will be incrementally added to and additional help
-from users is welcome!
-
-The other CCXT Pro exchanges are available through the unified API with a more
-limited order feature set including simple vanilla MARKET and LIMIT orders.
+See the [integrations](https://docs.nautilustrader.io/integrations) documentation for further details.
 
 ## Installation
-
-The `master` branch will always reflect the code of the latest release version.
-
-The package is tested against Python 3.7 - 3.9 on 64-bit Windows, macOS and Linux.
-We recommend running the platform with the latest stable version of Python, and
-in a virtual environment to isolate the dependencies.
-
-For UNIX machines, [pyenv](https://github.com/pyenv/pyenv) is the recommended tool for handling system wide
-Python installations and virtual environments.
-
-Installation can be achieved through _one_ of the following options;
-
-#### From PyPI
 
 To install the latest binary wheel (or sdist package) from PyPI:
 
     pip install -U nautilus_trader
 
-#### From GitHub Release
-
-To install a binary wheel from GitHub, first navigate to the latest release.
-
-> https://github.com/nautechsystems/nautilus_trader/releases/latest/
-
-Download the appropriate `.whl` for your operating system and Python version, then run:
-
-    pip install <file-name>.whl
-
-#### From Source
-
-Installation from source requires Cython to compile the Python C extensions.
-
-1. First, install Cython:
-
-        pip install -U Cython==3.0.0a9
-
-2. Then install the package using `pip`:
-
-        pip install -U git+https://github.com/nautechsystems/nautilus_trader
-
-   **Or** clone the source with `git`, and install from the projects root directory:
-
-        git clone https://github.com/nautechsystems/nautilus_trader
-        cd nautilus_trader
-        pip install .
-
-Also, the following optional dependency 'extras' are separately available for installation.
-- `betfair` for the Betfair adapter.
-- `ccxt` for the CCXT Pro adapter.
-- `docs` for building the documentation.
-- `ib` for the Interactive Brokers adapter.
-
-For example, to install including the `ccxt` extra using pip:
-
-    pip install nautilus_trader[ccxt]
+Refer to the [installation guide](https://docs.nautilustrader.io/getting-started/installation) for further details.
 
 ## Examples
 
@@ -190,7 +119,7 @@ These can run through your IDE, or from the command line:
 ## Data Types
 
 The following market data types can be requested historically, and also subscribed to as live streams
-when available from an exchange/broker, and implemented in an integrations adapter.
+when available from a data publisher, and implemented in an integrations adapter.
 
 - `OrderBookDelta`
 - `OrderBookDeltas` (L1/L2/L3)
@@ -265,43 +194,7 @@ The following account types are available for both live and backtest environment
 
 ## Development
 
-For development we recommend using the PyCharm _Professional_ edition IDE, as it interprets Cython
-syntax. Alternatively, you could use Visual Studio Code with a Cython extension.
-
-[pyenv](https://github.com/pyenv/pyenv) is the recommended tool for handling Python installations and virtual environments.
-
-[poetry](https://python-poetry.org/) is the preferred tool for handling all Python package and dev dependencies.
-
-[pre-commit](https://pre-commit.com/) is used to automatically run various checks, auto-formatters and linting tools
-at commit.
-
-#### Environment Setup
-
-The following steps are for UNIX-like systems, and only need to be completed once.
-
-1. Install `poetry`:
-
-        curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
-
-2. Then install all Python package dependencies, and compile the C extensions:
-
-        poetry install
-
-3. Install the `pre-commit` package:
-
-        pip install pre-commit
-
-4. Setup the `pre-commit` hook which will then run automatically at commit:
-
-        pre-commit install
-
-#### Builds
-
-Following any changes to `.pyx` or `.pxd` files, you can re-compile by running:
-
-    poetry run python build.py
-
-Refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/overview.html) for further information.
+See the [developer guides](https://docs.nautilustrader.io/developer-guides) for further information.
 
 ## Contributing
 
