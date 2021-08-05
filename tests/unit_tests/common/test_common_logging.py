@@ -168,7 +168,6 @@ class TestLoggerTests:
 
         # Assert
         assert sink[0] == {
-            "color": 0,
             "component": "TEST_LOGGER",
             "level": "INF",
             "msg": "A log event",
@@ -187,6 +186,7 @@ class TestLiveLogger:
         self.logger = LiveLogger(
             loop=self.loop,
             clock=LiveClock(),
+            level_stdout=LogLevel.DEBUG,
         )
 
         self.logger_adapter = LoggerAdapter(component="LIVER_LOGGER", logger=self.logger)
@@ -246,8 +246,9 @@ class TestLiveLogger:
         logger_adapter.info("A different log message.")  # <-- blocks
         logger_adapter.info("A log message.")  # <-- blocks
 
-        await asyncio.sleep(0.1)  # <-- processes all log messages
+        await asyncio.sleep(0.3)  # <-- processes all log messages
         self.logger.stop()
+        await asyncio.sleep(0.3)
 
         # Assert
         assert not self.logger.is_running
