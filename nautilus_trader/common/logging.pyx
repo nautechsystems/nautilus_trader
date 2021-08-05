@@ -218,6 +218,7 @@ cdef class Logger:
             sys.stdout.write(f"{self._format_record(level, color, record)}\n")
 
         if self._sinks:
+            del record["color"]  # Remove redundant color tag
             for handler in self._sinks:
                 handler(record)
 
