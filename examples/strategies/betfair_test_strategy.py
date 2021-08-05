@@ -20,6 +20,7 @@ from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.c_enums.book_level import BookLevel
+from nautilus_trader.model.c_enums.oms_type import OMSType
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
 from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.base import DataType
@@ -71,7 +72,7 @@ class BetfairTestStrategy(TradingStrategy):
             The theoretical change threshold.
 
         """
-        super().__init__(order_id_tag=order_id_tag)
+        super().__init__(order_id_tag=order_id_tag, oms_type=OMSType.HEDGING)
         self.instrument_filter = instrument_filter
         self.theo_change_threshold = theo_change_threshold
         self.instrument_id: Optional[InstrumentId] = None

@@ -1219,9 +1219,10 @@ cdef class Cache(CacheFacade):
 
         """
         Condition.not_none(position, "position")
-        Condition.not_in(position.id, self._positions, "position.id", "cached_positions")
-        Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
-        Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
+        # TODO(cs): Temporary to support NETTING OMS experiments
+        # Condition.not_in(position.id, self._positions, "position.id", "cached_positions")
+        # Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
+        # Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
 
         self._positions[position.id] = position
         self._index_positions.add(position.id)

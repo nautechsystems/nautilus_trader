@@ -30,6 +30,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class ExecutionEngine(Component):
@@ -39,6 +40,7 @@ cdef class ExecutionEngine(Component):
     cdef PositionIdGenerator _pos_id_generator
     cdef dict _clients
     cdef dict _routing_map
+    cdef dict _oms_types
 
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
@@ -56,6 +58,7 @@ cdef class ExecutionEngine(Component):
     cpdef void register_client(self, ExecutionClient client) except *
     cpdef void register_default_client(self, ExecutionClient client) except *
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *
+    cpdef void register_oms_type(self, TradingStrategy strategy) except *
     cpdef void deregister_client(self, ExecutionClient client) except *
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
@@ -88,6 +91,8 @@ cdef class ExecutionEngine(Component):
     cdef void _handle_account_event(self, AccountState event) except *
     cdef void _handle_order_event(self, OrderEvent event) except *
     cdef void _confirm_position_id(self, OrderFilled fill) except *
+    cdef void _assign_hedging_position_id(self, OrderFilled fill) except *
+    cdef void _assign_netting_position_id(self, OrderFilled fill) except *
     cdef void _handle_order_fill(self, OrderFilled fill) except *
     cdef void _open_position(self, OrderFilled fill) except *
     cdef void _update_position(self, Position position, OrderFilled fill) except *

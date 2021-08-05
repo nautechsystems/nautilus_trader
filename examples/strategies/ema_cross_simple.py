@@ -25,6 +25,7 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -76,7 +77,7 @@ class EMACross(TradingStrategy):
             amongst all running strategies for a particular trader ID.
 
         """
-        super().__init__(order_id_tag=order_id_tag)
+        super().__init__(order_id_tag=order_id_tag, oms_type=OMSType.HEDGING)
 
         # Custom strategy variables
         self.instrument_id = instrument_id
