@@ -1181,7 +1181,8 @@ cdef class SimulatedExchange:
             )
             if positions_open:
                 # Design-time invariant: netting OMS maintains a single position
-                assert len(positions_open) == 1
+                # TODO(cs): Temporarily comment out for OMS netting experiments
+                # assert len(positions_open) == 1
                 position_id = positions_open[0].id
 
         # Determine any position
