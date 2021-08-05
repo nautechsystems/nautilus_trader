@@ -39,7 +39,7 @@ from nautilus_trader.adapters.betfair.common import N2B_SIDE
 from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
-from nautilus_trader.adapters.betfair.data_types import BPSOrderBookDelta
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.util import hash_json
 from nautilus_trader.adapters.betfair.util import one
 from nautilus_trader.common.uuid import UUIDFactory
@@ -328,7 +328,7 @@ def _handle_bsp_updates(runner, instrument, ts_event, ts_init):
     for side in ("spb", "spl"):
         for upd in runner.get(side, []):
             price, volume = upd
-            delta = BPSOrderBookDelta(
+            delta = BSPOrderBookDelta(
                 instrument_id=instrument.id,
                 level=BookLevel.L2,
                 delta_type=DeltaType.DELETE if volume == 0 else DeltaType.UPDATE,
