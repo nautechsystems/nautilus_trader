@@ -3,6 +3,15 @@ Common
 
 .. automodule:: nautilus_trader.common
 
+Actor
+-----
+
+.. automodule:: nautilus_trader.common.actor
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Clock
 -----
 
