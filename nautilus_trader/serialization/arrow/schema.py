@@ -17,6 +17,7 @@ import pyarrow as pa
 
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
@@ -384,6 +385,13 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_opened": pa.int64(),
             "ts_closed": pa.int64(),
             "ts_init": pa.int64(),
+        }
+    ),
+    InstrumentClosePrice: pa.schema(
+        {
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "close_type": pa.dictionary(pa.int8(), pa.string()),
+            "close_price": pa.float64(),
         }
     ),
 }
