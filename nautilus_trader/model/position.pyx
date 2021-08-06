@@ -428,6 +428,10 @@ cdef class Position:
         else:  # event.side == OrderSide.SELL:
             self._handle_sell_order_fill(fill)
 
+        # Set entry side
+        if self.side == PositionSide.FLAT:
+            self.entry = fill.side
+
         # Set quantities
         self.quantity = Quantity(abs(self.net_qty), self.size_precision)
         if self.quantity > self.peak_qty:
@@ -436,8 +440,12 @@ cdef class Position:
         # Set state
         if self.net_qty > 0:
             self.side = PositionSide.LONG
+            self.ts_closed = 0
+            self.duration_ns = 0
         elif self.net_qty < 0:
             self.side = PositionSide.SHORT
+            self.ts_closed = 0
+            self.duration_ns = 0
         else:
             self.side = PositionSide.FLAT
             self.ts_closed = fill.ts_event
