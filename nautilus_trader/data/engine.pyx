@@ -31,6 +31,7 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
 from cpython.datetime cimport timedelta
+from typing import Callable
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
@@ -119,7 +120,7 @@ cdef class DataEngine(Component):
 
         self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}               # type: dict[ClientId, DataClient]
-        self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[callable]]
+        self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[Callable[[Bar], None]]]
         self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
 
         # Counters

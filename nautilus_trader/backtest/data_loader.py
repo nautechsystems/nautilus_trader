@@ -175,9 +175,9 @@ class CSVParser(TextParser):
 
         Parameters
         ----------
-        parser : callable
+        parser : Callable
             The handler which takes byte strings and yields Nautilus objects.
-        line_preprocessor : callable
+        line_preprocessor : Callable
             Optional handler to clean log lines prior to processing by `parser`
         instrument_provider_update
             Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
@@ -301,7 +301,7 @@ class DataLoader:
             If compression is used. Defaults to 'infer' by file extension.
         instrument_provider : InstrumentProvider
             The instrument provider for the loader.
-        file_filter: callable
+        file_filter: Callable
             Optional filter to apply to file list (if glob_pattern is not enough)
         """
         self._path = path
