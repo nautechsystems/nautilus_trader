@@ -97,9 +97,9 @@ cdef class OrderInitialized(OrderEvent):
     """
     Represents an event where an order has been initialized.
 
-    This is a seed event which can instantiated any order through a creation
+    This is a seed event which can instantiate any order through a creation
     method. This event should contain enough information to be able to send it
-    'over the wire' and have a valid order instantiated with exactly the same
+    'over the wire' and have a valid order created with exactly the same
     properties as if it had been instantiated locally.
     """
 
