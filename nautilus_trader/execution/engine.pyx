@@ -635,21 +635,14 @@ cdef class ExecutionEngine(Component):
             return
 
         if oms_type == OMSType.HEDGING:
-            self._assign_hedging_position_id(fill)
+            if fill.position_id is not None:
+                # Already assigned
+                return
+            # Assign new position ID
+            fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
         elif oms_type == OMSType.NETTING:
-            self._assign_netting_position_id(fill)
-
-    cdef void _assign_hedging_position_id(self, OrderFilled fill) except *:
-        if fill.position_id is not None:
-            # Assigned by the trading venue
-            return
-
-        # Assign new position ID
-        fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
-
-    cdef void _assign_netting_position_id(self, OrderFilled fill) except *:
-        # Assign netted position ID singleton
-        fill.position_id = PositionId(f"{fill.instrument_id.value}-{fill.strategy_id.value}")
+            # Assign netted position ID singleton
+            fill.position_id = PositionId(f"{fill.instrument_id.value}-{fill.strategy_id.value}")
 
     cdef void _handle_order_fill(self, OrderFilled fill) except *:
         self._msgbus.publish_c(
@@ -761,16 +754,13 @@ cdef class ExecutionEngine(Component):
         # Close original position
         self._update_position(position, fill_split1)
 
-        cdef OMSType oms_type = self._oms_types.get(fill.strategy_id, OMSType.HEDGING)
-        cdef PositionId position_id_flip = None
-        # Generate position ID for flipped position
-        if oms_type == OMSType.HEDGING:
+        cdef PositionId position_id_flip = fill.position_id
+        if self._oms_types.get(fill.strategy_id, OMSType.HEDGING) == OMSType.HEDGING:
+            # Generate new position ID for flipped position
             position_id_flip = self._pos_id_generator.generate(
                 strategy_id=fill.strategy_id,
                 flipped=True,
             )
-        else:  # OMSType.NETTING
-            position_id_flip = fill.position_id
 
         # Generate order fill for flipped position
         cdef OrderFilled fill_split2 = OrderFilled(
