@@ -88,7 +88,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 - Testability
 - Modularity
 - Maintainability
-- Scalability
+- Deployability
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture.png?raw=true "")
 
