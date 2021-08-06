@@ -556,6 +556,7 @@ cdef class ExecutionEngine(Component):
             for client in self._clients.values():
                 if client.account_id == account.id and client.get_account() is None:
                     client.register_account(account)
+            self._log.info(f"Initialized {account}")
         else:
             account.apply(event=event)
             self._cache.update_account(account)
