@@ -91,8 +91,6 @@ cdef class ExecutionEngine(Component):
     cdef void _handle_account_event(self, AccountState event) except *
     cdef void _handle_order_event(self, OrderEvent event) except *
     cdef void _confirm_position_id(self, OrderFilled fill) except *
-    cdef void _assign_hedging_position_id(self, OrderFilled fill) except *
-    cdef void _assign_netting_position_id(self, OrderFilled fill) except *
     cdef void _handle_order_fill(self, OrderFilled fill) except *
     cdef void _open_position(self, OrderFilled fill) except *
     cdef void _update_position(self, Position position, OrderFilled fill) except *
