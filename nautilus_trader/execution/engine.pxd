@@ -18,6 +18,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -90,8 +91,8 @@ cdef class ExecutionEngine(Component):
     cdef void _handle_event(self, Event event) except *
     cdef void _handle_account_event(self, AccountState event) except *
     cdef void _handle_order_event(self, OrderEvent event) except *
-    cdef void _confirm_position_id(self, OrderFilled fill) except *
-    cdef void _handle_order_fill(self, OrderFilled fill) except *
-    cdef void _open_position(self, OrderFilled fill) except *
-    cdef void _update_position(self, Position position, OrderFilled fill) except *
-    cdef void _flip_position(self, Position position, OrderFilled fill) except *
+    cdef void _confirm_position_id(self, OrderFilled fill, OMSType oms_type) except *
+    cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *
+    cdef void _open_position(self, OrderFilled fill, OMSType oms_type) except *
+    cdef void _update_position(self, Position position, OrderFilled fill, OMSType oms_type) except *
+    cdef void _flip_position(self, Position position, OrderFilled fill, OMSType oms_type) except *

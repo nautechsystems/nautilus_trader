@@ -855,9 +855,6 @@ cdef class ExecutionClient:
                 instrument_id=fill.instrument_id,
             )
             if positions_open:
-                # Design-time invariant: netting OMS maintains a single position
-                # TODO(cs): Temporarily comment out for OMS netting experiments
-                # assert len(positions_open) == 1
                 position_id = positions_open[0].id
 
         # Determine any position

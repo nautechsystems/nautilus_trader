@@ -25,6 +25,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.core.time cimport unix_timestamp_us
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
@@ -1199,7 +1200,7 @@ cdef class Cache(CacheFacade):
             f"client_order_id={client_order_id}, "
             f"strategy_id={strategy_id}).")
 
-    cpdef void add_position(self, Position position) except *:
+    cpdef void add_position(self, Position position, OMSType oms_type) except *:
         """
         Add the given position to the cache.
 
@@ -1207,22 +1208,24 @@ cdef class Cache(CacheFacade):
         ----------
         position : Position
             The position to add.
+        oms_type : OMSType
+            The order management system type for the position.
 
         Raises
         ------
         ValueError
-            If position.id is already contained in the cache.
+            If oms_type is HEDGING and position.id is already contained in the cache.
         ValueError
-            If position.id is already contained in the index_positions.
+            If oms_type is HEDGING and position.id is already contained in the index_positions.
         ValueError
-            If position.id is already contained in the index_positions_open.
+            If oms_type is HEDGING and position.id is already contained in the index_positions_open.
 
         """
         Condition.not_none(position, "position")
-        # TODO(cs): Temporary to support NETTING OMS experiments
-        # Condition.not_in(position.id, self._positions, "position.id", "cached_positions")
-        # Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
-        # Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
+        if oms_type == OMSType.HEDGING:
+            Condition.not_in(position.id, self._positions, "position.id", "cached_positions")
+            Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
+            Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
 
         self._positions[position.id] = position
         self._index_positions.add(position.id)
