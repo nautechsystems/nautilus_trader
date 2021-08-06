@@ -174,7 +174,7 @@ cdef class MessageBus:
         ValueError
             If endpoint is not a valid string.
         ValueError
-            If handler is not of type callable.
+            If handler is not of type of type Callable.
         KeyError
             If endpoint already registered.
 
@@ -201,7 +201,7 @@ cdef class MessageBus:
         ValueError
             If endpoint is not a valid string.
         ValueError
-            If handler is not of type callable.
+            If handler is not of type Callable.
         KeyError
             If endpoint is not registered.
         ValueError
@@ -326,7 +326,7 @@ cdef class MessageBus:
         ValueError
             If topic is not a valid string.
         ValueError
-            If handler is not of type callable.
+            If handler is not of type Callable.
 
         Warnings
         --------
@@ -386,7 +386,7 @@ cdef class MessageBus:
         ValueError
             If topic is not a valid string.
         ValueError
-            If handler is not of type callable.
+            If handler is not of type Callable.
 
         """
         Condition.valid_string(topic, "topic")

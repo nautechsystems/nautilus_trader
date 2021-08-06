@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any, Callable, Dict
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
@@ -123,8 +125,8 @@ _OBJECT_FROM_DICT_MAP = {
 
 cpdef inline void register_serializable_object(
     object obj,
-    to_dict: callable,
-    from_dict: callable,
+    to_dict: Callable[[Any], Dict[str, Any]],
+    from_dict: Callable[[Dict[str, Any]], Any],
 ) except *:
     """
     Register the given object with the global serialization object maps.
@@ -133,15 +135,15 @@ cpdef inline void register_serializable_object(
     ----------
     obj : object
         The object to register.
-    to_dict : callable
+    to_dict : Callable[[Any], Dict[str, Any]]
         The delegate to instantiate a dict of primitive types from the object.
-    from_dict : callable
+    from_dict : Callable[[Dict[str, Any]], Any]
         The delegate to instantiate the object from a dict of primitive types.
 
     Raises
     ------
     TypeError
-        If `to_dict` or `from_dict` are not of type callable.
+        If `to_dict` or `from_dict` are not of type Callable.
     KeyError
         If obj already registered with the global object maps.
 

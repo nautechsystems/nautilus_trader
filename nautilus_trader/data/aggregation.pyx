@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Callable
+
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
@@ -241,7 +243,7 @@ cdef class BarAggregator:
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         Logger logger not None,
         bint use_previous_close,
     ):
@@ -254,7 +256,7 @@ cdef class BarAggregator:
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         logger : Logger
             The logger for the aggregator.
@@ -341,7 +343,7 @@ cdef class TickBarAggregator(BarAggregator):
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         Logger logger not None,
     ):
         """
@@ -353,7 +355,7 @@ cdef class TickBarAggregator(BarAggregator):
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         logger : Logger
             The logger for the aggregator.
@@ -391,7 +393,7 @@ cdef class VolumeBarAggregator(BarAggregator):
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         Logger logger not None,
     ):
         """
@@ -403,7 +405,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         logger : Logger
             The logger for the aggregator.
@@ -463,7 +465,7 @@ cdef class ValueBarAggregator(BarAggregator):
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         Logger logger not None,
     ):
         """
@@ -475,7 +477,7 @@ cdef class ValueBarAggregator(BarAggregator):
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         logger : Logger
             The logger for the aggregator.
@@ -551,7 +553,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         bint use_previous_close,
         Clock clock not None,
         Logger logger not None,
@@ -565,7 +567,7 @@ cdef class TimeBarAggregator(BarAggregator):
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         use_previous_close : bool
             If the previous close should set the next open.
@@ -756,7 +758,7 @@ cdef class BulkTickBarBuilder:
         Instrument instrument not None,
         BarType bar_type not None,
         Logger logger not None,
-        callback not None: callable,
+        callback not None: Callable[[Bar], None],
     ):
         """
         Initialize a new instance of the ``BulkTickBarBuilder`` class.
@@ -769,13 +771,13 @@ cdef class BulkTickBarBuilder:
             The bar_type to build.
         logger : Logger
             The logger for the bar aggregator.
-        callback : callable
-            The callback to send the built bars to.
+        callback : Callable[[Bar], None]
+            The delegate to call with the built bars.
 
         Raises
         ------
         ValueError
-            If callback is not of type callable.
+            If callback is not of type Callable.
         ValueError
             If instrument.id != bar_type.instrument_id.
 

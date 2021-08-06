@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any, Callable
+
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.uuid cimport UUID
@@ -142,7 +144,7 @@ cdef class DataRequest(Request):
         self,
         ClientId client_id not None,
         DataType data_type not None,
-        callback not None: callable,
+        callback not None: Callable[[Any], None],
         UUID request_id not None,
         int64_t ts_init,
     ):
@@ -155,8 +157,8 @@ cdef class DataRequest(Request):
             The data client ID for the request.
         data_type : type
             The data type for the request.
-        callback : callable
-            The callback to receive the data.
+        callback : Callable[[Any], None]
+            The delegate to call with the data.
         request_id : UUID
             The request ID.
         ts_init : int64

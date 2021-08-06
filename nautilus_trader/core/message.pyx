@@ -202,7 +202,7 @@ cdef class Request(Message):
         Parameters
         ----------
         callback : Callable[[Any], None]
-            The callback to receive the response.
+            The delegate to call with the response.
         request_id : UUID
             The request ID.
         ts_init : int64
