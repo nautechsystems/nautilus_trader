@@ -32,7 +32,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.book import OrderBookData
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.trading.strategy import TradingStrategy
 
@@ -81,6 +81,7 @@ class BetfairTestStrategy(TradingStrategy):
         self.market_width = market_width
         self._in_flight = set()  # type: ignore
         self._state = "START"
+        self.book: Optional[OrderBook] = None
 
     def on_start(self):
         """Actions to be performed on strategy start."""
@@ -108,14 +109,14 @@ class BetfairTestStrategy(TradingStrategy):
                 level=BookLevel.L2,
             )
 
-    def on_order_book_delta(self, delta: OrderBookDelta):
+    def on_order_book_delta(self, delta: OrderBookData):
         """
         Actions to be performed when the strategy is running and receives an order book.
 
         Parameters
         ----------
-        delta : OrderBookDelta
-            The order book received.
+        delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
+            The order book delta received.
 
         """
         # self.log.debug(

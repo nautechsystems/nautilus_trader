@@ -85,11 +85,11 @@ cdef class TradingStrategy(Actor):
     An individual trading strategy can configure its own order management system
     type which determines how positions are handled by the `ExecutionEngine`.
 
-    - OMSType.HEDGING: position IDs will be assigned for each new position
+    - OMSType.HEDGING: A position ID will be assigned for each new position
     which is opened - per instrument.
 
-    - OMSType.NETTING: there should only ever be a single position per instrument.
-    The position ID will always be `{instrument_id}-{strategy_id}`.
+    - OMSType.NETTING: There will only ever be a single position for the strategy
+    per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
     """
 
     def __init__(
