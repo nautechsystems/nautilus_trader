@@ -716,6 +716,95 @@ class TestPosition:
             == "Position(LONG 19.00000 ETH/USDT.BINANCE, id=P-19700101-000000-000-001-1)"
         )
 
+    def test_position_closed_and_reopened_returns_expected_attributes(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(150000),
+        )
+
+        fill1 = TestStubs.event_order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00001"),
+            ts_filled_ns=1_000_000_000,
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+
+        fill2 = OrderFilled(
+            self.trader_id,
+            StrategyId("S-001"),
+            self.account_id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("2"),
+            ExecutionId("E2"),
+            PositionId("P-123456"),
+            OrderSide.SELL,
+            OrderType.MARKET,
+            order.quantity,
+            Price.from_str("1.00011"),
+            AUDUSD_SIM.quote_currency,
+            Money(0, USD),
+            LiquiditySide.TAKER,
+            uuid4(),
+            2_000_000_000,
+            0,
+        )
+
+        position.apply(fill2)
+
+        fill3 = OrderFilled(
+            self.trader_id,
+            StrategyId("S-001"),
+            self.account_id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("2"),
+            ExecutionId("E3"),
+            PositionId("P-123456"),
+            OrderSide.BUY,
+            OrderType.MARKET,
+            order.quantity,
+            Price.from_str("1.00012"),
+            AUDUSD_SIM.quote_currency,
+            Money(0, USD),
+            LiquiditySide.TAKER,
+            uuid4(),
+            3_000_000_000,
+            0,
+        )
+
+        # Act
+        position.apply(fill3)
+
+        # Assert
+        last = Price.from_str("1.00030")
+        assert position.is_opposite_side(fill2.side)
+        assert position.quantity == Quantity.from_int(150000)
+        assert position.side == PositionSide.LONG
+        assert position.ts_opened == 1_000_000_000
+        assert position.duration_ns == 0
+        assert position.avg_px_open == Decimal("1.00001")
+        assert position.event_count == 3
+        assert position.ts_closed == 0
+        assert position.avg_px_close == Decimal("1.00011")
+        assert position.is_long
+        assert position.is_open
+        assert not position.is_short
+        assert not position.is_closed
+        assert position.realized_points == Decimal("0.00010")
+        assert position.realized_return == Decimal("0.00009999900000999990000099999000")
+        assert position.realized_pnl == Money(12.00, USD)
+        assert position.unrealized_pnl(last) == Money(43.50, USD)
+        assert position.total_pnl(last) == Money(55.50, USD)
+        assert position.commissions() == [Money(3.00, USD)]
+        assert repr(position) == "Position(LONG 150_000 AUD/USD.SIM, id=P-123456)"
+
     def test_position_realised_pnl_with_interleaved_order_sides(self):
         # Arrange
         order1 = self.order_factory.market(
