@@ -23,11 +23,6 @@ import pandas as pd
 from pandas import DataFrame
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.parsing import on_market_update
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
-from nautilus_trader.backtest.data_loader import DataLoader
-from nautilus_trader.backtest.data_loader import TextParser
 from nautilus_trader.backtest.loaders import CSVBarDataLoader
 from nautilus_trader.backtest.loaders import CSVTickDataLoader
 from nautilus_trader.backtest.loaders import ParquetTickDataLoader
@@ -238,23 +233,23 @@ class TestDataProvider:
             if market_id in str(f)
         ]
 
-    @staticmethod
-    def betfair_feed_parsed(market_id="1.166564490", folder="data"):
-        instrument_provider = BetfairInstrumentProvider.from_instruments([])
-        parser = TextParser(
-            parser=lambda x, state: on_market_update(
-                instrument_provider=instrument_provider, update=orjson.loads(x)
-            ),
-            instrument_provider_update=historical_instrument_provider_loader,
-        )
-        loader = DataLoader(
-            path=f"{PACKAGE_ROOT}/{folder}",
-            parser=parser,
-            glob_pattern=f"{market_id}*",
-            instrument_provider=instrument_provider,
-        )
-        data = sum(loader.run(), list())
-        return data
+    # @staticmethod
+    # def betfair_feed_parsed(market_id="1.166564490", folder="data"):
+    #     instrument_provider = BetfairInstrumentProvider.from_instruments([])
+    #     parser = TextReader(
+    #         parser=lambda x, state: on_market_update(
+    #             instrument_provider=instrument_provider, update=orjson.loads(x)
+    #         ),
+    #         instrument_provider_update=historical_instrument_provider_loader,
+    #     )
+    # loader = DataLoader(
+    #     path=f"{PACKAGE_ROOT}/{folder}",
+    #     parser=parser,
+    #     glob_pattern=f"{market_id}*",
+    #     instrument_provider=instrument_provider,
+    # )
+    # data = sum(loader.run(), list())
+    # return data
 
     @staticmethod
     def betfair_trade_ticks():

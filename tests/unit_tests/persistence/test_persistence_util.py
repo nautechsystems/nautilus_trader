@@ -37,8 +37,8 @@ def test_merge_queues():
 def test_executor_process(executor_cls):
     def process(name: str, count: int):
         for chunk in range(count):
-            time.sleep(random.random() / 5)  # Simulate loading / processing some data
-            yield f"{name}-{chunk}"
+            time.sleep(random.random() / 5)  # Simulate loading / processing some data # noqa: S311
+            yield {"x": f"{name}-{chunk}"}
 
     results = []
 
@@ -58,4 +58,4 @@ def test_executor_process(executor_cls):
     # Ensure no chunks arrive out of order
     for key in ("a", "b", "c"):
         values = [x for x in results if x.startswith(key)]
-        assert values == sorted(values)
+        assert values and values == sorted(values)

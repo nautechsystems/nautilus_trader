@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import re
+from typing import Dict, List, Optional
+
+import pandas as pd
 
 from nautilus_trader.model.data.base import Data
 
@@ -65,13 +68,21 @@ def is_nautilus_class(cls):
         return is_data_subclass and is_nautilus_builtin
 
 
-def clean_partition_cols(df, partition_cols=None, cls=None):
+def check_partition_columns(
+    df: pd.DataFrame, partition_columns: Optional[List[str]], cls: type
+) -> Dict[str, Dict[str, str]]:
     """
-    The values in `partition_cols` may have characters that are illegal in filenames. Strip them out and return a
-    mapping we can write into a parquet file so that they can be reloaded correctly.
+    When writing a parquet dataset, parquet uses the values in `partition_columns` as part of the filename. The values
+    in `df` could potentially contain illegal characters. This function generates a mapping of {illegal: legal} that is
+    used to "clean" the values before they are written to the filename (and also saving this mapping for reversing the
+    process on reload)
     """
+    if partition_columns:
+        missing = [c for c in partition_columns if c not in df.columns]
+        assert not missing, f"Dataframe for {cls} missing partition_colums: {missing}"
+
     mappings = {}
-    for col in partition_cols or []:
+    for col in partition_columns or []:
         values = list(map(str, df[col].unique()))
         invalid_values = {val for val in values if any(x in val for x in INVALID_WINDOWS_CHARS)}
         if invalid_values:
@@ -79,16 +90,23 @@ def clean_partition_cols(df, partition_cols=None, cls=None):
                 # We have control over how instrument_ids are retrieved from the cache, so we can do this replacement
                 val_map = {k: clean_key(k) for k in values}
                 mappings[col] = val_map
-                df.loc[:, col] = df[col].map(val_map)
-
             else:
                 # We would be arbitrarily replacing values here which could break queries, we should not do this.
                 raise ValueError(
                     f"Some values in partition column [{col}] contain invalid characters: {invalid_values}"
                 )
-    if partition_cols:
-        assert all([c in df.columns for c in partition_cols]), f"Missing col for {cls}"
-    return df, mappings
+
+    return mappings
+
+
+def clean_partition_cols(df, mappings: Dict[str, Dict[str, str]]):
+    """
+    The values in `partition_cols` may have characters that are illegal in filenames. Strip them out and return a
+    dataframe we can write into a parquet file.
+    """
+    for col, val_map in mappings.items():
+        df.loc[:, col] = df[col].map(val_map)
+    return df
 
 
 def clean_key(s):

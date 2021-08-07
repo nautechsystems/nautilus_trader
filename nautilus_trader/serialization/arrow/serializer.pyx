@@ -30,7 +30,6 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.serialization.base cimport _OBJECT_FROM_DICT_MAP
 from nautilus_trader.serialization.base cimport _OBJECT_TO_DICT_MAP
 
-from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.serialization.arrow.implementations import account_state
 from nautilus_trader.serialization.arrow.implementations import order_book
 from nautilus_trader.serialization.arrow.implementations import order_events
@@ -51,11 +50,27 @@ def get_partition_keys(cls: type):
 
 
 def get_schema(cls: type):
-    return _SCHEMAS[cls]
+    return _SCHEMAS[get_cls_table(cls)]
+
+
+def list_schemas():
+    return _SCHEMAS
 
 
 def get_cls_table(cls: type):
     return _CLS_TO_TABLE.get(cls, cls)
+
+
+def _clear_all(**kwargs):
+    """
+    Used for testing
+    """
+    global _CLS_TO_TABLE, _SCHEMAS, _PARTITION_KEYS, _CHUNK
+    if kwargs.get("force", False):
+        _PARTITION_KEYS = {}
+        _SCHEMAS = {}
+        _CLS_TO_TABLE = {}  # type: dict[type, type]
+        _CHUNK = set()
 
 
 def register_parquet(
@@ -115,7 +130,7 @@ def register_parquet(
     if partition_keys is not None:
         _PARTITION_KEYS[cls] = partition_keys
     if schema is not None:
-        _SCHEMAS[cls] = schema
+        _SCHEMAS[table or cls] = schema
     if chunk:
         _CHUNK.add(cls)
     _CLS_TO_TABLE[cls] = table or cls
@@ -168,7 +183,7 @@ for cls in OrderBookData.__subclasses__():
         cls=cls,
         serializer=order_book.serialize,
         deserializer=order_book.deserialize,
-        table=OrderBookDelta,
+        table=OrderBookData,
         chunk=True,
     )
 

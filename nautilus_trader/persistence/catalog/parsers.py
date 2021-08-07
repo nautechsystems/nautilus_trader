@@ -12,54 +12,89 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from collections import namedtuple
+import inspect
+import pathlib
 from io import BytesIO
-from typing import Callable, Generator
+from typing import Callable, Generator, List, Optional, Union
 
+import fsspec
 import pandas as pd
 
+from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.serialization.arrow.util import identity
 
 
-NewFile = namedtuple("NewFile", "name")
-EOStream = namedtuple("EOStream", "")
-
-
-class ByteParser:
-    """
-    The base class for all byte string parsers.
-    """
-
+class Reader:
     def __init__(
         self,
+        instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Callable = None,
     ):
         """
-        Initialize a new instance of the ``ByteParser`` class.
+        Provides parsing of raw byte chunks to Nautilus objects.
         """
+        self.instrument_provider = instrument_provider
         self.instrument_provider_update = instrument_provider_update
+        self.buffer = b""
 
-    def read(self, stream: Generator, instrument_provider=None) -> Generator:
+    def check_instrument_provider(self, data: Union[bytes, str]):
+        if self.instrument_provider_update is not None:
+            assert (
+                self.instrument_provider is not None
+            ), "Passed `instrument_provider_update` but `instrument_provider` was None"
+            r = self.instrument_provider_update(self.instrument_provider, data)
+            # Check the user hasn't accidentally used a generator here also
+            if isinstance(r, Generator):
+                raise Exception(f"{self.instrument_provider_update} func should not be generator")
+
+    def parse(self, chunk: bytes):
         raise NotImplementedError
 
 
-class TextParser(ByteParser):
-    """
-    Provides parsing of byte strings to Nautilus objects.
-    """
-
+class ByteReader(Reader):
     def __init__(
         self,
-        parser: Callable,
-        line_preprocessor: Callable = None,
+        byte_parser: Callable,
+        instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Callable = None,
     ):
         """
-        Initialize a new instance of the ``TextParser`` class.
+        A Reader subclass for reading chunks of raw bytes; `byte_parser` will be passed a chunk of raw bytes.
 
         Parameters
         ----------
-        parser : Callable
+        byte_parser : Callable
+            The handler which takes a chunk of bytes and yields Nautilus objects.
+        instrument_provider_update : Callable , optional
+            An optional hook/callable to update instrument provider before data is passed to `byte_parser`
+            (in many cases instruments need to be known ahead of parsing).
+        """
+        super().__init__(
+            instrument_provider_update=instrument_provider_update,
+            instrument_provider=instrument_provider,
+        )
+        assert inspect.isgeneratorfunction(byte_parser)
+        self.parser = byte_parser
+
+    def parse(self, chunk: bytes) -> Generator:
+        self.check_instrument_provider(data=chunk)
+        return self.parser(chunk)
+
+
+class TextReader(ByteReader):
+    def __init__(
+        self,
+        line_parser: Callable,
+        line_preprocessor: Callable = None,
+        instrument_provider: Optional[InstrumentProvider] = None,
+        instrument_provider_update: Callable = None,
+    ):
+        """
+        A Reader subclass for reading lines of a text-like file; `line_parser` will be passed a single row of bytes.
+
+        Parameters
+        ----------
+        line_parser : Callable
             The handler which takes byte strings and yields Nautilus objects.
         line_preprocessor : Callable, optional
             The context manager for preprocessing (cleaning log lines) of lines
@@ -71,104 +106,82 @@ class TextParser(ByteParser):
             data is passed to `line_parser` (in many cases instruments need to
             be known ahead of parsing).
         """
-        super().__init__(instrument_provider_update=instrument_provider_update)
-
-        self.parser = parser
+        super().__init__(
+            instrument_provider_update=instrument_provider_update,
+            byte_parser=line_parser,
+            instrument_provider=instrument_provider,
+        )
         self.line_preprocessor = line_preprocessor or identity
-        self.state = None
 
-    def on_new_file(self, new_file):
-        pass
+    def parse(self, chunk) -> Generator:  # noqa: C901
+        self.buffer += chunk
+        if b"\n" in chunk:
+            process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
+        else:
+            process, self.buffer = chunk, b""
+        if process:
+            yield from self.process_chunk(chunk=process)
 
-    def read(self, stream: Generator, instrument_provider=None) -> Generator:  # noqa: C901
-        raw = b""
-        fn = None
-        for chunk in stream:
-            if isinstance(chunk, NewFile):
-                # New file, yield any remaining data, reset bytes
-                assert not raw, f"Data remaining at end of file: {fn}"
-                fn = chunk.name
-                raw = b""
-                self.on_new_file(chunk)
-                yield chunk
-                continue
-            elif isinstance(chunk, EOStream):
-                yield chunk
-                return
-            elif chunk is None:
-                yield
-                continue
-            if chunk == b"":
-                # This is probably EOF? Append a newline to ensure we emit the previous line
-                chunk = b"\n"
-            raw += chunk
-            process, raw = raw.rsplit(b"\n", maxsplit=1)
-            if process:
-                for x in self.process_chunk(chunk=process, instrument_provider=instrument_provider):
-                    try:
-                        x, self.state = x
-                    except TypeError as e:
-                        if not e.args[0].startswith("cannot unpack non-iterable"):
-                            raise e
-                    yield x
-
-    def process_chunk(self, chunk, instrument_provider):
+    def process_chunk(self, chunk):
         for line in map(self.line_preprocessor, chunk.split(b"\n")):
-            if self.instrument_provider_update is not None:
-                # Check the user hasn't accidentally used a generator here also
-                r = self.instrument_provider_update(instrument_provider, line)
-                if isinstance(r, Generator):
-                    raise Exception(
-                        f"{self.instrument_provider_update} func should not be generator"
-                    )
-            yield from self.parser(line, state=self.state)
+            self.check_instrument_provider(data=line)
+            yield from self.parser(line)
 
 
-class CSVParser(TextParser):
+class CSVReader(Reader):
     """
     Provides parsing of CSV formatted bytes strings to Nautilus objects.
     """
 
     def __init__(
         self,
-        parser: Callable,
-        line_preprocessor=None,
+        chunk_parser: Callable,
+        instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update=None,
+        chunked=True,
+        as_dataframe=False,
     ):
         """
-        Initialize a new instance of the ``CSVParser`` class.
+        Initialize a new instance of the ``CSVReader`` class.
 
         Parameters
         ----------
-        parser : callable
+        chunk_parser : callable
             The handler which takes byte strings and yields Nautilus objects.
-        line_preprocessor : callable
-            Optional handler to clean log lines prior to processing by `parser`
         instrument_provider_update
             Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
+        chunked: bool, default=True
+            If chunked=False, each CSV line will be passed to `chunk_parser` individually, if chunked=True, the data
+            passed will potentially contain many lines (a chunk).
+        as_dataframe: bool, default=False
+            If as_dataframe=True, the passes chunk will be parsed into a DataFrame before passing to `chunk_parser`
 
         """
         super().__init__(
-            parser=parser,
-            line_preprocessor=line_preprocessor,
+            instrument_provider=instrument_provider,
             instrument_provider_update=instrument_provider_update,
         )
-        self.header = None
+        self.chunk_parser = chunk_parser
+        self.header: Optional[List[str]] = None
+        self.chunked = chunked
+        self.as_dataframe = as_dataframe
 
-    def on_new_file(self, new_file):
-        self.header = None
-
-    def process_chunk(self, chunk, instrument_provider):
+    def parse(self, chunk: bytes):
         if self.header is None:
             header, chunk = chunk.split(b"\n", maxsplit=1)
             self.header = header.decode().split(",")
-        df = pd.read_csv(BytesIO(chunk), names=self.header)
+
+        self.buffer += chunk
+        process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
+
+        if self.as_dataframe:
+            process = pd.read_csv(BytesIO(process), names=self.header)
         if self.instrument_provider_update is not None:
-            self.instrument_provider_update(instrument_provider, df)
-        yield from self.parser(df, state=self.state)
+            self.instrument_provider_update(self.instrument_provider, process)
+        yield from self.chunk_parser(process)
 
 
-class ParquetParser(ByteParser):
+class ParquetReader(ByteReader):
     """
     Provides parsing of parquet specification bytes to Nautilus objects.
     """
@@ -177,6 +190,7 @@ class ParquetParser(ByteParser):
         self,
         data_type: str,
         parser: Callable = None,
+        instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update=None,
     ):
         """
@@ -193,34 +207,59 @@ class ParquetParser(ByteParser):
         data_types = ("quote_ticks", "trade_ticks")
         assert data_type in data_types, f"data_type must be one of {data_types}"
         super().__init__(
+            byte_parser=parser,
             instrument_provider_update=instrument_provider_update,
+            instrument_provider=instrument_provider,
         )
         self.parser = parser
         self.filename = None
         self.data_type = data_type
 
-    def read(self, stream: Generator, instrument_provider=None) -> Generator:
-        for chunk in stream:
-            if isinstance(chunk, NewFile):
-                self.filename = chunk.name
-                if self.instrument_provider_update is not None:
-                    self.instrument_provider_update(instrument_provider, chunk)
+    def parse(self, chunk: bytes, instrument_provider=None) -> Generator:
+        df = pd.read_parquet(BytesIO(chunk))
+        if self.instrument_provider_update is not None:
+            self.instrument_provider_update(
+                instrument_provider=instrument_provider,
+                df=df,
+                filename=self.filename,
+            )
+        yield from self.parser(data_type=self.data_type, df=df, filename=self.filename)
+
+
+class RawFile(fsspec.core.OpenFile):
+    def __init__(self, fs: fsspec.AbstractFileSystem, path: str, chunk_size: int, **kwargs):
+        """
+        A subclass of fsspec.OpenFile than can be read in chunks
+        """
+        super().__init__(fs=fs, path=path, **kwargs)
+        self.name = pathlib.Path(path).name
+        self.chunk_size = chunk_size
+        self._reader: Optional[Reader] = None
+
+    @property
+    def reader(self):
+        return self._reader
+
+    @reader.setter
+    def reader(self, reader: Reader):
+        assert isinstance(reader, Reader)
+        self._reader = reader
+
+    def __iter__(self):
+        return self
+
+    def iter_raw(self):
+        with self.open() as f:
+            f.seek(0, 2)
+            end = f.tell()
+            f.seek(0)
+            while f.tell() < end:
+                chunk = f.read(self.chunk_size)
                 yield chunk
-            elif isinstance(chunk, EOStream):
-                self.filename = None
-                yield chunk
-                return
-            elif chunk is None:
-                yield
-            elif isinstance(chunk, bytes):
-                if len(chunk):
-                    df = pd.read_parquet(BytesIO(chunk))
-                    if self.instrument_provider_update is not None:
-                        self.instrument_provider_update(
-                            instrument_provider=instrument_provider,
-                            df=df,
-                            filename=self.filename,
-                        )
-                    yield from self.parser(data_type=self.data_type, df=df, filename=self.filename)
-            else:
-                raise TypeError
+
+    def iter_parsed(self):
+        for chunk in self.iter_raw():
+            parsed = []
+            for p in self.reader.parse(chunk):
+                parsed.append(p)
+            yield parsed

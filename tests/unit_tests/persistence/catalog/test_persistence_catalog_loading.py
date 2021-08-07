@@ -1,24 +1,14 @@
 # import os
+import os
 import pathlib
 import sys
 
-# from decimal import Decimal
-# from functools import partial
-#
-# import fsspec.implementations.memory
-# import orjson
-import pandas as pd
-
 # import pyarrow.dataset as ds
 # import pyarrow.parquet as pq
+import orjson
 import pytest
 
-# from nautilus_trader.adapters.betfair.data import on_market_update
-# from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-# from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
-# from nautilus_trader.common.providers import InstrumentProvider
-# from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.data.wrangling import QuoteTickDataWrangler
+from nautilus_trader.adapters.betfair.parsing import on_market_update
 
 # from nautilus_trader.data.wrangling import TradeTickDataWrangler
 # from nautilus_trader.model import currencies
@@ -33,15 +23,30 @@ from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 # from nautilus_trader.model.objects import Quantity
 # from nautilus_trader.serialization.arrow.serializer import register_parquet
 # from nautilus_trader.persistence.catalog.core import DataCatalog
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
+from nautilus_trader.persistence.catalog.loading import load
 from nautilus_trader.persistence.catalog.loading import process_files
-from nautilus_trader.persistence.catalog.parsers import CSVParser
+from nautilus_trader.persistence.catalog.parsers import CSVReader
+from nautilus_trader.persistence.catalog.parsers import TextReader
 
 # from nautilus_trader.persistence.catalog.parsers import ParquetParser
 # from nautilus_trader.persistence.catalog.parsers import TextParser
 from nautilus_trader.persistence.catalog.scanner import scan
 from nautilus_trader.persistence.util import SyncExecutor
 from tests.test_kit import PACKAGE_ROOT
-from tests.test_kit.providers import TestInstrumentProvider
+
+
+# from decimal import Decimal
+# from functools import partial
+#
+# import fsspec.implementations.memory
+# import orjson
+# from nautilus_trader.adapters.betfair.data import on_market_update
+# from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+# from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
+# from nautilus_trader.common.providers import InstrumentProvider
+# from nautilus_trader.core.datetime import millis_to_nanos
 
 
 # from numpy import dtype
@@ -56,54 +61,48 @@ TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 
 
+@pytest.fixture(autouse=True)
+def nautilus_dir():
+    os.environ["NAUTILUS_DATA"] = "memory:///"
+
+
 @pytest.fixture
 def executor():
     return SyncExecutor()
 
 
-class CSVWrangler:
-    pass
+# TODO add some simpler tests
 
 
-def test_loader(executor):
-    def parse_csv(data, state=None):
-        if data is None:
-            return
-        data.loc[:, "timestamp"] = pd.to_datetime(data["timestamp"])
-        wrangler = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy(
-                "AUD/USD"
-            ),  # Normally we would properly parse this
-            data_quotes=data.set_index("timestamp"),
-        )
-        wrangler.pre_process(0)
-        return wrangler.build_ticks()
-
+def test_process_files_csv(executor, get_parser):
     files = scan(path=TEST_DATA_DIR, glob_pattern="truefx*.csv", chunk_size=100000)
-    parser = CSVParser(parser=parse_csv)
-    data = process_files(files, parser=parser, executor=executor)
-    assert len(data) == 1
+    reader = CSVReader(chunk_parser=get_parser("parse_csv_quotes"), as_dataframe=True)
+    data = process_files(files, reader=reader, executor=executor)
+    assert len(data) == 2
 
 
-# def test_data_loader_json_betting_parser():
-#     instrument_provider = BetfairInstrumentProvider.from_instruments([])
-#
-#     parser = TextParser(
-#         parser=lambda x, state: on_market_update(
-#             instrument_provider=instrument_provider, update=orjson.loads(x)
-#         ),
-#         instrument_provider_update=historical_instrument_provider_loader,
-#     )
-#     loader = DataLoader(
-#         path=TEST_DATA_DIR,
-#         parser=parser,
-#         glob_pattern="**.bz2",
-#         instrument_provider=instrument_provider,
-#     )
-#     assert len(loader.path) == 3
-#
-#     data = [x for y in loader.run() for x in y]
-#     assert len(data) == 30829
+def test_load_text_betfair():
+    instrument_provider = BetfairInstrumentProvider.from_instruments([])
+
+    def betfair_parser(chunk):
+        update = orjson.loads(chunk)
+        results = on_market_update(instrument_provider=instrument_provider, update=update)
+        yield from results
+
+    reader = TextReader(
+        line_parser=betfair_parser,
+        instrument_provider=instrument_provider,
+        instrument_provider_update=historical_instrument_provider_loader,
+    )
+    files = load(
+        path=TEST_DATA_DIR,
+        reader=reader,
+        glob_pattern="**.bz2",
+        instrument_provider=instrument_provider,
+    )
+    assert files == {"": 30829}
+
+
 #
 #
 # def test_data_loader_parquet():

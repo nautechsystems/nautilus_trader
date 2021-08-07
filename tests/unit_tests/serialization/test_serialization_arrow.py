@@ -18,8 +18,6 @@ import sys
 
 import pytest
 
-from nautilus_trader.backtest.data_loader import DataCatalog
-from nautilus_trader.backtest.data_loader import class_to_filename
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.c_enums.book_level import BookLevel
@@ -32,11 +30,20 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.position import Position
+from nautilus_trader.persistence.catalog.core import DataCatalog
+from nautilus_trader.serialization.arrow.serializer import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
+from nautilus_trader.serialization.arrow.serializer import _clear_all
+from nautilus_trader.serialization.arrow.serializer import get_cls_table
+from nautilus_trader.serialization.arrow.serializer import get_schema
+from nautilus_trader.serialization.arrow.serializer import list_schemas
+from nautilus_trader.serialization.arrow.serializer import register_parquet
+from nautilus_trader.serialization.arrow.util import class_to_filename
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -390,3 +397,31 @@ class TestParquetSerializer:
         self.catalog._write_chunks([event])
         df = self.catalog._query(class_to_filename(cls))
         assert len(df) == 1
+
+    def test_table_and_schema_mappings(self):
+        # Test get_cls_table
+        assert get_cls_table(OrderBookSnapshot) == OrderBookData
+        assert get_cls_table(OrderBookDeltas) == OrderBookData
+        assert get_cls_table(OrderBookDelta) == OrderBookData
+
+        # Test schemas
+        schema = get_schema(OrderBookData)
+        assert get_schema(OrderBookSnapshot) == schema
+        assert get_schema(OrderBookDeltas) == schema
+
+    def test_table_and_schema_registry(self):
+        # Setup
+        _clear_all(force=True)
+        assert list_schemas() == {}
+
+        # Register OrderBookData subclasses
+        for cls in OrderBookData.__subclasses__():
+            register_parquet(
+                cls=cls,
+                schema=NAUTILUS_PARQUET_SCHEMA[OrderBookData],
+                table=OrderBookDelta,
+                chunk=True,
+            )
+        assert list(list_schemas()) == [OrderBookDelta]
+        assert get_cls_table(OrderBookSnapshot) == OrderBookDelta
+        assert get_schema(OrderBookSnapshot) == get_schema(OrderBookDelta)

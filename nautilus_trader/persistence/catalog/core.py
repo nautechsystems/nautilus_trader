@@ -33,7 +33,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
-from nautilus_trader.serialization.arrow.serializer import get_partition_keys
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
 from nautilus_trader.serialization.arrow.util import class_to_filename
@@ -61,7 +60,6 @@ class DataCatalog:
         self.fs = fsspec.filesystem(fs_protocol)
         self.path = pathlib.Path(path)
         self._processed_files_fn = str(self.path / ".processed_raw_files.json")
-        self._partition_keys = get_partition_keys()
 
     @classmethod
     def from_env(cls):

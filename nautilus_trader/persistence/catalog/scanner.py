@@ -12,22 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import pathlib
+
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
 from typing import Callable, List
 
 import fsspec
-import orjson
 from tqdm import tqdm
 
-from nautilus_trader.persistence.catalog.parsers import EOStream
-from nautilus_trader.persistence.catalog.parsers import NewFile
-from nautilus_trader.persistence.util import get_catalog_fs
+from nautilus_trader.persistence.catalog.metadata import load_processed_raw_files
+from nautilus_trader.persistence.catalog.parsers import RawFile
 from nautilus_trader.serialization.arrow.util import identity
-
-
-PROCESSED_FILES_FN = ".processed_raw_files.json"
 
 
 def _resolve_path(fs, path: str, glob_pattern):
@@ -44,29 +39,8 @@ def _resolve_path(fs, path: str, glob_pattern):
         raise ValueError("path argument must be str and a valid directory or file")
 
 
-class ChunkedFile(fsspec.core.OpenFile):
-    def __init__(self, fs: fsspec.AbstractFileSystem, path: str, chunk_size: int, **kwargs):
-        """
-        A subclass of fsspec.OpenFile than can be read in chunks
-        """
-        super().__init__(fs=fs, path=path, **kwargs)
-        self.name = pathlib.Path(path).name
-        self.chunk_size = chunk_size
-
-    def iter_chunks(self):
-        with self.open() as f:
-            f.seek(0, 2)
-            end = f.tell()
-            f.seek(0)
-            yield NewFile(self.name)
-            while f.tell() < end:
-                chunk = f.read(self.chunk_size)
-                yield chunk
-            yield EOStream()
-
-
 def _scan(fs: fsspec.AbstractFileSystem, path: str, chunk_size: int, **kwargs):
-    return ChunkedFile(fs=fs, path=path, chunk_size=chunk_size, **kwargs)
+    return RawFile(fs=fs, path=path, chunk_size=chunk_size, **kwargs)
 
 
 def _scan_threaded(
@@ -77,7 +51,7 @@ def _scan_threaded(
     chunk_size: int = -1,
     file_filter: Callable = None,
     executor=None,
-) -> List[ChunkedFile]:
+) -> List[RawFile]:
     """
     Scan `fs` filesystem `paths`, and return a list of `ChunkedFiles`
     """
@@ -117,7 +91,7 @@ def scan(
     file_filter: Callable = None,
     executor=None,
     skip_already_processed=True,
-) -> List[ChunkedFile]:
+) -> List[RawFile]:
     """
     Scan `path` using `glob_pattern` and generate a list files to be loaded into the data catalog.
 
@@ -156,21 +130,3 @@ def scan(
         executor=executor,
         compression=compression,
     )
-
-
-# TODO(bm): We should save a hash of the contents alongside the filename to check for changes
-def save_processed_raw_files(files: List[str]):
-    fs = get_catalog_fs()
-    existing = load_processed_raw_files()
-    new = set(files + existing)
-    with fs.open(PROCESSED_FILES_FN, "wb") as f:
-        return f.write(orjson.dumps(sorted(new)))
-
-
-def load_processed_raw_files():
-    fs = get_catalog_fs()
-    if fs.exists(PROCESSED_FILES_FN):
-        with fs.open(PROCESSED_FILES_FN, "rb") as f:
-            return orjson.loads(f.read())
-    else:
-        return []
