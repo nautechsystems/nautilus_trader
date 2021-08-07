@@ -18,11 +18,10 @@ The `ExecutionEngine` is the central component of the entire execution stack.
 
 The execution engines primary responsibility is to orchestrate interactions
 between the `ExecutionClient` instances, and the rest of the platform. This
-includes sending commands to, and receiving events from, the particular venue
+includes sending commands to, and receiving events from, the trading venue
 endpoints via its registered execution clients.
 
-Beneath it sits an `ExecutionCache` which presents a read-only facade for
-consumers. The engine employs a simple fan-in fan-out messaging pattern to execute
+The engine employs a simple fan-in fan-out messaging pattern to execute
 `TradingCommand` messages, and process `AccountState` or `OrderEvent` type
 messages.
 
@@ -376,14 +375,14 @@ cdef class ExecutionEngine(Component):
     cpdef void _start(self) except *:
         cdef ExecutionClient client
         for client in self._clients.values():
-            client.connect()
+            client.start()
 
         self._on_start()
 
     cpdef void _stop(self) except *:
         cdef ExecutionClient client
         for client in self._clients.values():
-            client.disconnect()
+            client.stop()
 
         self._on_stop()
 

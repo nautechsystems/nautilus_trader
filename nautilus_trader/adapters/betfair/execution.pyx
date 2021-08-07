@@ -154,7 +154,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.published_executions = defaultdict(list)  # type: Dict[ClientOrderId, ExecutionId]
         self._account_currency = None
 
-    cpdef void connect(self) except *:
+    cpdef void _start(self) except *:
         self._loop.create_task(self._connect())
 
     async def _connect(self):
@@ -170,8 +170,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.is_connected = True
         self._log.info("Connected.")
 
-    cpdef void disconnect(self) except *:
-        """ Disconnect the client """
+    cpdef void _stop(self) except *:
         self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):

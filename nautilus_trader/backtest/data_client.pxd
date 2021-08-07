@@ -18,8 +18,8 @@ from nautilus_trader.data.client cimport MarketDataClient
 
 
 cdef class BacktestDataClient(DataClient):
-    cdef bint _is_connected
+    pass
 
 
 cdef class BacktestMarketDataClient(MarketDataClient):
-    cdef bint _is_connected
+    pass

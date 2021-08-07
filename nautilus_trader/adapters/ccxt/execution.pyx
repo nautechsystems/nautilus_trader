@@ -151,10 +151,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._cached_orders = {}  # type: {VenueOrderId: Order}
         self._cached_filled = {}  # type: {VenueOrderId: Decimal}
 
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
+    cpdef void _start(self) except *:
         self._log.info("Connecting...")
 
         # Re-cache orders
@@ -355,10 +352,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         return reports
 
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+    cpdef void _stop(self) except *:
         self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):

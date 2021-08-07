@@ -43,7 +43,7 @@ cdef class CacheDatabase:
             The logger for the database.
 
         """
-        self._log = LoggerAdapter(component=type(self).__name__, logger=logger)
+        self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
 
         self._log.info("Initialized.")
 

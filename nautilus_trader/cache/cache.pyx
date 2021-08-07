@@ -82,7 +82,7 @@ cdef class Cache(CacheFacade):
             config = {}
 
         self._database = database
-        self._log = LoggerAdapter(component=type(self).__name__, logger=logger)
+        self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
         self._xrate_calculator = ExchangeRateCalculator()
 
         # Cache deque capacities (per instrument_id)
