@@ -571,8 +571,8 @@ cdef class ExecutionEngine(Component):
         cdef Order order = self._cache.order(event.client_order_id)
         if order is None:
             self._log.warning(
-                f"{repr(event.client_order_id)} was not found in the cache "
-                f"for {repr(event.venue_order_id)} to apply {event}."
+                f"Order with {repr(event.client_order_id)} "
+                f"not found in the cache to apply {event}."
             )
 
             # Search cache for ClientOrderId matching the VenueOrderId
@@ -590,15 +590,15 @@ cdef class ExecutionEngine(Component):
             if order is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
-                    f"order for {repr(client_order_id)} not found in the cache."
+                    f"{repr(event.client_order_id)} and {repr(event.venue_order_id)} "
+                    f"not found in the cache."
                 )
                 return  # Cannot process event further
 
             # Set the correct ClientOrderId for the event
             event.client_order_id = client_order_id
             self._log.info(
-                f"{repr(client_order_id)} was found in the cache and "
-                f"applying event to order with {repr(order.venue_order_id)}.",
+                f"Order with {repr(client_order_id)} was found in the cache.",
                 color=LogColor.GREEN,
             )
 

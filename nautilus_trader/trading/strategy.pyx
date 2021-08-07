@@ -596,22 +596,26 @@ cdef class TradingStrategy(Actor):
 
         if trigger is not None:
             if order.is_triggered_c():
-                self.log.warning(f"Cannot update order: "
-                                 f"{repr(order.client_order_id)} already triggered.")
+                self.log.warning(
+                    f"Cannot create command UpdateOrder: "
+                    f"Order with {repr(order.client_order_id)} already triggered.",
+                )
                 return
             if trigger != order.trigger:
                 updating = True
 
         if not updating:
             self.log.error(
-                "Cannot create command UpdateOrder "
-                "(quantity, price and trigger were either None or the same as existing values)."
+                "Cannot create command UpdateOrder: "
+                "quantity, price and trigger were either None or the same as existing values.",
             )
             return
 
         if order.account_id is None:
-            self.log.error(f"Cannot update order: "
-                           f"no account assigned to order yet, {order}.")
+            self.log.error(
+                f"Cannot create command UpdateOrder: "
+                f"no account assigned to order yet, {order}.",
+            )
             return  # Cannot send command
 
         if (
@@ -620,7 +624,7 @@ cdef class TradingStrategy(Actor):
             or order.is_pending_cancel_c()
         ):
             self.log.warning(
-                f"Cannot update order: state is {order.state_string_c()}, {order}.",
+                f"Cannot create command UpdateOrder: state is {order.state_string_c()}, {order}.",
             )
             return  # Cannot send command
 
