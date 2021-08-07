@@ -62,6 +62,7 @@ cdef class DataEngine(Component):
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
+    cpdef list registered_clients(self)
     cpdef void register_client(self, DataClient client) except *
     cpdef void deregister_client(self, DataClient client) except *
 
@@ -69,6 +70,18 @@ cdef class DataEngine(Component):
 
     cpdef void _on_start(self) except *
     cpdef void _on_stop(self) except *
+
+# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef list subscribed_generic_data(self)
+    cpdef list subscribed_instruments(self)
+    cpdef list subscribed_order_book_deltas(self)
+    cpdef list subscribed_order_book_snapshots(self)
+    cpdef list subscribed_quote_ticks(self)
+    cpdef list subscribed_trade_ticks(self)
+    cpdef list subscribed_bars(self)
+    cpdef list subscribed_instrument_status_updates(self)
+    cpdef list subscribed_instrument_close_prices(self)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

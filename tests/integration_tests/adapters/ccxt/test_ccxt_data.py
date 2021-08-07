@@ -190,7 +190,7 @@ class TestCCXTDataClient:
         self.client.subscribe_instruments()
 
         # Assert
-        assert len(self.client.subscribed_instruments) == 1236
+        assert len(self.client.subscribed_instruments()) == 1236
 
         # Tear Down
         self.data_engine.stop()
@@ -206,7 +206,7 @@ class TestCCXTDataClient:
         self.client.subscribe_instrument(BTCUSDT)
 
         # Assert
-        assert BTCUSDT in self.client.subscribed_instruments
+        assert BTCUSDT in self.client.subscribed_instruments()
 
         # Tear Down
         self.data_engine.stop()
@@ -223,7 +223,7 @@ class TestCCXTDataClient:
         await asyncio.sleep(0.3)
 
         # Assert
-        assert ETHUSDT in self.client.subscribed_quote_ticks
+        assert ETHUSDT in self.client.subscribed_quote_ticks()
         assert self.cache.has_quote_ticks(ETHUSDT)
 
         # Tear Down
@@ -241,7 +241,7 @@ class TestCCXTDataClient:
         await asyncio.sleep(0.3)
 
         # Assert
-        assert ETHUSDT in self.client.subscribed_trade_ticks
+        assert ETHUSDT in self.client.subscribed_trade_ticks()
         assert self.cache.has_trade_ticks(ETHUSDT)
 
         # Tear Down
@@ -260,7 +260,7 @@ class TestCCXTDataClient:
         self.client.subscribe_bars(bar_type)
 
         # Assert
-        assert bar_type in self.client.subscribed_bars
+        assert bar_type in self.client.subscribed_bars()
 
         # Tear Down
         self.data_engine.stop()
@@ -278,7 +278,7 @@ class TestCCXTDataClient:
         self.client.unsubscribe_instruments()
 
         # Assert
-        assert len(self.client.subscribed_instruments) == 0
+        assert not self.client.subscribed_instruments()
 
         # Tear Down
         self.data_engine.stop()
@@ -296,7 +296,7 @@ class TestCCXTDataClient:
         self.client.unsubscribe_instrument(BTCUSDT)
 
         # Assert
-        assert BTCUSDT not in self.client.subscribed_instruments
+        assert BTCUSDT not in self.client.subscribed_instruments()
 
         # Tear Down
         self.data_engine.stop()
@@ -315,7 +315,7 @@ class TestCCXTDataClient:
         self.client.unsubscribe_quote_ticks(ETHUSDT)
 
         # Assert
-        assert ETHUSDT not in self.client.subscribed_quote_ticks
+        assert ETHUSDT not in self.client.subscribed_quote_ticks()
 
         # Tear Down
         self.data_engine.stop()
@@ -333,7 +333,7 @@ class TestCCXTDataClient:
         self.client.unsubscribe_trade_ticks(ETHUSDT)
 
         # Assert
-        assert ETHUSDT not in self.client.subscribed_trade_ticks
+        assert ETHUSDT not in self.client.subscribed_trade_ticks()
 
         # Tear Down
         self.data_engine.stop()
@@ -352,7 +352,7 @@ class TestCCXTDataClient:
         self.client.unsubscribe_bars(bar_type)
 
         # Assert
-        assert bar_type not in self.client.subscribed_bars
+        assert bar_type not in self.client.subscribed_bars()
 
         # Tear Down
         self.data_engine.stop()
