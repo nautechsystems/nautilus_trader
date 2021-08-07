@@ -100,7 +100,7 @@ cdef class Throttler:
         Condition.callable_or_none(output_drop, "output_drop")
 
         self._clock = clock
-        self._log = LoggerAdapter(component=f"Throttler-{name}", logger=logger)
+        self._log = LoggerAdapter(component_name=f"Throttler-{name}", logger=logger)
         self._interval_ns = secs_to_nanos(interval.total_seconds())
         self._buffer = Queue()
         self._timer_name = f"{name}-DEQUE"

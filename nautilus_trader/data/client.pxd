@@ -16,37 +16,31 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport DataType
-from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
-cdef class DataClient:
-    cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
-    cdef LoggerAdapter _log
+cdef class DataClient(Component):
     cdef MessageBus _msgbus
     cdef Cache _cache
     cdef dict _config
 
-    cdef readonly ClientId id
-    """The client ID.\n\n:returns: `ClientId`"""
+    cdef set _subscribed_instruments
+    cdef dict _subscribed_order_books
+    cdef dict _subscribed_quote_ticks
+    cdef dict _subscribed_trade_ticks
+    cdef dict _subscribed_bars
+    cdef object _update_instruments_task
+
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
-
-    cpdef void connect(self) except *
-    cpdef void disconnect(self) except *
-    cpdef void reset(self) except *
-    cpdef void dispose(self) except *
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 

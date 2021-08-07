@@ -16,17 +16,17 @@
 """
 The `DataClient` class is responsible for interfacing with a particular API
 which may be presented directly by an exchange, or broker intermediary. It
-could also be possible to write clients for specialized data provides as long
-as all abstract methods are implemented.
+could also be possible to write clients for specialized data publishers.
 """
+
+import asyncio
 
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
@@ -39,7 +39,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
-cdef class DataClient:
+cdef class DataClient(Component):
     """
     The abstract base class for all data clients.
 
@@ -75,39 +75,21 @@ cdef class DataClient:
         if config is None:
             config = {}
 
-        self._clock = clock
-        self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(
-            component=config.get("name", f"DataClient-{client_id.value}"),
+        super().__init__(
+            clock=clock,
             logger=logger,
+            component_id=client_id,
+            component_name=config.get("name", f"DataClient-{client_id.value}"),
         )
+
         self._msgbus = msgbus
         self._cache = cache
         self._config = config
 
-        self.id = client_id
         self.is_connected = False
-
-        self._log.info("Initialized.")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}-{self.id.value}"
-
-    cpdef void connect(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void disconnect(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void reset(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void dispose(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -195,6 +177,16 @@ cdef class MarketDataClient(DataClient):
             config=config,
         )
 
+        # Subscriptions
+        self._subscribed_instruments = set()  # type: set[InstrumentId]
+        self._subscribed_order_books = {}     # type: dict[InstrumentId, asyncio.Task]
+        self._subscribed_quote_ticks = {}     # type: dict[InstrumentId, asyncio.Task]
+        self._subscribed_trade_ticks = {}     # type: dict[InstrumentId, asyncio.Task]
+        self._subscribed_bars = {}            # type: dict[BarType, asyncio.Task]
+
+        # Scheduled tasks
+        self._update_instruments_task = None
+
     cpdef list unavailable_methods(self):
         """
         Return a list of unavailable methods for this data client.
@@ -207,23 +199,67 @@ cdef class MarketDataClient(DataClient):
         """
         return self._config.get("unavailable_methods", []).copy()
 
-    cpdef void connect(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void disconnect(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void reset(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void dispose(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    @property
+    def subscribed_instruments(self):
+        """
+        The instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._subscribed_instruments))
+
+    @property
+    def subscribed_order_books(self):
+        """
+        The order books subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._subscribed_order_books.keys()))
+
+    @property
+    def subscribed_quote_ticks(self):
+        """
+        The quote tick instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._subscribed_quote_ticks.keys()))
+
+    @property
+    def subscribed_trade_ticks(self):
+        """
+        The trade tick instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._subscribed_trade_ticks.keys()))
+
+    @property
+    def subscribed_bars(self):
+        """
+        The bar types subscribed to.
+
+        Returns
+        -------
+        list[BarType]
+
+        """
+        return sorted(list(self._subscribed_bars.keys()))
 
     cpdef void subscribe(self, DataType data_type) except *:
         """Abstract method (implement in subclass)."""

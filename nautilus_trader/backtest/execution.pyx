@@ -87,46 +87,23 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exchange = exchange
         self.is_connected = False
 
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
+    cpdef void _start(self) except *:
         self._log.info("Connecting...")
-
         self.is_connected = True
         self._log.info("Connected.")
 
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+    cpdef void _stop(self) except *:
         self._log.info("Disconnecting...")
-
         self.is_connected = False
         self._log.info("Disconnected.")
 
-    cpdef void reset(self) except *:
-        """
-        Reset the client.
-
-        All stateful fields are reset to their initial value.
-        """
-        self._log.info(f"Resetting...")
-
+    cpdef void _reset(self) except *:
+        pass
         # Nothing to reset
-        self._log.info("Reset.")
 
-    cpdef void dispose(self) except *:
-        """
-        Dispose of the client.
-
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-        """
-        self._log.info(f"Disposing.")
-
+    cpdef void _dispose(self) except *:
+        pass
         # Nothing to dispose
-        self._log.info(f"Disposed.")
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 

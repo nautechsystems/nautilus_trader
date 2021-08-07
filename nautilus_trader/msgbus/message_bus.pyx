@@ -85,7 +85,7 @@ cdef class MessageBus:
         self.trader_id = trader_id
 
         self._clock = clock
-        self._log = LoggerAdapter(component=name, logger=logger)
+        self._log = LoggerAdapter(component_name=name, logger=logger)
 
         self._endpoints = {}          # type: dict[str, Callable[[Any], None]]
         self._patterns = {}           # type: dict[str, Subscription[:]]

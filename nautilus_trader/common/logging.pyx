@@ -255,7 +255,7 @@ cdef class LoggerAdapter:
 
     def __init__(
         self,
-        str component not None,
+        str component_name not None,
         Logger logger not None,
     ):
         """
@@ -263,16 +263,16 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        component : str
+        component_name : str
             The name of the component.
         logger : Logger
             The logger for the component.
 
         """
-        Condition.valid_string(component, "component")
+        Condition.valid_string(component_name, "component_name")
 
         self._logger = logger
-        self.component = component
+        self.component = component_name
         self.is_bypassed = logger.is_bypassed
 
     cpdef Logger get_logger(self):

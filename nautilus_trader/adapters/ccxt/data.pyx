@@ -114,68 +114,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self.is_connected = False
 
-        # Subscriptions
-        self._subscribed_instruments = set()  # type: set[InstrumentId]
-        self._subscribed_order_books = {}     # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_quote_ticks = {}     # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_trade_ticks = {}     # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_bars = {}            # type: dict[BarType, asyncio.Task]
-
-        # Scheduled tasks
-        self._update_instruments_task = None
-
-    @property
-    def subscribed_instruments(self):
-        """
-        The instruments subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        return sorted(list(self._subscribed_instruments))
-
-    @property
-    def subscribed_quote_ticks(self):
-        """
-        The quote tick instruments subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        return sorted(list(self._subscribed_quote_ticks.keys()))
-
-    @property
-    def subscribed_trade_ticks(self):
-        """
-        The trade tick instruments subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        return sorted(list(self._subscribed_trade_ticks.keys()))
-
-    @property
-    def subscribed_bars(self):
-        """
-        The bar types subscribed to.
-
-        Returns
-        -------
-        list[BarType]
-
-        """
-        return sorted(list(self._subscribed_bars.keys()))
-
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
+    cpdef void _start(self) except *:
         self._log.info("Connecting...")
 
         # Schedule subscribed instruments update
@@ -198,10 +137,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         self.is_connected = True
         self._log.info("Connected.")
 
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+    cpdef void _stop(self) except *:
         self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):
@@ -224,10 +160,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         self.is_connected = False
         self._log.info("Disconnected.")
 
-    cpdef void reset(self) except *:
-        """
-        Reset the client.
-        """
+    cpdef void _reset(self) except *:
         if self.is_connected:
             self._log.error("Cannot reset a connected data client.")
             return
@@ -249,10 +182,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self._log.info("Reset.")
 
-    cpdef void dispose(self) except *:
-        """
-        Dispose the client.
-        """
+    cpdef void _dispose(self) except *:
         if self.is_connected:
             self._log.error("Cannot dispose a connected data client.")
             return

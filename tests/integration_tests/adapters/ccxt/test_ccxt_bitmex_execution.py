@@ -145,14 +145,11 @@ class TestBitmexExecutionClient:
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         # Act
-        self.client.disconnect()
+        self.client.stop()
         await asyncio.sleep(0.3)
 
         # Assert
         assert not self.client.is_connected
-
-        # Tear down
-        self.exec_engine.stop()
 
     @pytest.mark.asyncio
     async def test_reset_when_not_connected_successfully_resets(self):

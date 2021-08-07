@@ -124,17 +124,17 @@ class TestBacktestExecClientTests:
     def test_connect(self):
         # Arrange
         # Act
-        self.exec_client.connect()
+        self.exec_client.start()
 
         # Assert
         assert self.exec_client.is_connected
 
     def test_disconnect(self):
         # Arrange
-        self.exec_client.connect()
+        self.exec_client.start()
 
         # Act
-        self.exec_client.disconnect()
+        self.exec_client.stop()
 
         # Assert
         assert not self.exec_client.is_connected

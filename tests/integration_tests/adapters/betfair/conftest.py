@@ -113,7 +113,7 @@ def live_logger(event_loop, clock):
 
 @pytest.fixture()
 def logger(live_logger):
-    return LoggerAdapter(component="conftest", logger=live_logger)
+    return LoggerAdapter(component_name="conftest", logger=live_logger)
 
 
 @pytest.fixture()

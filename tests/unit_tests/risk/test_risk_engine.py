@@ -266,7 +266,7 @@ class TestRiskEngine:
 
         # Assert
         assert self.exec_engine.command_count == 1
-        assert self.exec_client.calls == ["connect", "submit_order"]
+        assert self.exec_client.calls == ["_start", "submit_order"]
 
     def test_submit_order_when_duplicate_id_then_denies(self):
         # Arrange
@@ -304,7 +304,7 @@ class TestRiskEngine:
 
         # Assert
         assert self.exec_engine.command_count == 1
-        assert self.exec_client.calls == ["connect", "submit_order"]
+        assert self.exec_client.calls == ["_start", "submit_order"]
 
     def test_submit_order_when_risk_bypassed_sends_to_execution_engine(self):
         # Arrange
@@ -340,7 +340,7 @@ class TestRiskEngine:
 
         # Assert
         assert self.exec_engine.command_count == 1  # <-- initial account event
-        assert self.exec_client.calls == ["connect", "submit_order"]
+        assert self.exec_client.calls == ["_start", "submit_order"]
 
     def test_submit_order_when_position_already_closed_then_denies(self):
         # Arrange
@@ -416,7 +416,7 @@ class TestRiskEngine:
 
         # Assert
         assert self.exec_engine.command_count == 2
-        assert self.exec_client.calls == ["connect", "submit_order", "submit_order"]
+        assert self.exec_client.calls == ["_start", "submit_order", "submit_order"]
 
     def test_submit_order_when_position_id_not_in_cache_then_denies(self):
         # Arrange
@@ -990,7 +990,7 @@ class TestRiskEngine:
 
         # Assert
         assert self.exec_engine.command_count == 1
-        assert self.exec_client.calls == ["connect", "submit_bracket_order"]
+        assert self.exec_client.calls == ["_start", "submit_bracket_order"]
 
     def test_submit_bracket_order_with_duplicate_entry_id_then_denies(self):
         # Arrange
@@ -1273,7 +1273,7 @@ class TestRiskEngine:
         self.risk_engine.execute(update)
 
         # Assert
-        assert self.exec_client.calls == ["connect"]
+        assert self.exec_client.calls == ["_start"]
         assert self.risk_engine.command_count == 1
         assert self.exec_engine.command_count == 0
 
@@ -1330,7 +1330,7 @@ class TestRiskEngine:
         self.risk_engine.execute(update)
 
         # Assert
-        assert self.exec_client.calls == ["connect", "submit_order"]
+        assert self.exec_client.calls == ["_start", "submit_order"]
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 1
 
@@ -1385,7 +1385,7 @@ class TestRiskEngine:
         self.risk_engine.execute(update)
 
         # Assert
-        assert self.exec_client.calls == ["connect", "submit_order"]
+        assert self.exec_client.calls == ["_start", "submit_order"]
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 1
 
@@ -1438,7 +1438,7 @@ class TestRiskEngine:
         self.risk_engine.execute(update)
 
         # Assert
-        assert self.exec_client.calls == ["connect", "submit_order", "update_order"]
+        assert self.exec_client.calls == ["_start", "submit_order", "update_order"]
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2
 
@@ -1472,7 +1472,7 @@ class TestRiskEngine:
         self.risk_engine.execute(cancel)
 
         # Assert
-        assert self.exec_client.calls == ["connect"]
+        assert self.exec_client.calls == ["_start"]
         assert self.risk_engine.command_count == 1
         assert self.exec_engine.command_count == 0
 
@@ -1523,7 +1523,7 @@ class TestRiskEngine:
         self.risk_engine.execute(cancel)
 
         # Assert
-        assert self.exec_client.calls == ["connect", "submit_order"]
+        assert self.exec_client.calls == ["_start", "submit_order"]
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 1
 
@@ -1577,7 +1577,7 @@ class TestRiskEngine:
         self.risk_engine.execute(cancel)
 
         # Assert
-        assert self.exec_client.calls == ["connect", "submit_order", "cancel_order"]
+        assert self.exec_client.calls == ["_start", "submit_order", "cancel_order"]
         assert self.risk_engine.command_count == 3
         assert self.exec_engine.command_count == 2
 
@@ -1626,6 +1626,6 @@ class TestRiskEngine:
         self.risk_engine.execute(cancel)
 
         # Assert
-        assert self.exec_client.calls == ["connect", "submit_order", "cancel_order"]
+        assert self.exec_client.calls == ["_start", "submit_order", "cancel_order"]
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2

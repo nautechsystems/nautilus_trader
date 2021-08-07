@@ -120,22 +120,6 @@ class TestExecutionClient:
         # Act, Assert
         assert client.venue is None
 
-    def test_connect_when_not_implemented_raises_exception(self):
-        with pytest.raises(NotImplementedError):
-            self.client.connect()
-
-    def test_disconnect_when_not_implemented_raises_exception(self):
-        with pytest.raises(NotImplementedError):
-            self.client.disconnect()
-
-    def test_reset_when_not_implemented_raises_exception(self):
-        with pytest.raises(NotImplementedError):
-            self.client.reset()
-
-    def test_dispose_when_not_implemented_raises_exception(self):
-        with pytest.raises(NotImplementedError):
-            self.client.dispose()
-
     def test_submit_order_raises_exception(self):
         order = self.order_factory.limit(
             AUDUSD_SIM.id,

@@ -69,7 +69,7 @@ class TestLoggerTests:
     def test_log_debug_messages_to_console(self):
         # Arrange
         logger = Logger(clock=TestClock(), level_stdout=LogLevel.DEBUG)
-        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
+        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
         logger_adapter.debug("This is a log message.")
@@ -80,7 +80,7 @@ class TestLoggerTests:
     def test_log_info_messages_to_console(self):
         # Arrange
         logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
-        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
+        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
         logger_adapter.info("This is a log message.")
@@ -91,7 +91,7 @@ class TestLoggerTests:
     def test_log_info_with_annotation_sends_to_stdout(self):
         # Arrange
         logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
-        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
+        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         annotations = {"my_tag": "something"}
 
@@ -104,7 +104,7 @@ class TestLoggerTests:
     def test_log_info_messages_to_console_with_blue_colour(self):
         # Arrange
         logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
-        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
+        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
         logger_adapter.info("This is a log message.", color=LogColor.BLUE)
@@ -115,7 +115,7 @@ class TestLoggerTests:
     def test_log_info_messages_to_console_with_green_colour(self):
         # Arrange
         logger = Logger(clock=TestClock(), level_stdout=LogLevel.INFO)
-        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
+        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
         logger_adapter.info("This is a log message.", color=LogColor.GREEN)
@@ -126,7 +126,7 @@ class TestLoggerTests:
     def test_log_warning_messages_to_console(self):
         # Arrange
         logger = Logger(clock=TestClock(), level_stdout=LogLevel.WARNING)
-        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
+        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
         logger_adapter.warning("This is a log message.")
@@ -137,7 +137,7 @@ class TestLoggerTests:
     def test_log_error_messages_to_console(self):
         # Arrange
         logger = Logger(clock=TestClock(), level_stdout=LogLevel.ERROR)
-        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
+        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
         logger_adapter.error("This is a log message.")
@@ -148,7 +148,7 @@ class TestLoggerTests:
     def test_log_critical_messages_to_console(self):
         # Arrange
         logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
-        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
+        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
         logger_adapter.critical("This is a log message.")
@@ -160,7 +160,7 @@ class TestLoggerTests:
         # Arrange
         sink = []
         logger = Logger(clock=TestClock(), level_stdout=LogLevel.CRITICAL)
-        logger_adapter = LoggerAdapter(component="TEST_LOGGER", logger=logger)
+        logger_adapter = LoggerAdapter(component_name="TEST_LOGGER", logger=logger)
 
         # Act
         logger.register_sink(sink.append)
@@ -189,7 +189,7 @@ class TestLiveLogger:
             level_stdout=LogLevel.DEBUG,
         )
 
-        self.logger_adapter = LoggerAdapter(component="LIVER_LOGGER", logger=self.logger)
+        self.logger_adapter = LoggerAdapter(component_name="LIVER_LOGGER", logger=self.logger)
 
     def test_log_when_not_running_on_event_loop_successfully_logs(self):
         # Arrange
@@ -235,7 +235,7 @@ class TestLiveLogger:
             maxsize=5,
         )
 
-        logger_adapter = LoggerAdapter(component="LIVE_LOGGER", logger=logger)
+        logger_adapter = LoggerAdapter(component_name="LIVE_LOGGER", logger=logger)
         logger.start()
 
         # Act

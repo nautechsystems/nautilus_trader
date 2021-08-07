@@ -461,18 +461,18 @@ class MockExecutionClient(ExecutionClient):
         self.calls = []
         self.commands = []
 
-    def connect(self) -> None:
+    def _start(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self._set_connected()
 
-    def disconnect(self) -> None:
+    def _stop(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self._set_connected(False)
 
-    def dispose(self) -> None:
+    def _reset(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def reset(self) -> None:
+    def _dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     # -- COMMANDS ----------------------------------------------------------------------------------
@@ -571,14 +571,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
     def add_trades_list(self, venue_order_id: VenueOrderId, trades: List[ExecutionReport]) -> None:
         self._trades_lists[venue_order_id] = trades
-
-    def connect(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-        self._set_connected()
-
-    def disconnect(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-        self._set_connected(False)
 
     def dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)

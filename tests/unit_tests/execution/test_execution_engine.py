@@ -210,7 +210,8 @@ class TestExecutionEngine:
 
     def test_check_connected_when_client_disconnected_returns_false(self):
         # Arrange
-        self.exec_client.disconnect()
+        self.exec_client.start()
+        self.exec_client.stop()
 
         # Act
         result = self.exec_engine.check_connected()
@@ -220,7 +221,7 @@ class TestExecutionEngine:
 
     def test_check_connected_when_client_connected_returns_true(self):
         # Arrange
-        self.exec_client.connect()
+        self.exec_client.start()
 
         # Act
         result = self.exec_engine.check_connected()
@@ -238,7 +239,7 @@ class TestExecutionEngine:
 
     def test_check_disconnected_when_client_connected_returns_false(self):
         # Arrange
-        self.exec_client.connect()
+        self.exec_client.start()
 
         # Act
         result = self.exec_engine.check_disconnected()

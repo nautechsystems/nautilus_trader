@@ -16,9 +16,7 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -32,7 +30,6 @@ from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -48,17 +45,12 @@ from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.trading.account cimport Account
 
 
-cdef class ExecutionClient:
-    cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
-    cdef LoggerAdapter _log
+cdef class ExecutionClient(Component):
     cdef MessageBus _msgbus
     cdef Cache _cache
     cdef Account _account
     cdef dict _config
 
-    cdef readonly ClientId id
-    """The clients ID.\n\n:returns: `ClientId`"""
     cdef readonly TraderId trader_id
     """The trader ID associated with the client.\n\n:returns: `TraderId`"""
     cdef readonly Venue venue
@@ -80,10 +72,6 @@ cdef class ExecutionClient:
     cpdef Account get_account(self)
 
     cpdef void _set_connected(self, bint value=*) except *
-    cpdef void connect(self) except *
-    cpdef void disconnect(self) except *
-    cpdef void reset(self) except *
-    cpdef void dispose(self) except *
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
