@@ -148,7 +148,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             self._update_instruments_task.cancel()
 
         # Cancel residual tasks
-        for task in self._subscribed_trade_ticks.values():
+        for task in self._feeds_trade_tick.values():
             if not task.cancelled():
                 self._log.debug(f"Cancelling {task}...")
                 task.cancel()
@@ -171,14 +171,6 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             client=self._client,
             load_all=False,
         )
-
-        self._subscribed_instruments = set()
-
-        # Check all tasks have been popped and canceled
-        assert not self._subscribed_order_books
-        assert not self._subscribed_quote_ticks
-        assert not self._subscribed_trade_ticks
-        assert not self._subscribed_bars
 
         self._log.info("Reset.")
 
@@ -203,8 +195,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         cdef list instruments = self._cache.instruments(Venue(self.id.value))
 
         for instrument in instruments:
-            if instrument not in self._subscribed_instruments:
-                self._subscribed_instruments.add(instrument.id)
+            if instrument not in self._feeds_instrument:
+                self._feeds_instrument.add(instrument.id)
 
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """
@@ -218,7 +210,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._subscribed_instruments.add(instrument_id)
+        self._feeds_instrument.add(instrument_id)
 
     cpdef void subscribe_order_book_snapshots(
         self,
@@ -249,7 +241,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         if not self._client.has.get("watchOrderBook", False):
             raise RuntimeError(f"CCXT `watch_order_book` not available for {self._client.name}")
 
-        if instrument_id in self._subscribed_order_books:
+        if instrument_id in self._feeds_order_book_snapshot:
             self._log.warning(f"Already subscribed {instrument_id.symbol} <OrderBook> data.")
             return
 
@@ -259,7 +251,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             depth=depth,
             kwargs=kwargs,
         ))
-        self._subscribed_order_books[instrument_id] = task
+        self._feeds_order_book_snapshot[instrument_id] = task
 
         self._log.info(f"Subscribed to {instrument_id.symbol} <OrderBook> data.")
 
@@ -275,12 +267,12 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        if instrument_id in self._subscribed_quote_ticks:
+        if instrument_id in self._feeds_quote_tick:
             self._log.warning(f"Already subscribed {instrument_id.symbol} <TradeTick> data.")
             return
 
         task = self._loop.create_task(self._watch_quotes(instrument_id))
-        self._subscribed_quote_ticks[instrument_id] = task
+        self._feeds_quote_tick[instrument_id] = task
 
         self._log.info(f"Subscribed to {instrument_id.symbol} <QuoteTick> data.")
 
@@ -296,12 +288,12 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        if instrument_id in self._subscribed_trade_ticks:
+        if instrument_id in self._feeds_trade_tick:
             self._log.warning(f"Already subscribed {instrument_id.symbol} <TradeTick> data.")
             return
 
         task = self._loop.create_task(self._watch_trades(instrument_id))
-        self._subscribed_trade_ticks[instrument_id] = task
+        self._feeds_trade_tick[instrument_id] = task
 
         self._log.info(f"Subscribed to {instrument_id.symbol} <TradeTick> data.")
 
@@ -326,12 +318,12 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                               f"when not supported by the exchange (must be LAST).")
             return
 
-        if bar_type in self._subscribed_bars:
+        if bar_type in self._feeds_bar:
             self._log.warning(f"Already subscribed {bar_type} <Bar> data.")
             return
 
         task = self._loop.create_task(self._watch_ohlcv(bar_type))
-        self._subscribed_bars[bar_type] = task
+        self._feeds_bar[bar_type] = task
 
         self._log.info(f"Subscribed to {bar_type} <Bar> data.")
 
@@ -340,7 +332,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Unsubscribe from `Instrument` data for the venue.
 
         """
-        self._subscribed_instruments.clear()
+        self._feeds_instrument.clear()
 
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
         """
@@ -354,7 +346,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._subscribed_instruments.discard(instrument_id)
+        self._feeds_instrument.discard(instrument_id)
 
     cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
         """
@@ -368,11 +360,11 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        if instrument_id not in self._subscribed_order_books:
+        if instrument_id not in self._feeds_order_book_snapshot:
             self._log.debug(f"Not subscribed to {instrument_id.symbol} <OrderBook> data.")
             return
 
-        task = self._subscribed_order_books.pop(instrument_id)
+        task = self._feeds_order_book_snapshot.pop(instrument_id)
         task.cancel()
         self._log.debug(f"Cancelled {task}.")
         self._log.info(f"Unsubscribed from {instrument_id.symbol} <OrderBook> data.")
@@ -389,11 +381,11 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        if instrument_id not in self._subscribed_quote_ticks:
+        if instrument_id not in self._feeds_quote_tick:
             self._log.debug(f"Not subscribed to {instrument_id.symbol} <QuoteTick> data.")
             return
 
-        task = self._subscribed_quote_ticks.pop(instrument_id)
+        task = self._feeds_quote_tick.pop(instrument_id)
         task.cancel()
         self._log.debug(f"Cancelled {task}.")
         self._log.info(f"Unsubscribed from {instrument_id.symbol} <QuoteTick> data.")
@@ -410,11 +402,11 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        if instrument_id not in self._subscribed_trade_ticks:
+        if instrument_id not in self._feeds_trade_tick:
             self._log.debug(f"Not subscribed to {instrument_id.symbol} <TradeTick> data.")
             return
 
-        task = self._subscribed_trade_ticks.pop(instrument_id)
+        task = self._feeds_trade_tick.pop(instrument_id)
         task.cancel()
         self._log.debug(f"Cancelled {task}.")
         self._log.info(f"Unsubscribed from {instrument_id.symbol} <TradeTick> data.")
@@ -431,11 +423,11 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        if bar_type not in self._subscribed_bars:
+        if bar_type not in self._feeds_bar:
             self._log.debug(f"Not subscribed to {bar_type} <Bar> data.")
             return
 
-        task = self._subscribed_bars.pop(bar_type)
+        task = self._feeds_bar.pop(bar_type)
         task.cancel()
         self._log.debug(f"Cancelled {task}.")
         self._log.info(f"Unsubscribed from {bar_type} <Bar> data.")
@@ -918,7 +910,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         cdef InstrumentId instrument_id
         cdef Instrument instrument
-        for instrument_id in self._subscribed_instruments:
+        for instrument_id in self._feeds_instrument:
             instrument = self._instrument_provider.find(instrument_id)
             if instrument is not None:
                 self._handle_data(instrument)
