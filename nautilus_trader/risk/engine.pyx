@@ -300,15 +300,23 @@ cdef class RiskEngine(Component):
         """
         return self._max_notional_per_order.get(instrument_id)
 
+# -- ABSTRACT METHODS ------------------------------------------------------------------------------
+
+    cpdef void _on_start(self) except *:
+        pass  # Optionally override in subclass
+
+    cpdef void _on_stop(self) except *:
+        pass  # Optionally override in subclass
+
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
     cpdef void _start(self) except *:
-        pass
         # Do nothing else for now
+        self._on_start()
 
     cpdef void _stop(self) except *:
-        pass
         # Do nothing else for now
+        self._on_stop()
 
     cpdef void _reset(self) except *:
         self.command_count = 0
@@ -350,13 +358,13 @@ cdef class RiskEngine(Component):
             if position is None:
                 self._deny_command(
                     command=command,
-                    reason=f"{repr(command.position_id)} does not exist",
+                    reason=f"Position with {repr(command.position_id)} does not exist",
                 )
                 return  # Denied
             if position.is_closed_c():
                 self._deny_command(
                     command=command,
-                    reason=f"{repr(command.position_id)} already closed",
+                    reason=f"Position with {repr(command.position_id)} already closed",
                 )
                 return  # Denied
 
@@ -370,7 +378,7 @@ cdef class RiskEngine(Component):
         if instrument is None:
             self._deny_command(
                 command=command,
-                reason=f"no instrument found for {command.instrument_id}",
+                reason=f"Instrument for {command.instrument_id} not found",
             )
             return  # Denied
 
@@ -438,19 +446,19 @@ cdef class RiskEngine(Component):
         if order is None:
             self._deny_command(
                 command=command,
-                reason=f"no order found for {repr(command.client_order_id)}",
+                reason=f"Order with {repr(command.client_order_id)} not found",
             )
             return  # Denied
         elif order.is_completed_c():
             self._deny_command(
                 command=command,
-                reason=f"{repr(command.client_order_id)} already completed",
+                reason=f"Order with {repr(command.client_order_id)} already completed",
             )
             return  # Denied
         elif order.is_inflight_c():
             self._deny_command(
                 command=command,
-                reason=f"{repr(command.client_order_id)} currently in-flight",
+                reason=f"Order with {repr(command.client_order_id)} currently in-flight",
             )
             return  # Denied
 
@@ -516,19 +524,19 @@ cdef class RiskEngine(Component):
         if order is None:
             self._deny_command(
                 command=command,
-                reason=f"no order found for {repr(command.client_order_id)}",
+                reason=f"Order with {repr(command.client_order_id)} not found",
             )
             return  # Denied
         elif order.is_completed_c():
             self._deny_command(
                 command=command,
-                reason=f"{repr(command.client_order_id)} already completed",
+                reason=f"Order with {repr(command.client_order_id)} already completed",
             )
             return  # Denied
         elif order.is_pending_cancel_c():
             self._deny_command(
                 command=command,
-                reason=f"{repr(command.client_order_id)} already pending cancel",
+                reason=f"Order with {repr(command.client_order_id)} already pending cancel",
             )
             return  # Denied
 

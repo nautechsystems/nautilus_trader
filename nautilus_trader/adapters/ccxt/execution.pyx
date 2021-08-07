@@ -218,7 +218,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         if order.venue_order_id is None:
             self._log.error(
-                f"Cannot reconcile state for {repr(order.client_order_id)}, "
+                f"Cannot reconcile state for order {repr(order.client_order_id)}, "
                 f"VenueOrderId was None.",
             )
             return None  # Cannot generate state report
@@ -226,7 +226,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef Instrument instrument = self._instrument_provider.find(order.instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot reconcile state for {repr(order.client_order_id)}, "
+                f"Cannot reconcile state for order {repr(order.client_order_id)}, "
                 f"instrument for {order.instrument_id} not found.",
             )
             return None  # Cannot generate state report
@@ -328,7 +328,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot reconcile state for {repr(client_order_id)}, "
+                f"Cannot reconcile state for order {repr(client_order_id)}, "
                 f"instrument for {instrument_id} not found."
             )
             return  # Cannot generate state report
@@ -722,8 +722,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         cdef Instrument instrument = self._instrument_provider.find(order.instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot reconcile state for {repr(order.client_order_id)}, "
-                            f"instrument for {order.instrument_id} not found.")
+            self._log.error(
+                f"Cannot reconcile state for order {repr(order.client_order_id)}, "
+                f"instrument for {order.instrument_id} not found.",
+            )
             return  # Cannot generate state report
 
         self.generate_order_filled(
@@ -761,12 +763,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef void _cache_order(self, VenueOrderId venue_order_id, Order order) except *:
         self._cached_orders[venue_order_id] = order
         self._cached_filled[venue_order_id] = order.filled_qty
-        self._log.debug(f"Cached {repr(venue_order_id)} {order}.")
+        self._log.debug(f"Cached order {repr(venue_order_id)} {order}.")
 
     cdef void _decache_order(self, VenueOrderId venue_order_id) except *:
         self._cached_orders.pop(venue_order_id, None)
         self._cached_filled.pop(venue_order_id, None)
-        self._log.debug(f"De-cached {repr(venue_order_id)}.")
+        self._log.debug(f"De-cached order {repr(venue_order_id)}.")
 
 
 cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):

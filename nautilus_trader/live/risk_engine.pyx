@@ -76,7 +76,7 @@ cdef class LiveRiskEngine(RiskEngine):
         )
 
         self._loop = loop
-        self._queue = Queue(maxsize=config.get("qsize"), 10000)
+        self._queue = Queue(maxsize=config.get("qsize", 10000))
 
         self._run_queue_task = None
         self.is_running = False
