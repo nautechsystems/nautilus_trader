@@ -17,9 +17,8 @@ from decimal import Decimal
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -63,7 +62,7 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
-cdef class ExecutionClient:
+cdef class ExecutionClient(Component):
     """
     The abstract base class for all execution clients.
 
@@ -120,18 +119,18 @@ cdef class ExecutionClient:
         if config is None:
             config = {}
 
-        self._clock = clock
-        self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(
-            component=config.get("name", f"ExecClient-{client_id.value}"),
+        super().__init__(
+            clock=clock,
             logger=logger,
+            component_id=client_id,
+            component_name=config.get("name", f"ExecClient-{client_id.value}"),
         )
+
         self._msgbus = msgbus
         self._cache = cache
         self._config = config
         self._account = None  # Initialized on connection
 
-        self.id = client_id
         self.trader_id = msgbus.trader_id
         self.venue = Venue(client_id.value) if venue_type != VenueType.BROKERAGE_MULTI_VENUE else None
         self.venue_type = venue_type
@@ -141,8 +140,6 @@ cdef class ExecutionClient:
         self.calculate_account_state = config.get("calculate_account_state", False)
 
         self.is_connected = False
-
-        self._log.info(f"Initialized.")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}-{self.id.value}"
@@ -184,22 +181,6 @@ cdef class ExecutionClient:
 
         """
         self.is_connected = value
-
-    cpdef void connect(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void disconnect(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void reset(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void dispose(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
@@ -855,8 +836,6 @@ cdef class ExecutionClient:
                 instrument_id=fill.instrument_id,
             )
             if positions_open:
-                # Design-time invariant: netting OMS maintains a single position
-                assert len(positions_open) == 1
                 position_id = positions_open[0].id
 
         # Determine any position

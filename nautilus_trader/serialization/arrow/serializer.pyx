@@ -30,7 +30,9 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.serialization.base cimport _OBJECT_FROM_DICT_MAP
 from nautilus_trader.serialization.base cimport _OBJECT_TO_DICT_MAP
 
+from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.serialization.arrow.implementations import account_state
+from nautilus_trader.serialization.arrow.implementations import closing_prices
 from nautilus_trader.serialization.arrow.implementations import order_book
 from nautilus_trader.serialization.arrow.implementations import order_events
 from nautilus_trader.serialization.arrow.implementations import position_events
@@ -205,6 +207,7 @@ for cls in (PositionOpened, PositionChanged, PositionClosed):
 
 register_parquet(OrderFilled, serializer=order_events.serialize)
 register_parquet(OrderInitialized, serializer=order_events.serialize_order_initialized)
+register_parquet(InstrumentClosePrice, serializer=closing_prices.serialize)
 
 
 # Other defined schemas

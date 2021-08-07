@@ -135,7 +135,7 @@ class TradingNode:
         )
 
         self._log = LoggerAdapter(
-            component=self.__class__.__name__,
+            component_name=type(self).__name__,
             logger=self._logger,
         )
 

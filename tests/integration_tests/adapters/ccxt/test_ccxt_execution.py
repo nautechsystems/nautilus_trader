@@ -153,15 +153,12 @@ class TestCCXTExecutionClient:
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         # Act
-        self.client.disconnect()
+        self.exec_engine.stop()
+        await self.exec_engine.get_run_queue_task()
         await asyncio.sleep(0.3)
 
         # Assert
         assert not self.client.is_connected
-
-        # Tear down
-        self.exec_engine.stop()
-        await self.exec_engine.get_run_queue_task()
 
     @pytest.mark.asyncio
     async def test_reset_when_not_connected_successfully_resets(self):

@@ -62,7 +62,7 @@ cdef class Actor(Component):
     cpdef void on_reset(self) except *
     cpdef void on_dispose(self) except *
     cpdef void on_instrument(self, Instrument instrument) except *
-    cpdef void on_order_book_delta(self, OrderBookData data) except *
+    cpdef void on_order_book_delta(self, OrderBookData delta) except *
     cpdef void on_order_book(self, OrderBook order_book) except *
     cpdef void on_quote_tick(self, QuoteTick tick) except *
     cpdef void on_trade_tick(self, TradeTick tick) except *

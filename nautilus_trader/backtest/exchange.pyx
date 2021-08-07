@@ -142,7 +142,7 @@ cdef class SimulatedExchange:
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(
-            component=f"{type(self).__name__}({venue})",
+            component_name=f"{type(self).__name__}({venue})",
             logger=logger,
         )
 
@@ -929,7 +929,7 @@ cdef class SimulatedExchange:
                     order.venue_order_id,
                     "update order",
                     f"STOP_LIMIT {OrderSideParser.to_str(order.side)} order "
-                    f"new stop px trigger of {price} was in the market: "
+                    f"new trigger stop px of {price} was in the market: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
                 )
@@ -1180,8 +1180,6 @@ cdef class SimulatedExchange:
                 instrument_id=order.instrument_id,
             )
             if positions_open:
-                # Design-time invariant: netting OMS maintains a single position
-                assert len(positions_open) == 1
                 position_id = positions_open[0].id
 
         # Determine any position

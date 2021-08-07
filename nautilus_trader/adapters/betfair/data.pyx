@@ -116,7 +116,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             logger=logger,
             message_handler=self._on_market_update,
         )
-        self.is_connected = False
+
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions
@@ -124,10 +124,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._strict_handling = strict_handling
         self._subscribed_market_ids = set()   # type: set[InstrumentId]
 
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
+    cpdef void _start(self) except *:
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
@@ -149,7 +146,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._log.debug("scheduling heartbeat")
         self._loop.create_task(self._post_connect_heartbeat())
 
-        self.is_connected = True
         self._log.info("Connected.")
 
     async def _post_connect_heartbeat(self):
@@ -157,10 +153,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             await asyncio.sleep(5)
             await self._stream.send(orjson.dumps({'op': 'heartbeat'}))
 
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+    cpdef void _stop(self) except *:
         self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):
@@ -174,18 +167,12 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._log.info("Closing APIClient...")
         self._client.client_logout()
 
-        self.is_connected = False
         self._log.info("Disconnected.")
 
-    cpdef void reset(self) except *:
-        """
-        Reset the client.
-        """
+    cpdef void _reset(self) except *:
         if self.is_connected:
             self._log.error("Cannot reset a connected data client.")
             return
-
-        self._log.info("Resetting...")
 
         # TODO: Reset client ?
 
@@ -196,21 +183,10 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         self._subscribed_instrument_ids = set()
 
-        self._log.info("Reset.")
-
-    cpdef void dispose(self) except *:
-        """
-        Dispose the client.
-        """
+    cpdef void _dispose(self) except *:
         if self.is_connected:
             self._log.error("Cannot dispose a connected data client.")
             return
-
-        self._log.info("Disposing...")
-
-        # Nothing to dispose yet
-
-        self._log.info("Disposed.")
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 

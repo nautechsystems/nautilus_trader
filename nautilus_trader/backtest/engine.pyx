@@ -157,7 +157,7 @@ cdef class BacktestEngine:
         )
 
         self._log = LoggerAdapter(
-            component=type(self).__name__,
+            component_name=type(self).__name__,
             logger=self._logger,
         )
 

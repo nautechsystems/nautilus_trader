@@ -213,14 +213,14 @@ cdef class Actor(Component):
         """
         pass  # Optionally override in subclass
 
-    cpdef void on_order_book_delta(self, OrderBookData data) except *:
+    cpdef void on_order_book_delta(self, OrderBookData delta) except *:
         """
         Actions to be performed when running and receives an order book delta.
 
         Parameters
         ----------
-        data : OrderBookData
-            The order book snapshot / operations received.
+        delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
+            The order book delta received.
 
         Warnings
         --------
@@ -1277,7 +1277,7 @@ cdef class Actor(Component):
                 self._log.exception(ex)
                 raise
 
-    cpdef void handle_order_book_delta(self, OrderBookData data) except *:
+    cpdef void handle_order_book_delta(self, OrderBookData delta) except *:
         """
         Handle the given order book data.
 
@@ -1285,19 +1285,19 @@ cdef class Actor(Component):
 
         Parameters
         ----------
-        data : {OrderBookDelta, OrderBookDeltas, OrderBookSnapshot}
-            The received order book data.
+        delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
+            The order book delta received.
 
         Warnings
         --------
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(data, "data")
+        Condition.not_none(delta, "data")
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
-                self.on_order_book_delta(data)
+                self.on_order_book_delta(delta)
             except Exception as ex:
                 self._log.exception(ex)
                 raise

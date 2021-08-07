@@ -31,6 +31,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
@@ -552,8 +553,8 @@ class TestPortfolio:
         )
 
         # Act
-        self.cache.add_position(position1)
-        self.cache.add_position(position2)
+        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position2, OMSType.HEDGING)
         self.portfolio.initialize_positions()
         self.portfolio.update_tick(last)
 
@@ -619,7 +620,7 @@ class TestPortfolio:
         position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
 
         # Act
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         # Assert
@@ -693,7 +694,7 @@ class TestPortfolio:
         position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
 
         # Act
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         # Assert
@@ -779,7 +780,7 @@ class TestPortfolio:
         position = Position(instrument=ETHUSD_BITMEX, fill=fill)
 
         # Act
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         # Assert
@@ -907,7 +908,7 @@ class TestPortfolio:
         position = Position(instrument=ETHUSD_BITMEX, fill=fill)
 
         self.portfolio.update_position(TestStubs.event_position_opened(position))
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
         self.cache.add_quote_tick(last_ethusd)
         self.cache.add_quote_tick(last_xbtusd)
         self.portfolio.update_tick(last_ethusd)
@@ -1007,8 +1008,8 @@ class TestPortfolio:
         position_opened2 = TestStubs.event_position_opened(position2)
 
         # Act
-        self.cache.add_position(position1)
-        self.cache.add_position(position2)
+        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position2, OMSType.HEDGING)
         self.portfolio.update_position(position_opened1)
         self.portfolio.update_position(position_opened2)
 
@@ -1078,7 +1079,7 @@ class TestPortfolio:
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         order2 = self.order_factory.market(
@@ -1152,7 +1153,7 @@ class TestPortfolio:
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         order2 = self.order_factory.market(
@@ -1295,9 +1296,9 @@ class TestPortfolio:
         self.portfolio.update_tick(last_audusd)
         self.portfolio.update_tick(last_gbpusd)
 
-        self.cache.add_position(position1)
-        self.cache.add_position(position2)
-        self.cache.add_position(position3)
+        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position2, OMSType.HEDGING)
+        self.cache.add_position(position3, OMSType.HEDGING)
 
         # Act
         self.portfolio.update_position(TestStubs.event_position_opened(position1))

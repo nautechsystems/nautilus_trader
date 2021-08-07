@@ -20,6 +20,7 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -42,7 +43,9 @@ class MyStrategy(TradingStrategy):
         """
         # The order_id_tag should be unique at the 'trader level', here we are
         # just using the traded instruments symbol as the strategy order id tag.
-        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", ""))
+        super().__init__(
+            order_id_tag=instrument_id.symbol.value.replace("/", ""), oms_type=OMSType.HEDGING
+        )
 
         # Custom strategy variables
         self.instrument_id = instrument_id

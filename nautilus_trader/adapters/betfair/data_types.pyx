@@ -15,6 +15,8 @@
 from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.orderbook.data cimport OrderBookDelta
 
+from nautilus_trader.serialization.base import register_serializable_object
+
 
 cpdef enum SubscriptionStatus:
     UNSUBSCRIBED = 0
@@ -33,5 +35,14 @@ class InstrumentSearch(Data):
         self.instruments = instruments
 
 
-cdef class BPSOrderBookDelta(OrderBookDelta):
-    pass
+cdef class BSPOrderBookDelta(OrderBookDelta):
+    @staticmethod
+    def from_dict(dict values):
+        return BSPOrderBookDelta.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(BSPOrderBookDelta obj):
+        return BSPOrderBookDelta.to_dict_c(obj)
+
+
+register_serializable_object(BSPOrderBookDelta, BSPOrderBookDelta.to_dict, BSPOrderBookDelta.from_dict)

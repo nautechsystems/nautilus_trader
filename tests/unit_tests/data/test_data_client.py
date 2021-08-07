@@ -89,34 +89,6 @@ class TestDataClient:
             logger=self.logger,
         )
 
-    def test_connect_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.connect()
-
-    def test_disconnect_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.disconnect()
-
-    def test_reset_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.reset()
-
-    def test_dispose_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.dispose()
-
     def test_subscribe_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
@@ -214,34 +186,6 @@ class TestMarketDataClient:
             clock=self.clock,
             logger=self.logger,
         )
-
-    def test_connect_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.connect()
-
-    def test_disconnect_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.disconnect()
-
-    def test_reset_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.reset()
-
-    def test_dispose_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.dispose()
 
     def test_subscribe_instruments_when_not_implemented_raises_exception(self):
         # Arrange

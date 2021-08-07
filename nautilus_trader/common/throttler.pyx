@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any, Callable
+
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
 
@@ -51,8 +53,8 @@ cdef class Throttler:
         str name,
         int limit,
         timedelta interval not None,
-        output_send not None: callable,
-        output_drop: callable,  # Can be None
+        output_send not None: Callable[[Any], None],
+        output_drop: Callable[[Any], None],  # Can be None
         Clock clock not None,
         Logger logger not None,
     ):
@@ -67,9 +69,9 @@ cdef class Throttler:
             The limit setting for the throttling.
         interval : timedelta
             The interval setting for the throttling.
-        output_send : callable
+        output_send : Callable[[Any], None]
             The output handler to send messages from the throttler.
-        output_drop : callable, optional
+        output_drop : Callable[[Any], None], optional
             The output handler to drop messages from the throttler.
             If None then messages will be buffered.
         clock : Clock
@@ -86,9 +88,9 @@ cdef class Throttler:
         ValueError
             If interval is not positive (> 0).
         ValueError
-            If output_send is not of type callable.
+            If output_send is not of type Callable.
         ValueError
-            If output_drop is not of type callable or None.
+            If output_drop is not of type Callable or None.
 
         """
         Condition.valid_string(name, "name")
@@ -98,7 +100,7 @@ cdef class Throttler:
         Condition.callable_or_none(output_drop, "output_drop")
 
         self._clock = clock
-        self._log = LoggerAdapter(component=f"Throttler-{name}", logger=logger)
+        self._log = LoggerAdapter(component_name=f"Throttler-{name}", logger=logger)
         self._interval_ns = secs_to_nanos(interval.total_seconds())
         self._buffer = Queue()
         self._timer_name = f"{name}-DEQUE"
@@ -201,7 +203,7 @@ cdef class Throttler:
             self._set_timer(timer_target)
             self.is_limiting = True
 
-    cdef void _set_timer(self, handler: callable) except *:
+    cdef void _set_timer(self, handler: Callable[[TimeEvent], None]) except *:
         self._clock.set_time_alert(
             name=self._timer_name,
             alert_time=nanos_to_unix_dt(self._clock.timestamp_ns() + self._delta_next()),

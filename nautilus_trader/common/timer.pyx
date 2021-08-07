@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Callable
+
 from libc.stdint cimport int64_t
 
 from threading import Timer as TimerThread
@@ -79,7 +81,11 @@ cdef class TimeEventHandler:
     Represents a bundled event and handler.
     """
 
-    def __init__(self, TimeEvent event not None, handler not None: callable):
+    def __init__(
+        self,
+        TimeEvent event not None,
+        handler not None: Callable[[TimeEvent], None],
+    ):
         self.event = event
         self._handler = handler
 
@@ -122,7 +128,7 @@ cdef class Timer:
     def __init__(
         self,
         str name not None,
-        callback not None: callable,
+        callback not None: Callable[[TimeEvent], None],
         int64_t interval_ns,
         int64_t start_time_ns,
         int64_t stop_time_ns=0,
@@ -134,14 +140,21 @@ cdef class Timer:
         ----------
         name : str
             The name for the timer.
-        callback : callable
-            The function to call at the next time.
+        callback : Callable[[TimeEvent], None]
+            The delegate to call at the next time.
         interval_ns : int64
             The time interval for the timer (not negative).
         start_time_ns : int64
             The UNIX time (nanoseconds) for timer start.
         stop_time_ns : int64, optional
             The UNIX time (nanoseconds) for timer stop (if 0 then timer is continuous).
+
+        Raises
+        ------
+        ValueError
+            If name is not a valid string.
+        TypeError
+            If callback is not of type Callable.
 
         """
         Condition.valid_string(name, "name")
@@ -228,7 +241,7 @@ cdef class TestTimer(Timer):
     def __init__(
         self,
         str name not None,
-        callback not None: callable,
+        callback not None: Callable[[TimeEvent], None],
         int64_t interval_ns,
         int64_t start_time_ns,
         int64_t stop_time_ns=0,
@@ -240,8 +253,8 @@ cdef class TestTimer(Timer):
         ----------
         name : str
             The name for the timer.
-        callback : callable
-            The function to call at the next time.
+        callback : Callable[[TimeEvent], None]
+            The delegate to call at the next time.
         interval_ns : int64
             The time interval for the timer (not negative).
         start_time_ns : int64
@@ -326,7 +339,7 @@ cdef class LiveTimer(Timer):
     def __init__(
         self,
         str name not None,
-        callback not None: callable,
+        callback not None: Callable[[TimeEvent], None],
         int64_t interval_ns,
         int64_t now_ns,
         int64_t start_time_ns,
@@ -339,8 +352,8 @@ cdef class LiveTimer(Timer):
         ----------
         name : str
             The name for the timer.
-        callback : callable
-            The function to call at the next time.
+        callback : Callable[[TimeEvent], None]
+            The delegate to call at the next time.
         interval_ns : int64
             The time interval for the timer.
         now_ns : int64
@@ -353,7 +366,7 @@ cdef class LiveTimer(Timer):
         Raises
         ------
         TypeError
-            If callback is not of type callable.
+            If callback is not of type Callable.
 
         """
         Condition.valid_string(name, "name")
@@ -398,7 +411,7 @@ cdef class ThreadTimer(LiveTimer):
     def __init__(
         self,
         str name not None,
-        callback not None: callable,
+        callback not None: Callable[[TimeEvent], None],
         int64_t interval_ns,
         int64_t now_ns,
         int64_t start_time_ns,
@@ -411,8 +424,8 @@ cdef class ThreadTimer(LiveTimer):
         ----------
         name : str
             The name for the timer.
-        callback : callable
-            The function to call at the next time.
+        callback : Callable[[TimeEvent], None]
+            The delegate to call at the next time.
         interval_ns : int64
             The time interval for the timer.
         now_ns : int64
@@ -425,7 +438,7 @@ cdef class ThreadTimer(LiveTimer):
         Raises
         ------
         TypeError
-            If callback is not of type callable.
+            If callback is not of type Callable.
 
         """
         super().__init__(
@@ -458,7 +471,7 @@ cdef class LoopTimer(LiveTimer):
         self,
         loop not None,
         str name not None,
-        callback not None: callable,
+        callback not None: Callable[[TimeEvent], None],
         int64_t interval_ns,
         int64_t now_ns,
         int64_t start_time_ns,
@@ -473,8 +486,8 @@ cdef class LoopTimer(LiveTimer):
             The event loop to run the timer on.
         name : str
             The name for the timer.
-        callback : callable
-            The function to call at the next time.
+        callback : Callable[[TimeEvent], None]
+            The delegate to call at the next time.
         interval_ns : int64
             The time interval for the timer.
         now_ns : int64
@@ -487,7 +500,7 @@ cdef class LoopTimer(LiveTimer):
         Raises
         ------
         TypeError
-            If callback is not of type callable.
+            If callback is not of type Callable.
 
         """
         Condition.valid_string(name, "name")

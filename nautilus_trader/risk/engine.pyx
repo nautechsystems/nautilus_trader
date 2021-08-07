@@ -443,10 +443,23 @@ cdef class RiskEngine(Component):
         ########################################################################
         # Validate command
         ########################################################################
-        if self._cache.is_order_completed(command.client_order_id):
+        cdef Order order = self._cache.order(command.client_order_id)
+        if order is None:
+            self._deny_command(
+                command=command,
+                reason=f"no order found for {repr(command.client_order_id)}",
+            )
+            return  # Denied
+        elif order.is_completed_c():
             self._deny_command(
                 command=command,
                 reason=f"{repr(command.client_order_id)} already completed",
+            )
+            return  # Denied
+        elif order.is_inflight_c():
+            self._deny_command(
+                command=command,
+                reason=f"{repr(command.client_order_id)} currently in-flight",
             )
             return  # Denied
 
@@ -479,15 +492,6 @@ cdef class RiskEngine(Component):
             self._deny_command(command=command, reason=risk_msg)
             return  # Denied
 
-        # Get order relating to update
-        cdef Order order = self._cache.order(command.client_order_id)
-        if order is None:
-            self._deny_command(
-                command=command,
-                reason=f"{command.client_order_id} not found in the cache",
-            )
-            return  # Denied
-
         # Check TradingState
         if self.trading_state == TradingState.HALTED:
             self._deny_command(
@@ -517,10 +521,23 @@ cdef class RiskEngine(Component):
         ########################################################################
         # Validate command
         ########################################################################
-        if self._cache.is_order_completed(command.client_order_id):
+        cdef Order order = self._cache.order(command.client_order_id)
+        if order is None:
+            self._deny_command(
+                command=command,
+                reason=f"no order found for {repr(command.client_order_id)}",
+            )
+            return  # Denied
+        elif order.is_completed_c():
             self._deny_command(
                 command=command,
                 reason=f"{repr(command.client_order_id)} already completed",
+            )
+            return  # Denied
+        elif order.is_pending_cancel_c():
+            self._deny_command(
+                command=command,
+                reason=f"{repr(command.client_order_id)} already pending cancel",
             )
             return  # Denied
 

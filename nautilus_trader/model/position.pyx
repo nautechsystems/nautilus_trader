@@ -435,9 +435,15 @@ cdef class Position:
 
         # Set state
         if self.net_qty > 0:
+            self.entry = OrderSide.BUY
             self.side = PositionSide.LONG
+            self.ts_closed = 0
+            self.duration_ns = 0
         elif self.net_qty < 0:
+            self.entry = OrderSide.SELL
             self.side = PositionSide.SHORT
+            self.ts_closed = 0
+            self.duration_ns = 0
         else:
             self.side = PositionSide.FLAT
             self.ts_closed = fill.ts_event

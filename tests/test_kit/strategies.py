@@ -30,6 +30,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
@@ -366,7 +367,10 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         """
         if extra_id_tag is None:
             extra_id_tag = ""
-        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag)
+        super().__init__(
+            order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag,
+            oms_type=OMSType.NETTING,
+        )
         self.instrument_id = instrument_id
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.trade_size = trade_size
@@ -390,17 +394,17 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         self.subscribe_instrument_status_updates(self.instrument_id)
         self.subscribe_instrument_close_prices(self.instrument_id)
 
-    def on_order_book_delta(self, data: OrderBookData):
+    def on_order_book_delta(self, delta: OrderBookData):
         """
         Actions to be performed when the strategy is running and receives an order book.
 
         Parameters
         ----------
-        order_book : OrderBook
-            The order book received.
+        delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
+            The order book delta received.
 
         """
-        self.book.apply(data)
+        self.book.apply(delta)
         bid_qty = self.book.best_bid_qty()
         ask_qty = self.book.best_ask_qty()
         if bid_qty and ask_qty:
@@ -507,8 +511,8 @@ class MarketMaker(TradingStrategy):
         # Subscribe to live data
         self.subscribe_order_book_deltas(self.instrument_id)
 
-    def on_order_book_delta(self, data: OrderBookData):
-        self._book.apply(data)
+    def on_order_book_delta(self, delta: OrderBookData):
+        self._book.apply(delta)
         bid_price = self._book.best_ask_price()
         ask_price = self._book.best_ask_price()
         if bid_price and ask_price:

@@ -97,10 +97,10 @@ cdef class OrderInitialized(OrderEvent):
     """
     Represents an event where an order has been initialized.
 
-    This is a seed event that any order can then be instantiated from through
-    a creation method. This event should contain enough information to be able
-    send it over a wire and have a valid order instantiated with exactly the
-    same properties as if it had been instantiated locally.
+    This is a seed event which can instantiate any order through a creation
+    method. This event should contain enough information to be able to send it
+    'over the wire' and have a valid order created with exactly the same
+    properties as if it had been instantiated locally.
     """
 
     def __init__(
@@ -155,8 +155,8 @@ cdef class OrderInitialized(OrderEvent):
             client_order_id,
             None,  # Pending assignment by venue
             event_id,
-            ts_init,  # Timestamp of initialization the same
-            ts_init,  # Timestamp of initialization the same
+            ts_init,  # Timestamp identical to ts_init
+            ts_init,
         )
 
         self.side = order_side
@@ -305,8 +305,8 @@ cdef class OrderDenied(OrderEvent):
             client_order_id,
             None,  # Never assigned
             event_id,
-            ts_init,  # Timestamp of initialization the same
-            ts_init,  # Timestamp of initialization the same
+            ts_init,  # Timestamp identical to ts_init
+            ts_init,
         )
 
         self.reason = reason
@@ -701,10 +701,10 @@ cdef class OrderRejected(OrderEvent):
         Raises
         ------
         ValueError
-            If rejected_reason is not a valid_string.
+            If reason is not a valid_string.
 
         """
-        Condition.valid_string(reason, "rejected_reason")
+        Condition.valid_string(reason, "reason")
         super().__init__(
             trader_id,
             strategy_id,
@@ -717,7 +717,6 @@ cdef class OrderRejected(OrderEvent):
             ts_init,
         )
 
-        self.account_id = account_id
         self.reason = reason
 
     def __str__(self) -> str:
@@ -1531,13 +1530,13 @@ cdef class OrderUpdateRejected(OrderEvent):
         Raises
         ------
         ValueError
-            If rejected_response_to is not a valid string.
+            If response_to is not a valid string.
         ValueError
-            If rejected_reason is not a valid string.
+            If reason is not a valid string.
 
         """
-        Condition.valid_string(response_to, "rejected_response_to")
-        Condition.valid_string(reason, "rejected_reason")
+        Condition.valid_string(response_to, "response_to")
+        Condition.valid_string(reason, "reason")
         super().__init__(
             trader_id,
             strategy_id,
@@ -1693,13 +1692,13 @@ cdef class OrderCancelRejected(OrderEvent):
         Raises
         ------
         ValueError
-            If rejected_response_to is not a valid string.
+            If response_to is not a valid string.
         ValueError
-            If rejected_reason is not a valid string.
+            If reason is not a valid string.
 
         """
-        Condition.valid_string(response_to, "rejected_response_to")
-        Condition.valid_string(reason, "rejected_reason")
+        Condition.valid_string(response_to, "response_to")
+        Condition.valid_string(reason, "reason")
         super().__init__(
             trader_id,
             strategy_id,

@@ -358,7 +358,7 @@ class TestCache:
         position = Position(instrument=AUDUSD_SIM, fill=fill)
 
         # Act
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
 
         # Assert
         assert self.cache.position_exists(position.id)
@@ -396,7 +396,7 @@ class TestCache:
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill)
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
 
         # Act
         result = self.cache.load_position(position.id)
@@ -576,7 +576,7 @@ class TestCache:
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
 
         # Act
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
 
         # Assert
         assert self.cache.position_exists(position.id)
@@ -622,7 +622,7 @@ class TestCache:
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
 
         order2 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -692,7 +692,7 @@ class TestCache:
         )
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position1)
+        self.cache.add_position(position1, OMSType.HEDGING)
 
         # -- Position 2 --------------------------------------------------------
 
@@ -715,7 +715,7 @@ class TestCache:
         )
 
         position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
-        self.cache.add_position(position2)
+        self.cache.add_position(position2, OMSType.HEDGING)
 
         # Assert
         assert position1.is_open
@@ -762,7 +762,7 @@ class TestCache:
         )
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position1)
+        self.cache.add_position(position1, OMSType.HEDGING)
 
         # -- Position 2 --------------------------------------------------------
 
@@ -785,7 +785,7 @@ class TestCache:
         )
 
         position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
-        self.cache.add_position(position2)
+        self.cache.add_position(position2, OMSType.HEDGING)
 
         order3 = self.strategy.order_factory.market(
             GBPUSD_SIM.id,
@@ -873,7 +873,7 @@ class TestCache:
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
-        self.cache.add_position(position1)
+        self.cache.add_position(position1, OMSType.HEDGING)
 
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -922,7 +922,7 @@ class TestCache:
         )
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
-        self.cache.add_position(position1)
+        self.cache.add_position(position1, OMSType.HEDGING)
 
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -976,7 +976,7 @@ class TestCache:
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
-        self.cache.add_position(position1)
+        self.cache.add_position(position1, OMSType.HEDGING)
 
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,

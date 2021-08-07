@@ -13,13 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.data.client cimport DataClient
-from nautilus_trader.data.client cimport MarketDataClient
+from nautilus_trader.model.data.venue import InstrumentClosePrice
 
 
-cdef class BacktestDataClient(DataClient):
-    pass
-
-
-cdef class BacktestMarketDataClient(MarketDataClient):
-    pass
+def serialize(price: InstrumentClosePrice):
+    result = price.to_dict(price)
+    result["close_price"] = price.close_price.as_double()
+    return result

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.adapters.betfair.common import price_probability_map
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
 from nautilus_trader.adapters.betfair.common import round_price
@@ -53,3 +54,11 @@ def test_probability_to_price():
     assert probability_to_price(0.499, side=OrderSide.BUY) == Price.from_str("2.02")
     assert probability_to_price(0.501, side=OrderSide.BUY) == Price.from_str("2.0")
     assert probability_to_price(0.501, side=OrderSide.SELL) == Price.from_str("1.99")
+    assert probability_to_price(Price.from_str("0.125"), side=OrderSide.BUY) == Price.from_str(
+        "8.0"
+    )
+
+
+def test_price_probability_map():
+    for prob in price_probability_map.values():
+        assert len(prob) == 7

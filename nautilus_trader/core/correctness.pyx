@@ -218,7 +218,7 @@ cdef class Condition:
     @staticmethod
     cdef void callable(object argument, str param, ex_type=None) except *:
         """
-        Check the object is callable.
+        Check the object is of type Callable.
 
         Parameters
         ----------
@@ -232,7 +232,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If argument is not callable.
+            If argument is not of type Callable.
 
         """
         if PyCallable_Check(argument):
@@ -247,7 +247,7 @@ cdef class Condition:
     @staticmethod
     cdef void callable_or_none(object argument, str param, ex_type=None) except *:
         """
-        Check the object is callable or None.
+        Check the object is of type Callable or None.
 
         Parameters
         ----------
@@ -261,7 +261,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If argument is not None and not callable.
+            If argument is not None and not of type Callable.
 
         """
         if argument is None:
@@ -962,7 +962,7 @@ class PyCondition:
     @staticmethod
     def callable(argument, str param, ex_type=None):
         """
-        Check the object is callable.
+        Check the object is of type Callable.
 
         Parameters
         ----------
@@ -976,7 +976,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If argument is not callable.
+            If argument is not of type Callable.
 
         """
         Condition.callable(argument, param, ex_type)
@@ -984,7 +984,7 @@ class PyCondition:
     @staticmethod
     def callable_or_none(argument, str param, ex_type=None):
         """
-        Check the object is callable or None.
+        Check the object is of type Callable or None.
 
         Parameters
         ----------
@@ -998,7 +998,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If argument is not None and not callable.
+            If argument is not None and not of type Callable.
 
         """
         Condition.callable_or_none(argument, param, ex_type)

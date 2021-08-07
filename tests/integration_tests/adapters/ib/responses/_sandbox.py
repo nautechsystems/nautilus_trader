@@ -28,7 +28,7 @@ def contract_details_cl():
     # Write pickled CL contract details to a file
 
     client = ib_insync.IB()
-    client.connect()
+    client.start()
 
     contract = Future(
         instrument_id="CL",

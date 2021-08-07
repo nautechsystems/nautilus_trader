@@ -21,7 +21,6 @@ the `DataClient` instances, and the rest of the platform. This includes sending
 requests to, and receiving responses from, data endpoints via its registered
 data clients.
 
-Beneath it sits a `DataCache` which presents a read-only facade for consumers.
 The engine employs a simple fan-in fan-out messaging pattern to execute
 `DataCommand` type messages, and process `DataResponse` messages or market data
 objects.
@@ -31,6 +30,7 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
 from cpython.datetime cimport timedelta
+from typing import Callable
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
@@ -119,7 +119,7 @@ cdef class DataEngine(Component):
 
         self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}               # type: dict[ClientId, DataClient]
-        self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[callable]]
+        self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[Callable[[Bar], None]]]
         self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
 
         # Counters
@@ -318,14 +318,14 @@ cdef class DataEngine(Component):
     cpdef void _start(self) except *:
         cdef DataClient client
         for client in self._clients.values():
-            client.connect()
+            client.start()
 
         self._on_start()
 
     cpdef void _stop(self) except *:
         cdef DataClient client
         for client in self._clients.values():
-            client.disconnect()
+            client.stop()
 
         for aggregator in self._bar_aggregators.values():
             if isinstance(aggregator, TimeBarAggregator):

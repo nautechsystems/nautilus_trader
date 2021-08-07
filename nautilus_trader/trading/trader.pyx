@@ -275,6 +275,7 @@ cdef class Trader(Component):
             logger=self._log.get_logger(),
         )
 
+        self._exec_engine.register_oms_type(strategy)
         self._strategies.append(strategy)
 
         self._log.info(f"Registered {strategy}.")

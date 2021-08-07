@@ -38,6 +38,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
@@ -79,9 +80,22 @@ cdef class TradingStrategy(Actor):
     The abstract base class for all trading strategies.
 
     This class should not be used directly, but through a concrete subclass.
+
+    Strategy OMS (Order Management System):
+    An individual trading strategy can configure its own order management system
+    type which determines how positions are handled by the `ExecutionEngine`.
+
+    - OMSType.HEDGING: A position ID will be assigned for each new position
+    which is opened - per instrument.
+
+    - OMSType.NETTING: There will only ever be a single position for the strategy
+    per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
     """
 
-    def __init__(self, str order_id_tag not None):
+    def __init__(
+        self, str order_id_tag not None,
+        OMSType oms_type=OMSType.HEDGING,
+    ):
         """
         Initialize a new instance of the ``TradingStrategy`` class.
 
@@ -90,6 +104,9 @@ cdef class TradingStrategy(Actor):
         order_id_tag : str
             The unique order ID tag for the strategy. Must be unique
             amongst all running strategies for a particular trader ID.
+        oms_type : OMSType
+            The order management system type for the strategy. This will determine
+            how the `ExecutionEngine` handles position IDs (see docs).
 
         Raises
         ------
@@ -99,8 +116,10 @@ cdef class TradingStrategy(Actor):
         """
         Condition.valid_string(order_id_tag, "order_id_tag")
 
-        cdef StrategyId strategy_id = StrategyId(f"{type(self).__name__}-{order_id_tag}")
+        self.oms_type = oms_type
 
+        # Assign strategy ID
+        strategy_id = StrategyId(f"{type(self).__name__}-{order_id_tag}")
         super().__init__(component_id=strategy_id)
 
         # Indicators
