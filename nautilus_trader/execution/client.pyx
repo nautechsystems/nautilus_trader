@@ -118,7 +118,6 @@ cdef class ExecutionClient(Component):
 
         if config is None:
             config = {}
-
         super().__init__(
             clock=clock,
             logger=logger,

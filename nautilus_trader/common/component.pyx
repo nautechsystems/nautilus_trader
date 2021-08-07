@@ -162,7 +162,7 @@ cdef class Component:
     @property
     def is_running(self):
         """
-        The components current state is RUNNING.
+        If the components current state is RUNNING.
 
         Returns
         -------
