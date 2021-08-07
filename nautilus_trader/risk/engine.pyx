@@ -43,7 +43,6 @@ from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -301,23 +300,15 @@ cdef class RiskEngine(Component):
         """
         return self._max_notional_per_order.get(instrument_id)
 
-# -- ABSTRACT METHODS ------------------------------------------------------------------------------
-
-    cpdef void _on_start(self) except *:
-        pass  # Optionally override in subclass
-
-    cpdef void _on_stop(self) except *:
-        pass  # Optionally override in subclass
-
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
     cpdef void _start(self) except *:
+        pass
         # Do nothing else for now
-        self._on_start()
 
     cpdef void _stop(self) except *:
+        pass
         # Do nothing else for now
-        self._on_stop()
 
     cpdef void _reset(self) except *:
         self.command_count = 0

@@ -66,8 +66,6 @@ cdef class LiveRiskEngine(RiskEngine):
         """
         if config is None:
             config = {}
-        if "qsize" not in config:
-            config["qsize"] = 10000
         super().__init__(
             portfolio=portfolio,
             msgbus=msgbus,
@@ -78,7 +76,7 @@ cdef class LiveRiskEngine(RiskEngine):
         )
 
         self._loop = loop
-        self._queue = Queue(maxsize=config.get("qsize"))
+        self._queue = Queue(maxsize=config.get("qsize"), 10000)
 
         self._run_queue_task = None
         self.is_running = False
