@@ -13,14 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import os
 
 from betfairlightweight import APIClient
-
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data_client cimport LiveDataClientFactory
-from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.currency cimport Currency
@@ -30,14 +30,17 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 
 from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
 from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
     @staticmethod
     def create(
+        loop not None: asyncio.AbstractEventLoop,
         str name not None,
         dict config not None,
-        LiveDataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         LiveLogger logger not None,
         client_cls=None,
@@ -47,12 +50,16 @@ cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the clients.
         name : str
             The client name.
         config : dict
             The configuration dictionary.
-        engine : LiveDataEngine
-            The data engine for the Nautilus clients.
+        msgbus : MessageBus
+            The message bus for the clients.
+        cache : Cache
+            The cache for the clients.
         clock : LiveClock
             The clock for the clients.
         logger : LiveLogger
@@ -65,15 +72,20 @@ cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
         BetfairDataClient
 
         """
+        # Create client
+        client = APIClient(
+            username=os.getenv(config.get("username", ""), ""),
+            password=os.getenv(config.get("password", ""), ""),
+            app_key=os.getenv(config.get("app_key", ""), ""),
+            certs=os.getenv(config.get("cert_dir", ""), ""),
+            lightweight=True,
+        )
+
         data_client = BetfairDataClient(
-            client=APIClient(
-                username=os.getenv(config.get("username", ""), ""),
-                password=os.getenv(config.get("password", ""), ""),
-                app_key=os.getenv(config.get("app_key", ""), ""),
-                certs=os.getenv(config.get("cert_dir", ""), ""),
-                lightweight=True,
-            ),
-            engine=engine,
+            loop=loop,
+            client=client,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             market_filter=config.get("market_filter", {})
@@ -88,9 +100,11 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
 
     @staticmethod
     def create(
+        loop not None: asyncio.AbstractEventLoop,
         str name not None,
         dict config not None,
-        LiveExecutionEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         LiveLogger logger not None,
         client_cls=None,
@@ -100,12 +114,16 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the clients.
         name : str
             The client name.
         config : dict
             The configuration dictionary.
-        engine : LiveExecutionEngine
-            The execution engine for the Nautilus clients.
+        msgbus : MessageBus
+            The message bus for the clients.
+        cache : Cache
+            The cache for the clients.
         clock : LiveClock
             The clock for the clients.
         logger : LiveLogger
@@ -127,18 +145,20 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
             lightweight=True,
         )
 
-        # Get account identifier env variable or set default
+        # Get account ID env variable or set default
         account_id_env_var = os.getenv(config.get("account_id", ""), "001")
 
-        # Set account identifier
+        # Set account ID
         account_id = AccountId(BETFAIR_VENUE.value, account_id_env_var)
 
         # Create client
         exec_client = BetfairExecutionClient(
+            loop=loop,
             client=client,
             account_id=account_id,
             base_currency=Currency.from_str_c(config.get("base_currency")),
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             market_filter=config.get("market_filter", {})

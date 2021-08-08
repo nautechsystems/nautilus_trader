@@ -21,13 +21,13 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Message
-from nautilus_trader.core.message cimport MessageType
+from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
-from nautilus_trader.model.data cimport Data
-from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class LiveDataEngine(DataEngine):
@@ -39,7 +39,7 @@ cdef class LiveDataEngine(DataEngine):
     def __init__(
         self,
         loop not None: asyncio.AbstractEventLoop,
-        Portfolio portfolio not None,
+        MessageBus msgbus not None,
         Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
@@ -52,8 +52,8 @@ cdef class LiveDataEngine(DataEngine):
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the engine.
-        portfolio : int
-            The portfolio to register.
+        msgbus : MessageBus
+            The message bus for the engine.
         cache : Cache
             The cache for the engine.
         clock : Clock
@@ -67,7 +67,7 @@ cdef class LiveDataEngine(DataEngine):
         if config is None:
             config = {}
         super().__init__(
-            portfolio=portfolio,
+            msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
@@ -81,7 +81,7 @@ cdef class LiveDataEngine(DataEngine):
         self._run_queues_task = None
         self.is_running = False
 
-    cpdef object get_event_loop(self):
+    def get_event_loop(self) -> asyncio.AbstractEventLoop:
         """
         Return the internal event loop for the engine.
 
@@ -92,7 +92,7 @@ cdef class LiveDataEngine(DataEngine):
         """
         return self._loop
 
-    cpdef object get_run_queue_task(self):
+    def get_run_queue_task(self) -> asyncio.Task:
         """
         Return the internal run queue task for the engine.
 
@@ -197,7 +197,7 @@ cdef class LiveDataEngine(DataEngine):
             )
             self._loop.create_task(self._data_queue.put(data))  # Blocking until qsize reduces
 
-    cpdef void send(self, DataRequest request) except *:
+    cpdef void request(self, DataRequest request) except *:
         """
         Handle the given request.
 
@@ -227,7 +227,7 @@ cdef class LiveDataEngine(DataEngine):
             )
             self._loop.create_task(self._message_queue.put(request))  # Blocking until qsize reduces
 
-    cpdef void receive(self, DataResponse response) except *:
+    cpdef void response(self, DataResponse response) except *:
         """
         Handle the given response.
 
@@ -246,7 +246,6 @@ cdef class LiveDataEngine(DataEngine):
 
         """
         Condition.not_none(response, "response")
-        # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
             self._message_queue.put_nowait(response)
@@ -305,11 +304,11 @@ cdef class LiveDataEngine(DataEngine):
                 message = await self._message_queue.get()
                 if message is None:  # Sentinel message (fast C-level check)
                     continue         # Returns to the top to check `self.is_running`
-                if message.type == MessageType.COMMAND:
+                if message.category == MessageCategory.COMMAND:
                     self._execute_command(message)
-                elif message.type == MessageType.REQUEST:
+                elif message.category == MessageCategory.REQUEST:
                     self._handle_request(message)
-                elif message.type == MessageType.RESPONSE:
+                elif message.category == MessageCategory.RESPONSE:
                     self._handle_response(message)
                 else:
                     self._log.error(f"Cannot handle message: unrecognized {message}.")
@@ -323,7 +322,7 @@ cdef class LiveDataEngine(DataEngine):
                     f"Message queue processing stopped (qsize={self.message_qsize()}).",
                 )
 
-    cdef void _enqueue_sentinels(self):
+    cdef void _enqueue_sentinels(self) except *:
         self._data_queue.put_nowait(self._sentinel)
         self._message_queue.put_nowait(self._sentinel)
         self._log.debug(f"Sentinel message placed on data queue.")

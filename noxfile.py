@@ -4,7 +4,7 @@ import nox
 from nox.sessions import Session
 
 
-ALL_EXTRAS = "betfair ccxt docs ib oanda"
+ALL_EXTRAS = "betfair ccxt distributed docs ib"
 
 
 # Ensure everything runs within Poetry venvs
@@ -14,7 +14,7 @@ nox.options.error_on_external_run = True
 @nox.session
 def tests(session: Session) -> None:
     """Run the test suite."""
-    _setup_poetry(session)
+    _setup_poetry(session, "--extras", ALL_EXTRAS)
     _run_pytest(
         session,
         "--ignore=tests/integration_tests/",
@@ -43,7 +43,7 @@ def performance_tests(session: Session) -> None:
     _run_pytest(
         session,
         "tests/performance_tests/",
-        "--benchmark-json=PERF.JSON",
+        "--benchmark-json=output.json",
         parallel=False,
     )
 
@@ -53,13 +53,6 @@ def coverage(session: Session) -> None:
     """Run with test coverage."""
     _setup_poetry(session, "--extras", ALL_EXTRAS, env={"PROFILING_MODE": "true"})
     _run_coverage(session)
-
-
-@nox.session
-def build_docs(session: Session) -> None:
-    """Build documentation."""
-    _setup_poetry(session, "--extras", ALL_EXTRAS)
-    session.run("poetry", "run", "sphinx-build", "docs/source", "docs/build")
 
 
 @nox.session
@@ -84,9 +77,13 @@ def _setup_poetry(session: Session, *args, **kwargs) -> None:
     # Once they are, the package dependencies can be installed and the
     # actual package can be compiled.
 
-    # No need to copy built *.so files back into the source tree
     env = kwargs.get("env", {})
-    # Skip the build copy when using Nox.
+
+    if "no-parallel" in session.posargs:
+        # Ensure deterministic builds by disabling parallelism
+        env["PARALLEL_BUILD"] = ""  # Empty string parsed as false
+
+    # Skip the build copy when using Nox
     env["SKIP_BUILD_COPY"] = "true"
     kwargs["env"] = env
 
@@ -95,13 +92,12 @@ def _setup_poetry(session: Session, *args, **kwargs) -> None:
     session.run("poetry", "install", *args, **kwargs)
 
 
-def _run_pytest(session: Session, *args, parallel: bool = True) -> None:
+def _run_pytest(session: Session, *args, parallel: bool = False) -> None:
     pytest_args = [
         "poetry",
         "run",
         "pytest",
         *args,
-        *session.posargs,
         "--new-first",
         "--failed-first",
     ]

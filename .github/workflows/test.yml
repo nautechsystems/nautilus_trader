@@ -33,7 +33,8 @@ jobs:
 
       # Test pip installation
       - name: Test pip installation
-        run: pip install .[docs]
+        if: runner.os != 'Windows'
+        run: pip install .[betfair,ccxt,docs,ib]
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
@@ -69,4 +70,4 @@ jobs:
 
       # Run tests
       - name: Run tests
-        run: nox -s tests_with_integration --reuse-existing-virtualenvs
+        run: nox -rs tests_with_integration -- no-parallel

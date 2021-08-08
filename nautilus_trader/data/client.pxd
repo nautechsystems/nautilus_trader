@@ -15,36 +15,32 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.cache.cache cimport Cache
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.data.engine cimport DataEngine
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
-from nautilus_trader.model.data cimport Data
-from nautilus_trader.model.data cimport DataType
-from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
-cdef class DataClient:
-    cdef Clock _clock
-    cdef UUIDFactory _uuid_factory
-    cdef LoggerAdapter _log
-    cdef DataEngine _engine
+cdef class DataClient(Component):
+    cdef MessageBus _msgbus
+    cdef Cache _cache
     cdef dict _config
 
-    cdef readonly ClientId id
-    """The client identifier.\n\n:returns: `ClientId`"""
+    cdef set _subscribed_instruments
+    cdef dict _subscribed_order_books
+    cdef dict _subscribed_quote_ticks
+    cdef dict _subscribed_trade_ticks
+    cdef dict _subscribed_bars
+    cdef object _update_instruments_task
+
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
-
-    cpdef void connect(self) except *
-    cpdef void disconnect(self) except *
-    cpdef void reset(self) except *
-    cpdef void dispose(self) except *
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -67,24 +63,29 @@ cdef class MarketDataClient(DataClient):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
+    cpdef void subscribe_instruments(self) except *
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_order_book(self, InstrumentId instrument_id, BookLevel level, int depth=*, dict kwargs=*) except *
     cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=*) except *
+    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookLevel level, int depth=*, dict kwargs=*) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
-
+    cpdef void subscribe_venue_status_update(self, InstrumentId instrument_id) except *
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
+    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
+    cpdef void unsubscribe_instruments(self) except *
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
-    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
+    cpdef void unsubscribe_venue_status_update(self, InstrumentId instrument_id) except *
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
+    cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
 
 # -- REQUEST HANDLERS ------------------------------------------------------------------------------
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *
-    cpdef void request_instruments(self, UUID correlation_id) except *
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -112,7 +113,6 @@ cdef class MarketDataClient(DataClient):
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_instruments(self, list instruments, UUID correlation_id) except *
     cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *
     cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *
     cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *

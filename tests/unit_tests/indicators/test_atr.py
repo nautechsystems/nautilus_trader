@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import sys
-import unittest
+
+import pytest
 
 from nautilus_trader.indicators.atr import AverageTrueRange
 from tests.test_kit.providers import TestInstrumentProvider
@@ -24,8 +25,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class AverageTrueRangeTests(unittest.TestCase):
-    def setUp(self):
+class TestAverageTrueRange:
+    def setup(self):
         # Fixture Setup
         self.atr = AverageTrueRange(10)
 
@@ -33,26 +34,26 @@ class AverageTrueRangeTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("AverageTrueRange", self.atr.name)
+        assert self.atr.name == "AverageTrueRange"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("AverageTrueRange(10, SIMPLE, True, 0.0)", str(self.atr))
-        self.assertEqual("AverageTrueRange(10, SIMPLE, True, 0.0)", repr(self.atr))
+        assert str(self.atr) == "AverageTrueRange(10, SIMPLE, True, 0.0)"
+        assert repr(self.atr) == "AverageTrueRange(10, SIMPLE, True, 0.0)"
 
     def test_period(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(10, self.atr.period)
+        assert self.atr.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.atr.initialized)
+        assert self.atr.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -61,7 +62,7 @@ class AverageTrueRangeTests(unittest.TestCase):
             self.atr.update_raw(1.00000, 1.00000, 1.00000)
 
         # Assert
-        self.assertEqual(True, self.atr.initialized)
+        assert self.atr.initialized is True
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -73,14 +74,14 @@ class AverageTrueRangeTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(2.999999999997449e-05, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 2.999999999997449e-05
 
     def test_value_with_no_inputs_returns_zero(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(0.0, self.atr.value)
+        assert self.atr.value == 0.0
 
     def test_value_with_epsilon_input(self):
         # Arrange
@@ -89,7 +90,7 @@ class AverageTrueRangeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.0, self.atr.value)
+        assert self.atr.value == 0.0
 
     def test_value_with_one_ones_input(self):
         # Arrange
@@ -97,7 +98,7 @@ class AverageTrueRangeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.0, self.atr.value)
+        assert self.atr.value == 0.0
 
     def test_value_with_one_input(self):
         # Arrange
@@ -105,7 +106,7 @@ class AverageTrueRangeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertAlmostEqual(0.00020, self.atr.value)
+        assert self.atr.value == pytest.approx(0.00020)
 
     def test_value_with_three_inputs(self):
         # Arrange
@@ -115,7 +116,7 @@ class AverageTrueRangeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertAlmostEqual(0.00020, self.atr.value)
+        assert self.atr.value == pytest.approx(0.00020)
 
     def test_value_with_close_on_high(self):
         # Arrange
@@ -130,7 +131,7 @@ class AverageTrueRangeTests(unittest.TestCase):
             self.atr.update_raw(high, low, close)
 
         # Assert
-        self.assertAlmostEqual(0.00010, self.atr.value, 2)
+        assert self.atr.value == pytest.approx(0.00010, 2)
 
     def test_value_with_close_on_low(self):
         # Arrange
@@ -145,7 +146,7 @@ class AverageTrueRangeTests(unittest.TestCase):
             self.atr.update_raw(high, low, close)
 
         # Assert
-        self.assertAlmostEqual(0.00010, self.atr.value)
+        assert self.atr.value == pytest.approx(0.00010)
 
     def test_floor_with_ten_ones_inputs(self):
         # Arrange
@@ -157,7 +158,7 @@ class AverageTrueRangeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(5e-05, floored_atr.value)
+        assert floored_atr.value == 5e-05
 
     def test_floor_with_exponentially_decreasing_high_inputs(self):
         # Arrange
@@ -174,7 +175,7 @@ class AverageTrueRangeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(5e-05, floored_atr.value)
+        assert floored_atr.value == 5e-05
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -185,5 +186,5 @@ class AverageTrueRangeTests(unittest.TestCase):
         self.atr.reset()
 
         # Assert
-        self.assertFalse(self.atr.initialized)
-        self.assertEqual(0, self.atr.value)
+        assert not self.atr.initialized
+        assert self.atr.value == 0

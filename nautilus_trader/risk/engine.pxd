@@ -13,75 +13,96 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.cache.cache cimport Cache
+from decimal import Decimal
+
+from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport SubmitBracketOrder
-from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.commands cimport TradingCommand
-from nautilus_trader.model.commands cimport UpdateOrder
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.c_enums.trading_state cimport TradingState
+from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport TradingCommand
+from nautilus_trader.model.commands.trading cimport UpdateOrder
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.bracket cimport BracketOrder
-from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class RiskEngine(Component):
-    cdef Portfolio _portfolio
-    cdef ExecutionEngine _exec_engine
+    cdef PortfolioFacade _portfolio
+    cdef MessageBus _msgbus
+    cdef CacheFacade _cache
+    cdef dict _max_notional_per_order
+    cdef Throttler _order_throttler
 
-    cdef readonly TraderId trader_id
-    """The trader identifier associated with the engine.\n\n:returns: `TraderId`"""
-    cdef readonly Cache cache
-    """The engines cache.\n\n:returns: `CacheFacade`"""
+    cdef readonly TradingState trading_state
+    """The current trading state for the engine.\n\n:returns: `TradingState`"""
+    cdef readonly bint is_bypassed
+    """If the risk engine is completely bypassed..\n\n:returns: `bool`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
-    cdef readonly bint block_all_orders
-    """If all orders are blocked from being sent.\n\n:returns: `bool`"""
+
+    cdef void _initialize_risk_checks(self, dict config) except *
+
+# -- COMMANDS --------------------------------------------------------------------------------------
+
+    cpdef void execute(self, Command command) except *
+    cpdef void process(self, Event event) except *
+    cpdef void set_trading_state(self, TradingState state) except *
+    cpdef void set_max_notional_per_order(self, InstrumentId instrument_id, new_value: Decimal) except *
+    cdef void _log_state(self) except *
+
+# -- RISK SETTINGS ---------------------------------------------------------------------------------
+
+    cpdef tuple max_order_rate(self)
+    cpdef dict max_notionals_per_order(self)
+    cpdef object max_notional_per_order(self, InstrumentId instrument_id)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void _on_start(self) except *
     cpdef void _on_stop(self) except *
 
-# -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef void execute(self, Command command) except *
-    cpdef void process(self, Event event) except *
-    cpdef void set_block_all_orders(self, bint value=*) except *
-
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cdef void _execute_command(self, Command command) except *
-    cdef void _handle_trading_command(self, TradingCommand command) except *
     cdef void _handle_submit_order(self, SubmitOrder command) except *
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
     cdef void _handle_update_order(self, UpdateOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
 
+# -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
+
+    cdef bint _check_order_id(self, Order order) except *
+    cdef bint _check_order(self, Instrument instrument, Order order) except *
+    cdef bint _check_order_quantity(self, Instrument instrument, Order order) except *
+    cdef bint _check_order_price(self, Instrument instrument, Order order) except *
+    cdef bint _check_order_risk(self, Instrument instrument, Order order) except *
+    cdef str _check_price(self, Instrument instrument, Price price)
+    cdef str _check_quantity(self, Instrument instrument, Quantity quantity)
+
+# -- DENIALS ---------------------------------------------------------------------------------------
+
+    cdef void _deny_command(self, TradingCommand command, str reason) except *
+    cpdef _deny_new_order(self, TradingCommand command)
+    cdef void _deny_order(self, Order order, str reason) except *
+    cdef void _deny_bracket_order(self, BracketOrder bracket_order, str reason) except *
+
+# -- EGRESS ----------------------------------------------------------------------------------------
+
+    cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order)
+    cpdef _send_command(self, TradingCommand command)
+
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, Event event) except *
-
-# -- PRE-TRADE VALIDATION --------------------------------------------------------------------------
-
-    cdef void _check_duplicate_ids(self, BracketOrder bracket_order)
-    cdef list _check_order_values(self, Instrument instrument, Order order, list msgs)
-
-# -- PRE-TRADE RISK --------------------------------------------------------------------------------
-
-    cdef list _check_order_risk(self, Instrument instrument, Order order)
-    cdef list _check_bracket_order_risk(self, Instrument instrument, BracketOrder bracket_order)
-
-# -- EVENT GENERATION ------------------------------------------------------------------------------
-
-    cdef void _invalidate_order(self, ClientOrderId client_order_id, str reason) except *
-    cdef void _invalidate_bracket_order(self, BracketOrder bracket_order, str reason) except *
-    cdef void _deny_order(self, ClientOrderId client_order_id, str reason) except *
+    cpdef void _handle_event(self, Event event) except *

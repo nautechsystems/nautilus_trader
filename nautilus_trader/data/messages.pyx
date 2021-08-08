@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any, Callable
+
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.uuid cimport UUID
-from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data.base cimport DataType
 
 
 cdef class DataCommand(Command):
@@ -30,9 +32,8 @@ cdef class DataCommand(Command):
         self,
         ClientId client_id not None,
         DataType data_type not None,
-        handler not None: callable,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initializes a new instance of the `DataCommand`` class.
@@ -40,22 +41,19 @@ cdef class DataCommand(Command):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier for the command.
+            The data client ID for the command.
         data_type : type
             The data type for the command.
-        handler : callable
-            The handler for the command.
         command_id : UUID
-            The command identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the command.
+            The command ID.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the command object was initialized.
 
         """
-        super().__init__(command_id, timestamp_ns)
+        super().__init__(command_id, ts_init)
 
         self.client_id = client_id
         self.data_type = data_type
-        self.handler = handler
 
     def __str__(self) -> str:
         return f"{type(self).__name__}({self.data_type})"
@@ -64,7 +62,6 @@ cdef class DataCommand(Command):
         return (f"{type(self).__name__}("
                 f"client_id={self.client_id.value}, "
                 f"data_type={self.data_type}, "
-                f"handler={self.handler}, "
                 f"id={self.id})")
 
 
@@ -77,9 +74,8 @@ cdef class Subscribe(DataCommand):
         self,
         ClientId client_id not None,
         DataType data_type not None,
-        handler not None: callable,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``Subscribe`` class.
@@ -87,23 +83,20 @@ cdef class Subscribe(DataCommand):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier for the command.
+            The data client ID for the command.
         data_type : type
             The data type for the subscription.
-        handler : callable
-            The handler for the subscription.
         command_id : UUID
-            The command identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the command.
+            The command ID.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the command object was initialized.
 
         """
         super().__init__(
             client_id,
             data_type,
-            handler,
             command_id,
-            timestamp_ns,
+            ts_init,
         )
 
 
@@ -116,9 +109,8 @@ cdef class Unsubscribe(DataCommand):
         self,
         ClientId client_id not None,
         DataType data_type not None,
-        handler not None: callable,
         UUID command_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``Unsubscribe`` class.
@@ -126,23 +118,20 @@ cdef class Unsubscribe(DataCommand):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier for the command.
+            The data client ID for the command.
         data_type : type
             The data type to unsubscribe from.
-        handler : callable
-            The handler for the subscription.
         command_id : UUID
-            The command identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the command.
+            The command ID.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the command object was initialized.
 
         """
         super().__init__(
             client_id,
             data_type,
-            handler,
             command_id,
-            timestamp_ns,
+            ts_init,
         )
 
 
@@ -155,9 +144,9 @@ cdef class DataRequest(Request):
         self,
         ClientId client_id not None,
         DataType data_type not None,
-        callback not None: callable,
+        callback not None: Callable[[Any], None],
         UUID request_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``DataRequest`` class.
@@ -165,25 +154,25 @@ cdef class DataRequest(Request):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier for the request.
+            The data client ID for the request.
         data_type : type
             The data type for the request.
-        callback : callable
-            The callback to receive the data.
+        callback : Callable[[Any], None]
+            The delegate to call with the data.
         request_id : UUID
-            The request identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the request.
+            The request ID.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the request object was initialized.
 
         """
         super().__init__(
+            callback,
             request_id,
-            timestamp_ns,
+            ts_init,
         )
 
         self.client_id = client_id
         self.data_type = data_type
-        self.callback = callback
 
     def __str__(self) -> str:
         return f"{type(self).__name__}({self.data_type})"
@@ -208,7 +197,7 @@ cdef class DataResponse(Response):
         data not None,
         UUID correlation_id not None,
         UUID response_id not None,
-        int64_t timestamp_ns,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``DataResponse`` class.
@@ -216,23 +205,23 @@ cdef class DataResponse(Response):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier of the response.
+            The data client ID of the response.
         data_type : type
             The data type of the response.
         data : object
             The data of the response.
         correlation_id : UUID
-            The correlation identifier.
+            The correlation ID.
         response_id : UUID
-            The response identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the response.
+            The response ID.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the response object was initialized.
 
         """
         super().__init__(
             correlation_id,
             response_id,
-            timestamp_ns,
+            ts_init,
         )
 
         self.client_id = client_id

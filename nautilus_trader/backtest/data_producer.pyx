@@ -17,8 +17,8 @@
 This module provides a data producer for backtesting.
 """
 
-from bisect import bisect_left
 import gc
+from bisect import bisect_left
 
 import numpy as np
 import pandas as pd
@@ -38,10 +38,10 @@ from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
-from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport QuoteTick
 
 
 INT64_MAX = 9223372036854775807
@@ -80,6 +80,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         dict trade_ticks=None,
         dict bars_bid=None,
         dict bars_ask=None,
+        list data=None
     ):
         """
         Initialize a new instance of the ``BacktestDataProducer`` class.
@@ -101,7 +102,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         bars_ask : dict[InstrumentId, dict[BarAggregation, pd.DataFrame]]
             The ask bar data for backtesting.
         logger : Logger
-            The logger for the component.
+            The logger for the producer.
 
         """
         if instruments is None:
@@ -118,9 +119,11 @@ cdef class BacktestDataProducer(DataProducerFacade):
             bars_bid = {}
         if bars_ask is None:
             bars_ask = {}
+        if data is None:
+            data = []
 
         self._log = LoggerAdapter(
-            component=type(self).__name__,
+            component_name=type(self).__name__,
             logger=logger,
         )
 
@@ -129,10 +132,15 @@ cdef class BacktestDataProducer(DataProducerFacade):
         cdef int instrument_counter = 0
         self._instrument_index = {}
 
+        # Find TradeTick objects
+        ticks = [
+            tick for instrument in self._instruments for tick in trade_ticks.get(instrument.id, [])
+            if isinstance(trade_ticks.get(instrument.id), list) and isinstance(trade_ticks.get(instrument.id)[0], TradeTick)
+        ]
         # Merge data stream
         self._stream = sorted(
-            generic_data + order_book_data,
-            key=lambda x: x.ts_recv_ns,
+            generic_data + order_book_data + ticks + data,
+            key=lambda x: x.ts_init,
         )
 
         # Check bar data integrity
@@ -170,7 +178,10 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
             # Process quote tick data
             # -----------------------
-            if instrument_id in quote_ticks or instrument_id in bars_bid:
+            if instrument_id in quote_ticks and isinstance(quote_ticks[instrument_id], list):
+                self._stream = sorted(self._stream + quote_ticks[instrument_id], key=lambda x: x.ts_init)
+
+            elif instrument_id in quote_ticks or instrument_id in bars_bid:
                 ts = unix_timestamp()  # Time data processing
                 quote_wrangler = QuoteTickDataWrangler(
                     instrument=instrument,
@@ -179,7 +190,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
                     data_bars_ask=bars_ask.get(instrument_id),
                 )
 
-                # noinspection PyUnresolvedReferences
                 quote_wrangler.pre_process(instrument_counter)
                 quote_tick_frames.append(quote_wrangler.processed_data)
 
@@ -188,7 +198,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
                     f"Prepared {len(quote_wrangler.processed_data):,} {instrument_id} quote tick rows in "
                     f"{unix_timestamp() - ts:.3f}s.")
                 del quote_wrangler  # Dump processing artifact
-
             # Process trade tick data
             # -----------------------
             if instrument_id in trade_ticks:
@@ -199,7 +208,6 @@ cdef class BacktestDataProducer(DataProducerFacade):
                         data=trade_ticks.get(instrument_id),
                     )
 
-                    # noinspection PyUnresolvedReferences
                     trade_wrangler.pre_process(instrument_counter)
                     trade_tick_frames.append(trade_wrangler.processed_data)
 
@@ -211,7 +219,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 elif isinstance(trade_ticks[instrument_id], list):
                     # We have a list of TradeTick objects
                     self._stream = sorted(
-                        self._stream + trade_ticks[instrument_id], key=lambda x: x.ts_recv_ns,
+                        self._stream + trade_ticks[instrument_id], key=lambda x: x.ts_init,
                     )
 
             # TODO: Execution resolution
@@ -258,17 +266,17 @@ cdef class BacktestDataProducer(DataProducerFacade):
                 max_timestamp = max(self._quote_tick_data.index.max(), self._trade_tick_data.index.max())
 
         if min_timestamp is None:
-            min_timestamp = as_utc_timestamp(pd.Timestamp.max)
+            min_timestamp = as_utc_timestamp(pd.Timestamp.max - timedelta(days=1))
 
         if max_timestamp is None:
-            max_timestamp = as_utc_timestamp(pd.Timestamp.min)
+            max_timestamp = as_utc_timestamp(pd.Timestamp.min + timedelta(days=1))
 
         self.min_timestamp_ns = dt_to_unix_nanos(min_timestamp)
         self.max_timestamp_ns = dt_to_unix_nanos(max_timestamp)
 
         if self._stream:
-            self.min_timestamp_ns = min(self.min_timestamp_ns, self._stream[0].ts_recv_ns)
-            self.max_timestamp_ns = max(self.max_timestamp_ns, self._stream[-1].ts_recv_ns)
+            self.min_timestamp_ns = min(self.min_timestamp_ns, self._stream[0].ts_init)
+            self.max_timestamp_ns = max(self.max_timestamp_ns, self._stream[-1].ts_init)
 
         self.min_timestamp = as_utc_timestamp(nanos_to_unix_dt(self.min_timestamp_ns))
         self.max_timestamp = as_utc_timestamp(nanos_to_unix_dt(self.max_timestamp_ns))
@@ -309,7 +317,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
 
     cpdef LoggerAdapter get_logger(self):
         """
-        Return the logger for the component.
+        Return the producers logger.
 
         Returns
         -------
@@ -336,26 +344,27 @@ cdef class BacktestDataProducer(DataProducerFacade):
         Parameters
         ----------
         start_ns : int64
-            The UNIX timestamp (nanoseconds) for the run start.
+            The UNIX timestamp (nanoseconds) when the run started.
         stop_ns : int64
-            The UNIX timestamp (nanoseconds) for the run stop.
+            The UNIX timestamp (nanoseconds) when the run stopped.
 
         """
-        self._log.info(f"Pre-processing data stream...")
-
-        # Calculate data size
-        cdef int64_t total_size = 0
-
         if self._stream:
             # Set data stream start index
-            self._stream_index = next(
-                idx for idx, data in enumerate(self._stream) if start_ns <= data.ts_recv_ns
-            )
+            if start_ns < self._stream[0].ts_init:
+                self._stream_index_last = 0
+            else:
+                self._stream_index = next(
+                    idx for idx, data in enumerate(self._stream) if start_ns <= data.ts_init
+                )
 
             # Set data stream stop index
-            self._stream_index_last = len(self._stream) - 1 - next(
-                idx for idx, data in enumerate(reversed(self._stream)) if stop_ns <= data.ts_recv_ns
-            )
+            if stop_ns > self._stream[-1].ts_init:
+                self._stream_index_last = len(self._stream)- 1
+            else:
+                self._stream_index_last = len(self._stream) - 1 - next(
+                    idx for idx, data in enumerate(reversed(self._stream)) if stop_ns <= data.ts_init
+                )
 
             # Prepare initial data
             self._iterate_stream()
@@ -475,16 +484,16 @@ cdef class BacktestDataProducer(DataProducerFacade):
         cdef int choice = 0
 
         if self._next_quote_tick is not None:
-            next_timestamp_ns = self._next_quote_tick.ts_recv_ns
+            next_timestamp_ns = self._next_quote_tick.ts_init
             choice = 1
 
         if self._next_trade_tick is not None:
-            if choice == 0 or self._next_trade_tick.ts_recv_ns <= next_timestamp_ns:
+            if choice == 0 or self._next_trade_tick.ts_init <= next_timestamp_ns:
                 choice = 2
 
         cdef Data next_data = None
         if self._next_data is not None:
-            if choice == 0 or self._next_data.ts_recv_ns <= next_timestamp_ns:
+            if choice == 0 or self._next_data.ts_init <= next_timestamp_ns:
                 next_data = self._next_data
                 self._iterate_stream()
                 return next_data
@@ -532,8 +541,8 @@ cdef class BacktestDataProducer(DataProducerFacade):
             ask=Price.from_str_c(self._quote_asks[index]),
             bid_size=Quantity.from_str_c(self._quote_bid_sizes[index]),
             ask_size=Quantity.from_str_c(self._quote_ask_sizes[index]),
-            ts_event_ns=self._quote_timestamps[index],
-            ts_recv_ns=self._quote_timestamps[index],
+            ts_event=self._quote_timestamps[index],
+            ts_init=self._quote_timestamps[index],
         )
 
     cdef TradeTick _generate_trade_tick(self, int index):
@@ -543,8 +552,8 @@ cdef class BacktestDataProducer(DataProducerFacade):
             size=Quantity.from_str_c(self._trade_sizes[index]),
             aggressor_side=AggressorSideParser.from_str(self._trade_sides[index]),
             match_id=self._trade_match_ids[index],
-            ts_event_ns=self._trade_timestamps[index],  # TODO(cs): Hardcoded identical for now
-            ts_recv_ns=self._trade_timestamps[index],
+            ts_event=self._trade_timestamps[index],  # TODO(cs): Hardcoded identical for now
+            ts_init=self._trade_timestamps[index],
         )
 
 
@@ -599,9 +608,9 @@ cdef class CachedProducer(DataProducerFacade):
         Parameters
         ----------
         start_ns : int64
-            The UNIX timestamp (nanoseconds) for the run start.
+            The UNIX timestamp (nanoseconds) when the run started.
         stop_ns : int64
-            The UNIX timestamp (nanoseconds) for the run stop.
+            The UNIX timestamp (nanoseconds) when the run stopped.
 
         """
         self._producer.setup(start_ns, stop_ns)
@@ -657,7 +666,7 @@ cdef class CachedProducer(DataProducerFacade):
         while self._producer.has_data:
             data = self._producer.next()
             self._data_cache.append(data)
-            self._timestamp_cache.append(data.ts_recv_ns)
+            self._timestamp_cache.append(data.ts_init)
 
         self._log.info(f"Pre-cached {len(self._data_cache):,} "
                        f"total data items in {unix_timestamp() - ts:.3f}s.")

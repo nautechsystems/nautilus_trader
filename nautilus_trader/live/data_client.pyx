@@ -15,13 +15,14 @@
 
 import asyncio
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
-from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class LiveDataClientFactory:
@@ -33,7 +34,8 @@ cdef class LiveDataClientFactory:
     def create(
         str name not None,
         dict config not None,
-        LiveDataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         LiveLogger logger not None,
         client_cls=None,
@@ -46,15 +48,18 @@ cdef class LiveDataClientFactory:
         name : str
             The client name.
         config : dict[str, object]
-            The clients configuration.
-        engine : LiveDataEngine
-            The clients engine.
+            The configuration for the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
-            The clients clock.
+            The clock for the client.
         logger : LiveLogger
-            The clients logger.
+            The logger for the client.
         client_cls : class, optional
-            The internal client constructor.
+            The internal client constructor. This allows external library and
+            testing dependency injection.
 
         Returns
         -------
@@ -73,8 +78,10 @@ cdef class LiveDataClient(DataClient):
 
     def __init__(
         self,
+        loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
-        LiveDataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict config=None,
@@ -84,10 +91,14 @@ cdef class LiveDataClient(DataClient):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
         client_id : ClientId
-            The client identifier.
-        engine : LiveDataEngine
-            The data engine for the client.
+            The client ID.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
             The clock for the client.
         logger : Logger
@@ -98,13 +109,14 @@ cdef class LiveDataClient(DataClient):
         """
         super().__init__(
             client_id=client_id,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             config=config,
         )
 
-        self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
+        self._loop = loop
 
 
 cdef class LiveMarketDataClient(MarketDataClient):
@@ -116,8 +128,10 @@ cdef class LiveMarketDataClient(MarketDataClient):
 
     def __init__(
         self,
+        loop not None: asyncio.AbstractEventLoop,
         ClientId client_id not None,
-        LiveDataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
         dict config=None,
@@ -127,10 +141,14 @@ cdef class LiveMarketDataClient(MarketDataClient):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop,
+            The event loop for the client.
         client_id : ClientId
-            The client identifier.
-        engine : LiveDataEngine
-            The data engine for the client.
+            The client ID.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
             The clock for the client.
         logger : Logger
@@ -141,10 +159,11 @@ cdef class LiveMarketDataClient(MarketDataClient):
         """
         super().__init__(
             client_id=client_id,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             config=config,
         )
 
-        self._loop: asyncio.AbstractEventLoop = engine.get_event_loop()
+        self._loop = loop

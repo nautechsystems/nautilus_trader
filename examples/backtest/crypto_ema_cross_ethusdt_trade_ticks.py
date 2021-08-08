@@ -14,9 +14,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 import os
 import sys
+from decimal import Decimal
 
 import ccxt
 import pandas as pd
@@ -30,9 +30,9 @@ from examples.strategies.ema_cross_simple import EMACross
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.model.bar import BarSpecification
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
@@ -55,7 +55,7 @@ if __name__ == "__main__":
     # Build the backtest engine
     engine = BacktestEngine(
         use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
-        # exec_db_type="redis",
+        # cache_db_type="redis",
         # bypass_logging=True
     )
 

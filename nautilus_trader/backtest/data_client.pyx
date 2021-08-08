@@ -19,20 +19,20 @@ This module provides a data producer for backtesting.
 
 from cpython.datetime cimport datetime
 
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
-from nautilus_trader.data.engine cimport DataEngine
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
-from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class BacktestDataClient(DataClient):
@@ -43,7 +43,8 @@ cdef class BacktestDataClient(DataClient):
     def __init__(
         self,
         ClientId client_id not None,
-        DataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         Clock clock not None,
         Logger logger not None,
         dict config=None,
@@ -54,25 +55,23 @@ cdef class BacktestDataClient(DataClient):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier.
-        engine : DataEngine
-            The data engine to connect to the client.
+            The data client ID.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : Clock
-            The clock for the component.
+            The clock for the client.
         logger : Logger
-            The logger for the component.
+            The logger for the client.
         config : dict[str, object], optional
             The configuration options.
-
-        Raises
-        ------
-        ValueError
-            If name is not a valid string.
 
         """
         super().__init__(
             client_id=client_id,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             config=config,
@@ -80,44 +79,23 @@ cdef class BacktestDataClient(DataClient):
 
         self.is_connected = False
 
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
+    cpdef void _start(self) except *:
         self._log.info(f"Connecting...")
-
         self.is_connected = True
         self._log.info(f"Connected.")
 
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+    cpdef void _stop(self) except *:
         self._log.info(f"Disconnecting...")
-
         self.is_connected = False
         self._log.info(f"Disconnected.")
 
-    cpdef void reset(self) except *:
-        """
-        Reset the data client.
-
-        All stateful fields are reset to their initial value.
-        """
-        self._log.debug(f"Resetting...")
-
+    cpdef void _reset(self) except *:
+        pass
         # Nothing to reset
-        self._log.info("Reset.")
 
-    cpdef void dispose(self) except *:
-        """
-        Dispose of the data client.
-
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-        """
+    cpdef void _dispose(self) except *:
+        pass
         # Nothing to dispose
-        self._log.info(f"Disposed.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -168,7 +146,7 @@ cdef class BacktestDataClient(DataClient):
         data_type : DataType
             The data type to request.
         correlation_id : UUID
-            The correlation identifier for the response.
+            The correlation ID for the response.
 
         """
         Condition.not_none(data_type, "data_type")
@@ -188,7 +166,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     def __init__(
         self,
         ClientId client_id not None,
-        DataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         Clock clock not None,
         Logger logger not None,
     ):
@@ -198,70 +177,63 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Parameters
         ----------
         client_id : ClientId
-            The data client identifier.
-        engine : DataEngine
-            The data engine to connect to the client.
+            The data client ID.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : Clock
-            The clock for the component.
+            The clock for the client.
         logger : Logger
-            The logger for the component.
+            The logger for the client.
 
         """
         super().__init__(
             client_id=client_id,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
         )
 
         self.is_connected = False
 
-# -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
+    cpdef void _start(self) except *:
         self._log.info(f"Connecting...")
-
         self.is_connected = True
         self._log.info(f"Connected.")
 
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+    cpdef void _stop(self) except *:
         self._log.info(f"Disconnecting...")
-
         self.is_connected = False
         self._log.info(f"Disconnected.")
 
-    cpdef void reset(self) except *:
-        """
-        Reset the data client.
-
-        All stateful fields are reset to their initial value.
-        """
-        self._log.debug(f"Resetting...")
-
+    cpdef void _reset(self) except *:
+        pass
         # Nothing to reset
-        self._log.info("Reset.")
 
-    cpdef void dispose(self) except *:
-        """
-        Dispose of the data client.
-
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-        """
+    cpdef void _dispose(self) except *:
+        pass
         # Nothing to dispose
-        self._log.info(f"Disposed.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
+    cpdef void subscribe_instruments(self) except *:
+        """
+        Subscribe to `Instrument` data for the venue.
+
+        """
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(
+                f"Cannot subscribe to instruments (not connected).",
+            )
+            return
+
+        # Do nothing else for backtest
+
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `Instrument` data for the given instrument identifier.
+        Subscribe to `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
@@ -272,12 +244,15 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot subscribe to instrument for {instrument_id} (not connected).")
+            self._log.error(
+                f"Cannot subscribe to instrument for {instrument_id} "
+                f"(not connected).",
+            )
             return
 
         # Do nothing else for backtest
 
-    cpdef void subscribe_order_book(
+    cpdef void subscribe_order_book_snapshots(
         self,
         InstrumentId instrument_id,
         BookLevel level,
@@ -285,7 +260,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         dict kwargs=None,
     ) except *:
         """
-        Subscribe to `OrderBook` data for the given instrument identifier.
+        Subscribe to `OrderBook` data for the given instrument ID.
 
         Parameters
         ----------
@@ -302,7 +277,10 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot subscribe to order book for {instrument_id} (not connected).")
+            self._log.error(
+                f"Cannot subscribe to order book for {instrument_id} "
+                f"(not connected).",
+            )
             return
 
         # Do nothing else for backtest
@@ -314,7 +292,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         dict kwargs=None,
     ) except *:
         """
-        Subscribe to `OrderBook` data for the given instrument identifier.
+        Subscribe to `OrderBook` data for the given instrument ID.
 
         Parameters
         ----------
@@ -329,14 +307,17 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot subscribe to order book deltas for {instrument_id} (not connected).")
+            self._log.error(
+                f"Cannot subscribe to order book deltas for {instrument_id} "
+                f"(not connected).",
+            )
             return
 
         # Do nothing else for backtest
 
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `QuoteTick` data for the given instrument identifier.
+        Subscribe to `QuoteTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -347,14 +328,17 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot subscribe to quote ticks for {instrument_id} (not connected).")
+            self._log.error(
+                f"Cannot subscribe to quote ticks for {instrument_id} "
+                f"(not connected).",
+            )
             return
 
         # Do nothing else for backtest
 
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `TradeTick` data for the given instrument identifier.
+        Subscribe to `TradeTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -365,7 +349,10 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot subscribe to trade ticks for {instrument_id} (not connected).")
+            self._log.error(
+                f"Cannot subscribe to trade ticks for {instrument_id} "
+                f"(not connected).",
+            )
             return
 
         # Do nothing else for backtest
@@ -383,15 +370,75 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(bar_type, "bar_type")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot subscribe to bars for {bar_type} (not connected).")
+            self._log.error(
+                f"Cannot subscribe to bars for {bar_type} "
+                f"(not connected).",
+            )
             return
 
-        self._log.error(f"Cannot subscribe to externally aggregated bars "
-                        f"(backtesting only supports internal aggregation at this stage).")
+        self._log.error(
+            f"Cannot subscribe to externally aggregated bars "
+            f"(backtesting only supports internal aggregation at this stage).",
+        )
+
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to `InstrumentStatusUpdates` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to subscribe to.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(
+                f"Cannot subscribe to trade ticks for {instrument_id} "
+                f"(not connected).",
+            )
+            return
+
+        # Do nothing else for backtest
+
+    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to `InstrumentClosePrice` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to subscribe to.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(
+                f"Cannot subscribe to trade ticks for {instrument_id} "
+                f"(not connected).",
+            )
+            return
+
+        # Do nothing else for backtest
+
+    cpdef void unsubscribe_instruments(self) except *:
+        """
+        Unsubscribe from `Instrument` data for the venue.
+
+        """
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(
+                f"Cannot unsubscribe from instruments (not connected).",
+            )
+            return
+
+        # Do nothing else for backtest
 
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `Instrument` data for the given instrument identifier.
+        Unsubscribe from `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
@@ -402,14 +449,17 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot unsubscribe from instrument for {instrument_id} (not connected).")
+            self._log.error(
+                f"Cannot unsubscribe from instrument for {instrument_id} "
+                f"(not connected).",
+            )
             return
 
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `OrderBook` data for the given instrument identifier.
+        Unsubscribe from `OrderBookData` data for the given instrument ID.
 
         Parameters
         ----------
@@ -420,14 +470,38 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot unsubscribe from order book for {instrument_id} (not connected).")
+            self._log.error(
+                f"Cannot unsubscribe from order book deltas for {instrument_id} "
+                f"(not connected).",
+            )
+            return
+
+        # Do nothing else for backtest
+
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `OrderBook` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The order book instrument to unsubscribe from.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(
+                f"Cannot unsubscribe from order book snapshots for {instrument_id} "
+                f"(not connected).",
+            )
             return
 
         # Do nothing else for backtest
 
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `QuoteTick` data for the given instrument identifier.
+        Unsubscribe from `QuoteTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -438,14 +512,17 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot unsubscribe from quote ticks for {instrument_id} (not connected).")
+            self._log.error(
+                f"Cannot unsubscribe from quote ticks for {instrument_id} "
+                f"(not connected).",
+            )
             return
 
         # Do nothing else for backtest
 
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `TradeTick` data for the given instrument identifier.
+        Unsubscribe from `TradeTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -456,7 +533,10 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot unsubscribe from trade ticks for {instrument_id} (not connected).")
+            self._log.error(
+                f"Cannot unsubscribe from trade ticks for {instrument_id} "
+                f"(not connected).",
+            )
             return
 
         # Do nothing else for backtest
@@ -474,59 +554,61 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(bar_type, "bar_type")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot unsubscribe from bars {bar_type} (not connected).")
+            self._log.error(
+                f"Cannot unsubscribe from bars {bar_type} (not connected).",
+            )
             return
 
-        self._log.error(f"Cannot unsubscribe from externally aggregated bars "
-                        f"(backtesting only supports internal aggregation at this stage).")
+        self._log.error(
+            f"Cannot unsubscribe from externally aggregated bars "
+            f"(backtesting only supports internal aggregation at this stage).",
+        )
 
         # Do nothing else for backtest
 
-# -- REQUESTS --------------------------------------------------------------------------------------
-
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
         """
-        Request the instrument for the given instrument identifier.
+        Unsubscribe from `InstrumentStatusUpdates` data for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the request.
-        correlation_id : UUID
-            The correlation identifier for the request.
+            The tick instrument to unsubscribe from.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(correlation_id, "correlation_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot request instrument for {instrument_id} (not connected).")
+            self._log.error(
+                f"Cannot unsubscribe from trade ticks for {instrument_id} "
+                f"(not connected).",
+            )
             return
 
-        cdef Instrument instrument = self._engine.cache.instrument(instrument_id)
+        # Do nothing else for backtest
 
-        if instrument is None:
-            self._log.warning(f"No instrument found for {instrument_id}.")
-            return
-
-        self._handle_instruments([instrument], correlation_id)
-
-    cpdef void request_instruments(self, UUID correlation_id) except *:
+    cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
         """
-        Request all instruments.
+        Unsubscribe from `InstrumentClosePrice` data for the given instrument ID.
 
         Parameters
         ----------
-        correlation_id : UUID
-            The correlation identifier for the request.
+        instrument_id : InstrumentId
+            The tick instrument to unsubscribe from.
 
         """
-        Condition.not_none(correlation_id, "correlation_id")
+        Condition.not_none(instrument_id, "instrument_id")
 
-        # Just return all instruments in the cache for this venue
-        cdef list instruments = self._engine.cache.instruments(Venue(self.id.value))
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(
+                f"Cannot unsubscribe from trade ticks for {instrument_id} "
+                f"(not connected).",
+            )
+            return
 
-        self._handle_instruments(instruments, correlation_id)
+        # Do nothing else for backtest
+
+# -- REQUESTS --------------------------------------------------------------------------------------
 
     cpdef void request_quote_ticks(
         self,
@@ -542,7 +624,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument identifier for the request.
+            The tick instrument ID for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -551,14 +633,17 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         limit : int
             The limit for the number of returned ticks.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(correlation_id, "correlation_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot request quote ticks for {instrument_id} (not connected).")
+            self._log.error(
+                f"Cannot request quote ticks for {instrument_id} "
+                f"(not connected).",
+            )
             return
 
         # Do nothing else for backtest
@@ -577,7 +662,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument identifier for the request.
+            The tick instrument ID for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -586,7 +671,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         limit : int
             The limit for the number of returned ticks.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -594,7 +679,10 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Condition.not_none(correlation_id, "correlation_id")
 
         if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot request trade ticks for {instrument_id} (not connected).")
+            self._log.error(
+                f"Cannot request trade ticks for {instrument_id} "
+                f"(not connected).",
+            )
             return
 
         # Do nothing else for backtest
@@ -622,7 +710,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         limit : int
             The limit for the number of returned bars.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(bar_type, "bar_type")

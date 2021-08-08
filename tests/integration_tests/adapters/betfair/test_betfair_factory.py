@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
+
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -23,7 +25,7 @@ from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientF
 
 
 @pytest.mark.asyncio()
-def test_create(mocker, data_engine, exec_engine, clock, live_logger):
+def test_create(mocker, msgbus, cache, clock, live_logger):
     config = {
         "data_client": True,
         "exec_client": True,
@@ -36,16 +38,20 @@ def test_create(mocker, data_engine, exec_engine, clock, live_logger):
     # mock_login = mocker.patch("betfairlightweight.endpoints.login.Login.request")
 
     data_client = BetfairLiveDataClientFactory.create(
+        loop=asyncio.get_event_loop(),
         name=BETFAIR_VENUE.value,
         config=config,
-        engine=data_engine,
+        msgbus=msgbus,
+        cache=cache,
         clock=clock,
         logger=live_logger,
     )
     exec_client = BetfairLiveExecutionClientFactory.create(
+        loop=asyncio.get_event_loop(),
         name=BETFAIR_VENUE.value,
         config=config,
-        engine=exec_engine,
+        msgbus=msgbus,
+        cache=cache,
         clock=clock,
         logger=live_logger,
     )

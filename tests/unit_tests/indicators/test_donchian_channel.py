@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.donchian_channel import DonchianChannel
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -23,8 +21,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class DonchianChannelTests(unittest.TestCase):
-    def setUp(self):
+class TestDonchianChannel:
+    def setup(self):
         # Fixture Setup
         self.dc = DonchianChannel(10)
 
@@ -32,26 +30,26 @@ class DonchianChannelTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("DonchianChannel", self.dc.name)
+        assert self.dc.name == "DonchianChannel"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("DonchianChannel(10)", str(self.dc))
-        self.assertEqual("DonchianChannel(10)", repr(self.dc))
+        assert str(self.dc) == "DonchianChannel(10)"
+        assert repr(self.dc) == "DonchianChannel(10)"
 
     def test_period_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(10, self.dc.period)
+        assert self.dc.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.dc.initialized)
+        assert self.dc.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -68,7 +66,7 @@ class DonchianChannelTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(True, self.dc.initialized)
+        assert self.dc.initialized is True
 
     def test_handle_quote_tick_updates_indicator(self):
         # Arrange
@@ -80,8 +78,8 @@ class DonchianChannelTests(unittest.TestCase):
         indicator.handle_quote_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.0000200000000001, indicator.middle)
+        assert indicator.has_inputs
+        assert indicator.middle == 1.0000200000000001
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
@@ -93,8 +91,8 @@ class DonchianChannelTests(unittest.TestCase):
         indicator.handle_trade_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00001, indicator.middle)
+        assert indicator.has_inputs
+        assert indicator.middle == 1.00001
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -106,8 +104,8 @@ class DonchianChannelTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.000025, indicator.middle)
+        assert indicator.has_inputs
+        assert indicator.middle == 1.000025
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -115,9 +113,9 @@ class DonchianChannelTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.00020, self.dc.upper)
-        self.assertEqual(1.00010, self.dc.middle)
-        self.assertEqual(1.00000, self.dc.lower)
+        assert self.dc.upper == 1.00020
+        assert self.dc.middle == 1.00010
+        assert self.dc.lower == 1.00000
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
@@ -127,9 +125,9 @@ class DonchianChannelTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.00040, self.dc.upper)
-        self.assertEqual(1.00020, self.dc.middle)
-        self.assertEqual(1.00000, self.dc.lower)
+        assert self.dc.upper == 1.00040
+        assert self.dc.middle == 1.00020
+        assert self.dc.lower == 1.00000
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -141,7 +139,7 @@ class DonchianChannelTests(unittest.TestCase):
         self.dc.reset()
 
         # Assert
-        self.assertFalse(self.dc.initialized)
-        self.assertEqual(0, self.dc.upper)
-        self.assertEqual(0, self.dc.middle)
-        self.assertEqual(0, self.dc.lower)
+        assert not self.dc.initialized
+        assert self.dc.upper == 0
+        assert self.dc.middle == 0
+        assert self.dc.lower == 0

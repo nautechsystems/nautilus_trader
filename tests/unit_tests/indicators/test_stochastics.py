@@ -13,42 +13,40 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.stochastics import Stochastics
 from tests.test_kit.stubs import TestStubs
 
 
-class StochasticsTests(unittest.TestCase):
-    def setUp(self):
+class TestStochastics:
+    def setup(self):
         # Fixture Setup
         self.stochastics = Stochastics(14, 3)
 
     def test_name_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual("Stochastics", self.stochastics.name)
+        assert self.stochastics.name == "Stochastics"
 
     def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual("Stochastics(14, 3)", str(self.stochastics))
-        self.assertEqual("Stochastics(14, 3)", repr(self.stochastics))
+        assert str(self.stochastics) == "Stochastics(14, 3)"
+        assert repr(self.stochastics) == "Stochastics(14, 3)"
 
     def test_period_k_returns_expected_value(self):
         # Act
         # Assert
-        self.assertEqual(14, self.stochastics.period_k)
+        assert self.stochastics.period_k == 14
 
     def test_period_d_returns_expected_value(self):
         # Act
         # Assert
-        self.assertEqual(3, self.stochastics.period_d)
+        assert self.stochastics.period_d == 3
 
     def test_initialized_without_inputs_returns_false(self):
         # Act
         # Assert
-        self.assertEqual(False, self.stochastics.initialized)
+        assert self.stochastics.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -69,7 +67,7 @@ class StochasticsTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(True, self.stochastics.initialized)
+        assert self.stochastics.initialized is True
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -81,9 +79,9 @@ class StochasticsTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(66.66666666641994, indicator.value_k)
-        self.assertEqual(66.66666666641994, indicator.value_d)
+        assert indicator.has_inputs
+        assert indicator.value_k == 66.66666666641994
+        assert indicator.value_d == 66.66666666641994
 
     def test_values_with_one_input_returns_expected_value(self):
         # Arrange
@@ -91,8 +89,8 @@ class StochasticsTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(50.0, self.stochastics.value_k)
-        self.assertEqual(50.0, self.stochastics.value_d)
+        assert self.stochastics.value_k == 50.0
+        assert self.stochastics.value_d == 50.0
 
     def test_value_with_all_higher_inputs_returns_expected_value(self):
         # Arrange
@@ -103,8 +101,8 @@ class StochasticsTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(80.0, self.stochastics.value_k)
-        self.assertEqual(75.0, self.stochastics.value_d)
+        assert self.stochastics.value_k == 80.0
+        assert self.stochastics.value_d == 75.0
 
     def test_value_with_all_lower_inputs_returns_expected_value(self):
         # Arrange
@@ -115,8 +113,8 @@ class StochasticsTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(20.0, self.stochastics.value_k)
-        self.assertEqual(25.0, self.stochastics.value_d)
+        assert self.stochastics.value_k == 20.0
+        assert self.stochastics.value_d == 25.0
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -126,6 +124,6 @@ class StochasticsTests(unittest.TestCase):
         self.stochastics.reset()  # No assertion errors
 
         # Assert
-        self.assertFalse(self.stochastics.initialized)
-        self.assertEqual(0, self.stochastics.value_k)
-        self.assertEqual(0, self.stochastics.value_d)
+        assert not self.stochastics.initialized
+        assert self.stochastics.value_k == 0
+        assert self.stochastics.value_d == 0

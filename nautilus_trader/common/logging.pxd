@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Callable, Dict
+
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
@@ -59,15 +61,17 @@ cdef class LogLevelParser:
 cdef class Logger:
     cdef Clock _clock
     cdef LogLevel _log_level_stdout
-    cdef LogLevel _log_level_raw
+    cdef list _sinks
 
     cdef readonly TraderId trader_id
-    """The loggers trader identifier.\n\n:returns: `TraderId`"""
+    """The loggers trader ID.\n\n:returns: `TraderId`"""
     cdef readonly UUID system_id
-    """The loggers system identifier.\n\n:returns: `UUID`"""
+    """The loggers system ID.\n\n:returns: `UUID`"""
     cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
+    cpdef void register_sink(self, handler: Callable[[Dict], None]) except *
+    cdef void change_clock_c(self, Clock clock) except *
     cdef void log_c(self, dict record) except *
     cdef dict create_record(self, LogLevel level, LogColor color, str component, str msg, dict annotations=*)
 
@@ -109,3 +113,4 @@ cdef class LiveLogger(Logger):
 
     cpdef void start(self) except *
     cpdef void stop(self) except *
+    cdef void _enqueue_sentinel(self) except *

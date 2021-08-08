@@ -16,7 +16,6 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
@@ -38,14 +37,14 @@ cdef class OrderFactory:
     A factory class which provides different order types.
 
     The `TraderId` tag and `StrategyId` tag will be inserted into all
-    identifiers generated.
+    IDs generated.
     """
 
     def __init__(
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        Clock clock=None,
+        Clock clock not None,
         int initial_count=0,
     ):
         """
@@ -54,11 +53,11 @@ cdef class OrderFactory:
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier (only numerical tag sent to venue).
+            The trader ID (only numerical tag sent to venue).
         strategy_id : StrategyId
-            The strategy identifier (only numerical tag sent to venue).
+            The strategy ID (only numerical tag sent to venue).
         clock : Clock
-            The clock for the component.
+            The clock for the factory.
         initial_count : int, optional
             The initial order count for the factory.
 
@@ -68,8 +67,6 @@ cdef class OrderFactory:
             If initial_count is negative (< 0).
 
         """
-        if clock is None:
-            clock = LiveClock()
         Condition.not_negative_int(initial_count, "initial_count")
 
         self._clock = clock
@@ -90,7 +87,7 @@ cdef class OrderFactory:
     @property
     def count(self):
         """
-        The count of identifiers generated.
+        The count of IDs generated.
 
         Returns
         -------
@@ -101,7 +98,7 @@ cdef class OrderFactory:
 
     cpdef void set_count(self, int count) except *:
         """
-        System Method: Set the internal order identifier generator count to the
+        System Method: Set the internal order ID generator count to the
         given count.
 
         Parameters
@@ -133,7 +130,7 @@ cdef class OrderFactory:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The orders instrument identifier.
+            The orders instrument ID.
         order_side : OrderSide
             The orders side.
         quantity : Quantity
@@ -150,18 +147,19 @@ cdef class OrderFactory:
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is other than GTC, IOC or FOK.
+            If time_in_force is other than GTC, IOC, FOK or OC.
 
         """
         return MarketOrder(
-            client_order_id=self._id_generator.generate(),
+            trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             time_in_force=time_in_force,
             init_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
         )
 
     cpdef LimitOrder limit(
@@ -184,7 +182,7 @@ cdef class OrderFactory:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The orders instrument identifier.
+            The orders instrument ID.
         order_side : OrderSide
             The orders side.
         quantity : Quantity
@@ -211,7 +209,7 @@ cdef class OrderFactory:
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is GTD expire_time is None.
+            If time_in_force is GTD and expire_time is None.
         ValueError
             If post_only and hidden.
         ValueError
@@ -219,16 +217,17 @@ cdef class OrderFactory:
 
         """
         return LimitOrder(
-            client_order_id=self._id_generator.generate(),
+            trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             price=price,
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
             post_only=post_only,
             reduce_only=reduce_only,
             hidden=hidden,
@@ -252,7 +251,7 @@ cdef class OrderFactory:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The orders instrument identifier.
+            The orders instrument ID.
         order_side : OrderSide
             The orders side.
         quantity : Quantity
@@ -275,20 +274,21 @@ cdef class OrderFactory:
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is GTD expire_time is None.
+            If time_in_force is GTD and expire_time is None.
 
         """
         return StopMarketOrder(
-            client_order_id=self._id_generator.generate(),
+            trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             price=price,
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
             reduce_only=reduce_only,
         )
 
@@ -313,7 +313,7 @@ cdef class OrderFactory:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The orders instrument identifier.
+            The orders instrument ID.
         order_side : OrderSide
             The orders side.
         quantity : Quantity
@@ -350,9 +350,10 @@ cdef class OrderFactory:
 
         """
         return StopLimitOrder(
-            client_order_id=self._id_generator.generate(),
+            trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
+            client_order_id=self._id_generator.generate(),
             order_side=order_side,
             quantity=quantity,
             price=price,
@@ -360,7 +361,7 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             expire_time=expire_time,
             init_id=self._uuid_factory.generate(),
-            timestamp_ns=self._clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
             post_only=post_only,
             reduce_only=reduce_only,
             hidden=hidden,

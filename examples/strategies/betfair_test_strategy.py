@@ -14,22 +14,25 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Optional
 
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.c_enums.book_level import BookLevel
+from nautilus_trader.model.c_enums.oms_type import OMSType
 from nautilus_trader.model.c_enums.time_in_force import TimeInForce
-from nautilus_trader.model.data import Data
-from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderCanceled
-from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.events.order import OrderCanceled
+from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookDelta
+from nautilus_trader.model.orderbook.book import OrderBookData
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.trading.strategy import TradingStrategy
 
@@ -60,29 +63,29 @@ class BetfairTestStrategy(TradingStrategy):
         ----------
         instrument_filter: dict
             The dict of filters to search for an instrument
-        theo_change_threshold: Decimal
         trade_size : Decimal
             The position size per trade.
         order_id_tag : str
-            The unique order identifier tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader identifier.
+            The unique order ID tag for the strategy. Must be unique
+            amongst all running strategies for a particular trader ID.
+        theo_change_threshold: Decimal
+            The theoretical change threshold.
 
         """
-        super().__init__(order_id_tag=order_id_tag)
+        super().__init__(order_id_tag=order_id_tag, oms_type=OMSType.HEDGING)
         self.instrument_filter = instrument_filter
         self.theo_change_threshold = theo_change_threshold
-        self.instrument_id = None
-        self.midpoint = None
+        self.instrument_id: Optional[InstrumentId] = None
+        self.midpoint: Optional[Decimal] = None
         self.trade_size = trade_size
         self.market_width = market_width
-        self._in_flight = set()
+        self._in_flight = set()  # type: ignore
         self._state = "START"
+        self.book: Optional[OrderBook] = None
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        self.request_data(
-            "BETFAIR", DataType(InstrumentSearch, metadata=self.instrument_filter)
-        )
+        self.request_data("BETFAIR", DataType(InstrumentSearch, metadata=self.instrument_filter))
 
     def on_event(self, event: Event):
         self.log.info(f"on_event: {event}")
@@ -106,14 +109,14 @@ class BetfairTestStrategy(TradingStrategy):
                 level=BookLevel.L2,
             )
 
-    def on_order_book_delta(self, delta: OrderBookDelta):
+    def on_order_book_delta(self, delta: OrderBookData):
         """
         Actions to be performed when the strategy is running and receives an order book.
 
         Parameters
         ----------
-        delta : OrderBookDelta
-            The order book received.
+        delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
+            The order book delta received.
 
         """
         # self.log.debug(
@@ -152,9 +155,7 @@ class BetfairTestStrategy(TradingStrategy):
             for client_order_id in self.cache.client_order_ids_working():
                 order = self.cache.order(client_order_id)
                 new_price = (
-                    order.price * 0.90
-                    if order.side == OrderSide.BUY
-                    else order.price * 1.10
+                    order.price * 0.90 if order.side == OrderSide.BUY else order.price * 1.10
                 )
                 self._in_flight.add(order.client_order_id)
                 self.update_order(order=order, price=Price(new_price, precision=5))
@@ -176,14 +177,9 @@ class BetfairTestStrategy(TradingStrategy):
         Check if midpoint has moved more than threshold, if so , update quotes.
         """
 
-        midpoint = Decimal(
-            order_book.best_ask_price() + order_book.best_bid_price()
-        ) / Decimal(2.0)
+        midpoint = Decimal(order_book.best_ask_price() + order_book.best_bid_price()) / Decimal(2.0)
         self.log.info(f"midpoint: {midpoint}, prev: {self.midpoint}")
-        if (
-            abs(midpoint - (self.midpoint or Decimal(-1e15)))
-            > self.theo_change_threshold
-        ):
+        if abs(midpoint - (self.midpoint or Decimal(-1e15))) > self.theo_change_threshold:
             self.log.info("Theo updating", LogColor.BLUE)
             self.midpoint = midpoint
 

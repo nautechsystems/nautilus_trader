@@ -16,7 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data.base cimport Data
 
 
 cdef class ForexSessionFilter:

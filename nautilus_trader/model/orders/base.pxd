@@ -24,24 +24,24 @@ from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
-from nautilus_trader.model.events cimport OrderAccepted
-from nautilus_trader.model.events cimport OrderCanceled
-from nautilus_trader.model.events cimport OrderDenied
-from nautilus_trader.model.events cimport OrderEvent
-from nautilus_trader.model.events cimport OrderExpired
-from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport OrderInitialized
-from nautilus_trader.model.events cimport OrderInvalid
-from nautilus_trader.model.events cimport OrderRejected
-from nautilus_trader.model.events cimport OrderSubmitted
-from nautilus_trader.model.events cimport OrderTriggered
-from nautilus_trader.model.events cimport OrderUpdated
+from nautilus_trader.model.events.order cimport OrderAccepted
+from nautilus_trader.model.events.order cimport OrderCanceled
+from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
+from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderSubmitted
+from nautilus_trader.model.events.order cimport OrderTriggered
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -53,40 +53,42 @@ cdef class Order:
     cdef FiniteStateMachine _fsm
     cdef OrderState _rollback_state
 
-    cdef readonly ClientOrderId client_order_id
-    """The client order identifier.\n\n:returns: `ClientOrderId`"""
-    cdef readonly VenueOrderId venue_order_id
-    """The venue assigned order identifier.\n\n:returns: `VenueOrderId`"""
-    cdef readonly PositionId position_id
-    """The position identifier associated with the order.\n\n:returns: `PositionId`"""
+    cdef readonly TraderId trader_id
+    """The trader ID associated with the position.\n\n:returns: `TraderId`"""
     cdef readonly StrategyId strategy_id
-    """The strategy identifier associated with the order.\n\n:returns: `StrategyId`"""
-    cdef readonly AccountId account_id
-    """The account identifier associated with the order.\n\n:returns: `AccountId` or None"""
-    cdef readonly ExecutionId execution_id
-    """The orders last execution identifier.\n\n:returns: `ExecutionId` or None"""
+    """The strategy ID associated with the order.\n\n:returns: `StrategyId`"""
     cdef readonly InstrumentId instrument_id
-    """The order instrument identifier.\n\n:returns: `InstrumentId`"""
+    """The order instrument ID.\n\n:returns: `InstrumentId`"""
+    cdef readonly ClientOrderId client_order_id
+    """The client order ID.\n\n:returns: `ClientOrderId`"""
+    cdef readonly VenueOrderId venue_order_id
+    """The venue assigned order ID.\n\n:returns: `VenueOrderId`"""
+    cdef readonly PositionId position_id
+    """The position ID associated with the order.\n\n:returns: `PositionId`"""
+    cdef readonly AccountId account_id
+    """The account ID associated with the order.\n\n:returns: `AccountId` or None"""
+    cdef readonly ExecutionId execution_id
+    """The orders last execution ID.\n\n:returns: `ExecutionId` or None"""
     cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType type
     """The order type.\n\n:returns: `OrderType`"""
-    cdef readonly Quantity quantity
-    """The order quantity.\n\n:returns: `Quantity`"""
-    cdef readonly int64_t timestamp_ns
-    """The UNIX timestamp (nanoseconds) of order initialization.\n\n:returns: `int64`"""
     cdef readonly TimeInForce time_in_force
     """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    cdef readonly Quantity quantity
+    """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity filled_qty
     """The order total filled quantity.\n\n:returns: `Quantity`"""
-    cdef readonly int64_t ts_filled_ns
-    """The UNIX timestamp (nanoseconds) of the last execution (0 for no execution).\n\n:returns: `int64`"""
     cdef readonly object avg_px
     """The order average fill price.\n\n:returns: `Decimal` or None"""
     cdef readonly object slippage
     """The order total price slippage.\n\n:returns: `Decimal`"""
     cdef readonly UUID init_id
-    """The identifier of the `OrderInitialized` event.\n\n:returns: `UUID`"""
+    """The ID of the `OrderInitialized` event.\n\n:returns: `UUID`"""
+    cdef readonly int64_t ts_last
+    """The UNIX timestamp (nanoseconds) when the last fill occurred (0 for no fill).\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the order was initialized.\n\n:returns: `int64`"""
 
     cpdef dict to_dict(self)
 
@@ -102,6 +104,7 @@ cdef class Order:
     cdef bint is_sell_c(self) except *
     cdef bint is_passive_c(self) except *
     cdef bint is_aggressive_c(self) except *
+    cdef bint is_inflight_c(self) except *
     cdef bint is_working_c(self) except *
     cdef bint is_pending_update_c(self) except *
     cdef bint is_pending_cancel_c(self) except *
@@ -115,7 +118,6 @@ cdef class Order:
 
     cpdef void apply(self, OrderEvent event) except *
 
-    cdef void _invalid(self, OrderInvalid event) except *
     cdef void _denied(self, OrderDenied event) except *
     cdef void _submitted(self, OrderSubmitted event) except *
     cdef void _rejected(self, OrderRejected event) except *

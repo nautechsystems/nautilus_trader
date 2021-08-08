@@ -14,16 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import threading
-import time
-import unittest
 
+import pytest
+
+from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
+from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.trading.strategy import TradingStrategy
 
 
-class TradingNodeConfigurationTests(unittest.TestCase):
+class TestTradingNodeConfiguration:
     def test_config_with_inmemory_execution_database(self):
         # Arrange
         config = {
@@ -56,13 +56,10 @@ class TradingNodeConfigurationTests(unittest.TestCase):
         }
 
         # Act
-        node = TradingNode(
-            strategies=[TradingStrategy("000")],
-            config=config,
-        )
+        node = TradingNode(config=config)
 
         # Assert
-        self.assertIsNotNone(node)
+        assert node is not None
 
     def test_config_with_redis_execution_database(self):
         # Arrange
@@ -84,36 +81,29 @@ class TradingNodeConfigurationTests(unittest.TestCase):
                 "save_state": True,
             },
             "data_clients": {
-                "oanda": {
-                    "api_token": "OANDA_API_TOKEN",  # value is the environment variable name
-                    "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
+                "binance": {
+                    "api_key": "BINANCE_API_KEY",  # value is the environment variable name
+                    "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
                 },
             },
             "exec_clients": {
-                "oanda": {
-                    "api_token": "OANDA_API_TOKEN",  # value is the environment variable name
-                    "account_id": "OANDA_ACCOUNT_ID",  # value is the environment variable name
+                "binance": {
+                    "api_key": "BINANCE_API_KEY",  # value is the environment variable name
+                    "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
                 },
             },
         }
 
         # Act
-        node = TradingNode(
-            strategies=[TradingStrategy("000")],
-            config=config,
-        )
+        node = TradingNode(config=config)
 
         # Assert
-        self.assertIsNotNone(node)
+        assert node is not None
 
 
-class TradingNodeOperationTests(unittest.TestCase):
-    def setUp(self):
+class TestTradingNodeOperation:
+    def setup(self):
         # Fixture Setup
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-
         config = {
             "trader": {
                 "name": "tester",
@@ -133,60 +123,85 @@ class TradingNodeOperationTests(unittest.TestCase):
             "exec_clients": {},
         }
 
-        self.node = TradingNode(
-            strategies=[TradingStrategy("000")],
-            config=config,
-        )
-
-        self.node.build()
+        self.node = TradingNode(config=config)
 
     def test_get_event_loop_returns_a_loop(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         loop = self.node.get_event_loop()
 
         # Assert
-        self.assertTrue(isinstance(loop, asyncio.AbstractEventLoop))
+        assert isinstance(loop, asyncio.AbstractEventLoop)
 
-    def test_start(self):
+    def test_add_data_client_factory(self):
+        # Arrange, # Act
+        self.node.add_data_client_factory("CCXT", CCXTDataClientFactory)
+        self.node.build()
+
+        # TODO(cs): Assert existence of client
+
+    def test_add_exec_client_factory(self):
+        # Arrange, # Act
+        self.node.add_exec_client_factory("CCXT", CCXTExecutionClientFactory)
+        self.node.build()
+
+        # TODO(cs): Assert existence of client
+
+    @pytest.mark.asyncio
+    async def test_register_log_sink(self):
         # Arrange
-        run = threading.Thread(target=self.node.start, daemon=True)
-        run.start()
-
-        time.sleep(2)  # Allow node to start
+        sink = []
 
         # Act
-        # Assert
-        self.assertEqual(ComponentState.RUNNING, self.node.trader.state)
-        self.loop.call_soon_threadsafe(self.node.stop)
+        self.node.add_log_sink(sink.append)
+        self.node.build()
 
-    def test_stop(self):
+        self.node.start()
+        await asyncio.sleep(1)
+
+        # Assert: Log record received
+        assert sink[-1]["system_id"] == self.node.system_id.value
+
+    @pytest.mark.asyncio
+    async def test_start(self):
         # Arrange
-        run = threading.Thread(target=self.node.start, daemon=True)
-        run.start()
-
-        time.sleep(2)  # Allow node to start
-        self.loop.call_soon_threadsafe(self.node.stop)
-
-        time.sleep(3)  # Allow node to stop
+        self.node.build()
 
         # Act
+        self.node.start()
+        await asyncio.sleep(2)
+
         # Assert
-        self.assertEqual(ComponentState.STOPPED, self.node.trader.state)
+        assert self.node.trader.state == ComponentState.RUNNING
 
-    def test_dispose(self):
+    @pytest.mark.asyncio
+    async def test_stop(self):
         # Arrange
-        run = threading.Thread(target=self.node.start, daemon=True)
-        run.start()
+        self.node.build()
+        self.node.start()
+        await asyncio.sleep(2)  # Allow node to start
 
-        time.sleep(2)  # Allow node to start
-        self.loop.call_soon_threadsafe(self.node.stop)
+        # Act
+        self.node.stop()
+        await asyncio.sleep(3)  # Allow node to stop
 
-        # Allow node to stop
-        time.sleep(3)
+        # Assert
+        assert self.node.trader.state == ComponentState.STOPPED
 
+    @pytest.mark.skip(reason="refactor TradingNode coroutines")
+    @pytest.mark.asyncio
+    async def test_dispose(self):
+        # Arrange
+        self.node.build()
+        self.node.start()
+        await asyncio.sleep(2)  # Allow node to start
+
+        self.node.stop()
+        await asyncio.sleep(2)  # Allow node to stop
+
+        # Act
         self.node.dispose()
+        await asyncio.sleep(1)  # Allow node to dispose
 
         # Act
         # Assert
-        self.assertEqual(ComponentState.DISPOSED, self.node.trader.state)
+        assert self.node.trader.state == ComponentState.DISPOSED

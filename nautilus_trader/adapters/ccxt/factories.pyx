@@ -13,20 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import os
 
 from nautilus_trader.adapters.ccxt.data cimport CCXTDataClient
 from nautilus_trader.adapters.ccxt.execution cimport BinanceCCXTExecutionClient
 from nautilus_trader.adapters.ccxt.execution cimport BitmexCCXTExecutionClient
 from nautilus_trader.adapters.ccxt.execution cimport CCXTExecutionClient
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data_client cimport LiveDataClientFactory
-from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory
-from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class CCXTDataClientFactory(LiveDataClientFactory):
@@ -36,9 +37,11 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
 
     @staticmethod
     def create(
+        loop not None: asyncio.AbstractEventLoop,
         str name not None,
         dict config not None,
-        LiveDataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         LiveLogger logger not None,
         client_cls=None,
@@ -48,12 +51,16 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
         name : str
             The client name.
         config : dict
             The configuration dictionary.
-        engine : LiveDataEngine
-            The data engine for the client.
+        msgbus : MessageBus
+            The message bus for the clients.
+        cache : Cache
+            The cache for the clients.
         clock : LiveClock
             The clock for the clients.
         logger : LiveLogger
@@ -73,7 +80,7 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
             "password": os.getenv(config.get("api_password", ""), ""),
             "timeout": 10000,         # Hard coded for now
             "enableRateLimit": True,  # Hard coded for now
-            "asyncio_loop": engine.get_event_loop(),
+            "asyncio_loop": loop,
             "options": {
                 "defaultType": config.get("defaultType", "spot"),
                 "OHLCVLimit": 1,
@@ -99,8 +106,10 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
 
         # Create client
         return CCXTDataClient(
+            loop=loop,
             client=client,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
         )
@@ -113,9 +122,11 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
 
     @staticmethod
     def create(
+        loop not None: asyncio.AbstractEventLoop,
         str name not None,
         dict config not None,
-        LiveExecutionEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         LiveLogger logger not None,
         client_cls=None,
@@ -125,12 +136,16 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the clients.
         name : str
             The client name.
         config : dict
             The configuration dictionary.
-        engine : LiveDataEngine
-            The data engine for the client.
+        msgbus : MessageBus
+            The message bus for the clients.
+        cache : Cache
+            The cache for the clients.
         clock : LiveClock
             The clock for the clients.
         logger : LiveLogger
@@ -151,7 +166,7 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
             "password": os.getenv(config.get("api_password", ""), ""),
             "timeout": 10000,         # Hard coded for now
             "enableRateLimit": True,  # Hard coded for now
-            "asyncio_loop": engine.get_event_loop(),
+            "asyncio_loop": loop,
             "options": {
                 "defaultType": account_type_str,
                 "OHLCVLimit": 1,
@@ -181,41 +196,47 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
         if not client.has.get("watchTrades", False):
             raise RuntimeError(f"CCXT `watch_trades` not available for {client.name}")
 
-        # Get account identifier env variable or set default
+        # Get account ID env variable or set default
         account_id_env_var = os.getenv(config.get("account_id", ""), "001")
 
         # Set exchange name
         exchange_name = client.name.upper()
 
-        # Set account identifier
+        # Set account ID
         account_id = AccountId(issuer=exchange_name, number=account_id_env_var)
         account_type = AccountType.CASH if account_type_str == "spot" else AccountType.MARGIN
 
         # Create client
         if exchange_name == "BINANCE":
             return BinanceCCXTExecutionClient(
+                loop=loop,
                 client=client,
                 account_id=account_id,
                 account_type=account_type,
-                engine=engine,
+                msgbus=msgbus,
+                cache=cache,
                 clock=clock,
                 logger=logger,
             )
         elif exchange_name == "BITMEX":
             return BitmexCCXTExecutionClient(
+                loop=loop,
                 client=client,
                 account_id=account_id,
-                engine=engine,
+                msgbus=msgbus,
+                cache=cache,
                 clock=clock,
                 logger=logger,
             )
         else:
             return CCXTExecutionClient(
+                loop=loop,
                 client=client,
                 account_id=account_id,
                 account_type=account_type,
                 base_currency=None,  # Multi-currency account
-                engine=engine,
+                msgbus=msgbus,
+                cache=cache,
                 clock=clock,
                 logger=logger,
             )

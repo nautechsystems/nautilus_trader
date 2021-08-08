@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from asyncio import AbstractEventLoop
-from asyncio import CancelledError
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport LiveClock
@@ -23,11 +21,11 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.message cimport Message
-from nautilus_trader.core.message cimport MessageType
-from nautilus_trader.execution.engine cimport ExecutionEngine
-from nautilus_trader.model.events cimport Event
-from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.core.message cimport MessageCategory
+from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class LiveRiskEngine(RiskEngine):
@@ -37,9 +35,9 @@ cdef class LiveRiskEngine(RiskEngine):
 
     def __init__(
         self,
-        loop not None: AbstractEventLoop,
-        ExecutionEngine exec_engine not None,
-        Portfolio portfolio not None,
+        loop not None: asyncio.AbstractEventLoop,
+        PortfolioFacade portfolio not None,
+        MessageBus msgbus not None,
         CacheFacade cache not None,
         LiveClock clock not None,
         Logger logger not None,
@@ -52,8 +50,10 @@ cdef class LiveRiskEngine(RiskEngine):
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the engine.
-        portfolio : Portfolio
+        portfolio : PortfolioFacade
             The portfolio for the engine.
+        msgbus : MessageBus
+            The message bus for the engine.
         cache : CacheFacade
             The read-only cache for the engine.
         clock : Clock
@@ -69,8 +69,8 @@ cdef class LiveRiskEngine(RiskEngine):
         if "qsize" not in config:
             config["qsize"] = 10000
         super().__init__(
-            exec_engine=exec_engine,
             portfolio=portfolio,
+            msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
@@ -209,13 +209,13 @@ cdef class LiveRiskEngine(RiskEngine):
                 message = await self._queue.get()
                 if message is None:  # Sentinel message (fast C-level check)
                     continue         # Returns to the top to check `self.is_running`
-                if message.type == MessageType.EVENT:
+                if message.category == MessageCategory.EVENT:
                     self._handle_event(message)
-                elif message.type == MessageType.COMMAND:
+                elif message.category == MessageCategory.COMMAND:
                     self._execute_command(message)
                 else:
                     self._log.error(f"Cannot handle message: unrecognized {message}.")
-        except CancelledError:
+        except asyncio.CancelledError:
             if self.qsize() > 0:
                 self._log.warning(f"Running canceled "
                                   f"with {self.qsize()} message(s) on queue.")

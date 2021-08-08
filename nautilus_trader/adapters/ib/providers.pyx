@@ -55,7 +55,7 @@ cdef class IBInstrumentProvider(InstrumentProvider):
         port : str
             The client port number.
         client_id : int
-            The unique client identifier number for the connection.
+            The unique client ID number for the connection.
 
         """
         super().__init__()
@@ -74,12 +74,12 @@ cdef class IBInstrumentProvider(InstrumentProvider):
 
     cpdef void load(self, InstrumentId instrument_id, dict details) except *:
         """
-        Load the instrument for the given identifier and details.
+        Load the instrument for the given ID and details.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier.
+            The instrument ID.
         details : dict
             The instrument details.
 
@@ -100,9 +100,9 @@ cdef class IBInstrumentProvider(InstrumentProvider):
 
         cdef list contract_details = self._client.reqContractDetails(contract=contract)
         if not contract_details:
-            raise ValueError(f"No contract details found for the given instrument identifier {instrument_id}")
+            raise ValueError(f"No contract details found for the given instrument ID {instrument_id}")
         elif len(contract_details) > 1:
-            raise ValueError(f"Multiple contract details found for the given instrument identifier {instrument_id}")
+            raise ValueError(f"Multiple contract details found for the given instrument ID {instrument_id}")
 
         cdef Instrument instrument = self._parse_instrument(
             asset_type=AssetTypeParser.from_str(details.get("asset_type")),
@@ -114,11 +114,11 @@ cdef class IBInstrumentProvider(InstrumentProvider):
         self._instruments[instrument_id] = instrument
 
     cdef Instrument _parse_instrument(
-            self,
-            AssetType asset_type,
-            InstrumentId instrument_id,
-            dict details,
-            object contract_details
+        self,
+        AssetType asset_type,
+        InstrumentId instrument_id,
+        dict details,
+        object contract_details
     ):
         if asset_type == AssetType.FUTURE:
             Condition.is_in("asset_class", details, "asset_class", "details")
@@ -167,8 +167,8 @@ cdef class IBInstrumentProvider(InstrumentProvider):
             trading_hours=details.tradingHours,
             liquid_hours=details.liquidHours,
             last_trade_time=details.lastTradeTime,
-            ts_event_ns=timestamp,
-            ts_recv_ns=timestamp,
+            ts_event=timestamp,
+            ts_init=timestamp,
         )
 
         return future
@@ -195,7 +195,7 @@ cdef class IBInstrumentProvider(InstrumentProvider):
             time_zone_id=details.timeZoneId,
             trading_hours=details.tradingHours,
             last_trade_time=details.lastTradeTime,
-            ts_event_ns=timestamp,
-            ts_recv_ns=timestamp,
+            ts_event=timestamp,
+            ts_init=timestamp,
         )
         return equity

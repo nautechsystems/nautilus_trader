@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
+import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -21,10 +21,10 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.commands import CancelOrder
-from nautilus_trader.model.commands import SubmitBracketOrder
-from nautilus_trader.model.commands import SubmitOrder
-from nautilus_trader.model.commands import UpdateOrder
+from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import SubmitBracketOrder
+from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
@@ -32,13 +32,13 @@ from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -48,26 +48,33 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class ExecutionClientTests(unittest.TestCase):
-    def setUp(self):
+class TestExecutionClient:
+    def setup(self):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -81,7 +88,8 @@ class ExecutionClientTests(unittest.TestCase):
             account_id=TestStubs.account_id(),
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -103,25 +111,14 @@ class ExecutionClientTests(unittest.TestCase):
             account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         # Act, Assert
         assert client.venue is None
-
-    def test_connect_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.client.connect)
-
-    def test_disconnect_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.client.disconnect)
-
-    def test_reset_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.client.reset)
-
-    def test_dispose_when_not_implemented_raises_exception(self):
-        self.assertRaises(NotImplementedError, self.client.dispose)
 
     def test_submit_order_raises_exception(self):
         order = self.order_factory.limit(
@@ -134,13 +131,14 @@ class ExecutionClientTests(unittest.TestCase):
         command = SubmitOrder(
             self.trader_id,
             order.strategy_id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
 
-        self.assertRaises(NotImplementedError, self.client.submit_order, command)
+        with pytest.raises(NotImplementedError):
+            self.client.submit_order(command)
 
     def test_submit_bracket_order_raises_not_implemented_error(self):
         entry_order = self.order_factory.stop_market(
@@ -165,9 +163,8 @@ class ExecutionClientTests(unittest.TestCase):
             self.clock.timestamp_ns(),
         )
 
-        self.assertRaises(
-            NotImplementedError, self.client.submit_bracket_order, command
-        )
+        with pytest.raises(NotImplementedError):
+            self.client.submit_bracket_order(command)
 
     def test_update_order_raises_not_implemented_error(self):
         # Arrange
@@ -186,7 +183,8 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertRaises(NotImplementedError, self.client.update_order, command)
+        with pytest.raises(NotImplementedError):
+            self.client.update_order(command)
 
     def test_cancel_order_raises_not_implemented_error(self):
         # Arrange
@@ -202,27 +200,5 @@ class ExecutionClientTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertRaises(NotImplementedError, self.client.cancel_order, command)
-
-    # TODO: WIP
-    # def test_handle_event_sends_to_execution_engine(self):
-    #     # Arrange
-    #     order = self.order_factory.market(
-    #         AUDUSD_SIM.id,
-    #         OrderSide.BUY,
-    #         Quantity.from_int(100000),
-    #     )
-    #
-    #     fill = TestStubs.event_order_filled(
-    #         order,
-    #         AUDUSD_SIM,
-    #         position_id=PositionId("P-123456"),
-    #         strategy_id=StrategyId("S-001"),
-    #         last_px=Price.from_str("1.00001"),
-    #     )
-    #
-    #     # Act
-    #     self.client._handle_event_py(fill)  # Accessing protected method
-    #
-    #     # Assert
-    #     self.assertEqual(1, self.exec_engine.event_count)
+        with pytest.raises(NotImplementedError):
+            self.client.cancel_order(command)

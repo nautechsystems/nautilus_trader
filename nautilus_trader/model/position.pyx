@@ -17,9 +17,10 @@ from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
-from nautilus_trader.model.events cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -51,14 +52,14 @@ cdef class Position:
         ValueError
             If instrument.id is not equal to fill.instrument_id.
         ValueError
-            If event.position_id has a 'NULL' value.
+            If event.position_id is None.
         ValueError
-            If event.strategy_id has a 'NULL' value.
+            If event.strategy_id is None.
 
         """
         Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")
-        Condition.true(fill.position_id.not_null(), "event.position_id.value was 'NULL'")
-        Condition.true(fill.strategy_id.not_null(), "event.strategy_id.value was 'NULL'")
+        Condition.not_none(fill.position_id, "fill.position_id")
+        Condition.not_none(fill.strategy_id, "fill.position_id")
 
         self._events = []         # type: list[OrderFilled]
         self._execution_ids = []  # type: list[ExecutionId]
@@ -67,22 +68,24 @@ cdef class Position:
         self._commissions = {}
 
         # Identifiers
+        self.trader_id = fill.trader_id
+        self.strategy_id = fill.strategy_id
+        self.instrument_id = fill.instrument_id
         self.id = fill.position_id
         self.account_id = fill.account_id
         self.from_order = fill.client_order_id
-        self.strategy_id = fill.strategy_id
-        self.instrument_id = fill.instrument_id
 
         # Properties
-        self.entry = fill.order_side
-        self.side = Position.side_from_order_side(fill.order_side)
+        self.entry = fill.side
+        self.side = Position.side_from_order_side(fill.side)
         self.net_qty = Decimal()
         self.quantity = Quantity.zero_c(precision=instrument.size_precision)
         self.peak_qty = Quantity.zero_c(precision=instrument.size_precision)
-        self.timestamp_ns = fill.ts_filled_ns
-        self.opened_timestamp_ns = fill.ts_filled_ns
-        self.closed_timestamp_ns = 0
-        self.open_duration_ns = 0
+        self.ts_init = fill.ts_init
+        self.ts_opened = fill.ts_event
+        self.ts_last = fill.ts_event
+        self.ts_closed = 0
+        self.duration_ns = 0
         self.avg_px_open = fill.last_px.as_decimal()
         self.avg_px_close = None  # Can be None
         self.price_precision = instrument.price_precision
@@ -118,31 +121,26 @@ cdef class Position:
 
         """
         return {
-            "type": type(self).__name__,
-            "id": self.id.value,
+            "position_id": self.id.value,
             "account_id": self.account_id.value,
             "from_order": self.from_order.value,
             "strategy_id": self.strategy_id.value,
             "instrument_id": self.instrument_id.value,
+            "entry": OrderSideParser.to_str(self.entry),
             "side": PositionSideParser.to_str(self.side),
             "net_qty": str(self.net_qty),
             "quantity": str(self.quantity),
             "peak_qty": str(self.peak_qty),
-            "timestamp_ns": self.timestamp_ns,
-            "opened_timestamp_ns": self.opened_timestamp_ns,
-            "closed_timestamp_ns": self.closed_timestamp_ns,
-            "open_duration_ns": self.open_duration_ns,
+            "ts_opened": self.ts_opened,
+            "ts_closed": self.ts_closed,
+            "duration_ns": self.duration_ns,
             "avg_px_open": str(self.avg_px_open),
             "avg_px_close": str(self.avg_px_close),
-            "price_precision": self.price_precision,
-            "size_precision": self.size_precision,
-            "multiplier": str(self.multiplier),
-            "is_inverse": self.is_inverse,
             "quote_currency": self.quote_currency.code,
             "base_currency": self.base_currency.code,
             "cost_currency": self.cost_currency.code,
             "realized_points": str(self.realized_points),
-            "realized_return": str(self.realized_return),
+            "realized_return": str(round(self.realized_return, 5)),
             "realized_pnl": str(self.realized_pnl.to_str()),
             "commissions": str([c.to_str() for c in self.commissions()]),
         }
@@ -214,7 +212,7 @@ cdef class Position:
     @property
     def client_order_ids(self):
         """
-        The client order identifiers associated with the position.
+        The client order IDs associated with the position.
 
         Returns
         -------
@@ -222,7 +220,7 @@ cdef class Position:
 
         Notes
         -----
-        Guaranteed not to contain duplicate identifiers.
+        Guaranteed not to contain duplicate IDs.
 
         """
         return self.client_order_ids_c()
@@ -230,7 +228,7 @@ cdef class Position:
     @property
     def venue_order_ids(self):
         """
-        The venue order identifiers associated with the position.
+        The venue order IDs associated with the position.
 
         Returns
         -------
@@ -238,7 +236,7 @@ cdef class Position:
 
         Notes
         -----
-        Guaranteed not to contain duplicate identifiers.
+        Guaranteed not to contain duplicate IDs.
 
         """
         return self.venue_order_ids_c()
@@ -246,7 +244,7 @@ cdef class Position:
     @property
     def execution_ids(self):
         """
-        The execution identifiers associated with the position.
+        The execution IDs associated with the position.
 
         Returns
         -------
@@ -282,7 +280,7 @@ cdef class Position:
     @property
     def last_execution_id(self):
         """
-        The last execution identifier for the position.
+        The last execution ID for the position.
 
         Returns
         -------
@@ -425,9 +423,9 @@ cdef class Position:
         self._commissions[currency] = cum_commission
 
         # Calculate avg prices, points, return, PnL
-        if fill.order_side == OrderSide.BUY:
+        if fill.side == OrderSide.BUY:
             self._handle_buy_order_fill(fill)
-        else:  # event.order_side == OrderSide.SELL:
+        else:  # event.side == OrderSide.SELL:
             self._handle_sell_order_fill(fill)
 
         # Set quantities
@@ -437,13 +435,21 @@ cdef class Position:
 
         # Set state
         if self.net_qty > 0:
+            self.entry = OrderSide.BUY
             self.side = PositionSide.LONG
+            self.ts_closed = 0
+            self.duration_ns = 0
         elif self.net_qty < 0:
+            self.entry = OrderSide.SELL
             self.side = PositionSide.SHORT
+            self.ts_closed = 0
+            self.duration_ns = 0
         else:
             self.side = PositionSide.FLAT
-            self.closed_timestamp_ns = fill.ts_filled_ns
-            self.open_duration_ns = self.closed_timestamp_ns - self.opened_timestamp_ns
+            self.ts_closed = fill.ts_event
+            self.duration_ns = self.ts_closed - self.ts_opened
+
+        self.ts_last = fill.ts_event
 
     cpdef Money notional_value(self, Price last):
         """

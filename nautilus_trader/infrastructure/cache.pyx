@@ -20,8 +20,8 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyTypeParser
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -51,8 +51,15 @@ cdef str _STRATEGIES = 'Strategies'
 
 cdef class RedisCacheDatabase(CacheDatabase):
     """
-    Provides an cache database backed by Redis.
+    Provides a cache database backed by Redis.
 
+    Warnings
+    --------
+    Redis can only accurately store int64 types to 17 digits of precision.
+    Therefore nanosecond timestamp int64's with 19 digits will lose 2 digits of
+    precision when persisted. If precision to this level is important, then you
+    could additionally persist events in another medium/database which can
+    properly handle int64 types.
     """
 
     def __init__(
@@ -70,7 +77,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier for the database.
+            The trader ID for the database.
         logger : Logger
             The logger for the database.
         instrument_serializer : InstrumentSerializer
@@ -92,7 +99,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         cdef int port = int(config["port"])
         Condition.valid_string(host, "host")
         Condition.in_range_int(port, 0, 65535, "port")
-        super().__init__(trader_id, logger)
+        super().__init__(logger)
 
         # Database keys
         self._key_trader      = f"{_TRADER}-{trader_id.value}"        # noqa
@@ -124,7 +131,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef dict load_currencies(self):
         """
-        Load all currencies from the execution database.
+        Load all currencies from the database.
 
         Returns
         -------
@@ -151,7 +158,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef dict load_instruments(self):
         """
-        Load all instruments from the execution database.
+        Load all instruments from the database.
 
         Returns
         -------
@@ -180,7 +187,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef dict load_accounts(self):
         """
-        Load all accounts from the execution database.
+        Load all accounts from the database.
 
         Returns
         -------
@@ -209,7 +216,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef dict load_orders(self):
         """
-        Load all orders from the execution database.
+        Load all orders from the database.
 
         Returns
         -------
@@ -238,7 +245,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef dict load_positions(self):
         """
-        Load all positions from the execution database.
+        Load all positions from the database.
 
         Returns
         -------
@@ -294,13 +301,13 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id):
         """
-        Load the instrument associated with the given instrument identifier
+        Load the instrument associated with the given instrument ID
         (if found).
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier to load.
+            The instrument ID to load.
 
         Returns
         -------
@@ -318,12 +325,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef Account load_account(self, AccountId account_id):
         """
-        Load the account associated with the given account_id (if found).
+        Load the account associated with the given account ID (if found).
 
         Parameters
         ----------
         account_id : AccountId
-            The account identifier to load.
+            The account ID to load.
 
         Returns
         -------
@@ -351,12 +358,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef Order load_order(self, ClientOrderId client_order_id):
         """
-        Load the order associated with the given identifier (if found).
+        Load the order associated with the given client order ID (if found).
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier to load.
+            The client order ID to load.
 
         Returns
         -------
@@ -386,12 +393,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef Position load_position(self, PositionId position_id):
         """
-        Load the position associated with the given identifier (if found).
+        Load the position associated with the given ID (if found).
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier to load.
+            The position ID to load.
 
         Returns
         -------
@@ -434,7 +441,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Parameters
         ----------
         strategy_id : StrategyId
-            The identifier of the strategy state dictionary to load.
+            The ID of the strategy state dictionary to load.
 
         Returns
         -------
@@ -450,14 +457,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void delete_strategy(self, StrategyId strategy_id) except *:
         """
-        Delete the given strategy from the execution database.
-
-        Logs error if strategy not found in the database.
+        Delete the given strategy from the database.
 
         Parameters
         ----------
         strategy_id : StrategyId
-            The identifier of the strategy state dictionary to delete.
+            The ID of the strategy state dictionary to delete.
 
         """
         Condition.not_none(strategy_id, "strategy_id")
@@ -468,7 +473,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void add_currency(self, Currency currency) except *:
         """
-        Add the given currency to the execution database.
+        Add the given currency to the database.
 
         Parameters
         ----------
@@ -495,7 +500,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void add_instrument(self, Instrument instrument) except *:
         """
-        Add the given instrument to the execution database.
+        Add the given instrument to the database.
 
         Parameters
         ----------
@@ -512,7 +517,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void add_account(self, Account account) except *:
         """
-        Add the given account to the execution database.
+        Add the given account to the database.
 
         Parameters
         ----------
@@ -538,7 +543,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void add_order(self, Order order) except *:
         """
-        Add the given order to the execution database.
+        Add the given order to the database.
 
         Parameters
         ----------
@@ -562,7 +567,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void add_position(self, Position position) except *:
         """
-        Add the given position associated with the given strategy identifier.
+        Add the given position associated with the given strategy ID.
 
         Parameters
         ----------
@@ -586,7 +591,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
         """
-        Update the given strategy state in the execution database.
+        Update the given strategy state in the database.
 
         Parameters
         ----------
@@ -613,7 +618,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void update_account(self, Account account) except *:
         """
-        Update the given account in the execution database.
+        Update the given account in the database.
 
         Parameters
         ----------
@@ -629,7 +634,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void update_order(self, Order order) except *:
         """
-        Update the given order in the execution database.
+        Update the given order in the database.
 
         Parameters
         ----------
@@ -650,7 +655,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
     cpdef void update_position(self, Position position) except *:
         """
-        Update the given position in the execution database.
+        Update the given position in the database.
 
         Parameters
         ----------

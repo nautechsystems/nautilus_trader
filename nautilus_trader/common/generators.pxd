@@ -30,7 +30,7 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
     cdef str _id_tag_strategy
 
     cdef readonly int count
-    """The count of identifiers generated.\n\n:returns: `int`"""
+    """The count of IDs generated.\n\n:returns: `int`"""
 
     cpdef void set_count(self, int count) except *
     cpdef ClientOrderId generate(self)

@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.efficiency_ratio import EfficiencyRatio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -23,31 +21,31 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class EfficiencyRatioTests(unittest.TestCase):
-    def setUp(self):
+class TestEfficiencyRatio:
+    def setup(self):
         # Fixture Setup
         self.er = EfficiencyRatio(10)
 
     def test_name_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual("EfficiencyRatio", self.er.name)
+        assert self.er.name == "EfficiencyRatio"
 
     def test_str_repr_returns_expected_string(self):
         # Act
         # Assert
-        self.assertEqual("EfficiencyRatio(10)", str(self.er))
-        self.assertEqual("EfficiencyRatio(10)", repr(self.er))
+        assert str(self.er) == "EfficiencyRatio(10)"
+        assert repr(self.er) == "EfficiencyRatio(10)"
 
     def test_period(self):
         # Act
         # Assert
-        self.assertEqual(10, self.er.period)
+        assert self.er.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
         # Act
         # Assert
-        self.assertEqual(False, self.er.initialized)
+        assert self.er.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -56,7 +54,7 @@ class EfficiencyRatioTests(unittest.TestCase):
             self.er.update_raw(1.00000)
 
         # Assert
-        self.assertEqual(True, self.er.initialized)
+        assert self.er.initialized is True
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -68,8 +66,8 @@ class EfficiencyRatioTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(0, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 0
 
     def test_value_with_one_input(self):
         # Arrange
@@ -77,7 +75,7 @@ class EfficiencyRatioTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.0, self.er.value)
+        assert self.er.value == 0.0
 
     def test_value_with_efficient_higher_inputs(self):
         # Arrange
@@ -89,7 +87,7 @@ class EfficiencyRatioTests(unittest.TestCase):
             self.er.update_raw(initial_price)
 
         # Assert
-        self.assertEqual(1.0, self.er.value)
+        assert self.er.value == 1.0
 
     def test_value_with_efficient_lower_inputs(self):
         # Arrange
@@ -101,7 +99,7 @@ class EfficiencyRatioTests(unittest.TestCase):
             self.er.update_raw(initial_price)
 
         # Assert
-        self.assertEqual(1.0, self.er.value)
+        assert self.er.value == 1.0
 
     def test_value_with_oscillating_inputs_returns_zero(self):
         # Arrange
@@ -113,7 +111,7 @@ class EfficiencyRatioTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.0, self.er.value)
+        assert self.er.value == 0.0
 
     def test_value_with_half_oscillating_inputs_returns_zero(self):
         # Arrange
@@ -125,7 +123,7 @@ class EfficiencyRatioTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.3333333333333333, self.er.value)
+        assert self.er.value == 0.3333333333333333
 
     def test_value_with_noisy_inputs(self):
         # Arrange
@@ -139,7 +137,7 @@ class EfficiencyRatioTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0.42857142857215363, self.er.value)
+        assert self.er.value == 0.42857142857215363
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -150,5 +148,5 @@ class EfficiencyRatioTests(unittest.TestCase):
         self.er.reset()
 
         # Assert
-        self.assertFalse(self.er.initialized)
-        self.assertEqual(0, self.er.value)
+        assert not self.er.initialized
+        assert self.er.value == 0

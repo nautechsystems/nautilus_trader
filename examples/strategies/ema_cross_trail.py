@@ -14,23 +14,25 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Dict, Optional
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.data import Data
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -70,7 +72,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the strategy.
+            The instrument ID for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -84,15 +86,15 @@ class EMACrossWithTrailingStop(TradingStrategy):
         trail_atr_multiple : float
             The ATR multiple for the trailing stop.
         order_id_tag : str
-            The unique order identifier tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader identifier.
+            The unique order ID tag for the strategy. Must be unique
+            amongst all running strategies for a particular trader ID.
 
         """
-        super().__init__(order_id_tag=order_id_tag)
+        super().__init__(order_id_tag=order_id_tag, oms_type=OMSType.HEDGING)
 
         # Custom strategy variables
         self.instrument_id = instrument_id
-        self.instrument = None  # Initialize in on_start
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.trail_atr_multiple = trail_atr_multiple
@@ -192,8 +194,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up "
-                f"[{self.cache.bar_count(self.bar_type)}]...",
+                f"Waiting for indicators to warm up " f"[{self.cache.bar_count(self.bar_type)}]...",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
@@ -286,16 +287,12 @@ class EMACrossWithTrailingStop(TradingStrategy):
             return
 
         if self.trailing_stop.is_sell:
-            new_trailing_price = last_bar.low - (
-                self.atr.value * self.trail_atr_multiple
-            )
+            new_trailing_price = last_bar.low - (self.atr.value * self.trail_atr_multiple)
             if new_trailing_price > self.trailing_stop.price:
                 self.cancel_order(self.trailing_stop)
                 self.trailing_stop_sell(last_bar)
         else:  # trailing_stop.is_buy
-            new_trailing_price = last_bar.high + (
-                self.atr.value * self.trail_atr_multiple
-            )
+            new_trailing_price = last_bar.high + (self.atr.value * self.trail_atr_multiple)
             if new_trailing_price < self.trailing_stop.price:
                 self.cancel_order(self.trailing_stop)
                 self.trailing_stop_buy(last_bar)
@@ -325,9 +322,9 @@ class EMACrossWithTrailingStop(TradingStrategy):
         if isinstance(event, OrderFilled) and self.trailing_stop:
             if event.client_order_id == self.trailing_stop.client_order_id:
                 last_bar = self.cache.bar(self.bar_type)
-                if event.order_side == OrderSide.BUY:
+                if event.side == OrderSide.BUY:
                     self.trailing_stop_sell(last_bar)
-                elif event.order_side == OrderSide.SELL:
+                elif event.side == OrderSide.SELL:
                     self.trailing_stop_buy(last_bar)
             elif event.client_order_id == self.trailing_stop.client_order_id:
                 self.trailing_stop = None
@@ -351,7 +348,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         self.slow_ema.reset()
         self.atr.reset()
 
-    def on_save(self) -> {}:
+    def on_save(self) -> Dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -365,7 +362,7 @@ class EMACrossWithTrailingStop(TradingStrategy):
         """
         return {}
 
-    def on_load(self, state: {}):
+    def on_load(self, state: Dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 

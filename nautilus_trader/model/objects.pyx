@@ -32,12 +32,12 @@ https://docs.python.org/3.9/library/decimal.html
 
 import decimal
 
-from cpython.object cimport PyObject_RichCompareBool
 from cpython.object cimport Py_EQ
 from cpython.object cimport Py_GE
 from cpython.object cimport Py_GT
 from cpython.object cimport Py_LE
 from cpython.object cimport Py_LT
+from cpython.object cimport PyObject_RichCompareBool
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -244,7 +244,6 @@ cdef class Quantity(BaseDecimal):
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Qty
-
     """
 
     def __init__(self, value, uint8_t precision):
@@ -323,8 +322,8 @@ cdef class Quantity(BaseDecimal):
         -------
         Quantity
 
-        Warning
-        -------
+        Warnings
+        --------
         The decimal precision will be inferred from the number of digits
         following the '.' point (if no point then precision zero).
 
@@ -377,7 +376,6 @@ cdef class Price(BaseDecimal):
     References
     ----------
     https://www.onixs.biz/fix-dictionary/5.0.SP2/index.html#Price
-
     """
 
     def __init__(self, value, uint8_t precision):
@@ -496,12 +494,12 @@ cdef class Money(BaseDecimal):
 
     @staticmethod
     cdef Money from_str_c(str value):
-        cdef tuple pieces = value.partition(' ')
+        cdef list pieces = value.split(' ', maxsplit=1)
 
-        if len(pieces) != 3:
+        if len(pieces) != 2:
             raise ValueError(f"The `Money` string value was malformed, was {value}")
 
-        return Money(pieces[0], Currency.from_str_c(pieces[2]))
+        return Money(pieces[0], Currency.from_str_c(pieces[1]))
 
     @staticmethod
     def from_str(str value) -> Money:
@@ -546,7 +544,6 @@ cdef class Money(BaseDecimal):
         str
 
         """
-        # TODO(cs): Refactor - replace with faster formatting
         return f"{self._value:,} {self.currency}".replace(",", "_")
 
 
@@ -602,6 +599,7 @@ cdef class AccountBalance:
 
     @staticmethod
     cdef AccountBalance from_dict_c(dict values):
+        Condition.not_none(values, "values")
         cdef Currency currency = Currency.from_str_c(values["currency"])
         return AccountBalance(
             currency=currency,

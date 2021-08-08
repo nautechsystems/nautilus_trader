@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 import numpy as np
 
 from nautilus_trader.indicators.fuzzy_candlesticks import FuzzyCandle
@@ -30,8 +28,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class FuzzyCandlesticksTests(unittest.TestCase):
-    def setUp(self):
+class TestFuzzyCandlesticks:
+    def setup(self):
         # Fixture Setup
         self.fc = FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)
 
@@ -63,9 +61,9 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertTrue(fuzzy_candle1 == fuzzy_candle1)
-        self.assertTrue(fuzzy_candle1 == fuzzy_candle2)
-        self.assertTrue(fuzzy_candle1 != fuzzy_candle3)
+        assert fuzzy_candle1 == fuzzy_candle1
+        assert fuzzy_candle1 == fuzzy_candle2
+        assert fuzzy_candle1 != fuzzy_candle3
 
     def test_fuzzy_str_and_repr(self):
         # Arrange
@@ -79,27 +77,27 @@ class FuzzyCandlesticksTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual("(1, 3, 2, 1, 1)", str(fuzzy_candle))
-        self.assertEqual("FuzzyCandle(1, 3, 2, 1, 1)", repr(fuzzy_candle))
+        assert str(fuzzy_candle) == "(1, 3, 2, 1, 1)"
+        assert repr(fuzzy_candle) == "FuzzyCandle(1, 3, 2, 1, 1)"
 
     def test_name_returns_expected_name(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("FuzzyCandlesticks", self.fc.name)
+        assert self.fc.name == "FuzzyCandlesticks"
 
     def test_str_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)", str(self.fc))
-        self.assertEqual("FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)", repr(self.fc))
+        assert str(self.fc) == "FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)"
+        assert repr(self.fc) == "FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)"
 
     def test_period_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(10, self.fc.period)
+        assert self.fc.period == 10
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -111,7 +109,7 @@ class FuzzyCandlesticksTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
+        assert indicator.has_inputs
 
     def test_values_with_doji_bars_returns_expected_results(self):
         # Arrange
@@ -132,12 +130,12 @@ class FuzzyCandlesticksTests(unittest.TestCase):
         result_vector = self.fc.vector
 
         # Assert
-        self.assertTrue(np.array_equal([0, 0, 0, 0, 0], result_vector))
-        self.assertEqual(CandleDirection.NONE, result_candle.direction)
-        self.assertEqual(CandleSize.NONE, result_candle.size)
-        self.assertEqual(CandleBodySize.NONE, result_candle.body_size)
-        self.assertEqual(CandleWickSize.NONE, result_candle.upper_wick_size)
-        self.assertEqual(CandleWickSize.NONE, result_candle.lower_wick_size)
+        assert np.array_equal([0, 0, 0, 0, 0], result_vector)
+        assert result_candle.direction == CandleDirection.NONE
+        assert result_candle.size == CandleSize.NONE
+        assert result_candle.body_size == CandleBodySize.NONE
+        assert result_candle.upper_wick_size == CandleWickSize.NONE
+        assert result_candle.lower_wick_size == CandleWickSize.NONE
 
     def test_values_with_stub_bars_returns_expected_results(self):
         # Arrange
@@ -157,12 +155,12 @@ class FuzzyCandlesticksTests(unittest.TestCase):
         result_vector = self.fc.vector
 
         # Assert
-        self.assertTrue(np.array_equal([1, 1, 1, 1, 1], result_vector))
-        self.assertEqual(CandleDirection.BULL, result_candle.direction)
-        self.assertEqual(CandleSize.VERY_SMALL, result_candle.size)
-        self.assertEqual(CandleBodySize.SMALL, result_candle.body_size)
-        self.assertEqual(CandleWickSize.SMALL, result_candle.upper_wick_size)
-        self.assertEqual(CandleWickSize.SMALL, result_candle.lower_wick_size)
+        assert np.array_equal([1, 1, 1, 1, 1], result_vector)
+        assert result_candle.direction == CandleDirection.BULL
+        assert result_candle.size == CandleSize.VERY_SMALL
+        assert result_candle.body_size == CandleBodySize.SMALL
+        assert result_candle.upper_wick_size == CandleWickSize.SMALL
+        assert result_candle.lower_wick_size == CandleWickSize.SMALL
 
     def test_values_with_down_market_returns_expected_results(self):
         # Arrange
@@ -182,12 +180,12 @@ class FuzzyCandlesticksTests(unittest.TestCase):
         result_vector = self.fc.vector
 
         # Assert
-        self.assertTrue([-1, 2, 4, 2, 2], result_vector)
-        self.assertEqual(CandleDirection.BEAR, result_candle.direction)
-        self.assertEqual(CandleSize.SMALL, result_candle.size)
-        self.assertEqual(CandleBodySize.TREND, result_candle.body_size)
-        self.assertEqual(CandleWickSize.MEDIUM, result_candle.upper_wick_size)
-        self.assertEqual(CandleWickSize.MEDIUM, result_candle.lower_wick_size)
+        assert [-1, 2, 4, 2, 2], result_vector
+        assert result_candle.direction == CandleDirection.BEAR
+        assert result_candle.size == CandleSize.SMALL
+        assert result_candle.body_size == CandleBodySize.TREND
+        assert result_candle.upper_wick_size == CandleWickSize.MEDIUM
+        assert result_candle.lower_wick_size == CandleWickSize.MEDIUM
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -198,4 +196,4 @@ class FuzzyCandlesticksTests(unittest.TestCase):
         self.fc.reset()
 
         # Assert
-        self.assertEqual(False, self.fc.initialized)  # No assertion errors.
+        assert self.fc.initialized is False  # No assertion errors.

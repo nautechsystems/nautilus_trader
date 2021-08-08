@@ -15,25 +15,24 @@
 
 import asyncio
 import concurrent.futures
-from datetime import timedelta
 import platform
 import signal
 import sys
 import time
-from typing import Dict, List
 import warnings
+from datetime import timedelta
+from typing import Callable, Dict
 
 import msgpack
 import redis
 
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogColor
-from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.correctness import PyCondition
@@ -43,11 +42,11 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
 from nautilus_trader.trading.portfolio import Portfolio
-from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.trader import Trader
 
 
@@ -66,32 +65,22 @@ class TradingNode:
     Provides an asynchronous network node for live trading.
     """
 
-    def __init__(
-        self,
-        strategies: List[TradingStrategy],
-        config: Dict[str, object],
-    ):
+    def __init__(self, config: Dict[str, Dict[str, object]]):
         """
         Initialize a new instance of the TradingNode class.
 
         Parameters
         ----------
-        strategies : list[TradingStrategy]
-            The list of strategies to run on the trading node.
-        config : dict[str, object]
+        config : dict[str, dict[str, object]]
             The configuration for the trading node.
 
         Raises
         ------
         ValueError
-            If strategies is None or empty.
-        ValueError
             If config is None or empty.
 
         """
-        PyCondition.not_none(strategies, "strategies")
         PyCondition.not_none(config, "config")
-        PyCondition.not_empty(strategies, "strategies")
         PyCondition.not_empty(config, "config")
 
         self._config = config
@@ -108,19 +97,19 @@ class TradingNode:
         config_strategy = config.get("strategy", {})
 
         # System config
-        self._timeout_connection = config_system.get("timeout_connection", 5.0)
-        self._timeout_reconciliation = config_system.get("timeout_reconciliation", 10.0)
-        self._timeout_portfolio = config_system.get("timeout_portfolio", 10.0)
-        self._timeout_disconnection = config_system.get("timeout_disconnection", 5.0)
-        self._check_residuals_delay = config_system.get("check_residuals_delay", 5.0)
-        self._load_strategy_state = config_strategy.get("load_state", True)
-        self._save_strategy_state = config_strategy.get("save_state", True)
+        self._timeout_connection: float = config_system.get("timeout_connection", 5.0)  # type: ignore
+        self._timeout_reconciliation: float = config_system.get("timeout_reconciliation", 10.0)  # type: ignore
+        self._timeout_portfolio: float = config_system.get("timeout_portfolio", 10.0)  # type: ignore
+        self._timeout_disconnection: float = config_system.get("timeout_disconnection", 5.0)  # type: ignore
+        self._check_residuals_delay: float = config_system.get("check_residuals_delay", 5.0)  # type: ignore
+        self._load_strategy_state: bool = config_strategy.get("load_state", True)  # type: ignore
+        self._save_strategy_state: bool = config_strategy.get("save_state", True)  # type: ignore
 
         # Setup loop
         self._loop = asyncio.get_event_loop()
         self._executor = concurrent.futures.ThreadPoolExecutor()
         self._loop.set_default_executor(self._executor)
-        self._loop.set_debug(config_system.get("loop_debug", False))
+        self._loop.set_debug(bool(config_system.get("loop_debug", False)))
 
         # Components
         self._clock = LiveClock(loop=self._loop)
@@ -146,7 +135,7 @@ class TradingNode:
         )
 
         self._log = LoggerAdapter(
-            component=self.__class__.__name__,
+            component_name=type(self).__name__,
             logger=self._logger,
         )
 
@@ -161,8 +150,9 @@ class TradingNode:
         ########################################################################
         # Build platform
         ########################################################################
-
-        if config_db["type"] == "redis":
+        if config_db["type"] == "in-memory":
+            cache_db = None
+        elif config_db["type"] == "redis":
             cache_db = RedisCacheDatabase(
                 trader_id=self.trader_id,
                 logger=self._logger,
@@ -175,27 +165,34 @@ class TradingNode:
                 },
             )
         else:
-            cache_db = BypassCacheDatabase(
-                trader_id=self.trader_id,
-                logger=self._logger,
+            raise ValueError(
+                "The cache_db_type in the configuration is unrecognized, "
+                "can one of {{'in-memory', 'redis'}}.",
             )
 
-        cache = Cache(
+        self._msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self._clock,
+            logger=self._logger,
+        )
+
+        self._cache = Cache(
             database=cache_db,
             logger=self._logger,
             config=config_cache,
         )
 
         self.portfolio = Portfolio(
-            cache=cache,
+            msgbus=self._msgbus,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
         )
 
         self._data_engine = LiveDataEngine(
             loop=self._loop,
-            portfolio=self.portfolio,
-            cache=cache,
+            msgbus=self._msgbus,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
             config=config_data,
@@ -203,30 +200,28 @@ class TradingNode:
 
         self._exec_engine = LiveExecutionEngine(
             loop=self._loop,
-            portfolio=self.portfolio,
-            cache=cache,
+            msgbus=self._msgbus,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
             config=config_exec,
         )
+        self._exec_engine.load_cache()
 
         self._risk_engine = LiveRiskEngine(
             loop=self._loop,
-            exec_engine=self._exec_engine,
             portfolio=self.portfolio,
-            cache=cache,
+            msgbus=self._msgbus,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
             config=config_risk,
         )
 
-        # Wire up components
-        self._exec_engine.register_risk_engine(self._risk_engine)
-        self._exec_engine.load_cache()
-
         self.trader = Trader(
             trader_id=self.trader_id,
-            strategies=strategies,
+            msgbus=self._msgbus,
+            cache=self._cache,
             portfolio=self.portfolio,
             data_engine=self._data_engine,
             risk_engine=self._risk_engine,
@@ -239,8 +234,11 @@ class TradingNode:
             self.trader.load()
 
         self._builder = TradingNodeBuilder(
+            loop=self._loop,
             data_engine=self._data_engine,
             exec_engine=self._exec_engine,
+            msgbus=self._msgbus,
+            cache=self._cache,
             clock=self._clock,
             logger=self._logger,
             log=self._log,
@@ -248,9 +246,7 @@ class TradingNode:
 
         self._log.info("state=INITIALIZED.")
         self.time_to_initialize = self._clock.delta(self.created_time)
-        self._log.info(
-            f"Initialized in {self.time_to_initialize.total_seconds():.3f}s."
-        )
+        self._log.info(f"Initialized in {self.time_to_initialize.total_seconds():.3f}s.")
 
         self._is_built = False
 
@@ -302,7 +298,24 @@ class TradingNode:
         """
         return self._logger
 
-    def add_data_client_factory(self, name, factory):
+    def add_log_sink(self, handler: Callable[[Dict], None]):
+        """
+        Register the given sink handler with the nodes logger.
+
+        Parameters
+        ----------
+        handler : Callable[[Dict], None]
+            The sink handler to register.
+
+        Raises
+        ------
+        KeyError
+            If handler already registered.
+
+        """
+        self._logger.register_sink(handler=handler)
+
+    def add_data_client_factory(self, name: str, factory):
         """
         Add the given data client factory to the node.
 
@@ -323,7 +336,7 @@ class TradingNode:
         """
         self._builder.add_data_client_factory(name, factory)
 
-    def add_exec_client_factory(self, name, factory):
+    def add_exec_client_factory(self, name: str, factory):
         """
         Add the given execution client factory to the node.
 
@@ -349,7 +362,7 @@ class TradingNode:
         Build the nodes clients.
         """
         if self._is_built:
-            raise RuntimeError("The trading nodes clients are already built.")
+            raise RuntimeError("the trading nodes clients are already built.")
 
         self._builder.build_data_clients(self._config.get("data_clients"))
         self._builder.build_exec_clients(self._config.get("exec_clients"))
@@ -388,6 +401,7 @@ class TradingNode:
                 self._loop.create_task(self._stop())
             else:
                 self._loop.run_until_complete(self._stop())
+
         except RuntimeError as ex:
             self._log.exception(ex)
 
@@ -399,9 +413,7 @@ class TradingNode:
 
         """
         try:
-            timeout = self._clock.utc_now() + timedelta(
-                seconds=self._timeout_disconnection
-            )
+            timeout = self._clock.utc_now() + timedelta(seconds=self._timeout_disconnection)
             while self._is_running:
                 time.sleep(0.1)
                 if self._clock.utc_now() >= timeout:
@@ -434,7 +446,6 @@ class TradingNode:
 
             self._log.info("Stopping event loop...")
             self._cancel_all_tasks()
-            self._logger.stop()
             self._loop.stop()
         except RuntimeError as ex:
             self._log.exception(ex)
@@ -461,15 +472,11 @@ class TradingNode:
 
     def _log_header(self) -> None:
         nautilus_header(self._log)
-        self._log.info(f"redis {redis.__version__}")
-        self._log.info(
-            f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}"
-        )
+        self._log.info(f"redis {redis.__version__}")  # type: ignore
+        self._log.info(f"msgpack {msgpack.version[0]}.{msgpack.version[1]}.{msgpack.version[2]}")
         if uvloop_version:
             self._log.info(f"uvloop {uvloop_version}")
-        self._log.info(
-            "================================================================="
-        )
+        self._log.info("=================================================================")
 
     def _setup_loop(self) -> None:
         if self._loop.is_closed():
@@ -482,7 +489,7 @@ class TradingNode:
             self._loop.add_signal_handler(sig, self._loop_sig_handler, sig)
         self._log.debug(f"Event loop {signals} handling setup.")
 
-    def _loop_sig_handler(self, sig: signal.signal) -> None:
+    def _loop_sig_handler(self, sig) -> None:
         self._loop.remove_signal_handler(signal.SIGTERM)
         self._loop.add_signal_handler(signal.SIGINT, lambda: None)
 
@@ -533,10 +540,13 @@ class TradingNode:
                 return
             self._log.info("State reconciled.", color=LogColor.GREEN)
 
+            # Initialize portfolio
+            self.portfolio.initialize_orders()
+            self.portfolio.initialize_positions()
+
             # Await portfolio initialization
             self._log.info(
-                "Waiting for portfolio to initialize "
-                f"({self._timeout_portfolio}s timeout)...",
+                "Waiting for portfolio to initialize " f"({self._timeout_portfolio}s timeout)...",
                 color=LogColor.BLUE,
             )
             if not await self._await_portfolio_initialized():
@@ -548,6 +558,10 @@ class TradingNode:
                 )
                 return
             self._log.info("Portfolio initialized.", color=LogColor.GREEN)
+
+            # Update portfolio
+            for account in self._cache.accounts():
+                self.portfolio.register_account(account)
 
             # Start trader and strategies
             self.trader.start()
@@ -625,8 +639,7 @@ class TradingNode:
             self._risk_engine.stop()
 
         self._log.info(
-            f"Waiting for engines to disconnect "
-            f"({self._timeout_disconnection}s timeout)...",
+            f"Waiting for engines to disconnect " f"({self._timeout_disconnection}s timeout)...",
             color=LogColor.BLUE,
         )
         if not await self._await_engines_disconnected():
@@ -646,6 +659,7 @@ class TradingNode:
             self._log.info(f"Cancelled Timer(name={name}).")
 
         self._log.info("state=STOPPED.")
+        self._logger.stop()
         self._is_running = False
 
     async def _await_engines_disconnected(self) -> bool:

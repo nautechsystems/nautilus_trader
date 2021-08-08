@@ -20,7 +20,6 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
@@ -30,9 +29,6 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 cdef class CacheDatabase:
     cdef LoggerAdapter _log
-
-    cdef readonly TraderId trader_id
-    """The trader identifier associated with the database.\n\n:returns: `TraderId`"""
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
@@ -60,7 +56,3 @@ cdef class CacheDatabase:
     cpdef void update_order(self, Order order) except *
     cpdef void update_position(self, Position position) except *
     cpdef void update_strategy(self, TradingStrategy strategy) except *
-
-
-cdef class BypassCacheDatabase(CacheDatabase):
-    cdef dict _instruments

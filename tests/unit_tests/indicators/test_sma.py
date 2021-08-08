@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.average.sma import SimpleMovingAverage
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit.providers import TestInstrumentProvider
@@ -24,8 +22,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class SimpleMovingAverageTests(unittest.TestCase):
-    def setUp(self):
+class TestSimpleMovingAverage:
+    def setup(self):
         # Fixture Setup
         self.sma = SimpleMovingAverage(10)
 
@@ -33,26 +31,26 @@ class SimpleMovingAverageTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("SimpleMovingAverage", self.sma.name)
+        assert self.sma.name == "SimpleMovingAverage"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("SimpleMovingAverage(10)", str(self.sma))
-        self.assertEqual("SimpleMovingAverage(10)", repr(self.sma))
+        assert str(self.sma) == "SimpleMovingAverage(10)"
+        assert repr(self.sma) == "SimpleMovingAverage(10)"
 
     def test_period_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(10, self.sma.period)
+        assert self.sma.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.sma.initialized)
+        assert self.sma.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -69,9 +67,9 @@ class SimpleMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(True, self.sma.initialized)
-        self.assertEqual(10, self.sma.count)
-        self.assertEqual(5.5, self.sma.value)
+        assert self.sma.initialized is True
+        assert self.sma.count == 10
+        assert self.sma.value == 5.5
 
     def test_handle_quote_tick_updates_indicator(self):
         # Arrange
@@ -83,8 +81,8 @@ class SimpleMovingAverageTests(unittest.TestCase):
         indicator.handle_quote_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00002, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00002
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
@@ -96,8 +94,8 @@ class SimpleMovingAverageTests(unittest.TestCase):
         indicator.handle_trade_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00001, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00001
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -109,8 +107,8 @@ class SimpleMovingAverageTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00003, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00003
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -118,7 +116,7 @@ class SimpleMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.0, self.sma.value)
+        assert self.sma.value == 1.0
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
@@ -128,7 +126,7 @@ class SimpleMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(2.0, self.sma.value)
+        assert self.sma.value == 2.0
 
     def test_value_at_returns_expected_value(self):
         # Arrange
@@ -138,7 +136,7 @@ class SimpleMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(2.0, self.sma.value)
+        assert self.sma.value == 2.0
 
     def test_handle_quote_tick_updates_with_expected_value(self):
         # Arrange
@@ -154,12 +152,12 @@ class SimpleMovingAverageTests(unittest.TestCase):
         sma_for_ticks3.handle_quote_tick(tick)
 
         # Assert
-        self.assertTrue(sma_for_ticks1.has_inputs)
-        self.assertTrue(sma_for_ticks2.has_inputs)
-        self.assertTrue(sma_for_ticks3.has_inputs)
-        self.assertEqual(1.00003, sma_for_ticks1.value)
-        self.assertEqual(1.00002, sma_for_ticks2.value)
-        self.assertEqual(1.00001, sma_for_ticks3.value)
+        assert sma_for_ticks1.has_inputs
+        assert sma_for_ticks2.has_inputs
+        assert sma_for_ticks3.has_inputs
+        assert sma_for_ticks1.value == 1.00003
+        assert sma_for_ticks2.value == 1.00002
+        assert sma_for_ticks3.value == 1.00001
 
     def test_handle_trade_tick_updates_with_expected_value(self):
         # Arrange
@@ -171,8 +169,8 @@ class SimpleMovingAverageTests(unittest.TestCase):
         sma_for_ticks.handle_trade_tick(tick)
 
         # Assert
-        self.assertTrue(sma_for_ticks.has_inputs)
-        self.assertEqual(1.00001, sma_for_ticks.value)
+        assert sma_for_ticks.has_inputs
+        assert sma_for_ticks.value == 1.00001
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -183,5 +181,5 @@ class SimpleMovingAverageTests(unittest.TestCase):
         self.sma.reset()
 
         # Assert
-        self.assertFalse(self.sma.initialized)
-        self.assertEqual(0, self.sma.value)
+        assert not self.sma.initialized
+        assert self.sma.value == 0

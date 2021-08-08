@@ -20,7 +20,7 @@ from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -29,7 +29,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Instrument(Data):
     cdef readonly InstrumentId id
-    """The instrument identifier.\n\n:returns: `InstrumentId`"""
+    """The instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly AssetClass asset_class
     """The asset class of the instrument.\n\n:returns: `AssetClass`"""
     cdef readonly AssetType asset_type
@@ -74,16 +74,16 @@ cdef class Instrument(Data):
     """The raw info for the instrument.\n\n:returns: `dict[str, object]`"""
 
     @staticmethod
-    cdef Instrument from_dict_c(dict values)
+    cdef Instrument base_from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(Instrument obj)
+    cdef dict base_to_dict_c(Instrument obj)
 
     cpdef Currency get_base_currency(self)
     cpdef Currency get_cost_currency(self)
     cpdef Price make_price(self, value)
     cpdef Quantity make_qty(self, value)
-    cpdef Money notional_value(self, Quantity quantity, close_price: Decimal, bint inverse_as_quote=*)
+    cpdef Money notional_value(self, Quantity quantity, price: Decimal, bint inverse_as_quote=*)
     cpdef Money calculate_initial_margin(self, Quantity quantity, Price price, leverage=*, bint inverse_as_quote=*)
     cpdef Money calculate_maint_margin(self, PositionSide side, Quantity quantity, Price last, leverage=*, bint inverse_as_quote=*)
     cpdef Money calculate_commission(self, Quantity last_qty, last_px: Decimal, LiquiditySide liquidity_side, bint inverse_as_quote=*)

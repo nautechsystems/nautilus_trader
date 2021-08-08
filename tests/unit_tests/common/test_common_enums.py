@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from parameterized import parameterized
 import pytest
 
 from nautilus_trader.common.c_enums.component_state import ComponentState
@@ -33,7 +32,8 @@ class TestComponentState:
         with pytest.raises(ValueError):
             ComponentStateParser.from_str_py("")
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "enum,expected",
         [
             [ComponentState.INITIALIZED, "INITIALIZED"],
             [ComponentState.STARTING, "STARTING"],
@@ -45,7 +45,7 @@ class TestComponentState:
             [ComponentState.DISPOSING, "DISPOSING"],
             [ComponentState.DISPOSED, "DISPOSED"],
             [ComponentState.FAULTED, "FAULTED"],
-        ]
+        ],
     )
     def test_component_state_to_str(self, enum, expected):
         # Arrange
@@ -55,7 +55,8 @@ class TestComponentState:
         # Assert
         assert result == expected
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "string,expected",
         [
             ["INITIALIZED", ComponentState.INITIALIZED],
             ["STARTING", ComponentState.STARTING],
@@ -67,7 +68,7 @@ class TestComponentState:
             ["DISPOSING", ComponentState.DISPOSING],
             ["DISPOSED", ComponentState.DISPOSED],
             ["FAULTED", ComponentState.FAULTED],
-        ]
+        ],
     )
     def test_component_state_from_str(self, string, expected):
         # Arrange
@@ -89,7 +90,8 @@ class TestComponentTrigger:
         with pytest.raises(ValueError):
             ComponentTriggerParser.from_str_py("")
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "enum,expected",
         [
             [ComponentTrigger.START, "START"],
             [ComponentTrigger.RUNNING, "RUNNING"],
@@ -99,7 +101,7 @@ class TestComponentTrigger:
             [ComponentTrigger.RESET, "RESET"],
             [ComponentTrigger.DISPOSE, "DISPOSE"],
             [ComponentTrigger.DISPOSED, "DISPOSED"],
-        ]
+        ],
     )
     def test_component_trigger_to_str(self, enum, expected):
         # Arrange
@@ -109,7 +111,8 @@ class TestComponentTrigger:
         # Assert
         assert result == expected
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "string,expected",
         [
             ["START", ComponentTrigger.START],
             ["RUNNING", ComponentTrigger.RUNNING],
@@ -119,7 +122,7 @@ class TestComponentTrigger:
             ["RESET", ComponentTrigger.RESET],
             ["DISPOSE", ComponentTrigger.DISPOSE],
             ["DISPOSED", ComponentTrigger.DISPOSED],
-        ]
+        ],
     )
     def test_component_trigger_from_str(self, string, expected):
         # Arrange

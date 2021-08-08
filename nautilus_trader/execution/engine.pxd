@@ -16,49 +16,39 @@
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
+from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport SubmitBracketOrder
-from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.commands cimport TradingCommand
-from nautilus_trader.model.commands cimport UpdateOrder
-from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.events cimport Event
-from nautilus_trader.model.events cimport OrderEvent
-from nautilus_trader.model.events cimport OrderFilled
-from nautilus_trader.model.events cimport PositionChanged
-from nautilus_trader.model.events cimport PositionClosed
-from nautilus_trader.model.events cimport PositionEvent
-from nautilus_trader.model.events cimport PositionOpened
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport TradingCommand
+from nautilus_trader.model.commands.trading cimport UpdateOrder
+from nautilus_trader.model.events.account cimport AccountState
+from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.risk.engine cimport RiskEngine
-from nautilus_trader.trading.portfolio cimport Portfolio
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class ExecutionEngine(Component):
-    cdef dict _clients
-    cdef dict _strategies
-    cdef dict _routing_map
+    cdef MessageBus _msgbus
+    cdef Cache _cache
     cdef ExecutionClient _default_client
     cdef PositionIdGenerator _pos_id_generator
-    cdef Portfolio _portfolio
-    cdef RiskEngine _risk_engine
+    cdef dict _clients
+    cdef dict _routing_map
+    cdef dict _oms_types
 
-    cdef readonly TraderId trader_id
-    """The trader identifier associated with the engine.\n\n:returns: `TraderId`"""
-    cdef readonly Cache cache
-    """The engines cache.\n\n:returns: `Cache`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
 
     cpdef int position_id_count(self, StrategyId strategy_id) except *
-    cpdef bint check_portfolio_equal(self, Portfolio portfolio) except *
     cpdef bint check_integrity(self) except *
     cpdef bint check_connected(self) except *
     cpdef bint check_disconnected(self) except *
@@ -66,13 +56,11 @@ cdef class ExecutionEngine(Component):
 
 # -- REGISTRATION ----------------------------------------------------------------------------------
 
-    cpdef void register_risk_engine(self, RiskEngine engine) except *
     cpdef void register_client(self, ExecutionClient client) except *
     cpdef void register_default_client(self, ExecutionClient client) except *
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *
-    cpdef void register_strategy(self, TradingStrategy strategy) except *
+    cpdef void register_oms_type(self, TradingStrategy strategy) except *
     cpdef void deregister_client(self, ExecutionClient client) except *
-    cpdef void deregister_strategy(self, TradingStrategy strategy) except *
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -102,16 +90,9 @@ cdef class ExecutionEngine(Component):
 
     cdef void _handle_event(self, Event event) except *
     cdef void _handle_account_event(self, AccountState event) except *
-    cdef void _handle_position_event(self, PositionEvent event) except *
     cdef void _handle_order_event(self, OrderEvent event) except *
-    cdef void _confirm_strategy_id(self, OrderFilled fill) except *
-    cdef void _confirm_position_id(self, OrderFilled fill) except *
-    cdef void _handle_order_command_rejected(self, OrderEvent event) except *
-    cdef void _handle_order_fill(self, OrderFilled fill) except *
-    cdef void _open_position(self, OrderFilled fill) except *
-    cdef void _update_position(self, Position position, OrderFilled fill) except *
-    cdef void _flip_position(self, Position position, OrderFilled fill) except *
-    cdef PositionOpened _pos_opened_event(self, Position position, OrderFilled fill)
-    cdef PositionChanged _pos_changed_event(self, Position position, OrderFilled fill)
-    cdef PositionClosed _pos_closed_event(self, Position position, OrderFilled fill)
-    cdef void _send_to_strategy(self, Event event, StrategyId strategy_id) except *
+    cdef void _confirm_position_id(self, OrderFilled fill, OMSType oms_type) except *
+    cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *
+    cdef void _open_position(self, OrderFilled fill, OMSType oms_type) except *
+    cdef void _update_position(self, Position position, OrderFilled fill, OMSType oms_type) except *
+    cdef void _flip_position(self, Position position, OrderFilled fill, OMSType oms_type) except *

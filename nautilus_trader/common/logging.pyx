@@ -13,14 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Optional
+
 from cpython.datetime cimport timedelta
 
 import asyncio
-from collections import defaultdict
 import platform
-from platform import python_version
 import sys
 import traceback
+from asyncio import Task
+from collections import defaultdict
+from platform import python_version
 
 import numpy as np
 import pandas as pd
@@ -31,8 +34,8 @@ from nautilus_trader import __version__
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
-from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.logging cimport LogLevel
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
@@ -41,6 +44,7 @@ from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.model.identifiers cimport TraderId
 
 
+# ANSI color constants
 cdef str _HEADER = "\033[95m"
 cdef str _BLUE = "\033[94m"
 cdef str _GREEN = "\033[92m"
@@ -106,8 +110,7 @@ cdef class Logger:
         TraderId trader_id=None,
         UUID system_id=None,
         LogLevel level_stdout=LogLevel.INFO,
-        LogLevel level_raw=LogLevel.DEBUG,
-        bint bypass_logging=False,
+        bint bypass=False,
     ):
         """
         Initialize a new instance of the ``Logger`` class.
@@ -117,14 +120,12 @@ cdef class Logger:
         clock : Clock
             The clock for the logger.
         trader_id : TraderId, optional
-            The trader identifier for the logger.
+            The trader ID for the logger.
         system_id : UUID, optional
-            The systems unique instantiation identifier.
+            The systems unique instantiation ID.
         level_stdout : LogLevel
             The minimum log level for logging messages to stdout.
-        level_raw : LogLevel
-            The minimum log level for the raw log record sink.
-        bypass_logging : bool
+        bypass : bool
             If the logger should be bypassed.
 
         """
@@ -132,11 +133,44 @@ cdef class Logger:
             system_id = UUIDFactory().generate()
         self._clock = clock
         self._log_level_stdout = level_stdout
-        self._log_level_raw = level_raw
+        self._sinks = []
 
         self.trader_id = trader_id
         self.system_id = system_id
-        self.is_bypassed = bypass_logging
+        self.is_bypassed = bypass
+
+    cpdef void register_sink(self, handler: Callable[[Dict], None]) except *:
+        """
+        Register the given sink handler with the logger.
+
+        Parameters
+        ----------
+        handler : Callable[[Dict], None]
+            The sink handler to register.
+
+        Raises
+        ------
+        KeyError
+            If handler already registered.
+
+        """
+        Condition.not_none(handler, "handler")
+        Condition.not_in(handler, self._sinks, "handler", "self._sinks")
+
+        self._sinks.append(handler)
+
+    cdef void change_clock_c(self, Clock clock) except *:
+        """
+        Change the loggers internal clock to the given clock.
+
+        Parameters
+        ----------
+        clock : Clock
+
+        """
+        Condition.not_none(clock, "clock")
+
+        self._clock = clock
 
     cdef void log_c(self, dict record) except *:
         """
@@ -183,8 +217,10 @@ cdef class Logger:
         elif level >= self._log_level_stdout:
             sys.stdout.write(f"{self._format_record(level, color, record)}\n")
 
-        if level >= self._log_level_raw:
-            pass  # TODO: Raw sink out - str(record)
+        if self._sinks:
+            del record["color"]  # Remove redundant color tag
+            for handler in self._sinks:
+                handler(record)
 
     cdef str _format_record(
         self,
@@ -219,7 +255,7 @@ cdef class LoggerAdapter:
 
     def __init__(
         self,
-        str component not None,
+        str component_name not None,
         Logger logger not None,
     ):
         """
@@ -227,16 +263,16 @@ cdef class LoggerAdapter:
 
         Parameters
         ----------
-        component : str
+        component_name : str
             The name of the component.
         logger : Logger
             The logger for the component.
 
         """
-        Condition.valid_string(component, "component")
+        Condition.valid_string(component_name, "component_name")
 
         self._logger = logger
-        self.component = component
+        self.component = component_name
         self.is_bypassed = logger.is_bypassed
 
     cpdef Logger get_logger(self):
@@ -477,7 +513,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(f"CPU architecture: {platform.processor()}")
     try:
         cpu_freq_str = f"@ {int(psutil.cpu_freq()[2])} MHz"
-    except NotImplementedError:
+    except (TypeError, NotImplementedError):
         cpu_freq_str = None
     logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
     logger.info(f"OS: {platform.platform()}")
@@ -517,6 +553,7 @@ cdef class LiveLogger(Logger):
     """
     Provides a high-performance logger which runs on the event loop.
     """
+    _sentinel = None
 
     def __init__(
         self,
@@ -525,8 +562,7 @@ cdef class LiveLogger(Logger):
         TraderId trader_id=None,
         UUID system_id=None,
         LogLevel level_stdout=LogLevel.INFO,
-        LogLevel level_raw=LogLevel.DEBUG,
-        bint bypass_logging=False,
+        bint bypass=False,
         int maxsize=10000,
     ):
         """
@@ -539,14 +575,12 @@ cdef class LiveLogger(Logger):
         clock : LiveClock
             The clock for the logger.
         trader_id : TraderId, optional
-            The trader identifier for the logger.
+            The trader ID for the logger.
         system_id : UUID, optional
-            The systems unique instantiation identifier.
+            The systems unique instantiation ID.
         level_stdout : LogLevel
             The minimum log level for logging messages to stdout.
-        level_raw : LogLevel
-            The minimum log level for the raw log record sink.
-        bypass_logging : bool
+        bypass : bool
             If the logger should be bypassed.
         maxsize : int, optional
             The maximum capacity for the log queue.
@@ -557,17 +591,27 @@ cdef class LiveLogger(Logger):
             trader_id=trader_id,
             system_id=system_id,
             level_stdout=level_stdout,
-            level_raw=level_raw,
-            bypass_logging=bypass_logging,
+            bypass=bypass,
         )
 
         self._loop = loop
         self._queue = Queue(maxsize=maxsize)
-        self._run_task = None
+        self._run_task: Optional[Task] = None
         self._blocked_log_interval = timedelta(seconds=1)
 
         self.is_running = False
-        self.last_blocked = None
+        self.last_blocked: Optional[datetime] = None
+
+    def get_run_task(self) -> asyncio.Task:
+        """
+        Return the internal run queue task for the engine.
+
+        Returns
+        -------
+        asyncio.Task
+
+        """
+        return self._run_task
 
     cdef void log_c(self, dict record) except *:
         """
@@ -592,7 +636,7 @@ cdef class LiveLogger(Logger):
                 self._queue.put_nowait(record)
             except asyncio.QueueFull:
                 now = self._clock.utc_now()
-                next_msg = self._queue.peek().get("msg")
+                next_msg = self._queue.peek_front().get("msg")
 
                 # Log blocking message once a second
                 if (
@@ -648,16 +692,25 @@ cdef class LiveLogger(Logger):
 
         """
         if self._run_task:
-            self._run_task.cancel()
-        self.is_running = False
+            self.is_running = False
+            self._enqueue_sentinel()
 
     async def _consume_messages(self):
+        cdef dict record
         try:
-            while True:
-                self._log(await self._queue.get())
+            while self.is_running:
+                record = await self._queue.get()
+                if record is None:  # Sentinel message (fast C-level check)
+                    continue        # Returns to the top to check `self.is_running`
+                self._log(record)
         except asyncio.CancelledError:
             pass
         finally:
             # Pass remaining messages directly to the base class
             while not self._queue.empty():
-                self._log(self._queue.get_nowait())
+                record = self._queue.get_nowait()
+                if record:
+                    self._log(record)
+
+    cdef void _enqueue_sentinel(self) except *:
+        self._queue.put_nowait(self._sentinel)

@@ -18,8 +18,20 @@ import json
 import ccxt
 
 
-# Requirements:
-# - An internet connection
+def download_instruments():
+    exchange = "bitmex"
+    client = getattr(ccxt, exchange.lower())()
+    client.load_markets()
+    print(client.name)
+
+    # precisions = [{k: v['precision']} for k, v in ccxt.markets.items()]
+    # print(json.dumps(precisions, sort_keys=True, indent=4))
+
+    instruments = {k: v for k, v in client.markets.items()}
+    print(json.dumps(instruments["BTC/USD"], sort_keys=True, indent=4))
+
+    # currencies = {k: v for k, v in ccxt.currencies.items()}
+    # print(json.dumps(currencies, sort_keys=True, indent=4))
 
 
 def request_instruments():
@@ -117,5 +129,5 @@ def request_trades():
 
 
 if __name__ == "__main__":
-    # Enter function to run
+    download_instruments()
     pass

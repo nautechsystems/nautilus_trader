@@ -21,7 +21,7 @@ cdef class SpreadAnalyzer(Indicator):
     cdef object _spreads
 
     cdef readonly InstrumentId instrument_id
-    """The indicators instrument identifier.\n\n:returns: `InstrumentId`"""
+    """The indicators instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly int capacity
     """The indicators spread capacity.\n\n:returns: `int`"""
     cdef readonly double current

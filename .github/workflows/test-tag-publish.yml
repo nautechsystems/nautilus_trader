@@ -63,7 +63,7 @@ jobs:
 
       # Run tests
       - name: Run tests
-        run: nox -s tests_with_integration --reuse-existing-virtualenvs
+        run: nox -rs tests_with_integration -- no-parallel
 
 
   tag_release:
@@ -150,6 +150,8 @@ jobs:
         python-version: [ 3.9 ]
     name: publish_sdist - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      SKIP_BUILD_COPY: true
 
     steps:
       - uses: actions/checkout@v2
@@ -181,7 +183,6 @@ jobs:
       # Install / Build (No need to copy built *.so files back into the source tree)
       - name: Install / Build
         run: |
-          export SKIP_BUILD_COPY=true
           poetry install
           poetry build --format sdist
 

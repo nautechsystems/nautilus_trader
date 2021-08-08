@@ -21,10 +21,13 @@ A running instance could be either a test/backtest or live implementation - the
 `Trader` will operate in the same way.
 """
 
+from typing import Any, Callable
+
 import pandas as pd
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
+from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -32,7 +35,9 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -46,14 +51,14 @@ cdef class Trader(Component):
     def __init__(
         self,
         TraderId trader_id not None,
-        list strategies not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         Portfolio portfolio not None,
         DataEngine data_engine not None,
         RiskEngine risk_engine not None,
         ExecutionEngine exec_engine not None,
         Clock clock not None,
         Logger logger not None,
-        bint warn_no_strategies=True,
     ):
         """
         Initialize a new instance of the ``Trader`` class.
@@ -61,9 +66,11 @@ cdef class Trader(Component):
         Parameters
         ----------
         trader_id : TraderId
-            The identifier for the trader.
-        strategies : list[TradingStrategy]
-            The initial strategies for the trader.
+            The ID for the trader.
+        msgbus : MessageBus
+            The message bus for the trader.
+        cache : Cache
+            The cache for the trader.
         portfolio : Portfolio
             The portfolio for the trader.
         data_engine : DataEngine
@@ -76,13 +83,9 @@ cdef class Trader(Component):
             The clock for the trader.
         logger : Logger
             The logger for the trader.
-        warn_no_strategies : bool, optional
-            If the trader should warn if there are no strategies to initialize.
 
         Raises
         ------
-        ValueError
-            If trader_id is not equal to the exec_engine.trader_id.
         ValueError
             If portfolio is not equal to the exec_engine._portfolio.
         ValueError
@@ -93,35 +96,34 @@ cdef class Trader(Component):
             If strategies list contains a type other than TradingStrategy.
 
         """
-        Condition.equal(trader_id, exec_engine.trader_id, "trader_id", "exec_engine.trader_id")
-        Condition.true(exec_engine.check_portfolio_equal(portfolio), "portfolio != exec_engine._portfolio")
-        super().__init__(clock, logger)
+        super().__init__(
+            clock=clock,
+            logger=logger,
+            component_id=trader_id,
+        )
 
-        self._strategies = []
+        self._msgbus = msgbus
+        self._cache = cache
         self._portfolio = portfolio
         self._data_engine = data_engine
         self._risk_engine = risk_engine
         self._exec_engine = exec_engine
         self._report_provider = ReportProvider()
 
-        self.id = trader_id
-        self.analyzer = PerformanceAnalyzer()
+        self._strategies = []
+        self._components = []
 
-        if strategies:
-            self.initialize_strategies(
-                strategies=strategies,
-                warn_no_strategies=warn_no_strategies,
-            )
-        else:
-            if warn_no_strategies:
-                self._log.warning(f"No strategies to initialize.")
+        self.analyzer = PerformanceAnalyzer()
 
     cdef list strategies_c(self):
         return self._strategies
 
+    cdef list components_c(self):
+        return self._components
+
     cpdef list strategy_ids(self):
         """
-        Return the strategy identifiers loaded in the trader.
+        Return the strategy IDs loaded in the trader.
 
         Returns
         -------
@@ -130,13 +132,24 @@ cdef class Trader(Component):
         """
         return sorted([strategy.id for strategy in self._strategies])
 
-    cpdef dict strategy_states(self):
+    cpdef list component_ids(self):
         """
-        Return a dictionary containing the traders strategy states.
+        Return the custom component IDs loaded in the trader.
 
         Returns
         -------
-        dict[StrategyId, bool]
+        list[ComponentId]
+
+        """
+        return sorted([component.id for component in self._components])
+
+    cpdef dict strategy_states(self):
+        """
+        Return the traders strategy states.
+
+        Returns
+        -------
+        dict[StrategyId, str]
 
         """
         cdef dict states = {}
@@ -145,6 +158,33 @@ cdef class Trader(Component):
             states[strategy.id] = strategy.state_string_c()
 
         return states
+
+    cpdef dict component_states(self):
+        """
+        Return the traders custom component states.
+
+        Returns
+        -------
+        dict[ComponentId, str]
+
+        """
+        cdef dict states = {}
+        cdef Actor component
+        for component in self._components:
+            states[component.id] = component.state_string_c()
+
+        return states
+
+    cpdef list components(self):
+        """
+        Return the custom components loaded in the trader.
+
+        Returns
+        -------
+        list[Actor]
+
+        """
+        return self._components.copy()
 
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
@@ -157,6 +197,10 @@ cdef class Trader(Component):
         for strategy in self._strategies:
             strategy.start()
 
+        cdef Actor component
+        for component in self._components:
+            component.start()
+
     cpdef void _stop(self) except *:
         cdef TradingStrategy strategy
         for strategy in self._strategies:
@@ -165,33 +209,85 @@ cdef class Trader(Component):
             else:
                 self._log.warning(f"{strategy} already stopped.")
 
+        cdef Actor component
+        for component in self._components:
+            if component.state_c() == ComponentState.RUNNING:
+                component.stop()
+            else:
+                self._log.warning(f"{component} already stopped.")
+
     cpdef void _reset(self) except *:
+        cdef TradingStrategy strategy
         for strategy in self._strategies:
             strategy.reset()
+
+        cdef Actor component
+        for component in self._components:
+            component.reset()
 
         self._portfolio.reset()
         self.analyzer.reset()
 
     cpdef void _dispose(self) except *:
+        cdef TradingStrategy strategy
         for strategy in self._strategies:
             strategy.dispose()
 
+        cdef Actor component
+        for component in self._components:
+            component.dispose()
+
 # --------------------------------------------------------------------------------------------------
 
-    cpdef void initialize_strategies(
-        self,
-        list strategies: [TradingStrategy],
-        bint warn_no_strategies,
-    ) except *:
+    cpdef void add_strategy(self, TradingStrategy strategy) except *:
         """
-        Initialize the given strategies.
+        Add the given trading strategy to the trader.
+
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The trading strategy to add and register.
+
+        Raises
+        ------
+        KeyError
+            If strategy.id already exists in the trader.
+        ValueError
+            If strategy.state is `RUNNING` or `DISPOSED`.
+
+        """
+        Condition.not_none(strategy, "strategy")
+        Condition.not_in(strategy, self._strategies, "strategy", "strategies")
+        Condition.true(strategy.state_c() != ComponentState.RUNNING, "strategy.state_c() was RUNNING")
+        Condition.true(strategy.state_c() != ComponentState.DISPOSED, "strategy.state_c() was DISPOSED")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            self._log.error("Cannot add a strategy to a running trader.")
+            return
+
+        # Wire strategy into trader
+        strategy.register(
+            trader_id=self.id,
+            portfolio=self._portfolio,
+            msgbus=self._msgbus,
+            cache=self._cache,
+            clock=self._clock.__class__(),  # Clock per strategy
+            logger=self._log.get_logger(),
+        )
+
+        self._exec_engine.register_oms_type(strategy)
+        self._strategies.append(strategy)
+
+        self._log.info(f"Registered {strategy}.")
+
+    cpdef void add_strategies(self, list strategies: [TradingStrategy]) except *:
+        """
+        Add the given trading strategies to the trader.
 
         Parameters
         ----------
         strategies : list[TradingStrategies]
-            The strategies to load into the trader.
-        warn_no_strategies : bool
-            If the trader should warn if there are no strategies to initialize.
+            The trading strategies to add and register.
 
         Raises
         ------
@@ -201,79 +297,158 @@ cdef class Trader(Component):
             If strategies contains a type other than TradingStrategy.
 
         """
+        Condition.not_empty(strategies, "strategies")
         Condition.list_type(strategies, TradingStrategy, "strategies")
 
+        for strategy in strategies:
+            self.add_strategy(strategy)
+
+    cpdef void add_component(self, Actor component) except *:
+        """
+        Add the given custom component to the trader.
+
+        Parameters
+        ----------
+        component : Actor
+            The custom component to add and register.
+
+        Raises
+        ------
+        KeyError
+            If component.id already exists in the trader.
+        ValueError
+            If component.state is `RUNNING` or `DISPOSED`.
+
+        """
+        Condition.not_in(component, self._components, "component", "components")
+        Condition.true(component.state_c() != ComponentState.RUNNING, "component.state_c() was RUNNING")
+        Condition.true(component.state_c() != ComponentState.DISPOSED, "component.state_c() was DISPOSED")
+
         if self._fsm.state == ComponentState.RUNNING:
-            self._log.error("Cannot re-initialize the strategies of a running trader.")
+            self._log.error("Cannot add component to a running trader.")
             return
 
-        self._log.info(f"Initializing strategies...")
+        # Wire component into trader
+        component.register_base(
+            trader_id=self.id,
+            msgbus=self._msgbus,
+            cache=self._cache,
+            clock=self._clock.__class__(),  # Clock per component
+            logger=self._log.get_logger(),
+        )
 
-        cdef TradingStrategy strategy
-        for strategy in self._strategies:
-            Condition.true(strategy.state_c() != ComponentState.RUNNING, "strategy.state_c() was RUNNING")
+        self._components.append(component)
 
-        # Dispose of current strategies
+        self._log.info(f"Registered {component}.")
+
+    cpdef void add_components(self, list components: [Actor]) except *:
+        """
+        Add the given custom components to the trader.
+
+        Parameters
+        ----------
+        components : list[TradingStrategies]
+            The custom components to add and register.
+
+        Raises
+        ------
+        ValueError
+            If components is None or empty.
+        TypeError
+            If components contains a type other than Actor.
+
+        """
+        Condition.not_empty(components, "components")
+        Condition.list_type(components, Actor, "components")
+
+        for component in components:
+            self.add_component(component)
+
+    cpdef void clear_strategies(self) except *:
+        """
+        Dispose and clear all strategies held by the trader.
+
+        Raises
+        ------
+        ValueError
+            If state is RUNNING.
+
+        """
+        if self._fsm.state == ComponentState.RUNNING:
+            self._log.error("Cannot clear the strategies of a running trader.")
+            return
+
         for strategy in self._strategies:
-            self._exec_engine.deregister_strategy(strategy)
             strategy.dispose()
 
         self._strategies.clear()
 
-        cdef set strategy_ids = set()
-        # Initialize strategies
-        for strategy in strategies:
-            # Check strategy_ids are unique
-            if strategy.id not in strategy_ids:
-                strategy_ids.add(strategy.id)
-            else:
-                raise ValueError(f"The strategy_id {strategy.id} was not unique, "
-                                 f"duplicate strategy identifiers")
-
-            # Wire data engine into strategy
-            self._data_engine.register_strategy(strategy)
-
-            # Wire execution engine into strategy
-            self._exec_engine.register_strategy(strategy)
-
-            client_order_ids = self._exec_engine.cache.client_order_ids(
-                venue=None,
-                instrument_id=None,
-                strategy_id=strategy.id,
-            )
-
-            # Wire trader into strategy
-            strategy.register_trader(
-                self.id,
-                self._clock.__class__(),  # Clock per strategy
-                self._log.get_logger(),
-                order_id_count=len(client_order_ids),
-            )
-
-            # Add to internal strategies
-            self._strategies.append(strategy)
-
-            self._log.info(f"Initialized {strategy}.")
-
-    cpdef void check_residuals(self) except *:
+    cpdef void clear_components(self) except *:
         """
-        Check for residual business objects such as working orders or open positions.
+        Dispose and clear all custom components held by the trader.
+
+        Raises
+        ------
+        ValueError
+            If state is RUNNING.
+
         """
-        self._exec_engine.check_residuals()
+        if self._fsm.state == ComponentState.RUNNING:
+            self._log.error("Cannot clear the components of a running trader.")
+            return
+
+        for component in self._components:
+            component.dispose()
+
+        self._components.clear()
+
+    cpdef void subscribe(self, str topic, handler: Callable[[Any], None]) except *:
+        """
+        Subscribe to the given message topic with the given callback handler.
+
+        Parameters
+        ----------
+        topic : str
+            The topic for the subscription. May include wildcard glob patterns.
+        handler : Callable[[Any], None]
+            The handler for the subscription.
+
+        """
+        self._msgbus.subscribe(topic=topic, handler=handler)
+
+    cpdef void unsubscribe(self, str topic, handler: Callable[[Any], None]) except *:
+        """
+        Unsubscribe the given handler from the given message topic.
+
+        Parameters
+        ----------
+        topic : str, optional
+            The topic to unsubscribe from. May include wildcard glob patterns.
+        handler : Callable[[Any], None]
+            The handler for the subscription.
+
+        """
+        self._msgbus.unsubscribe(topic=topic, handler=handler)
 
     cpdef void save(self) except *:
         """
         Save all strategy states to the execution cache.
         """
         for strategy in self._strategies:
-            self._exec_engine.cache.update_strategy(strategy)
+            self._cache.update_strategy(strategy)
 
     cpdef void load(self) except *:
         """
         Load all strategy states from the execution cache.
         """
         for strategy in self._strategies:
-            self._exec_engine.cache.load_strategy(strategy)
+            self._cache.load_strategy(strategy)
+
+    cpdef void check_residuals(self) except *:
+        """
+        Check for residual business objects such as working orders or open positions.
+        """
+        self._exec_engine.check_residuals()
 
     cpdef object generate_orders_report(self):
         """
@@ -284,7 +459,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_orders_report(self._exec_engine.cache.orders())
+        return self._report_provider.generate_orders_report(self._cache.orders())
 
     cpdef object generate_order_fills_report(self):
         """
@@ -295,7 +470,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_order_fills_report(self._exec_engine.cache.orders())
+        return self._report_provider.generate_order_fills_report(self._cache.orders())
 
     cpdef object generate_positions_report(self):
         """
@@ -306,7 +481,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_positions_report(self._exec_engine.cache.positions())
+        return self._report_provider.generate_positions_report(self._cache.positions())
 
     cpdef object generate_account_report(self, Venue venue):
         """
@@ -317,7 +492,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        cdef Account account = self._exec_engine.cache.account_for_venue(venue)
+        cdef Account account = self._cache.account_for_venue(venue)
         if account is None:
             return pd.DataFrame()
         return self._report_provider.generate_account_report(account)

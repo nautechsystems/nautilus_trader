@@ -21,12 +21,12 @@ from libc.stdint cimport uint8_t
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.timer cimport TimeEvent
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class BarBuilder:
@@ -40,8 +40,8 @@ cdef class BarBuilder:
     """If the builder is using the previous close for aggregation.\n\n:returns: `bool`"""
     cdef readonly bint initialized
     """If the builder is initialized.\n\n:returns: `bool`"""
-    cdef readonly int64_t last_timestamp_ns
-    """The builders last update UNIX timestamp (nanoseconds).\n\n:returns: `int64`"""
+    cdef readonly int64_t ts_last
+    """The UNIX timestamp (nanoseconds) when the builder last updated.\n\n:returns: `int64`"""
     cdef readonly int count
     """The builders current update count.\n\n:returns: `int`"""
 
@@ -54,10 +54,10 @@ cdef class BarBuilder:
     cdef object volume
 
     cpdef void set_partial(self, Bar partial_bar) except *
-    cpdef void update(self, Price price, Quantity size, int64_t timestamp_ns) except *
+    cpdef void update(self, Price price, Quantity size, int64_t ts_event) except *
     cpdef void reset(self) except *
     cpdef Bar build_now(self)
-    cpdef Bar build(self, int64_t timestamp_ns)
+    cpdef Bar build(self, int64_t ts_event)
 
 
 cdef class BarAggregator:
@@ -70,9 +70,9 @@ cdef class BarAggregator:
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_trade_tick(self, TradeTick tick) except *
-    cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *
+    cdef void _apply_update(self, Price price, Quantity size, int64_t ts_event) except *
     cdef void _build_now_and_send(self) except *
-    cdef void _build_and_send(self, int64_t timestamp_ns) except *
+    cdef void _build_and_send(self, int64_t ts_event) except *
 
 
 cdef class TickBarAggregator(BarAggregator):
@@ -107,7 +107,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef timedelta _get_interval(self)
     cdef int64_t _get_interval_ns(self)
     cpdef void _set_build_timer(self) except *
-    cpdef void _build_bar(self, int64_t timestamp_ns) except *
+    cpdef void _build_bar(self, int64_t ts_event) except *
     cpdef void _build_event(self, TimeEvent event) except *
 
 

@@ -15,7 +15,7 @@
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
-from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data.base cimport Data
 
 
 cpdef enum SubscriptionStatus:
@@ -27,8 +27,9 @@ cpdef enum SubscriptionStatus:
 cdef class BetfairDataClient(LiveMarketDataClient):
     cdef object _client
     cdef object _stream
-    cdef set _subscribed_instruments
+    cdef set _subscribed_instrument_ids
     cdef set _subscribed_market_ids
+    cdef bint _strict_handling
     cdef SubscriptionStatus subscription_status
     cdef BetfairInstrumentProvider _instrument_provider
 

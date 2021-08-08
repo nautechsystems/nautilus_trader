@@ -17,7 +17,6 @@ from libc.stdint cimport int64_t
 
 from decimal import Decimal
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
@@ -29,7 +28,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Equity(Instrument):
     """
-    Represents an Equity  instrument.
+    Represents an Equity instrument.
     """
 
     def __init__(
@@ -48,26 +47,30 @@ cdef class Equity(Instrument):
         str time_zone_id not None,
         str trading_hours not None,
         str last_trade_time not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
-        Initialize a new instance of the ``Future`` class.
+        Initialize a new instance of the ``Equity`` class.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier.
+            The instrument ID.
         currency : Currency
             The futures contract currency.
         price_precision : int
             The price decimal precision.
         price_increment : Decimal
             The minimum price increment (tick size).
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        multiplier : Decimal
+            The contract value multiplier (determines tick value).
+        lot_size : Quantity
+            The rounded lot unit size (standard/board).
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the instrument update occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the instrument object was initialized.
 
         Raises
         ------
@@ -81,7 +84,6 @@ cdef class Equity(Instrument):
             If lot size is not positive (> 0).
 
         """
-        Condition.positive_int(multiplier, "multiplier")
         super().__init__(
             instrument_id=instrument_id,
             asset_class=AssetClass.EQUITY,
@@ -89,7 +91,7 @@ cdef class Equity(Instrument):
             quote_currency=currency,
             is_inverse=False,
             price_precision=price_precision,
-            size_precision=0,  # No fractional contracts
+            size_precision=0,  # No fractional units
             price_increment=price_increment,
             size_increment=Quantity.from_int_c(1),
             multiplier=multiplier,
@@ -104,8 +106,8 @@ cdef class Equity(Instrument):
             margin_maint=Decimal(),
             maker_fee=Decimal(),
             taker_fee=Decimal(),
-            ts_event_ns=ts_event_ns,
-            ts_recv_ns=ts_recv_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
             info={},
         )
 
@@ -117,3 +119,19 @@ cdef class Equity(Instrument):
         self.time_zone_id = time_zone_id
         self.trading_hours = trading_hours
         self.last_trade_time = last_trade_time
+
+    @staticmethod
+    def from_dict(dict values) -> Instrument:
+        return Instrument.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(Instrument obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return Instrument.to_dict_c(obj)

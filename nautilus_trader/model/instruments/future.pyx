@@ -17,7 +17,6 @@ from libc.stdint cimport int64_t
 
 from decimal import Decimal
 
-from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
@@ -52,8 +51,8 @@ cdef class Future(Instrument):
         str trading_hours not None,
         str liquid_hours not None,
         str last_trade_time not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``Future`` class.
@@ -61,7 +60,7 @@ cdef class Future(Instrument):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier.
+            The instrument ID.
         asset_class : AssetClass
             The futures contract asset class.
         currency : Currency
@@ -70,10 +69,10 @@ cdef class Future(Instrument):
             The price decimal precision.
         price_increment : Decimal
             The minimum price increment (tick size).
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Raises
         ------
@@ -87,7 +86,6 @@ cdef class Future(Instrument):
             If lot size is not positive (> 0).
 
         """
-        Condition.positive_int(multiplier, "multiplier")
         super().__init__(
             instrument_id=instrument_id,
             asset_class=asset_class,
@@ -95,7 +93,7 @@ cdef class Future(Instrument):
             quote_currency=currency,
             is_inverse=False,
             price_precision=price_precision,
-            size_precision=0,  # No fractional contracts
+            size_precision=0,  # No fractional units
             price_increment=price_increment,
             size_increment=Quantity.from_int_c(1),
             multiplier=multiplier,
@@ -110,8 +108,8 @@ cdef class Future(Instrument):
             margin_maint=Decimal(),
             maker_fee=Decimal(),
             taker_fee=Decimal(),
-            ts_event_ns=ts_event_ns,
-            ts_recv_ns=ts_recv_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
             info={},
         )
 
@@ -126,3 +124,19 @@ cdef class Future(Instrument):
         self.trading_hours = trading_hours
         self.liquid_hours = liquid_hours
         self.last_trade_time = last_trade_time
+
+    @staticmethod
+    def from_dict(dict values) -> Instrument:
+        return Instrument.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(Instrument obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return Instrument.to_dict_c(obj)

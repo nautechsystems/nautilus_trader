@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
+import os
+
 import pytest
 
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
@@ -22,18 +25,20 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.cache.cache import Cache
-from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
@@ -47,35 +52,35 @@ def betfairlightweight_mocks(mocker):
     # Mock Navigation / market catalogue endpoints
     mocker.patch(
         "betfairlightweight.endpoints.navigation.Navigation.list_navigation",
-        return_value=BetfairTestStubs.navigation(),
+        return_value=BetfairDataProvider.navigation(),
     )
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.list_market_catalogue",
-        return_value=BetfairTestStubs.market_catalogue_short(),
+        return_value=BetfairDataProvider.market_catalogue_short(),
     )
 
     # Mock Account endpoints
     mocker.patch(
         "betfairlightweight.endpoints.account.Account.get_account_details",
-        return_value=BetfairTestStubs.account_detail(),
+        return_value=BetfairDataProvider.account_detail(),
     )
     mocker.patch(
         "betfairlightweight.endpoints.account.Account.get_account_funds",
-        return_value=BetfairTestStubs.account_funds_no_exposure(),
+        return_value=BetfairDataProvider.account_funds_no_exposure(),
     )
 
     # Mock Betting endpoints
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.place_orders",
-        return_value=BetfairTestStubs.place_orders_success(),
+        return_value=BetfairDataProvider.place_orders_success(),
     )
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.replace_orders",
-        return_value=BetfairTestStubs.replace_orders_success(),
+        return_value=BetfairDataProvider.replace_orders_success(),
     )
     mocker.patch(
         "betfairlightweight.endpoints.betting.Betting.cancel_orders",
-        return_value=BetfairTestStubs.cancel_orders_success(),
+        return_value=BetfairDataProvider.cancel_orders_success(),
     )
 
     # Streaming endpoint
@@ -102,28 +107,46 @@ def clock() -> LiveClock:
 
 @pytest.fixture()
 def live_logger(event_loop, clock):
-    return LiveLogger(loop=event_loop, clock=clock, level_stdout=LogLevel.INFO)
+    level_stdout = LogLevel.DEBUG if os.environ.get("NAUTILUS_DEBUG", False) else LogLevel.ERROR
+    return LiveLogger(loop=event_loop, clock=clock, level_stdout=level_stdout)
 
 
 @pytest.fixture()
-def cache_db(trader_id, live_logger):
-    return BypassCacheDatabase(
-        trader_id=trader_id,
+def logger(live_logger):
+    return LoggerAdapter(component_name="conftest", logger=live_logger)
+
+
+@pytest.fixture()
+def msgbus(clock, live_logger):
+    class MockMessageBus(MessageBus):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.data_engine_messages = []
+            self.data_engine_responses = []
+            self.exec_engine_events = []
+            self.register(endpoint="DataEngine.process", handler=self.data_engine_messages.append)
+            self.register(endpoint="DataEngine.response", handler=self.data_engine_responses.append)
+            self.register(endpoint="ExecEngine.process", handler=self.exec_engine_events.append)
+
+    return MockMessageBus(
+        trader_id=BetfairTestStubs.trader_id(),
+        clock=clock,
         logger=live_logger,
     )
 
 
 @pytest.fixture()
-def cache(live_logger, cache_db):
+def cache(live_logger):
     return Cache(
-        database=cache_db,
+        database=None,
         logger=live_logger,
     )
 
 
 @pytest.fixture()
-def portfolio(cache, clock, live_logger):
+def portfolio(msgbus, cache, clock, live_logger):
     return Portfolio(
+        msgbus=msgbus,
         cache=cache,
         clock=clock,
         logger=live_logger,
@@ -161,16 +184,6 @@ def uuid():
 
 
 @pytest.fixture()
-def data_engine(event_loop, clock, live_logger, portfolio):
-    return BetfairTestStubs.mock_live_data_engine()
-
-
-@pytest.fixture()
-def exec_engine(event_loop, clock, live_logger, portfolio, trader_id):
-    return BetfairTestStubs.mock_live_exec_engine()
-
-
-@pytest.fixture()
 def risk_engine(event_loop, clock, live_logger, portfolio, trader_id):
     return BetfairTestStubs.mock_live_risk_engine()
 
@@ -188,54 +201,73 @@ def betfair_account_state(betfair_client, uuid):
         account_detail=details,
         account_funds=funds,
         event_id=uuid,
-        ts_updated_ns=0,
-        timestamp_ns=0,
+        ts_event=0,
+        ts_init=0,
     )
 
 
 @pytest.fixture()
 def betfair_order_socket(betfair_client, live_logger):
     return BetfairOrderStreamClient(
-        client=betfair_client, logger=live_logger, message_handler=None
+        client=betfair_client,
+        logger=live_logger,
+        message_handler=None,
     )
 
 
 @pytest.fixture()
 def betfair_market_socket():
     return BetfairMarketStreamClient(
-        client=betfair_client, logger=live_logger, message_handler=None
+        client=betfair_client,
+        logger=live_logger,
+        message_handler=None,
     )
 
 
 @pytest.fixture()
 async def execution_client(
-    betfair_client, account_id, exec_engine, clock, live_logger, betfair_account_state
+    betfair_client,
+    account_id,
+    msgbus,
+    cache,
+    clock,
+    live_logger,
+    betfair_account_state,
 ) -> BetfairExecutionClient:
     client = BetfairExecutionClient(
+        loop=asyncio.get_event_loop(),
         client=betfair_client,
         account_id=account_id,
-        base_currency=AUD,
-        engine=exec_engine,
+        base_currency=GBP,
+        msgbus=msgbus,
+        cache=cache,
         clock=clock,
         logger=live_logger,
         market_filter={},
         load_instruments=False,
     )
     client.instrument_provider().load_all()
-    exec_engine.register_client(client)
-    exec_engine.cache.add_account(account=Account(betfair_account_state))
+    cache.add_account(account=Account(betfair_account_state))
+    for instrument in client.instrument_provider().list_instruments():
+        cache.add_instrument(instrument)
     return client
 
 
 @pytest.fixture()
-def betfair_data_client(betfair_client, data_engine, clock, live_logger):
+def betfair_data_client(betfair_client, msgbus, cache, clock, live_logger):
     client = BetfairDataClient(
+        loop=asyncio.get_event_loop(),
         client=betfair_client,
-        engine=data_engine,
+        msgbus=msgbus,
+        cache=cache,
         clock=clock,
         logger=live_logger,
         market_filter={},
         load_instruments=True,
     )
-    data_engine.register_client(client)
     return client
+
+
+@pytest.fixture()
+def order_factory():
+    return BetfairTestStubs.order_factory()

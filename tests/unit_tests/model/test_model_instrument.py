@@ -20,15 +20,19 @@ import pytest
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 
@@ -59,13 +63,12 @@ class TestInstrument:
         assert result1 == expected1
         assert result2 == expected2
 
-    # TODO: WIP - TBC
-    # def test_str_repr_returns_expected(self):
-    #     # Arrange
-    #     # Act
-    #     # Assert
-    #     assert str(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
-    #     assert repr(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
+    def test_str_repr_returns_expected(self):
+        # Arrange
+        # Act
+        # Assert
+        assert str(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
+        assert repr(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
 
     def test_hash(self):
         # Arrange
@@ -73,6 +76,111 @@ class TestInstrument:
         # Assert
         assert isinstance(hash(BTCUSDT_BINANCE), int)
         assert hash(BTCUSDT_BINANCE), hash(BTCUSDT_BINANCE)
+
+    def test_symbol_returns_expected_symbol(self):
+        # Arrange, Act, Assert
+        assert BTCUSDT_BINANCE.symbol == BTCUSDT_BINANCE.id.symbol
+
+    def test_base_to_dict_returns_expected_dict(self):
+        # Arrange, Act
+        result = Instrument.base_to_dict(BTCUSDT_BINANCE)
+
+        # Assert
+        assert result == {
+            "type": "Instrument",
+            "id": "BTC/USDT.BINANCE",
+            "asset_class": "CRYPTO",
+            "asset_type": "SPOT",
+            "quote_currency": "USDT",
+            "is_inverse": False,
+            "price_precision": 2,
+            "price_increment": "0.01",
+            "size_precision": 6,
+            "size_increment": "0.000001",
+            "multiplier": "1",
+            "lot_size": None,
+            "max_quantity": "9000.000000",
+            "min_quantity": "0.000001",
+            "max_notional": None,
+            "min_notional": "10.00000000 USDT",
+            "max_price": "1000000.00",
+            "min_price": "0.01",
+            "margin_init": "0",
+            "margin_maint": "0",
+            "maker_fee": "0.001",
+            "taker_fee": "0.001",
+            "ts_event": 0,
+            "ts_init": 0,
+            "info": None,
+        }
+
+    def test_base_from_dict_returns_expected_instrument(self):
+        # Arrange
+        values = {
+            "type": "Instrument",
+            "id": "BTC/USDT.BINANCE",
+            "asset_class": "CRYPTO",
+            "asset_type": "SPOT",
+            "quote_currency": "USDT",
+            "is_inverse": False,
+            "price_precision": 2,
+            "price_increment": "0.01",
+            "size_precision": 6,
+            "size_increment": "0.000001",
+            "multiplier": "1",
+            "lot_size": None,
+            "max_quantity": "9000.000000",
+            "min_quantity": "0.000001",
+            "max_notional": None,
+            "min_notional": "10.00000000 USDT",
+            "max_price": "1000000.00",
+            "min_price": "0.01",
+            "margin_init": "0",
+            "margin_maint": "0",
+            "maker_fee": "0.001",
+            "taker_fee": "0.001",
+            "ts_event": 0,
+            "ts_init": 0,
+            "info": None,
+        }
+
+        # Act
+        result = Instrument.base_from_dict(values)
+
+        # Assert
+        assert result == BTCUSDT_BINANCE
+
+    def test_crypto_swap_instrument_to_dict(self):
+        # Arrange, Act
+        result = CryptoSwap.to_dict(XBTUSD_BITMEX)
+
+        # Assert
+        assert CryptoSwap.from_dict(result) == XBTUSD_BITMEX
+        assert result == {
+            "type": "CryptoSwap",
+            "id": "XBT/USD.BITMEX",
+            "base_currency": "BTC",
+            "quote_currency": "USD",
+            "settlement_currency": "BTC",
+            "is_inverse": True,
+            "price_precision": 1,
+            "price_increment": "0.5",
+            "size_precision": 0,
+            "size_increment": "1",
+            "max_quantity": None,
+            "min_quantity": None,
+            "max_notional": "10_000_000.00 USD",
+            "min_notional": "1.00 USD",
+            "max_price": "1000000.0",
+            "min_price": "0.5",
+            "margin_init": "0.01",
+            "margin_maint": "0.0035",
+            "maker_fee": "-0.00025",
+            "taker_fee": "0.00075",
+            "ts_event": 0,
+            "ts_init": 0,
+            "info": None,
+        }
 
     @pytest.mark.parametrize(
         "value, expected_str",
@@ -233,6 +341,20 @@ class TestInstrument:
         # Assert
         assert result == Money(0.03697710, BTC)
 
+    def test_calculate_commission_when_given_liquidity_side_none_raises_value_error(
+        self,
+    ):
+        # Arrange
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            instrument.calculate_commission(
+                Quantity.from_int(100000),
+                Decimal("11450.50"),
+                LiquiditySide.NONE,
+            )
+
     @pytest.mark.parametrize(
         "inverse_as_quote, expected",
         [
@@ -240,9 +362,7 @@ class TestInstrument:
             [True, Money(-25.00, USD)],  # Negative commission = credit
         ],
     )
-    def test_calculate_commission_for_inverse_maker_crypto(
-        self, inverse_as_quote, expected
-    ):
+    def test_calculate_commission_for_inverse_maker_crypto(self, inverse_as_quote, expected):
         # Arrange
         instrument = TestInstrumentProvider.xbtusd_bitmex()
 
@@ -298,3 +418,52 @@ class TestInstrument:
 
         # Assert
         assert result == Money(5294, JPY)
+
+
+class TestBettingInstrument:
+    def setup(self):
+        self.instrument = BetfairTestStubs.betting_instrument()
+
+    def test_notional_value(self):
+        notional = self.instrument.notional_value(
+            quantity=Quantity.from_int(100),
+            price=Price.from_str("0.5").as_decimal(),
+            inverse_as_quote=False,
+        ).as_decimal()
+        # We are long 100 at 0.5 probability, aka 2.0 in odds terms
+        assert notional == Decimal("200.0")
+
+    def test_calculate_initial_margin(self):
+        # Arrange
+        instrument = BetfairTestStubs.betting_instrument()
+
+        result = instrument.calculate_initial_margin(
+            Quantity.from_int(100),
+            Price.from_str("0.5"),
+        )
+
+        # Assert
+        assert result == Money("200.00", GBP)
+
+    def test_calculate_maintenance_margin(self):
+        # Arrange
+        long = self.instrument.calculate_maint_margin(
+            side=PositionSide.LONG,
+            quantity=Quantity.from_int(100),
+            last=Price.from_str("0.4"),
+        )
+        short = self.instrument.calculate_maint_margin(
+            side=PositionSide.SHORT,
+            quantity=Quantity.from_int(100),
+            last=Price.from_str("0.8"),
+        )
+        very_short = self.instrument.calculate_maint_margin(
+            side=PositionSide.SHORT,
+            quantity=Quantity.from_int(100),
+            last=Price.from_str("0.1"),
+        )
+
+        # Assert
+        assert long == Money("250.00", GBP)
+        assert short == Money("125.00", GBP)
+        assert very_short == Money("1000.00", GBP)

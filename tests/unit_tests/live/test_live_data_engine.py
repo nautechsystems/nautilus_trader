@@ -14,24 +14,25 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import unittest
+
+import pytest
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
-from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.model.data import Data
-from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -44,37 +45,43 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-class LiveDataEngineTests(unittest.TestCase):
-    def setUp(self):
+class TestLiveDataEngine:
+    def setup(self):
         # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
+
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock, level_stdout=LogLevel.DEBUG)
+        self.logger = Logger(self.clock)
+
+        self.trader_id = TestStubs.trader_id()
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
-
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
 
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
-    def tearDown(self):
+    def teardown(self):
         self.engine.dispose()
-        self.loop.stop()
-        self.loop.close()
 
     def test_start_when_loop_not_running_logs(self):
         # Arrange
@@ -82,14 +89,19 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine.start()
 
         # Assert
-        self.assertTrue(True)  # No exceptions raised
+        assert True  # No exceptions raised
         self.engine.stop()
 
     def test_message_qsize_at_max_blocks_on_put_data_command(self):
         # Arrange
+        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
+        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
+        self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
+        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -99,9 +111,8 @@ class LiveDataEngineTests(unittest.TestCase):
         subscribe = Subscribe(
             client_id=ClientId(BINANCE.value),
             data_type=DataType(QuoteTick),
-            handler=[].append,
             command_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
@@ -109,14 +120,19 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine.execute(subscribe)
 
         # Assert
-        self.assertEqual(1, self.engine.message_qsize())
-        self.assertEqual(0, self.engine.command_count)
+        assert self.engine.message_qsize() == 1
+        assert self.engine.command_count == 0
 
     def test_message_qsize_at_max_blocks_on_send_request(self):
         # Arrange
+        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
+        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
+        self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
+        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -137,22 +153,27 @@ class LiveDataEngineTests(unittest.TestCase):
             ),
             callback=handler.append,
             request_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
-        self.engine.send(request)
-        self.engine.send(request)
+        self.engine.request(request)
+        self.engine.request(request)
 
         # Assert
-        self.assertEqual(1, self.engine.message_qsize())
-        self.assertEqual(0, self.engine.command_count)
+        assert self.engine.message_qsize() == 1
+        assert self.engine.command_count == 0
 
     def test_message_qsize_at_max_blocks_on_receive_response(self):
         # Arrange
+        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
+        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
+        self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
+        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -165,22 +186,27 @@ class LiveDataEngineTests(unittest.TestCase):
             data=[],
             correlation_id=self.uuid_factory.generate(),
             response_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         # Act
-        self.engine.receive(response)
-        self.engine.receive(response)  # Add over max size
+        self.engine.response(response)
+        self.engine.response(response)  # Add over max size
 
         # Assert
-        self.assertEqual(1, self.engine.message_qsize())
-        self.assertEqual(0, self.engine.command_count)
+        assert self.engine.message_qsize() == 1
+        assert self.engine.command_count == 0
 
     def test_data_qsize_at_max_blocks_on_put_data(self):
         # Arrange
+        self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.engine.execute)
+        self.msgbus.deregister(endpoint="DataEngine.process", handler=self.engine.process)
+        self.msgbus.deregister(endpoint="DataEngine.request", handler=self.engine.request)
+        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.engine.response)
+
         self.engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -194,8 +220,8 @@ class LiveDataEngineTests(unittest.TestCase):
         self.engine.process(data)  # Add over max size
 
         # Assert
-        self.assertEqual(1, self.engine.data_qsize())
-        self.assertEqual(0, self.engine.data_count)
+        assert self.engine.data_qsize() == 1
+        assert self.engine.data_count == 0
 
     def test_get_event_loop_returns_expected_loop(self):
         # Arrange
@@ -203,154 +229,137 @@ class LiveDataEngineTests(unittest.TestCase):
         loop = self.engine.get_event_loop()
 
         # Assert
-        self.assertEqual(self.loop, loop)
+        assert loop == self.loop
 
-    def test_start(self):
-        async def run_test():
-            # Arrange
-            # Act
-            self.engine.start()
-            await asyncio.sleep(0.1)
+    @pytest.mark.asyncio
+    async def test_start(self):
+        # Arrange
+        # Act
+        self.engine.start()
+        await asyncio.sleep(0.1)
 
-            # Assert
-            self.assertEqual(ComponentState.RUNNING, self.engine.state)
+        # Assert
+        assert self.engine.state == ComponentState.RUNNING
 
-            # Tear Down
-            self.engine.stop()
+        # Tear Down
+        self.engine.stop()
 
-        self.loop.run_until_complete(run_test())
+    @pytest.mark.asyncio
+    async def test_kill_when_running_and_no_messages_on_queues(self):
+        # Arrange
+        # Act
+        self.engine.start()
+        await asyncio.sleep(0)
+        self.engine.kill()
 
-    def test_kill_when_running_and_no_messages_on_queues(self):
-        async def run_test():
-            # Arrange
-            # Act
-            self.engine.start()
-            await asyncio.sleep(0)
-            self.engine.kill()
+        # Assert
+        assert self.engine.state == ComponentState.STOPPED
 
-            # Assert
-            self.assertEqual(ComponentState.STOPPED, self.engine.state)
+    @pytest.mark.asyncio
+    async def test_kill_when_not_running_with_messages_on_queue(self):
+        # Arrange
+        # Act
+        self.engine.kill()
 
-        self.loop.run_until_complete(run_test())
+        # Assert
+        assert self.engine.data_qsize() == 0
 
-    def test_kill_when_not_running_with_messages_on_queue(self):
-        async def run_test():
-            # Arrange
-            # Act
-            self.engine.kill()
+    @pytest.mark.asyncio
+    async def test_execute_command_processes_message(self):
+        # Arrange
+        self.engine.start()
 
-            # Assert
-            self.assertEqual(0, self.engine.data_qsize())
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            data_type=DataType(QuoteTick),
+            command_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
 
-        self.loop.run_until_complete(run_test())
+        # Act
+        self.engine.execute(subscribe)
+        await asyncio.sleep(0.1)
 
-    def test_execute_command_processes_message(self):
-        async def run_test():
-            # Arrange
-            self.engine.start()
+        # Assert
+        assert self.engine.message_qsize() == 0
+        assert self.engine.command_count == 1
 
-            subscribe = Subscribe(
-                client_id=ClientId(BINANCE.value),
-                data_type=DataType(QuoteTick),
-                handler=[].append,
-                command_id=self.uuid_factory.generate(),
-                timestamp_ns=self.clock.timestamp_ns(),
-            )
+        # Tear Down
+        self.engine.stop()
 
-            # Act
-            self.engine.execute(subscribe)
-            await asyncio.sleep(0.1)
+    @pytest.mark.asyncio
+    async def test_send_request_processes_message(self):
+        # Arrange
+        self.engine.start()
 
-            # Assert
-            self.assertEqual(0, self.engine.message_qsize())
-            self.assertEqual(1, self.engine.command_count)
+        handler = []
+        request = DataRequest(
+            client_id=ClientId("RANDOM"),
+            data_type=DataType(
+                QuoteTick,
+                metadata={
+                    "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
+                    "from_datetime": None,
+                    "to_datetime": None,
+                    "limit": 1000,
+                },
+            ),
+            callback=handler.append,
+            request_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
 
-            # Tear Down
-            self.engine.stop()
+        # Act
+        self.engine.request(request)
+        await asyncio.sleep(0.1)
 
-        self.loop.run_until_complete(run_test())
+        # Assert
+        assert self.engine.message_qsize() == 0
+        assert self.engine.request_count == 1
 
-    def test_send_request_processes_message(self):
-        async def run_test():
-            # Arrange
-            self.engine.start()
+        # Tear Down
+        self.engine.stop()
 
-            handler = []
-            request = DataRequest(
-                client_id=ClientId("RANDOM"),
-                data_type=DataType(
-                    QuoteTick,
-                    metadata={
-                        "instrument_id": InstrumentId(
-                            Symbol("SOMETHING"), Venue("RANDOM")
-                        ),
-                        "from_datetime": None,
-                        "to_datetime": None,
-                        "limit": 1000,
-                    },
-                ),
-                callback=handler.append,
-                request_id=self.uuid_factory.generate(),
-                timestamp_ns=self.clock.timestamp_ns(),
-            )
+    @pytest.mark.asyncio
+    async def test_receive_response_processes_message(self):
+        # Arrange
+        self.engine.start()
 
-            # Act
-            self.engine.send(request)
-            await asyncio.sleep(0.1)
+        response = DataResponse(
+            client_id=ClientId("BINANCE"),
+            data_type=DataType(QuoteTick),
+            data=[],
+            correlation_id=self.uuid_factory.generate(),
+            response_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
 
-            # Assert
-            self.assertEqual(0, self.engine.message_qsize())
-            self.assertEqual(1, self.engine.request_count)
+        # Act
+        self.engine.response(response)
+        await asyncio.sleep(0.1)
 
-            # Tear Down
-            self.engine.stop()
+        # Assert
+        assert self.engine.message_qsize() == 0
+        assert self.engine.response_count == 1
 
-        self.loop.run_until_complete(run_test())
+        # Tear Down
+        self.engine.stop()
 
-    def test_receive_response_processes_message(self):
-        async def run_test():
-            # Arrange
-            self.engine.start()
+    @pytest.mark.asyncio
+    async def test_process_data_processes_data(self):
+        # Arrange
+        self.engine.start()
 
-            response = DataResponse(
-                client_id=ClientId("BINANCE"),
-                data_type=DataType(QuoteTick),
-                data=[],
-                correlation_id=self.uuid_factory.generate(),
-                response_id=self.uuid_factory.generate(),
-                timestamp_ns=self.clock.timestamp_ns(),
-            )
+        # Act
+        tick = TestStubs.trade_tick_5decimal()
 
-            # Act
-            self.engine.receive(response)
-            await asyncio.sleep(0.1)
+        # Act
+        self.engine.process(tick)
+        await asyncio.sleep(0.1)
 
-            # Assert
-            self.assertEqual(0, self.engine.message_qsize())
-            self.assertEqual(1, self.engine.response_count)
+        # Assert
+        assert self.engine.data_qsize() == 0
+        assert self.engine.data_count == 1
 
-            # Tear Down
-            self.engine.stop()
-
-        self.loop.run_until_complete(run_test())
-
-    def test_process_data_processes_data(self):
-        async def run_test():
-            # Arrange
-            self.engine.start()
-
-            # Act
-            tick = TestStubs.trade_tick_5decimal()
-
-            # Act
-            self.engine.process(tick)
-            await asyncio.sleep(0.1)
-
-            # Assert
-            self.assertEqual(0, self.engine.data_qsize())
-            self.assertEqual(1, self.engine.data_count)
-
-            # Tear Down
-            self.engine.stop()
-
-        self.loop.run_until_complete(run_test())
+        # Tear Down
+        self.engine.stop()

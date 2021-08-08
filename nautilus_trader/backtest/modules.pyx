@@ -157,7 +157,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
                 if mid is None:
                     mid = book.best_ask_price()
                 if mid is None:
-                    raise RuntimeError("Cannot apply rollover interest, no market prices")
+                    raise RuntimeError("cannot apply rollover interest, no market prices")
                 mid_prices[instrument.id] = Price(mid, precision=instrument.price_precision)
 
             interest_rate = self._calculator.calc_overnight_rate(

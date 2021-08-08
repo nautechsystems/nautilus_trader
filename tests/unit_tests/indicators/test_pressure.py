@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 from nautilus_trader.indicators.pressure import Pressure
 from tests.test_kit.providers import TestInstrumentProvider
@@ -24,8 +22,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class PressureTests(unittest.TestCase):
-    def setUp(self):
+class TestPressure:
+    def setup(self):
         # Fixture Setup
         self.pressure = Pressure(10, MovingAverageType.EXPONENTIAL)
 
@@ -33,26 +31,26 @@ class PressureTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("Pressure", self.pressure.name)
+        assert self.pressure.name == "Pressure"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("Pressure(10, EXPONENTIAL, 0.0)", str(self.pressure))
-        self.assertEqual("Pressure(10, EXPONENTIAL, 0.0)", repr(self.pressure))
+        assert str(self.pressure) == "Pressure(10, EXPONENTIAL, 0.0)"
+        assert repr(self.pressure) == "Pressure(10, EXPONENTIAL, 0.0)"
 
     def test_period_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(10, self.pressure.period)
+        assert self.pressure.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.pressure.initialized)
+        assert self.pressure.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -61,7 +59,7 @@ class PressureTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(True, self.pressure.initialized)
+        assert self.pressure.initialized is True
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -73,8 +71,8 @@ class PressureTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(0.333333333328399, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 0.333333333328399
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -82,7 +80,7 @@ class PressureTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0, self.pressure.value)
+        assert self.pressure.value == 0
 
     def test_values_with_higher_inputs_returns_expected_value(self):
         # Arrange
@@ -99,8 +97,8 @@ class PressureTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.6027263066543116, self.pressure.value)
-        self.assertEqual(17.427420446202998, self.pressure.value_cumulative)
+        assert self.pressure.value == 1.6027263066543116
+        assert self.pressure.value_cumulative == 17.427420446202998
 
     def test_values_with_all_lower_inputs_returns_expected_value(self):
         # Arrange
@@ -117,8 +115,8 @@ class PressureTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(-1.602726306654309, self.pressure.value)
-        self.assertEqual(-17.427420446203406, self.pressure.value_cumulative)
+        assert self.pressure.value == -1.602726306654309
+        assert self.pressure.value_cumulative == -17.427420446203406
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -129,4 +127,4 @@ class PressureTests(unittest.TestCase):
         self.pressure.reset()
 
         # Assert
-        self.assertFalse(self.pressure.initialized)
+        assert not self.pressure.initialized

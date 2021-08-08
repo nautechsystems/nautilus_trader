@@ -3,14 +3,6 @@ Core
 
 .. automodule:: nautilus_trader.core
 
-Cache
------
-
-.. automodule:: nautilus_trader.core.cache
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
 
 Datetime
 --------

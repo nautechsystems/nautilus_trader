@@ -19,9 +19,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport is_datetime_utc
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class BidAskMinMax(Indicator):
@@ -37,7 +37,7 @@ cdef class BidAskMinMax(Indicator):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for inbound ticks.
+            The instrument ID for inbound ticks.
         lookback : timedelta
             The look back duration in time.
 
@@ -61,8 +61,8 @@ cdef class BidAskMinMax(Indicator):
             Incoming quote tick to process
 
         """
-        self.bids.add_price(nanos_to_unix_dt(nanos=tick.ts_recv_ns), tick.bid)
-        self.asks.add_price(nanos_to_unix_dt(nanos=tick.ts_recv_ns), tick.ask)
+        self.bids.add_price(nanos_to_unix_dt(nanos=tick.ts_init), tick.bid)
+        self.asks.add_price(nanos_to_unix_dt(nanos=tick.ts_init), tick.ask)
 
         # Mark as having input and initialized
         self._set_has_inputs(True)

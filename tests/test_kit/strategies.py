@@ -15,18 +15,30 @@
 
 from datetime import timedelta
 from decimal import Decimal
+from typing import Dict, Optional
 
 from nautilus_trader.common.logging import LogColor
+from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
-from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.order_side import OrderSide
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.venue import InstrumentClosePrice
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.events.position import PositionChanged
+from nautilus_trader.model.events.position import PositionClosed
+from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -51,7 +63,7 @@ class TickTock(TradingStrategy):
 
         self.instrument = instrument
         self.bar_type = bar_type
-        self.store = []
+        self.store = []  # type: list[object]
         self.timer_running = False
         self.time_alert_counter = 0
 
@@ -107,7 +119,7 @@ class EMACross(TradingStrategy):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the strategy.
+            The instrument ID for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -117,18 +129,16 @@ class EMACross(TradingStrategy):
         slow_ema : int
             The slow EMA period.
         extra_id_tag : str
-            An additional order identifier tag.
+            An additional order ID tag.
 
         """
         if extra_id_tag is None:
             extra_id_tag = ""
-        super().__init__(
-            order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag
-        )
+        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag)
 
         # Custom strategy variables
         self.instrument_id = instrument_id
-        self.instrument = None
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
 
@@ -205,8 +215,7 @@ class EMACross(TradingStrategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up "
-                f"[{self.cache.bar_count(self.bar_type)}]...",
+                f"Waiting for indicators to warm up " f"[{self.cache.bar_count(self.bar_type)}]...",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
@@ -292,7 +301,7 @@ class EMACross(TradingStrategy):
         self.fast_ema.reset()
         self.slow_ema.reset()
 
-    def on_save(self) -> {}:
+    def on_save(self) -> Dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -306,7 +315,7 @@ class EMACross(TradingStrategy):
         """
         return {"example": b"123456"}
 
-    def on_load(self, state: {}):
+    def on_load(self, state: Dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 
@@ -318,7 +327,9 @@ class EMACross(TradingStrategy):
             The strategy state dictionary.
 
         """
-        self.log.info(f"Loaded users state {state['example']}")
+        example = state["example"].decode()
+
+        self.log.info(f"Loaded users state {example}")
 
     def on_dispose(self):
         """
@@ -347,21 +358,25 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the strategy.
+            The instrument ID for the strategy.
         trade_size : Decimal
             The position size per trade.
         extra_id_tag : str
-            An additional order identifier tag.
+            An additional order ID tag.
 
         """
         if extra_id_tag is None:
             extra_id_tag = ""
         super().__init__(
-            order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag
+            order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag,
+            oms_type=OMSType.NETTING,
         )
         self.instrument_id = instrument_id
-        self.instrument = None  # Initialized in on_start
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.trade_size = trade_size
+        self.instrument_status: Optional[InstrumentStatus] = None
+        self.close_price: Optional[InstrumentClosePrice] = None
+        self.book: Optional[OrderBook] = None
 
     def on_start(self):
         """Actions to be performed on strategy start."""
@@ -371,21 +386,27 @@ class OrderBookImbalanceStrategy(TradingStrategy):
             self.stop()
             return
 
-        # Subscribe to live data
-        self.subscribe_order_book(self.instrument_id)
+        # Create orderbook
+        self.book = OrderBook.create(instrument=self.instrument, level=BookLevel.L2)
 
-    def on_order_book(self, order_book: OrderBook):
+        # Subscribe to live data
+        self.subscribe_order_book_deltas(self.instrument_id)
+        self.subscribe_instrument_status_updates(self.instrument_id)
+        self.subscribe_instrument_close_prices(self.instrument_id)
+
+    def on_order_book_delta(self, delta: OrderBookData):
         """
         Actions to be performed when the strategy is running and receives an order book.
 
         Parameters
         ----------
-        order_book : OrderBook
-            The order book received.
+        delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
+            The order book delta received.
 
         """
-        bid_qty = order_book.best_bid_qty()
-        ask_qty = order_book.best_ask_qty()
+        self.book.apply(delta)
+        bid_qty = self.book.best_bid_qty()
+        ask_qty = self.book.best_ask_qty()
         if bid_qty and ask_qty:
             imbalance = bid_qty / (bid_qty + ask_qty)
             if imbalance > 0.90:
@@ -429,6 +450,13 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         """
         pass
 
+    def on_instrument_status_update(self, data: InstrumentStatusUpdate):
+        if data.status == InstrumentStatus.CLOSED:
+            self.instrument_status = data.status
+
+    def on_instrument_close_price(self, data: InstrumentClosePrice):
+        self.close_price = data.close_price
+
     def on_stop(self):
         """
         Actions to be performed when the strategy is stopped.
@@ -437,11 +465,101 @@ class OrderBookImbalanceStrategy(TradingStrategy):
         self.cancel_all_orders(self.instrument_id)
         self.flatten_all_positions(self.instrument_id)
 
-    def on_dispose(self):
-        """
-        Actions to be performed when the strategy is disposed.
 
-        Cleanup any resources used by the strategy here.
+class MarketMaker(TradingStrategy):
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        trade_size: Decimal,
+        max_size: Decimal,
+        extra_id_tag: str = "",
+    ):
+        """
+        Initialize a new instance of the ``MarketMaker`` class.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the strategy.
+        trade_size : Decimal
+            The position size per trade.
+        extra_id_tag : str
+            An additional order ID tag.
 
         """
-        self.unsubscribe_order_book(self.instrument_id)
+        if extra_id_tag is None:
+            extra_id_tag = ""
+        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag)
+        self.instrument_id = instrument_id
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
+        self.trade_size = trade_size
+        self.max_size = max_size
+        self._book: Optional[OrderBook] = None
+        self._mid: Optional[Decimal] = None
+        self._adj = Decimal(0)
+
+    def on_start(self):
+        self.instrument = self.cache.instrument(self.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.stop()
+            return
+
+        # Create orderbook
+        self._book = OrderBook.create(instrument=self.instrument, level=BookLevel.L2)
+
+        # Subscribe to live data
+        self.subscribe_order_book_deltas(self.instrument_id)
+
+    def on_order_book_delta(self, delta: OrderBookData):
+        self._book.apply(delta)
+        bid_price = self._book.best_ask_price()
+        ask_price = self._book.best_ask_price()
+        if bid_price and ask_price:
+            mid = (bid_price + ask_price) / 2
+            if mid != self._mid:
+                self.cancel_all_orders(self.instrument_id)
+                self._mid = Decimal(mid)
+                val = self._mid + self._adj
+                self.buy(price=val * Decimal(1.01))
+                self.sell(price=val * Decimal(0.99))
+
+    def on_event(self, event: Event):
+        if isinstance(event, (PositionOpened, PositionChanged)):
+            self._adj = (event.net_qty / self.max_size) * Decimal(0.01)
+        elif isinstance(event, PositionClosed):
+            self._adj = Decimal(0)
+
+    def buy(self, price: Decimal):
+        """
+        Users simple buy method (example).
+        """
+        order = self.order_factory.limit(
+            instrument_id=self.instrument_id,
+            order_side=OrderSide.BUY,
+            price=Price(price, precision=self.instrument.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+        )
+
+        self.submit_order(order)
+
+    def sell(self, price: Decimal):
+        """
+        Users simple sell method (example).
+        """
+        order = self.order_factory.limit(
+            instrument_id=self.instrument_id,
+            order_side=OrderSide.SELL,
+            price=Price(price, precision=self.instrument.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+        )
+
+        self.submit_order(order)
+
+    def on_stop(self):
+        """
+        Actions to be performed when the strategy is stopped.
+
+        """
+        self.cancel_all_orders(self.instrument_id)
+        self.flatten_all_positions(self.instrument_id)

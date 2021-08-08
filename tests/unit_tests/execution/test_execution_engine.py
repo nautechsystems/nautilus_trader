@@ -13,39 +13,39 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
+from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.commands import CancelOrder
-from nautilus_trader.model.commands import SubmitBracketOrder
-from nautilus_trader.model.commands import SubmitOrder
-from nautilus_trader.model.commands import TradingCommand
-from nautilus_trader.model.commands import UpdateOrder
+from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import SubmitBracketOrder
+from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.commands.trading import TradingCommand
+from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import VenueType
-from nautilus_trader.model.events import OrderCanceled
-from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.events.order import OrderCanceled
+from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.bracket import BracketOrder
 from nautilus_trader.model.position import Position
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -60,25 +60,33 @@ GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
-class ExecutionEngineTests(unittest.TestCase):
-    def setUp(self):
+class TestExecutionEngine:
+    def setup(self):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(
+            clock=TestClock(),
+            level_stdout=LogLevel.DEBUG,
+        )
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
+        self.strategy_id = TestStubs.strategy_id()
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("S-001"),
+            strategy_id=self.strategy_id,
             clock=TestClock(),
         )
 
-        # Keep cache database in fixture
-        self.cache_db = MockCacheDatabase(
+        self.msgbus = MessageBus(
             trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.cache_db = MockCacheDatabase(
             logger=self.logger,
         )
 
@@ -88,21 +96,29 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.data_engine = DataEngine(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.risk_engine = RiskEngine(
-            exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -119,12 +135,12 @@ class ExecutionEngineTests(unittest.TestCase):
             account_id=self.account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
-        self.exec_engine.register_risk_engine(self.risk_engine)
         self.exec_engine.register_client(self.exec_client)
 
     def test_registered_clients_returns_expected(self):
@@ -144,7 +160,8 @@ class ExecutionEngineTests(unittest.TestCase):
             account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -167,7 +184,8 @@ class ExecutionEngineTests(unittest.TestCase):
             account_id=AccountId("IB", "U1258001"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -188,76 +206,28 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.deregister_client(self.exec_client)
 
         # Assert
-        self.assertEqual([], self.exec_engine.registered_clients)
-
-    def test_register_strategy(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            self.trader_id,
-            self.clock,
-            self.logger,
-        )
-
-        # Act
-        self.exec_engine.register_strategy(strategy)
-
-        # Assert
-        self.assertIn(strategy.id, self.exec_engine.registered_strategies)
-
-    def test_deregister_strategy(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
-        )
-
-        self.exec_engine.register_strategy(strategy)
-
-        # Act
-        self.exec_engine.deregister_strategy(strategy)
-
-        # Assert
-        self.assertNotIn(strategy.id, self.exec_engine.registered_strategies)
-
-    def test_reset_retains_registered_strategies(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
-        )
-
-        self.exec_engine.register_strategy(strategy)  # Also registers with portfolio
-
-        # Act
-        self.exec_engine.reset()
-
-        # Assert
-        self.assertIn(strategy.id, self.exec_engine.registered_strategies)
+        assert self.exec_engine.registered_clients == []
 
     def test_check_connected_when_client_disconnected_returns_false(self):
         # Arrange
-        self.exec_client.disconnect()
+        self.exec_client.start()
+        self.exec_client.stop()
 
         # Act
         result = self.exec_engine.check_connected()
 
         # Assert
-        self.assertFalse(result)
+        assert not result
 
     def test_check_connected_when_client_connected_returns_true(self):
         # Arrange
-        self.exec_client.connect()
+        self.exec_client.start()
 
         # Act
         result = self.exec_engine.check_connected()
 
         # Assert
-        self.assertTrue(result)
+        assert result
 
     def test_check_disconnected_when_client_disconnected_returns_true(self):
         # Arrange
@@ -265,17 +235,17 @@ class ExecutionEngineTests(unittest.TestCase):
         result = self.exec_engine.check_disconnected()
 
         # Assert
-        self.assertTrue(result)
+        assert result
 
     def test_check_disconnected_when_client_connected_returns_false(self):
         # Arrange
-        self.exec_client.connect()
+        self.exec_client.start()
 
         # Act
         result = self.exec_engine.check_disconnected()
 
         # Assert
-        self.assertFalse(result)
+        assert not result
 
     def test_check_integrity_calls_check_on_cache(self):
         # Arrange
@@ -283,11 +253,11 @@ class ExecutionEngineTests(unittest.TestCase):
         result = self.exec_engine.check_integrity()
 
         # Assert
-        self.assertTrue(result)  # No exceptions raised
+        assert result  # No exceptions raised
 
     def test_loading_account_from_cache_registers_with_portfolio(self):
         # Arrange, Act, Assert
-        self.assertEqual(AccountId("SIM", "000"), self.portfolio.account(self.venue).id)
+        assert self.portfolio.account(self.venue).id == AccountId("SIM", "000")
 
     def test_setting_of_position_id_counts(self):
         # Arrange
@@ -320,13 +290,13 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.load_cache()
 
         # Assert
-        self.assertEqual(1, self.exec_engine.position_id_count(strategy_id))
+        assert self.exec_engine.position_id_count(strategy_id) == 1
 
     def test_given_random_command_logs_and_continues(self):
         # Arrange
         random = TradingCommand(
             self.trader_id,
-            StrategyId("SCALPER-001"),
+            self.strategy_id,
             AUDUSD_SIM.id,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -337,8 +307,9 @@ class ExecutionEngineTests(unittest.TestCase):
     def test_given_random_event_logs_and_continues(self):
         # Arrange
         random = Event(
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
+            event_id=self.uuid_factory.generate(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
 
         self.exec_engine.process(random)
@@ -348,13 +319,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -365,7 +337,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -377,21 +349,22 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_order)  # Duplicate command
 
         # Assert
-        self.assertEqual(OrderState.SUBMITTED, order.state)
+        assert order.state == OrderState.SUBMITTED
 
     def test_submit_order_for_random_venue_logs(self):
         # Arrange
-        self.exec_engine.cache.add_instrument(BTCUSDT_BINANCE)
+        self.cache.add_instrument(BTCUSDT_BINANCE)
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             BTCUSDT_BINANCE.id,
@@ -402,7 +375,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -412,21 +385,22 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_order)
 
         # Assert
-        self.assertEqual(1, self.exec_engine.command_count)
-        self.assertEqual(OrderState.INITIALIZED, order.state)
+        assert self.exec_engine.command_count == 1
+        assert order.state == OrderState.INITIALIZED
 
     def test_submit_order_for_none_existent_position_id_invalidates_order(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -447,20 +421,21 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_order)
 
         # Assert
-        self.assertEqual(OrderState.INVALID, order.state)
+        assert order.state == OrderState.DENIED
 
     def test_order_filled_with_unrecognized_strategy_id(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -471,7 +446,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -489,7 +464,7 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Assert (does not send to strategy)
-        self.assertEqual(OrderState.FILLED, order.state)
+        assert order.state == OrderState.FILLED
 
     def test_submit_bracket_order_with_all_duplicate_client_order_id_logs_does_not_submit(
         self,
@@ -498,13 +473,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         entry = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -542,18 +518,16 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Act
         self.risk_engine.execute(submit_bracket)
-        self.risk_engine.execute(submit_bracket)  # Duplicate command
+        self.exec_engine.process(TestStubs.event_order_submitted(entry))
+        self.exec_engine.process(TestStubs.event_order_submitted(stop_loss))
+        self.exec_engine.process(TestStubs.event_order_submitted(take_profit))
+        self.risk_engine.execute(submit_bracket)  # <-- Duplicate command
 
         # Assert
-        self.assertEqual(
-            OrderState.INITIALIZED, entry.state
-        )  # Did not invalidate originals
-        self.assertEqual(
-            OrderState.INITIALIZED, stop_loss.state
-        )  # Did not invalidate originals
-        self.assertEqual(
-            OrderState.INITIALIZED, take_profit.state
-        )  # Did not invalidate originals
+        assert entry.state == OrderState.SUBMITTED  # Did not invalidate originals
+        assert stop_loss.state == OrderState.SUBMITTED  # Did not invalidate originals
+        assert take_profit.state == OrderState.SUBMITTED  # Did not invalidate originals
+        assert self.exec_engine.command_count == 1
 
     def test_submit_bracket_order_with_duplicate_take_profit_client_order_id_logs_does_not_submit(
         self,
@@ -562,13 +536,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         entry1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -642,12 +617,10 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_bracket2)  # SL and TP
 
         # Assert
-        self.assertEqual(OrderState.INVALID, entry2.state)
-        self.assertEqual(OrderState.ACCEPTED, entry1.state)
-        self.assertEqual(OrderState.ACCEPTED, stop_loss1.state)
-        self.assertEqual(
-            OrderState.ACCEPTED, take_profit1.state
-        )  # Did not invalidate original
+        assert entry2.state == OrderState.DENIED
+        assert entry1.state == OrderState.ACCEPTED
+        assert stop_loss1.state == OrderState.ACCEPTED
+        assert take_profit1.state == OrderState.ACCEPTED  # Did not invalidate original
 
     def test_submit_bracket_order_with_duplicate_stop_loss_client_order_id_logs_does_not_submit(
         self,
@@ -657,13 +630,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         entry1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -737,30 +711,25 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_bracket2)  # SL and TP
 
         # Assert
-        self.assertEqual(OrderState.INVALID, entry2.state)
-        self.assertEqual(
-            OrderState.ACCEPTED, entry1.state
-        )  # Did not invalidate original
-        self.assertEqual(
-            OrderState.ACCEPTED, stop_loss1.state
-        )  # Did not invalidate original
-        self.assertEqual(
-            OrderState.ACCEPTED, take_profit1.state
-        )  # Did not invalidate original
-        self.assertEqual(OrderState.INVALID, take_profit2.state)
+        assert entry2.state == OrderState.DENIED
+        assert entry1.state == OrderState.ACCEPTED  # Did not invalidate original
+        assert stop_loss1.state == OrderState.ACCEPTED  # Did not invalidate original
+        assert take_profit1.state == OrderState.ACCEPTED  # Did not invalidate original
+        assert take_profit2.state == OrderState.DENIED
 
     def test_submit_order(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -771,7 +740,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -781,21 +750,22 @@ class ExecutionEngineTests(unittest.TestCase):
         self.risk_engine.execute(submit_order)
 
         # Assert
-        self.assertIn(submit_order, self.exec_client.commands)
-        self.assertTrue(self.cache.order_exists(order.client_order_id))
+        assert submit_order in self.exec_client.commands
+        assert self.cache.order_exists(order.client_order_id)
 
     def test_submit_order_with_cleared_cache_logs_error(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -806,7 +776,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -814,24 +784,25 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Act
         self.risk_engine.execute(submit_order)
-        self.exec_engine.cache.clear_cache()
+        self.cache.clear_cache()
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
         # Assert
-        self.assertEqual(OrderState.INITIALIZED, order.state)
+        assert order.state == OrderState.INITIALIZED
 
     def test_when_applying_event_to_order_with_invalid_state_trigger_logs(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -842,7 +813,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -853,20 +824,21 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
         # Assert
-        self.assertEqual(OrderState.INITIALIZED, order.state)
+        assert order.state == OrderState.INITIALIZED
 
     def test_order_filled_event_when_order_not_found_in_cache_logs(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -878,23 +850,24 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
         # Assert
-        self.assertEqual(2, self.exec_engine.event_count)
-        self.assertEqual(OrderState.INITIALIZED, order.state)
+        assert self.exec_engine.event_count == 2
+        assert order.state == OrderState.INITIALIZED
 
     def test_cancel_order_for_already_completed_order_logs_and_does_nothing(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
-        self.exec_engine.register_strategy(strategy)
-
-        # Push order state to filled (completed)
+        # Push to OrderState.FILLED (completed)
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -904,7 +877,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -929,22 +902,23 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(cancel_order)
 
         # Assert
-        self.assertEqual(OrderState.FILLED, order.state)
+        assert order.state == OrderState.FILLED
 
     def test_update_order_for_already_completed_order_logs_and_does_nothing(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
-        self.exec_engine.register_strategy(strategy)
-
-        # Push order state to filled (completed)
+        # Push to OrderState.FILLED (completed)
         order = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -955,7 +929,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -983,21 +957,22 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.execute(update_order)
 
         # Assert
-        self.assertEqual(OrderState.FILLED, order.state)
-        self.assertEqual(Quantity.from_int(100000), order.quantity)
+        assert order.state == OrderState.FILLED
+        assert order.quantity == Quantity.from_int(100000)
 
     def test_handle_order_event_with_random_client_order_id_and_order_id_cached(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -1008,7 +983,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1019,11 +994,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
         canceled = OrderCanceled(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
-            self.clock.timestamp_ns(),
             self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
         )
 
@@ -1031,7 +1009,7 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(canceled)
 
         # Assert (order was found and OrderCanceled event was applied)
-        self.assertEqual(OrderState.CANCELED, order.state)
+        assert order.state == OrderState.CANCELED
 
     def test_handle_order_event_with_random_client_order_id_and_order_id_not_cached(
         self,
@@ -1040,13 +1018,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -1057,7 +1036,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1068,11 +1047,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
         canceled = OrderCanceled(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             VenueOrderId("RANDOM_001"),  # Also a random order id the engine won't find
-            self.clock.timestamp_ns(),
             self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
         )
 
@@ -1080,20 +1062,21 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(canceled)
 
         # Assert (order was not found, engine did not crash)
-        self.assertEqual(OrderState.ACCEPTED, order.state)
+        assert order.state == OrderState.ACCEPTED
 
     def test_handle_duplicate_order_events_logs_error_and_does_not_apply(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -1104,7 +1087,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1115,11 +1098,14 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
         canceled = OrderCanceled(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("web_001"),  # Random id from say a web UI
             order.venue_order_id,
-            self.clock.timestamp_ns(),
             self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
             self.clock.timestamp_ns(),
         )
 
@@ -1128,83 +1114,22 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(canceled)
 
         # Assert (order was found and OrderCanceled event was applied)
-        self.assertEqual(OrderState.CANCELED, order.state)
-        self.assertEqual(4, order.event_count)
-
-    def test_handle_order_fill_event_with_no_strategy_id_correctly_handles_fill(self):
-        # Arrange
-        self.exec_engine.start()
-
-        strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
-        )
-
-        self.exec_engine.register_strategy(strategy)
-
-        order = strategy.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        submit_order = SubmitOrder(
-            self.trader_id,
-            strategy.id,
-            PositionId.null(),
-            order,
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
-        )
-
-        self.risk_engine.execute(submit_order)
-
-        # Act
-        self.exec_engine.process(TestStubs.event_order_submitted(order))
-        self.exec_engine.process(TestStubs.event_order_accepted(order))
-        self.exec_engine.process(
-            TestStubs.event_order_filled(
-                order=order,
-                instrument=AUDUSD_SIM,
-                strategy_id=StrategyId.null(),
-            )
-        )
-
-        expected_position_id = PositionId("P-19700101-000000-000-001-1")
-
-        # Assert
-        self.assertTrue(self.cache.position_exists(expected_position_id))
-        self.assertTrue(self.cache.is_position_open(expected_position_id))
-        self.assertFalse(self.cache.is_position_closed(expected_position_id))
-        self.assertEqual(Position, type(self.cache.position(expected_position_id)))
-        self.assertIn(expected_position_id, self.cache.position_ids())
-        self.assertNotIn(
-            expected_position_id,
-            self.cache.position_closed_ids(strategy_id=strategy.id),
-        )
-        self.assertNotIn(expected_position_id, self.cache.position_closed_ids())
-        self.assertIn(
-            expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id)
-        )
-        self.assertIn(expected_position_id, self.cache.position_open_ids())
-        self.assertEqual(1, self.cache.positions_total_count())
-        self.assertEqual(1, self.cache.positions_open_count())
-        self.assertEqual(0, self.cache.positions_closed_count())
+        assert order.state == OrderState.CANCELED
+        assert order.event_count == 4
 
     def test_handle_order_fill_event_with_no_position_id_correctly_handles_fill(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -1215,7 +1140,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1230,43 +1155,38 @@ class ExecutionEngineTests(unittest.TestCase):
             TestStubs.event_order_filled(
                 order=order,
                 instrument=AUDUSD_SIM,
-                strategy_id=StrategyId.null(),
             )
         )
 
         expected_position_id = PositionId("P-19700101-000000-000-001-1")
 
         # Assert
-        self.assertTrue(self.cache.position_exists(expected_position_id))
-        self.assertTrue(self.cache.is_position_open(expected_position_id))
-        self.assertFalse(self.cache.is_position_closed(expected_position_id))
-        self.assertEqual(Position, type(self.cache.position(expected_position_id)))
-        self.assertIn(expected_position_id, self.cache.position_ids())
-        self.assertNotIn(
-            expected_position_id,
-            self.cache.position_closed_ids(strategy_id=strategy.id),
-        )
-        self.assertNotIn(expected_position_id, self.cache.position_closed_ids())
-        self.assertIn(
-            expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id)
-        )
-        self.assertIn(expected_position_id, self.cache.position_open_ids())
-        self.assertEqual(1, self.cache.positions_total_count())
-        self.assertEqual(1, self.cache.positions_open_count())
-        self.assertEqual(0, self.cache.positions_closed_count())
+        assert self.cache.position_exists(expected_position_id)
+        assert self.cache.is_position_open(expected_position_id)
+        assert not self.cache.is_position_closed(expected_position_id)
+        assert isinstance(self.cache.position(expected_position_id), Position)
+        assert expected_position_id in self.cache.position_ids()
+        assert expected_position_id not in self.cache.position_closed_ids(strategy_id=strategy.id)
+        assert expected_position_id not in self.cache.position_closed_ids()
+        assert expected_position_id in self.cache.position_open_ids(strategy_id=strategy.id)
+        assert expected_position_id in self.cache.position_open_ids()
+        assert self.cache.positions_total_count() == 1
+        assert self.cache.positions_open_count() == 1
+        assert self.cache.positions_closed_count() == 0
 
     def test_handle_order_fill_event(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -1277,7 +1197,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1293,36 +1213,32 @@ class ExecutionEngineTests(unittest.TestCase):
         expected_position_id = PositionId("P-19700101-000000-000-001-1")
 
         # Assert
-        self.assertTrue(self.cache.position_exists(expected_position_id))
-        self.assertTrue(self.cache.is_position_open(expected_position_id))
-        self.assertFalse(self.cache.is_position_closed(expected_position_id))
-        self.assertEqual(Position, type(self.cache.position(expected_position_id)))
-        self.assertIn(expected_position_id, self.cache.position_ids())
-        self.assertNotIn(
-            expected_position_id,
-            self.cache.position_closed_ids(strategy_id=strategy.id),
-        )
-        self.assertNotIn(expected_position_id, self.cache.position_closed_ids())
-        self.assertIn(
-            expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id)
-        )
-        self.assertIn(expected_position_id, self.cache.position_open_ids())
-        self.assertEqual(1, self.cache.positions_total_count())
-        self.assertEqual(1, self.cache.positions_open_count())
-        self.assertEqual(0, self.cache.positions_closed_count())
+        assert self.cache.position_exists(expected_position_id)
+        assert self.cache.is_position_open(expected_position_id)
+        assert not self.cache.is_position_closed(expected_position_id)
+        assert isinstance(self.cache.position(expected_position_id), Position)
+        assert expected_position_id in self.cache.position_ids()
+        assert expected_position_id not in self.cache.position_closed_ids(strategy_id=strategy.id)
+        assert expected_position_id not in self.cache.position_closed_ids()
+        assert expected_position_id in self.cache.position_open_ids(strategy_id=strategy.id)
+        assert expected_position_id in self.cache.position_open_ids()
+        assert self.cache.positions_total_count() == 1
+        assert self.cache.positions_open_count() == 1
+        assert self.cache.positions_closed_count() == 0
 
     def test_handle_multiple_partial_fill_events(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -1333,7 +1249,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1365,36 +1281,32 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # Assert
-        self.assertTrue(self.cache.position_exists(expected_position_id))
-        self.assertTrue(self.cache.is_position_open(expected_position_id))
-        self.assertFalse(self.cache.is_position_closed(expected_position_id))
-        self.assertEqual(Position, type(self.cache.position(expected_position_id)))
-        self.assertIn(expected_position_id, self.cache.position_ids())
-        self.assertNotIn(
-            expected_position_id,
-            self.cache.position_closed_ids(strategy_id=strategy.id),
-        )
-        self.assertNotIn(expected_position_id, self.cache.position_closed_ids())
-        self.assertIn(
-            expected_position_id, self.cache.position_open_ids(strategy_id=strategy.id)
-        )
-        self.assertIn(expected_position_id, self.cache.position_open_ids())
-        self.assertEqual(1, self.cache.positions_total_count())
-        self.assertEqual(1, self.cache.positions_open_count())
-        self.assertEqual(0, self.cache.positions_closed_count())
+        assert self.cache.position_exists(expected_position_id)
+        assert self.cache.is_position_open(expected_position_id)
+        assert not self.cache.is_position_closed(expected_position_id)
+        assert isinstance(self.cache.position(expected_position_id), Position)
+        assert expected_position_id in self.cache.position_ids()
+        assert expected_position_id not in self.cache.position_closed_ids(strategy_id=strategy.id)
+        assert expected_position_id not in self.cache.position_closed_ids()
+        assert expected_position_id in self.cache.position_open_ids(strategy_id=strategy.id)
+        assert expected_position_id in self.cache.position_open_ids()
+        assert self.cache.positions_total_count() == 1
+        assert self.cache.positions_open_count() == 1
+        assert self.cache.positions_closed_count() == 0
 
     def test_handle_position_opening_with_position_id_none(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -1405,7 +1317,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1416,46 +1328,37 @@ class ExecutionEngineTests(unittest.TestCase):
         # Act
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
-        self.exec_engine.process(
-            TestStubs.event_order_filled(
-                order, AUDUSD_SIM, position_id=PositionId.null()
-            )
-        )
+        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
-        expected_id = PositionId(
-            "P-19700101-000000-000-001-1"
-        )  # Generated inside engine
+        expected_id = PositionId("P-19700101-000000-000-001-1")  # Generated inside engine
 
         # Assert
-        self.assertTrue(self.cache.position_exists(expected_id))
-        self.assertTrue(self.cache.is_position_open(expected_id))
-        self.assertFalse(self.cache.is_position_closed(expected_id))
-        self.assertEqual(Position, type(self.cache.position(expected_id)))
-        self.assertIn(expected_id, self.cache.position_ids())
-        self.assertNotIn(
-            expected_id, self.cache.position_closed_ids(strategy_id=strategy.id)
-        )
-        self.assertNotIn(expected_id, self.cache.position_closed_ids())
-        self.assertIn(
-            expected_id, self.cache.position_open_ids(strategy_id=strategy.id)
-        )
-        self.assertIn(expected_id, self.cache.position_open_ids())
-        self.assertEqual(1, self.cache.positions_total_count())
-        self.assertEqual(1, self.cache.positions_open_count())
-        self.assertEqual(0, self.cache.positions_closed_count())
+        assert self.cache.position_exists(expected_id)
+        assert self.cache.is_position_open(expected_id)
+        assert not self.cache.is_position_closed(expected_id)
+        assert isinstance(self.cache.position(expected_id), Position)
+        assert expected_id in self.cache.position_ids()
+        assert expected_id not in self.cache.position_closed_ids(strategy_id=strategy.id)
+        assert expected_id not in self.cache.position_closed_ids()
+        assert expected_id in self.cache.position_open_ids(strategy_id=strategy.id)
+        assert expected_id in self.cache.position_open_ids()
+        assert self.cache.positions_total_count() == 1
+        assert self.cache.positions_open_count() == 1
+        assert self.cache.positions_closed_count() == 0
 
     def test_add_to_existing_position_on_order_fill(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -1472,7 +1375,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1499,36 +1402,35 @@ class ExecutionEngineTests(unittest.TestCase):
         self.exec_engine.process(TestStubs.event_order_submitted(order2))
         self.exec_engine.process(TestStubs.event_order_accepted(order2))
         self.exec_engine.process(
-            TestStubs.event_order_filled(
-                order2, AUDUSD_SIM, position_id=expected_position_id
-            )
+            TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id=expected_position_id)
         )
 
         # Assert
-        self.assertTrue(self.cache.position_exists(expected_position_id))
-        self.assertTrue(self.cache.is_position_open(expected_position_id))
-        self.assertFalse(self.cache.is_position_closed(expected_position_id))
-        self.assertEqual(Position, type(self.cache.position(expected_position_id)))
-        self.assertEqual(0, len(self.cache.positions_closed(strategy_id=strategy.id)))
-        self.assertEqual(0, len(self.cache.positions_closed()))
-        self.assertEqual(1, len(self.cache.positions_open(strategy_id=strategy.id)))
-        self.assertEqual(1, len(self.cache.positions_open()))
-        self.assertEqual(1, self.cache.positions_total_count())
-        self.assertEqual(1, self.cache.positions_open_count())
-        self.assertEqual(0, self.cache.positions_closed_count())
+        assert self.cache.position_exists(expected_position_id)
+        assert self.cache.is_position_open(expected_position_id)
+        assert not self.cache.is_position_closed(expected_position_id)
+        assert isinstance(self.cache.position(expected_position_id), Position)
+        assert len(self.cache.positions_closed(strategy_id=strategy.id)) == 0
+        assert len(self.cache.positions_closed()) == 0
+        assert len(self.cache.positions_open(strategy_id=strategy.id)) == 1
+        assert len(self.cache.positions_open()) == 1
+        assert self.cache.positions_total_count() == 1
+        assert self.cache.positions_open_count() == 1
+        assert self.cache.positions_closed_count() == 0
 
     def test_close_position_on_order_fill(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -1547,7 +1449,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1580,48 +1482,45 @@ class ExecutionEngineTests(unittest.TestCase):
         )
 
         # # Assert
-        self.assertTrue(self.cache.position_exists(position_id))
-        self.assertFalse(self.cache.is_position_open(position_id))
-        self.assertTrue(self.cache.is_position_closed(position_id))
-        self.assertEqual(position_id, self.cache.position(position_id).id)
-        self.assertEqual(
-            position_id, self.cache.positions(strategy_id=strategy.id)[0].id
-        )
-        self.assertEqual(position_id, self.cache.positions()[0].id)
-        self.assertEqual(0, len(self.cache.positions_open(strategy_id=strategy.id)))
-        self.assertEqual(0, len(self.cache.positions_open()))
-        self.assertEqual(
-            position_id, self.cache.positions_closed(strategy_id=strategy.id)[0].id
-        )
-        self.assertEqual(position_id, self.cache.positions_closed()[0].id)
-        self.assertNotIn(
-            position_id, self.cache.position_open_ids(strategy_id=strategy.id)
-        )
-        self.assertNotIn(position_id, self.cache.position_open_ids())
-        self.assertEqual(1, self.cache.positions_total_count())
-        self.assertEqual(0, self.cache.positions_open_count())
-        self.assertEqual(1, self.cache.positions_closed_count())
+        assert self.cache.position_exists(position_id)
+        assert not self.cache.is_position_open(position_id)
+        assert self.cache.is_position_closed(position_id)
+        assert self.cache.position(position_id).id == position_id
+        assert self.cache.positions(strategy_id=strategy.id)[0].id == position_id
+        assert self.cache.positions()[0].id == position_id
+        assert len(self.cache.positions_open(strategy_id=strategy.id)) == 0
+        assert len(self.cache.positions_open()) == 0
+        assert self.cache.positions_closed(strategy_id=strategy.id)[0].id == position_id
+        assert self.cache.positions_closed()[0].id == position_id
+        assert position_id not in self.cache.position_open_ids(strategy_id=strategy.id)
+        assert position_id not in self.cache.position_open_ids()
+        assert self.cache.positions_total_count() == 1
+        assert self.cache.positions_open_count() == 0
+        assert self.cache.positions_closed_count() == 1
 
     def test_multiple_strategy_positions_opened(self):
         # Arrange
         self.exec_engine.start()
 
         strategy1 = TradingStrategy(order_id_tag="001")
-        strategy1.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy1.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         strategy2 = TradingStrategy(order_id_tag="002")
-        strategy2.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy2.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy1)
-        self.exec_engine.register_strategy(strategy2)
 
         order1 = strategy1.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -1640,7 +1539,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy1.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1649,7 +1548,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order2 = SubmitOrder(
             self.trader_id,
             strategy2.id,
-            PositionId.null(),
+            None,
             order2,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1672,66 +1571,61 @@ class ExecutionEngineTests(unittest.TestCase):
             TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id=position2_id)
         )
 
-        # Assert
-        self.assertTrue(self.cache.position_exists(position1_id))
-        self.assertTrue(self.cache.position_exists(position2_id))
-        self.assertTrue(self.cache.is_position_open(position1_id))
-        self.assertTrue(self.cache.is_position_open(position2_id))
-        self.assertFalse(self.cache.is_position_closed(position1_id))
-        self.assertFalse(self.cache.is_position_closed(position2_id))
-        self.assertEqual(Position, type(self.cache.position(position1_id)))
-        self.assertEqual(Position, type(self.cache.position(position2_id)))
-        self.assertIn(position1_id, self.cache.position_ids(strategy_id=strategy1.id))
-        self.assertIn(position2_id, self.cache.position_ids(strategy_id=strategy2.id))
-        self.assertIn(position1_id, self.cache.position_ids())
-        self.assertIn(position2_id, self.cache.position_ids())
-        self.assertEqual(2, len(self.cache.position_open_ids()))
-        self.assertEqual(1, len(self.cache.positions_open(strategy_id=strategy1.id)))
-        self.assertEqual(1, len(self.cache.positions_open(strategy_id=strategy2.id)))
-        self.assertEqual(1, len(self.cache.positions_open(strategy_id=strategy2.id)))
-        self.assertEqual(2, len(self.cache.positions_open()))
-        self.assertEqual(1, len(self.cache.positions_open(strategy_id=strategy1.id)))
-        self.assertEqual(1, len(self.cache.positions_open(strategy_id=strategy2.id)))
-        self.assertIn(
-            position1_id, self.cache.position_open_ids(strategy_id=strategy1.id)
-        )
-        self.assertIn(
-            position2_id, self.cache.position_open_ids(strategy_id=strategy2.id)
-        )
-        self.assertIn(position1_id, self.cache.position_open_ids())
-        self.assertIn(position2_id, self.cache.position_open_ids())
-        self.assertNotIn(
-            position1_id, self.cache.position_closed_ids(strategy_id=strategy1.id)
-        )
-        self.assertNotIn(
-            position2_id, self.cache.position_closed_ids(strategy_id=strategy2.id)
-        )
-        self.assertNotIn(position1_id, self.cache.position_closed_ids())
-        self.assertNotIn(position2_id, self.cache.position_closed_ids())
-        self.assertEqual(2, self.cache.positions_total_count())
-        self.assertEqual(2, self.cache.positions_open_count())
-        self.assertEqual(0, self.cache.positions_closed_count())
+        # # Assert
+        assert self.cache.position_exists(position1_id)
+        assert self.cache.position_exists(position2_id)
+        assert self.cache.is_position_open(position1_id)
+        assert self.cache.is_position_open(position2_id)
+        assert not self.cache.is_position_closed(position1_id)
+        assert not self.cache.is_position_closed(position2_id)
+        assert isinstance(self.cache.position(position1_id), Position)
+        assert isinstance(self.cache.position(position2_id), Position)
+        assert position1_id in self.cache.position_ids(strategy_id=strategy1.id)
+        assert position2_id in self.cache.position_ids(strategy_id=strategy2.id)
+        assert position1_id in self.cache.position_ids()
+        assert position2_id in self.cache.position_ids()
+        assert len(self.cache.position_open_ids()) == 2
+        assert len(self.cache.positions_open(strategy_id=strategy1.id)) == 1
+        assert len(self.cache.positions_open(strategy_id=strategy2.id)) == 1
+        assert len(self.cache.positions_open(strategy_id=strategy2.id)) == 1
+        assert len(self.cache.positions_open()) == 2
+        assert len(self.cache.positions_open(strategy_id=strategy1.id)) == 1
+        assert len(self.cache.positions_open(strategy_id=strategy2.id)) == 1
+        assert position1_id in self.cache.position_open_ids(strategy_id=strategy1.id)
+        assert position2_id in self.cache.position_open_ids(strategy_id=strategy2.id)
+        assert position1_id in self.cache.position_open_ids()
+        assert position2_id in self.cache.position_open_ids()
+        assert position1_id not in self.cache.position_closed_ids(strategy_id=strategy1.id)
+        assert position2_id not in self.cache.position_closed_ids(strategy_id=strategy2.id)
+        assert position1_id not in self.cache.position_closed_ids()
+        assert position2_id not in self.cache.position_closed_ids()
+        assert self.cache.positions_total_count() == 2
+        assert self.cache.positions_open_count() == 2
+        assert self.cache.positions_closed_count() == 0
 
     def test_multiple_strategy_positions_one_active_one_closed(self):
         # Arrange
         self.exec_engine.start()
 
         strategy1 = TradingStrategy(order_id_tag="001")
-        strategy1.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy1.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         strategy2 = TradingStrategy(order_id_tag="002")
-        strategy2.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy2.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy1)
-        self.exec_engine.register_strategy(strategy2)
 
         order1 = strategy1.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -1757,7 +1651,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy1.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1777,7 +1671,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order3 = SubmitOrder(
             self.trader_id,
             strategy2.id,
-            PositionId.null(),
+            None,
             order3,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1809,49 +1703,42 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Assert
         # Already tested .is_position_active and .is_position_closed above
-        self.assertTrue(self.cache.position_exists(position_id1))
-        self.assertTrue(self.cache.position_exists(position_id2))
-        self.assertIn(position_id1, self.cache.position_ids(strategy_id=strategy1.id))
-        self.assertIn(position_id2, self.cache.position_ids(strategy_id=strategy2.id))
-        self.assertIn(position_id1, self.cache.position_ids())
-        self.assertIn(position_id2, self.cache.position_ids())
-        self.assertEqual(0, len(self.cache.positions_open(strategy_id=strategy1.id)))
-        self.assertEqual(1, len(self.cache.positions_open(strategy_id=strategy2.id)))
-        self.assertEqual(1, len(self.cache.positions_open()))
-        self.assertEqual(1, len(self.cache.positions_closed()))
-        self.assertEqual(2, len(self.cache.positions()))
-        self.assertNotIn(
-            position_id1, self.cache.position_open_ids(strategy_id=strategy1.id)
-        )
-        self.assertIn(
-            position_id2, self.cache.position_open_ids(strategy_id=strategy2.id)
-        )
-        self.assertNotIn(position_id1, self.cache.position_open_ids())
-        self.assertIn(position_id2, self.cache.position_open_ids())
-        self.assertIn(
-            position_id1, self.cache.position_closed_ids(strategy_id=strategy1.id)
-        )
-        self.assertNotIn(
-            position_id2, self.cache.position_closed_ids(strategy_id=strategy2.id)
-        )
-        self.assertIn(position_id1, self.cache.position_closed_ids())
-        self.assertNotIn(position_id2, self.cache.position_closed_ids())
-        self.assertEqual(2, self.cache.positions_total_count())
-        self.assertEqual(1, self.cache.positions_open_count())
-        self.assertEqual(1, self.cache.positions_closed_count())
+        assert self.cache.position_exists(position_id1)
+        assert self.cache.position_exists(position_id2)
+        assert position_id1 in self.cache.position_ids(strategy_id=strategy1.id)
+        assert position_id2 in self.cache.position_ids(strategy_id=strategy2.id)
+        assert position_id1 in self.cache.position_ids()
+        assert position_id2 in self.cache.position_ids()
+        assert len(self.cache.positions_open(strategy_id=strategy1.id)) == 0
+        assert len(self.cache.positions_open(strategy_id=strategy2.id)) == 1
+        assert len(self.cache.positions_open()) == 1
+        assert len(self.cache.positions_closed()) == 1
+        assert len(self.cache.positions()) == 2
+        assert position_id1 not in self.cache.position_open_ids(strategy_id=strategy1.id)
+        assert position_id2 in self.cache.position_open_ids(strategy_id=strategy2.id)
+        assert position_id1 not in self.cache.position_open_ids()
+        assert position_id2 in self.cache.position_open_ids()
+        assert position_id1 in self.cache.position_closed_ids(strategy_id=strategy1.id)
+        assert position_id2 not in self.cache.position_closed_ids(strategy_id=strategy2.id)
+        assert position_id1 in self.cache.position_closed_ids()
+        assert position_id2 not in self.cache.position_closed_ids()
+        assert self.cache.positions_total_count() == 2
+        assert self.cache.positions_open_count() == 1
+        assert self.cache.positions_closed_count() == 1
 
     def test_flip_position_on_opposite_filled_same_position_sell(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -1868,7 +1755,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1904,34 +1791,33 @@ class ExecutionEngineTests(unittest.TestCase):
         position_id_flipped = PositionId("P-19700101-000000-000-001-1F")
         position_flipped = self.cache.position(position_id_flipped)
 
-        self.assertEqual(-50000, position_flipped.net_qty)
-        self.assertEqual(50000, position_flipped.last_event.last_qty)
-        self.assertTrue(self.cache.position_exists(position_id))
-        self.assertTrue(self.cache.position_exists(position_id_flipped))
-        self.assertTrue(self.cache.is_position_closed(position_id))
-        self.assertTrue(self.cache.is_position_open(position_id_flipped))
-        self.assertIn(position_id, self.cache.position_ids())
-        self.assertIn(position_id, self.cache.position_ids(strategy_id=strategy.id))
-        self.assertIn(position_id_flipped, self.cache.position_ids())
-        self.assertIn(
-            position_id_flipped, self.cache.position_ids(strategy_id=strategy.id)
-        )
-        self.assertEqual(2, self.cache.positions_total_count())
-        self.assertEqual(1, self.cache.positions_open_count())
-        self.assertEqual(1, self.cache.positions_closed_count())
+        assert position_flipped.net_qty == -50000
+        assert position_flipped.last_event.last_qty == 50000
+        assert self.cache.position_exists(position_id)
+        assert self.cache.position_exists(position_id_flipped)
+        assert self.cache.is_position_closed(position_id)
+        assert self.cache.is_position_open(position_id_flipped)
+        assert position_id in self.cache.position_ids()
+        assert position_id in self.cache.position_ids(strategy_id=strategy.id)
+        assert position_id_flipped in self.cache.position_ids()
+        assert position_id_flipped in self.cache.position_ids(strategy_id=strategy.id)
+        assert self.cache.positions_total_count() == 2
+        assert self.cache.positions_open_count() == 1
+        assert self.cache.positions_closed_count() == 1
 
     def test_flip_position_on_opposite_filled_same_position_buy(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order1 = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -1948,7 +1834,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order1 = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -1984,34 +1870,118 @@ class ExecutionEngineTests(unittest.TestCase):
         position_id_flipped = PositionId("P-19700101-000000-000-001-1F")
         position_flipped = self.cache.position(position_id_flipped)
 
-        self.assertEqual(50000, position_flipped.net_qty)
-        self.assertEqual(50000, position_flipped.last_event.last_qty)
-        self.assertTrue(self.cache.position_exists(position_id))
-        self.assertTrue(self.cache.position_exists(position_id_flipped))
-        self.assertTrue(self.cache.is_position_closed(position_id))
-        self.assertTrue(self.cache.is_position_open(position_id_flipped))
-        self.assertIn(position_id, self.cache.position_ids())
-        self.assertIn(position_id, self.cache.position_ids(strategy_id=strategy.id))
-        self.assertIn(position_id_flipped, self.cache.position_ids())
-        self.assertIn(
-            position_id_flipped, self.cache.position_ids(strategy_id=strategy.id)
+        assert position_flipped.net_qty == 50000
+        assert position_flipped.last_event.last_qty == 50000
+        assert self.cache.position_exists(position_id)
+        assert self.cache.position_exists(position_id_flipped)
+        assert self.cache.is_position_closed(position_id)
+        assert self.cache.is_position_open(position_id_flipped)
+        assert position_id in self.cache.position_ids()
+        assert position_id in self.cache.position_ids(strategy_id=strategy.id)
+        assert position_id_flipped in self.cache.position_ids()
+        assert position_id_flipped in self.cache.position_ids(strategy_id=strategy.id)
+        assert self.cache.positions_total_count() == 2
+        assert self.cache.positions_open_count() == 1
+        assert self.cache.positions_closed_count() == 1
+
+    def test_flip_position_on_flat_position_then_filled_reuse_position_id(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-        self.assertEqual(2, self.cache.positions_total_count())
-        self.assertEqual(1, self.cache.positions_open_count())
-        self.assertEqual(1, self.cache.positions_closed_count())
+
+        order1 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+        )
+
+        order2 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        order3 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        submit_order1 = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            None,
+            order1,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        position_id = PositionId("P-19700101-000000-000-001-1")
+
+        self.risk_engine.execute(submit_order1)
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_accepted(order1))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order1, AUDUSD_SIM, position_id=position_id)
+        )
+
+        submit_order2 = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            position_id,
+            order2,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        submit_order3 = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            position_id,
+            order3,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        position = self.cache.position(position_id)
+
+        self.risk_engine.execute(submit_order2)
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+        self.exec_engine.process(TestStubs.event_order_accepted(order2))
+        self.exec_engine.process(
+            TestStubs.event_order_filled(order2, AUDUSD_SIM, position_id=position_id)
+        )
+        assert position.net_qty == 0
+
+        # Reuse same position_id
+        self.risk_engine.execute(submit_order3)
+
+        # Assert
+        assert order3.state == OrderState.DENIED
 
     def test_handle_updated_order_event(self):
         # Arrange
         self.exec_engine.start()
 
         strategy = TradingStrategy(order_id_tag="001")
-        strategy.register_trader(
-            TraderId("TESTER-000"),
-            self.clock,
-            self.logger,
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        self.exec_engine.register_strategy(strategy)
 
         order = strategy.order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
@@ -2023,7 +1993,7 @@ class ExecutionEngineTests(unittest.TestCase):
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -2036,23 +2006,26 @@ class ExecutionEngineTests(unittest.TestCase):
 
         # Get order, check venue_order_id
         cached_order = self.cache.order(order.client_order_id)
-        self.assertTrue(cached_order.venue_order_id == order.venue_order_id)
+        assert cached_order.venue_order_id == order.venue_order_id
 
         # Act
         new_venue_id = VenueOrderId("UPDATED")
         order_updated = OrderUpdated(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
             account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
             client_order_id=order.client_order_id,
             venue_order_id=new_venue_id,
             quantity=order.quantity,
             price=order.price,
             trigger=None,
-            ts_updated_ns=self.clock.timestamp_ns(),
+            ts_event=self.clock.timestamp_ns(),
             event_id=self.uuid_factory.generate(),
-            timestamp_ns=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
         )
         self.exec_engine.process(order_updated)
 
         # Order should have new venue_order_id
         cached_order = self.cache.order(order.client_order_id)
-        self.assertTrue(cached_order.venue_order_id == new_venue_id)
+        assert cached_order.venue_order_id == new_venue_id

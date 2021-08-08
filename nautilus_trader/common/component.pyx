@@ -91,7 +91,8 @@ cdef class Component:
         self,
         Clock clock not None,
         Logger logger not None,
-        str name=None,
+        ComponentId component_id=None,
+        str component_name=None,
         bint log_initialized=True,
     ):
         """
@@ -103,39 +104,48 @@ cdef class Component:
             The clock for the component.
         logger : Logger
             The logger for the component.
-        name : str, optional
-            The customized name for the component. If None is passed then the
-            name will be taken from `type(self).__name__`.
+        component_id : ComponentId, optional
+            The component ID. If None is passed then the identifier will be
+            taken from `type(self).__name__`.
         log_initialized : bool
             If the initial state should be logged.
 
-        """
-        if name is None:
-            name = type(self).__name__
-        else:
-            Condition.valid_string(name, "name")
+        Raises
+        ------
+        ValueError
+            If component_name is not a valid string.
 
-        self.name = name
+        """
+        if component_id is None:
+            component_id = ComponentId(type(self).__name__)
+        if component_name is None:
+            component_name = component_id.value
+        Condition.valid_string(component_name, "component_name")
+
+        self.id = component_id
 
         self._clock = clock
         self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(component=name, logger=logger)
+        self._log = LoggerAdapter(component_name=component_name, logger=logger)
         self._fsm = ComponentFSMFactory.create()
 
         if log_initialized:
-            self._log.info(f"state={self._fsm.state_string_c()}...")
+            self._log.info(f"{self._fsm.state_string_c()}.")
 
     def __str__(self) -> str:
-        return self.name
+        return self.id.value
 
     def __repr__(self) -> str:
-        return self.name
+        return self.id.value
 
     cdef ComponentState state_c(self) except *:
         return <ComponentState>self._fsm.state
 
     cdef str state_string_c(self):
         return self._fsm.state_string_c()
+
+    cdef bint is_running_c(self):
+        return self._fsm.state == ComponentState.RUNNING
 
     @property
     def state(self):
@@ -149,6 +159,18 @@ cdef class Component:
         """
         return self.state_c()
 
+    @property
+    def is_running(self):
+        """
+        The components current state is RUNNING.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_running_c()
+
     cdef void _change_clock(self, Clock clock) except *:
         Condition.not_none(clock, "clock")
 
@@ -157,7 +179,7 @@ cdef class Component:
     cdef void _change_logger(self, Logger logger) except *:
         Condition.not_none(logger, "logger")
 
-        self._log = LoggerAdapter(component=self.name, logger=logger)
+        self._log = LoggerAdapter(component_name=self.id.value, logger=logger)
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -312,7 +334,7 @@ cdef class Component:
             self._log.exception(ex)
             raise  # Guards against component being put in an invalid state
 
-        self._log.info(f"state={self._fsm.state_string_c()}...")
+        self._log.info(f"{self._fsm.state_string_c()}...")
 
         try:
             action()
@@ -321,4 +343,4 @@ cdef class Component:
             raise
         finally:
             self._fsm.trigger(trigger2)
-            self._log.info(f"state={self._fsm.state_string_c()}.")
+            self._log.info(f"{self._fsm.state_string_c()}.")

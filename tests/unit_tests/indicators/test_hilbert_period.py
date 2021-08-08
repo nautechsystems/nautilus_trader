@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import sys
-import unittest
 
 from nautilus_trader.indicators.hilbert_period import HilbertPeriod
 from tests.test_kit.providers import TestInstrumentProvider
@@ -24,8 +23,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class HilbertPeriodTests(unittest.TestCase):
-    def setUp(self):
+class TestHilbertPeriod:
+    def setup(self):
         # Fixture Setup
         self.h_period = HilbertPeriod()
 
@@ -33,26 +32,26 @@ class HilbertPeriodTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("HilbertPeriod", self.h_period.name)
+        assert self.h_period.name == "HilbertPeriod"
 
     def test_str_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("HilbertPeriod(7)", str(self.h_period))
-        self.assertEqual("HilbertPeriod(7)", repr(self.h_period))
+        assert str(self.h_period) == "HilbertPeriod(7)"
+        assert repr(self.h_period) == "HilbertPeriod(7)"
 
     def test_period_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(7, self.h_period.period)
+        assert self.h_period.period == 7
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.h_period.initialized)
+        assert self.h_period.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -61,7 +60,7 @@ class HilbertPeriodTests(unittest.TestCase):
             self.h_period.update_raw(1.00010, 1.00000)
 
         # Assert
-        self.assertEqual(True, self.h_period.initialized)
+        assert self.h_period.initialized is True
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -73,14 +72,14 @@ class HilbertPeriodTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(0, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 0
 
     def test_value_with_no_inputs_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(0, self.h_period.value)
+        assert self.h_period.value == 0
 
     def test_value_with_epsilon_inputs_returns_expected_value(self):
         # Arrange
@@ -89,7 +88,7 @@ class HilbertPeriodTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(7, self.h_period.value)
+        assert self.h_period.value == 7
 
     def test_value_with_ones_inputs_returns_expected_value(self):
         # Arrange
@@ -98,7 +97,7 @@ class HilbertPeriodTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(7, self.h_period.value)
+        assert self.h_period.value == 7
 
     def test_value_with_seven_inputs_returns_expected_value(self):
         # Arrange
@@ -112,7 +111,7 @@ class HilbertPeriodTests(unittest.TestCase):
             self.h_period.update_raw(high, low)
 
         # Assert
-        self.assertEqual(0, self.h_period.value)
+        assert self.h_period.value == 0
 
     def test_value_with_close_on_high_returns_expected_value(self):
         # Arrange
@@ -126,7 +125,7 @@ class HilbertPeriodTests(unittest.TestCase):
             self.h_period.update_raw(high, low)
 
         # Assert
-        self.assertEqual(7, self.h_period.value)
+        assert self.h_period.value == 7
 
     def test_value_with_close_on_low_returns_expected_value(self):
         # Arrange
@@ -140,7 +139,7 @@ class HilbertPeriodTests(unittest.TestCase):
             self.h_period.update_raw(high, low)
 
         # Assert
-        self.assertEqual(7, self.h_period.value)
+        assert self.h_period.value == 7
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -151,4 +150,4 @@ class HilbertPeriodTests(unittest.TestCase):
         self.h_period.reset()
 
         # Assert
-        self.assertEqual(0, self.h_period.value)  # No exceptions raised
+        assert self.h_period.value == 0  # No exceptions raised

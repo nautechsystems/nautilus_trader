@@ -109,43 +109,31 @@ class TestQueue:
         with pytest.raises(asyncio.QueueEmpty):
             queue.get_nowait()
 
-    def test_await_put(self):
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
+    @pytest.mark.asyncio
+    async def test_await_put(self):
+        # Arrange
+        queue = Queue()
+        await queue.put("A")
 
-        async def run_test():
-            # Arrange
-            queue = Queue()
-            await queue.put("A")
+        # Act
+        item = queue.get_nowait()
 
-            # Act
-            item = queue.get_nowait()
+        # Assert
+        assert queue.empty()
+        assert item == "A"
 
-            # Assert
-            assert queue.empty()
-            assert item == "A"
+    @pytest.mark.asyncio
+    async def test_await_get(self):
+        # Arrange
+        queue = Queue()
+        queue.put_nowait("A")
 
-        self.loop.run_until_complete(run_test())
+        # Act
+        item = await queue.get()
 
-    def test_await_get(self):
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-
-        async def run_test():
-            # Arrange
-            queue = Queue()
-            queue.put_nowait("A")
-
-            # Act
-            item = await queue.get()
-
-            # Assert
-            assert queue.empty()
-            assert item == "A"
-
-        self.loop.run_until_complete(run_test())
+        # Assert
+        assert queue.empty()
+        assert item == "A"
 
     def test_peek_when_no_items_returns_none(self):
         # Arrange
@@ -153,9 +141,9 @@ class TestQueue:
 
         # Act
         # Assert
-        assert queue.peek() is None
+        assert queue.peek_back() is None
 
-    def test_peek_when_items_returns_expected_front_of_queue(self):
+    def test_peek_front_when_items_returns_expected_front_of_queue(self):
         # Arrange
         queue = Queue()
         queue.put_nowait("A")
@@ -164,7 +152,31 @@ class TestQueue:
 
         # Act
         # Assert
-        assert queue.peek() == "A"
+        assert queue.peek_front() == "A"
+
+    def test_peek_index_when_items_returns_expected_front_of_queue(self):
+        # Arrange
+        queue = Queue()
+        queue.put_nowait("A")
+        queue.put_nowait("B")
+        queue.put_nowait("C")
+
+        # Act
+        # Assert
+        assert queue.peek_index(-1) == "A"
+        assert queue.peek_index(1) == "B"
+        assert queue.peek_index(0) == "C"
+
+    def test_peek_back_when_items_returns_expected_front_of_queue(self):
+        # Arrange
+        queue = Queue()
+        queue.put_nowait("A")
+        queue.put_nowait("B")
+        queue.put_nowait("C")
+
+        # Act
+        # Assert
+        assert queue.peek_back() == "C"
 
     def test_as_list_when_no_items_returns_empty_list(self):
         # Arrange
@@ -187,6 +199,6 @@ class TestQueue:
         result = queue.to_list()
 
         # Assert
-        assert result == ["A", "B", "C"]
-        assert queue.get_nowait() == "A"  # <-- confirm copy
-        assert result == ["A", "B", "C"]
+        assert result == ["C", "B", "A"]
+        assert queue.get_nowait() == "A"
+        assert result == ["C", "B", "A"]  # <-- confirm was copy

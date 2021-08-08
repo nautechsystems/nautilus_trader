@@ -17,10 +17,11 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -53,19 +54,21 @@ class OrderbookImbalance(TradingStrategy):
         instrument : Instrument
             The instrument to trade
         max_trade_size : Decimal
-            The max position size per trade (volume on the level can be less)
-        trigger_min_size : float
-            The minimum size on the larger side to trigger an order
-        trigger_imbalance_ratio : float
-            The ratio of bid:ask volume required to trigger an order (smaller value / larger value) ie given a
-            trigger_imbalance_ratio=0.2, and a bid volume of 100, we will send a buy order if the ask volume is < 20).
+            The max position size per trade (volume on the level can be less).
         order_id_tag : str
-            The unique order identifier tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader identifier.
+            The unique order ID tag for the strategy. Must be unique
+            amongst all running strategies for a particular trader ID.
+        trigger_min_size : float
+            The minimum size on the larger side to trigger an order.
+        trigger_imbalance_ratio : float
+            The ratio of bid:ask volume required to trigger an order (smaller
+            value / larger value) ie given a trigger_imbalance_ratio=0.2, and a
+            bid volume of 100, we will send a buy order if the ask volume is <
+            20).
 
         """
         assert 0 < trigger_imbalance_ratio < 1
-        super().__init__(order_id_tag=order_id_tag)
+        super().__init__(order_id_tag=order_id_tag, oms_type=OMSType.NETTING)
         # self.instrument_filter = instrument_filter
         self.instrument = instrument
         self.max_trade_size = max_trade_size
@@ -87,9 +90,9 @@ class OrderbookImbalance(TradingStrategy):
             level=BookLevel.L2,
         )
 
-    def on_order_book_delta(self, delta: OrderBookDelta):
+    def on_order_book_delta(self, data: OrderBookData):
         """Actions to be performed when a delta is received."""
-        self._book.apply(delta)
+        self._book.apply(data)
         if self._book.spread():
             self.check_trigger()
 

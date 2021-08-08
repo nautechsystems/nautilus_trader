@@ -114,12 +114,12 @@ cdef class InstrumentProvider:
 
     cpdef Instrument find(self, InstrumentId instrument_id):
         """
-        Return the instrument for the given instrument identifier (if found).
+        Return the instrument for the given instrument ID (if found).
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The identifier for the instrument
+            The ID for the instrument
 
         Returns
         -------

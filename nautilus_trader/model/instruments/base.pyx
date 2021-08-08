@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
+import orjson
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
@@ -61,8 +61,8 @@ cdef class Instrument(Data):
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
         dict info=None,
     ):
         """
@@ -71,7 +71,7 @@ cdef class Instrument(Data):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the instrument.
+            The instrument ID for the instrument.
         asset_class : AssetClass
             The instrument asset class.
         asset_type : AssetType
@@ -112,10 +112,10 @@ cdef class Instrument(Data):
             The fee rate for liquidity makers as a percentage of order value.
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
         info : dict[str, object], optional
             The additional instrument information.
 
@@ -178,7 +178,7 @@ cdef class Instrument(Data):
         Condition.not_negative(margin_maint, "margin_maint")
         Condition.type(maker_fee, Decimal, "maker_fee")
         Condition.type(taker_fee, Decimal, "taker_fee")
-        super().__init__(ts_event_ns, ts_recv_ns)
+        super().__init__(ts_event, ts_init)
 
         self.id = instrument_id
         self.asset_class = asset_class
@@ -230,7 +230,7 @@ cdef class Instrument(Data):
                 f"info={self.info})")
 
     @staticmethod
-    cdef Instrument from_dict_c(dict values):
+    cdef Instrument base_from_dict_c(dict values):
         cdef str lot_s = values["lot_size"]
         cdef str max_q = values["max_quantity"]
         cdef str min_q = values["min_quantity"]
@@ -238,7 +238,7 @@ cdef class Instrument(Data):
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
-        cdef str info = values["info"]
+        cdef bytes info = values["info"]
         return Instrument(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             asset_class=AssetClassParser.from_str(values["asset_class"]),
@@ -261,13 +261,13 @@ cdef class Instrument(Data):
             margin_maint=Decimal(values["margin_maint"]),
             maker_fee=Decimal(values["maker_fee"]),
             taker_fee=Decimal(values["taker_fee"]),
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
-            info=json.loads(info) if info is not None else None,
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+            info=orjson.loads(info) if info is not None else None,
         )
 
     @staticmethod
-    cdef dict to_dict_c(Instrument obj):
+    cdef dict base_to_dict_c(Instrument obj):
         return {
             "type": "Instrument",
             "id": obj.id.value,
@@ -291,13 +291,13 @@ cdef class Instrument(Data):
             "margin_maint": str(obj.margin_maint),
             "maker_fee": str(obj.maker_fee),
             "taker_fee": str(obj.taker_fee),
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
-            "info": json.dumps(obj.info) if obj.info is not None else None,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
+            "info": orjson.dumps(obj.info) if obj.info is not None else None,
         }
 
     @staticmethod
-    def from_dict(dict values) -> Instrument:
+    def base_from_dict(dict values) -> Instrument:
         """
         Return an instrument from the given initialization values.
 
@@ -311,10 +311,10 @@ cdef class Instrument(Data):
         Instrument
 
         """
-        return Instrument.from_dict_c(values)
+        return Instrument.base_from_dict_c(values)
 
     @staticmethod
-    def to_dict(Instrument obj):
+    def base_to_dict(Instrument obj):
         """
         Return a dictionary representation of this object.
 
@@ -323,7 +323,7 @@ cdef class Instrument(Data):
         dict[str, object]
 
         """
-        return Instrument.to_dict_c(obj)
+        return Instrument.base_to_dict_c(obj)
 
     @property
     def symbol(self):
@@ -415,7 +415,7 @@ cdef class Instrument(Data):
     cpdef Money notional_value(
         self,
         Quantity quantity,
-        close_price: Decimal,
+        price: Decimal,
         bint inverse_as_quote=False,
     ):
         """
@@ -428,8 +428,8 @@ cdef class Instrument(Data):
         ----------
         quantity : Quantity
             The total quantity.
-        close_price : Decimal or Price
-            The closing price.
+        price : Decimal or Price
+            The price for the calculation.
         inverse_as_quote : bool
             If inverse instrument calculations use quote currency (instead of base).
 
@@ -439,16 +439,16 @@ cdef class Instrument(Data):
 
         """
         Condition.not_none(quantity, "quantity")
-        Condition.type(close_price, (Decimal, Price), "close_price")
+        Condition.type(price, (Decimal, Price), "price")
 
         if self.is_inverse:
             if inverse_as_quote:
                 # Quantity is notional
                 return Money(quantity, self.quote_currency)
-            notional_value: Decimal = quantity * self.multiplier * (1 / close_price)
+            notional_value: Decimal = quantity * self.multiplier * (1 / price)
             return Money(notional_value, self.base_currency)
         else:
-            notional_value: Decimal = quantity * self.multiplier * close_price
+            notional_value: Decimal = quantity * self.multiplier * price
             return Money(notional_value, self.quote_currency)
 
     cpdef Money calculate_initial_margin(
@@ -485,7 +485,7 @@ cdef class Instrument(Data):
 
         notional: Decimal = self.notional_value(
             quantity=quantity,
-            close_price=price.as_decimal(),
+            price=price.as_decimal(),
             inverse_as_quote=inverse_as_quote,
         ).as_decimal()
 
@@ -537,7 +537,7 @@ cdef class Instrument(Data):
 
         notional: Decimal = self.notional_value(
             quantity=quantity,
-            close_price=last.as_decimal(),
+            price=last.as_decimal(),
             inverse_as_quote=inverse_as_quote
         ).as_decimal()
 
@@ -592,7 +592,7 @@ cdef class Instrument(Data):
 
         notional: Decimal = self.notional_value(
             quantity=last_qty,
-            close_price=last_px,
+            price=last_px,
             inverse_as_quote=inverse_as_quote,
         ).as_decimal()
 
@@ -601,7 +601,7 @@ cdef class Instrument(Data):
         elif liquidity_side == LiquiditySide.TAKER:
             commission: Decimal = notional * self.taker_fee
         else:
-            raise RuntimeError(
+            raise ValueError(
                 f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
             )
 

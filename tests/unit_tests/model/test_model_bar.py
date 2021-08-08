@@ -15,9 +15,9 @@
 
 import pytest
 
-from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.bar import BarType
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -167,10 +167,7 @@ class TestBarType:
         # Assert
         assert isinstance(hash(bar_type), int)
         assert str(bar_type) == "AUD/USD.SIM-1-MINUTE-BID"
-        assert (
-            repr(bar_type)
-            == "BarType(AUD/USD.SIM-1-MINUTE-BID, internal_aggregation=True)"
-        )
+        assert repr(bar_type) == "BarType(AUD/USD.SIM-1-MINUTE-BID, internal_aggregation=True)"
 
     @pytest.mark.parametrize(
         "value",
@@ -324,14 +321,8 @@ class TestBar:
         # Act
         # Assert
         assert isinstance(hash(bar), int)
-        assert (
-            str(bar)
-            == "AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0"
-        )
-        assert (
-            repr(bar)
-            == "Bar(AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0)"
-        )
+        assert str(bar) == "AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0"
+        assert repr(bar) == "Bar(AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0)"
 
     def test_to_dict(self):
         # Arrange
@@ -358,8 +349,8 @@ class TestBar:
             "low": "1.00002",
             "close": "1.00003",
             "volume": "100000",
-            "ts_event_ns": 0,
-            "ts_recv_ns": 0,
+            "ts_event": 0,
+            "ts_init": 0,
         }
 
     def test_from_dict_returns_expected_bar(self):

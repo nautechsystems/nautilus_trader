@@ -20,7 +20,6 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
@@ -34,20 +33,17 @@ cdef class CacheDatabase:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, TraderId trader_id not None, Logger logger not None):
+    def __init__(self, Logger logger not None):
         """
         Initialize a new instance of the ``CacheDatabase`` class.
 
         Parameters
         ----------
-        trader_id : TraderId
-            The trader identifier to associate with the database.
         logger : Logger
             The logger for the database.
 
         """
-        self.trader_id = trader_id
-        self._log = LoggerAdapter(component=type(self).__name__, logger=logger)
+        self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
 
         self._log.info("Initialized.")
 
@@ -138,100 +134,3 @@ cdef class CacheDatabase:
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
-
-
-cdef class BypassCacheDatabase(CacheDatabase):
-    """
-    Provides a bypass cache database which does nothing.
-
-    """
-
-    def __init__(self, TraderId trader_id not None, Logger logger not None):
-        """
-        Initialize a new instance of the ``BypassCacheDatabase`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader identifier to associate with the database.
-        logger : Logger
-            The logger for the database.
-
-        """
-        super().__init__(trader_id, logger)
-
-    cpdef void flush(self) except *:
-        pass
-
-    cpdef dict load_currencies(self):
-        return {}
-
-    cpdef dict load_instruments(self):
-        return {}
-
-    cpdef dict load_accounts(self):
-        return {}
-
-    cpdef dict load_orders(self):
-        return {}
-
-    cpdef dict load_positions(self):
-        return {}
-
-    cpdef Currency load_currency(self, str code):
-        return None
-
-    cpdef Instrument load_instrument(self, InstrumentId instrument_id):
-        return None
-
-    cpdef Account load_account(self, AccountId account_id):
-        return None
-
-    cpdef Order load_order(self, ClientOrderId client_order_id):
-        return None
-
-    cpdef Position load_position(self, PositionId position_id):
-        return None
-
-    cpdef dict load_strategy(self, StrategyId strategy_id):
-        return {}
-
-    cpdef void delete_strategy(self, StrategyId strategy_id) except *:
-        # NO-OP
-        pass
-
-    cpdef void add_currency(self, Currency currency) except *:
-        # NO-OP
-        pass
-
-    cpdef void add_instrument(self, Instrument instrument) except *:
-        # NO-OP
-        pass
-
-    cpdef void add_account(self, Account account) except *:
-        # NO-OP
-        pass
-
-    cpdef void add_order(self, Order order) except *:
-        # NO-OP
-        pass
-
-    cpdef void add_position(self, Position position) except *:
-        # NO-OP
-        pass
-
-    cpdef void update_account(self, Account event) except *:
-        # NO-OP
-        pass
-
-    cpdef void update_order(self, Order order) except *:
-        # NO-OP
-        pass
-
-    cpdef void update_position(self, Position position) except *:
-        # NO-OP
-        pass
-
-    cpdef void update_strategy(self, TradingStrategy strategy) except *:
-        # NO-OP
-        pass

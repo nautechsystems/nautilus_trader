@@ -19,11 +19,11 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.serialization.base cimport _OBJECT_FROM_DICT_MAP
+from nautilus_trader.serialization.base cimport _OBJECT_TO_DICT_MAP
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
 from nautilus_trader.serialization.base cimport InstrumentSerializer
-from nautilus_trader.serialization.base cimport _OBJECT_FROM_DICT_MAP
-from nautilus_trader.serialization.base cimport _OBJECT_TO_DICT_MAP
 
 
 cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
@@ -50,7 +50,7 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
 
         delegate = _OBJECT_TO_DICT_MAP.get(type(instrument).__name__)
         if delegate is None:
-            raise RuntimeError("Cannot serialize instrument: unrecognized type")
+            raise RuntimeError("cannot serialize instrument: unrecognized type")
 
         return msgpack.packb(delegate(instrument))
 
@@ -79,7 +79,7 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
 
         delegate = _OBJECT_FROM_DICT_MAP.get(unpacked["type"])
         if delegate is None:
-            raise RuntimeError("Cannot deserialize instrument: unrecognized type")
+            raise RuntimeError("cannot deserialize instrument: unrecognized type")
 
         return delegate(unpacked)
 
@@ -113,7 +113,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         delegate = _OBJECT_TO_DICT_MAP.get(type(command).__name__)
         if delegate is None:
-            raise RuntimeError("Cannot serialize command: unrecognized type")
+            raise RuntimeError("cannot serialize command: unrecognized type")
 
         return msgpack.packb(delegate(command))
 
@@ -144,7 +144,7 @@ cdef class MsgPackCommandSerializer(CommandSerializer):
 
         delegate = _OBJECT_FROM_DICT_MAP.get(unpacked["type"])
         if delegate is None:
-            raise RuntimeError("Cannot deserialize command: unrecognized type")
+            raise RuntimeError("cannot deserialize command: unrecognized type")
 
         return delegate(unpacked)
 
@@ -178,7 +178,7 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         delegate = _OBJECT_TO_DICT_MAP.get(type(event).__name__)
         if delegate is None:
-            raise RuntimeError("Cannot serialize event: unrecognized type")
+            raise RuntimeError("cannot serialize event: unrecognized type")
 
         return msgpack.packb(delegate(event))
 
@@ -209,6 +209,6 @@ cdef class MsgPackEventSerializer(EventSerializer):
 
         delegate = _OBJECT_FROM_DICT_MAP.get(unpacked["type"])
         if delegate is None:
-            raise RuntimeError("Cannot deserialize command: unrecognized type")
+            raise RuntimeError("cannot deserialize command: unrecognized type")
 
         return delegate(unpacked)

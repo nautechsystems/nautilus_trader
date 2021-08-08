@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.indicators.average.hma import HullMovingAverage
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
@@ -27,14 +25,14 @@ from tests.test_kit.providers import TestInstrumentProvider
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
+class TestMovingAverageConvergenceDivergence:
     def test_simple_returns_expected_indicator(self):
         # Arrange
         # Act
         indicator = MovingAverageFactory.create(10, MovingAverageType.SIMPLE)
 
         # Assert
-        self.assertTrue(isinstance(indicator, SimpleMovingAverage))
+        assert isinstance(indicator, SimpleMovingAverage)
 
     def test_exponential_returns_expected_indicator(self):
         # Arrange
@@ -42,7 +40,7 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
         indicator = MovingAverageFactory.create(10, MovingAverageType.EXPONENTIAL)
 
         # Assert
-        self.assertTrue(isinstance(indicator, ExponentialMovingAverage))
+        assert isinstance(indicator, ExponentialMovingAverage)
 
     def test_hull_returns_expected_indicator(self):
         # Arrange
@@ -50,7 +48,7 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
         indicator = MovingAverageFactory.create(10, MovingAverageType.HULL)
 
         # Assert
-        self.assertTrue(isinstance(indicator, HullMovingAverage))
+        assert isinstance(indicator, HullMovingAverage)
 
     def test_weighted_returns_expected_indicator(self):
         # Arrange
@@ -58,4 +56,4 @@ class MovingAverageConvergenceDivergenceTests(unittest.TestCase):
         indicator = MovingAverageFactory.create(10, MovingAverageType.WEIGHTED)
 
         # Assert
-        self.assertTrue(isinstance(indicator, WeightedMovingAverage))
+        assert isinstance(indicator, WeightedMovingAverage)

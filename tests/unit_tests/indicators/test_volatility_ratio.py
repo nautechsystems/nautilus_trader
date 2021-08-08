@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import sys
-import unittest
+
+import pytest
 
 from nautilus_trader.indicators.volatility_ratio import VolatilityRatio
 from tests.test_kit.providers import TestInstrumentProvider
@@ -24,8 +25,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class VolatilityCompressionRatioTests(unittest.TestCase):
-    def setUp(self):
+class TestVolatilityCompressionRatio:
+    def setup(self):
         # Fixture Setup
         self.vcr = VolatilityRatio(10, 100)
 
@@ -33,20 +34,20 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("VolatilityRatio", self.vcr.name)
+        assert self.vcr.name == "VolatilityRatio"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("VolatilityRatio(10, 100, SIMPLE, True, 0.0)", str(self.vcr))
-        self.assertEqual("VolatilityRatio(10, 100, SIMPLE, True, 0.0)", repr(self.vcr))
+        assert str(self.vcr) == "VolatilityRatio(10, 100, SIMPLE, True, 0.0)"
+        assert repr(self.vcr) == "VolatilityRatio(10, 100, SIMPLE, True, 0.0)"
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.vcr.initialized)
+        assert self.vcr.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -55,7 +56,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
             self.vcr.update_raw(1.00000, 1.00000, 1.00000)
 
         # Assert
-        self.assertEqual(True, self.vcr.initialized)
+        assert self.vcr.initialized is True
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -67,14 +68,14 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.0, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.0
 
     def test_value_with_no_inputs_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(0, self.vcr.value)
+        assert self.vcr.value == 0
 
     def test_value_with_epsilon_inputs_returns_expected_value(self):
         # Arrange
@@ -83,7 +84,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0, self.vcr.value)
+        assert self.vcr.value == 0
 
     def test_value_with_one_ones_input_returns_expected_value(self):
         # Arrange
@@ -91,7 +92,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(0, self.vcr.value)
+        assert self.vcr.value == 0
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -99,7 +100,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.0, self.vcr.value)
+        assert self.vcr.value == 1.0
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
@@ -109,7 +110,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.0, self.vcr.value)
+        assert self.vcr.value == 1.0
 
     def test_value_with_close_on_high_returns_expected_value(self):
         # Arrange
@@ -126,7 +127,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
             self.vcr.update_raw(high, low, close)
 
         # Assert
-        self.assertEqual(0.9552015928322548, self.vcr.value, 2)
+        assert self.vcr.value == pytest.approx(0.9552015928322548, 2)
 
     def test_value_with_close_on_low_returns_expected_value(self):
         # Arrange
@@ -143,7 +144,7 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
             self.vcr.update_raw(high, low, close)
 
         # Assert
-        self.assertEqual(0.9547511312217188, self.vcr.value)
+        assert self.vcr.value == 0.9547511312217188
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -154,5 +155,5 @@ class VolatilityCompressionRatioTests(unittest.TestCase):
         self.vcr.reset()
 
         # Assert
-        self.assertFalse(self.vcr.initialized)
-        self.assertEqual(0, self.vcr.value)
+        assert not self.vcr.initialized
+        assert self.vcr.value == 0

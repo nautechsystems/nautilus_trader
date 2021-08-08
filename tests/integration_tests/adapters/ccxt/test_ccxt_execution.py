@@ -15,8 +15,9 @@
 
 import asyncio
 import json
-import unittest
 from unittest.mock import MagicMock
+
+import pytest
 
 from nautilus_trader.adapters.ccxt.execution import CCXTExecutionClient
 from nautilus_trader.common.clock import LiveClock
@@ -27,8 +28,8 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.stubs import TestStubs
@@ -51,17 +52,17 @@ async def async_magic():
     return
 
 
-class CCXTExecutionClientTests(unittest.TestCase):
-    def setUp(self):
+class TestCCXTExecutionClient:
+    def setup(self):
         # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
+
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER-001")
-        self.account_id = AccountId(BINANCE.value, "001")
 
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
+        self.trader_id = TestStubs.trader_id()
+        self.account_id = AccountId(BINANCE.value, "001")
 
         # Setup logging
         self.logger = LiveLogger(
@@ -69,9 +70,16 @@ class CCXTExecutionClientTests(unittest.TestCase):
             clock=self.clock,
         )
 
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -79,7 +87,7 @@ class CCXTExecutionClientTests(unittest.TestCase):
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -111,105 +119,90 @@ class CCXTExecutionClientTests(unittest.TestCase):
         self.mock_ccxt.watch_balance = watch_balance
 
         self.client = CCXTExecutionClient(
+            loop=self.loop,
             client=self.mock_ccxt,
             account_id=self.account_id,
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency account
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.exec_engine.register_client(self.client)
 
-    def tearDown(self):
-        self.loop.stop()
-        self.loop.close()
+    @pytest.mark.asyncio
+    async def test_connect(self):
+        # Arrange
+        # Act
+        self.exec_engine.start()  # Also connects clients
+        await asyncio.sleep(0.3)  # Allow engine message queue to start
 
-    def test_connect(self):
-        async def run_test():
-            # Arrange
-            # Act
-            self.exec_engine.start()  # Also connects clients
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
+        # Assert
+        assert self.client.is_connected
 
-            # Assert
-            self.assertTrue(self.client.is_connected)
+        # Tear down
+        self.exec_engine.stop()
+        await self.exec_engine.get_run_queue_task()
 
-            # Tear down
-            self.exec_engine.stop()
-            await self.exec_engine.get_run_queue_task()
+    @pytest.mark.asyncio
+    async def test_disconnect(self):
+        # Arrange
+        self.exec_engine.start()
+        await asyncio.sleep(0.3)  # Allow engine message queue to start
 
-        self.loop.run_until_complete(run_test())
+        # Act
+        self.exec_engine.stop()
+        await self.exec_engine.get_run_queue_task()
+        await asyncio.sleep(0.3)
 
-    def test_disconnect(self):
-        async def run_test():
-            # Arrange
-            self.exec_engine.start()
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
+        # Assert
+        assert not self.client.is_connected
 
-            # Act
-            self.client.disconnect()
-            await asyncio.sleep(0.3)
+    @pytest.mark.asyncio
+    async def test_reset_when_not_connected_successfully_resets(self):
+        # Arrange
+        self.exec_engine.start()
+        await asyncio.sleep(0.3)  # Allow engine message queue to start
 
-            # Assert
-            self.assertFalse(self.client.is_connected)
+        self.exec_engine.stop()
+        await asyncio.sleep(0.3)  # Allow engine message queue to stop
 
-            # Tear down
-            self.exec_engine.stop()
-            await self.exec_engine.get_run_queue_task()
+        # Act
+        self.client.reset()
 
-        self.loop.run_until_complete(run_test())
+        # Assert
+        assert not self.client.is_connected
 
-    def test_reset_when_not_connected_successfully_resets(self):
-        async def run_test():
-            # Arrange
-            self.exec_engine.start()
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
+    @pytest.mark.asyncio
+    async def test_reset_when_connected_does_not_reset(self):
+        # Arrange
+        self.exec_engine.start()
+        await asyncio.sleep(0.3)  # Allow engine message queue to start
 
-            self.exec_engine.stop()
-            await asyncio.sleep(0.3)  # Allow engine message queue to stop
+        # Act
+        self.client.reset()
 
-            # Act
-            self.client.reset()
+        # Assert
+        assert self.client.is_connected
 
-            # Assert
-            self.assertFalse(self.client.is_connected)
+        # Tear Down
+        self.exec_engine.stop()
+        await self.exec_engine.get_run_queue_task()
 
-        self.loop.run_until_complete(run_test())
+    @pytest.mark.asyncio
+    async def test_dispose_when_not_connected_does_not_dispose(self):
+        # Arrange
+        self.exec_engine.start()
+        await asyncio.sleep(0.3)  # Allow engine message queue to start
 
-    def test_reset_when_connected_does_not_reset(self):
-        async def run_test():
-            # Arrange
-            self.exec_engine.start()
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
+        # Act
+        self.client.dispose()
 
-            # Act
-            self.client.reset()
+        # Assert
+        assert self.client.is_connected
 
-            # Assert
-            self.assertTrue(self.client.is_connected)
-
-            # Tear Down
-            self.exec_engine.stop()
-            await self.exec_engine.get_run_queue_task()
-
-        self.loop.run_until_complete(run_test())
-
-    def test_dispose_when_not_connected_does_not_dispose(self):
-        async def run_test():
-            # Arrange
-            self.exec_engine.start()
-            await asyncio.sleep(0.3)  # Allow engine message queue to start
-
-            # Act
-            self.client.dispose()
-
-            # Assert
-            self.assertTrue(self.client.is_connected)
-
-            # Tear Down
-            self.exec_engine.stop()
-            await self.exec_engine.get_run_queue_task()
-
-        self.loop.run_until_complete(run_test())
+        # Tear Down
+        self.exec_engine.stop()
+        await self.exec_engine.get_run_queue_task()

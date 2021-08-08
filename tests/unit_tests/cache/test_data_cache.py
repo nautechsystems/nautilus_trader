@@ -14,14 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import unittest
 
-from parameterized import parameterized
+import pytest
 
-from nautilus_trader.model.bar import Bar
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import PriceType
@@ -29,9 +30,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -42,8 +41,8 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-class CacheTests(unittest.TestCase):
-    def setUp(self):
+class TestCache:
+    def setup(self):
         # Fixture Setup
         self.cache = TestStubs.cache()
 
@@ -53,106 +52,106 @@ class CacheTests(unittest.TestCase):
         self.cache.reset()
 
         # Assert
-        self.assertEqual([], self.cache.instruments())
-        self.assertEqual([], self.cache.quote_ticks(AUDUSD_SIM.id))
-        self.assertEqual([], self.cache.trade_ticks(AUDUSD_SIM.id))
-        self.assertEqual([], self.cache.bars(TestStubs.bartype_gbpusd_1sec_mid()))
+        assert self.cache.instruments() == []
+        assert self.cache.quote_ticks(AUDUSD_SIM.id) == []
+        assert self.cache.trade_ticks(AUDUSD_SIM.id) == []
+        assert self.cache.bars(TestStubs.bartype_gbpusd_1sec_mid()) == []
 
     def test_instrument_ids_when_no_instruments_returns_empty_list(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual([], self.cache.instrument_ids())
+        assert self.cache.instrument_ids() == []
 
     def test_instruments_when_no_instruments_returns_empty_list(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual([], self.cache.instruments())
+        assert self.cache.instruments() == []
 
     def test_quote_ticks_for_unknown_instrument_returns_empty_list(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual([], self.cache.quote_ticks(AUDUSD_SIM.id))
+        assert self.cache.quote_ticks(AUDUSD_SIM.id) == []
 
     def test_trade_ticks_for_unknown_instrument_returns_empty_list(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual([], self.cache.trade_ticks(AUDUSD_SIM.id))
+        assert self.cache.trade_ticks(AUDUSD_SIM.id) == []
 
     def test_bars_for_unknown_bar_type_returns_empty_list(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual([], self.cache.bars(TestStubs.bartype_gbpusd_1sec_mid()))
+        assert self.cache.bars(TestStubs.bartype_gbpusd_1sec_mid()) == []
 
     def test_instrument_when_no_instruments_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.cache.instrument(AUDUSD_SIM.id))
+        assert self.cache.instrument(AUDUSD_SIM.id) is None
 
     def test_order_book_for_unknown_instrument_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.cache.order_book(AUDUSD_SIM.id))
+        assert self.cache.order_book(AUDUSD_SIM.id) is None
 
     def test_quote_tick_when_no_ticks_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.cache.quote_tick(AUDUSD_SIM.id))
+        assert self.cache.quote_tick(AUDUSD_SIM.id) is None
 
     def test_trade_tick_when_no_ticks_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.cache.trade_tick(AUDUSD_SIM.id))
+        assert self.cache.trade_tick(AUDUSD_SIM.id) is None
 
     def test_bar_when_no_bars_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.cache.bar(TestStubs.bartype_gbpusd_1sec_mid()))
+        assert self.cache.bar(TestStubs.bartype_gbpusd_1sec_mid()) is None
 
     def test_quote_tick_count_for_unknown_instrument_returns_zero(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(0, self.cache.quote_tick_count(AUDUSD_SIM.id))
+        assert self.cache.quote_tick_count(AUDUSD_SIM.id) == 0
 
     def test_trade_tick_count_for_unknown_instrument_returns_zero(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(0, self.cache.trade_tick_count(AUDUSD_SIM.id))
+        assert self.cache.trade_tick_count(AUDUSD_SIM.id) == 0
 
     def test_has_order_book_for_unknown_instrument_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.cache.has_order_book(AUDUSD_SIM.id))
+        assert not self.cache.has_order_book(AUDUSD_SIM.id)
 
     def test_has_quote_ticks_for_unknown_instrument_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.cache.has_quote_ticks(AUDUSD_SIM.id))
+        assert not self.cache.has_quote_ticks(AUDUSD_SIM.id)
 
     def test_has_trade_ticks_for_unknown_instrument_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.cache.has_trade_ticks(AUDUSD_SIM.id))
+        assert not self.cache.has_trade_ticks(AUDUSD_SIM.id)
 
     def test_has_bars_for_unknown_bar_type_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertFalse(self.cache.has_bars(TestStubs.bartype_gbpusd_1sec_mid()))
+        assert not self.cache.has_bars(TestStubs.bartype_gbpusd_1sec_mid())
 
     def test_instrument_ids_when_one_instrument_returns_expected_list(self):
         # Arrange
@@ -164,7 +163,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.instrument_ids()
 
         # Assert
-        self.assertEqual([instrument.id], result)
+        assert result == [instrument.id]
 
     def test_instrument_ids_given_same_venue_returns_expected_list(self):
         # Arrange
@@ -176,7 +175,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.instrument_ids(venue=instrument.venue)
 
         # Assert
-        self.assertEqual([instrument.id], result)
+        assert result == [instrument.id]
 
     def test_instrument_ids_given_different_venue_returns_empty_list(self):
         # Arrange
@@ -188,7 +187,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.instrument_ids(venue=SIM)
 
         # Assert
-        self.assertEqual([], result)
+        assert result == []
 
     def test_instruments_when_one_instrument_returns_expected_list(self):
         # Arrange
@@ -200,7 +199,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.instruments()
 
         # Assert
-        self.assertEqual([instrument], result)
+        assert result == [instrument]
 
     def test_instruments_given_same_venue_returns_expected_list(self):
         # Arrange
@@ -212,7 +211,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.instruments(venue=instrument.venue)
 
         # Assert
-        self.assertEqual([instrument], result)
+        assert result == [instrument]
 
     def test_instruments_given_different_venue_returns_empty_list(self):
         # Arrange
@@ -224,7 +223,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.instruments(venue=SIM)
 
         # Assert
-        self.assertEqual([], result)
+        assert result == []
 
     def test_quote_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
@@ -244,7 +243,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.quote_ticks(tick.instrument_id)
 
         # Assert
-        self.assertEqual([tick], result)
+        assert result == [tick]
 
     def test_add_quote_ticks_when_already_ticks_does_not_add(self):
         # Arrange
@@ -265,7 +264,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.quote_ticks(tick.instrument_id)
 
         # Assert
-        self.assertEqual([tick], result)
+        assert result == [tick]
 
     def test_trade_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
@@ -285,7 +284,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.trade_ticks(tick.instrument_id)
 
         # Assert
-        self.assertEqual([tick], result)
+        assert result == [tick]
 
     def test_add_trade_ticks_when_already_ticks_does_not_add(self):
         # Arrange
@@ -306,13 +305,13 @@ class CacheTests(unittest.TestCase):
         result = self.cache.trade_ticks(tick.instrument_id)
 
         # Assert
-        self.assertEqual([tick], result)
+        assert result == [tick]
 
     def test_bars_when_one_bar_returns_expected_list(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
-            TestStubs.bartype_audusd_1min_bid(),
+            bar_type,
             Price.from_str("1.00001"),
             Price.from_str("1.00004"),
             Price.from_str("1.00002"),
@@ -328,13 +327,13 @@ class CacheTests(unittest.TestCase):
         result = self.cache.bars(bar_type)
 
         # Assert
-        self.assertTrue([bar], result)
+        assert result == [bar]
 
     def test_add_bars_when_already_bars_does_not_add(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
         bar = Bar(
-            TestStubs.bartype_audusd_1min_bid(),
+            bar_type,
             Price.from_str("1.00001"),
             Price.from_str("1.00004"),
             Price.from_str("1.00002"),
@@ -351,7 +350,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.bars(bar_type)
 
         # Assert
-        self.assertTrue([bar], result)
+        assert result == [bar]
 
     def test_instrument_when_no_instrument_returns_none(self):
         # Arrange
@@ -359,7 +358,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.instrument(AUDUSD_SIM.id)
 
         # Assert
-        self.assertIsNone(result)
+        assert result is None
 
     def test_instrument_when_instrument_exists_returns_expected(self):
         # Arrange
@@ -369,7 +368,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.instrument(AUDUSD_SIM.id)
 
         # Assert
-        self.assertEqual(AUDUSD_SIM, result)
+        assert result == AUDUSD_SIM
 
     def test_order_book_when_order_book_exists_returns_expected(self):
         # Arrange
@@ -378,8 +377,8 @@ class CacheTests(unittest.TestCase):
             level=BookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         order_book = L2OrderBook(
@@ -395,14 +394,14 @@ class CacheTests(unittest.TestCase):
         result = self.cache.order_book(ETHUSDT_BINANCE.id)
 
         # Assert
-        self.assertEqual(order_book, result)
+        assert result == order_book
 
     def test_price_when_no_ticks_returns_none(self):
         # Act
         result = self.cache.price(AUDUSD_SIM.id, PriceType.LAST)
 
         # Assert
-        self.assertIsNone(result)
+        assert result is None
 
     def test_price_given_last_when_no_trade_ticks_returns_none(self):
         # Act
@@ -421,7 +420,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.price(AUDUSD_SIM.id, PriceType.LAST)
 
         # Assert
-        self.assertIsNone(result)
+        assert result is None
 
     def test_price_given_quote_price_type_when_no_quote_ticks_returns_none(self):
         # Arrange
@@ -441,7 +440,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.price(AUDUSD_SIM.id, PriceType.MID)
 
         # Assert
-        self.assertIsNone(result)
+        assert result is None
 
     def test_price_given_last_when_trade_tick_returns_expected_price(self):
         # Arrange
@@ -461,14 +460,15 @@ class CacheTests(unittest.TestCase):
         result = self.cache.price(AUDUSD_SIM.id, PriceType.LAST)
 
         # Assert
-        self.assertEqual(Price.from_str("1.00000"), result)
+        assert result == Price.from_str("1.00000")
 
-    @parameterized.expand(
+    @pytest.mark.parametrize(
+        "price_type,expected",
         [
             [PriceType.BID, Price.from_str("1.00000")],
             [PriceType.ASK, Price.from_str("1.00001")],
             [PriceType.MID, Price.from_str("1.000005")],
-        ]
+        ],
     )
     def test_price_given_various_quote_price_types_when_quote_tick_returns_expected_price(
         self, price_type, expected
@@ -490,7 +490,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.price(AUDUSD_SIM.id, price_type)
 
         # Assert
-        self.assertEqual(expected, result)
+        assert result == expected
 
     def test_quote_tick_when_index_out_of_range_returns_none(self):
         # Arrange
@@ -510,8 +510,8 @@ class CacheTests(unittest.TestCase):
         result = self.cache.quote_tick(AUDUSD_SIM.id, index=1)
 
         # Assert
-        self.assertEqual(1, self.cache.quote_tick_count(AUDUSD_SIM.id))
-        self.assertIsNone(result)
+        assert self.cache.quote_tick_count(AUDUSD_SIM.id) == 1
+        assert result is None
 
     def test_quote_tick_with_two_ticks_returns_expected_tick(self):
         # Arrange
@@ -542,8 +542,8 @@ class CacheTests(unittest.TestCase):
         result = self.cache.quote_tick(AUDUSD_SIM.id, index=0)
 
         # Assert
-        self.assertEqual(2, self.cache.quote_tick_count(AUDUSD_SIM.id))
-        self.assertEqual(tick2, result)
+        assert self.cache.quote_tick_count(AUDUSD_SIM.id) == 2
+        assert result == tick2
 
     def test_trade_tick_when_index_out_of_range_returns_none(self):
         # Arrange
@@ -563,8 +563,8 @@ class CacheTests(unittest.TestCase):
         result = self.cache.trade_tick(AUDUSD_SIM.id, index=1)
 
         # Assert
-        self.assertEqual(1, self.cache.trade_tick_count(AUDUSD_SIM.id))
-        self.assertIsNone(result)
+        assert self.cache.trade_tick_count(AUDUSD_SIM.id) == 1
+        assert result is None
 
     def test_trade_tick_with_one_tick_returns_expected_tick(self):
         # Arrange
@@ -595,8 +595,8 @@ class CacheTests(unittest.TestCase):
         result = self.cache.trade_tick(AUDUSD_SIM.id, index=0)
 
         # Assert
-        self.assertEqual(2, self.cache.trade_tick_count(AUDUSD_SIM.id))
-        self.assertEqual(tick2, result)
+        assert self.cache.trade_tick_count(AUDUSD_SIM.id) == 2
+        assert result == tick2
 
     def test_bar_index_out_of_range_returns_expected_bar(self):
         # Arrange
@@ -618,8 +618,8 @@ class CacheTests(unittest.TestCase):
         result = self.cache.bar(bar_type, index=1)
 
         # Assert
-        self.assertEqual(1, self.cache.bar_count(bar_type))
-        self.assertIsNone(result)
+        assert self.cache.bar_count(bar_type) == 1
+        assert result is None
 
     def test_bar_with_two_bars_returns_expected_bar(self):
         # Arrange
@@ -653,8 +653,8 @@ class CacheTests(unittest.TestCase):
         result = self.cache.bar(bar_type, index=0)
 
         # Assert
-        self.assertEqual(2, self.cache.bar_count(bar_type))
-        self.assertEqual(bar2, result)
+        assert self.cache.bar_count(bar_type) == 2
+        assert result == bar2
 
     def test_get_xrate_returns_correct_rate(self):
         # Arrange
@@ -676,7 +676,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.get_xrate(SIM, JPY, USD)
 
         # Assert
-        self.assertEqual(Decimal("0.009025266685348968705339031887"), result)
+        assert result == Decimal("0.009025266685348968705339031887")
 
     def test_get_xrate_with_no_conversion_returns_one(self):
         # Arrange
@@ -684,7 +684,7 @@ class CacheTests(unittest.TestCase):
         result = self.cache.get_xrate(SIM, AUD, AUD)
 
         # Assert
-        self.assertEqual(Decimal("1"), result)
+        assert result == Decimal("1")
 
     def test_get_xrate_with_conversion(self):
         # Arrange
@@ -706,4 +706,4 @@ class CacheTests(unittest.TestCase):
         result = self.cache.get_xrate(SIM, AUD, USD)
 
         # Assert
-        self.assertEqual(Decimal("0.80005"), result)
+        assert result == Decimal("0.80005")

@@ -14,9 +14,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 import os
 import sys
+from decimal import Decimal
 
 
 sys.path.insert(
@@ -28,7 +28,7 @@ from examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrai
 from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -45,7 +45,7 @@ config = {
     },
     "system": {
         "loop_debug": False,  # If event loop debug mode
-        "timeout_connection": 10.0,  # Timeout for all engines client to connect and initialize
+        "timeout_connection": 10.0,  # Timeout for all clients to connect and initialize
         "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
         "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
         "timeout_disconnection": 5.0,  # Timeout for all engine clients to disconnect
@@ -134,8 +134,12 @@ strategy2 = EMACrossStopEntryTrail(
 )
 
 # ------------------------------------------------------------------------------
-# Instantiate the node passing a list of strategies and configuration
-node = TradingNode(strategies=[strategy1, strategy2], config=config)
+
+# Instantiate the node with a configuration
+node = TradingNode(config=config)  # type: ignore
+
+# Add your strategies and modules
+node.trader.add_strategies(strategies=[strategy1, strategy2])
 
 # Register your client factories with the node (can take user defined factories)
 node.add_data_client_factory("CCXT", CCXTDataClientFactory)

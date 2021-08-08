@@ -25,10 +25,11 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     cdef dict _cache
     cdef set _searched_filters
     cdef str _account_currency
+    cdef set _missing_instruments
 
     cdef readonly venue
 
-    cdef void _load_instruments(self, market_filter=*) except *
+    cdef void _load_instruments(self, dict market_filter=*) except *
     cpdef void _assert_loaded_instruments(self) except *
     cpdef list search_markets(self, dict market_filter=*)
     cpdef list search_instruments(self, dict instrument_filter=*, bint load=*)

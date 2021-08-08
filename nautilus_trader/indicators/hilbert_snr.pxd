@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.data.bar cimport Bar
 
 
 cdef class HilbertSignalNoiseRatio(Indicator):

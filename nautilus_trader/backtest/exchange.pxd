@@ -27,29 +27,30 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
-from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport SubmitBracketOrder
-from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.model.orderbook.book cimport OrderBookData
+from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
-from nautilus_trader.model.tick cimport Tick
 from nautilus_trader.trading.account cimport Account
 
 
@@ -59,7 +60,7 @@ cdef class SimulatedExchange:
     cdef LoggerAdapter _log
 
     cdef readonly Venue id
-    """The exchange identifier.\n\n:returns: `Venue`"""
+    """The exchange ID.\n\n:returns: `Venue`"""
     cdef readonly VenueType venue_type
     """The venues type.\n\n:returns: `VenueType`"""
     cdef readonly OMSType oms_type
@@ -127,7 +128,7 @@ cdef class SimulatedExchange:
 
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
-    cdef PositionId _generate_position_id(self, InstrumentId instrument_id)
+    cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id)
     cdef VenueOrderId _generate_venue_order_id(self, InstrumentId instrument_id)
     cdef ExecutionId _generate_execution_id(self)
 
@@ -144,8 +145,24 @@ cdef class SimulatedExchange:
     cdef void _generate_order_accepted(self, Order order) except *
     cdef void _generate_order_pending_replace(self, Order order) except *
     cdef void _generate_order_pending_cancel(self, Order order) except *
-    cdef void _generate_order_update_rejected(self, ClientOrderId client_order_id, str response, str reason) except *
-    cdef void _generate_order_cancel_rejected(self, ClientOrderId client_order_id, str response, str reason) except *
+    cdef void _generate_order_update_rejected(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        str response,
+        str reason,
+    ) except *
+    cdef void _generate_order_cancel_rejected(
+        self,
+        StrategyId strategy_id,
+        InstrumentId instrument_id,
+        ClientOrderId client_order_id,
+        VenueOrderId venue_order_id,
+        str response,
+        str reason,
+    ) except *
     cdef void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *
     cdef void _generate_order_canceled(self, PassiveOrder order) except *
     cdef void _generate_order_triggered(self, StopLimitOrder order) except *

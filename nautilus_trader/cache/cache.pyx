@@ -25,10 +25,13 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.core.time cimport unix_timestamp_us
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -39,8 +42,6 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -53,7 +54,7 @@ cdef class Cache(CacheFacade):
 
     def __init__(
         self,
-        CacheDatabase database not None,
+        CacheDatabase database,  # Can be None
         Logger logger not None,
         dict config=None,
     ):
@@ -62,8 +63,8 @@ cdef class Cache(CacheFacade):
 
         Parameters
         ----------
-        database : CacheDatabase
-            The database for the cache.
+        database : CacheDatabase, optional
+            The database for the cache. If None then will bypass persistence.
         logger : Logger
             The logger for the cache.
         config : dict[str, object], optional
@@ -80,10 +81,8 @@ cdef class Cache(CacheFacade):
         if config is None:
             config = {}
 
-        self.trader_id = database.trader_id
-
         self._database = database
-        self._log = LoggerAdapter(component=type(self).__name__, logger=logger)
+        self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
         self._xrate_calculator = ExchangeRateCalculator()
 
         # Cache deque capacities (per instrument_id)
@@ -93,16 +92,16 @@ cdef class Cache(CacheFacade):
         Condition.positive_int(self.bar_capacity, "bar_capacity")
 
         # Caches
-        self._xrate_symbols = {}  # type: dict[InstrumentId, str]
-        self._quote_ticks = {}    # type: dict[InstrumentId, deque[QuoteTick]]
-        self._trade_ticks = {}    # type: dict[InstrumentId, deque[TradeTick]]
-        self._order_books = {}    # type: dict[InstrumentId, OrderBook]
-        self._bars = {}           # type: dict[BarType, deque[Bar]]
-        self._currencies = {}     # type: dict[str, Currency]
-        self._instruments = {}    # type: dict[InstrumentId, Instrument]
-        self._accounts = {}       # type: dict[AccountId, Account]
-        self._orders = {}         # type: dict[ClientOrderId, Order]
-        self._positions = {}      # type: dict[PositionId, Position]
+        self._xrate_symbols = {}               # type: dict[InstrumentId, str]
+        self._quote_ticks = {}                 # type: dict[InstrumentId, deque[QuoteTick]]
+        self._trade_ticks = {}                 # type: dict[InstrumentId, deque[TradeTick]]
+        self._order_books = {}                 # type: dict[InstrumentId, OrderBook]
+        self._bars = {}                        # type: dict[BarType, deque[Bar]]
+        self._currencies = {}                  # type: dict[str, Currency]
+        self._instruments = {}                 # type: dict[InstrumentId, Instrument]
+        self._accounts = {}                    # type: dict[AccountId, Account]
+        self._orders = {}                      # type: dict[ClientOrderId, Order]
+        self._positions = {}                   # type: dict[PositionId, Position]
 
         # Cache index
         self._index_venue_account = {}         # type: dict[Venue, AccountId]
@@ -118,6 +117,7 @@ cdef class Cache(CacheFacade):
         self._index_strategy_orders = {}       # type: dict[StrategyId, set[ClientOrderId]]
         self._index_strategy_positions = {}    # type: dict[StrategyId, set[PositionId]]
         self._index_orders = set()             # type: set[ClientOrderId]
+        self._index_orders_inflight = set()    # type: set[ClientOrderId]
         self._index_orders_working = set()     # type: set[ClientOrderId]
         self._index_orders_completed = set()   # type: set[ClientOrderId]
         self._index_positions = set()          # type: set[PositionId]
@@ -136,7 +136,10 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading accounts from database...")
 
-        self._currencies = self._database.load_currencies()
+        if self._database is not None:
+            self._currencies = self._database.load_currencies()
+        else:
+            self._currencies = {}
 
         # Register currencies in internal `_CURRENCY_MAP`.
         cdef Currency currency
@@ -156,7 +159,10 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading instruments from database...")
 
-        self._instruments = self._database.load_instruments()
+        if self._database is not None:
+            self._instruments = self._database.load_instruments()
+        else:
+            self._instruments = {}
 
         cdef int count = len(self._instruments)
         self._log.info(
@@ -171,7 +177,10 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading accounts from database...")
 
-        self._accounts = self._database.load_accounts()
+        if self._database is not None:
+            self._accounts = self._database.load_accounts()
+        else:
+            self._accounts = {}
 
         cdef int count = len(self._accounts)
         self._log.info(
@@ -186,7 +195,10 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading orders from database...")
 
-        self._orders = self._database.load_orders()
+        if self._database is not None:
+            self._orders = self._database.load_orders()
+        else:
+            self._orders = {}
 
         cdef int count = len(self._orders)
         self._log.info(
@@ -201,7 +213,10 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug(f"Loading positions from database...")
 
-        self._positions = self._database.load_positions()
+        if self._database is not None:
+            self._positions = self._database.load_positions()
+        else:
+            self._positions = {}
 
         cdef int count = len(self._positions)
         self._log.info(
@@ -226,7 +241,7 @@ cdef class Cache(CacheFacade):
 
     cpdef bint check_integrity(self) except *:
         """
-        Check integrity of data within the cache and clients.
+        Check integrity of data within the cache.
 
         All data should be loaded from the database prior to this call. If an
         error is found then a log error message will also be produced.
@@ -274,6 +289,12 @@ cdef class Cache(CacheFacade):
                 self._log.error(
                     f"{failure} in _cached_orders: "
                     f"{repr(client_order_id)} not found in self._index_orders"
+                )
+                error_count += 1
+            if order.is_inflight_c() and client_order_id not in self._index_orders_inflight:
+                self._log.error(
+                    f"{failure} in _cached_orders: "
+                    f"{repr(client_order_id)} not found in self._index_orders_inflight"
                 )
                 error_count += 1
             if order.is_working_c() and client_order_id not in self._index_orders_working:
@@ -414,6 +435,14 @@ cdef class Cache(CacheFacade):
                 )
                 error_count += 1
 
+        for client_order_id in self._index_orders_inflight:
+            if client_order_id not in self._orders:
+                self._log.error(
+                    f"{failure} in _index_orders_inflight: "
+                    f"{repr(client_order_id)} not found in self._cached_orders"
+                )
+                error_count += 1
+
         for client_order_id in self._index_orders_working:
             if client_order_id not in self._orders:
                 self._log.error(
@@ -507,7 +536,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void clear_cache(self) except *:
         """
-        Clear the account, orders and positions caches.
+        Clear the cache.
 
         Warnings
         --------
@@ -540,6 +569,7 @@ cdef class Cache(CacheFacade):
         self._index_strategy_orders.clear()
         self._index_strategy_positions.clear()
         self._index_orders.clear()
+        self._index_orders_inflight.clear()
         self._index_orders_working.clear()
         self._index_orders_completed.clear()
         self._index_positions.clear()
@@ -569,7 +599,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void flush_db(self) except *:
         """
-        Flush the execution database which permanently removes all persisted data.
+        Flush the caches database which permanently removes all persisted data.
 
         Warnings
         --------
@@ -578,7 +608,8 @@ cdef class Cache(CacheFacade):
         """
         self._log.debug("Flushing execution database...")
 
-        self._database.flush()
+        if self._database is not None:
+            self._database.flush()
 
         self._log.info("Execution database flushed.")
 
@@ -601,16 +632,15 @@ cdef class Cache(CacheFacade):
             self._index_venue_orders[order.instrument_id.venue].add(client_order_id)
 
             # 2: Build _index_order_ids -> {VenueOrderId, ClientOrderId}
-            if order.venue_order_id.not_null():
+            if order.venue_order_id is not None:
                 self._index_order_ids[order.venue_order_id] = order.client_order_id
 
             # 3: Build _index_order_position -> {ClientOrderId, PositionId}
-            if order.position_id.not_null():
+            if order.position_id is not None:
                 self._index_order_position[client_order_id] = order.position_id
 
             # 4: Build _index_order_strategy -> {ClientOrderId, StrategyId}
-            if order.strategy_id.not_null():
-                self._index_order_strategy[client_order_id] = order.strategy_id
+            self._index_order_strategy[client_order_id] = order.strategy_id
 
             # 5: Build _index_instrument_orders -> {InstrumentId, {ClientOrderId}}
             if order.instrument_id not in self._index_instrument_orders:
@@ -625,15 +655,19 @@ cdef class Cache(CacheFacade):
             # 7: Build _index_orders -> {ClientOrderId}
             self._index_orders.add(client_order_id)
 
-            # 8: Build _index_orders_working -> {ClientOrderId}
+            # 8: Build _index_orders_inflight -> {ClientOrderId}
+            if order.is_inflight_c():
+                self._index_orders_inflight.add(client_order_id)
+
+            # 9: Build _index_orders_working -> {ClientOrderId}
             if order.is_working_c():
                 self._index_orders_working.add(client_order_id)
 
-            # 9: Build _index_orders_completed -> {ClientOrderId}
+            # 10: Build _index_orders_completed -> {ClientOrderId}
             if order.is_completed_c():
                 self._index_orders_completed.add(client_order_id)
 
-            # 10: Build _index_strategies -> {StrategyId}
+            # 11: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(order.strategy_id)
 
     cdef void _build_indexes_from_positions(self) except *:
@@ -663,7 +697,7 @@ cdef class Cache(CacheFacade):
             self._index_instrument_positions[position.instrument_id].add(position_id)
 
             # 5: Build _index_strategy_positions -> {StrategyId, {PositionId}}
-            if position.strategy_id.not_null() and position.strategy_id not in self._index_strategy_positions:
+            if position.strategy_id is not None and position.strategy_id not in self._index_strategy_positions:
                 self._index_strategy_positions[position.strategy_id] = set()
             self._index_strategy_positions[position.strategy_id].add(position.id)
 
@@ -682,7 +716,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void load_strategy(self, TradingStrategy strategy) except *:
         """
-        Load the state dictionary for the given strategy from the execution cache.
+        Load the state dictionary for the given strategy.
 
         Parameters
         ----------
@@ -692,9 +726,12 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(strategy, "strategy")
 
-        cdef dict state = self._database.load_strategy(strategy.id)
+        cdef dict state = None
 
-        if state is not None:
+        if self._database is not None:
+            state = self._database.load_strategy(strategy.id)
+
+        if state:
             for key, value in state.items():
                 self._log.debug(f"Loading {strategy.id}) state {{ {key}: {value} }}")
             strategy.load(state)
@@ -708,7 +745,7 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier to load.
+            The instrument ID to load.
 
         Returns
         -------
@@ -718,9 +755,9 @@ cdef class Cache(CacheFacade):
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef Instrument instrument = self._instruments.get(instrument_id)
-        if instrument is None:
+        if instrument is None and self._database is not None:
             instrument = self._database.load_instrument(instrument_id)
-            if instrument:
+            if instrument is not None:
                 self._instruments[instrument.id] = instrument
 
         return instrument
@@ -732,7 +769,7 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         account_id : AccountId
-            The account identifier to load.
+            The account ID to load.
 
         Returns
         -------
@@ -745,12 +782,12 @@ cdef class Cache(CacheFacade):
 
     cpdef Order load_order(self, ClientOrderId client_order_id):
         """
-        Load the order associated with the given identifier (if found).
+        Load the order associated with the given ID (if found).
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier to load.
+            The client order ID to load.
 
         Returns
         -------
@@ -763,12 +800,12 @@ cdef class Cache(CacheFacade):
 
     cpdef Position load_position(self, PositionId position_id):
         """
-        Load the position associated with the given identifier (if found).
+        Load the position associated with the given ID (if found).
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier to load.
+            The position ID to load.
 
         Returns
         -------
@@ -971,7 +1008,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void add_currency(self, Currency currency) except *:
         """
-        Add the given currency to the execution cache.
+        Add the given currency to the cache.
 
         Parameters
         ----------
@@ -987,7 +1024,8 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Added currency {currency.code}.")
 
         # Update database
-        self._database.add_currency(currency)
+        if self._database is not None:
+            self._database.add_currency(currency)
 
     cpdef void add_instrument(self, Instrument instrument) except *:
         """
@@ -1009,11 +1047,12 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Added instrument {instrument.id.value}.")
 
         # Update database
-        self._database.add_instrument(instrument)
+        if self._database is not None:
+            self._database.add_instrument(instrument)
 
     cpdef void add_account(self, Account account) except *:
         """
-        Add the given account to the execution cache.
+        Add the given account to the cache.
 
         Parameters
         ----------
@@ -1023,7 +1062,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If account_id is already contained in the cached_accounts.
+            If account_id is already contained in the cache.
 
         """
         Condition.not_none(account, "account")
@@ -1036,24 +1075,25 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Indexed {repr(account.id)}.")
 
         # Update database
-        self._database.add_account(account)
+        if self._database is not None:
+            self._database.add_account(account)
 
     cpdef void add_order(self, Order order, PositionId position_id) except *:
         """
-        Add the given order to the execution cache indexed with the given
-        identifiers.
+        Add the given order to the cache indexed with the given position
+        ID.
 
         Parameters
         ----------
         order : Order
             The order to add.
         position_id : PositionId
-            The position identifier to index for the order.
+            The position ID to index for the order.
 
         Raises
         ------
         ValueError
-            If order.client_order_id is already contained in the cached_orders.
+            If order.client_order_id is already contained in the cache.
         ValueError
             If order.client_order_id is already contained in the index_orders.
         ValueError
@@ -1063,7 +1103,6 @@ cdef class Cache(CacheFacade):
 
         """
         Condition.not_none(order, "order")
-        Condition.not_none(position_id, "position_id")
         Condition.not_in(order.client_order_id, self._orders, "order.client_order_id", "cached_orders")
         Condition.not_in(order.client_order_id, self._index_orders, "order.client_order_id", "index_orders")
         Condition.not_in(order.client_order_id, self._index_order_position, "order.client_order_id", "index_order_position")
@@ -1094,20 +1133,20 @@ cdef class Cache(CacheFacade):
         else:
             strategy_orders.add(order.client_order_id)
 
-        cdef str position_id_str = f", {position_id.value}" if position_id.not_null() else ""
-        self._log.debug(f"Added Order(id={order.client_order_id.value}{position_id_str}).")
-
         # Update database
-        self._database.add_order(order)  # Logs
+        if self._database is not None:
+            self._database.add_order(order)  # Logs
 
-        if position_id.is_null():
-            return  # Do not index the NULL id
-        self.add_position_id(
-            position_id,
-            order.instrument_id.venue,
-            order.client_order_id,
-            order.strategy_id,
-        )
+        if position_id is not None:
+            self.add_position_id(
+                position_id,
+                order.instrument_id.venue,
+                order.client_order_id,
+                order.strategy_id,
+            )
+
+        cdef str position_id_str = f", {position_id.value}" if position_id is not None else ""
+        self._log.debug(f"Added Order(id={order.client_order_id.value}{position_id_str}).")
 
     cpdef void add_position_id(
         self,
@@ -1117,18 +1156,18 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id,
     ) except *:
         """
-        Index the given position identifier with the other given identifiers.
+        Index the given position ID with the other given IDs.
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier to index.
+            The position ID to index.
         venue : Venue
-            The venue identifier to index with the position identifier.
+            The venue ID to index with the position ID.
         client_order_id : ClientOrderId
-            The client order identifier to index with the position identifier.
+            The client order ID to index with the position ID.
         strategy_id : StrategyId
-            The strategy identifier to index with the position identifier.
+            The strategy ID to index with the position ID.
 
         """
         Condition.not_none(position_id, "position_id")
@@ -1161,29 +1200,32 @@ cdef class Cache(CacheFacade):
             f"client_order_id={client_order_id}, "
             f"strategy_id={strategy_id}).")
 
-    cpdef void add_position(self, Position position) except *:
+    cpdef void add_position(self, Position position, OMSType oms_type) except *:
         """
-        Add the given position associated with the given strategy identifier.
+        Add the given position to the cache.
 
         Parameters
         ----------
         position : Position
             The position to add.
+        oms_type : OMSType
+            The order management system type for the position.
 
         Raises
         ------
         ValueError
-            If position.id is already contained in the cached_positions.
+            If oms_type is HEDGING and position.id is already contained in the cache.
         ValueError
-            If position.id is already contained in the index_positions.
+            If oms_type is HEDGING and position.id is already contained in the index_positions.
         ValueError
-            If position.id is already contained in the index_positions_open.
+            If oms_type is HEDGING and position.id is already contained in the index_positions_open.
 
         """
         Condition.not_none(position, "position")
-        Condition.not_in(position.id, self._positions, "position.id", "cached_positions")
-        Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
-        Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
+        if oms_type == OMSType.HEDGING:
+            Condition.not_in(position.id, self._positions, "position.id", "cached_positions")
+            Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
+            Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
 
         self._positions[position.id] = position
         self._index_positions.add(position.id)
@@ -1215,11 +1257,12 @@ cdef class Cache(CacheFacade):
         self._log.debug(f"Added Position(id={position.id.value}, strategy_id={position.strategy_id}).")
 
         # Update database
-        self._database.add_position(position)
+        if self._database is not None:
+            self._database.add_position(position)
 
     cpdef void update_account(self, Account account) except *:
         """
-        Update the given account in the execution cache.
+        Update the given account in the cache.
 
         Parameters
         ----------
@@ -1229,11 +1272,12 @@ cdef class Cache(CacheFacade):
         Condition.not_none(account, "account")
 
         # Update database
-        self._database.update_account(account)
+        if self._database is not None:
+            self._database.update_account(account)
 
     cpdef void update_order(self, Order order) except *:
         """
-        Update the given order in the execution cache.
+        Update the given order in the cache.
 
         Parameters
         ----------
@@ -1243,24 +1287,29 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(order, "order")
 
-        if order.venue_order_id.not_null():
+        if order.venue_order_id is not None:
             # Assumes order_id does not change
             self._index_order_ids[order.venue_order_id] = order.client_order_id
 
-        if order.is_completed_c():
-            self._index_orders_completed.add(order.client_order_id)
+        if order.is_inflight_c():
+            self._index_orders_inflight.add(order.client_order_id)
+        elif order.is_completed_c():
+            self._index_orders_inflight.discard(order.client_order_id)
             self._index_orders_working.discard(order.client_order_id)
+            self._index_orders_completed.add(order.client_order_id)
         else:
             if order.is_working_c():
                 self._index_orders_working.add(order.client_order_id)
+            self._index_orders_inflight.discard(order.client_order_id)
             self._index_orders_completed.discard(order.client_order_id)
 
         # Update database
-        self._database.update_order(order)
+        if self._database is not None:
+            self._database.update_order(order)
 
     cpdef void update_position(self, Position position) except *:
         """
-        Update the given position in the execution cache.
+        Update the given position in the cache.
 
         Parameters
         ----------
@@ -1275,11 +1324,12 @@ cdef class Cache(CacheFacade):
             self._index_positions_open.discard(position.id)
 
         # Update database
-        self._database.update_position(position)
+        if self._database is not None:
+            self._database.update_position(position)
 
     cpdef void update_strategy(self, TradingStrategy strategy) except *:
         """
-        Update the given strategy state in the execution cache.
+        Update the given strategy state in the cache.
 
         Parameters
         ----------
@@ -1291,12 +1341,12 @@ cdef class Cache(CacheFacade):
         self._index_strategies.add(strategy.id)
 
         # Update database
-        self._database.update_strategy(strategy)
+        if self._database is not None:
+            self._database.update_strategy(strategy)
 
     cpdef void delete_strategy(self, TradingStrategy strategy) except *:
         """
-        Delete the given strategy from the execution cache.
-        Logs error if strategy not found in the cache.
+        Delete the given strategy from the cache.
 
         Parameters
         ----------
@@ -1321,19 +1371,20 @@ cdef class Cache(CacheFacade):
             del self._index_strategy_positions[strategy.id]
 
         # Update database
-        self._database.delete_strategy(strategy.id)
-        self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
+        if self._database is not None:
+            self._database.delete_strategy(strategy.id)
+            self._log.debug(f"Deleted Strategy(id={strategy.id.value}).")
 
 # -- DATA QUERIES ----------------------------------------------------------------------------------
 
     cpdef list quote_ticks(self, InstrumentId instrument_id):
         """
-        Return the quote ticks for the given instrument identifier.
+        Return the quote ticks for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the ticks to get.
+            The instrument ID for the ticks to get.
 
         Returns
         -------
@@ -1346,12 +1397,12 @@ cdef class Cache(CacheFacade):
 
     cpdef list trade_ticks(self, InstrumentId instrument_id):
         """
-        Return trade ticks for the given instrument identifier.
+        Return trade ticks for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the ticks to get.
+            The instrument ID for the ticks to get.
 
         Returns
         -------
@@ -1382,12 +1433,12 @@ cdef class Cache(CacheFacade):
 
     cpdef Price price(self, InstrumentId instrument_id, PriceType price_type):
         """
-        Return the price for the given instrument identifier and price type.
+        Return the price for the given instrument ID and price type.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the price.
+            The instrument ID for the price.
         price_type : PriceType
             The price type for the query.
 
@@ -1410,7 +1461,7 @@ cdef class Cache(CacheFacade):
 
     cpdef OrderBook order_book(self, InstrumentId instrument_id):
         """
-        Return the order book for the given instrument identifier.
+        Return the order book for the given instrument ID.
 
         Parameters
         ----------
@@ -1425,14 +1476,14 @@ cdef class Cache(CacheFacade):
 
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=0):
         """
-        Return the quote tick for the given instrument identifier at the given index.
+        Return the quote tick for the given instrument ID at the given index.
 
         Last quote tick if no index specified.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the tick to get.
+            The instrument ID for the tick to get.
         index : int, optional
             The index for the tick to get.
 
@@ -1459,14 +1510,14 @@ cdef class Cache(CacheFacade):
 
     cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=0):
         """
-        Return the trade tick for the given instrument identifier at the given index
+        Return the trade tick for the given instrument ID at the given index
 
         Last trade tick if no index specified.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the tick to get.
+            The instrument ID for the tick to get.
         index : int, optional
             The index for the tick to get.
 
@@ -1527,12 +1578,12 @@ cdef class Cache(CacheFacade):
 
     cpdef int quote_tick_count(self, InstrumentId instrument_id) except *:
         """
-        The count of quote ticks for the given instrument identifier.
+        The count of quote ticks for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the ticks.
+            The instrument ID for the ticks.
 
         Returns
         -------
@@ -1545,12 +1596,12 @@ cdef class Cache(CacheFacade):
 
     cpdef int trade_tick_count(self, InstrumentId instrument_id) except *:
         """
-        The count of trade ticks for the given instrument identifier.
+        The count of trade ticks for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the ticks.
+            The instrument ID for the ticks.
 
         Returns
         -------
@@ -1582,12 +1633,12 @@ cdef class Cache(CacheFacade):
     cpdef bint has_order_book(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the data engine has an order book
-        snapshot for the given instrument identifier.
+        snapshot for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the order book snapshot.
+            The instrument ID for the order book snapshot.
 
         Returns
         -------
@@ -1599,12 +1650,12 @@ cdef class Cache(CacheFacade):
     cpdef bint has_quote_ticks(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the data engine has quote ticks for
-        the given instrument identifier.
+        the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the ticks.
+            The instrument ID for the ticks.
 
         Returns
         -------
@@ -1618,12 +1669,12 @@ cdef class Cache(CacheFacade):
     cpdef bint has_trade_ticks(self, InstrumentId instrument_id) except *:
         """
         Return a value indicating whether the data engine has trade ticks for
-        the given instrument identifier.
+        the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the ticks.
+            The instrument ID for the ticks.
 
         Returns
         -------
@@ -1724,12 +1775,12 @@ cdef class Cache(CacheFacade):
 
     cpdef Instrument instrument(self, InstrumentId instrument_id):
         """
-        Return the instrument corresponding to the given instrument identifier.
+        Return the instrument corresponding to the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier of the instrument to return.
+            The instrument ID of the instrument to return.
 
         Returns
         -------
@@ -1742,7 +1793,7 @@ cdef class Cache(CacheFacade):
 
     cpdef list instrument_ids(self, Venue venue=None):
         """
-        Return all instrument identifiers held by the data cache.
+        Return all instrument IDs held by the cache.
 
         Parameters
         ----------
@@ -1758,7 +1809,7 @@ cdef class Cache(CacheFacade):
 
     cpdef list instruments(self, Venue venue=None):
         """
-        Return all instruments held by the data cache.
+        Return all instruments held by the cache.
 
         Parameters
         ----------
@@ -1776,12 +1827,12 @@ cdef class Cache(CacheFacade):
 
     cpdef Account account(self, AccountId account_id):
         """
-        Return the account matching the given identifier (if found).
+        Return the account matching the given ID (if found).
 
         Parameters
         ----------
         account_id : AccountId
-            The account identifier.
+            The account ID.
 
         Returns
         -------
@@ -1794,7 +1845,7 @@ cdef class Cache(CacheFacade):
 
     cpdef Account account_for_venue(self, Venue venue):
         """
-        Return the account matching the given client identifier (if found).
+        Return the account matching the given client ID (if found).
 
         Parameters
         ----------
@@ -1815,12 +1866,12 @@ cdef class Cache(CacheFacade):
 
     cpdef AccountId account_id(self, Venue venue):
         """
-        Return the account identifier for the given venue (if found).
+        Return the account ID for the given venue (if found).
 
         Parameters
         ----------
         venue : Venue
-            The venue for the account identifier.
+            The venue for the account ID.
 
         Returns
         -------
@@ -1899,16 +1950,16 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all client order identifiers with the given query filters.
+        Return all client order IDs with the given query filters.
 
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -1922,6 +1973,36 @@ cdef class Cache(CacheFacade):
         else:
             return self._index_orders.intersection(query)
 
+    cpdef set client_order_ids_inflight(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
+        """
+        Return all in-flight client order IDs with the given query filters.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+
+        Returns
+        -------
+        set[ClientOrderId]
+
+        """
+        cdef set query = self._build_ord_query_filter_set(venue, instrument_id, strategy_id)
+
+        if query is None:
+            return self._index_orders_inflight
+        else:
+            return self._index_orders_inflight.intersection(query)
+
     cpdef set client_order_ids_working(
         self,
         Venue venue=None,
@@ -1929,17 +2010,16 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all working client order identifiers with the given query
-        filters.
+        Return all working client order IDs with the given query filters.
 
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -1960,17 +2040,16 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all completed client order identifiers with the given query
-        filters.
+        Return all completed client order IDs with the given query filters.
 
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -1991,16 +2070,16 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all position identifiers with the given query filters.
+        Return all position IDs with the given query filters.
 
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2021,16 +2100,16 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all open position identifiers with the given query filters.
+        Return all open position IDs with the given query filters.
 
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2051,16 +2130,16 @@ cdef class Cache(CacheFacade):
         StrategyId strategy_id=None,
     ):
         """
-        Return all closed position identifiers with the given query filters.
+        Return all closed position IDs with the given query filters.
 
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2076,7 +2155,7 @@ cdef class Cache(CacheFacade):
 
     cpdef set strategy_ids(self):
         """
-        Return all strategy identifiers.
+        Return all strategy IDs.
 
         Returns
         -------
@@ -2089,7 +2168,7 @@ cdef class Cache(CacheFacade):
 
     cpdef Order order(self, ClientOrderId client_order_id):
         """
-        Return the order matching the given client order identifier (if found).
+        Return the order matching the given client order ID (if found).
 
         Returns
         -------
@@ -2102,13 +2181,13 @@ cdef class Cache(CacheFacade):
 
     cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id):
         """
-        Return the client order identifier matching the given order identifier
+        Return the client order ID matching the given order ID
         (if found).
 
         Parameters
         ----------
         venue_order_id : VenueOrderId
-            The venue assigned order identifier.
+            The venue assigned order ID.
 
         Returns
         -------
@@ -2121,7 +2200,7 @@ cdef class Cache(CacheFacade):
 
     cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id):
         """
-        Return the order identifier matching the given client order identifier
+        Return the order ID matching the given client order ID
         (if found).
 
         Returns
@@ -2148,11 +2227,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2166,6 +2245,36 @@ cdef class Cache(CacheFacade):
         except KeyError as ex:
             self._log.error("Cannot find order object in cached orders " + str(ex))
 
+    cpdef list orders_inflight(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ):
+        """
+        Return all working orders with the given query filters.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+
+        Returns
+        -------
+        list[Order]
+
+        """
+        cdef set client_order_ids = self.client_order_ids_inflight(venue, instrument_id, strategy_id)
+
+        try:
+            return [self._orders[client_order_id] for client_order_id in client_order_ids]
+        except KeyError as ex:
+            self._log.error("Cannot find Order object in the cache " + str(ex))
+
     cpdef list orders_working(
         self,
         Venue venue=None,
@@ -2178,11 +2287,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2194,7 +2303,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Order object in cache " + str(ex))
+            self._log.error("Cannot find Order object in the cache " + str(ex))
 
     cpdef list orders_completed(
         self,
@@ -2208,11 +2317,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2224,18 +2333,18 @@ cdef class Cache(CacheFacade):
         try:
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Order object in cache " + str(ex))
+            self._log.error("Cannot find Order object in the cache " + str(ex))
 
 # -- POSITION QUERIES ------------------------------------------------------------------------------
 
     cpdef Position position(self, PositionId position_id):
         """
-        Return the position associated with the given identifier (if found).
+        Return the position associated with the given ID (if found).
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier.
+            The position ID.
 
         Returns
         -------
@@ -2248,13 +2357,13 @@ cdef class Cache(CacheFacade):
 
     cpdef PositionId position_id(self, ClientOrderId client_order_id):
         """
-        Return the position identifier associated with the given client order
-        identifier (if found).
+        Return the position ID associated with the given client order
+        ID (if found).
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier associated with the position.
+            The client order ID associated with the position.
 
         Returns
         -------
@@ -2277,11 +2386,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2293,7 +2402,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._positions[position_id] for position_id in position_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
+            self._log.error("Cannot find Position object in the cache " + str(ex))
 
     cpdef list positions_open(
         self,
@@ -2307,11 +2416,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2323,7 +2432,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._positions[position_id] for position_id in position_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
+            self._log.error("Cannot find Position object in the cache " + str(ex))
 
     cpdef list positions_closed(
         self,
@@ -2337,11 +2446,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2353,17 +2462,17 @@ cdef class Cache(CacheFacade):
         try:
             return [self._positions[position_id] for position_id in position_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
+            self._log.error("Cannot find Position object in the cache " + str(ex))
 
     cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
         """
-        Return a value indicating whether an order with the given identifier
+        Return a value indicating whether an order with the given ID
         exists.
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier to check.
+            The client order ID to check.
 
         Returns
         -------
@@ -2374,15 +2483,32 @@ cdef class Cache(CacheFacade):
 
         return client_order_id in self._index_orders
 
-    cpdef bint is_order_working(self, ClientOrderId client_order_id) except *:
+    cpdef bint is_order_inflight(self, ClientOrderId client_order_id) except *:
         """
-        Return a value indicating whether an order with the given identifier is
-        working.
+        Return a value indicating whether an order with the given ID is in-flight.
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier to check.
+            The client order ID to check.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        return client_order_id in self._index_orders_inflight
+
+    cpdef bint is_order_working(self, ClientOrderId client_order_id) except *:
+        """
+        Return a value indicating whether an order with the given ID is working.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID to check.
 
         Returns
         -------
@@ -2395,13 +2521,12 @@ cdef class Cache(CacheFacade):
 
     cpdef bint is_order_completed(self, ClientOrderId client_order_id) except *:
         """
-        Return a value indicating whether an order with the given identifier is
-        completed.
+        Return a value indicating whether an order with the given ID is completed.
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier to check.
+            The client order ID to check.
 
         Returns
         -------
@@ -2424,11 +2549,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2436,6 +2561,31 @@ cdef class Cache(CacheFacade):
 
         """
         return len(self.client_order_ids(venue, instrument_id, strategy_id))
+
+    cpdef int orders_inflight_count(
+        self,
+        Venue venue=None,
+        InstrumentId instrument_id=None,
+        StrategyId strategy_id=None,
+    ) except *:
+        """
+        Return the count of in-flight orders with the given query filters.
+
+        Parameters
+        ----------
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+
+        Returns
+        -------
+        int
+
+        """
+        return len(self.client_order_ids_inflight(venue, instrument_id, strategy_id))
 
     cpdef int orders_working_count(
         self,
@@ -2449,11 +2599,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2474,11 +2624,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2489,13 +2639,13 @@ cdef class Cache(CacheFacade):
 
     cpdef bint position_exists(self, PositionId position_id) except *:
         """
-        Return a value indicating whether a position with the given identifier
+        Return a value indicating whether a position with the given ID
         exists.
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier.
+            The position ID.
 
         Returns
         -------
@@ -2508,13 +2658,13 @@ cdef class Cache(CacheFacade):
 
     cpdef bint is_position_open(self, PositionId position_id) except *:
         """
-        Return a value indicating whether a position with the given identifier
+        Return a value indicating whether a position with the given ID
         exists and is open.
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier.
+            The position ID.
 
         Returns
         -------
@@ -2527,13 +2677,13 @@ cdef class Cache(CacheFacade):
 
     cpdef bint is_position_closed(self, PositionId position_id) except *:
         """
-        Return a value indicating whether a position with the given identifier
+        Return a value indicating whether a position with the given ID
         exists and is closed.
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier.
+            The position ID.
 
         Returns
         -------
@@ -2556,11 +2706,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2581,11 +2731,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2606,11 +2756,11 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         venue : Venue, optional
-            The venue identifier query filter.
+            The venue ID query filter.
         instrument_id : InstrumentId, optional
-            The instrument identifier query filter.
+            The instrument ID query filter.
         strategy_id : StrategyId, optional
-            The strategy identifier query filter.
+            The strategy ID query filter.
 
         Returns
         -------
@@ -2623,13 +2773,13 @@ cdef class Cache(CacheFacade):
 
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId client_order_id):
         """
-        Return the strategy identifier associated with the given identifier
+        Return the strategy ID associated with the given ID
         (if found).
 
         Parameters
         ----------
         client_order_id : ClientOrderId
-            The client order identifier associated with the strategy.
+            The client order ID associated with the strategy.
 
         Returns
         -------
@@ -2642,13 +2792,13 @@ cdef class Cache(CacheFacade):
 
     cpdef StrategyId strategy_id_for_position(self, PositionId position_id):
         """
-        Return the strategy identifier associated with the given identifier
+        Return the strategy ID associated with the given ID
         (if found).
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier associated with the strategy.
+            The position ID associated with the strategy.
 
         Returns
         -------

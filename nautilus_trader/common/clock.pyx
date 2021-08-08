@@ -20,6 +20,7 @@ import pytz
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
+from typing import Callable
 from libc.stdint cimport int64_t
 
 from nautilus_trader.common.timer cimport LoopTimer
@@ -50,7 +51,7 @@ cdef class Clock:
         """
         self._uuid_factory = UUIDFactory()
         self._timers = {}    # type: dict[str, Timer]
-        self._handlers = {}  # type: dict[str, callable]
+        self._handlers = {}  # type: dict[str, Callable[[TimeEvent], None]]
         self._stack = None
         self._default_handler = None
         self.is_test_clock = False
@@ -175,20 +176,20 @@ cdef class Clock:
 
         return self._timers.get(name)
 
-    cpdef void register_default_handler(self, handler: callable) except *:
+    cpdef void register_default_handler(self, handler: Callable[[TimeEvent], None]) except *:
         """
         Register the given handler as the clocks default handler.
 
-        handler : callable
+        handler : Callable[[TimeEvent], None]
             The handler to register.
 
         Raises
         ------
         TypeError
-            If handler is not of type callable.
+            If handler is not of type Callable.
 
         """
-        Condition.not_none(handler, "handler")
+        Condition.callable(handler, "handler")
 
         self._default_handler = handler
         self.is_default_handler_registered = True
@@ -197,7 +198,7 @@ cdef class Clock:
         self,
         str name,
         datetime alert_time,
-        handler: callable=None,
+        handler: Callable[[TimeEvent], None]=None,
     ) except *:
         """
         Set a time alert for the given time.
@@ -212,7 +213,7 @@ cdef class Clock:
             The name for the alert (must be unique for this clock).
         alert_time : datetime
             The time for the alert.
-        handler : callable, optional
+        handler : Callable[[TimeEvent], None], optional
             The handler to receive time events.
 
         Raises
@@ -222,7 +223,7 @@ cdef class Clock:
         ValueError
             If alert_time is not >= the clocks current time.
         TypeError
-            If handler is not of type callable or None.
+            If handler is not of type Callable or None.
         ValueError
             If handler is None and no default handler is registered.
 
@@ -255,7 +256,7 @@ cdef class Clock:
         timedelta interval,
         datetime start_time=None,
         datetime stop_time=None,
-        handler: callable=None,
+        handler: Callable[[TimeEvent], None]=None,
     ) except *:
         """
         Set a timer to run.
@@ -275,7 +276,7 @@ cdef class Clock:
             The start time for the timer (if None then starts immediately).
         stop_time : datetime, optional
             The stop time for the timer (if None then repeats indefinitely).
-        handler : callable, optional
+        handler : Callable[[TimeEvent], None], optional
             The handler to receive time events.
 
         Raises
@@ -289,7 +290,7 @@ cdef class Clock:
         ValueError
             If stop_time is not None and start_time + interval > stop_time.
         TypeError
-            If handler is not of type callable or None.
+            If handler is not of type Callable or None.
         ValueError
             If handler is None and no default handler is registered.
 
@@ -364,7 +365,7 @@ cdef class Clock:
     cdef Timer _create_timer(
         self,
         str name,
-        callback: callable,
+        callback: Callable[[TimeEvent], None],
         int64_t interval_ns,
         int64_t start_time_ns,
         int64_t stop_time_ns,
@@ -372,7 +373,7 @@ cdef class Clock:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef void _add_timer(self, Timer timer, handler: callable) except *:
+    cdef void _add_timer(self, Timer timer, handler: Callable[[TimeEvent], None]) except *:
         self._timers[timer.name] = timer
         self._handlers[timer.name] = handler
         self._update_stack()
@@ -391,7 +392,8 @@ cdef class Clock:
             # The call to np.asarray here looks inefficient, however its only
             # called when a timer is added or removed. This then allows the
             # construction of an efficient Timer[:] memoryview.
-            self._stack = np.asarray(list(self._timers.values()))
+            timers = list(self._timers.values())
+            self._stack = np.ascontiguousarray(timers, dtype=Timer)
         else:
             self._stack = None
 
@@ -539,7 +541,7 @@ cdef class TestClock(Clock):
     cdef Timer _create_timer(
         self,
         str name,
-        callback: callable,
+        callback: Callable[[TimeEvent], None],
         int64_t interval_ns,
         int64_t start_time_ns,
         int64_t stop_time_ns,
@@ -629,7 +631,7 @@ cdef class LiveClock(Clock):
     cdef Timer _create_timer(
         self,
         str name,
-        callback: callable,
+        callback: Callable[[TimeEvent], None],
         int64_t interval_ns,
         int64_t start_time_ns,
         int64_t stop_time_ns,
@@ -655,10 +657,9 @@ cdef class LiveClock(Clock):
             )
 
     cpdef void _raise_time_event(self, LiveTimer timer) except *:
-        cdef int64_t timestamp_ns = self.timestamp_ns()
         cdef TimeEvent event = timer.pop_event(
             event_id=self._uuid_factory.generate(),
-            timestamp_ns=timestamp_ns,
+            ts_init=self.timestamp_ns(),
         )
 
         timer.iterate_next_time(self.timestamp_ns())

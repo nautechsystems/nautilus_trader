@@ -14,24 +14,25 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Union
+from typing import Dict, Optional, Union
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
-from nautilus_trader.model.bar import Bar
-from nautilus_trader.model.bar import BarSpecification
-from nautilus_trader.model.bar import BarType
-from nautilus_trader.model.data import Data
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.base import Data
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.limit import LimitOrder
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -62,7 +63,7 @@ class VolatilityMarketMaker(TradingStrategy):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the strategy.
+            The instrument ID for the strategy.
         bar_spec : BarSpecification
             The bar specification for the strategy.
         trade_size : Decimal
@@ -72,15 +73,15 @@ class VolatilityMarketMaker(TradingStrategy):
         atr_multiple : float
             The ATR multiple for bracketing limit orders.
         order_id_tag : str
-            The unique order identifier tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader identifier.
+            The unique order ID tag for the strategy. Must be unique
+            amongst all running strategies for a particular trader ID.
 
         """
-        super().__init__(order_id_tag=order_id_tag)
+        super().__init__(order_id_tag=order_id_tag, oms_type=OMSType.HEDGING)
 
         # Custom strategy variables
         self.instrument_id = instrument_id
-        self.instrument = None  # Initialize in on_start
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.bar_type = BarType(instrument_id, bar_spec)
         self.trade_size = trade_size
         self.atr_multiple = atr_multiple
@@ -109,7 +110,12 @@ class VolatilityMarketMaker(TradingStrategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
-        # self.subscribe_order_book(self.instrument_id, level=2, depth=25, interval=1)  # For debugging
+        self.subscribe_order_book_snapshots(
+            self.instrument_id,
+            level=2,
+            depth=25,
+            interval_ms=1000,
+        )  # For debugging
         # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
 
     def on_instrument(self, instrument: Instrument):
@@ -135,9 +141,7 @@ class VolatilityMarketMaker(TradingStrategy):
             The order book received.
 
         """
-        # self.log.info(f"Received {repr(order_book)}")  # For debugging (must add a subscription)
-        # self.log.info(str(order_book.asks))
-        # self.log.info(str(order_book.bids))
+        # self.log.info(str(order_book))  # For debugging (must add a subscription)
         pass
 
     def on_quote_tick(self, tick: QuoteTick):
@@ -181,8 +185,7 @@ class VolatilityMarketMaker(TradingStrategy):
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
-                f"Waiting for indicators to warm up "
-                f"[{self.cache.bar_count(self.bar_type)}]...",
+                f"Waiting for indicators to warm up " f"[{self.cache.bar_count(self.bar_type)}]...",
                 color=LogColor.BLUE,
             )
             return  # Wait for indicators to warm up...
@@ -267,10 +270,10 @@ class VolatilityMarketMaker(TradingStrategy):
 
         # If order filled then replace order at atr multiple distance from the market
         if isinstance(event, OrderFilled):
-            if event.order_side == OrderSide.BUY:
+            if event.side == OrderSide.BUY:
                 if self.buy_order.is_completed:
                     self.create_buy_order(last)
-            elif event.order_side == OrderSide.SELL:
+            elif event.side == OrderSide.SELL:
                 if self.sell_order.is_completed:
                     self.create_sell_order(last)
 
@@ -284,7 +287,7 @@ class VolatilityMarketMaker(TradingStrategy):
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.instrument_id)
-        # self.unsubscribe_order_book(self.instrument_id, interval=5)
+        self.unsubscribe_order_book_snapshots(self.instrument_id, interval_ms=1000)
         # self.unsubscribe_trade_ticks(self.instrument_id)
 
     def on_reset(self):
@@ -294,7 +297,7 @@ class VolatilityMarketMaker(TradingStrategy):
         # Reset indicators here
         self.atr.reset()
 
-    def on_save(self) -> {}:
+    def on_save(self) -> Dict[str, bytes]:
         """
         Actions to be performed when the strategy is saved.
 
@@ -308,7 +311,7 @@ class VolatilityMarketMaker(TradingStrategy):
         """
         return {}
 
-    def on_load(self, state: {}):
+    def on_load(self, state: Dict[str, bytes]):
         """
         Actions to be performed when the strategy is loaded.
 

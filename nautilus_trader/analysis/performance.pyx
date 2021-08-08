@@ -16,6 +16,7 @@
 from cpython.datetime cimport date
 from cpython.datetime cimport datetime
 
+import numpy as np
 from empyrical import alpha
 from empyrical import annual_return
 from empyrical import annual_volatility
@@ -28,9 +29,10 @@ from empyrical import sharpe_ratio
 from empyrical import sortino_ratio
 from empyrical import stability_of_timeseries
 from empyrical import tail_ratio
-import numpy as np
 from numpy import float64
+
 cimport numpy as np
+
 import pandas as pd
 from scipy.stats import kurtosis
 from scipy.stats import skew
@@ -82,7 +84,7 @@ cdef class PerformanceAnalyzer:
 
     cpdef void add_positions(self, list positions) except *:
         """
-        Add end of day positions data to the analyzer.
+        Add positions data to the analyzer.
 
         Parameters
         ----------
@@ -95,16 +97,16 @@ cdef class PerformanceAnalyzer:
         cdef Position position
         for position in positions:
             self.add_trade(position.id, position.realized_pnl)
-            self.add_return(nanos_to_unix_dt(position.closed_timestamp_ns), position.realized_return)
+            self.add_return(nanos_to_unix_dt(position.ts_closed), position.realized_return)
 
     cpdef void add_trade(self, PositionId position_id, Money realized_pnl) except *:
         """
-        Handle the transaction associated with the given account event.
+        Add trade data to the analyzer.
 
         Parameters
         ----------
         position_id : PositionId
-            The position identifier for the trade.
+            The position ID for the trade.
         realized_pnl : Money
             The realized PnL for the trade.
 

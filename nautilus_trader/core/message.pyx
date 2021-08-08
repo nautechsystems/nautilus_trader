@@ -13,64 +13,51 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.message cimport MessageType
+from typing import Any, Callable
+
+from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.core.uuid cimport UUID
 
 
-cpdef str message_type_to_str(int value):
-    """
-    Covert a C Enum int to a message type string.
+cdef class MessageCategoryParser:
 
-    Parameters
-    ----------
-    value : int
-        The value to convert.
+    @staticmethod
+    cdef str to_str(int value):
+        if value == 1:
+            return "COMMAND"
+        elif value == 2:
+            return "DOCUMENT"
+        elif value == 3:
+            return "EVENT"
+        elif value == 4:
+            return "REQUEST"
+        elif value == 5:
+            return "RESPONSE"
+        else:
+            raise ValueError(f"value was invalid, was {value}")
 
-    Returns
-    -------
-    str
+    @staticmethod
+    cdef MessageCategory from_str(str value) except *:
+        if value == "COMMAND":
+            return MessageCategory.COMMAND
+        elif value == "DOCUMENT":
+            return MessageCategory.DOCUMENT
+        elif value == "EVENT":
+            return MessageCategory.EVENT
+        elif value == "REQUEST":
+            return MessageCategory.REQUEST
+        elif value == "RESPONSE":
+            return MessageCategory.RESPONSE
+        else:
+            raise ValueError(f"value was invalid, was {value}")
 
-    """
-    if value == 1:
-        return "STRING"
-    elif value == 2:
-        return "COMMAND"
-    elif value == 3:
-        return "DOCUMENT"
-    elif value == 4:
-        return "EVENT"
-    elif value == 5:
-        return "REQUEST"
-    elif value == 6:
-        return "RESPONSE"
+    @staticmethod
+    def to_str_py(int value):
+        return MessageCategoryParser.to_str(value)
 
-
-cpdef MessageType message_type_from_str(str value):
-    """
-    Parse a string to a message type.
-
-    Parameters
-    ----------
-    value : str
-        The value to parse.
-
-    Returns
-    -------
-    str
-
-    """
-    if value == "STRING":
-        return MessageType.STRING
-    elif value == "COMMAND":
-        return MessageType.COMMAND
-    elif value == "DOCUMENT":
-        return MessageType.DOCUMENT
-    elif value == "EVENT":
-        return MessageType.EVENT
-    elif value == "REQUEST":
-        return MessageType.REQUEST
-    elif value == "RESPONSE":
-        return MessageType.RESPONSE
+    @staticmethod
+    def from_str_py(str value):
+        return MessageCategoryParser.from_str(value)
 
 
 cdef class Message:
@@ -82,35 +69,35 @@ cdef class Message:
 
     def __init__(
         self,
-        MessageType msg_type,
-        UUID identifier not None,
-        int64_t timestamp_ns,
+        MessageCategory category,
+        UUID message_id not None,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``Message`` class.
 
         Parameters
         ----------
-        msg_type : MessageType
-            The message type.
-        identifier : UUID
-            The message identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the message initialization.
+        category : MessageCategory
+            The message category.
+        message_id : UUID
+            The message ID.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the message object was initialized.
 
         """
-        self.type = msg_type
-        self.id = identifier
-        self.timestamp_ns = timestamp_ns
+        self.category = category
+        self.id = message_id
+        self.ts_init = ts_init
 
     def __eq__(self, Message other) -> bool:
-        return self.type == other.type and self.id == other.id
+        return self.category == other.category and self.id == other.id
 
     def __hash__(self) -> int:
-        return hash((self.type, self.id))
+        return hash((self.category, self.id))
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self.id}, timestamp={self.timestamp_ns})"
+        return f"{type(self).__name__}(id={self.id}, ts_init={self.ts_init})"
 
 
 cdef class Command(Message):
@@ -120,19 +107,23 @@ cdef class Command(Message):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, UUID identifier not None, int64_t timestamp_ns):
+    def __init__(
+        self,
+        UUID command_id not None,
+        int64_t ts_init,
+    ):
         """
         Initialize a new instance of the ``Command`` class.
 
         Parameters
         ----------
-        identifier : UUID
-            The command identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the command initialization.
+        command_id : UUID
+            The command ID.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the command object was initialized.
 
         """
-        super().__init__(MessageType.COMMAND, identifier, timestamp_ns)
+        super().__init__(MessageCategory.COMMAND, command_id, ts_init)
 
 
 cdef class Document(Message):
@@ -144,21 +135,21 @@ cdef class Document(Message):
 
     def __init__(
         self,
-        UUID identifier not None,
-        int64_t timestamp_ns,
+        UUID document_id not None,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``Document`` class.
 
         Parameters
         ----------
-        identifier : UUID
-            The document identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the document initialization.
+        document_id : UUID
+            The document ID.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the document object was initialized.
 
         """
-        super().__init__(MessageType.DOCUMENT, identifier, timestamp_ns)
+        super().__init__(MessageCategory.DOCUMENT, document_id, ts_init)
 
 
 cdef class Event(Message):
@@ -170,21 +161,26 @@ cdef class Event(Message):
 
     def __init__(
         self,
-        UUID identifier not None,
-        int64_t timestamp_ns,
+        UUID event_id not None,
+        int64_t ts_event,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``Event`` class.
 
         Parameters
         ----------
-        identifier : UUID
-            The event identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the event initialization.
+        event_id : UUID
+            The event ID.
+        ts_event : int64
+            The UNIX timestamp (nanoseconds) when the event occurred.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the event object was initialized.
 
         """
-        super().__init__(MessageType.EVENT, identifier, timestamp_ns)
+        super().__init__(MessageCategory.EVENT, event_id, ts_init)
+
+        self.ts_event = ts_event
 
 
 cdef class Request(Message):
@@ -194,19 +190,28 @@ cdef class Request(Message):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, UUID identifier not None, int64_t timestamp_ns):
+    def __init__(
+        self,
+        callback not None: Callable[[Any], None],
+        UUID request_id not None,
+        int64_t ts_init,
+    ):
         """
         Initialize a new instance of the ``Request`` class.
 
         Parameters
         ----------
-        identifier : UUID
-            The request identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the request initialization.
+        callback : Callable[[Any], None]
+            The delegate to call with the response.
+        request_id : UUID
+            The request ID.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the request object was initialized.
 
         """
-        super().__init__(MessageType.REQUEST, identifier, timestamp_ns)
+        super().__init__(MessageCategory.REQUEST, request_id, ts_init)
+
+        self.callback = callback
 
 
 cdef class Response(Message):
@@ -219,8 +224,8 @@ cdef class Response(Message):
     def __init__(
         self,
         UUID correlation_id not None,
-        UUID identifier not None,
-        int64_t timestamp_ns,
+        UUID response_id not None,
+        int64_t ts_init,
     ):
         """
         Initialize a new instance of the ``Response`` class.
@@ -228,14 +233,14 @@ cdef class Response(Message):
         Parameters
         ----------
         correlation_id : UUID
-            The correlation identifier.
-        identifier : UUID
-            The response identifier.
-        timestamp_ns : int64
-            The UNIX timestamp (nanoseconds) of the response initialization.
+            The correlation ID.
+        response_id : UUID
+            The response ID.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the response object was initialized.
 
         """
-        super().__init__(MessageType.RESPONSE, identifier, timestamp_ns)
+        super().__init__(MessageCategory.RESPONSE, response_id, ts_init)
 
         self.correlation_id = correlation_id
 
@@ -243,4 +248,4 @@ cdef class Response(Message):
         return (f"{type(self).__name__}("
                 f"correlation_id={self.correlation_id}, "
                 f"id={self.id}, "
-                f"timestamp={self.timestamp_ns})")
+                f"ts_init={self.ts_init})")

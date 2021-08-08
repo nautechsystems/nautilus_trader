@@ -25,11 +25,11 @@ from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.book import OrderBookDelta
-from nautilus_trader.model.orderbook.book import OrderBookDeltas
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
-from nautilus_trader.model.orderbook.order import Order
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -98,7 +98,7 @@ def test_create_level_1_order_book():
     assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
     assert book.bids.reverse
     assert not book.asks.reverse
-    assert book.timestamp_ns == 0
+    assert book.ts_last == 0
 
 
 def test_create_level_2_order_book():
@@ -299,8 +299,8 @@ def test_orderbook_snapshot(empty_l2_book):
         level=BookLevel.L2,
         bids=[[1550.15, 0.51], [1580.00, 1.20]],
         asks=[[1552.15, 1.51], [1582.00, 2.20]],
-        ts_event_ns=0,
-        ts_recv_ns=0,
+        ts_event=0,
+        ts_init=0,
     )
     empty_l2_book.apply_snapshot(snapshot)
     assert empty_l2_book.best_bid_price() == 1580.0
@@ -318,8 +318,8 @@ def test_orderbook_operation_update(empty_l2_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        ts_event_ns=clock.timestamp(),
-        ts_recv_ns=clock.timestamp(),
+        ts_event=clock.timestamp(),
+        ts_init=clock.timestamp(),
     )
     empty_l2_book.apply_delta(delta)
     assert empty_l2_book.best_ask_price() == 0.5814
@@ -336,8 +336,8 @@ def test_orderbook_operation_add(empty_l2_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        ts_event_ns=clock.timestamp(),
-        ts_recv_ns=clock.timestamp(),
+        ts_event=clock.timestamp(),
+        ts_init=clock.timestamp(),
     )
     empty_l2_book.apply_delta(delta)
     assert empty_l2_book.best_ask_price() == 0.59
@@ -354,15 +354,15 @@ def test_orderbook_operations(empty_l2_book):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        ts_event_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
-        ts_recv_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
+        ts_event=pd.Timestamp.utcnow().timestamp() * 1e9,
+        ts_init=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     deltas = OrderBookDeltas(
         instrument_id=TestStubs.audusd_id(),
         level=BookLevel.L2,
         deltas=[delta],
-        ts_event_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
-        ts_recv_ns=pd.Timestamp.utcnow().timestamp() * 1e9,
+        ts_event=pd.Timestamp.utcnow().timestamp() * 1e9,
+        ts_init=pd.Timestamp.utcnow().timestamp() * 1e9,
     )
     empty_l2_book.apply_deltas(deltas)
     assert empty_l2_book.best_ask_price() == 0.5814
@@ -374,8 +374,8 @@ def test_apply(empty_l2_book, clock):
         level=BookLevel.L2,
         bids=[[150.0, 0.51]],
         asks=[[160.0, 1.51]],
-        ts_event_ns=0,
-        ts_recv_ns=0,
+        ts_event=0,
+        ts_init=0,
     )
     empty_l2_book.apply_snapshot(snapshot)
     assert empty_l2_book.best_ask_price() == 160
@@ -389,8 +389,8 @@ def test_apply(empty_l2_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        ts_event_ns=clock.timestamp(),
-        ts_recv_ns=clock.timestamp(),
+        ts_event=clock.timestamp(),
+        ts_init=clock.timestamp(),
     )
     empty_l2_book.apply(delta)
     assert empty_l2_book.best_ask_price() == 155
@@ -415,11 +415,11 @@ def test_timestamp_ns(empty_l2_book, clock):
             OrderSide.SELL,
             "4a25c3f6-76e7-7584-c5a3-4ec84808e240",
         ),
-        ts_event_ns=clock.timestamp(),
-        ts_recv_ns=clock.timestamp(),
+        ts_event=clock.timestamp(),
+        ts_init=clock.timestamp(),
     )
     empty_l2_book.apply_delta(delta)
-    assert empty_l2_book.timestamp_ns == delta.ts_recv_ns
+    assert empty_l2_book.ts_last == delta.ts_init
 
 
 def test_trade_side(sample_book):
@@ -513,6 +513,4 @@ def test_get_quote_volume_for_price(sample_book, is_buy, price, expected):
     ],
 )
 def test_get_vwap_for_volume(sample_book, is_buy, volume, expected):
-    assert sample_book.get_vwap_for_volume(is_buy, volume) == pytest.approx(
-        expected, 0.01
-    )
+    assert sample_book.get_vwap_for_volume(is_buy, volume) == pytest.approx(expected, 0.01)

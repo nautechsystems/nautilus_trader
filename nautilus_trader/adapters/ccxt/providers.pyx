@@ -144,7 +144,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
             size_increment = Quantity(float(amount_prec) / 10 ** size_precision, size_precision)
         else:
             raise RuntimeError(
-                f"The {self._client.name} exchange is using SIGNIFICANT_DIGITS "
+                f"{self._client.name} exchange is using SIGNIFICANT_DIGITS "
                 f"precision which is not currently supported in this version."
             )
 
@@ -230,8 +230,8 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                 margin_maint=Decimal(),  # Margin trading not implemented
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
-                ts_event_ns=timestamp,
-                ts_recv_ns=timestamp,
+                ts_event=timestamp,
+                ts_init=timestamp,
                 info=values,
             )
         elif is_swap:
@@ -255,8 +255,8 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                 margin_maint=Decimal(),  # Margin trading not implemented
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
-                ts_event_ns=timestamp,
-                ts_recv_ns=timestamp,
+                ts_event=timestamp,
+                ts_init=timestamp,
                 info=values,
             )
         elif is_option:

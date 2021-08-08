@@ -16,10 +16,7 @@
 
 cdef class Identifier:
     cdef readonly str value
-    """The identifier value.\n\n:returns: `str`"""
-
-    cdef bint is_null(self) except *
-    cdef bint not_null(self) except *
+    """The ID value.\n\n:returns: `str`"""
 
 
 cdef class Symbol(Identifier):
@@ -40,15 +37,20 @@ cdef class InstrumentId(Identifier):
     cdef InstrumentId from_str_c(str value)
 
 
-cdef class TraderId(Identifier):
+cdef class ComponentId(Identifier):
+    pass
+
+
+cdef class ClientId(ComponentId):
+    pass
+
+
+cdef class TraderId(ComponentId):
     cpdef str get_tag(self)
 
 
-cdef class StrategyId(Identifier):
+cdef class StrategyId(ComponentId):
     cpdef str get_tag(self)
-
-    @staticmethod
-    cdef StrategyId null_c()
 
 
 cdef class AccountId(Identifier):
@@ -61,10 +63,6 @@ cdef class AccountId(Identifier):
     cdef AccountId from_str_c(str value)
 
 
-cdef class ClientId(Identifier):
-    pass
-
-
 cdef class ClientOrderId(Identifier):
     pass
 
@@ -74,15 +72,11 @@ cdef class ClientOrderLinkId(Identifier):
 
 
 cdef class VenueOrderId(Identifier):
-
-    @staticmethod
-    cdef VenueOrderId null_c()
+    pass
 
 
 cdef class PositionId(Identifier):
-
-    @staticmethod
-    cdef PositionId null_c()
+    pass
 
 
 cdef class ExecutionId(Identifier):

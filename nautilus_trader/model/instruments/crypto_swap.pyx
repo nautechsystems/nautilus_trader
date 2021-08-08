@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import json
+import orjson
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
@@ -54,8 +55,8 @@ cdef class CryptoSwap(Instrument):
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
         dict info=None,
     ):
         """
@@ -64,7 +65,7 @@ cdef class CryptoSwap(Instrument):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the instrument.
+            The instrument ID for the instrument.
         base_currency : Currency, optional
             The base currency.
         quote_currency : Currency
@@ -101,10 +102,10 @@ cdef class CryptoSwap(Instrument):
             The fee rate for liquidity makers as a percentage of order value.
         taker_fee : Decimal
             The fee rate for liquidity takers as a percentage of order value.
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
+        ts_event: int64
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init: int64
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
         info : dict[str, object], optional
             The additional instrument information.
 
@@ -160,8 +161,8 @@ cdef class CryptoSwap(Instrument):
             margin_maint=margin_maint,
             maker_fee=maker_fee,
             taker_fee=taker_fee,
-            ts_event_ns=ts_event_ns,
-            ts_recv_ns=ts_recv_ns,
+            ts_event=ts_event,
+            ts_init=ts_init,
             info=info,
         )
 
@@ -185,13 +186,14 @@ cdef class CryptoSwap(Instrument):
 
     @staticmethod
     cdef CryptoSwap from_dict_c(dict values):
+        Condition.not_none(values, "values")
         cdef str max_q = values["max_quantity"]
         cdef str min_q = values["min_quantity"]
         cdef str max_n = values["max_notional"]
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
-        cdef str info = values["info"],
+        cdef bytes info = values["info"]
         return CryptoSwap(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             base_currency=Currency.from_str_c(values["base_currency"]),
@@ -212,13 +214,14 @@ cdef class CryptoSwap(Instrument):
             margin_maint=Decimal(values["margin_maint"]),
             maker_fee=Decimal(values["maker_fee"]),
             taker_fee=Decimal(values["taker_fee"]),
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
-            info=json.loads(info) if info is not None else None,
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
+            info=orjson.loads(info) if info is not None else None,
         )
 
     @staticmethod
     cdef dict to_dict_c(CryptoSwap obj):
+        Condition.not_none(obj, "obj")
         return {
             "type": "CryptoSwap",
             "id": obj.id.value,
@@ -240,9 +243,9 @@ cdef class CryptoSwap(Instrument):
             "margin_maint": str(obj.margin_maint),
             "maker_fee": str(obj.maker_fee),
             "taker_fee": str(obj.taker_fee),
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
-            "info": json.dumps(obj.info) if obj.info is not None else None,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
+            "info": orjson.dumps(obj.info) if obj.info is not None else None,
         }
 
     @staticmethod

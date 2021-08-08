@@ -20,7 +20,7 @@ from collections import deque
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.data.bar cimport Bar
 
 
 cdef class Swings(Indicator):
@@ -71,7 +71,7 @@ cdef class Swings(Indicator):
         self.update_raw(
             bar.high.as_double(),
             bar.low.as_double(),
-            nanos_to_unix_dt(nanos=bar.ts_recv_ns),
+            nanos_to_unix_dt(nanos=bar.ts_init),
         )
 
     cpdef void update_raw(

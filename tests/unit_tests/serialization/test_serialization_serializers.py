@@ -13,40 +13,49 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import copy
+import sys
 from base64 import b64encode
 
+import pytest
+
+from nautilus_trader.backtest.data_loader import DataCatalog
+from nautilus_trader.backtest.data_loader import class_to_filename
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.c_enums.book_level import BookLevel
 from nautilus_trader.model.c_enums.delta_type import DeltaType
-from nautilus_trader.model.commands import CancelOrder
-from nautilus_trader.model.commands import SubmitBracketOrder
-from nautilus_trader.model.commands import SubmitOrder
-from nautilus_trader.model.commands import UpdateOrder
+from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import SubmitBracketOrder
+from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.events import AccountState
-from nautilus_trader.model.events import OrderAccepted
-from nautilus_trader.model.events import OrderCancelRejected
-from nautilus_trader.model.events import OrderCanceled
-from nautilus_trader.model.events import OrderDenied
-from nautilus_trader.model.events import OrderExpired
-from nautilus_trader.model.events import OrderFilled
-from nautilus_trader.model.events import OrderInitialized
-from nautilus_trader.model.events import OrderInvalid
-from nautilus_trader.model.events import OrderPendingCancel
-from nautilus_trader.model.events import OrderPendingReplace
-from nautilus_trader.model.events import OrderRejected
-from nautilus_trader.model.events import OrderSubmitted
-from nautilus_trader.model.events import OrderTriggered
-from nautilus_trader.model.events import OrderUpdateRejected
-from nautilus_trader.model.events import OrderUpdated
+from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.events.order import OrderCanceled
+from nautilus_trader.model.events.order import OrderCancelRejected
+from nautilus_trader.model.events.order import OrderDenied
+from nautilus_trader.model.events.order import OrderExpired
+from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.model.events.order import OrderPendingCancel
+from nautilus_trader.model.events.order import OrderPendingUpdate
+from nautilus_trader.model.events.order import OrderRejected
+from nautilus_trader.model.events.order import OrderSubmitted
+from nautilus_trader.model.events.order import OrderTriggered
+from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.events.order import OrderUpdateRejected
+from nautilus_trader.model.events.position import PositionChanged
+from nautilus_trader.model.events.position import PositionClosed
+from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -59,29 +68,29 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.book import OrderBookDelta
-from nautilus_trader.model.orderbook.book import OrderBookDeltas
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
+from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
-from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.position import Position
 from nautilus_trader.serialization.arrow.core import _deserialize
 from nautilus_trader.serialization.arrow.core import _serialize
 from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
 from tests.test_kit.providers import TestInstrumentProvider
-from tests.test_kit.stubs import TestStubs
 from tests.test_kit.stubs import UNIX_EPOCH
+from tests.test_kit.stubs import TestStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-class TestInstrumentSerializer:
+class TestMsgPackInstrumentSerializer:
     def setup(self):
         # Fixture Setup
         self.serializer = MsgPackInstrumentSerializer()
@@ -117,13 +126,16 @@ class TestInstrumentSerializer:
         print(deserialized)
 
 
-class TestOrderUnpackerSerializer:
+class TestOrderSerializer:
     def setup(self):
         # Fixture Setup
         self.unpacker = OrderUnpacker()
+        self.trader_id = TestStubs.trader_id()
+        self.strategy_id = TestStubs.strategy_id()
+
         self.order_factory = OrderFactory(
-            trader_id=TraderId("TESTER-000"),
-            strategy_id=StrategyId("S-001"),
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
             clock=TestClock(),
         )
 
@@ -162,16 +174,17 @@ class TestOrderUnpackerSerializer:
     def test_pack_and_unpack_limit_orders_with_expire_time(self):
         # Arrange
         order = LimitOrder(
-            ClientOrderId("O-123456"),
-            StrategyId("S-001"),
+            self.trader_id,
+            self.strategy_id,
             AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
             OrderSide.BUY,
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -184,16 +197,17 @@ class TestOrderUnpackerSerializer:
     def test_pack_and_unpack_stop_market_orders_with_expire_time(self):
         # Arrange
         order = StopMarketOrder(
-            ClientOrderId("O-123456"),
-            StrategyId("S-001"),
+            self.trader_id,
+            self.strategy_id,
             AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
             OrderSide.BUY,
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -206,9 +220,10 @@ class TestOrderUnpackerSerializer:
     def test_pack_and_unpack_stop_limit_orders(self):
         # Arrange
         order = StopLimitOrder(
-            ClientOrderId("O-123456"),
-            StrategyId("S-001"),
+            self.trader_id,
+            self.strategy_id,
             AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
             OrderSide.BUY,
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
@@ -216,7 +231,7 @@ class TestOrderUnpackerSerializer:
             time_in_force=TimeInForce.GTC,
             expire_time=None,
             init_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -229,9 +244,10 @@ class TestOrderUnpackerSerializer:
     def test_pack_and_unpack_stop_limit_orders_with_expire_time(self):
         # Arrange
         order = StopLimitOrder(
-            ClientOrderId("O-123456"),
-            StrategyId("S-001"),
+            self.trader_id,
+            self.strategy_id,
             AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
             OrderSide.BUY,
             Quantity(100000, precision=0),
             price=Price(1.00000, precision=5),
@@ -239,7 +255,7 @@ class TestOrderUnpackerSerializer:
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
             init_id=uuid4(),
-            timestamp_ns=0,
+            ts_init=0,
         )
 
         # Act
@@ -255,11 +271,13 @@ class TestMsgPackCommandSerializer:
         # Fixture Setup
         self.venue = Venue("SIM")
         self.trader_id = TestStubs.trader_id()
+        self.strategy_id = TestStubs.strategy_id()
         self.account_id = TestStubs.account_id()
         self.serializer = MsgPackCommandSerializer()
+
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
-            strategy_id=StrategyId("S-001"),
+            strategy_id=self.strategy_id,
             clock=TestClock(),
         )
 
@@ -410,7 +428,15 @@ class TestMsgPackCommandSerializer:
 class TestMsgPackEventSerializer:
     def setup(self):
         # Fixture Setup
+        self.trader_id = TestStubs.trader_id()
+        self.strategy_id = TestStubs.strategy_id()
         self.account_id = TestStubs.account_id()
+
+        self.order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            clock=TestClock(),
+        )
         self.serializer = MsgPackEventSerializer()
 
     def test_serialize_and_deserialize_account_state_with_base_currency_events(self):
@@ -420,15 +446,11 @@ class TestMsgPackEventSerializer:
             account_type=AccountType.MARGIN,
             base_currency=USD,
             reported=True,
-            balances=[
-                AccountBalance(
-                    USD, Money(1525000, USD), Money(0, USD), Money(1525000, USD)
-                )
-            ],
+            balances=[AccountBalance(USD, Money(1525000, USD), Money(0, USD), Money(1525000, USD))],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=1_000_000_000,
+            ts_event=0,
+            ts_init=1_000_000_000,
         )
 
         # Act
@@ -455,8 +477,8 @@ class TestMsgPackEventSerializer:
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=1_000_000_000,
+            ts_event=0,
+            ts_init=1_000_000_000,
         )
 
         # Act
@@ -469,9 +491,10 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_market_order_initialized_events(self):
         # Arrange
         event = OrderInitialized(
-            ClientOrderId("O-123456"),
-            StrategyId("S-001"),
+            self.trader_id,
+            self.strategy_id,
             AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
             OrderSide.SELL,
             OrderType.MARKET,
             Quantity(100000, precision=0),
@@ -499,9 +522,10 @@ class TestMsgPackEventSerializer:
         }
 
         event = OrderInitialized(
-            ClientOrderId("O-123456"),
-            StrategyId("S-001"),
+            self.trader_id,
+            self.strategy_id,
             AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
             OrderSide.SELL,
             OrderType.LIMIT,
             Quantity(100000, precision=0),
@@ -528,9 +552,10 @@ class TestMsgPackEventSerializer:
         }
 
         event = OrderInitialized(
-            ClientOrderId("O-123456"),
-            StrategyId("S-001"),
+            self.trader_id,
+            self.strategy_id,
             AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
             OrderSide.SELL,
             OrderType.STOP_MARKET,
             Quantity(100000, precision=0),
@@ -560,9 +585,10 @@ class TestMsgPackEventSerializer:
         }
 
         event = OrderInitialized(
-            ClientOrderId("O-123456"),
-            StrategyId("S-001"),
+            self.trader_id,
+            self.strategy_id,
             AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
             OrderSide.SELL,
             OrderType.STOP_LIMIT,
             Quantity(100000, precision=0),
@@ -580,27 +606,14 @@ class TestMsgPackEventSerializer:
         assert deserialized == event
         assert deserialized.options == options
 
-    def test_serialize_and_deserialize_order_invalid_events(self):
-        # Arrange
-        event = OrderInvalid(
-            ClientOrderId("O-123456"),
-            "VenueOrderId already exists",
-            uuid4(),
-            0,
-        )
-
-        # Act
-        serialized = self.serializer.serialize(event)
-        deserialized = self.serializer.deserialize(serialized)
-
-        # Assert
-        assert deserialized == event
-
     def test_serialize_and_deserialize_order_denied_events(self):
         # Arrange
         event = OrderDenied(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
-            "Exceeds risk for FX",
+            "Exceeds MAX_NOTIONAL_PER_ORDER",
             uuid4(),
             0,
         )
@@ -615,10 +628,13 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_order_submitted_events(self):
         # Arrange
         event = OrderSubmitted(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -632,11 +648,14 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_order_accepted_events(self):
         # Arrange
         event = OrderAccepted(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("B-123456"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -650,11 +669,14 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_order_rejected_events(self):
         # Arrange
         event = OrderRejected(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             "ORDER_ID_INVALID",
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -668,11 +690,14 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_order_pending_cancel_events(self):
         # Arrange
         event = OrderPendingCancel(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -685,12 +710,15 @@ class TestMsgPackEventSerializer:
 
     def test_serialize_and_deserialize_order_pending_replace_events(self):
         # Arrange
-        event = OrderPendingReplace(
+        event = OrderPendingUpdate(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -704,11 +732,14 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_order_canceled_events(self):
         # Arrange
         event = OrderCanceled(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -722,13 +753,16 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_order_update_reject_events(self):
         # Arrange
         event = OrderUpdateRejected(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             "RESPONSE",
             "ORDER_DOES_NOT_EXIST",
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -742,13 +776,16 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_order_cancel_reject_events(self):
         # Arrange
         event = OrderCancelRejected(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             "RESPONSE",
             "ORDER_DOES_NOT_EXIST",
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -762,14 +799,17 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_order_amended_events(self):
         # Arrange
         event = OrderUpdated(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             Quantity(100000, precision=0),
             Price(0.80010, precision=5),
             Price(0.80050, precision=5),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -783,11 +823,14 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_order_expired_events(self):
         # Arrange
         event = OrderExpired(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -801,11 +844,14 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_order_triggered_events(self):
         # Arrange
         event = OrderTriggered(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -819,21 +865,23 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_order_partially_filled_events(self):
         # Arrange
         event = OrderFilled(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             ExecutionId("E123456"),
             PositionId("T123456"),
-            StrategyId("S-001"),
-            AUDUSD_SIM.id,
             OrderSide.SELL,
+            OrderType.MARKET,
             Quantity(50000, precision=0),
             Price(1.00000, precision=5),
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.MAKER,
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -847,21 +895,23 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_order_filled_events(self):
         # Arrange
         event = OrderFilled(
+            self.trader_id,
+            self.strategy_id,
             self.account_id,
+            AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             ExecutionId("E123456"),
             PositionId("T123456"),
-            StrategyId("S-001"),
-            AUDUSD_SIM.id,
             OrderSide.SELL,
+            OrderType.MARKET,
             Quantity(100000, precision=0),
             Price(1.00000, precision=5),
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.TAKER,
-            0,
             uuid4(),
+            0,
             0,
         )
 
@@ -872,10 +922,148 @@ class TestMsgPackEventSerializer:
         # Assert
         assert deserialized == event
 
+    def test_serialize_and_deserialize_position_opened_events(self):
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
 
+        fill = TestStubs.event_order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00001"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+
+        uuid = uuid4()
+        event = PositionOpened.create(position, fill, uuid, 0)
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+
+    def test_serialize_and_deserialize_position_changed_events(self):
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        fill1 = TestStubs.event_order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00001"),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(50000),
+        )
+
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00011"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        uuid = uuid4()
+        event = PositionChanged.create(position, fill2, uuid, 0)
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+
+    def test_serialize_and_deserialize_position_closed_events(self):
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        fill1 = TestStubs.event_order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00001"),
+        )
+
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+        )
+
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00011"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+        uuid = uuid4()
+        event = PositionClosed.create(position, fill2, uuid, 0)
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="does not run on windows")
 class TestParquetSerializer:
-    def test_serialize_and_deserialize_trade_tick(self):
+    def setup(self):
+        self.catalog = DataCatalog(path="/", fs_protocol="memory")
+        self.order_factory = OrderFactory(
+            trader_id=TraderId("T-001"),
+            strategy_id=StrategyId("S-001"),
+            clock=TestClock(),
+        )
+        self.order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+        self.order_submitted = copy.copy(self.order)
+        self.order_submitted.apply(TestStubs.event_order_submitted(self.order))
 
+        self.order_accepted = copy.copy(self.order_submitted)
+        self.order_accepted.apply(TestStubs.event_order_accepted(self.order_submitted))
+
+        self.order_pending_cancel = copy.copy(self.order_accepted)
+        self.order_pending_cancel.apply(TestStubs.event_order_pending_cancel(self.order_accepted))
+
+        self.order_cancelled = copy.copy(self.order_pending_cancel)
+        self.order_cancelled.apply(TestStubs.event_order_canceled(self.order_pending_cancel))
+
+    def test_serialize_and_deserialize_trade_tick(self):
         tick = TestStubs.trade_tick_5decimal()
 
         serialized = _serialize(tick)
@@ -883,30 +1071,37 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == [tick]
+        self.catalog._write_chunks([tick])
 
     def test_serialize_and_deserialize_order_book_delta(self):
-
         delta = OrderBookDelta(
             instrument_id=TestStubs.audusd_id(),
             level=BookLevel.L2,
             delta_type=DeltaType.CLEAR,
             order=None,
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         serialized = _serialize(delta)
-        deserialized = _deserialize(cls=OrderBookDelta, chunk=serialized)
+        [deserialized] = _deserialize(cls=OrderBookDelta, chunk=serialized)
 
         # Assert
-        assert deserialized == [delta]
+        expected = OrderBookDeltas(
+            instrument_id=TestStubs.audusd_id(),
+            level=BookLevel.L2,
+            deltas=[delta],
+            ts_event=0,
+            ts_init=0,
+        )
+        assert deserialized == expected
+        self.catalog._write_chunks([delta])
 
     def test_serialize_and_deserialize_order_book_deltas(self):
-
         kw = {
             "instrument_id": "AUD/USD.SIM",
-            "ts_event_ns": 0,
-            "ts_recv_ns": 0,
+            "ts_event": 0,
+            "ts_init": 0,
             "level": "L2",
         }
         deltas = OrderBookDeltas(
@@ -934,8 +1129,8 @@ class TestParquetSerializer:
                     }
                 ),
             ],
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         serialized = _serialize(deltas)
@@ -943,9 +1138,67 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == [deltas]
+        self.catalog._write_chunks([deltas])
+
+    def test_serialize_and_deserialize_order_book_deltas_grouped(self):
+        kw = {
+            "instrument_id": "AUD/USD.SIM",
+            "ts_event": 0,
+            "ts_init": 0,
+            "level": "L2",
+        }
+        deltas = [
+            {
+                "delta_type": "ADD",
+                "order_side": "SELL",
+                "order_price": 0.9901,
+                "order_size": 327.25,
+                "order_id": "1",
+            },
+            {
+                "delta_type": "CLEAR",
+                "order_side": None,
+                "order_price": None,
+                "order_size": None,
+                "order_id": None,
+            },
+            {
+                "delta_type": "ADD",
+                "order_side": "SELL",
+                "order_price": 0.98039,
+                "order_size": 27.91,
+                "order_id": "2",
+            },
+            {
+                "delta_type": "ADD",
+                "order_side": "SELL",
+                "order_price": 0.97087,
+                "order_size": 14.43,
+                "order_id": "3",
+            },
+        ]
+        deltas = OrderBookDeltas(
+            instrument_id=TestStubs.audusd_id(),
+            level=BookLevel.L2,
+            deltas=[OrderBookDelta.from_dict({**kw, **d}) for d in deltas],
+            ts_event=0,
+            ts_init=0,
+        )
+
+        serialized = _serialize(deltas)
+        [deserialized] = _deserialize(cls=OrderBookDeltas, chunk=serialized)
+
+        # Assert
+        assert deserialized == deltas
+        self.catalog._write_chunks([deserialized])
+        assert [d.type for d in deserialized.deltas] == [
+            DeltaType.ADD,
+            DeltaType.CLEAR,
+            DeltaType.ADD,
+            DeltaType.ADD,
+        ]
 
     def test_serialize_and_deserialize_order_book_snapshot(self):
-
         book = TestStubs.order_book_snapshot()
 
         serialized = _serialize(book)
@@ -953,3 +1206,174 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == [book]
+        self.catalog._write_chunks([book])
+
+    def test_serialize_and_deserialize_account_state(self):
+        account = TestStubs.event_account_state()
+
+        serialized = _serialize(account)
+        [deserialized] = _deserialize(cls=AccountState, chunk=serialized)
+
+        # Assert
+        assert deserialized == account
+
+        self.catalog._write_chunks([account])
+
+    @pytest.mark.parametrize(
+        "event_func",
+        [
+            TestStubs.event_order_accepted,
+            TestStubs.event_order_rejected,
+            TestStubs.event_order_submitted,
+        ],
+    )
+    def test_serialize_and_deserialize_order_events_base(self, event_func):
+        order = TestStubs.limit_order()
+        # order.venue_order_id = "1"
+        event = event_func(order=order)
+        cls = type(event)
+
+        serialized = _serialize(event)
+        deserialized = _deserialize(cls=cls, chunk=serialized)
+
+        # Assert
+        assert deserialized == [event]
+        self.catalog._write_chunks([event])
+        df = self.catalog._query(class_to_filename(cls))
+        assert len(df) == 1
+
+    @pytest.mark.parametrize(
+        "event_func",
+        [
+            TestStubs.event_order_canceled,
+            TestStubs.event_order_expired,
+            TestStubs.event_order_pending_cancel,
+            TestStubs.event_order_pending_update,
+            TestStubs.event_order_triggered,
+        ],
+    )
+    def test_serialize_and_deserialize_order_events_post_accepted(self, event_func):
+        # Act
+        event = event_func(order=self.order_accepted)
+        cls = type(event)
+
+        serialized = _serialize(event)
+        deserialized = _deserialize(cls=cls, chunk=serialized)
+
+        # Assert
+        assert deserialized == [event]
+        self.catalog._write_chunks([event])
+        df = self.catalog._query(class_to_filename(cls))
+        assert len(df) == 1
+
+    @pytest.mark.parametrize(
+        "event_func",
+        [
+            TestStubs.event_order_filled,
+        ],
+    )
+    def test_serialize_and_deserialize_order_events_filled(self, event_func):
+        # Act
+        event = event_func(order=self.order_accepted, instrument=AUDUSD_SIM)
+        cls = type(event)
+
+        serialized = _serialize(event)
+        assert serialized
+        # TODO (bm) - can't deserialize order filled right now
+        # deserialized = _deserialize(cls=cls, chunk=serialized)
+
+        # Assert
+        # assert deserialized == [event]
+        self.catalog._write_chunks([event])
+        df = self.catalog._query(class_to_filename(cls))
+        assert len(df) == 1
+
+    @pytest.mark.parametrize(
+        "position_func",
+        [
+            TestStubs.event_position_opened,
+            TestStubs.event_position_changed,
+        ],
+    )
+    def test_serialize_and_deserialize_position_events_open_changed(self, position_func):
+        instrument = TestInstrumentProvider.default_fx_ccy("GBPUSD")
+
+        order3 = self.order_factory.market(
+            instrument.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+        fill3 = TestStubs.event_order_filled(
+            order3,
+            instrument=instrument,
+            position_id=PositionId("P-3"),
+            strategy_id=StrategyId("S-1"),
+            last_px=Price.from_str("1.00000"),
+        )
+
+        position = Position(instrument=instrument, fill=fill3)
+
+        event = position_func(position=position)
+        cls = type(event)
+
+        serialized = _serialize(event)
+        assert serialized
+        # TODO (bm) - can't deserialize positions right now
+        # deserialized = _deserialize(cls=cls, chunk=serialized)
+
+        # Assert
+        # assert deserialized == [event]
+        self.catalog._write_chunks([event])
+        df = self.catalog._query(class_to_filename(cls))
+        assert len(df) == 1
+
+    @pytest.mark.parametrize(
+        "position_func",
+        [
+            TestStubs.event_position_closed,
+        ],
+    )
+    def test_serialize_and_deserialize_position_events_closed(self, position_func):
+        instrument = TestInstrumentProvider.default_fx_ccy("GBPUSD")
+
+        open_order = self.order_factory.market(
+            instrument.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+        open_fill = TestStubs.event_order_filled(
+            open_order,
+            instrument=instrument,
+            position_id=PositionId("P-3"),
+            strategy_id=StrategyId("S-1"),
+            last_px=Price.from_str("1.00000"),
+        )
+        close_order = self.order_factory.market(
+            instrument.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+        )
+        close_fill = TestStubs.event_order_filled(
+            close_order,
+            instrument=instrument,
+            position_id=PositionId("P-3"),
+            strategy_id=StrategyId("S-1"),
+            last_px=Price.from_str("1.20000"),
+        )
+
+        position = Position(instrument=instrument, fill=open_fill)
+        position.apply(close_fill)
+
+        event = position_func(position=position)
+        cls = type(event)
+
+        serialized = _serialize(event)
+        assert serialized
+        # TODO (bm) - can't deserialize positions right now
+        # deserialized = _deserialize(cls=cls, chunk=serialized)
+
+        # Assert
+        # assert deserialized == [event]
+        self.catalog._write_chunks([event])
+        df = self.catalog._query(class_to_filename(cls))
+        assert len(df) == 1

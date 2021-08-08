@@ -27,7 +27,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 
 cdef class IdentifierGenerator:
     """
-    Provides a generator for unique identifier strings.
+    Provides a generator for unique ID strings.
     """
 
     def __init__(self, TraderId trader_id not None, Clock clock not None):
@@ -37,7 +37,7 @@ cdef class IdentifierGenerator:
         Parameters
         ----------
         trader_id : TraderId
-            The identifier tag for the trader.
+            The ID tag for the trader.
         clock : Clock
             The internal clock.
 
@@ -82,11 +82,11 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier for the generator.
+            The trader ID for the generator.
         strategy_id : StrategyId
-            The strategy identifier for the generator.
+            The strategy ID for the generator.
         clock : Clock
-            The clock for the component.
+            The clock for the generator.
         initial_count : int
             The initial count for the generator.
 
@@ -116,7 +116,7 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
 
     cpdef ClientOrderId generate(self):
         """
-        Return a unique client order identifier.
+        Return a unique client order ID.
 
         Returns
         -------
@@ -135,7 +135,7 @@ cdef class ClientOrderIdGenerator(IdentifierGenerator):
 
     cpdef void reset(self) except *:
         """
-        Reset the identifier generator.
+        Reset the ID generator.
 
         All stateful fields are reset to their initial value.
         """
@@ -154,7 +154,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
         Parameters
         ----------
         trader_id : TraderId
-            The trader identifier tag for the generator.
+            The trader ID tag for the generator.
 
         """
         super().__init__(trader_id, clock)
@@ -163,12 +163,12 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
     cpdef void set_count(self, StrategyId strategy_id, int count) except *:
         """
-        Set the internal position count for the given strategy identifier.
+        Set the internal position count for the given strategy ID.
 
         Parameters
         ----------
         strategy_id : StrategyId
-            The strategy identifier associated with the count.
+            The strategy ID associated with the count.
         count : int
             The count to set.
 
@@ -185,12 +185,12 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
     cpdef int get_count(self, StrategyId strategy_id) except *:
         """
-        Return the internal position count for the given strategy identifier.
+        Return the internal position count for the given strategy ID.
 
         Parameters
         ----------
         strategy_id : StrategyId
-            The strategy identifier associated with the count.
+            The strategy ID associated with the count.
 
         Returns
         -------
@@ -203,12 +203,12 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
     cpdef PositionId generate(self, StrategyId strategy_id, bint flipped=False):
         """
-        Return a unique position identifier.
+        Return a unique position ID.
 
         Parameters
         ----------
         strategy_id : StrategyId
-            The strategy identifier associated with the position.
+            The strategy ID associated with the position.
         flipped : bool
             If the position is being flipped. If True then the generated id
             will be appended with 'F'.
@@ -234,7 +234,7 @@ cdef class PositionIdGenerator(IdentifierGenerator):
 
     cpdef void reset(self) except *:
         """
-        Reset the identifier generator.
+        Reset the ID generator.
 
         All stateful fields are reset to their initial value.
         """

@@ -14,9 +14,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 import os
 import sys
+from decimal import Decimal
 
 
 sys.path.insert(
@@ -39,7 +39,7 @@ config = {
     },
     "system": {
         "loop_debug": False,  # If event loop debug mode
-        "timeout_connection": 30.0,  # Timeout for all engines client to connect and initialize
+        "timeout_connection": 30.0,  # Timeout for all clients to connect and initialize
         "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
         "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
         "timeout_disconnection": 30.0,  # Timeout for all engine clients to disconnect
@@ -49,7 +49,7 @@ config = {
         "level_stdout": "DBG",
     },
     "database": {
-        "type": "memory",
+        "type": "in-memory",
     },
     "data_engine": {},
     "risk_engine": {},
@@ -91,7 +91,10 @@ strategy = BetfairTestStrategy(
 )
 
 # Instantiate the node passing a list of strategies and configuration
-node = TradingNode(strategies=[strategy], config=config)
+node = TradingNode(config=config)  # type: ignore
+
+# Add your strategies and modules
+node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user defined factories)
 node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)

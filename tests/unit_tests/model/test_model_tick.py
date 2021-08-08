@@ -15,12 +15,12 @@
 
 import pytest
 
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.tick import QuoteTick
-from nautilus_trader.model.tick import TradeTick
 from tests.test_kit.providers import TestInstrumentProvider
 
 
@@ -144,8 +144,8 @@ class TestQuoteTick:
             "ask": "1.00001",
             "bid_size": "1",
             "ask_size": "1",
-            "ts_event_ns": 0,
-            "ts_recv_ns": 0,
+            "ts_event": 0,
+            "ts_init": 0,
         }
 
     def test_from_dict_returns_expected_tick(self):
@@ -208,8 +208,8 @@ class TestTradeTick:
             "size": "10000",
             "aggressor_side": "BUY",
             "match_id": "123456789",
-            "ts_event_ns": 0,
-            "ts_recv_ns": 0,
+            "ts_event": 0,
+            "ts_init": 0,
         }
 
     def test_from_dict_returns_expected_tick(self):

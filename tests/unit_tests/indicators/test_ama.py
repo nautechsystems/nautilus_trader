@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.average.ama import AdaptiveMovingAverage
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit.providers import TestInstrumentProvider
@@ -24,8 +22,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class AdaptiveMovingAverageTests(unittest.TestCase):
-    def setUp(self):
+class TestAdaptiveMovingAverage:
+    def setup(self):
         # Fixture Setup
         self.ama = AdaptiveMovingAverage(10, 2, 30)
 
@@ -33,26 +31,26 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("AdaptiveMovingAverage", self.ama.name)
+        assert self.ama.name == "AdaptiveMovingAverage"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("AdaptiveMovingAverage(10, 2, 30)", str(self.ama))
-        self.assertEqual("AdaptiveMovingAverage(10, 2, 30)", repr(self.ama))
+        assert str(self.ama) == "AdaptiveMovingAverage(10, 2, 30)"
+        assert repr(self.ama) == "AdaptiveMovingAverage(10, 2, 30)"
 
     def test_period(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(10, self.ama.period)
+        assert self.ama.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.ama.initialized)
+        assert self.ama.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -62,7 +60,7 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
             self.ama.update_raw(1.00000)
 
         # Assert
-        self.assertEqual(True, self.ama.initialized)
+        assert self.ama.initialized is True
 
     def test_handle_quote_tick_updates_indicator(self):
         # Arrange
@@ -74,8 +72,8 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
         indicator.handle_quote_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00002, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00002
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
@@ -87,8 +85,8 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
         indicator.handle_trade_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00001, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00001
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -100,8 +98,8 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00003, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00003
 
     def test_value_with_one_input(self):
         # Arrange
@@ -109,7 +107,7 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.0, self.ama.value)
+        assert self.ama.value == 1.0
 
     def test_value_with_three_inputs(self):
         # Arrange
@@ -119,7 +117,7 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(2.135802469135802, self.ama.value, 10)
+        assert self.ama.value == 2.135802469135802
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -130,5 +128,5 @@ class AdaptiveMovingAverageTests(unittest.TestCase):
         self.ama.reset()
 
         # Assert
-        self.assertFalse(self.ama.initialized)
-        self.assertEqual(0, self.ama.value)
+        assert not self.ama.initialized
+        assert self.ama.value == 0

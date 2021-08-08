@@ -20,7 +20,7 @@ from cpython.datetime cimport datetime
 from ccxt.base.errors import BaseError as CCXTError
 
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
-
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
@@ -28,10 +28,6 @@ from nautilus_trader.core.datetime cimport dt_to_unix_millis
 from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
-from nautilus_trader.live.data_engine cimport LiveDataEngine
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarSpecification
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
@@ -39,14 +35,19 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarSpecification
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orderbook.book cimport OrderBookSnapshot
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
+from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -59,8 +60,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     def __init__(
         self,
+        loop not None: asyncio.AbstractEventLoop,
         client not None,
-        LiveDataEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
     ):
@@ -69,10 +72,14 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         Parameters
         ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
         client : ccxtpro.Exchange
             The unified CCXT client.
-        engine : LiveDataEngine
-            The live data engine for the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : LiveClock
             The clock for the client.
         logger : Logger
@@ -85,8 +92,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         """
         super().__init__(
+            loop=loop,
             client_id=ClientId(client.name.upper()),
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             config={
@@ -105,68 +114,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self.is_connected = False
 
-        # Subscriptions
-        self._subscribed_instruments = set()   # type: set[InstrumentId]
-        self._subscribed_order_books = {}      # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_quote_ticks = {}      # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_trade_ticks = {}      # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_bars = {}             # type: dict[BarType, asyncio.Task]
-
-        # Scheduled tasks
-        self._update_instruments_task = None
-
-    @property
-    def subscribed_instruments(self):
-        """
-        The instruments subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        return sorted(list(self._subscribed_instruments))
-
-    @property
-    def subscribed_quote_ticks(self):
-        """
-        The quote tick instruments subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        return sorted(list(self._subscribed_quote_ticks.keys()))
-
-    @property
-    def subscribed_trade_ticks(self):
-        """
-        The trade tick instruments subscribed to.
-
-        Returns
-        -------
-        list[InstrumentId]
-
-        """
-        return sorted(list(self._subscribed_trade_ticks.keys()))
-
-    @property
-    def subscribed_bars(self):
-        """
-        The bar types subscribed to.
-
-        Returns
-        -------
-        list[BarType]
-
-        """
-        return sorted(list(self._subscribed_bars.keys()))
-
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
+    cpdef void _start(self) except *:
         self._log.info("Connecting...")
 
         # Schedule subscribed instruments update
@@ -189,10 +137,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         self.is_connected = True
         self._log.info("Connected.")
 
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+    cpdef void _stop(self) except *:
         self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):
@@ -215,10 +160,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         self.is_connected = False
         self._log.info("Disconnected.")
 
-    cpdef void reset(self) except *:
-        """
-        Reset the client.
-        """
+    cpdef void _reset(self) except *:
         if self.is_connected:
             self._log.error("Cannot reset a connected data client.")
             return
@@ -240,10 +182,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self._log.info("Reset.")
 
-    cpdef void dispose(self) except *:
-        """
-        Dispose the client.
-        """
+    cpdef void _dispose(self) except *:
         if self.is_connected:
             self._log.error("Cannot dispose a connected data client.")
             return
@@ -256,9 +195,20 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
+    cpdef void subscribe_instruments(self) except *:
+        """
+        Subscribe to `Instrument` data for the venue.
+
+        """
+        cdef list instruments = self._cache.instruments(Venue(self.id.value))
+
+        for instrument in instruments:
+            if instrument not in self._subscribed_instruments:
+                self._subscribed_instruments.add(instrument.id)
+
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `Instrument` data for the given instrument identifier.
+        Subscribe to `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
@@ -270,7 +220,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self._subscribed_instruments.add(instrument_id)
 
-    cpdef void subscribe_order_book(
+    cpdef void subscribe_order_book_snapshots(
         self,
         InstrumentId instrument_id,
         BookLevel level,
@@ -278,7 +228,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         dict kwargs=None,
     ) except *:
         """
-        Subscribe to `OrderBook` data for the given instrument identifier.
+        Subscribe to `OrderBook` data for the given instrument ID.
 
         Parameters
         ----------
@@ -315,7 +265,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `QuoteTick` data for the given instrument identifier.
+        Subscribe to `QuoteTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -336,7 +286,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """
-        Subscribe to `TradeTick` data for the given instrument identifier.
+        Subscribe to `TradeTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -385,9 +335,16 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self._log.info(f"Subscribed to {bar_type} <Bar> data.")
 
+    cpdef void unsubscribe_instruments(self) except *:
+        """
+        Unsubscribe from `Instrument` data for the venue.
+
+        """
+        self._subscribed_instruments.clear()
+
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `Instrument` data for the given instrument identifier.
+        Unsubscribe from `Instrument` data for the given instrument ID.
 
         Parameters
         ----------
@@ -399,9 +356,9 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
         self._subscribed_instruments.discard(instrument_id)
 
-    cpdef void unsubscribe_order_book(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `OrderBook` data for the given instrument identifier.
+        Unsubscribe from `OrderBook` data for the given instrument ID.
 
         Parameters
         ----------
@@ -422,7 +379,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `QuoteTick` data for the given instrument identifier.
+        Unsubscribe from `QuoteTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -443,7 +400,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """
-        Unsubscribe from `TradeTick` data for the given instrument identifier.
+        Unsubscribe from `TradeTick` data for the given instrument ID.
 
         Parameters
         ----------
@@ -485,37 +442,6 @@ cdef class CCXTDataClient(LiveMarketDataClient):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID correlation_id) except *:
-        """
-        Request the instrument for the given instrument identifier.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument identifier for the request.
-        correlation_id : UUID
-            The correlation identifier for the request.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(correlation_id, "correlation_id")
-
-        self._loop.create_task(self._request_instrument(instrument_id, correlation_id))
-
-    cpdef void request_instruments(self, UUID correlation_id) except *:
-        """
-        Request all instruments.
-
-        Parameters
-        ----------
-        correlation_id : UUID
-            The correlation identifier for the request.
-
-        """
-        Condition.not_none(correlation_id, "correlation_id")
-
-        self._loop.create_task(self._request_instruments(correlation_id))
-
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -530,7 +456,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument identifier for the request.
+            The tick instrument ID for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -539,15 +465,16 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         limit : int
             The limit for the number of returned ticks.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 
-        self._log.warning("`request_quote_ticks` was called when not supported "
-                          "by the exchange.")
+        self._log.warning(
+            "`request_quote_ticks` was called when not supported by the exchange.",
+        )
 
     cpdef void request_trade_ticks(
         self,
@@ -563,7 +490,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The tick instrument identifier for the request.
+            The tick instrument ID for the request.
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
@@ -572,16 +499,17 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         limit : int
             The limit for the number of returned ticks.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(correlation_id, "correlation_id")
 
         if to_datetime is not None:
-            self._log.warning(f"`request_trade_ticks` was called with a `to_datetime` "
-                              f"argument of {to_datetime} when not supported by the exchange "
-                              f"(will use `limit` of {limit}).")
+            self._log.warning(
+                f"`request_trade_ticks` was called with a `to_datetime` "
+                f"argument of {to_datetime} when not supported by the exchange "
+                f"(will use `limit` of {limit}).")
 
         self._loop.create_task(self._request_trade_ticks(
             instrument_id,
@@ -614,7 +542,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         limit : int
             The limit for the number of returned bars.
         correlation_id : UUID
-            The correlation identifier for the request.
+            The correlation ID for the request.
 
         """
         Condition.not_none(bar_type, "bar_type")
@@ -687,8 +615,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
                         level=level,
                         bids=list(bids),
                         asks=list(asks),
-                        ts_event_ns=self._ccxt_to_timestamp_ns(millis=timestamp_ms),
-                        ts_recv_ns=self._clock.timestamp_ns(),
+                        ts_event=self._ccxt_to_timestamp_ns(millis=timestamp_ms),
+                        ts_init=self._clock.timestamp_ns(),
                     )
 
                     self._handle_data(snapshot)
@@ -787,8 +715,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double best_ask,
         double best_bid_size,
         double best_ask_size,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
         int price_precision,
         int size_precision,
     ) except *:
@@ -798,8 +726,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Price(best_ask, price_precision),
             Quantity(best_bid_size, size_precision),
             Quantity(best_ask_size, size_precision),
-            ts_event_ns,
-            ts_recv_ns,
+            ts_event,
+            ts_init,
         )
 
         self._handle_data(tick)
@@ -854,8 +782,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double amount,
         str aggressor_side,
         str match_id,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
         int price_precision,
         int size_precision,
     ) except *:
@@ -863,10 +791,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             instrument_id,
             Price(price, price_precision),
             Quantity(amount, size_precision),
-            AggressorSideParser.from_str(aggressor_side.upper()) ,
+            AggressorSideParser.from_str(aggressor_side.upper()),
             match_id,
-            ts_event_ns,
-            ts_recv_ns,
+            ts_event,
+            ts_init,
         )
 
         self._handle_data(tick)
@@ -946,8 +874,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double low_price,
         double close_price,
         double volume,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
         int price_precision,
         int size_precision,
     ) except *:
@@ -958,8 +886,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             Price(low_price, price_precision),
             Price(close_price, price_precision),
             Quantity(volume, size_precision),
-            ts_event_ns,
-            ts_recv_ns,
+            ts_event,
+            ts_init,
         )
 
         self._handle_data(bar)

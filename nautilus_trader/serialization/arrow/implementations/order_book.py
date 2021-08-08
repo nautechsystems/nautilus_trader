@@ -21,124 +21,110 @@ from nautilus_trader.model.enums import BookLevelParser
 from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.orderbook.book import OrderBookData
-from nautilus_trader.model.orderbook.book import OrderBookDelta
-from nautilus_trader.model.orderbook.book import OrderBookDeltas
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
-from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 
 
-def _parse_delta(delta: OrderBookDelta):
-    return OrderBookDelta.to_dict(delta)
+def _parse_delta(delta: OrderBookDelta, cls):
+    return dict(**OrderBookDelta.to_dict(delta), _type=cls.__name__)
 
 
 def serialize(data: OrderBookData):
-    def inner():
-        if isinstance(data, OrderBookDeltas):
-            yield from [_parse_delta(delta=delta) for delta in data.deltas]
-        elif isinstance(data, OrderBookDelta):
-            yield _parse_delta(delta=data)
-        elif isinstance(data, OrderBookSnapshot):
-            # For a snapshot, we store the individual deltas required to rebuild, namely a CLEAR, followed by ADDs
-            yield _parse_delta(
+    if isinstance(data, OrderBookDelta):
+        result = [_parse_delta(delta=data, cls=OrderBookDelta)]
+    elif isinstance(data, OrderBookDeltas):
+        result = [_parse_delta(delta=delta, cls=OrderBookDeltas) for delta in data.deltas]
+    elif isinstance(data, OrderBookSnapshot):
+        # For a snapshot, we store the individual deltas required to rebuild, namely a CLEAR, followed by ADDs
+        result = [
+            _parse_delta(
                 OrderBookDelta(
                     instrument_id=data.instrument_id,
                     level=data.level,
                     order=None,
                     delta_type=DeltaType.CLEAR,
-                    ts_event_ns=data.ts_event_ns,
-                    ts_recv_ns=data.ts_recv_ns,
+                    ts_event=data.ts_event,
+                    ts_init=data.ts_init,
                 ),
+                cls=OrderBookSnapshot,
             )
-            orders = list(zip(repeat(OrderSide.BUY), data.bids)) + list(
-                zip(repeat(OrderSide.SELL), data.asks)
-            )
-            yield from [
+        ]
+        orders = list(zip(repeat(OrderSide.BUY), data.bids)) + list(
+            zip(repeat(OrderSide.SELL), data.asks)
+        )
+        result.extend(
+            [
                 _parse_delta(
                     OrderBookDelta(
                         instrument_id=data.instrument_id,
                         level=data.level,
-                        ts_event_ns=data.ts_event_ns,
-                        ts_recv_ns=data.ts_recv_ns,
+                        ts_event=data.ts_event,
+                        ts_init=data.ts_init,
                         order=Order(price=price, size=volume, side=side),
                         delta_type=DeltaType.ADD,
                     ),
+                    cls=OrderBookSnapshot,
                 )
                 for side, (price, volume) in orders
             ]
+        )
+    else:
+        raise TypeError
+    # Add a "last" message to let downstream consumers know the end of this group of messages
+    result[-1]["_last"] = True
+    return result
 
-    return list(inner())
+
+def _is_orderbook_snapshot(values: list):
+    return values[0]["_type"] == "OrderBookSnapshot"
+
+
+def _build_order_book_snapshot(values):
+    # First value is a CLEAR message, which we ignore
+    assert len(set([v["instrument_id"] for v in values])) == 1
+    assert len(values) >= 2, f"Not enough values passed! {values}"
+    return OrderBookSnapshot(
+        instrument_id=InstrumentId.from_str(values[1]["instrument_id"]),
+        level=BookLevelParser.from_str_py(values[1]["level"]),
+        bids=[
+            (order["order_price"], order["order_size"])
+            for order in values[1:]
+            if order["order_side"] == "BUY"
+        ],
+        asks=[
+            (order["order_price"], order["order_size"])
+            for order in values[1:]
+            if order["order_side"] == "SELL"
+        ],
+        ts_event=values[1]["ts_event"],
+        ts_init=values[1]["ts_init"],
+    )
+
+
+def _build_order_book_deltas(values):
+    return OrderBookDeltas(
+        instrument_id=InstrumentId.from_str(values[0]["instrument_id"]),
+        level=BookLevelParser.from_str_py(values[0]["level"]),
+        deltas=[OrderBookDelta.from_dict(v) for v in values],
+        ts_event=values[0]["ts_event"],
+        ts_init=values[0]["ts_init"],
+    )
+
+
+def _sort_func(x):
+    return x["instrument_id"], x["ts_event"]
 
 
 def deserialize(data: List[Dict]):
-    def _is_orderbook_snapshot(values: list):
-        if len(values) < 2:
-            return False
-        return values[0]["delta_type"] == "CLEAR" and values[1]["delta_type"] == "ADD"
-
-    def _build_order_book_snapshot(values):
-        # First value is a CLEAR message, which we ignore
-        return OrderBookSnapshot(
-            instrument_id=InstrumentId.from_str(values[1]["instrument_id"]),
-            level=BookLevelParser.from_str_py(values[1]["level"]),
-            bids=[
-                (order["order_price"], order["order_size"])
-                for order in data[1:]
-                if order["order_side"] == "BUY"
-            ],
-            asks=[
-                (order["order_price"], order["order_size"])
-                for order in data[1:]
-                if order["order_side"] == "SELL"
-            ],
-            ts_event_ns=data[1]["ts_event_ns"],
-            ts_recv_ns=data[1]["ts_recv_ns"],
-        )
-
-    def _build_order_book_delta(values):
-        return OrderBookDelta.from_dict(values[0])
-
-    def _build_order_book_deltas(values):
-        return OrderBookDeltas(
-            instrument_id=InstrumentId.from_str(values[0]["instrument_id"]),
-            level=BookLevelParser.from_str_py(values[0]["level"]),
-            deltas=[OrderBookDelta.from_dict(v) for v in values],
-            ts_event_ns=data[0]["ts_event_ns"],
-            ts_recv_ns=data[0]["ts_recv_ns"],
-        )
-
-    assert not set([d["order_side"] for d in data]).difference(
-        (None, "BUY", "SELL")
-    ), "Wrong sides"
+    assert not set([d["order_side"] for d in data]).difference((None, "BUY", "SELL")), "Wrong sides"
     results = []
-    for _, chunk in itertools.groupby(data, key=timestamp_key):
-        chunk = list(chunk)
-        if _is_orderbook_snapshot(values=chunk):
+    for _, chunk in itertools.groupby(sorted(data, key=_sort_func), key=_sort_func):
+        chunk = list(chunk)  # type: ignore
+        if _is_orderbook_snapshot(values=chunk):  # type: ignore
             results.append(_build_order_book_snapshot(values=chunk))
-        elif len(chunk) > 1:
+        elif len(chunk) >= 1:  # type: ignore
             results.append(_build_order_book_deltas(values=chunk))
-        else:
-            results.append(_build_order_book_delta(values=chunk))
-    return results
-
-
-def timestamp_key(x):
-    if hasattr(x, "ts_event_ns"):
-        return x.ts_event_ns
-    elif hasattr(x, "ts_recv_ns"):
-        return x.ts_recv_ns
-    elif hasattr(x, "timestamp_ns"):
-        return x.timestamp_ns
-    elif "ts_event_ns" in x:
-        return x["ts_event_ns"]
-    elif "ts_recv_ns" in x:
-        return x["ts_recv_ns"]
-    elif "timestamp_ns" in x:
-        return x["timestamp_ns"]
-    else:
-        raise KeyError("Can't find timestamp attribute or key")
-
-
-def order_book_register(func):
-    for cls in OrderBookData.__subclasses__():
-        func(cls, serializer=serialize, deserializer=deserialize, chunk=True)
+    return sorted(results, key=lambda x: x.ts_event)

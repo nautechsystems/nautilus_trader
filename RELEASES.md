@@ -1,4 +1,4 @@
-# NautilusTrader 1.124.0 Beta - Release Notes
+# NautilusTrader 1.127.0 Beta - Release Notes
 
 
 ## Breaking Changes
@@ -9,6 +9,147 @@ None
 
 ## Fixes
 None
+
+---
+
+# NautilusTrader 1.126.1 Beta - Release Notes
+
+This is a patch release which fixes a bug involving `NotImplementedError` 
+exception handling when subscribing to order book deltas when not supported by 
+a client. This bug affected CCXT order book subscriptions.
+
+## Breaking Changes
+None
+
+## Enhancements
+None
+
+## Fixes
+- Fix `DataEngine` order book subscription handling.
+
+---
+
+# NautilusTrader 1.126.0 Beta - Release Notes
+
+This release sees the completion of the initial implementation of the 
+`MessageBus`, with data now being handled by PUB/SUB patterns, along with the 
+additions of point-to-point and REQ/REP messaging functionality.
+
+An `Actor` base class has been abstracted from `TradingStrategy` which allows
+custom components to be added to a `Trader` which aren't necessarily trading 
+strategies, opening up further possibilities for extending NautilusTrader with 
+custom functionality.
+
+For the sake of simplicity and to favour more idiomatic Python, the null object
+pattern is no longer utilized for handling identifiers. This has removed a layer
+of 'logical indirection' in certain parts of the codebase, and allows for simpler 
+code.
+
+An order is now considered 'in-flight' if it is actively pending a state 
+transition i.e. in the `SUBMITTED`,`PENDING_UPDATE` or `PENDING_CANCEL` states.
+
+It is now a well established convention that all integer based timestamps are 
+expressed in UNIX nanoseconds, therefore the `_ns` postfix has now been dropped. 
+For clarity - time periods/intervals/objects where the units may not be obvious 
+have retained the `_ns` postfix.
+
+The opportunity was identified to unify the parameter naming for the concept
+of object instantiation by renaming `timestamp_ns` and `ts_recv_ns` to `ts_init`.
+Along the same lines, the timestamps for both event and data occurrence have 
+been standardized to `ts_event`.
+
+It is acknowledged that the frequent name changes and modifications to core 
+concepts may be frustrating, however whilst still in a beta phase - we're taking 
+the opportunity to lay a solid foundation for this project to continue to growth 
+in the years ahead.
+
+## Breaking Changes
+- Renamed `timestamp_ns` to `ts_init`.
+- Renamed `ts_recv_ns` to `ts_event`.
+- Renamed various event timestamp parameters to `ts_event`.
+- Removed null object methods on identifiers.
+
+## Enhancements
+- Added `Actor` component base class.
+- Added `MessageBus.register()`.
+- Added `MessageBus.send()`.
+- Added `MessageBus.request()`.
+- Added `MessageBus.response()`.
+- Added `Trader.add_component()`.
+- Added `Trader.add_components()`.
+- Added `Trader.add_log_sink()`.
+
+## Fixes
+- Various Betfair adapter patches and fixes.
+- `ExecutionEngine` position flip logic in certain edge cases.
+
+---
+
+# NautilusTrader 1.125.0 Beta - Release Notes
+
+This release introduces a major re-architecture of the internal messaging system.
+A common message bus has been implemented which now handles all events via a 
+PUB/SUB messaging pattern. The next release will see all data being handled by 
+the message bus, please see the related issue for further details on this enhancement.
+
+Another notable feature is the introduction of the order 'in-flight' concept, 
+which is a submitted order which has not yet been acknowledged by the 
+trading venue. Several properties on `Order`, and methods on `Cache`, now exist
+to support this.
+
+The `Throttler` has been refactored and optimized further. There has also been
+extensive reorganization of the model sub-package, standardization of identifiers
+on events, along with numerous 'under the hood' cleanups and two bug fixes.
+
+## Breaking Changes
+- Renamed `MessageType` enum to `MessageCategory`.
+- Renamed `fill.order_side` to `fill.side`.
+- Renamed `fill.order_type` to `fill.type`.
+- All `Event` serialization due to domain refactorings.
+
+## Enhancements
+- Added `MessageBus` class.
+- Added `TraderId` to `Order` and `Position`.
+- Added `OrderType` to OrderFilled.
+- Added unrealized PnL to position events.
+- Added order inflight concept to `Order` and `Cache`.
+- Improved efficiency of `Throttler`.
+- Standardized events `str` and `repr`.
+- Standardized commands `str` and `repr`.
+- Standardized identifiers on events and objects.
+- Improved `Account` `str` and `repr`.
+- Using `orjson` over `json` for efficiency.
+- Removed redundant `BypassCacheDatabase`.
+- Introduced `mypy` to the codebase.
+
+## Fixes
+- Fixed backtest log timestamping.
+- Fixed backtest duplicate initial account event.
+
+---
+
+# NautilusTrader 1.124.0 Beta - Release Notes
+
+This release sees the expansion of pre-trade risk check options (see 
+`RiskEngine` class documentation). There has also been extensive 'under the 
+hood' code cleanup and consolidation.
+
+## Breaking Changes
+- Renamed `Position.opened_timestamp_ns` to `ts_opened_ns`.
+- Renamed `Position.closed_timestamp_ns` to `ts_closed_ns`.
+- Renamed `Position.open_duration_ns` to `duration_ns`.
+- Renamed Loggers `bypass_logging` to `bypass`.
+- Refactored `PositionEvent` types.
+
+## Enhancements
+- Add pre-trade risk checks to `RiskEngine` iteration 2.
+- Improve `Throttler` functionality and performance.
+- Removed redundant `OrderInvalid` state and associated code.
+- Improve analysis reports.
+
+## Fixes
+- PnL calculations for `CASH` account types.
+- Various event serializations.
 
 ---
 
@@ -232,7 +373,7 @@ for `OrderFill` events, as well as additional order states and events.
 - Re-engineered `BacktestEngine` to take data directly.
 - Added `OrderState.PENDING_CANCEL`.
 - Added `OrderState.PENDING_REPLACE`.
-- Added `OrderPendingReplace` event.
+- Added `OrderPendingUpdate` event.
 - Added `OrderPendingCancel` event.
 - Added `OrderFilled.is_buy` property (with corresponding `is_buy_c()` fast method).
 - Added `OrderFilled.is_sell` property (with corresponding `is_sell_c()` fast method).

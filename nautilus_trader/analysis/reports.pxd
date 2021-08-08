@@ -13,9 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.events cimport AccountState
-from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.account cimport Account
 
 
@@ -24,7 +21,3 @@ cdef class ReportProvider:
     cpdef object generate_order_fills_report(self, list orders)
     cpdef object generate_positions_report(self, list positions)
     cpdef object generate_account_report(self, Account account)
-
-    cdef dict _order_to_dict(self, Order order)
-    cdef dict _position_to_dict(self, Position position)
-    cdef dict _account_state_to_dict(self, AccountState event)

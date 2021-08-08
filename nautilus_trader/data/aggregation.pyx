@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Callable
+
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
@@ -26,16 +28,16 @@ from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport secs_to_nanos
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class BarBuilder:
@@ -75,7 +77,7 @@ cdef class BarBuilder:
         self.size_precision = instrument.size_precision
         self.use_previous_close = use_previous_close
         self.initialized = False
-        self.last_timestamp_ns = 0
+        self.ts_last = 0
         self.count = 0
 
         self._partial_set = False
@@ -123,13 +125,13 @@ cdef class BarBuilder:
 
         self.volume += partial_bar.volume
 
-        if self.last_timestamp_ns == 0:
-            self.last_timestamp_ns = partial_bar.ts_recv_ns
+        if self.ts_last == 0:
+            self.ts_last = partial_bar.ts_init
 
         self._partial_set = True
         self.initialized = True
 
-    cpdef void update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
+    cpdef void update(self, Price price, Quantity size, int64_t ts_event) except *:
         """
         Update the bar builder.
 
@@ -139,7 +141,7 @@ cdef class BarBuilder:
             The update price.
         size : Decimal
             The update size.
-        timestamp_ns : int64
+        ts_event : int64
             The UNIX timestamp (nanoseconds) of the update.
 
         """
@@ -147,7 +149,7 @@ cdef class BarBuilder:
         Condition.not_none(size, "size")
 
         # TODO: What happens if the first tick updates before a partial bar is applied?
-        if timestamp_ns < self.last_timestamp_ns:
+        if ts_event < self.ts_last:
             return  # Not applicable
 
         if self._open is None:
@@ -164,7 +166,7 @@ cdef class BarBuilder:
         self._close = price
         self.volume += size
         self.count += 1
-        self.last_timestamp_ns = timestamp_ns
+        self.ts_last = ts_event
 
     cpdef void reset(self) except *:
         """
@@ -194,15 +196,15 @@ cdef class BarBuilder:
         Bar
 
         """
-        return self.build(self.last_timestamp_ns)
+        return self.build(self.ts_last)
 
-    cpdef Bar build(self, int64_t timestamp_ns):
+    cpdef Bar build(self, int64_t ts_event):
         """
         Return the aggregated bar with the given closing timestamp, and reset.
 
         Parameters
         ----------
-        timestamp_ns : int64
+        ts_event : int64
             The UNIX timestamp (nanoseconds) of the bar close.
 
         Returns
@@ -223,8 +225,8 @@ cdef class BarBuilder:
             low_price=self._low,
             close_price=self._close,
             volume=Quantity(self.volume, self.size_precision),
-            ts_event_ns=timestamp_ns,  # TODO: Hardcoded identical for now...
-            ts_recv_ns=timestamp_ns,
+            ts_event=ts_event,  # TODO: Hardcoded identical for now...
+            ts_init=ts_event,
         )
 
         self._last_close = self._close
@@ -241,7 +243,7 @@ cdef class BarAggregator:
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         Logger logger not None,
         bint use_previous_close,
     ):
@@ -254,7 +256,7 @@ cdef class BarAggregator:
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         logger : Logger
             The logger for the aggregator.
@@ -272,7 +274,7 @@ cdef class BarAggregator:
         self.bar_type = bar_type
         self._handler = handler
         self._log = LoggerAdapter(
-            component=type(self).__name__,
+            component_name=type(self).__name__,
             logger=logger,
         )
         self._builder = BarBuilder(
@@ -296,7 +298,7 @@ cdef class BarAggregator:
         self._apply_update(
             price=tick.extract_price(self.bar_type.spec.price_type),
             size=tick.extract_volume(self.bar_type.spec.price_type),
-            timestamp_ns=tick.ts_recv_ns,
+            ts_event=tick.ts_event,
         )
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
@@ -314,18 +316,18 @@ cdef class BarAggregator:
         self._apply_update(
             price=tick.price,
             size=tick.size,
-            timestamp_ns=tick.ts_recv_ns,
+            ts_event=tick.ts_event,
         )
 
-    cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
+    cdef void _apply_update(self, Price price, Quantity size, int64_t ts_event) except *:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cdef void _build_now_and_send(self) except *:
         cdef Bar bar = self._builder.build_now()
         self._handler(bar)
 
-    cdef void _build_and_send(self, int64_t timestamp_ns) except *:
-        cdef Bar bar = self._builder.build(timestamp_ns)
+    cdef void _build_and_send(self, int64_t ts_event) except *:
+        cdef Bar bar = self._builder.build(ts_event)
         self._handler(bar)
 
 
@@ -341,7 +343,7 @@ cdef class TickBarAggregator(BarAggregator):
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         Logger logger not None,
     ):
         """
@@ -353,7 +355,7 @@ cdef class TickBarAggregator(BarAggregator):
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         logger : Logger
             The logger for the aggregator.
@@ -372,8 +374,8 @@ cdef class TickBarAggregator(BarAggregator):
             use_previous_close=False,
         )
 
-    cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
-        self._builder.update(price, size, timestamp_ns)
+    cdef void _apply_update(self, Price price, Quantity size, int64_t ts_event) except *:
+        self._builder.update(price, size, ts_event)
 
         if self._builder.count == self.bar_type.spec.step:
             self._build_now_and_send()
@@ -391,7 +393,7 @@ cdef class VolumeBarAggregator(BarAggregator):
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         Logger logger not None,
     ):
         """
@@ -403,7 +405,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         logger : Logger
             The logger for the aggregator.
@@ -422,7 +424,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             use_previous_close=False,
         )
 
-    cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
+    cdef void _apply_update(self, Price price, Quantity size, int64_t ts_event) except *:
         size_update = size
 
         while size_update > 0:  # While there is size to apply
@@ -431,7 +433,7 @@ cdef class VolumeBarAggregator(BarAggregator):
                 self._builder.update(
                     price=price,
                     size=Quantity(size_update, precision=size.precision),
-                    timestamp_ns=timestamp_ns,
+                    ts_event=ts_event,
                 )
                 break
 
@@ -440,7 +442,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             self._builder.update(
                 price=price,
                 size=Quantity(size_diff, precision=size.precision),
-                timestamp_ns=timestamp_ns,
+                ts_event=ts_event,
             )
 
             # Build a bar and reset builder
@@ -463,7 +465,7 @@ cdef class ValueBarAggregator(BarAggregator):
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         Logger logger not None,
     ):
         """
@@ -475,7 +477,7 @@ cdef class ValueBarAggregator(BarAggregator):
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         logger : Logger
             The logger for the aggregator.
@@ -507,7 +509,7 @@ cdef class ValueBarAggregator(BarAggregator):
         """
         return self._cum_value
 
-    cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
+    cdef void _apply_update(self, Price price, Quantity size, int64_t ts_event) except *:
         size_update = size
 
         while size_update > 0:  # While there is value to apply
@@ -518,7 +520,7 @@ cdef class ValueBarAggregator(BarAggregator):
                 self._builder.update(
                     price=price,
                     size=Quantity(size_update, precision=size.precision),
-                    timestamp_ns=timestamp_ns,
+                    ts_event=ts_event,
                 )
                 break
 
@@ -528,7 +530,7 @@ cdef class ValueBarAggregator(BarAggregator):
             self._builder.update(
                 price=price,
                 size=Quantity(size_diff, precision=size.precision),
-                timestamp_ns=timestamp_ns,
+                ts_event=ts_event,
             )
 
             # Build a bar and reset builder and cumulative value
@@ -551,7 +553,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         bint use_previous_close,
         Clock clock not None,
         Logger logger not None,
@@ -565,7 +567,7 @@ cdef class TimeBarAggregator(BarAggregator):
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         use_previous_close : bool
             If the previous close should set the next open.
@@ -710,27 +712,27 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._log.debug(f"Started timer {timer_name}.")
 
-    cdef void _apply_update(self, Price price, Quantity size, int64_t timestamp_ns) except *:
+    cdef void _apply_update(self, Price price, Quantity size, int64_t ts_event) except *:
         if self._clock.is_test_clock:
-            if self.next_close_ns < timestamp_ns:
+            if self.next_close_ns < ts_event:
                 # Build bar first, then update
                 self._build_bar(self.next_close_ns)
-                self._builder.update(price, size, timestamp_ns)
+                self._builder.update(price, size, ts_event)
                 return
-            elif self.next_close_ns == timestamp_ns:
+            elif self.next_close_ns == ts_event:
                 # Update first, then build bar
-                self._builder.update(price, size, timestamp_ns)
+                self._builder.update(price, size, ts_event)
                 self._build_bar(self.next_close_ns)
                 return
 
-        self._builder.update(price, size, timestamp_ns)
+        self._builder.update(price, size, ts_event)
         if self._build_on_next_tick:  # (fast C-level check)
             self._build_and_send(self._stored_close)
             # Reset flag and clear stored close
             self._build_on_next_tick = False
             self._stored_close = 0
 
-    cpdef void _build_bar(self, int64_t timestamp_ns) except *:
+    cpdef void _build_bar(self, int64_t ts_event) except *:
         cdef TestTimer timer = self._clock.timer(str(self.bar_type))
         cdef TimeEvent event = timer.pop_next_event()
         self._build_event(event)
@@ -743,7 +745,7 @@ cdef class TimeBarAggregator(BarAggregator):
             self._stored_close_ns = self.next_close_ns
             return
 
-        self._build_and_send(timestamp_ns=event.event_timestamp_ns)
+        self._build_and_send(ts_event=event.ts_event)
 
 
 cdef class BulkTickBarBuilder:
@@ -756,7 +758,7 @@ cdef class BulkTickBarBuilder:
         Instrument instrument not None,
         BarType bar_type not None,
         Logger logger not None,
-        callback not None: callable,
+        callback not None: Callable[[Bar], None],
     ):
         """
         Initialize a new instance of the ``BulkTickBarBuilder`` class.
@@ -769,13 +771,13 @@ cdef class BulkTickBarBuilder:
             The bar_type to build.
         logger : Logger
             The logger for the bar aggregator.
-        callback : callable
-            The callback to send the built bars to.
+        callback : Callable[[Bar], None]
+            The delegate to call with the built bars.
 
         Raises
         ------
         ValueError
-            If callback is not of type callable.
+            If callback is not of type Callable.
         ValueError
             If instrument.id != bar_type.instrument_id.
 
@@ -845,11 +847,11 @@ cdef class BulkTimeBarUpdater:
         """
         if self.aggregator.bar_type.spec.price_type == PriceType.LAST:
             for i in range(len(ticks)):
-                if ticks[i].timestamp_ns < self.start_time_ns:
+                if ticks[i].ts_event < self.start_time_ns:
                     continue  # Price not applicable to this bar
                 self.aggregator.handle_trade_tick(ticks[i])
         else:
             for i in range(len(ticks)):
-                if ticks[i].timestamp_ns < self.start_time_ns:
+                if ticks[i].ts_event < self.start_time_ns:
                     continue  # Price not applicable to this bar
                 self.aggregator.handle_quote_tick(ticks[i])

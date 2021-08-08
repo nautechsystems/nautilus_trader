@@ -15,14 +15,12 @@
 
 import pytest
 
-from nautilus_trader.cache.database import BypassCacheDatabase
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from tests.test_kit.stubs import TestStubs
 
 
@@ -37,7 +35,7 @@ class TestCacheDatabase:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
 
         self.order_factory = OrderFactory(
@@ -46,10 +44,7 @@ class TestCacheDatabase:
             clock=TestClock(),
         )
 
-        self.database = CacheDatabase(
-            trader_id=self.trader_id,
-            logger=self.logger,
-        )
+        self.database = CacheDatabase(logger=self.logger)
 
     def test_flush_when_not_implemented_raises_exception(self):
         with pytest.raises(NotImplementedError):
@@ -130,45 +125,3 @@ class TestCacheDatabase:
     def test_update_strategy_when_not_implemented_raises_exception(self):
         with pytest.raises(NotImplementedError):
             self.database.update_strategy(None)
-
-
-class TestBypassCacheDatabase:
-    def setup(self):
-        # Fixture Setup
-        self.clock = TestClock()
-        self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock)
-
-        self.trader_id = TraderId("TESTER-000")
-        self.account_id = TestStubs.account_id()
-
-        self.order_factory = OrderFactory(
-            trader_id=self.trader_id,
-            strategy_id=StrategyId("S-001"),
-            clock=TestClock(),
-        )
-
-        self.database = BypassCacheDatabase(
-            trader_id=self.trader_id, logger=self.logger
-        )
-
-    def teardown(self):
-        self.database.flush()
-
-    def test_load_currency_returns_none(self):
-        assert self.database.load_currency(None) is None
-
-    def test_load_instrument_returns_none(self):
-        assert self.database.load_instrument(None) is None
-
-    def test_load_account_returns_none(self):
-        assert self.database.load_account(None) is None
-
-    def test_load_order_returns_none(self):
-        assert self.database.load_order(None) is None
-
-    def test_load_position_returns_none(self):
-        assert self.database.load_position(None) is None
-
-    def test_load_strategy_returns_empty_dict(self):
-        assert self.database.load_strategy(None) == {}

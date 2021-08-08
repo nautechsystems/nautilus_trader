@@ -17,24 +17,16 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.adapters.ccxt.providers cimport CCXTInstrumentProvider
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarSpecification
-from nautilus_trader.model.bar cimport BarType
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarSpecification
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class CCXTDataClient(LiveMarketDataClient):
     cdef object _client
     cdef CCXTInstrumentProvider _instrument_provider
-
-    cdef set _subscribed_instruments
-    cdef dict _subscribed_order_books
-    cdef dict _subscribed_quote_ticks
-    cdef dict _subscribed_trade_ticks
-    cdef dict _subscribed_bars
-
-    cdef object _update_instruments_task
 
     cdef void _log_ccxt_error(self, ex, str method_name) except *
     cdef int64_t _ccxt_to_timestamp_ns(self, int64_t millis) except *
@@ -45,8 +37,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double best_ask,
         double best_bid_size,
         double best_ask_size,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
         int price_precision,
         int size_precision,
     ) except *
@@ -57,8 +49,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double amount,
         str aggressor_side,
         str trade_match_id,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
         int price_precision,
         int size_precision,
     ) except *
@@ -70,8 +62,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         double low_price,
         double close_price,
         double volume,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
+        int64_t ts_event,
+        int64_t ts_init,
         int price_precision,
         int size_precision,
     ) except *

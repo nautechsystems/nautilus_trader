@@ -20,8 +20,8 @@ import numpy as np
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.functions cimport fast_mean_iterated
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class SpreadAnalyzer(Indicator):
@@ -36,7 +36,7 @@ cdef class SpreadAnalyzer(Indicator):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the tick updates.
+            The instrument ID for the tick updates.
         capacity : int
             The max length for the internal `QuoteTick` deque (determines averages).
 

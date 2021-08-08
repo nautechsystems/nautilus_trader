@@ -13,13 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
 import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookLevel
@@ -33,10 +34,10 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.book import OrderBookDelta
-from nautilus_trader.model.orderbook.book import OrderBookDeltas
-from nautilus_trader.model.orderbook.book import OrderBookSnapshot
-from nautilus_trader.model.orderbook.order import Order
+from nautilus_trader.model.orderbook.data import Order
+from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
@@ -86,7 +87,7 @@ class TestBacktestEngineData:
         # TODO: WIP - Implement asserts
         # assert ClientId("NEWS_CLIENT") in data.clients
         # assert len(data.generic_data) == 5
-        # assert data.generic_data[-1].ts_recv_ns == 3000  # sorted
+        # assert data.generic_data[-1].ts_init == 3000  # sorted
 
     def test_add_instrument_adds_to_container(self):
         # Arrange
@@ -110,8 +111,8 @@ class TestBacktestEngineData:
             level=BookLevel.L2,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         snapshot2 = OrderBookSnapshot(
@@ -119,8 +120,8 @@ class TestBacktestEngineData:
             level=BookLevel.L2,
             bids=[[1551.15, 0.51], [1581.00, 1.20]],
             asks=[[1553.15, 1.51], [1583.00, 2.20]],
-            ts_event_ns=1_000_000_000,
-            ts_recv_ns=1_000_000_000,
+            ts_event=1_000_000_000,
+            ts_init=1_000_000_000,
         )
 
         # Act
@@ -148,8 +149,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("40"),
                     side=OrderSide.SELL,
                 ),
-                ts_event_ns=0,
-                ts_recv_ns=0,
+                ts_event=0,
+                ts_init=0,
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
@@ -160,8 +161,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("30"),
                     side=OrderSide.SELL,
                 ),
-                ts_event_ns=0,
-                ts_recv_ns=0,
+                ts_event=0,
+                ts_init=0,
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
@@ -172,8 +173,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("20"),
                     side=OrderSide.SELL,
                 ),
-                ts_event_ns=0,
-                ts_recv_ns=0,
+                ts_event=0,
+                ts_init=0,
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
@@ -184,8 +185,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("20"),
                     side=OrderSide.BUY,
                 ),
-                ts_event_ns=0,
-                ts_recv_ns=0,
+                ts_event=0,
+                ts_init=0,
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
@@ -196,8 +197,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("30"),
                     side=OrderSide.BUY,
                 ),
-                ts_event_ns=0,
-                ts_recv_ns=0,
+                ts_event=0,
+                ts_init=0,
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
@@ -208,8 +209,8 @@ class TestBacktestEngineData:
                     size=Quantity.from_str("40"),
                     side=OrderSide.BUY,
                 ),
-                ts_event_ns=0,
-                ts_recv_ns=0,
+                ts_event=0,
+                ts_init=0,
             ),
         ]
 
@@ -217,16 +218,16 @@ class TestBacktestEngineData:
             instrument_id=ETHUSDT_BINANCE.id,
             level=BookLevel.L2,
             deltas=deltas,
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         operations2 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
             level=BookLevel.L2,
             deltas=deltas,
-            ts_event_ns=1000,
-            ts_recv_ns=1000,
+            ts_event=1000,
+            ts_init=1000,
         )
 
         # Act
@@ -416,3 +417,15 @@ class TestBacktestEngine:
 
         # Assert
         assert True  # No exceptions raised
+
+    def test_account_state_timestamp(self):
+        # Arrange
+        start = pd.Timestamp("2013-01-31 23:59:59.700000+00:00")
+        self.engine.run(start=start)
+
+        # Act
+        report = self.engine.trader.generate_account_report(Venue("SIM"))
+
+        # Assert
+        assert len(report) == 1
+        assert report.index[0] == start

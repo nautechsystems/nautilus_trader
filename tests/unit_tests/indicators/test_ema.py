@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import unittest
-
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.enums import PriceType
 from tests.test_kit.providers import TestInstrumentProvider
@@ -24,8 +22,8 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class ExponentialMovingAverageTests(unittest.TestCase):
-    def setUp(self):
+class TestExponentialMovingAverage:
+    def setup(self):
         # Fixture Setup
         self.ema = ExponentialMovingAverage(10)
 
@@ -33,32 +31,32 @@ class ExponentialMovingAverageTests(unittest.TestCase):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("ExponentialMovingAverage", self.ema.name)
+        assert self.ema.name == "ExponentialMovingAverage"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual("ExponentialMovingAverage(10)", str(self.ema))
-        self.assertEqual("ExponentialMovingAverage(10)", repr(self.ema))
+        assert str(self.ema) == "ExponentialMovingAverage(10)"
+        assert repr(self.ema) == "ExponentialMovingAverage(10)"
 
     def test_period_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(10, self.ema.period)
+        assert self.ema.period == 10
 
     def test_multiplier_returns_expected_value(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(0.18181818181818182, self.ema.alpha)
+        assert self.ema.alpha == 0.18181818181818182
 
     def test_initialized_without_inputs_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.ema.initialized)
+        assert self.ema.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
@@ -76,7 +74,7 @@ class ExponentialMovingAverageTests(unittest.TestCase):
         # Act
 
         # Assert
-        self.assertEqual(True, self.ema.initialized)
+        assert self.ema.initialized is True
 
     def test_handle_quote_tick_updates_indicator(self):
         # Arrange
@@ -88,8 +86,8 @@ class ExponentialMovingAverageTests(unittest.TestCase):
         indicator.handle_quote_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00002, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00002
 
     def test_handle_trade_tick_updates_indicator(self):
         # Arrange
@@ -101,8 +99,8 @@ class ExponentialMovingAverageTests(unittest.TestCase):
         indicator.handle_trade_tick(tick)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00001, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00001
 
     def test_handle_bar_updates_indicator(self):
         # Arrange
@@ -114,8 +112,8 @@ class ExponentialMovingAverageTests(unittest.TestCase):
         indicator.handle_bar(bar)
 
         # Assert
-        self.assertTrue(indicator.has_inputs)
-        self.assertEqual(1.00003, indicator.value)
+        assert indicator.has_inputs
+        assert indicator.value == 1.00003
 
     def test_value_with_one_input_returns_expected_value(self):
         # Arrange
@@ -123,7 +121,7 @@ class ExponentialMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.0, self.ema.value)
+        assert self.ema.value == 1.0
 
     def test_value_with_three_inputs_returns_expected_value(self):
         # Arrange
@@ -133,7 +131,7 @@ class ExponentialMovingAverageTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertEqual(1.5123966942148757, self.ema.value)
+        assert self.ema.value == 1.5123966942148757
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):
         # Arrange
@@ -144,5 +142,5 @@ class ExponentialMovingAverageTests(unittest.TestCase):
         self.ema.reset()
 
         # Assert
-        self.assertFalse(self.ema.initialized)
-        self.assertEqual(0.0, self.ema.value)
+        assert not self.ema.initialized
+        assert self.ema.value == 0.0

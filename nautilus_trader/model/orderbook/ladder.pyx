@@ -20,8 +20,8 @@ from nautilus_trader.core.functions cimport bisect_double_right
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orderbook.data cimport Order
 from nautilus_trader.model.orderbook.level cimport Level
-from nautilus_trader.model.orderbook.order cimport Order
 
 
 cdef class Ladder:

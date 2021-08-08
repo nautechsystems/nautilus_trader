@@ -17,10 +17,9 @@ import pytest
 
 from nautilus_trader.core.message import Document
 from nautilus_trader.core.message import Message
-from nautilus_trader.core.message import MessageType
+from nautilus_trader.core.message import MessageCategory
+from nautilus_trader.core.message import MessageCategoryParser
 from nautilus_trader.core.message import Response
-from nautilus_trader.core.message import message_type_from_str
-from nautilus_trader.core.message import message_type_to_str
 from nautilus_trader.core.uuid import uuid4
 
 
@@ -30,27 +29,27 @@ class TestMessage:
         uuid = uuid4()
 
         message1 = Message(
-            msg_type=MessageType.COMMAND,
-            identifier=uuid,
-            timestamp_ns=0,
+            category=MessageCategory.COMMAND,
+            message_id=uuid,
+            ts_init=0,
         )
 
         message2 = Message(
-            msg_type=MessageType.COMMAND,
-            identifier=uuid,
-            timestamp_ns=0,
+            category=MessageCategory.COMMAND,
+            message_id=uuid,
+            ts_init=0,
         )
 
         message3 = Message(
-            msg_type=MessageType.DOCUMENT,  # Different message type
-            identifier=uuid,
-            timestamp_ns=0,
+            category=MessageCategory.DOCUMENT,  # Different message type
+            message_id=uuid,
+            ts_init=0,
         )
 
         message4 = Message(
-            msg_type=MessageType.DOCUMENT,
-            identifier=uuid4(),  # Different UUID
-            timestamp_ns=0,
+            category=MessageCategory.DOCUMENT,
+            message_id=uuid4(),  # Different UUID
+            ts_init=0,
         )
 
         # Act
@@ -63,8 +62,8 @@ class TestMessage:
     def test_message_hash(self):
         # Arrange
         message = Document(
-            identifier=uuid4(),
-            timestamp_ns=0,
+            document_id=uuid4(),
+            ts_init=0,
         )
 
         # Act
@@ -75,14 +74,14 @@ class TestMessage:
         # Arrange
         uuid = uuid4()
         message = Document(
-            identifier=uuid,
-            timestamp_ns=0,
+            document_id=uuid,
+            ts_init=0,
         )
 
         # Act
         # Assert
-        assert str(message) == f"Document(id={uuid}, timestamp=0)"
-        assert str(message) == f"Document(id={uuid}, timestamp=0)"
+        assert str(message) == f"Document(id={uuid}, ts_init=0)"
+        assert str(message) == f"Document(id={uuid}, ts_init=0)"
 
     def test_response_message_str_and_repr(self):
         # Arrange
@@ -90,34 +89,29 @@ class TestMessage:
         uuid_corr = uuid4()
         message = Response(
             correlation_id=uuid_corr,
-            identifier=uuid_id,
-            timestamp_ns=0,
+            response_id=uuid_id,
+            ts_init=0,
         )
 
         # Act
         # Assert
-        assert str(message) == (
-            f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=0)"
-        )
-        assert str(message) == (
-            f"Response(correlation_id={uuid_corr}, id={uuid_id}, timestamp=0)"
-        )
+        assert str(message) == f"Response(correlation_id={uuid_corr}, id={uuid_id}, ts_init=0)"
+        assert str(message) == f"Response(correlation_id={uuid_corr}, id={uuid_id}, ts_init=0)"
 
     @pytest.mark.parametrize(
-        "msg_type, expected",
+        "category, expected",
         [
-            [MessageType.STRING, "STRING"],
-            [MessageType.COMMAND, "COMMAND"],
-            [MessageType.DOCUMENT, "DOCUMENT"],
-            [MessageType.EVENT, "EVENT"],
-            [MessageType.REQUEST, "REQUEST"],
-            [MessageType.RESPONSE, "RESPONSE"],
+            [MessageCategory.COMMAND, "COMMAND"],
+            [MessageCategory.DOCUMENT, "DOCUMENT"],
+            [MessageCategory.EVENT, "EVENT"],
+            [MessageCategory.REQUEST, "REQUEST"],
+            [MessageCategory.RESPONSE, "RESPONSE"],
         ],
     )
-    def test_message_type_to_str(self, msg_type, expected):
+    def test_message_category_to_str(self, category, expected):
         # Arrange
         # Act
-        result = message_type_to_str(msg_type)
+        result = MessageCategoryParser.to_str_py(category)
 
         # Assert
         assert result == expected
@@ -125,18 +119,17 @@ class TestMessage:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["STRING", MessageType.STRING],
-            ["COMMAND", MessageType.COMMAND],
-            ["DOCUMENT", MessageType.DOCUMENT],
-            ["EVENT", MessageType.EVENT],
-            ["REQUEST", MessageType.REQUEST],
-            ["RESPONSE", MessageType.RESPONSE],
+            ["COMMAND", MessageCategory.COMMAND],
+            ["DOCUMENT", MessageCategory.DOCUMENT],
+            ["EVENT", MessageCategory.EVENT],
+            ["REQUEST", MessageCategory.REQUEST],
+            ["RESPONSE", MessageCategory.RESPONSE],
         ],
     )
-    def test_message_type_from_str(self, string, expected):
+    def test_message_category_from_str(self, string, expected):
         # Arrange
         # Act
-        result = message_type_from_str(string)
+        result = MessageCategoryParser.from_str_py(string)
 
         # Assert
         assert result == expected

@@ -24,7 +24,6 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class TestIdentifiers:
@@ -176,18 +175,6 @@ class TestIdentifiers:
         assert "TESTER-000" == trader_id1.value
         assert trader_id1.get_tag() == "000"
 
-    def test_strategy_identifier(self):
-        # Arrange
-        # Act
-        strategy_id1 = StrategyId.null()
-        strategy_id2 = StrategyId("SCALPER-001")
-
-        # Assert
-        assert "NULL" == strategy_id1.value
-        assert strategy_id1 == strategy_id1
-        assert strategy_id1 != strategy_id2
-        assert strategy_id2.get_tag() == "001"
-
     def test_account_identifier(self):
         # Arrange
         # Act
@@ -199,22 +186,6 @@ class TestIdentifiers:
         assert account_id1 != account_id2
         assert "SIM-02851908", account_id1.value
         assert account_id1 == AccountId("SIM", "02851908")
-
-    def test_position_identifier(self):
-        # Arrange
-        # Act
-        position_id0 = PositionId.null()
-
-        # Assert
-        assert "NULL" == position_id0.value
-
-    def test_order_identifier(self):
-        # Arrange
-        # Act
-        order_id = VenueOrderId.null()
-
-        # Assert
-        assert "NULL" == order_id.value
 
 
 class TestVenue:

@@ -12,29 +12,26 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import json
+
 from operator import itemgetter
 
-import orjson
 import pandas as pd
 from tabulate import tabulate
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
-from nautilus_trader.model.c_enums.book_level cimport BookLevelParser
 from nautilus_trader.model.c_enums.delta_type cimport DeltaType
-from nautilus_trader.model.c_enums.delta_type cimport DeltaTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.data cimport Data
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport Tick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.orderbook.data cimport Order
+from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
-from nautilus_trader.model.orderbook.order cimport Order
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport Tick
-from nautilus_trader.model.tick cimport TradeTick
 
 
 cdef class OrderBook:
@@ -58,7 +55,7 @@ cdef class OrderBook:
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the book.
+            The instrument ID for the book.
         level : BookLevel
             The order book level (L1, L2, L3).
         price_precision : int
@@ -77,7 +74,7 @@ cdef class OrderBook:
 
         """
         if self.__class__.__name__ == OrderBook.__name__:
-            raise RuntimeError("Cannot instantiate OrderBook directly: use OrderBook.create()")
+            raise RuntimeError("cannot instantiate OrderBook directly: use OrderBook.create()")
         Condition.not_negative_int(price_precision, "price_precision")
         Condition.not_negative_int(size_precision, "size_precision")
 
@@ -95,7 +92,7 @@ cdef class OrderBook:
             price_precision=price_precision,
             size_precision=size_precision,
         )
-        self.last_update_timestamp_ns = 0
+        self.ts_last = 0
 
     @staticmethod
     def create(
@@ -260,7 +257,7 @@ cdef class OrderBook:
             )
             self.update(order=order)
 
-        self.last_update_timestamp_ns = snapshot.ts_recv_ns
+        self.ts_last = snapshot.ts_init
 
     cpdef void apply(self, OrderBookData data) except *:
         """
@@ -333,7 +330,7 @@ cdef class OrderBook:
         elif delta.type == DeltaType.DELETE:
             self.delete(order=delta.order)
 
-        self.last_update_timestamp_ns = delta.ts_recv_ns
+        self.ts_last = delta.ts_init
 
     cdef void _add(self, Order order) except *:
         if order.side == OrderSide.BUY:
@@ -364,18 +361,6 @@ cdef class OrderBook:
         if best_bid is None or best_ask is None:
             return
         assert best_bid < best_ask, f"Orders in cross [{best_bid} @ {best_ask}]"
-
-    @property
-    def timestamp_ns(self):
-        """
-        The UNIX timestamp (nanoseconds) of the last update.
-
-        Returns
-        -------
-        int64
-
-        """
-        return self.last_update_timestamp_ns
 
     cpdef int trade_side(self, TradeTick trade):
         """
@@ -483,7 +468,7 @@ cdef class OrderBook:
         return (
             f"{type(self).__name__}\n"
             f"instrument: {self.instrument_id}\n"
-            f"timestamp: {pd.Timestamp(self.last_update_timestamp_ns)}\n\n"
+            f"timestamp: {pd.Timestamp(self.ts_last)}\n\n"
             f"{self.pprint()}"
         )
 
@@ -704,7 +689,7 @@ cdef class L3OrderBook(OrderBook):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the book.
+            The instrument ID for the book.
         price_precision : int
             The price precision for the book.
         size_precision : int
@@ -745,7 +730,7 @@ cdef class L2OrderBook(OrderBook):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the book.
+            The instrument ID for the book.
         price_precision : int
             The price precision for the book.
         size_precision : int
@@ -857,7 +842,7 @@ cdef class L1OrderBook(OrderBook):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument identifier for the book.
+            The instrument ID for the book.
         price_precision : int
             The price precision for the book.
         size_precision : int
@@ -1002,356 +987,3 @@ cdef class L1OrderBook(OrderBook):
         # the order.
         order.id = OrderSideParser.to_str(order.side)
         return order
-
-
-cdef class OrderBookData(Data):
-    """
-    The abstract base class for all `OrderBook` data.
-
-    This class should not be used directly, but through a concrete subclass.
-    """
-
-    def __init__(
-        self,
-        InstrumentId instrument_id not None,
-        BookLevel level,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
-    ):
-        """
-        Initialize a new instance of the ``OrderBookData`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument identifier for the book.
-        level : BookLevel
-            The order book level (L1, L2, L3).
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
-
-        """
-        super().__init__(ts_event_ns, ts_recv_ns)
-
-        self.instrument_id = instrument_id
-        self.level = level
-
-
-cdef class OrderBookSnapshot(OrderBookData):
-    """
-    Represents a snapshot in time for an `OrderBook`.
-    """
-
-    def __init__(
-        self,
-        InstrumentId instrument_id not None,
-        BookLevel level,
-        list bids not None,
-        list asks not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
-    ):
-        """
-        Initialize a new instance of the ``OrderBookSnapshot`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument identifier for the book.
-        level : BookLevel
-            The order book level (L1, L2, L3).
-        bids : list
-            The bids for the snapshot.
-        asks : list
-            The asks for the snapshot.
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
-
-        """
-        super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
-
-        self.bids = bids
-        self.asks = asks
-
-    def __eq__(self, OrderBookSnapshot other) -> bool:
-        return OrderBookSnapshot.to_dict_c(self) == OrderBookSnapshot.to_dict_c(other)
-
-    def __hash__(self) -> int:
-        return hash(frozenset(OrderBookSnapshot.to_dict_c(self)))
-
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"'{self.instrument_id}', "
-                f"level={BookLevelParser.to_str(self.level)}, "
-                f"bids={self.bids}, "
-                f"asks={self.asks}, "
-                f"ts_recv_ns={self.ts_recv_ns})")
-
-    @staticmethod
-    cdef OrderBookSnapshot from_dict_c(dict values):
-        return OrderBookSnapshot(
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            level=BookLevelParser.from_str(values["level"]),
-            bids=orjson.loads(values["bids"]),
-            asks=orjson.loads(values["asks"]),
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
-        )
-
-    @staticmethod
-    cdef dict to_dict_c(OrderBookSnapshot obj):
-        return {
-            "type": "OrderBookSnapshot",
-            "instrument_id": obj.instrument_id.value,
-            "level": BookLevelParser.to_str(obj.level),
-            "bids": json.dumps(obj.bids),
-            "asks": json.dumps(obj.asks),
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
-        }
-
-    @staticmethod
-    def from_dict(dict values):
-        """
-        Return an order book snapshot from the given dict values.
-
-        Parameters
-        ----------
-        values : dict[str, object]
-            The values for initialization.
-
-        Returns
-        -------
-        OrderBookSnapshot
-
-        """
-        return OrderBookSnapshot.from_dict_c(values)
-
-    @staticmethod
-    def to_dict(OrderBookSnapshot obj):
-        """
-        Return a dictionary representation of this object.
-
-        Returns
-        -------
-        dict[str, object]
-
-        """
-        return OrderBookSnapshot.to_dict_c(obj)
-
-
-cdef class OrderBookDeltas(OrderBookData):
-    """
-    Represents bulk changes for an `OrderBook`.
-    """
-
-    def __init__(
-        self,
-        InstrumentId instrument_id not None,
-        BookLevel level,
-        list deltas not None,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
-    ):
-        """
-        Initialize a new instance of the ``OrderBookDeltas`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument identifier for the book.
-        level : BookLevel
-            The order book level (L1, L2, L3).
-        deltas : list[OrderBookDelta]
-            The list of order book changes.
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
-
-        """
-        super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
-
-        self.deltas = deltas
-
-    def __eq__(self, OrderBookDeltas other) -> bool:
-        return OrderBookDeltas.to_dict_c(self) == OrderBookDeltas.to_dict_c(other)
-
-    def __hash__(self) -> int:
-        return hash(frozenset(OrderBookDeltas.to_dict_c(self)))
-
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"'{self.instrument_id}', "
-                f"level={BookLevelParser.to_str(self.level)}, "
-                f"{self.deltas}, "
-                f"ts_recv_ns={self.ts_recv_ns})")
-
-    @staticmethod
-    cdef OrderBookDeltas from_dict_c(dict values):
-        return OrderBookDeltas(
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            level=BookLevelParser.from_str(values["level"]),
-            deltas=[OrderBookDelta.from_dict_c(d) for d in orjson.loads(values["deltas"])],
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
-        )
-
-    @staticmethod
-    cdef dict to_dict_c(OrderBookDeltas obj):
-        return {
-            "type": "OrderBookDeltas",
-            "instrument_id": obj.instrument_id.value,
-            "level": BookLevelParser.to_str(obj.level),
-            "deltas": json.dumps([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
-        }
-
-    @staticmethod
-    def from_dict(dict values):
-        """
-        Return order book deltas from the given dict values.
-
-        Parameters
-        ----------
-        values : dict[str, object]
-            The values for initialization.
-
-        Returns
-        -------
-        OrderBookDeltas
-
-        """
-        return OrderBookDeltas.from_dict_c(values)
-
-    @staticmethod
-    def to_dict(OrderBookDeltas obj):
-        """
-        Return a dictionary representation of this object.
-
-        Returns
-        -------
-        dict[str, object]
-
-        """
-        return OrderBookDeltas.to_dict_c(obj)
-
-
-cdef class OrderBookDelta(OrderBookData):
-    """
-    Represents a single difference on an `OrderBook`.
-    """
-
-    def __init__(
-        self,
-        InstrumentId instrument_id not None,
-        BookLevel level,
-        DeltaType delta_type,
-        Order order,
-        int64_t ts_event_ns,
-        int64_t ts_recv_ns,
-    ):
-        """
-        Initialize a new instance of the ``OrderBookDelta`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument identifier.
-        level : BookLevel
-            The book level for the delta.
-        delta_type : DeltaType
-            The type of change (ADD, UPDATED, DELETE, CLEAR).
-        order : Order
-            The order to apply.
-        ts_event_ns: int64
-            The UNIX timestamp (nanoseconds) when data event occurred.
-        ts_recv_ns: int64
-            The UNIX timestamp (nanoseconds) when received by the Nautilus system.
-
-        """
-        super().__init__(instrument_id, level, ts_event_ns, ts_recv_ns)
-
-        self.type = delta_type
-        self.order = order
-
-    def __eq__(self, OrderBookDelta other) -> bool:
-        return OrderBookDelta.to_dict_c(self) == OrderBookDelta.to_dict_c(other)
-
-    def __hash__(self) -> int:
-        return hash(frozenset(OrderBookDelta.to_dict_c(self)))
-
-    def __repr__(self) -> str:
-        return (f"{type(self).__name__}("
-                f"'{self.instrument_id}', "
-                f"level={BookLevelParser.to_str(self.level)}, "
-                f"delta_type={DeltaTypeParser.to_str(self.type)}, "
-                f"order={self.order}, "
-                f"ts_recv_ns={self.ts_recv_ns})")
-
-    @staticmethod
-    cdef OrderBookDelta from_dict_c(dict values):
-        cdef DeltaType delta_type = DeltaTypeParser.from_str(values["delta_type"])
-        cdef Order order = Order.from_dict_c({
-            "price": values["order_price"],
-            "size": values["order_size"],
-            "side": values["order_side"],
-            "id": values["order_id"],
-        }) if values['delta_type'] != "CLEAR" else None
-        return OrderBookDelta(
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            level=BookLevelParser.from_str(values["level"]),
-            delta_type=DeltaTypeParser.from_str(values["delta_type"]),
-            order=order,
-            ts_event_ns=values["ts_event_ns"],
-            ts_recv_ns=values["ts_recv_ns"],
-        )
-
-    @staticmethod
-    cdef dict to_dict_c(OrderBookDelta obj):
-        return {
-            "type": "OrderBookDelta",
-            "instrument_id": obj.instrument_id.value,
-            "level": BookLevelParser.to_str(obj.level),
-            "delta_type": DeltaTypeParser.to_str(obj.type),
-            "order_price": obj.order.price if obj.order else None,
-            "order_size": obj.order.size if obj.order else None,
-            "order_side": OrderSideParser.to_str(obj.order.side) if obj.order else None,
-            "order_id": obj.order.id if obj.order else None,
-            "ts_event_ns": obj.ts_event_ns,
-            "ts_recv_ns": obj.ts_recv_ns,
-        }
-
-    @staticmethod
-    def from_dict(dict values):
-        """
-        Return an order book delta from the given dict values.
-
-        Parameters
-        ----------
-        values : dict[str, object]
-            The values for initialization.
-
-        Returns
-        -------
-        OrderBookDelta
-
-        """
-        return OrderBookDelta.from_dict_c(values)
-
-    @staticmethod
-    def to_dict(OrderBookDelta obj):
-        """
-        Return a dictionary representation of this object.
-
-        Returns
-        -------
-        dict[str, object]
-
-        """
-        return OrderBookDelta.to_dict_c(obj)

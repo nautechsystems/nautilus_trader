@@ -15,19 +15,31 @@
 
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import build_market_update_messages
+from nautilus_trader.adapters.betfair.parsing import make_order
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
-from nautilus_trader.model.currencies import AUD
+from nautilus_trader.core.uuid import UUID
+from nautilus_trader.model.currencies import GBP
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orderbook.book import OrderBookDeltas
-from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.model.orders.limit import LimitOrder
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
@@ -36,10 +48,10 @@ def test_order_submit_to_betfair(betting_instrument):
     result = order_submit_to_betfair(command=command, instrument=betting_instrument)
     expected = {
         "customer_ref": command.id.value.replace("-", ""),
-        "customer_strategy_ref": "Test-1",
+        "customer_strategy_ref": "S-001",
         "instructions": [
             {
-                "customerOrderRef": "O-20210410-022422-001-001-Test",
+                "customerOrderRef": "O-20210410-022422-001-001-S",
                 "handicap": "",
                 "limitOrder": {
                     "minFillSize": 0,
@@ -92,28 +104,23 @@ def test_order_cancel_to_betfair(betting_instrument):
 def test_account_statement(betfair_client, uuid, clock):
     detail = betfair_client.account.get_account_details()
     funds = betfair_client.account.get_account_funds()
-    timestamp_ns = clock.timestamp_ns()
     result = betfair_account_to_account_state(
         account_detail=detail,
         account_funds=funds,
         event_id=uuid,
-        ts_updated_ns=timestamp_ns,
-        timestamp_ns=timestamp_ns,
+        ts_event=clock.timestamp_ns(),
+        ts_init=clock.timestamp_ns(),
     )
     expected = AccountState(
         account_id=AccountId(issuer="BETFAIR", number="Testy-McTest"),
         account_type=AccountType.CASH,
-        base_currency=AUD,
+        base_currency=GBP,
         reported=True,  # reported
-        balances=[
-            AccountBalance(
-                AUD, Money(1000.0, AUD), Money(0.00, AUD), Money(1000.0, AUD)
-            )
-        ],
+        balances=[AccountBalance(GBP, Money(1000.0, GBP), Money(0.00, GBP), Money(1000.0, GBP))],
         info={"funds": funds, "detail": detail},
         event_id=uuid,
-        ts_updated_ns=result.timestamp_ns,
-        timestamp_ns=result.timestamp_ns,
+        ts_event=result.ts_event,
+        ts_init=result.ts_init,
     )
     assert result == expected
 
@@ -142,3 +149,31 @@ def test__merge_order_book_deltas(provider):
     assert isinstance(updates[0], TradeTick)
     assert isinstance(updates[1], OrderBookDeltas)
     assert len(updates[1].deltas) == 2
+
+
+def test_make_order():
+    order = LimitOrder(
+        trader_id=TraderId("TESTER-001"),
+        strategy_id=StrategyId("Quoter-Warwick(AUS)2ndAug | R2800m3yo | 7.DubaiClassic"),
+        instrument_id=InstrumentId(
+            Symbol("HorseRacing,,30747950,20210802-034000,ODDS,WIN,1.185880713,40372921,0.0"),
+            Venue("BETFAIR"),
+        ),
+        client_order_id=ClientOrderId(
+            "O-20210802-033429-001-Warwick(AUS)2ndAug | R2800m3yo | 7.DubaiClassic-25"
+        ),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("1.0"),
+        price=Price.from_str("0.125"),
+        time_in_force=TimeInForce.GTC,
+        expire_time=None,
+        init_id=UUID.from_str("91de5795-8c64-334f-4f9c-16e01572249d"),
+        ts_init=1627875270563974000,
+        # account_id='BETFAIR-001'
+    )
+    result = make_order(order)
+    expected = {
+        "limit_order": {"minFillSize": 0, "persistenceType": "PERSIST", "price": 8.0, "size": 1.0},
+        "order_type": "LIMIT",
+    }
+    assert result == expected

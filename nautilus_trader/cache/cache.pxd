@@ -16,21 +16,21 @@
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.model.bar cimport Bar
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.tick cimport QuoteTick
-from nautilus_trader.model.tick cimport TradeTick
 from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 from nautilus_trader.trading.strategy cimport TradingStrategy
@@ -65,6 +65,7 @@ cdef class Cache(CacheFacade):
     cdef dict _index_strategy_orders
     cdef dict _index_strategy_positions
     cdef set _index_orders
+    cdef set _index_orders_inflight
     cdef set _index_orders_working
     cdef set _index_orders_completed
     cdef set _index_positions
@@ -72,8 +73,6 @@ cdef class Cache(CacheFacade):
     cdef set _index_positions_closed
     cdef set _index_strategies
 
-    cdef readonly TraderId trader_id
-    """The trader identifier for the cache.\n\n:returns: `TraderId`"""
     cdef readonly int tick_capacity
     """The caches tick capacity.\n\n:returns: `int`"""
     cdef readonly int bar_capacity
@@ -118,7 +117,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, PositionId position_id) except *
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id) except *
-    cpdef void add_position(self, Position position) except *
+    cpdef void add_position(self, Position position, OMSType oms_type) except *
 
     cpdef void update_account(self, Account account) except *
     cpdef void update_order(self, Order order) except *

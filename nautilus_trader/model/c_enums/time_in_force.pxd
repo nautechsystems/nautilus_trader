@@ -21,6 +21,7 @@ cpdef enum TimeInForce:
     FOK = 4,  # Fill or Kill
     FAK = 5,  # Fill and Kill
     GTD = 6,  # Good till Date
+    OC = 7,   # On Close
 
 
 cdef class TimeInForceParser:

@@ -18,15 +18,16 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.events cimport PositionEvent
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.model.tick cimport QuoteTick
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 from nautilus_trader.trading.account cimport Account
 
 
@@ -58,6 +59,7 @@ cdef class Portfolio(PortfolioFacade):
     cdef LoggerAdapter _log
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
+    cdef MessageBus _msgbus
     cdef CacheFacade _cache
 
     cdef dict _unrealized_pnls
@@ -73,7 +75,7 @@ cdef class Portfolio(PortfolioFacade):
     cpdef void initialize_orders(self) except *
     cpdef void initialize_positions(self) except *
     cpdef void update_tick(self, QuoteTick tick) except *
-    cpdef void update_order(self, Order order) except *
+    cpdef void update_order(self, OrderEvent event) except *
     cpdef void update_position(self, PositionEvent event) except *
     cpdef void reset(self) except *
 

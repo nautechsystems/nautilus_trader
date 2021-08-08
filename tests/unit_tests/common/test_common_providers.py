@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-
 import pytest
 
 from nautilus_trader.common.providers import InstrumentProvider
@@ -29,22 +27,13 @@ AUDUSD = TestStubs.audusd_id()
 class TestInstrumentProvider:
     def setup(self):
         # Fixture Setup
-
         self.provider = InstrumentProvider()
 
-    def test_load_all_async_when_not_implemented_raises_exception(self):
-        # Fresh isolated loop testing pattern
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        async def run_test():
-            # Arrange
-            # Act
-            # Assert
-            with pytest.raises(NotImplementedError):
-                await self.provider.load_all_async()
-
-        loop.run_until_complete(run_test())
+    @pytest.mark.asyncio
+    async def test_load_all_async_when_not_implemented_raises_exception(self):
+        # Arrange, Act, Assert
+        with pytest.raises(NotImplementedError):
+            await self.provider.load_all_async()
 
     def test_load_all_when_not_implemented_raises_exception(self):
         # Arrange

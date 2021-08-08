@@ -18,7 +18,7 @@
 
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.orderbook.order cimport Order
+from nautilus_trader.model.orderbook.data cimport Order
 
 
 cdef class Level:

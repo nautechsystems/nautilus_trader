@@ -15,7 +15,7 @@
 
 import pytest
 
-from nautilus_trader.model.bar import Bar
+from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue

@@ -13,22 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 import random
+from decimal import Decimal
 
 import pandas as pd
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.core.datetime cimport secs_to_nanos
-from nautilus_trader.model.bar cimport Bar
-from nautilus_trader.model.bar cimport BarType
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick cimport QuoteTick
 
 
 cdef class QuoteTickDataWrangler:
@@ -99,7 +99,7 @@ cdef class QuoteTickDataWrangler:
         Parameters
         ----------
         instrument_indexer : int
-            The instrument identifier indexer for the built ticks.
+            The instrument ID indexer for the built ticks.
         random_seed : int, optional
             The random seed for shuffling order of high and low ticks from bar
             data. If random_seed is None then won't shuffle.
@@ -260,8 +260,8 @@ cdef class QuoteTickDataWrangler:
             ask=Price(values[1], self.instrument.price_precision),
             bid_size=Quantity(values[2], self.instrument.size_precision),
             ask_size=Quantity(values[3], self.instrument.size_precision),
-            ts_event_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
-            ts_recv_ns=secs_to_nanos(timestamp),
+            ts_event=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
+            ts_init=secs_to_nanos(timestamp),
         )
 
 
@@ -304,7 +304,7 @@ cdef class TradeTickDataWrangler:
         Parameters
         ----------
         instrument_indexer : int
-            The instrument identifier indexer for the built ticks.
+            The instrument ID indexer for the built ticks.
 
         """
         processed_trades = pd.DataFrame(index=self._data_trades.index)
@@ -343,8 +343,8 @@ cdef class TradeTickDataWrangler:
             size=Quantity(values[1], self.instrument.size_precision),
             aggressor_side=AggressorSideParser.from_str(values[2]),
             match_id=values[3],
-            ts_event_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
-            ts_recv_ns=secs_to_nanos(timestamp),
+            ts_event=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
+            ts_init=secs_to_nanos(timestamp),
         )
 
 
@@ -451,6 +451,6 @@ cdef class BarDataWrangler:
             low_price=Price(values[2], self._price_precision),
             close_price=Price(values[3], self._price_precision),
             volume=Quantity(values[4], self._size_precision),
-            ts_event_ns=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
-            ts_recv_ns=secs_to_nanos(timestamp),
+            ts_event=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
+            ts_init=secs_to_nanos(timestamp),
         )

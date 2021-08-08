@@ -14,18 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.execution.client cimport ExecutionClient
-from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.commands cimport CancelOrder
-from nautilus_trader.model.commands cimport SubmitBracketOrder
-from nautilus_trader.model.commands cimport SubmitOrder
-from nautilus_trader.model.commands cimport UpdateOrder
+from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -39,7 +40,8 @@ cdef class BacktestExecClient(ExecutionClient):
         AccountId account_id not None,
         AccountType account_type,
         Currency base_currency,  # Can be None
-        ExecutionEngine engine not None,
+        MessageBus msgbus not None,
+        Cache cache not None,
         TestClock clock not None,
         Logger logger not None,
         bint is_frozen_account=False,
@@ -52,17 +54,19 @@ cdef class BacktestExecClient(ExecutionClient):
         exchange : SimulatedExchange
             The simulated exchange for the backtest.
         account_id : AccountId
-            The account identifier for the client.
+            The account ID for the client.
         account_type : AccountType
             The account type for the client.
         base_currency : Currency, optional
             The account base currency for the client. Use ``None`` for multi-currency accounts.
-        engine : ExecutionEngine
-            The execution engine for the client.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
         clock : TestClock
-            The clock for the component.
+            The clock for the client.
         logger : Logger
-            The logger for the component.
+            The logger for the client.
         is_frozen_account : bool
             If the backtest run account is frozen.
 
@@ -73,7 +77,8 @@ cdef class BacktestExecClient(ExecutionClient):
             account_id=account_id,
             account_type=account_type,
             base_currency=base_currency,
-            engine=engine,
+            msgbus=msgbus,
+            cache=cache,
             clock=clock,
             logger=logger,
             config={"calculate_account_state": False if is_frozen_account else True},
@@ -82,46 +87,23 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exchange = exchange
         self.is_connected = False
 
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
+    cpdef void _start(self) except *:
         self._log.info("Connecting...")
-
         self.is_connected = True
         self._log.info("Connected.")
 
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+    cpdef void _stop(self) except *:
         self._log.info("Disconnecting...")
-
         self.is_connected = False
         self._log.info("Disconnected.")
 
-    cpdef void reset(self) except *:
-        """
-        Reset the client.
-
-        All stateful fields are reset to their initial value.
-        """
-        self._log.info(f"Resetting...")
-
+    cpdef void _reset(self) except *:
+        pass
         # Nothing to reset
-        self._log.info("Reset.")
 
-    cpdef void dispose(self) except *:
-        """
-        Dispose of the client.
-
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-        """
-        self._log.info(f"Disposing.")
-
+    cpdef void _dispose(self) except *:
+        pass
         # Nothing to dispose
-        self._log.info(f"Disposed.")
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 

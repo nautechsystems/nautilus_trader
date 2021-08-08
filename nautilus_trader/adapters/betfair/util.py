@@ -43,9 +43,7 @@ def flatten_tree(y: Dict, **filters):
 
         depth = depth or 0
         node_type = dict_like["type"].lower()
-        data = {
-            f"{node_type}_{k}": v for k, v in dict_like.items() if k not in ignore_keys
-        }
+        data = {f"{node_type}_{k}": v for k, v in dict_like.items() if k not in ignore_keys}
         if "children" in dict_like:
             for child in dict_like["children"]:
                 for child_data in flatten(child, depth=depth + 1):

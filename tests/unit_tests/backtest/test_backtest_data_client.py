@@ -20,6 +20,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -35,16 +36,25 @@ class TestBacktestDataClient:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
+        self.trader_id = TestStubs.trader_id()
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.data_engine = DataEngine(
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -53,25 +63,26 @@ class TestBacktestDataClient:
 
         self.client = BacktestMarketDataClient(
             client_id=ClientId("SIM"),
-            engine=self.data_engine,
-            clock=TestClock(),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
             logger=self.logger,
         )
 
     def test_connect(self):
         # Arrange
         # Act
-        self.client.connect()
+        self.client.start()
 
         # Assert
         assert self.client.is_connected
 
     def test_disconnect(self):
         # Arrange
-        self.client.connect()
+        self.client.start()
 
         # Act
-        self.client.disconnect()
+        self.client.stop()
 
         # Assert
         assert not self.client.is_connected
@@ -92,11 +103,21 @@ class TestBacktestDataClient:
         # Assert
         assert True  # No exceptions raised
 
+    def test_subscribe_instruments(self):
+        # Arrange
+        # Act
+        self.client.subscribe_instruments()
+        self.client.start()
+        self.client.subscribe_instruments()
+
+        # Assert
+        assert True  # No exceptions raised
+
     def test_subscribe_instrument(self):
         # Arrange
         # Act
         self.client.subscribe_instrument(USDJPY_SIM.id)
-        self.client.connect()
+        self.client.start()
         self.client.subscribe_instrument(USDJPY_SIM.id)
 
         # Assert
@@ -106,7 +127,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.subscribe_quote_ticks(USDJPY_SIM.id)
-        self.client.connect()
+        self.client.start()
         self.client.subscribe_quote_ticks(USDJPY_SIM.id)
 
         # Assert
@@ -116,7 +137,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.subscribe_trade_ticks(USDJPY_SIM.id)
-        self.client.connect()
+        self.client.start()
         self.client.subscribe_trade_ticks(USDJPY_SIM.id)
 
         # Assert
@@ -126,8 +147,18 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
-        self.client.connect()
+        self.client.start()
         self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
+
+        # Assert
+        assert True  # No exceptions raised
+
+    def test_unsubscribe_instruments(self):
+        # Arrange
+        # Act
+        self.client.unsubscribe_instruments()
+        self.client.start()
+        self.client.unsubscribe_instruments()
 
         # Assert
         assert True  # No exceptions raised
@@ -136,7 +167,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.unsubscribe_instrument(USDJPY_SIM.id)
-        self.client.connect()
+        self.client.start()
         self.client.unsubscribe_instrument(USDJPY_SIM.id)
 
         # Assert
@@ -146,7 +177,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.unsubscribe_quote_ticks(USDJPY_SIM.id)
-        self.client.connect()
+        self.client.start()
         self.client.unsubscribe_quote_ticks(USDJPY_SIM.id)
 
         # Assert
@@ -156,7 +187,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.unsubscribe_trade_ticks(USDJPY_SIM.id)
-        self.client.connect()
+        self.client.start()
         self.client.unsubscribe_trade_ticks(USDJPY_SIM.id)
 
         # Assert
@@ -166,28 +197,8 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.unsubscribe_bars(TestStubs.bartype_usdjpy_1min_bid())
-        self.client.connect()
+        self.client.start()
         self.client.unsubscribe_bars(TestStubs.bartype_usdjpy_1min_bid())
-
-        # Assert
-        assert True  # No exceptions raised
-
-    def test_request_instrument(self):
-        # Arrange
-        # Act
-        self.client.request_instrument(USDJPY_SIM.id, uuid4())
-        self.client.connect()
-        self.client.request_instrument(USDJPY_SIM.id, uuid4())
-
-        # Assert
-        assert True  # No exceptions raised
-
-    def test_request_instruments(self):
-        # Arrange
-        # Act
-        self.client.request_instruments(uuid4())
-        self.client.connect()
-        self.client.request_instruments(uuid4())
 
         # Assert
         assert True  # No exceptions raised
@@ -196,7 +207,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.request_quote_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
-        self.client.connect()
+        self.client.start()
         self.client.request_quote_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
 
         # Assert
@@ -206,7 +217,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.request_trade_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
-        self.client.connect()
+        self.client.start()
         self.client.request_trade_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
 
         # Assert
@@ -215,13 +226,9 @@ class TestBacktestDataClient:
     def test_request_bars(self):
         # Arrange
         # Act
-        self.client.request_bars(
-            TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4()
-        )
-        self.client.connect()
-        self.client.request_bars(
-            TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4()
-        )
+        self.client.request_bars(TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4())
+        self.client.start()
+        self.client.request_bars(TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4())
 
         # Assert
         assert True  # No exceptions raised

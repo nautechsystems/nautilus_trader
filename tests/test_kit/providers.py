@@ -14,14 +14,20 @@
 # -------------------------------------------------------------------------------------------------
 
 import bz2
-from decimal import Decimal
-import json
 import os
+from decimal import Decimal
 from typing import List
 
+import orjson
 import pandas as pd
 from pandas import DataFrame
 
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.parsing import on_market_update
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
+from nautilus_trader.backtest.data_loader import DataLoader
+from nautilus_trader.backtest.data_loader import TextParser
 from nautilus_trader.backtest.loaders import CSVBarDataLoader
 from nautilus_trader.backtest.loaders import CSVTickDataLoader
 from nautilus_trader.backtest.loaders import ParquetTickDataLoader
@@ -29,22 +35,24 @@ from nautilus_trader.backtest.loaders import TardisQuoteDataLoader
 from nautilus_trader.backtest.loaders import TardisTradeDataLoader
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.order import Order
-from nautilus_trader.model.tick import TradeTick
+from nautilus_trader.model.orderbook.data import Order
 from tests.test_kit import PACKAGE_ROOT
 
 
@@ -114,9 +122,7 @@ class TestDataProvider:
     def l1_feed():
         updates = []
         for _, row in TestDataProvider.usdjpy_ticks().iterrows():
-            for side, order_side in zip(
-                ("bid", "ask"), (OrderSide.BUY, OrderSide.SELL)
-            ):
+            for side, order_side in zip(("bid", "ask"), (OrderSide.BUY, OrderSide.SELL)):
                 updates.append(
                     {
                         "op": "update",
@@ -147,10 +153,8 @@ class TestDataProvider:
                         size=Quantity(d["trade"]["volume"], 4),
                         aggressor_side=d["trade"]["side"],
                         match_id=(d["trade"]["trade_id"]),
-                        ts_event_ns=millis_to_nanos(
-                            pd.Timestamp(d["remote_timestamp"]).timestamp()
-                        ),
-                        ts_recv_ns=millis_to_nanos(
+                        ts_event=millis_to_nanos(pd.Timestamp(d["remote_timestamp"]).timestamp()),
+                        ts_init=millis_to_nanos(
                             pd.Timestamp(
                                 d["remote_timestamp"]
                             ).timestamp()  # TODO(cs): Hardcoded identical for now
@@ -176,7 +180,7 @@ class TestDataProvider:
 
         return [
             parse_line(line)
-            for line in json.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
+            for line in orjson.loads(open(PACKAGE_ROOT + "/data/L2_feed.json").read())
         ]
 
     @staticmethod
@@ -222,7 +226,7 @@ class TestDataProvider:
 
         return [
             msg
-            for data in json.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
+            for data in orjson.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
             for msg in parser(data)
         ]
 
@@ -235,12 +239,26 @@ class TestDataProvider:
         ]
 
     @staticmethod
+    def betfair_feed_parsed(market_id="1.166564490", folder="data"):
+        instrument_provider = BetfairInstrumentProvider.from_instruments([])
+        parser = TextParser(
+            parser=lambda x, state: on_market_update(
+                instrument_provider=instrument_provider, update=orjson.loads(x)
+            ),
+            instrument_provider_update=historical_instrument_provider_loader,
+        )
+        loader = DataLoader(
+            path=f"{PACKAGE_ROOT}/{folder}",
+            parser=parser,
+            glob_pattern=f"{market_id}*",
+            instrument_provider=instrument_provider,
+        )
+        data = sum(loader.run(), list())
+        return data
+
+    @staticmethod
     def betfair_trade_ticks():
-        return [
-            msg["trade"]
-            for msg in TestDataProvider.l2_feed()
-            if msg.get("op") == "trade"
-        ]
+        return [msg["trade"] for msg in TestDataProvider.l2_feed() if msg.get("op") == "trade"]
 
 
 class TestInstrumentProvider:
@@ -280,8 +298,8 @@ class TestInstrumentProvider:
             margin_maint=Decimal(),
             maker_fee=Decimal("0.001"),
             taker_fee=Decimal("0.001"),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -316,8 +334,44 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.35"),
             maker_fee=Decimal("0.0001"),
             taker_fee=Decimal("0.0001"),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def adabtc_binance() -> CurrencySpot:
+        """
+        Return the Binance ADA/BTC instrument for backtesting.
+
+        Returns
+        -------
+        CurrencySpot
+
+        """
+        return CurrencySpot(
+            instrument_id=InstrumentId(
+                symbol=Symbol("ADA/BTC"),
+                venue=Venue("BINANCE"),
+            ),
+            base_currency=ADA,
+            quote_currency=BTC,
+            price_precision=8,
+            size_precision=0,
+            price_increment=Price(1e-08, precision=8),
+            size_increment=Quantity.from_int(1),
+            lot_size=None,
+            max_quantity=Quantity.from_int(90000000),
+            min_quantity=Quantity.from_int(1),
+            max_notional=None,
+            min_notional=Money(0.00010000, BTC),
+            max_price=Price(1000, precision=8),
+            min_price=Price(1e-8, precision=8),
+            margin_init=Decimal("0"),
+            margin_maint=Decimal("0"),
+            maker_fee=Decimal("0.0010"),
+            taker_fee=Decimal("0.0010"),
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -353,8 +407,8 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.0035"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -390,8 +444,8 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.007"),
             maker_fee=Decimal("-0.00025"),
             taker_fee=Decimal("0.00075"),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
     @staticmethod
@@ -454,6 +508,31 @@ class TestInstrumentProvider:
             margin_maint=Decimal("0.03"),
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
-            ts_event_ns=0,
-            ts_recv_ns=0,
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def betting_instrument():
+        return BettingInstrument(
+            venue_name=BETFAIR_VENUE.value,
+            betting_type="ODDS",
+            competition_id="12282733",
+            competition_name="NFL",
+            event_country_code="GB",
+            event_id="29678534",
+            event_name="NFL",
+            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00").to_pydatetime(),
+            event_type_id="6423",
+            event_type_name="American Football",
+            market_id="1.179082386",
+            market_name="AFC Conference Winner",
+            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00").to_pydatetime(),
+            market_type="SPECIAL",
+            selection_handicap="",
+            selection_id="50214",
+            selection_name="Kansas City Chiefs",
+            currency="GBP",
+            ts_event=0,
+            ts_init=0,
         )

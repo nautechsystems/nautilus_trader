@@ -21,10 +21,10 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.commands import CancelOrder
-from nautilus_trader.model.commands import SubmitBracketOrder
-from nautilus_trader.model.commands import SubmitOrder
-from nautilus_trader.model.commands import UpdateOrder
+from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import SubmitBracketOrder
+from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
@@ -32,13 +32,13 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestInstrumentProvider
@@ -56,19 +56,26 @@ class TestBacktestExecClientTests:
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)
 
-        self.trader_id = TraderId("TESTER-000")
+        self.trader_id = TestStubs.trader_id()
         self.account_id = AccountId("BINANCE", "000")
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
 
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -84,7 +91,7 @@ class TestBacktestExecClientTests:
             is_frozen_account=False,
             instruments=[ETHUSDT_BINANCE],
             modules=[],
-            cache=self.exec_engine.cache,
+            cache=self.cache,
             fill_model=FillModel(),
             clock=self.clock,
             logger=self.logger,
@@ -95,7 +102,8 @@ class TestBacktestExecClientTests:
             account_id=self.account_id,
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency account
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
         )
@@ -116,17 +124,17 @@ class TestBacktestExecClientTests:
     def test_connect(self):
         # Arrange
         # Act
-        self.exec_client.connect()
+        self.exec_client.start()
 
         # Assert
         assert self.exec_client.is_connected
 
     def test_disconnect(self):
         # Arrange
-        self.exec_client.connect()
+        self.exec_client.start()
 
         # Act
-        self.exec_client.disconnect()
+        self.exec_client.stop()
 
         # Assert
         assert not self.exec_client.is_connected
@@ -159,7 +167,7 @@ class TestBacktestExecClientTests:
         command = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId.null(),
+            None,
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -213,7 +221,7 @@ class TestBacktestExecClientTests:
             self.order_factory.strategy_id,
             order.instrument_id,
             order.client_order_id,
-            order.venue_order_id,
+            VenueOrderId("1"),
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
@@ -238,7 +246,7 @@ class TestBacktestExecClientTests:
             order.strategy_id,
             order.instrument_id,
             order.client_order_id,
-            order.venue_order_id,
+            VenueOrderId("1"),
             Quantity.from_int(100),
             Price.from_str("1010.00"),
             None,

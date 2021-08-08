@@ -14,12 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-import unittest
 
-from nautilus_trader.cache.cache import Cache
-from nautilus_trader.cache.database import BypassCacheDatabase
+import pytest
+
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import uuid4
@@ -27,21 +26,24 @@ from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
+from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from nautilus_trader.model.tick import QuoteTick
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.portfolio import PortfolioFacade
@@ -52,6 +54,7 @@ from tests.test_kit.stubs import TestStubs
 SIM = Venue("SIM")
 BINANCE = Venue("BINANCE")
 BITMEX = Venue("BITMEX")
+BETFAIR = BETFAIR_VENUE
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
@@ -59,16 +62,18 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
+BETTING_INSTRUMENT = TestInstrumentProvider.betting_instrument()
 
 
-class PortfolioFacadeTests(unittest.TestCase):
+class TestPortfolioFacade:
     def test_account_raises_not_implemented_error(self):
         # Arrange
         portfolio = PortfolioFacade()
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.account, SIM)
+        with pytest.raises(NotImplementedError):
+            portfolio.account(SIM)
 
     def test_order_margin_raises_not_implemented_error(self):
         # Arrange
@@ -76,7 +81,8 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.initial_margins, SIM)
+        with pytest.raises(NotImplementedError):
+            portfolio.initial_margins(SIM)
 
     def test_position_margin_raises_not_implemented_error(self):
         # Arrange
@@ -84,7 +90,8 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.maint_margins, SIM)
+        with pytest.raises(NotImplementedError):
+            portfolio.maint_margins(SIM)
 
     def test_unrealized_pnl_for_venue_raises_not_implemented_error(self):
         # Arrange
@@ -92,7 +99,8 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.unrealized_pnls, SIM)
+        with pytest.raises(NotImplementedError):
+            portfolio.unrealized_pnls(SIM)
 
     def test_unrealized_pnl_for_instrument_raises_not_implemented_error(self):
         # Arrange
@@ -100,9 +108,8 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(
-            NotImplementedError, portfolio.unrealized_pnl, BTCUSDT_BINANCE.id
-        )
+        with pytest.raises(NotImplementedError):
+            portfolio.unrealized_pnl(BTCUSDT_BINANCE.id)
 
     def test_market_value_raises_not_implemented_error(self):
         # Arrange
@@ -110,7 +117,8 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.net_exposure, AUDUSD_SIM.id)
+        with pytest.raises(NotImplementedError):
+            portfolio.net_exposure(AUDUSD_SIM.id)
 
     def test_market_values_raises_not_implemented_error(self):
         # Arrange
@@ -118,7 +126,8 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.net_exposures, BITMEX)
+        with pytest.raises(NotImplementedError):
+            portfolio.net_exposures(BITMEX)
 
     def test_net_position_raises_not_implemented_error(self):
         # Arrange
@@ -126,7 +135,8 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.net_position, GBPUSD_SIM.id)
+        with pytest.raises(NotImplementedError):
+            portfolio.net_position(GBPUSD_SIM.id)
 
     def test_is_net_long_raises_not_implemented_error(self):
         # Arrange
@@ -134,7 +144,8 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.is_net_long, GBPUSD_SIM.id)
+        with pytest.raises(NotImplementedError):
+            portfolio.is_net_long(GBPUSD_SIM.id)
 
     def test_is_net_short_raises_not_implemented_error(self):
         # Arrange
@@ -142,7 +153,8 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.is_net_short, GBPUSD_SIM.id)
+        with pytest.raises(NotImplementedError):
+            portfolio.is_net_short(GBPUSD_SIM.id)
 
     def test_is_flat_raises_not_implemented_error(self):
         # Arrange
@@ -150,7 +162,8 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.is_flat, GBPUSD_SIM.id)
+        with pytest.raises(NotImplementedError):
+            portfolio.is_flat(GBPUSD_SIM.id)
 
     def test_is_completely_flat_raises_not_implemented_error(self):
         # Arrange
@@ -158,55 +171,53 @@ class PortfolioFacadeTests(unittest.TestCase):
 
         # Act
         # Assert
-        self.assertRaises(NotImplementedError, portfolio.is_completely_flat)
+        with pytest.raises(NotImplementedError):
+            portfolio.is_completely_flat()
 
 
-class PortfolioTests(unittest.TestCase):
-    def setUp(self):
+class TestPortfolio:
+    def setup(self):
         # Fixture Setup
-        clock = TestClock()
-        logger = Logger(clock, level_stdout=LogLevel.DEBUG)
-        trader_id = TraderId("TESTER-000")
+        self.clock = TestClock()
+        self.logger = Logger(self.clock)
+
+        self.trader_id = TestStubs.trader_id()
 
         self.order_factory = OrderFactory(
-            trader_id=trader_id,
+            trader_id=self.trader_id,
             strategy_id=StrategyId("S-001"),
             clock=TestClock(),
         )
 
-        cache_db = BypassCacheDatabase(
-            trader_id=trader_id,
-            logger=logger,
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
         )
 
-        self.cache = Cache(
-            database=cache_db,
-            logger=logger,
-        )
+        self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.exec_engine = ExecutionEngine(
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
 
         self.risk_engine = RiskEngine(
-            exec_engine=self.exec_engine,
             portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
-            clock=clock,
-            logger=logger,
+            clock=self.clock,
+            logger=self.logger,
         )
-
-        # Wire up components
-        self.exec_engine.register_risk_engine(self.risk_engine)
 
         # Prepare components
         self.cache.add_instrument(AUDUSD_SIM)
@@ -214,12 +225,13 @@ class PortfolioTests(unittest.TestCase):
         self.cache.add_instrument(BTCUSDT_BINANCE)
         self.cache.add_instrument(BTCUSD_BITMEX)
         self.cache.add_instrument(ETHUSD_BITMEX)
+        self.cache.add_instrument(BETTING_INSTRUMENT)
 
     def test_account_when_no_account_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.portfolio.account(SIM))
+        assert self.portfolio.account(SIM) is None
 
     def test_account_when_account_returns_the_account_facade(self):
         # Arrange
@@ -238,8 +250,8 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
         self.exec_engine.process(account_state)
 
@@ -247,67 +259,67 @@ class PortfolioTests(unittest.TestCase):
         result = self.portfolio.account(BINANCE)
 
         # Assert
-        self.assertEqual("BINANCE", result.id.issuer)
+        assert result.id.issuer == "BINANCE"
 
     def test_net_position_when_no_positions_returns_zero(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(Decimal(0), self.portfolio.net_position(AUDUSD_SIM.id))
+        assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(0)
 
     def test_is_net_long_when_no_positions_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.portfolio.is_net_long(AUDUSD_SIM.id))
+        assert self.portfolio.is_net_long(AUDUSD_SIM.id) is False
 
     def test_is_net_short_when_no_positions_returns_false(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(False, self.portfolio.is_net_short(AUDUSD_SIM.id))
+        assert self.portfolio.is_net_short(AUDUSD_SIM.id) is False
 
     def test_is_flat_when_no_positions_returns_true(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(True, self.portfolio.is_flat(AUDUSD_SIM.id))
+        assert self.portfolio.is_flat(AUDUSD_SIM.id) is True
 
     def test_is_completely_flat_when_no_positions_returns_true(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(True, self.portfolio.is_flat(AUDUSD_SIM.id))
+        assert self.portfolio.is_flat(AUDUSD_SIM.id) is True
 
     def test_unrealized_pnl_for_instrument_when_no_instrument_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertIsNone(self.portfolio.unrealized_pnl(USDJPY_SIM.id))
+        assert self.portfolio.unrealized_pnl(USDJPY_SIM.id) is None
 
     def test_unrealized_pnl_for_venue_when_no_account_returns_empty_dict(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual({}, self.portfolio.unrealized_pnls(SIM))
+        assert self.portfolio.unrealized_pnls(SIM) == {}
 
     def test_initial_margins_when_no_account_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(None, self.portfolio.initial_margins(SIM))
+        assert self.portfolio.initial_margins(SIM) is None
 
     def test_maint_margins_when_no_account_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(None, self.portfolio.maint_margins(SIM))
+        assert self.portfolio.maint_margins(SIM) is None
 
     def test_open_value_when_no_account_returns_none(self):
         # Arrange
         # Act
         # Assert
-        self.assertEqual(None, self.portfolio.net_exposures(SIM))
+        assert self.portfolio.net_exposures(SIM) is None
 
     def test_update_tick(self):
         # Arrange
@@ -317,7 +329,7 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_tick(tick)
 
         # Assert
-        self.assertIsNone(self.portfolio.unrealized_pnl(GBPUSD_SIM.id))
+        assert self.portfolio.unrealized_pnl(GBPUSD_SIM.id) is None
 
     def test_update_orders_working(self):
         # Arrange
@@ -342,8 +354,8 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -363,14 +375,14 @@ class PortfolioTests(unittest.TestCase):
             Price.from_str("25000.00"),
         )
 
-        self.exec_engine.cache.add_order(order1, PositionId.null())
-        self.exec_engine.cache.add_order(order2, PositionId.null())
+        self.cache.add_order(order1, position_id=None)
+        self.cache.add_order(order2, position_id=None)
 
         # Push states to ACCEPTED
         order1.apply(TestStubs.event_order_submitted(order1))
-        self.exec_engine.cache.update_order(order1)
+        self.cache.update_order(order1)
         order1.apply(TestStubs.event_order_accepted(order1))
-        self.exec_engine.cache.update_order(order1)
+        self.cache.update_order(order1)
 
         filled1 = TestStubs.event_order_filled(
             order1,
@@ -397,7 +409,51 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.initialize_orders()
 
         # Assert
-        self.assertEqual({}, self.portfolio.initial_margins(BINANCE))
+        assert self.portfolio.initial_margins(BINANCE) == {}
+
+    def test_order_accept_updates_initial_margin(self):
+        # Arrange
+        state = AccountState(
+            account_id=AccountId("BETFAIR", "01234"),
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
+            reported=True,
+            balances=[
+                AccountBalance(
+                    currency=GBP,
+                    total=Money(1000, GBP),
+                    free=Money(1000, GBP),
+                    locked=Money(0, GBP),
+                ),
+            ],
+            info={},
+            event_id=uuid4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.exec_engine.process(state)
+
+        # Create a passive order
+        order1 = self.order_factory.limit(
+            BETTING_INSTRUMENT.id,
+            OrderSide.BUY,
+            Quantity.from_str("100"),
+            Price.from_str("0.5"),
+        )
+
+        self.cache.add_order(order1, position_id=None)
+
+        # Push states to ACCEPTED
+        order1.apply(TestStubs.event_order_submitted(order1))
+        order1.apply(TestStubs.event_order_accepted(order1, venue_order_id=VenueOrderId("1")))
+        self.cache.update_order(order1)
+
+        # Act
+        self.portfolio.initialize_orders()
+
+        # Assert
+        assert self.portfolio.initial_margins(BETFAIR)[GBP] == Money(200, GBP)
 
     def test_update_positions(self):
         # Arrange
@@ -422,8 +478,8 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -441,14 +497,14 @@ class PortfolioTests(unittest.TestCase):
             Quantity.from_str("10.50000000"),
         )
 
-        self.exec_engine.cache.add_order(order1, PositionId.null())
-        self.exec_engine.cache.add_order(order2, PositionId.null())
+        self.cache.add_order(order1, position_id=None)
+        self.cache.add_order(order2, position_id=None)
 
         # Push states to ACCEPTED
         order1.apply(TestStubs.event_order_submitted(order1))
-        self.exec_engine.cache.update_order(order1)
+        self.cache.update_order(order1)
         order1.apply(TestStubs.event_order_accepted(order1))
-        self.exec_engine.cache.update_order(order1)
+        self.cache.update_order(order1)
 
         fill1 = TestStubs.event_order_filled(
             order1,
@@ -497,13 +553,13 @@ class PortfolioTests(unittest.TestCase):
         )
 
         # Act
-        self.cache.add_position(position1)
-        self.cache.add_position(position2)
+        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position2, OMSType.HEDGING)
         self.portfolio.initialize_positions()
         self.portfolio.update_tick(last)
 
         # Assert
-        self.assertTrue(self.portfolio.is_net_long(BTCUSDT_BINANCE.id))
+        assert self.portfolio.is_net_long(BTCUSDT_BINANCE.id)
 
     def test_opening_one_long_position_updates_portfolio(self):
         # Arrange
@@ -528,8 +584,8 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -564,38 +620,20 @@ class PortfolioTests(unittest.TestCase):
         position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
 
         # Act
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         # Assert
-        self.assertEqual(
-            {USDT: Money(105100.00000000, USDT)},
-            self.portfolio.net_exposures(BINANCE),
-        )
-        self.assertEqual(
-            {USDT: Money(100.00000000, USDT)},
-            self.portfolio.unrealized_pnls(BINANCE),
-        )
-        self.assertEqual(
-            {USDT: Money(105.10000000, USDT)},
-            self.portfolio.maint_margins(BINANCE),
-        )
-        self.assertEqual(
-            Money(105100.00000000, USDT),
-            self.portfolio.net_exposure(BTCUSDT_BINANCE.id),
-        )
-        self.assertEqual(
-            Money(100.00000000, USDT),
-            self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id),
-        )
-        self.assertEqual(
-            Decimal("10.00000000"),
-            self.portfolio.net_position(order.instrument_id),
-        )
-        self.assertTrue(self.portfolio.is_net_long(order.instrument_id))
-        self.assertFalse(self.portfolio.is_net_short(order.instrument_id))
-        self.assertFalse(self.portfolio.is_flat(order.instrument_id))
-        self.assertFalse(self.portfolio.is_completely_flat())
+        assert self.portfolio.net_exposures(BINANCE) == {USDT: Money(105100.00000000, USDT)}
+        assert self.portfolio.unrealized_pnls(BINANCE) == {USDT: Money(100.00000000, USDT)}
+        assert self.portfolio.maint_margins(BINANCE) == {USDT: Money(105.10000000, USDT)}
+        assert self.portfolio.net_exposure(BTCUSDT_BINANCE.id) == Money(105100.00000000, USDT)
+        assert self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id) == Money(100.00000000, USDT)
+        assert self.portfolio.net_position(order.instrument_id) == Decimal("10.00000000")
+        assert self.portfolio.is_net_long(order.instrument_id)
+        assert not self.portfolio.is_net_short(order.instrument_id)
+        assert not self.portfolio.is_flat(order.instrument_id)
+        assert not self.portfolio.is_completely_flat()
 
     def test_opening_one_short_position_updates_portfolio(self):
         # Arrange
@@ -620,8 +658,8 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -656,38 +694,20 @@ class PortfolioTests(unittest.TestCase):
         position = Position(instrument=BTCUSDT_BINANCE, fill=fill)
 
         # Act
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         # Assert
-        self.assertEqual(
-            {USDT: Money(7987.77875000, USDT)},
-            self.portfolio.net_exposures(BINANCE),
-        )
-        self.assertEqual(
-            {USDT: Money(-262.77875000, USDT)},
-            self.portfolio.unrealized_pnls(BINANCE),
-        )
-        self.assertEqual(
-            {USDT: Money(7.98777875, USDT)},
-            self.portfolio.maint_margins(BINANCE),
-        )
-        self.assertEqual(
-            Money(7987.77875000, USDT),
-            self.portfolio.net_exposure(BTCUSDT_BINANCE.id),
-        )
-        self.assertEqual(
-            Money(-262.77875000, USDT),
-            self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id),
-        )
-        self.assertEqual(
-            Decimal("-0.515"),
-            self.portfolio.net_position(order.instrument_id),
-        )
-        self.assertFalse(self.portfolio.is_net_long(order.instrument_id))
-        self.assertTrue(self.portfolio.is_net_short(order.instrument_id))
-        self.assertFalse(self.portfolio.is_flat(order.instrument_id))
-        self.assertFalse(self.portfolio.is_completely_flat())
+        assert self.portfolio.net_exposures(BINANCE) == {USDT: Money(7987.77875000, USDT)}
+        assert self.portfolio.unrealized_pnls(BINANCE) == {USDT: Money(-262.77875000, USDT)}
+        assert self.portfolio.maint_margins(BINANCE) == {USDT: Money(7.98777875, USDT)}
+        assert self.portfolio.net_exposure(BTCUSDT_BINANCE.id) == Money(7987.77875000, USDT)
+        assert self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id) == Money(-262.77875000, USDT)
+        assert self.portfolio.net_position(order.instrument_id) == Decimal("-0.515")
+        assert not self.portfolio.is_net_long(order.instrument_id)
+        assert self.portfolio.is_net_short(order.instrument_id)
+        assert not self.portfolio.is_flat(order.instrument_id)
+        assert not self.portfolio.is_completely_flat()
 
     def test_opening_positions_with_multi_asset_account(self):
         # Arrange
@@ -712,8 +732,8 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -760,26 +780,14 @@ class PortfolioTests(unittest.TestCase):
         position = Position(instrument=ETHUSD_BITMEX, fill=fill)
 
         # Act
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         # Assert
-        self.assertEqual(
-            {ETH: Money(26.59220848, ETH)},
-            self.portfolio.net_exposures(BITMEX),
-        )
-        self.assertEqual(
-            {ETH: Money(0.20608962, ETH)},
-            self.portfolio.maint_margins(BITMEX),
-        )
-        self.assertEqual(
-            Money(26.59220848, ETH),
-            self.portfolio.net_exposure(ETHUSD_BITMEX.id),
-        )
-        self.assertEqual(
-            Money(0.00000000, ETH),
-            self.portfolio.unrealized_pnl(ETHUSD_BITMEX.id),
-        )
+        assert self.portfolio.net_exposures(BITMEX) == {ETH: Money(26.59220848, ETH)}
+        assert self.portfolio.maint_margins(BITMEX) == {ETH: Money(0.20608962, ETH)}
+        assert self.portfolio.net_exposure(ETHUSD_BITMEX.id) == Money(26.59220848, ETH)
+        assert self.portfolio.unrealized_pnl(ETHUSD_BITMEX.id) == Money(0.00000000, ETH)
 
     def test_unrealized_pnl_when_insufficient_data_for_xrate_returns_none(self):
         # Arrange
@@ -804,8 +812,8 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -816,7 +824,7 @@ class PortfolioTests(unittest.TestCase):
             Quantity.from_int(100),
         )
 
-        self.exec_engine.cache.add_order(order, PositionId.null())
+        self.cache.add_order(order, position_id=None)
         self.exec_engine.process(TestStubs.event_order_submitted(order))
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
@@ -838,7 +846,7 @@ class PortfolioTests(unittest.TestCase):
         result = self.portfolio.unrealized_pnls(BITMEX)
 
         # # Assert
-        self.assertEqual({}, result)
+        assert result == {}
 
     def test_market_value_when_insufficient_data_for_xrate_returns_none(self):
         # Arrange
@@ -857,8 +865,8 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -900,7 +908,7 @@ class PortfolioTests(unittest.TestCase):
         position = Position(instrument=ETHUSD_BITMEX, fill=fill)
 
         self.portfolio.update_position(TestStubs.event_position_opened(position))
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
         self.cache.add_quote_tick(last_ethusd)
         self.cache.add_quote_tick(last_xbtusd)
         self.portfolio.update_tick(last_ethusd)
@@ -910,7 +918,7 @@ class PortfolioTests(unittest.TestCase):
         result = self.portfolio.net_exposures(BITMEX)
 
         # Assert
-        self.assertEqual({BTC: Money(0.00200000, BTC)}, result)
+        assert result == {BTC: Money(0.00200000, BTC)}
 
     def test_opening_several_positions_updates_portfolio(self):
         # Arrange
@@ -929,8 +937,8 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -972,8 +980,8 @@ class PortfolioTests(unittest.TestCase):
             Quantity.from_int(100000),
         )
 
-        self.exec_engine.cache.add_order(order1, PositionId.null())
-        self.exec_engine.cache.add_order(order2, PositionId.null())
+        self.cache.add_order(order1, position_id=None)
+        self.cache.add_order(order2, position_id=None)
 
         fill1 = TestStubs.event_order_filled(
             order1,
@@ -991,8 +999,8 @@ class PortfolioTests(unittest.TestCase):
             last_px=Price.from_str("1.00000"),
         )
 
-        self.exec_engine.cache.update_order(order1)
-        self.exec_engine.cache.update_order(order2)
+        self.cache.update_order(order1)
+        self.cache.update_order(order2)
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
@@ -1000,43 +1008,25 @@ class PortfolioTests(unittest.TestCase):
         position_opened2 = TestStubs.event_position_opened(position2)
 
         # Act
-        self.cache.add_position(position1)
-        self.cache.add_position(position2)
+        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position2, OMSType.HEDGING)
         self.portfolio.update_position(position_opened1)
         self.portfolio.update_position(position_opened2)
 
         # Assert
-        self.assertEqual(
-            {USD: Money(210816.00, USD)},
-            self.portfolio.net_exposures(SIM),
-        )
-        self.assertEqual(
-            {USD: Money(10816.00, USD)},
-            self.portfolio.unrealized_pnls(SIM),
-        )
-        self.assertEqual({USD: Money(3912.06, USD)}, self.portfolio.maint_margins(SIM)),
-        self.assertEqual(
-            Money(80501.00, USD),
-            self.portfolio.net_exposure(AUDUSD_SIM.id),
-        )
-        self.assertEqual(
-            Money(130315.00, USD),
-            self.portfolio.net_exposure(GBPUSD_SIM.id),
-        )
-        self.assertEqual(
-            Money(-19499.00, USD),
-            self.portfolio.unrealized_pnl(AUDUSD_SIM.id),
-        )
-        self.assertEqual(
-            Money(30315.00, USD),
-            self.portfolio.unrealized_pnl(GBPUSD_SIM.id),
-        )
-        self.assertEqual(Decimal(100000), self.portfolio.net_position(AUDUSD_SIM.id))
-        self.assertEqual(Decimal(100000), self.portfolio.net_position(GBPUSD_SIM.id))
-        self.assertTrue(self.portfolio.is_net_long(AUDUSD_SIM.id))
-        self.assertFalse(self.portfolio.is_net_short(AUDUSD_SIM.id))
-        self.assertFalse(self.portfolio.is_flat(AUDUSD_SIM.id))
-        self.assertFalse(self.portfolio.is_completely_flat())
+        assert self.portfolio.net_exposures(SIM) == {USD: Money(210816.00, USD)}
+        assert self.portfolio.unrealized_pnls(SIM) == {USD: Money(10816.00, USD)}
+        assert self.portfolio.maint_margins(SIM) == {USD: Money(3912.06, USD)}
+        assert self.portfolio.net_exposure(AUDUSD_SIM.id) == Money(80501.00, USD)
+        assert self.portfolio.net_exposure(GBPUSD_SIM.id) == Money(130315.00, USD)
+        assert self.portfolio.unrealized_pnl(AUDUSD_SIM.id) == Money(-19499.00, USD)
+        assert self.portfolio.unrealized_pnl(GBPUSD_SIM.id) == Money(30315.00, USD)
+        assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(100000)
+        assert self.portfolio.net_position(GBPUSD_SIM.id) == Decimal(100000)
+        assert self.portfolio.is_net_long(AUDUSD_SIM.id)
+        assert not self.portfolio.is_net_short(AUDUSD_SIM.id)
+        assert not self.portfolio.is_flat(AUDUSD_SIM.id)
+        assert not self.portfolio.is_completely_flat()
 
     def test_modifying_position_updates_portfolio(self):
         # Arrange
@@ -1055,8 +1045,8 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -1089,7 +1079,7 @@ class PortfolioTests(unittest.TestCase):
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.exec_engine.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         order2 = self.order_factory.market(
@@ -1112,33 +1102,18 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_position(TestStubs.event_position_changed(position))
 
         # Assert
-        self.assertEqual(
-            {USD: Money(40250.50, USD)},
-            self.portfolio.net_exposures(SIM),
-        )
-        self.assertEqual(
-            {USD: Money(-9749.50, USD)},
-            self.portfolio.unrealized_pnls(SIM),
-        )
-        self.assertEqual(
-            {USD: Money(1208.32, USD)},
-            self.portfolio.maint_margins(SIM),
-        )
-        self.assertEqual(
-            Money(40250.50, USD),
-            self.portfolio.net_exposure(AUDUSD_SIM.id),
-        )
-        self.assertEqual(
-            Money(-9749.50, USD),
-            self.portfolio.unrealized_pnl(AUDUSD_SIM.id),
-        )
-        self.assertEqual(Decimal(50000), self.portfolio.net_position(AUDUSD_SIM.id))
-        self.assertTrue(self.portfolio.is_net_long(AUDUSD_SIM.id))
-        self.assertFalse(self.portfolio.is_net_short(AUDUSD_SIM.id))
-        self.assertFalse(self.portfolio.is_flat(AUDUSD_SIM.id))
-        self.assertFalse(self.portfolio.is_completely_flat())
-        self.assertEqual({}, self.portfolio.unrealized_pnls(BINANCE))
-        self.assertIsNone(self.portfolio.net_exposures(BINANCE))
+        assert self.portfolio.net_exposures(SIM) == {USD: Money(40250.50, USD)}
+        assert self.portfolio.unrealized_pnls(SIM) == {USD: Money(-9749.50, USD)}
+        assert self.portfolio.maint_margins(SIM) == {USD: Money(1208.32, USD)}
+        assert self.portfolio.net_exposure(AUDUSD_SIM.id) == Money(40250.50, USD)
+        assert self.portfolio.unrealized_pnl(AUDUSD_SIM.id) == Money(-9749.50, USD)
+        assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(50000)
+        assert self.portfolio.is_net_long(AUDUSD_SIM.id)
+        assert not self.portfolio.is_net_short(AUDUSD_SIM.id)
+        assert not self.portfolio.is_flat(AUDUSD_SIM.id)
+        assert not self.portfolio.is_completely_flat()
+        assert self.portfolio.unrealized_pnls(BINANCE) == {}
+        assert self.portfolio.net_exposures(BINANCE) is None
 
     def test_closing_position_updates_portfolio(self):
         # Arrange
@@ -1157,8 +1132,8 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -1178,7 +1153,7 @@ class PortfolioTests(unittest.TestCase):
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.exec_engine.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
         self.portfolio.update_position(TestStubs.event_position_opened(position))
 
         order2 = self.order_factory.market(
@@ -1196,22 +1171,22 @@ class PortfolioTests(unittest.TestCase):
         )
 
         position.apply(order2_filled)
-        self.exec_engine.cache.update_position(position)
+        self.cache.update_position(position)
 
         # Act
         self.portfolio.update_position(TestStubs.event_position_closed(position))
 
         # Assert
-        self.assertEqual({}, self.portfolio.net_exposures(SIM))
-        self.assertEqual({}, self.portfolio.unrealized_pnls(SIM))
-        self.assertEqual({}, self.portfolio.maint_margins(SIM))
-        self.assertEqual(Money(0, USD), self.portfolio.net_exposure(AUDUSD_SIM.id))
-        self.assertEqual(Money(0, USD), self.portfolio.unrealized_pnl(AUDUSD_SIM.id))
-        self.assertEqual(Decimal(0), self.portfolio.net_position(AUDUSD_SIM.id))
-        self.assertFalse(self.portfolio.is_net_long(AUDUSD_SIM.id))
-        self.assertFalse(self.portfolio.is_net_short(AUDUSD_SIM.id))
-        self.assertTrue(self.portfolio.is_flat(AUDUSD_SIM.id))
-        self.assertTrue(self.portfolio.is_completely_flat())
+        assert self.portfolio.net_exposures(SIM) == {}
+        assert self.portfolio.unrealized_pnls(SIM) == {}
+        assert self.portfolio.maint_margins(SIM) == {}
+        assert self.portfolio.net_exposure(AUDUSD_SIM.id) == Money(0, USD)
+        assert self.portfolio.unrealized_pnl(AUDUSD_SIM.id) == Money(0, USD)
+        assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(0)
+        assert not self.portfolio.is_net_long(AUDUSD_SIM.id)
+        assert not self.portfolio.is_net_short(AUDUSD_SIM.id)
+        assert self.portfolio.is_flat(AUDUSD_SIM.id)
+        assert self.portfolio.is_completely_flat()
 
     def test_several_positions_with_different_instruments_updates_portfolio(self):
         # Arrange
@@ -1230,8 +1205,8 @@ class PortfolioTests(unittest.TestCase):
             ],
             info={},
             event_id=uuid4(),
-            ts_updated_ns=0,
-            timestamp_ns=0,
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exec_engine.process(state)
@@ -1321,9 +1296,9 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_tick(last_audusd)
         self.portfolio.update_tick(last_gbpusd)
 
-        self.cache.add_position(position1)
-        self.cache.add_position(position2)
-        self.cache.add_position(position3)
+        self.cache.add_position(position1, OMSType.HEDGING)
+        self.cache.add_position(position2, OMSType.HEDGING)
+        self.cache.add_position(position3, OMSType.HEDGING)
 
         # Act
         self.portfolio.update_position(TestStubs.event_position_opened(position1))
@@ -1335,26 +1310,14 @@ class PortfolioTests(unittest.TestCase):
         self.portfolio.update_position(TestStubs.event_position_closed(position3))
 
         # Assert
-        self.assertEqual(
-            {USD: Money(-38998.00, USD)},
-            self.portfolio.unrealized_pnls(SIM),
-        )
-        self.assertEqual(
-            {USD: Money(161002.00, USD)},
-            self.portfolio.net_exposures(SIM),
-        )
-        self.assertEqual({USD: Money(3912.06, USD)}, self.portfolio.maint_margins(SIM)),
-        self.assertEqual(
-            Money(161002.00, USD),
-            self.portfolio.net_exposure(AUDUSD_SIM.id),
-        )
-        self.assertEqual(
-            Money(-38998.00, USD),
-            self.portfolio.unrealized_pnl(AUDUSD_SIM.id),
-        )
-        self.assertEqual(Money(0, USD), self.portfolio.unrealized_pnl(GBPUSD_SIM.id))
-        self.assertEqual(Decimal(200000), self.portfolio.net_position(AUDUSD_SIM.id))
-        self.assertEqual(Decimal(0), self.portfolio.net_position(GBPUSD_SIM.id))
-        self.assertTrue(self.portfolio.is_net_long(AUDUSD_SIM.id))
-        self.assertTrue(self.portfolio.is_flat(GBPUSD_SIM.id))
-        self.assertFalse(self.portfolio.is_completely_flat())
+        assert {USD: Money(-38998.00, USD)} == self.portfolio.unrealized_pnls(SIM)
+        assert {USD: Money(161002.00, USD)} == self.portfolio.net_exposures(SIM)
+        assert self.portfolio.maint_margins(SIM) == {USD: Money(3912.06, USD)}
+        assert Money(161002.00, USD) == self.portfolio.net_exposure(AUDUSD_SIM.id)
+        assert Money(-38998.00, USD) == self.portfolio.unrealized_pnl(AUDUSD_SIM.id)
+        assert self.portfolio.unrealized_pnl(GBPUSD_SIM.id) == Money(0, USD)
+        assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(200000)
+        assert self.portfolio.net_position(GBPUSD_SIM.id) == Decimal(0)
+        assert self.portfolio.is_net_long(AUDUSD_SIM.id)
+        assert self.portfolio.is_flat(GBPUSD_SIM.id)
+        assert not self.portfolio.is_completely_flat()

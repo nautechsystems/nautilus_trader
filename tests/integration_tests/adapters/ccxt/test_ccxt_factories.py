@@ -26,7 +26,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.stubs import TestStubs
 
@@ -34,22 +34,29 @@ from tests.test_kit.stubs import TestStubs
 class TestCCXTDataClientFactory:
     def setup(self):
         # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
+
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER-001")
 
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
+        self.trader_id = TestStubs.trader_id()
 
         self.logger = LiveLogger(
             loop=self.loop,
             clock=self.clock,
         )
 
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -57,7 +64,7 @@ class TestCCXTDataClientFactory:
 
         self.data_engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -65,7 +72,7 @@ class TestCCXTDataClientFactory:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -89,38 +96,47 @@ class TestCCXTDataClientFactory:
 
         # Act
         data_client = CCXTDataClientFactory.create(
+            loop=self.loop,
             name="CCXT-BINANCE",
             config=config,
-            engine=self.data_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             client_cls=client_cls,
         )
 
         # Assert
-        assert type(data_client) == CCXTDataClient
+        assert isinstance(data_client, CCXTDataClient)
         assert data_client.id == ClientId("BINANCE")
 
 
 class TestCCXTExecClientFactory:
     def setup(self):
         # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
+
         self.clock = LiveClock()
         self.uuid_factory = UUIDFactory()
-        self.trader_id = TraderId("TESTER-001")
 
-        # Fresh isolated loop testing pattern
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
+        self.trader_id = TestStubs.trader_id()
 
         self.logger = LiveLogger(
             loop=self.loop,
             clock=self.clock,
         )
 
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -128,7 +144,7 @@ class TestCCXTExecClientFactory:
 
         self.data_engine = LiveDataEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -136,7 +152,7 @@ class TestCCXTExecClientFactory:
 
         self.exec_engine = LiveExecutionEngine(
             loop=self.loop,
-            portfolio=self.portfolio,
+            msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
@@ -160,14 +176,16 @@ class TestCCXTExecClientFactory:
 
         # Act
         client = CCXTExecutionClientFactory.create(
+            loop=self.loop,
             name="CCXT-BINANCE",
             config=config,
-            engine=self.exec_engine,
+            msgbus=self.msgbus,
+            cache=self.cache,
             clock=self.clock,
             logger=self.logger,
             client_cls=client_cls,
         )
 
         # Assert
-        assert type(client) == BinanceCCXTExecutionClient
+        assert isinstance(client, BinanceCCXTExecutionClient)
         assert client.id == ClientId("BINANCE")
