@@ -9,8 +9,8 @@ import orjson
 import pytest
 
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.network.tcp_client import SocketClient
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+from nautilus_trader.network.socket import SocketClient
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -54,7 +54,7 @@ class BetfairTCPHandler(socketserver.StreamRequestHandler):
         if self.connection_info.get("auth") is None:
             return self.close()
 
-        for n, data in enumerate(BetfairTestStubs.raw_market_updates()):
+        for n, data in enumerate(BetfairDataProvider.raw_market_updates()):
             line = orjson.dumps(data)
             try:
                 print("SERVER [SEND]", line)

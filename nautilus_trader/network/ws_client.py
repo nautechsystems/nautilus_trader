@@ -1,9 +1,10 @@
 import asyncio
 from asyncio import AbstractEventLoop
 from asyncio import IncompleteReadError
-from typing import Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 import aiohttp
+from aiohttp import ClientWebSocketResponse
 
 from nautilus_trader.common.logging import LoggerAdapter
 
@@ -12,7 +13,7 @@ class WebsocketClient:
     def __init__(
         self,
         ws_url: str,
-        handler: callable,
+        handler: Callable,
         logger: LoggerAdapter,
         loop: AbstractEventLoop = None,
         ws_connect_kwargs: Optional[Dict] = None,
@@ -32,17 +33,15 @@ class WebsocketClient:
         self._loop = loop or asyncio.get_event_loop()
         self._log = logger
         self._session = None
-        self._ws = None
-        self._tasks = []
+        self._ws: Optional[ClientWebSocketResponse] = None
+        self._tasks: List[asyncio.Task] = []
         self._stop = False
         self._stopped = False
 
     async def connect(self, start=True):
         self._session = aiohttp.ClientSession(loop=self._loop)
         self._log.debug(f"Connecting to websocket: {self.ws_url}")
-        self._ws = await self._session._ws_connect(
-            url=self.ws_url, **self.ws_connect_kwargs
-        )
+        self._ws = await self._session._ws_connect(url=self.ws_url, **self.ws_connect_kwargs)
         if start:
             task = self._loop.create_task(self.start())
             self._tasks.append(task)
@@ -55,7 +54,7 @@ class WebsocketClient:
         self._log.debug("Websocket closed")
 
     async def send(self, raw: bytes):
-        self._log.debug(f"SEND: {raw}")
+        self._log.debug("SEND:" + str(raw))
         await self._ws.send_bytes(raw)
 
     async def recv(self):
@@ -63,7 +62,7 @@ class WebsocketClient:
             resp = await self._ws.receive()
             return resp.data
         except IncompleteReadError as e:
-            self._log.exception(str(e))
+            self._log.exception(e)
             await self.connect(start=False)
 
     async def start(self):
@@ -76,16 +75,12 @@ class WebsocketClient:
                     self.handler(raw)
             except Exception as e:
                 # TODO - Handle disconnect? Should we reconnect or throw?
-                self.logger.exception(e)
+                self._log.exception(e)
                 self._stop = True
         self._log.debug("stopped")
         self._stopped = True
 
     async def close(self):
-        tasks = [
-            task
-            for task in asyncio.Task.all_tasks()
-            if task is not asyncio.tasks.Task.current_task()
-        ]
+        tasks = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
         list(map(lambda task: task.cancel(), tasks))
         return await asyncio.gather(*tasks, return_exceptions=True)

@@ -13,7 +13,7 @@ def logger_adapter() -> LoggerAdapter:
 
 
 @pytest.mark.asyncio
-async def test_client_recv(logger_adapter):
+async def test_client_recv(logger_adapter, event_loop):
     NUM_MESSAGES = 3
     lines = []
 
@@ -24,6 +24,7 @@ async def test_client_recv(logger_adapter):
         ws_url="ws://echo.websocket.org",
         handler=record,
         logger=logger_adapter,
+        loop=event_loop,
     )
     await client.connect()
     for _ in range(NUM_MESSAGES):
