@@ -7,11 +7,9 @@ import orjson
 from nautilus_trader.common.logging import LoggerAdapter
 
 
-DEFAULT_CRLF = b"\r\n"
-
-
-# TODO - Need to add DataClient subclass back
 class SocketClient:
+    DEFAULT_CRLF = b"\r\n"
+
     def __init__(
         self,
         host,
@@ -39,7 +37,7 @@ class SocketClient:
         self.logger = logger_adapter
         self.message_handler = message_handler
         self.loop = loop or asyncio.get_event_loop()
-        self.crlf = crlf or DEFAULT_CRLF
+        self.crlf = crlf or self.DEFAULT_CRLF
         self.encoding = encoding
         self.ssl = ssl
         self.reader: Optional[asyncio.StreamReader] = None
@@ -104,6 +102,7 @@ class SocketClient:
             except IncompleteReadError as e:
                 partial = e.partial
                 self.logger.warning(str(e))
+                await asyncio.sleep(0)
                 continue
             except ConnectionResetError:
                 await self.connect()

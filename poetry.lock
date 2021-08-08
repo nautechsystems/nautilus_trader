@@ -14,7 +14,7 @@ name = "aiohttp"
 version = "3.7.4.post0"
 description = "Async http client/server framework (asyncio)"
 category = "main"
-optional = true
+optional = false
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -55,7 +55,7 @@ name = "async-timeout"
 version = "3.0.1"
 description = "Timeout context manager for asyncio programs"
 category = "main"
-optional = true
+optional = false
 python-versions = ">=3.5.3"
 
 [[package]]
@@ -142,7 +142,7 @@ typing_extensions = ">=3.7.4"
 
 [[package]]
 name = "ccxt"
-version = "1.54.59"
+version = "1.54.60"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = true
@@ -542,7 +542,7 @@ name = "multidict"
 version = "5.1.0"
 description = "multidict implementation"
 category = "main"
-optional = true
+optional = false
 python-versions = ">=3.6"
 
 [[package]]
@@ -1231,7 +1231,7 @@ name = "yarl"
 version = "1.6.3"
 description = "Yet another URL library"
 category = "main"
-optional = true
+optional = false
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -1272,7 +1272,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "8fdefb1223aff91eab15700db4452b1d504d8f00fadde3e7aacc79d10b77d28e"
+content-hash = "2d899d2747787692cc07fe70a83930173f5d1580235e5c2f739e13c6f62ca326"
 
 [metadata.files]
 aiodns = [
@@ -1354,8 +1354,8 @@ bokeh = [
     {file = "bokeh-2.3.3.tar.gz", hash = "sha256:a5fdcc181835561447fcc5a371300973fce4114692d5853addec284d1cdeb677"},
 ]
 ccxt = [
-    {file = "ccxt-1.54.59-py2.py3-none-any.whl", hash = "sha256:d3b4a9a54406f91571bebe9b51e3a020c99409a69b86313a13358916ffe01adb"},
-    {file = "ccxt-1.54.59.tar.gz", hash = "sha256:8339f6cd4714b404c17b80c752a5a56a637bd08c1e87b1e131f62e150a7ad269"},
+    {file = "ccxt-1.54.60-py2.py3-none-any.whl", hash = "sha256:4475c14b14db36dc0eb06246eb57a447970da378da7b41ccd8f7457d088cd4de"},
+    {file = "ccxt-1.54.60.tar.gz", hash = "sha256:92c6e0be9d3cf56975670dd8417bdfcc12b2fa184580c78efeab37b7746c37eb"},
 ]
 certifi = [
     {file = "certifi-2021.5.30-py2.py3-none-any.whl", hash = "sha256:50b1e4f8446b06f41be7dd6338db18e0990601dce795c2b1686458aa7e8fa7d8"},
