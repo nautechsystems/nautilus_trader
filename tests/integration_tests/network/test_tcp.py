@@ -1,6 +1,5 @@
 import asyncio
 import json
-import logging
 import socketserver
 import threading
 import time
@@ -12,9 +11,6 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.network.socket import SocketClient
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.test_kit.stubs import TestStubs
-
-
-logger = logging.getLogger(__name__)
 
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
