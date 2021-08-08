@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import copy
 import inspect
 import pathlib
 from io import BytesIO
@@ -243,7 +244,7 @@ class RawFile(fsspec.core.OpenFile):
     @reader.setter
     def reader(self, reader: Reader):
         assert isinstance(reader, Reader)
-        self._reader = reader
+        self._reader = copy.copy(reader)
 
     def __iter__(self):
         return self
@@ -259,7 +260,5 @@ class RawFile(fsspec.core.OpenFile):
 
     def iter_parsed(self):
         for chunk in self.iter_raw():
-            parsed = []
-            for p in self.reader.parse(chunk):
-                parsed.append(p)
+            parsed = list(filter(None, self.reader.parse(chunk)))
             yield parsed

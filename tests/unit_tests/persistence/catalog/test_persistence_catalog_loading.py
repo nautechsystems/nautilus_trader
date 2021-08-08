@@ -1,5 +1,4 @@
 # import os
-import os
 import pathlib
 import sys
 
@@ -61,11 +60,6 @@ TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 
 
-@pytest.fixture(autouse=True)
-def nautilus_dir():
-    os.environ["NAUTILUS_DATA"] = "memory:///"
-
-
 @pytest.fixture
 def executor():
     return SyncExecutor()
@@ -75,10 +69,19 @@ def executor():
 
 
 def test_process_files_csv(executor, get_parser):
-    files = scan(path=TEST_DATA_DIR, glob_pattern="truefx*.csv", chunk_size=100000)
+    files = scan(path=TEST_DATA_DIR, glob_pattern="truefx*.csv", chunk_size=1_000_000)
+    assert len(files) == 2
     reader = CSVReader(chunk_parser=get_parser("parse_csv_quotes"), as_dataframe=True)
-    data = process_files(files, reader=reader, executor=executor)
-    assert len(data) == 2
+    result = process_files(files, reader=reader, executor=executor)
+    expected = [
+        (TEST_DATA_DIR + "/truefx-audusd-ticks.csv", 20410),
+        (TEST_DATA_DIR + "/truefx-audusd-ticks.csv", 20411),
+        (TEST_DATA_DIR + "/truefx-audusd-ticks.csv", 20412),
+        (TEST_DATA_DIR + "/truefx-audusd-ticks.csv", 20411),
+        (TEST_DATA_DIR + "/truefx-audusd-ticks.csv", 18356),
+        (TEST_DATA_DIR + "/truefx-usdjpy-ticks.csv", 1000),
+    ]
+    assert result == expected
 
 
 def test_load_text_betfair():
@@ -100,11 +103,9 @@ def test_load_text_betfair():
         glob_pattern="**.bz2",
         instrument_provider=instrument_provider,
     )
-    assert files == {"": 30829}
+    assert files == {"1.166564490.bz2": 2698, "1.180305278.bz2": 13797, "1.166811431.bz2": 20871}
 
 
-#
-#
 # def test_data_loader_parquet():
 #     def filename_to_instrument(fn):
 #         if "btcusd" in fn:

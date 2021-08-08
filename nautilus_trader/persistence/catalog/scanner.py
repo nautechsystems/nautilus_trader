@@ -78,7 +78,7 @@ def _scan_threaded(
     files = []
     for f in ac:
         files.append(f.result())
-    return files
+    return sorted(files, key=lambda x: x.path)
 
 
 def scan(

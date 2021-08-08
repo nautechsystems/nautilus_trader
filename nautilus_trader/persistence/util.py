@@ -186,7 +186,8 @@ def executor_queue_process(
                 x, dict
             ), "return value from `process_func` should be dict of kwargs for `output_func`"
             r = output_func(**x)
-            results.append(r)
+            if r:
+                results.append(r)
         else:
             sentinel_count += 1
     return results

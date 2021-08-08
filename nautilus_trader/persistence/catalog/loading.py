@@ -201,6 +201,11 @@ def read_and_clear_existing_data(
 
 
 def write_chunk(raw_file: RawFile, chunk, append=False, **parquet_dataset_kwargs):
+
+    if chunk is None:  # EOF
+        save_processed_raw_files(files=[raw_file.path])
+        return
+
     shape = 0
     tables = nautilus_chunk_to_dataframes(chunk)
 
@@ -212,9 +217,7 @@ def write_chunk(raw_file: RawFile, chunk, append=False, **parquet_dataset_kwargs
             )
             shape += len(df)
 
-    if chunk is None:  # EOF
-        save_processed_raw_files(files=[raw_file.path])
-    return raw_file, shape
+    return raw_file.path, shape
 
 
 def process_files(
@@ -279,7 +282,7 @@ def load(
     # Aggregate results
     file_shapes: Dict[str, int] = defaultdict(lambda: 0)
     for k, shape in results:
-        file_shapes[k] += shape
+        file_shapes[k.name] += shape
     return file_shapes
 
 

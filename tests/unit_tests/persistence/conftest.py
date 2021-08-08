@@ -1,6 +1,8 @@
 import inspect
+import os
 import sys
 
+import fsspec.implementations.memory
 import numpy as np
 import orjson
 import pandas as pd
@@ -12,8 +14,49 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.util import get_catalog_fs
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
+
+
+@pytest.fixture(autouse=True)
+def nautilus_dir():
+    os.environ["NAUTILUS_DATA"] = "memory:///"
+
+
+@pytest.fixture(autouse=True)
+def test_reset():
+    """Cleanup resources before each test run"""
+    fs = get_catalog_fs()
+    assert isinstance(fs, fsspec.implementations.memory.MemoryFileSystem)
+    for f in fs.glob("**/*"):
+        fs.rm(f)
+    yield
+
+
+@pytest.fixture()
+def get_parser():
+    def inner(name):
+        mappings = {
+            name: obj
+            for name, obj in inspect.getmembers(sys.modules[__name__])
+            if inspect.isfunction(obj)
+        }
+        if name in mappings:
+            return mappings[name]
+        raise KeyError
+
+    return inner
+
+
+@pytest.fixture()
+def parser(request, get_parser):
+    return get_parser(request.param)
+
+
+@pytest.fixture()
+def sample_df():
+    return pd.DataFrame({"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]})
 
 
 def parse_text(x):
@@ -65,28 +108,3 @@ def parse_betfair(line, instrument_provider):
 #         data=data.set_index("timestamp"),
 #     )
 #     yield from wrangler.build_bars_all()
-
-
-@pytest.fixture()
-def get_parser():
-    def inner(name):
-        mappings = {
-            name: obj
-            for name, obj in inspect.getmembers(sys.modules[__name__])
-            if inspect.isfunction(obj)
-        }
-        if name in mappings:
-            return mappings[name]
-        raise KeyError
-
-    return inner
-
-
-@pytest.fixture()
-def parser(request, get_parser):
-    return get_parser(request.param)
-
-
-@pytest.fixture()
-def sample_df():
-    return pd.DataFrame({"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]})
