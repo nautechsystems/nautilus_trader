@@ -21,17 +21,18 @@ from nautilus_trader.persistence.util import get_catalog_fs
 
 
 PROCESSED_FILES_FN = ".processed_raw_files.json"
+PARTITION_MAPPINGS_FN = "_partition_mappings.json"
 
 
 def _load_mappings(fs, fn) -> Dict:
     if not fs.exists(fn):
         return {}
-    with fs.open(str(fn / "_partition_mappings.json"), "rb") as f:
+    with fs.open(str(fn / PARTITION_MAPPINGS_FN), "rb") as f:
         return orjson.loads(f.read())
 
 
 def _write_mappings(fs, fn, mappings) -> None:
-    with fs.open(str(fn / "_partition_mappings.json"), "wb") as f:
+    with fs.open(str(fn / PARTITION_MAPPINGS_FN), "wb") as f:
         f.write(orjson.dumps(mappings))
 
 

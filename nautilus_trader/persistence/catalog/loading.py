@@ -282,8 +282,8 @@ def load(
     # Aggregate results
     file_shapes: Dict[str, int] = defaultdict(lambda: 0)
     for k, shape in results:
-        file_shapes[k.name] += shape
-    return file_shapes
+        file_shapes[k] += shape
+    return dict(file_shapes)
 
 
 def _determine_partition_cols(cls: type, instrument_id: str = None):

@@ -14,6 +14,8 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.catalog.metadata import PROCESSED_FILES_FN
+from nautilus_trader.persistence.catalog.metadata import load_processed_raw_files
 from nautilus_trader.persistence.util import get_catalog_fs
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -24,13 +26,16 @@ def nautilus_dir():
     os.environ["NAUTILUS_DATA"] = "memory:///"
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="function")
 def test_reset():
     """Cleanup resources before each test run"""
     fs = get_catalog_fs()
     assert isinstance(fs, fsspec.implementations.memory.MemoryFileSystem)
-    for f in fs.glob("**/*"):
+    for f in list(fs.glob("**/*")):
         fs.rm(f)
+    if fs.exists(PROCESSED_FILES_FN):
+        fs.rm(PROCESSED_FILES_FN)
+    assert not load_processed_raw_files()
     yield
 
 

@@ -103,7 +103,12 @@ def test_load_text_betfair():
         glob_pattern="**.bz2",
         instrument_provider=instrument_provider,
     )
-    assert files == {"1.166564490.bz2": 2698, "1.180305278.bz2": 13797, "1.166811431.bz2": 20871}
+    expected = {
+        TEST_DATA_DIR + "/1.166564490.bz2": 2698,
+        TEST_DATA_DIR + "/betfair/1.180305278.bz2": 13797,
+        TEST_DATA_DIR + "/betfair/1.166811431.bz2": 20871,
+    }
+    assert files == expected
 
 
 # def test_data_loader_parquet():
