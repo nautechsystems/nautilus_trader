@@ -17,9 +17,12 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 
 
 cdef class AccountState(Event):
+    cdef readonly ClientId client_id
+    """The client ID associated with the event.\n\n:returns: `ClientId`"""
     cdef readonly AccountId account_id
     """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly AccountType account_type

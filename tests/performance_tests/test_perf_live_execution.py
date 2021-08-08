@@ -111,7 +111,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
 
         # Wire up components
         self.exec_engine.register_client(exec_client)
-        self.exec_engine.process(TestStubs.event_account_state(self.account_id))
+        self.exec_engine.process(TestStubs.event_cash_account_state(account_id=self.account_id))
 
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register(

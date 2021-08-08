@@ -218,7 +218,7 @@ class TestTradingStrategy:
         # Arrange
         strategy = TradingStrategy("000")
 
-        event = TestStubs.event_account_state()
+        event = TestStubs.event_cash_account_state()
 
         # Act
         strategy.handle_event(event)
@@ -352,7 +352,7 @@ class TestTradingStrategy:
     def test_on_event_when_not_overridden_does_nothing(self):
         # Arrange
         strategy = TradingStrategy("000")
-        event = TestStubs.event_account_state(AccountId("SIM", "000"))
+        event = TestStubs.event_cash_account_state(account_id=AccountId("SIM", "000"))
 
         # Act
         strategy.on_event(event)
@@ -801,7 +801,7 @@ class TestTradingStrategy:
         strategy.set_explode_on_start(False)
         strategy.start()
 
-        event = TestStubs.event_account_state(AccountId("TEST", "000"))
+        event = TestStubs.event_cash_account_state(account_id=AccountId("TEST", "000"))
 
         # Act
         # Assert

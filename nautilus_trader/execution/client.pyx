@@ -158,6 +158,8 @@ cdef class ExecutionClient(Component):
 
         self._account = account
 
+        self._log.info(f"Registered {account}.")
+
     cpdef Account get_account(self):
         """
         Return the account for the client (if registered).
@@ -225,6 +227,7 @@ cdef class ExecutionClient(Component):
         """
         # Generate event
         cdef AccountState account_state = AccountState(
+            client_id=self.id,
             account_id=self.account_id,
             account_type=self.account_type,
             base_currency=self.base_currency,

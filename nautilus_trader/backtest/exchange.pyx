@@ -327,7 +327,7 @@ cdef class SimulatedExchange:
 
         self.exec_client = client
 
-        self._log.info(f"Registered {client}.")
+        self._log.info(f"Registered ExecutionClient {client}.")
 
     cpdef void set_fill_model(self, FillModel fill_model) except *:
         """
@@ -1190,7 +1190,8 @@ cdef class SimulatedExchange:
 
         # Calculate commission
         cdef Instrument instrument = self.instruments[order.instrument_id]
-        cdef Money commission = instrument.calculate_commission(
+        cdef Money commission = self.exec_client.get_account().calculate_commission(
+            instrument=instrument,
             last_qty=order.quantity,
             last_px=last_px,
             liquidity_side=liquidity_side,

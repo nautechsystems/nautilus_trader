@@ -113,7 +113,7 @@ class VolatilityMarketMaker(TradingStrategy):
         self.subscribe_order_book_snapshots(
             self.instrument_id,
             level=2,
-            depth=25,
+            depth=10,
             interval_ms=1000,
         )  # For debugging
         # self.subscribe_trade_ticks(self.instrument_id)  # For debugging

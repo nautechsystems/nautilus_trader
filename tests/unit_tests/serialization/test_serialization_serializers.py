@@ -57,6 +57,7 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import PositionId
@@ -442,6 +443,7 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_account_state_with_base_currency_events(self):
         # Arrange
         event = AccountState(
+            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "000"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -463,6 +465,7 @@ class TestMsgPackEventSerializer:
     def test_serialize_and_deserialize_account_state_without_base_currency_events(self):
         # Arrange
         event = AccountState(
+            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "000"),
             account_type=AccountType.MARGIN,
             base_currency=None,
@@ -1209,7 +1212,7 @@ class TestParquetSerializer:
         self.catalog._write_chunks([book])
 
     def test_serialize_and_deserialize_account_state(self):
-        account = TestStubs.event_account_state()
+        account = TestStubs.event_cash_account_state()
 
         serialized = _serialize(account)
         [deserialized] = _deserialize(cls=AccountState, chunk=serialized)

@@ -2,13 +2,18 @@
 
 
 ## Breaking Changes
-None
+- Moved margin calculation methods from `Instrument` to `Account`.
+- Removed redundant `Portfolio.register_account`.
 
 ## Enhancements
-None
+- Subclassed `Account` with `CashAccount` and `MarginAccount`.
+- Added registration of OMS type per trading strategy.
+- Added registration of custom account classes.
+- Added `client_id` to `AccountState` events.
 
 ## Fixes
-None
+- Data subscription handling in `DataEngine`.
+- Cash accounts no longer generate spurious margins.
 
 ---
 
