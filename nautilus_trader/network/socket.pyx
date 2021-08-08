@@ -31,8 +31,8 @@ cdef class SocketClient:
 
     def __init__(
         self,
-        str host,
-        int port,
+        host,
+        port,
         loop not None: asyncio.AbstractEventLoop,
         handler not None: Callable,
         Logger logger not None: Logger,
@@ -70,8 +70,8 @@ cdef class SocketClient:
             If port is not in range [0, 65535].
 
         """
-        Condition.valid_string(host, "host")
-        # Condition.valid_port(port, "port")
+        # Condition.valid_string(host, "host")  # TODO(cs): Temporary
+        # Condition.valid_port(port, "port")  # TODO(cs): Temporary
 
         self.host = host
         self.port = port
@@ -87,7 +87,7 @@ cdef class SocketClient:
 
         self._crlf = crlf or DEFAULT_CRLF
         self._encoding = encoding
-        self._stop = False
+        self._running = False
         self._stopped = False
 
         self.is_connected = False
@@ -114,7 +114,7 @@ cdef class SocketClient:
         self.is_connected = False
 
     def stop(self):
-        self._stop = True
+        self._running = False
 
     async def reconnect(self):
         await self.disconnect()
@@ -137,7 +137,7 @@ cdef class SocketClient:
         cdef bytes partial = b""
         cdef:
             bytes raw
-        while not self._stop:
+        while self._running:
             try:
                 raw = await self._reader.readuntil(separator=self._crlf)
                 if partial:
