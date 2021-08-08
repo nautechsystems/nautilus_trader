@@ -278,7 +278,7 @@ cdef class Trader(Component):
         self._exec_engine.register_oms_type(strategy)
         self._strategies.append(strategy)
 
-        self._log.info(f"Registered {strategy}.")
+        self._log.info(f"Registered TradingStrategy {strategy}.")
 
     cpdef void add_strategies(self, list strategies: [TradingStrategy]) except *:
         """
@@ -339,7 +339,7 @@ cdef class Trader(Component):
 
         self._components.append(component)
 
-        self._log.info(f"Registered {component}.")
+        self._log.info(f"Registered Component {component}.")
 
     cpdef void add_components(self, list components: [Actor]) except *:
         """

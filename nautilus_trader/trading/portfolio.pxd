@@ -66,10 +66,6 @@ cdef class Portfolio(PortfolioFacade):
     cdef dict _net_positions
     cdef set _pending_calcs
 
-# -- REGISTRATION ----------------------------------------------------------------------------------
-
-    cpdef void register_account(self, Account account) except *
-
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void initialize_orders(self) except *

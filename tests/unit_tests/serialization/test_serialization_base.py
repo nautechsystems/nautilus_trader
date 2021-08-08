@@ -89,7 +89,7 @@ class TestSerializationBase:
 
     def test_event_serializer_methods_raise_not_implemented_error(self):
         # Arrange
-        event = TestStubs.event_account_state(TestStubs.account_id())
+        event = TestStubs.event_cash_account_state()
         serializer = EventSerializer()
 
         # Act

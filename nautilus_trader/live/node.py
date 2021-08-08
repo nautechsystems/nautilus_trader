@@ -559,10 +559,6 @@ class TradingNode:
                 return
             self._log.info("Portfolio initialized.", color=LogColor.GREEN)
 
-            # Update portfolio
-            for account in self._cache.accounts():
-                self.portfolio.register_account(account)
-
             # Start trader and strategies
             self.trader.start()
 

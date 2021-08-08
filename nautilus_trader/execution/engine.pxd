@@ -27,6 +27,7 @@ from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.position cimport Position
@@ -42,6 +43,7 @@ cdef class ExecutionEngine(Component):
     cdef dict _clients
     cdef dict _routing_map
     cdef dict _oms_types
+    cdef dict _account_types
 
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
@@ -60,6 +62,7 @@ cdef class ExecutionEngine(Component):
     cpdef void register_default_client(self, ExecutionClient client) except *
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *
     cpdef void register_oms_type(self, TradingStrategy strategy) except *
+    cpdef void register_account_type(self, ClientId client_id, type account_type) except *
     cpdef void deregister_client(self, ExecutionClient client) except *
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------

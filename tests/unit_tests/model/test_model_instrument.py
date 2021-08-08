@@ -20,13 +20,8 @@ import pytest
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
-from nautilus_trader.model.currencies import GBP
-from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import PositionSide
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
 from nautilus_trader.model.objects import Money
@@ -292,133 +287,6 @@ class TestInstrument:
         # Assert
         assert result == expected
 
-    def test_calculate_initial_margin_with_leverage(self):
-        # Arrange
-        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-
-        result = instrument.calculate_initial_margin(
-            Quantity.from_int(100000),
-            Price.from_str("0.80000"),
-            leverage=Decimal(50),
-        )
-
-        # Assert
-        assert result == Money(48.06, USD)
-
-    @pytest.mark.parametrize(
-        "inverse_as_quote, expected",
-        [
-            [False, Money(0.10005568, BTC)],
-            [True, Money(1150.00, USD)],
-        ],
-    )
-    def test_calculate_initial_margin_with_no_leverage_for_inverse(
-        self, inverse_as_quote, expected
-    ):
-        # Arrange
-        instrument = TestInstrumentProvider.xbtusd_bitmex()
-
-        result = instrument.calculate_initial_margin(
-            Quantity.from_int(100000),
-            Price.from_str("11493.60"),
-            inverse_as_quote=inverse_as_quote,
-        )
-
-        # Assert
-        assert result == expected
-
-    def test_calculate_position_maint_with_no_leverage(self):
-        # Arrange
-        instrument = TestInstrumentProvider.xbtusd_bitmex()
-
-        # Act
-        result = instrument.calculate_maint_margin(
-            PositionSide.LONG,
-            Quantity.from_int(100000),
-            Price.from_str("11493.60"),
-        )
-
-        # Assert
-        assert result == Money(0.03697710, BTC)
-
-    def test_calculate_commission_when_given_liquidity_side_none_raises_value_error(
-        self,
-    ):
-        # Arrange
-        instrument = TestInstrumentProvider.xbtusd_bitmex()
-
-        # Act, Assert
-        with pytest.raises(ValueError):
-            instrument.calculate_commission(
-                Quantity.from_int(100000),
-                Decimal("11450.50"),
-                LiquiditySide.NONE,
-            )
-
-    @pytest.mark.parametrize(
-        "inverse_as_quote, expected",
-        [
-            [False, Money(-0.00218331, BTC)],  # Negative commission = credit
-            [True, Money(-25.00, USD)],  # Negative commission = credit
-        ],
-    )
-    def test_calculate_commission_for_inverse_maker_crypto(self, inverse_as_quote, expected):
-        # Arrange
-        instrument = TestInstrumentProvider.xbtusd_bitmex()
-
-        # Act
-        result = instrument.calculate_commission(
-            Quantity.from_int(100000),
-            Decimal("11450.50"),
-            LiquiditySide.MAKER,
-            inverse_as_quote=inverse_as_quote,
-        )
-
-        # Assert
-        assert result == expected
-
-    def test_calculate_commission_for_taker_fx(self):
-        # Arrange
-        instrument = AUDUSD_SIM
-
-        # Act
-        result = instrument.calculate_commission(
-            Quantity.from_int(1500000),
-            Decimal("0.80050"),
-            LiquiditySide.TAKER,
-        )
-
-        # Assert
-        assert result == Money(24.02, USD)
-
-    def test_calculate_commission_crypto_taker(self):
-        # Arrange
-        instrument = TestInstrumentProvider.xbtusd_bitmex()
-
-        # Act
-        result = instrument.calculate_commission(
-            Quantity.from_int(100000),
-            Decimal("11450.50"),
-            LiquiditySide.TAKER,
-        )
-
-        # Assert
-        assert result == Money(0.00654993, BTC)
-
-    def test_calculate_commission_fx_taker(self):
-        # Arrange
-        instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY", Venue("IDEALPRO"))
-
-        # Act
-        result = instrument.calculate_commission(
-            Quantity.from_int(2200000),
-            Decimal("120.310"),
-            LiquiditySide.TAKER,
-        )
-
-        # Assert
-        assert result == Money(5294, JPY)
-
 
 class TestBettingInstrument:
     def setup(self):
@@ -432,38 +300,3 @@ class TestBettingInstrument:
         ).as_decimal()
         # We are long 100 at 0.5 probability, aka 2.0 in odds terms
         assert notional == Decimal("200.0")
-
-    def test_calculate_initial_margin(self):
-        # Arrange
-        instrument = BetfairTestStubs.betting_instrument()
-
-        result = instrument.calculate_initial_margin(
-            Quantity.from_int(100),
-            Price.from_str("0.5"),
-        )
-
-        # Assert
-        assert result == Money("200.00", GBP)
-
-    def test_calculate_maintenance_margin(self):
-        # Arrange
-        long = self.instrument.calculate_maint_margin(
-            side=PositionSide.LONG,
-            quantity=Quantity.from_int(100),
-            last=Price.from_str("0.4"),
-        )
-        short = self.instrument.calculate_maint_margin(
-            side=PositionSide.SHORT,
-            quantity=Quantity.from_int(100),
-            last=Price.from_str("0.8"),
-        )
-        very_short = self.instrument.calculate_maint_margin(
-            side=PositionSide.SHORT,
-            quantity=Quantity.from_int(100),
-            last=Price.from_str("0.1"),
-        )
-
-        # Assert
-        assert long == Money("250.00", GBP)
-        assert short == Money("125.00", GBP)
-        assert very_short == Money("1000.00", GBP)

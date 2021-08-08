@@ -47,6 +47,7 @@ from nautilus_trader.model.orders.bracket import BracketOrder
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.trading.account import CashAccount
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockCacheDatabase
@@ -58,6 +59,10 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+
+
+class MyAccount(CashAccount):
+    pass  # Dummy subclass for testing
 
 
 class TestExecutionEngine:
@@ -126,7 +131,6 @@ class TestExecutionEngine:
 
         # Prepare components
         self.cache.add_instrument(AUDUSD_SIM)
-        self.exec_engine.process(TestStubs.event_account_state())
 
         self.venue = Venue("SIM")
         self.exec_client = MockExecutionClient(
@@ -142,6 +146,7 @@ class TestExecutionEngine:
         )
 
         self.exec_engine.register_client(self.exec_client)
+        self.exec_engine.process(TestStubs.event_cash_account_state())
 
     def test_registered_clients_returns_expected(self):
         # Arrange
@@ -200,9 +205,38 @@ class TestExecutionEngine:
             self.exec_client.id,
         ]
 
-    def test_deregister_client_removes_client(self):
+    def test_register_account_type_then_account_event_instantiates_type(self):
         # Arrange
+        client_id = ClientId("CRYPTO_X")
+        account_id = AccountId.from_str("CRYPTO_X-001")
+
+        exec_client = MockExecutionClient(
+            client_id=client_id,
+            venue_type=VenueType.EXCHANGE,
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        self.exec_engine.register_client(exec_client)
+
         # Act
+        self.exec_engine.register_account_type(exec_client.id, MyAccount)
+
+        account_event = TestStubs.event_cash_account_state(
+            client_id=client_id,
+            account_id=account_id,
+        )
+        self.exec_engine.process(account_event)
+
+        # Assert
+        assert isinstance(exec_client.get_account(), MyAccount)
+
+    def test_deregister_client_removes_client(self):
+        # Arrange, Act
         self.exec_engine.deregister_client(self.exec_client)
 
         # Assert

@@ -169,7 +169,7 @@ cdef class DataEngine(Component):
 
         self._clients[client.id] = client
 
-        self._log.info(f"Registered {client}.")
+        self._log.info(f"Registered DataClient {client}.")
 
     cpdef void deregister_client(self, DataClient client) except *:
         """

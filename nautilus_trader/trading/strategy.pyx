@@ -297,7 +297,7 @@ cdef class TradingStrategy(Actor):
 
         if indicator not in self._indicators_for_quotes[instrument_id]:
             self._indicators_for_quotes[instrument_id].append(indicator)
-            self.log.info(f"Registered indicator {indicator} for {instrument_id} quote ticks.")
+            self.log.info(f"Registered Indicator {indicator} for {instrument_id} quote ticks.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {instrument_id} quote ticks.")
 
@@ -325,7 +325,7 @@ cdef class TradingStrategy(Actor):
 
         if indicator not in self._indicators_for_trades[instrument_id]:
             self._indicators_for_trades[instrument_id].append(indicator)
-            self.log.info(f"Registered indicator {indicator} for {instrument_id} trade ticks.")
+            self.log.info(f"Registered Indicator {indicator} for {instrument_id} trade ticks.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {instrument_id} trade ticks.")
 
@@ -353,7 +353,7 @@ cdef class TradingStrategy(Actor):
 
         if indicator not in self._indicators_for_bars[bar_type]:
             self._indicators_for_bars[bar_type].append(indicator)
-            self.log.info(f"Registered indicator {indicator} for {bar_type} bars.")
+            self.log.info(f"Registered Indicator {indicator} for {bar_type} bars.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 

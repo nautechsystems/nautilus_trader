@@ -42,6 +42,7 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -74,6 +75,7 @@ class TestEvents:
             free=Money(1525000, USD),
         )
         event = AccountState(
+            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "000"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -89,11 +91,11 @@ class TestEvents:
         assert AccountState.from_dict(AccountState.to_dict(event)) == event
         assert (
             str(event)
-            == f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
+            == f"AccountState(client_id=SIM, account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
         )
         assert (
             repr(event)
-            == f"AccountState(account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
+            == f"AccountState(client_id=SIM, account_id=SIM-000, account_type=MARGIN, base_currency=USD, is_reported=True, balances=[AccountBalance(total=1_525_000.00 USD, locked=0.00 USD, free=1_525_000.00 USD)], event_id={uuid})"  # noqa
         )
 
     def test_order_initialized_event_to_from_dict_and_str_repr(self):
