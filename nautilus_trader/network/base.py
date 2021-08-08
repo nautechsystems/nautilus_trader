@@ -2,7 +2,7 @@
 
 
 class StreamingBase:
-    def __init__(self, logger, recv_handler: callable):
+    def __init__(self, logger, recv_handler: callable):  # type: ignore
         """
         Base class for WebsocketClient and TCPClient handling some shared read/write/connection functionality
 
