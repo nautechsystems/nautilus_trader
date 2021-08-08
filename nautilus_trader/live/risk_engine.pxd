@@ -22,6 +22,7 @@ cdef class LiveRiskEngine(RiskEngine):
     cdef object _run_queue_task
 
     cdef readonly bint is_running
+    """If the risk engine is running.\n\n:returns: `bool`"""
 
     cpdef object get_event_loop(self)
     cpdef object get_run_queue_task(self)

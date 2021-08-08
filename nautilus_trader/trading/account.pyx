@@ -28,8 +28,6 @@ from nautilus_trader.model.objects cimport AccountBalance
 cdef class Account:
     """
     The base class for all trading accounts.
-
-    Represents Cash account type.
     """
 
     def __init__(self, AccountType account_type, AccountState event):
@@ -535,7 +533,7 @@ cdef class Account:
 
 cdef class CashAccount:
     """
-    Represents a cash account.
+    Provides a cash account.
     """
 
     def __init__(self, AccountState event):
@@ -602,7 +600,7 @@ cdef class CashAccount:
 
 cdef class MarginAccount(Account):
     """
-    Represents a margin account.
+    Provides a margin account.
     """
 
     def __init__(self, AccountState event):
@@ -847,11 +845,11 @@ cdef class MarginAccount(Account):
             return [Money(0, instrument.get_cost_currency())]
 
     cpdef Money calculate_initial_margin(
-            self,
-            Instrument instrument,
-            Quantity quantity,
-            Price price,
-            bint inverse_as_quote=False,
+        self,
+        Instrument instrument,
+        Quantity quantity,
+        Price price,
+        bint inverse_as_quote=False,
     ):
         """
         Calculate the initial margin from the given parameters.
@@ -901,12 +899,12 @@ cdef class MarginAccount(Account):
             return Money(margin, instrument.quote_currency)
 
     cpdef Money calculate_maint_margin(
-            self,
-            Instrument instrument,
-            PositionSide side,
-            Quantity quantity,
-            Price last,
-            bint inverse_as_quote=False,
+        self,
+        Instrument instrument,
+        PositionSide side,
+        Quantity quantity,
+        Price last,
+        bint inverse_as_quote=False,
     ):
         """
         Calculate the maintenance margin from the given parameters.
