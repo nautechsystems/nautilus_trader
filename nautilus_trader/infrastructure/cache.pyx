@@ -90,9 +90,9 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Raises
         ------
         ValueError
-            If the host is not a valid string.
+            If host is not a valid string.
         ValueError
-            If the port is not in range [0, 65535].
+            If port is not in range [0, 65535].
 
         """
         cdef str host = config["host"]
