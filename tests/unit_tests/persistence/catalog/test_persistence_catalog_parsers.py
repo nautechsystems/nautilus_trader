@@ -3,11 +3,13 @@ import sys
 from functools import partial
 from typing import Callable
 
+import fsspec.implementations.local
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
 from nautilus_trader.persistence.catalog.parsers import CSVReader
+from nautilus_trader.persistence.catalog.parsers import RawFile
 from nautilus_trader.persistence.catalog.parsers import TextReader
 from nautilus_trader.persistence.catalog.scanner import scan
 from tests.test_kit import PACKAGE_ROOT
@@ -16,6 +18,23 @@ from tests.test_kit import PACKAGE_ROOT
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
+
+
+def test_parse_raw_file_single_chunk():
+    fs = fsspec.implementations.local.LocalFileSystem()
+    rf = RawFile(fs=fs, path=TEST_DATA_DIR + "/betfair/1.166811431.bz2", chunk_size=-1)
+    data = list(rf.iter_raw())
+    assert len(data) == 1
+    assert len(data[0]) == 151707
+
+
+def test_parse_raw_file_multiple_chunks():
+    fs = fsspec.implementations.local.LocalFileSystem()
+    rf = RawFile(fs=fs, path=TEST_DATA_DIR + "/betfair/1.166811431.bz2", chunk_size=100_000)
+    data = list(rf.iter_raw())
+    assert len(data) == 2
+    assert len(data[0]) == 100_000
+    assert len(data[1]) == 51707
 
 
 @pytest.mark.parametrize(

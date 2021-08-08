@@ -228,7 +228,7 @@ class ParquetReader(ByteReader):
 
 
 class RawFile(fsspec.core.OpenFile):
-    def __init__(self, fs: fsspec.AbstractFileSystem, path: str, chunk_size: int, **kwargs):
+    def __init__(self, fs: fsspec.AbstractFileSystem, path: str, chunk_size: int = -1, **kwargs):
         """
         A subclass of fsspec.OpenFile than can be read in chunks
         """

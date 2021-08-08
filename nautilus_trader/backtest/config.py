@@ -7,7 +7,6 @@ from dask import delayed
 from dask.base import normalize_token
 from dask.base import tokenize
 
-from nautilus_trader.backtest.data_loader import DataCatalog
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import SimulationModule
@@ -22,6 +21,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.persistence.catalog.core import DataCatalog
 
 
 PARTIAL_SUFFIX = "Partial-"

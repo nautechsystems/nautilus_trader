@@ -24,7 +24,6 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog.core import DataCatalog
 from nautilus_trader.persistence.catalog.metadata import _write_mappings
@@ -52,7 +51,7 @@ from nautilus_trader.serialization.arrow.util import maybe_list
 TIMESTAMP_COLUMN = "ts_init"
 
 
-def _parse(f: RawFile, reader: ByteReader, instrument_provider=None):
+def parse_raw_file(f: RawFile, reader: ByteReader, instrument_provider=None):
     f.reader = reader
     if instrument_provider:
         f.instrument_provider = instrument_provider
@@ -60,18 +59,6 @@ def _parse(f: RawFile, reader: ByteReader, instrument_provider=None):
         if chunk:
             yield {"raw_file": f, "chunk": chunk}
     yield {"raw_file": f, "chunk": None}
-
-
-def preprocess_instrument_provider(chunk=None, instrument_provider=None):
-    if instrument_provider is not None:
-        # Find any instrument status updates, if we have some, emit instruments first
-        instruments = [
-            instrument_provider.find(s.instrument_id)
-            for s in chunk
-            if isinstance(s, InstrumentStatusUpdate)
-        ]
-        chunk = instruments + chunk
-    return chunk
 
 
 def nautilus_chunk_to_dataframes(
@@ -108,7 +95,7 @@ def nautilus_chunk_to_dataframes(
     return tables
 
 
-def _write_single(
+def write_parquet(
     cls: type, df: pd.DataFrame, instrument_id: str, append: bool, **parquet_dataset_kwargs
 ):
     """
@@ -212,7 +199,7 @@ def write_chunk(raw_file: RawFile, chunk, append=False, **parquet_dataset_kwargs
     # Load any existing data, drop dupes
     for cls, instruments in tables.items():
         for instrument_id, df in instruments.items():
-            _write_single(
+            write_parquet(
                 cls=cls, df=df, instrument_id=instrument_id, append=append, **parquet_dataset_kwargs
             )
             shape += len(df)
@@ -226,6 +213,7 @@ def process_files(
     progress=True,
     executor: Executor = None,
     instrument_provider=None,
+    output_func=None,
 ):
     """
     Load data in chunks from `files`, parsing with the `parser` function using `executor`.
@@ -238,8 +226,10 @@ def process_files(
     return executor_queue_process(
         executor=executor,
         inputs=[{"f": f} for f in files],
-        process_func=partial(_parse, reader=reader, instrument_provider=instrument_provider),
-        output_func=write_chunk,
+        process_func=partial(
+            parse_raw_file, reader=reader, instrument_provider=instrument_provider
+        ),
+        output_func=output_func or write_chunk,
         progress=progress,
     )
 

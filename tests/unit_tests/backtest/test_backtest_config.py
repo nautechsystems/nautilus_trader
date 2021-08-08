@@ -16,9 +16,6 @@ from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.config import Partialable
 from nautilus_trader.backtest.config import build_graph
-from nautilus_trader.backtest.data_loader import CSVParser
-from nautilus_trader.backtest.data_loader import DataCatalog
-from nautilus_trader.backtest.data_loader import DataLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_nanos
@@ -31,6 +28,9 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.catalog.core import DataCatalog
+from nautilus_trader.persistence.catalog.loading import load
+from nautilus_trader.persistence.catalog.parsers import CSVReader
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
@@ -63,9 +63,9 @@ def data_loader():
 
     instrument_provider = InstrumentProvider()
     instrument_provider.add(instrument)
-    loader = DataLoader(
+    loader = load(
         path=TEST_DATA_DIR,
-        parser=CSVParser(parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id())),
+        reader=CSVReader(parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id())),
         glob_pattern="truefx-audusd-ticks.csv",
         instrument_provider=instrument_provider,
     )
