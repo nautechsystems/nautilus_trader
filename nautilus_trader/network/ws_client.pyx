@@ -73,7 +73,7 @@ cdef class WebSocketClient:
         self._session = Optional[aiohttp.ClientSession] = None
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._tasks: List[asyncio.Task] = []
-        self._stop = False
+        self._running = False
         self._stopped = False
         self._trigger_stop = False
 
@@ -82,6 +82,7 @@ cdef class WebSocketClient:
         self._log.debug(f"Connecting to websocket: {self.ws_url}")
         self._ws = await self._session.ws_connect(url=self.ws_url, **self._ws_connect_kwargs)
         if start:
+            self._running = True
             task = self._loop.create_task(self.start())
             self._tasks.append(task)
 
@@ -106,16 +107,16 @@ cdef class WebSocketClient:
 
     async def start(self):
         self._log.debug("Starting recv loop")
-        while not self._stop:
+        while self._running:
             try:
                 raw = await self.recv()
                 self._log.debug("[RECV] {raw}")
                 if raw is not None:
-                    self.handler(raw)
-            except Exception as e:
+                    self._handler(raw)
+            except Exception as ex:
                 # TODO - Handle disconnect? Should we reconnect or throw?
-                self._log.exception(e)
-                self._stop = True
+                self._log.exception(ex)
+                self._running = False
         self._log.debug("Stopped")
         self._stopped = True
 

@@ -24,12 +24,12 @@ cdef class SocketClient:
     cdef LoggerAdapter _log
     cdef bytes _crlf
     cdef str _encoding
-    cdef bint _stop
+    cdef bint _running
     cdef bint _stopped
 
-    cdef readonly str host
+    cdef readonly object host  # TODO(cs): Temporary
     """The host for the socket client.\n\n:returns: `str`"""
-    cdef readonly int port
+    cdef readonly object port  # TODO(cs): Temporary
     """The port for the socket client.\n\n:returns: `int`"""
     cdef readonly bint ssl
     """If the socket client is using SSL.\n\n:returns: `bool`"""

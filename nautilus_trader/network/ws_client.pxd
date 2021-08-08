@@ -24,7 +24,7 @@ cdef class WebSocketClient:
     cdef object _ws
     cdef object _session
     cdef list _tasks
-    cdef bint _stop
+    cdef bint _running
     cdef bint _stopped
     cdef bint _trigger_stop
 
