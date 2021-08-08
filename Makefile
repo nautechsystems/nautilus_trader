@@ -1,4 +1,5 @@
 EXTRAS?=	"betfair ccxt distributed docs ib"
+.PHONY: build clean docs
 
 install:
 	poetry install --extras ${EXTRAS}
@@ -27,7 +28,6 @@ clean:
 
 clean-build: clean build
 
-.PHONY: docs
 docs:
 	poetry run sphinx-build docs/source docs/build
 

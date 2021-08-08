@@ -34,6 +34,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
@@ -236,6 +237,7 @@ class TestPortfolio:
     def test_account_when_account_returns_the_account_facade(self):
         # Arrange
         account_state = AccountState(
+            client_id=ClientId("BINANCE"),
             account_id=AccountId("BINANCE", "1513111"),
             account_type=AccountType.CASH,
             base_currency=None,
@@ -334,8 +336,9 @@ class TestPortfolio:
     def test_update_orders_working(self):
         # Arrange
         state = AccountState(
+            client_id=ClientId("BINANCE"),
             account_id=AccountId("BINANCE", "01234"),
-            account_type=AccountType.CASH,
+            account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-currency account
             reported=True,
             balances=[
@@ -414,8 +417,9 @@ class TestPortfolio:
     def test_order_accept_updates_initial_margin(self):
         # Arrange
         state = AccountState(
+            client_id=ClientId("BETFAIR"),
             account_id=AccountId("BETFAIR", "01234"),
-            account_type=AccountType.CASH,
+            account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-currency account
             reported=True,
             balances=[
@@ -458,6 +462,7 @@ class TestPortfolio:
     def test_update_positions(self):
         # Arrange
         state = AccountState(
+            client_id=ClientId("BINANCE"),
             account_id=AccountId("BINANCE", "01234"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency account
@@ -564,8 +569,9 @@ class TestPortfolio:
     def test_opening_one_long_position_updates_portfolio(self):
         # Arrange
         state = AccountState(
+            client_id=ClientId("BINANCE"),
             account_id=AccountId("BINANCE", "01234"),
-            account_type=AccountType.CASH,
+            account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-currency account
             reported=True,
             balances=[
@@ -638,8 +644,9 @@ class TestPortfolio:
     def test_opening_one_short_position_updates_portfolio(self):
         # Arrange
         state = AccountState(
+            client_id=ClientId("BINANCE"),
             account_id=AccountId("BINANCE", "01234"),
-            account_type=AccountType.CASH,
+            account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-currency account
             reported=True,
             balances=[
@@ -712,8 +719,9 @@ class TestPortfolio:
     def test_opening_positions_with_multi_asset_account(self):
         # Arrange
         state = AccountState(
+            client_id=ClientId("BITMEX"),
             account_id=AccountId("BITMEX", "01234"),
-            account_type=AccountType.CASH,
+            account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-currency account
             reported=True,
             balances=[
@@ -792,6 +800,7 @@ class TestPortfolio:
     def test_unrealized_pnl_when_insufficient_data_for_xrate_returns_none(self):
         # Arrange
         state = AccountState(
+            client_id=ClientId("BITMEX"),
             account_id=AccountId("BITMEX", "01234"),
             account_type=AccountType.MARGIN,
             base_currency=BTC,
@@ -851,6 +860,7 @@ class TestPortfolio:
     def test_market_value_when_insufficient_data_for_xrate_returns_none(self):
         # Arrange
         state = AccountState(
+            client_id=ClientId("BITMEX"),
             account_id=AccountId("BITMEX", "01234"),
             account_type=AccountType.MARGIN,
             base_currency=BTC,
@@ -923,6 +933,7 @@ class TestPortfolio:
     def test_opening_several_positions_updates_portfolio(self):
         # Arrange
         state = AccountState(
+            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "01234"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -1031,6 +1042,7 @@ class TestPortfolio:
     def test_modifying_position_updates_portfolio(self):
         # Arrange
         state = AccountState(
+            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "01234"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -1118,6 +1130,7 @@ class TestPortfolio:
     def test_closing_position_updates_portfolio(self):
         # Arrange
         state = AccountState(
+            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "01234"),
             account_type=AccountType.MARGIN,
             base_currency=USD,
@@ -1191,6 +1204,7 @@ class TestPortfolio:
     def test_several_positions_with_different_instruments_updates_portfolio(self):
         # Arrange
         state = AccountState(
+            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "01234"),
             account_type=AccountType.MARGIN,
             base_currency=USD,

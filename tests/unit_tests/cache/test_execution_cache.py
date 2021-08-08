@@ -41,7 +41,6 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestDataProvider
@@ -180,8 +179,7 @@ class TestCache:
 
     def test_add_account(self):
         # Arrange
-        initial = TestStubs.event_account_state()
-        account = Account(initial)
+        account = TestStubs.cash_account()
 
         # Act
         self.cache.add_account(account)
@@ -201,8 +199,7 @@ class TestCache:
 
     def test_load_account(self):
         # Arrange
-        initial = TestStubs.event_account_state()
-        account = Account(initial)
+        account = TestStubs.cash_account()
 
         self.cache.add_account(account)
 
@@ -826,8 +823,7 @@ class TestCache:
 
     def test_update_account(self):
         # Arrange
-        event = TestStubs.event_account_state()
-        account = Account(event)
+        account = TestStubs.cash_account()
 
         self.cache.add_account(account)
 

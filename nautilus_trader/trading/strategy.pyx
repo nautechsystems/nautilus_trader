@@ -297,7 +297,7 @@ cdef class TradingStrategy(Actor):
 
         if indicator not in self._indicators_for_quotes[instrument_id]:
             self._indicators_for_quotes[instrument_id].append(indicator)
-            self.log.info(f"Registered indicator {indicator} for {instrument_id} quote ticks.")
+            self.log.info(f"Registered Indicator {indicator} for {instrument_id} quote ticks.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {instrument_id} quote ticks.")
 
@@ -325,7 +325,7 @@ cdef class TradingStrategy(Actor):
 
         if indicator not in self._indicators_for_trades[instrument_id]:
             self._indicators_for_trades[instrument_id].append(indicator)
-            self.log.info(f"Registered indicator {indicator} for {instrument_id} trade ticks.")
+            self.log.info(f"Registered Indicator {indicator} for {instrument_id} trade ticks.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {instrument_id} trade ticks.")
 
@@ -353,7 +353,7 @@ cdef class TradingStrategy(Actor):
 
         if indicator not in self._indicators_for_bars[bar_type]:
             self._indicators_for_bars[bar_type].append(indicator)
-            self.log.info(f"Registered indicator {indicator} for {bar_type} bars.")
+            self.log.info(f"Registered Indicator {indicator} for {bar_type} bars.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
@@ -596,22 +596,26 @@ cdef class TradingStrategy(Actor):
 
         if trigger is not None:
             if order.is_triggered_c():
-                self.log.warning(f"Cannot update order: "
-                                 f"{repr(order.client_order_id)} already triggered.")
+                self.log.warning(
+                    f"Cannot create command UpdateOrder: "
+                    f"Order with {repr(order.client_order_id)} already triggered.",
+                )
                 return
             if trigger != order.trigger:
                 updating = True
 
         if not updating:
             self.log.error(
-                "Cannot create command UpdateOrder "
-                "(quantity, price and trigger were either None or the same as existing values)."
+                "Cannot create command UpdateOrder: "
+                "quantity, price and trigger were either None or the same as existing values.",
             )
             return
 
         if order.account_id is None:
-            self.log.error(f"Cannot update order: "
-                           f"no account assigned to order yet, {order}.")
+            self.log.error(
+                f"Cannot create command UpdateOrder: "
+                f"no account assigned to order yet, {order}.",
+            )
             return  # Cannot send command
 
         if (
@@ -620,7 +624,7 @@ cdef class TradingStrategy(Actor):
             or order.is_pending_cancel_c()
         ):
             self.log.warning(
-                f"Cannot update order: state is {order.state_string_c()}, {order}.",
+                f"Cannot create command UpdateOrder: state is {order.state_string_c()}, {order}.",
             )
             return  # Cannot send command
 

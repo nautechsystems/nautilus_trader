@@ -36,7 +36,7 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.account import Account
+from nautilus_trader.trading.account import CashAccount
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -44,7 +44,6 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 @pytest.fixture(autouse=True)
 def betfairlightweight_mocks(mocker):
-    # TODO - Mocks not currently working in TestKit, need to stay here
 
     # Betfair client login
     mocker.patch("betfairlightweight.endpoints.login.Login.__call__")
@@ -247,7 +246,7 @@ async def execution_client(
         load_instruments=False,
     )
     client.instrument_provider().load_all()
-    cache.add_account(account=Account(betfair_account_state))
+    cache.add_account(account=CashAccount(betfair_account_state))
     for instrument in client.instrument_provider().list_instruments():
         cache.add_instrument(instrument)
     return client

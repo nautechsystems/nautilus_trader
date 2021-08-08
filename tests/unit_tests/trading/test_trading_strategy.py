@@ -45,8 +45,10 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -216,7 +218,7 @@ class TestTradingStrategy:
         # Arrange
         strategy = TradingStrategy("000")
 
-        event = TestStubs.event_account_state()
+        event = TestStubs.event_cash_account_state()
 
         # Act
         strategy.handle_event(event)
@@ -350,7 +352,7 @@ class TestTradingStrategy:
     def test_on_event_when_not_overridden_does_nothing(self):
         # Arrange
         strategy = TradingStrategy("000")
-        event = TestStubs.event_account_state(AccountId("SIM", "000"))
+        event = TestStubs.event_cash_account_state(account_id=AccountId("SIM", "000"))
 
         # Act
         strategy.on_event(event)
@@ -799,7 +801,7 @@ class TestTradingStrategy:
         strategy.set_explode_on_start(False)
         strategy.start()
 
-        event = TestStubs.event_account_state(AccountId("TEST", "000"))
+        event = TestStubs.event_cash_account_state(account_id=AccountId("TEST", "000"))
 
         # Act
         # Assert
@@ -1670,7 +1672,6 @@ class TestTradingStrategy:
         # Assert
         assert self.data_engine.command_count == 2
 
-    @pytest.mark.skip(reason="implement")
     def test_subscribe_instruments(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
@@ -1688,9 +1689,12 @@ class TestTradingStrategy:
         strategy.subscribe_instruments(Venue("SIM"))
 
         # Assert
-        # Assert  # TODO(cs): Implement DataEngine subscription queries
-        # expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
         assert self.data_engine.command_count == 1
+        assert self.data_engine.subscribed_instruments() == [
+            InstrumentId.from_str("AUD/USD.SIM"),
+            InstrumentId.from_str("GBP/USD.SIM"),
+            InstrumentId.from_str("USD/JPY.SIM"),
+        ]
 
     # @pytest.mark.skip(reason="implement")
     def test_unsubscribe_instruments(self):
@@ -1710,11 +1714,9 @@ class TestTradingStrategy:
         strategy.unsubscribe_instruments(Venue("SIM"))
 
         # Assert
-        # Assert  # TODO(cs): Implement DataEngine subscription queries
-        # expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
         assert self.data_engine.command_count == 1
+        assert self.data_engine.subscribed_instruments() == []
 
-    @pytest.mark.skip(reason="implement")
     def test_subscribe_instrument(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
@@ -1732,9 +1734,9 @@ class TestTradingStrategy:
         strategy.subscribe_instrument(AUDUSD_SIM.id)
 
         # Assert
-        # Assert  # TODO(cs): Implement DataEngine subscription queries
-        # expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
         assert self.data_engine.command_count == 1
+        assert self.data_engine.subscribed_instruments() == [expected_instrument]
 
     def test_unsubscribe_instrument(self):
         # Arrange
@@ -1755,10 +1757,9 @@ class TestTradingStrategy:
         strategy.unsubscribe_instrument(AUDUSD_SIM.id)
 
         # Assert
-        assert self.data_engine.subscribed_instruments == []
+        assert self.data_engine.subscribed_instruments() == []
         assert self.data_engine.command_count == 2
 
-    @pytest.mark.skip(reason="implement")
     def test_subscribe_quote_ticks(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
@@ -1776,8 +1777,8 @@ class TestTradingStrategy:
         strategy.subscribe_quote_ticks(AUDUSD_SIM.id)
 
         # Assert
-        # expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
-        # assert self.data_engine.subscribed_quote_ticks == [expected_instrument]
+        expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        assert self.data_engine.subscribed_quote_ticks() == [expected_instrument]
         assert self.data_engine.command_count == 1
 
     def test_unsubscribe_quote_ticks(self):
@@ -1799,11 +1800,9 @@ class TestTradingStrategy:
         strategy.unsubscribe_quote_ticks(AUDUSD_SIM.id)
 
         # Assert
-        # Assert  # TODO(cs): Implement DataEngine subscription queries
-        assert self.data_engine.subscribed_quote_ticks == []
+        assert self.data_engine.subscribed_quote_ticks() == []
         assert self.data_engine.command_count == 2
 
-    @pytest.mark.skip(reason="implement")
     def test_subscribe_trade_ticks(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
@@ -1820,9 +1819,9 @@ class TestTradingStrategy:
         # Act
         strategy.subscribe_trade_ticks(AUDUSD_SIM.id)
 
-        # Assert  # TODO(cs): Implement DataEngine subscription queries
-        # expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
-        # assert self.data_engine.subscribed_trade_ticks == [expected_instrument]
+        # Assert
+        expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        assert self.data_engine.subscribed_trade_ticks() == [expected_instrument]
         assert self.data_engine.command_count == 1
 
     def test_unsubscribe_trade_ticks(self):
@@ -1844,7 +1843,7 @@ class TestTradingStrategy:
         strategy.unsubscribe_trade_ticks(AUDUSD_SIM.id)
 
         # Assert
-        assert self.data_engine.subscribed_trade_ticks == []
+        assert self.data_engine.subscribed_trade_ticks() == []
         assert self.data_engine.command_count == 2
 
     def test_subscribe_strategy_data(self):
@@ -1982,8 +1981,7 @@ class TestTradingStrategy:
         strategy.subscribe_bars(bar_type)
 
         # Assert
-        # TODO(cs): Implement DataEngine subscription queries
-        # assert self.data_engine.subscribed_bars == [bar_type]
+        assert self.data_engine.subscribed_bars() == []
         assert self.data_engine.command_count == 1
 
     def test_unsubscribe_bars(self):
@@ -2005,7 +2003,7 @@ class TestTradingStrategy:
         strategy.unsubscribe_bars(bar_type)
 
         # Assert
-        assert self.data_engine.subscribed_bars == []
+        assert self.data_engine.subscribed_bars() == []
         assert self.data_engine.command_count == 2
 
     def test_request_data_sends_request_to_data_engine(self):

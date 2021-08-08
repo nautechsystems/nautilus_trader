@@ -350,7 +350,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
             return None
 
         cdef bytes event
-        cdef Account account = Account(self._event_serializer.deserialize(events[0]))
+        cdef Account account = Account.create_c(self._event_serializer.deserialize(events[0]))
         for event in events[1:]:
             account.apply(event=self._event_serializer.deserialize(event))
 

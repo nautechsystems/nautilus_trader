@@ -74,7 +74,6 @@ cdef class DataClient(Component):
         """
         if config is None:
             config = {}
-
         super().__init__(
             clock=clock,
             logger=logger,
@@ -86,12 +85,26 @@ cdef class DataClient(Component):
         self._cache = cache
         self._config = config
 
+        # Feeds
+        self._feeds_generic_data = {}  # type: dict[DataType, asyncio.Task]
+
         self.is_connected = False
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}-{self.id.value}"
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef list subscribed_generic_data(self):
+        """
+        Return the generic data types subscribed to.
+
+        Returns
+        -------
+        list[DataType]
+
+        """
+        return sorted(list(self._feeds_generic_data.keys()))
 
     cpdef void subscribe(self, DataType data_type) except *:
         """Abstract method (implement in subclass)."""
@@ -177,14 +190,16 @@ cdef class MarketDataClient(DataClient):
             config=config,
         )
 
-        # Subscriptions
-        self._subscribed_instruments = set()  # type: set[InstrumentId]
-        self._subscribed_order_books = {}     # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_quote_ticks = {}     # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_trade_ticks = {}     # type: dict[InstrumentId, asyncio.Task]
-        self._subscribed_bars = {}            # type: dict[BarType, asyncio.Task]
+        # Feeds
+        self._feeds_order_book_delta = {}          # type: dict[InstrumentId, asyncio.Task]
+        self._feeds_order_book_snapshot = {}       # type: dict[InstrumentId, asyncio.Task]
+        self._feeds_quote_tick = {}                # type: dict[InstrumentId, asyncio.Task]
+        self._feeds_trade_tick = {}                # type: dict[InstrumentId, asyncio.Task]
+        self._feeds_bar = {}                       # type: dict[BarType, asyncio.Task]
+        self._feeds_instrument_status_update = {}  # type: dict[InstrumentId, asyncio.Task]
+        self._feeds_instrument_close_price = {}    # type: dict[InstrumentId, asyncio.Task]
 
-        # Scheduled tasks
+        self._feeds_instrument = set()             # type: set[InstrumentId]
         self._update_instruments_task = None
 
     cpdef list unavailable_methods(self):
@@ -201,65 +216,93 @@ cdef class MarketDataClient(DataClient):
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
-    @property
-    def subscribed_instruments(self):
+    cpdef list subscribed_instruments(self):
         """
-        The instruments subscribed to.
+        Return the instruments subscribed to.
 
         Returns
         -------
         list[InstrumentId]
 
         """
-        return sorted(list(self._subscribed_instruments))
+        return sorted(list(self._feeds_instrument))
 
-    @property
-    def subscribed_order_books(self):
+    cpdef list subscribed_order_book_deltas(self):
         """
-        The order books subscribed to.
+        Return the order book delta instruments subscribed to.
 
         Returns
         -------
         list[InstrumentId]
 
         """
-        return sorted(list(self._subscribed_order_books.keys()))
+        return sorted(list(self._feeds_order_book_delta.keys()))
 
-    @property
-    def subscribed_quote_ticks(self):
+    cpdef list subscribed_order_book_snapshots(self):
         """
-        The quote tick instruments subscribed to.
+        Return the order book snapshot instruments subscribed to.
 
         Returns
         -------
         list[InstrumentId]
 
         """
-        return sorted(list(self._subscribed_quote_ticks.keys()))
+        return sorted(list(self._feeds_order_book_snapshot.keys()))
 
-    @property
-    def subscribed_trade_ticks(self):
+    cpdef list subscribed_quote_ticks(self):
         """
-        The trade tick instruments subscribed to.
+        Return the quote tick instruments subscribed to.
 
         Returns
         -------
         list[InstrumentId]
 
         """
-        return sorted(list(self._subscribed_trade_ticks.keys()))
+        return sorted(list(self._feeds_quote_tick.keys()))
 
-    @property
-    def subscribed_bars(self):
+    cpdef list subscribed_trade_ticks(self):
         """
-        The bar types subscribed to.
+        Return the trade tick instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._feeds_trade_tick.keys()))
+
+    cpdef list subscribed_bars(self):
+        """
+        Return the bar types subscribed to.
 
         Returns
         -------
         list[BarType]
 
         """
-        return sorted(list(self._subscribed_bars.keys()))
+        return sorted(list(self._feeds_bar.keys()))
+
+    cpdef list subscribed_instrument_status_updates(self):
+        """
+        Return the status update instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._feeds_instrument_status_update.keys()))
+
+    cpdef list subscribed_instrument_close_prices(self):
+        """
+        Return the close price instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._feeds_instrument_close_price.keys()))
 
     cpdef void subscribe(self, DataType data_type) except *:
         """Abstract method (implement in subclass)."""

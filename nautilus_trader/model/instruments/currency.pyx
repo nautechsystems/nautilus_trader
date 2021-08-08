@@ -78,19 +78,19 @@ cdef class CurrencySpot(Instrument):
             The minimum price increment (tick size).
         size_increment : Price
             The minimum size increment.
-        lot_size : Quantity
+        lot_size : Quantity, optional
             The rounded lot unit size.
-        max_quantity : Quantity
+        max_quantity : Quantity, optional
             The maximum allowable order quantity.
-        min_quantity : Quantity
+        min_quantity : Quantity, optional
             The minimum allowable order quantity.
-        max_notional : Money
+        max_notional : Money, optional
             The maximum allowable order notional value.
-        min_notional : Money
+        min_notional : Money, optional
             The minimum allowable order notional value.
-        max_price : Price
+        max_price : Price, optional
             The maximum allowable printed price.
-        min_price : Price
+        min_price : Price, optional
             The minimum allowable printed price.
         margin_init : Decimal
             The initial margin requirement in percentage of order value.
