@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import asyncio
 import json
 import socketserver
@@ -7,7 +22,6 @@ import time
 import orjson
 import pytest
 
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.network.socket import SocketClient
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.test_kit.stubs import TestStubs
@@ -18,7 +32,7 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
 
 
-class BetfairTCPHandler(socketserver.StreamRequestHandler):
+class TCPHandler(socketserver.StreamRequestHandler):
     def reader(self):
         raw = self.rfile.readline()
         print("SERVER [RECV]", raw)
@@ -75,31 +89,28 @@ class BetfairTCPHandler(socketserver.StreamRequestHandler):
 
 @pytest.fixture(autouse=True)
 def betfair_server():
-    print("Starting mock-betfair server")
-    with ThreadedTCPServer(("127.0.0.1", 0), BetfairTCPHandler) as server:
+    print("Starting mock server")
+    with ThreadedTCPServer(("127.0.0.1", 0), TCPHandler) as server:
         thread = threading.Thread(target=server.serve_forever)
         thread.daemon = True
         thread.start()
         yield server
 
 
-@pytest.fixture()
-def logger_adapter() -> LoggerAdapter:
-    return LoggerAdapter("socket_test", TestStubs.logger())
-
-
+@pytest.mark.skip(reason="WIP")
 @pytest.mark.asyncio
-async def test_client_recv(event_loop, betfair_server, logger_adapter):
+async def test_client_recv(betfair_server, event_loop):
     lines = []
 
     def record(*args, **kwargs):
         lines.append((args, kwargs))
 
     client = SocketClient(
-        logger_adapter=logger_adapter,
-        message_handler=record,
         host=betfair_server.server_address[0],
         port=betfair_server.server_address[1],
+        loop=asyncio.get_event_loop(),
+        handler=record,
+        logger=TestStubs.logger(),
         ssl=False,
     )
     await client.connect()
@@ -108,6 +119,6 @@ async def test_client_recv(event_loop, betfair_server, logger_adapter):
     await client.send(orjson.dumps({"num_lines": 10}))
     event_loop.create_task(client.start())
     await asyncio.sleep(1)
-    client._stop = True
+    client.stop()
     await asyncio.sleep(1)
     assert len(lines) == 10

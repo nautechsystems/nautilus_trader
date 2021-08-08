@@ -13,34 +13,25 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-
-import pytest
-
-from nautilus_trader.network.socket import SocketClient
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.common.logging cimport LoggerAdapter
 
 
-@pytest.mark.skip(reason="WIP")
-@pytest.mark.asyncio
-async def test_socket_base(socket_server, event_loop):
-    messages = []
+cdef class SocketClient:
+    cdef object _loop
+    cdef object _reader
+    cdef object _writer
+    cdef object _handler
+    cdef LoggerAdapter _log
+    cdef bytes _crlf
+    cdef str _encoding
+    cdef bint _stop
+    cdef bint _stopped
 
-    def handler(raw):
-        messages.append(raw)
-        if len(messages) > 5:
-            client.stop()
-
-    host, port = socket_server.server_address
-    client = SocketClient(
-        host=host,
-        port=port,
-        loop=event_loop,
-        handler=handler,
-        logger=TestStubs.logger(),
-        ssl=False,
-    )
-    await client.start()
-    assert messages == [b"hello"] * 6
-    await asyncio.sleep(1)
-    client.stop()
+    cdef readonly str host
+    """The host for the socket client.\n\n:returns: `str`"""
+    cdef readonly int port
+    """The port for the socket client.\n\n:returns: `int`"""
+    cdef readonly bint ssl
+    """If the socket client is using SSL.\n\n:returns: `bool`"""
+    cdef readonly bint is_connected
+    """If the socket is connected.\n\n:returns: `bool`"""
