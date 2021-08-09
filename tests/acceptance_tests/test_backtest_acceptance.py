@@ -38,6 +38,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookData
+from nautilus_trader.persistence.util import get_catalog_fs
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
@@ -389,6 +391,9 @@ class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQ:
 class TestBacktestAcceptanceTestsOrderBookImbalance:
     def setup(self):
         # Fixture Setup
+        os.environ["NAUTILUS_DATA"] = "memory:///root/"
+        fs = get_catalog_fs()
+        fs.mkdir("/root/data")
         self.engine = BacktestEngine(
             bypass_logging=True,
             run_analysis=False,
@@ -396,7 +401,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
 
         self.venue = Venue("BETFAIR")
 
-        data = TestDataProvider.betfair_feed_parsed(
+        data = BetfairDataProvider.betfair_feed_parsed(
             market_id="1.166811431.bz2", folder="data/betfair"
         )
         instruments = [d for d in data if isinstance(d, BettingInstrument)]

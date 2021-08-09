@@ -13,26 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import copy
-import sys
 from base64 import b64encode
 
-import pytest
-
-from nautilus_trader.backtest.data_loader import DataCatalog
-from nautilus_trader.backtest.data_loader import class_to_filename
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.model.c_enums.book_level import BookLevel
-from nautilus_trader.model.c_enums.delta_type import DeltaType
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import SubmitBracketOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -62,23 +53,17 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
 from nautilus_trader.model.position import Position
-from nautilus_trader.serialization.arrow.core import _deserialize
-from nautilus_trader.serialization.arrow.core import _serialize
 from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
@@ -1038,345 +1023,3 @@ class TestMsgPackEventSerializer:
 
         # Assert
         assert deserialized == event
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="does not run on windows")
-class TestParquetSerializer:
-    def setup(self):
-        self.catalog = DataCatalog(path="/", fs_protocol="memory")
-        self.order_factory = OrderFactory(
-            trader_id=TraderId("T-001"),
-            strategy_id=StrategyId("S-001"),
-            clock=TestClock(),
-        )
-        self.order = self.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-        self.order_submitted = copy.copy(self.order)
-        self.order_submitted.apply(TestStubs.event_order_submitted(self.order))
-
-        self.order_accepted = copy.copy(self.order_submitted)
-        self.order_accepted.apply(TestStubs.event_order_accepted(self.order_submitted))
-
-        self.order_pending_cancel = copy.copy(self.order_accepted)
-        self.order_pending_cancel.apply(TestStubs.event_order_pending_cancel(self.order_accepted))
-
-        self.order_cancelled = copy.copy(self.order_pending_cancel)
-        self.order_cancelled.apply(TestStubs.event_order_canceled(self.order_pending_cancel))
-
-    def test_serialize_and_deserialize_trade_tick(self):
-        tick = TestStubs.trade_tick_5decimal()
-
-        serialized = _serialize(tick)
-        deserialized = _deserialize(cls=TradeTick, chunk=[serialized])
-
-        # Assert
-        assert deserialized == [tick]
-        self.catalog._write_chunks([tick])
-
-    def test_serialize_and_deserialize_order_book_delta(self):
-        delta = OrderBookDelta(
-            instrument_id=TestStubs.audusd_id(),
-            level=BookLevel.L2,
-            delta_type=DeltaType.CLEAR,
-            order=None,
-            ts_event=0,
-            ts_init=0,
-        )
-
-        serialized = _serialize(delta)
-        [deserialized] = _deserialize(cls=OrderBookDelta, chunk=serialized)
-
-        # Assert
-        expected = OrderBookDeltas(
-            instrument_id=TestStubs.audusd_id(),
-            level=BookLevel.L2,
-            deltas=[delta],
-            ts_event=0,
-            ts_init=0,
-        )
-        assert deserialized == expected
-        self.catalog._write_chunks([delta])
-
-    def test_serialize_and_deserialize_order_book_deltas(self):
-        kw = {
-            "instrument_id": "AUD/USD.SIM",
-            "ts_event": 0,
-            "ts_init": 0,
-            "level": "L2",
-        }
-        deltas = OrderBookDeltas(
-            instrument_id=TestStubs.audusd_id(),
-            level=BookLevel.L2,
-            deltas=[
-                OrderBookDelta.from_dict(
-                    {
-                        "delta_type": "ADD",
-                        "order_side": "BUY",
-                        "order_price": 8.0,
-                        "order_size": 30.0,
-                        "order_id": "e0364f94-8fcb-0262-cbb3-075c51ee4917",
-                        **kw,
-                    }
-                ),
-                OrderBookDelta.from_dict(
-                    {
-                        "delta_type": "ADD",
-                        "order_side": "SELL",
-                        "order_price": 15.0,
-                        "order_size": 10.0,
-                        "order_id": "cabec174-acc6-9204-9ebf-809da3896daf",
-                        **kw,
-                    }
-                ),
-            ],
-            ts_event=0,
-            ts_init=0,
-        )
-
-        serialized = _serialize(deltas)
-        deserialized = _deserialize(cls=OrderBookDeltas, chunk=serialized)
-
-        # Assert
-        assert deserialized == [deltas]
-        self.catalog._write_chunks([deltas])
-
-    def test_serialize_and_deserialize_order_book_deltas_grouped(self):
-        kw = {
-            "instrument_id": "AUD/USD.SIM",
-            "ts_event": 0,
-            "ts_init": 0,
-            "level": "L2",
-        }
-        deltas = [
-            {
-                "delta_type": "ADD",
-                "order_side": "SELL",
-                "order_price": 0.9901,
-                "order_size": 327.25,
-                "order_id": "1",
-            },
-            {
-                "delta_type": "CLEAR",
-                "order_side": None,
-                "order_price": None,
-                "order_size": None,
-                "order_id": None,
-            },
-            {
-                "delta_type": "ADD",
-                "order_side": "SELL",
-                "order_price": 0.98039,
-                "order_size": 27.91,
-                "order_id": "2",
-            },
-            {
-                "delta_type": "ADD",
-                "order_side": "SELL",
-                "order_price": 0.97087,
-                "order_size": 14.43,
-                "order_id": "3",
-            },
-        ]
-        deltas = OrderBookDeltas(
-            instrument_id=TestStubs.audusd_id(),
-            level=BookLevel.L2,
-            deltas=[OrderBookDelta.from_dict({**kw, **d}) for d in deltas],
-            ts_event=0,
-            ts_init=0,
-        )
-
-        serialized = _serialize(deltas)
-        [deserialized] = _deserialize(cls=OrderBookDeltas, chunk=serialized)
-
-        # Assert
-        assert deserialized == deltas
-        self.catalog._write_chunks([deserialized])
-        assert [d.type for d in deserialized.deltas] == [
-            DeltaType.ADD,
-            DeltaType.CLEAR,
-            DeltaType.ADD,
-            DeltaType.ADD,
-        ]
-
-    def test_serialize_and_deserialize_order_book_snapshot(self):
-        book = TestStubs.order_book_snapshot()
-
-        serialized = _serialize(book)
-        deserialized = _deserialize(cls=OrderBookSnapshot, chunk=serialized)
-
-        # Assert
-        assert deserialized == [book]
-        self.catalog._write_chunks([book])
-
-    def test_serialize_and_deserialize_account_state(self):
-        account = TestStubs.event_cash_account_state()
-
-        serialized = _serialize(account)
-        [deserialized] = _deserialize(cls=AccountState, chunk=serialized)
-
-        # Assert
-        assert deserialized == account
-
-        self.catalog._write_chunks([account])
-
-    @pytest.mark.parametrize(
-        "event_func",
-        [
-            TestStubs.event_order_accepted,
-            TestStubs.event_order_rejected,
-            TestStubs.event_order_submitted,
-        ],
-    )
-    def test_serialize_and_deserialize_order_events_base(self, event_func):
-        order = TestStubs.limit_order()
-        # order.venue_order_id = "1"
-        event = event_func(order=order)
-        cls = type(event)
-
-        serialized = _serialize(event)
-        deserialized = _deserialize(cls=cls, chunk=serialized)
-
-        # Assert
-        assert deserialized == [event]
-        self.catalog._write_chunks([event])
-        df = self.catalog._query(class_to_filename(cls))
-        assert len(df) == 1
-
-    @pytest.mark.parametrize(
-        "event_func",
-        [
-            TestStubs.event_order_canceled,
-            TestStubs.event_order_expired,
-            TestStubs.event_order_pending_cancel,
-            TestStubs.event_order_pending_update,
-            TestStubs.event_order_triggered,
-        ],
-    )
-    def test_serialize_and_deserialize_order_events_post_accepted(self, event_func):
-        # Act
-        event = event_func(order=self.order_accepted)
-        cls = type(event)
-
-        serialized = _serialize(event)
-        deserialized = _deserialize(cls=cls, chunk=serialized)
-
-        # Assert
-        assert deserialized == [event]
-        self.catalog._write_chunks([event])
-        df = self.catalog._query(class_to_filename(cls))
-        assert len(df) == 1
-
-    @pytest.mark.parametrize(
-        "event_func",
-        [
-            TestStubs.event_order_filled,
-        ],
-    )
-    def test_serialize_and_deserialize_order_events_filled(self, event_func):
-        # Act
-        event = event_func(order=self.order_accepted, instrument=AUDUSD_SIM)
-        cls = type(event)
-
-        serialized = _serialize(event)
-        assert serialized
-        # TODO (bm) - can't deserialize order filled right now
-        # deserialized = _deserialize(cls=cls, chunk=serialized)
-
-        # Assert
-        # assert deserialized == [event]
-        self.catalog._write_chunks([event])
-        df = self.catalog._query(class_to_filename(cls))
-        assert len(df) == 1
-
-    @pytest.mark.parametrize(
-        "position_func",
-        [
-            TestStubs.event_position_opened,
-            TestStubs.event_position_changed,
-        ],
-    )
-    def test_serialize_and_deserialize_position_events_open_changed(self, position_func):
-        instrument = TestInstrumentProvider.default_fx_ccy("GBPUSD")
-
-        order3 = self.order_factory.market(
-            instrument.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-        fill3 = TestStubs.event_order_filled(
-            order3,
-            instrument=instrument,
-            position_id=PositionId("P-3"),
-            strategy_id=StrategyId("S-1"),
-            last_px=Price.from_str("1.00000"),
-        )
-
-        position = Position(instrument=instrument, fill=fill3)
-
-        event = position_func(position=position)
-        cls = type(event)
-
-        serialized = _serialize(event)
-        assert serialized
-        # TODO (bm) - can't deserialize positions right now
-        # deserialized = _deserialize(cls=cls, chunk=serialized)
-
-        # Assert
-        # assert deserialized == [event]
-        self.catalog._write_chunks([event])
-        df = self.catalog._query(class_to_filename(cls))
-        assert len(df) == 1
-
-    @pytest.mark.parametrize(
-        "position_func",
-        [
-            TestStubs.event_position_closed,
-        ],
-    )
-    def test_serialize_and_deserialize_position_events_closed(self, position_func):
-        instrument = TestInstrumentProvider.default_fx_ccy("GBPUSD")
-
-        open_order = self.order_factory.market(
-            instrument.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-        open_fill = TestStubs.event_order_filled(
-            open_order,
-            instrument=instrument,
-            position_id=PositionId("P-3"),
-            strategy_id=StrategyId("S-1"),
-            last_px=Price.from_str("1.00000"),
-        )
-        close_order = self.order_factory.market(
-            instrument.id,
-            OrderSide.SELL,
-            Quantity.from_int(100000),
-        )
-        close_fill = TestStubs.event_order_filled(
-            close_order,
-            instrument=instrument,
-            position_id=PositionId("P-3"),
-            strategy_id=StrategyId("S-1"),
-            last_px=Price.from_str("1.20000"),
-        )
-
-        position = Position(instrument=instrument, fill=open_fill)
-        position.apply(close_fill)
-
-        event = position_func(position=position)
-        cls = type(event)
-
-        serialized = _serialize(event)
-        assert serialized
-        # TODO (bm) - can't deserialize positions right now
-        # deserialized = _deserialize(cls=cls, chunk=serialized)
-
-        # Assert
-        # assert deserialized == [event]
-        self.catalog._write_chunks([event])
-        df = self.catalog._query(class_to_filename(cls))
-        assert len(df) == 1
