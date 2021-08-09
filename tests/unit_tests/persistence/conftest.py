@@ -179,7 +179,7 @@ def load_data(betfair_reader):
 
 @pytest.fixture(scope="function")
 def catalog():
-    catalog = DataCatalog(path="/root/data", fs_protocol="memory")
+    catalog = DataCatalog(path="/root", fs_protocol="memory")
     catalog.fs = get_catalog_fs()
     return catalog
 

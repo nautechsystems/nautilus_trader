@@ -26,25 +26,26 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.serialization.arrow.core import _schemas
-from nautilus_trader.serialization.arrow.core import _serialize
+from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
+from nautilus_trader.serialization.arrow.serializer import get_cls_table
+from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.util import is_nautilus_class
 from nautilus_trader.serialization.arrow.util import list_dicts_to_dict_lists
 
 
 class FeatherWriter:
-    def __init__(self, path: str, fs_type="file", flush_interval=None):
+    def __init__(self, path: str, fs_protocol: str = "file", flush_interval=None):
         """
         Write a stream of nautilus objects into feather files under `path`
         """
+        self.fs = fsspec.filesystem(fs_protocol)
         self.path = pathlib.Path(path)
-        assert (
-            self.path.parent.exists()
+        assert self.fs.exists(
+            str(self.path.parent)
         ), f"Parent of path {self.path} does not exist, please create it"
         assert self.path.is_dir() or not self.path.exists(), "Path must be directory or empty"
-        self.path.mkdir(exist_ok=True)
-        self.fs = fsspec.filesystem(fs_type)
-        self._schemas = _schemas
+        self.fs.mkdir(str(self.path), exist_ok=True)
+        self._schemas = list_schemas()
         self._schemas.update(
             {
                 OrderBookDelta: self._schemas[OrderBookData],
@@ -74,22 +75,27 @@ class FeatherWriter:
 
     def _create_writers(self):
         for cls in self._schemas:
+            table_name = get_cls_table(cls).__name__
+            if table_name in self._writers:
+                continue
             prefix = "genericdata_" if not is_nautilus_class(cls) else ""
             schema = self._schemas[cls]
-            f = self.fs.open(str(self.path.joinpath(f"{prefix}{cls.__name__}.feather")), "wb")
+            full_path = self.path.joinpath(f"{prefix}{table_name}.feather")
+            f = self.fs.open(str(full_path), "wb")
             self._files[cls] = f
-            self._writers[cls] = pa.ipc.new_stream(f, schema)
+            self._writers[table_name] = pa.ipc.new_stream(f, schema)
 
     def write(self, obj: object):
         assert obj is not None
         cls = obj.__class__
+        table = get_cls_table(cls).__name__
         if isinstance(obj, GenericData):
             cls = obj.data_type.type
-        if cls not in self._writers:
+        if table not in self._writers:
             print(f"Can't find writer for cls: {cls}")
             return
-        writer = self._writers[cls]
-        serialized = _serialize(obj)
+        writer = self._writers[table]
+        serialized = ParquetSerializer.serialize(obj)
         if isinstance(serialized, dict):
             serialized = [serialized]
         data = list_dicts_to_dict_lists(
@@ -115,3 +121,14 @@ class FeatherWriter:
         self.flush()
         for cls in self._writers:
             self._writers[cls].close()
+
+
+def read_feather(fs: fsspec.AbstractFileSystem, path: str):
+    if not fs.exists(path):
+        return
+    try:
+        with fs.open(path) as f:
+            reader = pa.ipc.open_stream(f)
+            return reader.read_pandas()
+    except (pa.ArrowInvalid, FileNotFoundError):
+        return

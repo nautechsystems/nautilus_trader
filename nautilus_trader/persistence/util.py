@@ -154,7 +154,7 @@ def executor_queue_process(
     """
     assert inputs and isinstance(
         inputs[0], dict
-    ), "`inputs` should be List[dict] of kwargs for `process_func`"
+    ), f"`inputs` should be List[dict] of kwargs for `process_func`, was: {inputs}"
     assert inspect.isgeneratorfunction(process_func)
     executor = executor or ThreadPoolExecutor()
     queue_cls = Queue

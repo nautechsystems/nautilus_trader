@@ -1,5 +1,6 @@
 import copy
 import dataclasses
+import os
 import pathlib
 import pickle
 import sys
@@ -10,6 +11,7 @@ from typing import Optional
 import pandas as pd
 import pytest
 from dask.base import tokenize
+from fsspec.implementations.memory import MemoryFileSystem
 
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.config import BacktestDataConfig
@@ -30,7 +32,9 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.core import DataCatalog
 from nautilus_trader.persistence.catalog.loading import load
+from nautilus_trader.persistence.catalog.metadata import load_processed_raw_files
 from nautilus_trader.persistence.catalog.parsers import CSVReader
+from nautilus_trader.persistence.util import get_catalog_fs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
@@ -42,7 +46,27 @@ TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(autouse=True, scope="function")
+def nautilus_dir():
+    os.environ["NAUTILUS_DATA"] = "memory://root/"
+
+
+@pytest.fixture(autouse=True, scope="function")
+def reset():
+    """Cleanup resources before each test run"""
+    fs = get_catalog_fs()
+    assert isinstance(fs, MemoryFileSystem)
+    try:
+        fs.rm("/", recursive=True)
+    except FileNotFoundError:
+        pass
+    fs.mkdir("/root/data")
+    assert fs.exists("/root/")
+    assert not load_processed_raw_files()
+    yield
+
+
+@pytest.fixture(scope="function")
 def data_loader():
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
 
@@ -63,25 +87,22 @@ def data_loader():
 
     instrument_provider = InstrumentProvider()
     instrument_provider.add(instrument)
-    loader = load(
+    load(
         path=TEST_DATA_DIR,
-        reader=CSVReader(parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id())),
+        reader=CSVReader(
+            chunk_parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id()),
+            as_dataframe=True,
+        ),
         glob_pattern="truefx-audusd-ticks.csv",
         instrument_provider=instrument_provider,
     )
-    return loader
 
 
 @pytest.fixture(scope="function")
 def catalog(data_loader):
-    root = pathlib.Path(sys.executable).anchor
-    catalog = DataCatalog(path=root, fs_protocol="memory")
-    try:
-        catalog.fs.rm(root, recursive=True)
-    except FileNotFoundError:
-        pass
-    catalog.import_from_data_loader(loader=data_loader)
-    assert len(catalog.instruments()) == 1
+    catalog = DataCatalog(path="/root/", fs_protocol="memory")
+    catalog.fs = get_catalog_fs()
+    # assert len(catalog.instruments()) == 1
     assert len(catalog.quote_ticks()) == 100000
     return catalog
 
@@ -111,7 +132,7 @@ def backtest_config(catalog):
         instruments=[instrument],
         data_config=[
             BacktestDataConfig(
-                catalog_path="/",
+                catalog_path="/root",
                 catalog_fs_protocol="memory",
                 data_type=QuoteTick,
                 instrument_id=instrument.id.value,
@@ -221,7 +242,7 @@ def test_tokenization(backtest_config):
 def test_backtest_data_config_load(catalog):
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
     c = BacktestDataConfig(
-        catalog_path="/",
+        catalog_path="/root/",
         catalog_fs_protocol="memory",
         data_type=QuoteTick,
         instrument_id=instrument.id.value,
@@ -309,7 +330,7 @@ def test_backtest_against_example(catalog):
         ],
         data_config=[
             BacktestDataConfig(
-                catalog_path="/",
+                catalog_path="/root",
                 catalog_fs_protocol="memory",
                 data_type=QuoteTick,
                 instrument_id=AUDUSD.id.value,

@@ -208,8 +208,12 @@ def write_chunk(raw_file: RawFile, chunk, append=False, **parquet_dataset_kwargs
     # Load any existing data, drop dupes
     for cls, instruments in tables.items():
         for instrument_id, df in instruments.items():
-            partition_cols = get_partition_keys(cls=cls)
-            schema = get_schema(cls)
+            partition_cols = determine_partition_cols(cls=cls, instrument_id=instrument_id)
+            try:
+                schema = get_schema(cls)
+            except KeyError:
+                print(f"Can't find parquet schema for type: {cls}, skipping!")
+                continue
 
             path = f"{class_to_filename(cls)}.parquet"
             write_parquet(
@@ -295,6 +299,7 @@ def load(
         executor=executor,
         skip_already_processed=skip_already_processed,
     )
+    assert files, f"Could not find files for protocol={fs_protocol}, path={path}"
     results = process_files(
         files=files,
         reader=reader,
@@ -308,3 +313,15 @@ def load(
     for k, shape in results:
         file_shapes[k] += shape
     return dict(file_shapes)
+
+
+def determine_partition_cols(cls: type, instrument_id: str = None):
+    if cls in Instrument.__subclasses__():
+        # No partitioning for instrument tables
+        return None
+    partition_keys = get_partition_keys(cls)
+    if partition_keys:
+        return list(partition_keys)
+    elif instrument_id is not None:
+        return ["instrument_id"]
+    return

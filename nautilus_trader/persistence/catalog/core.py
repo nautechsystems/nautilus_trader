@@ -249,14 +249,11 @@ class DataCatalog:
         for col in mappings:
             df.loc[:, col] = df[col].map({v: k for k, v in mappings[col].items()})
 
-        # TODO (bm) - This should be stored as a dictionary (category) anyway.
-        if "instrument_id" in df.columns:
-            df = df.astype({"instrument_id": "category"})
         if df.empty and raise_on_empty:
             local_vars = dict(locals())
             kw = [
                 f"{k}={local_vars[k]}"
-                for k in ("filename", "filter_expr", "instrument_ids", "start", "end")
+                for k in ("path", "filter_expr", "instrument_ids", "start", "end")
             ]
             raise ValueError(f"Data empty for {kw}")
         return df
@@ -285,7 +282,7 @@ class DataCatalog:
         for ins_type in instrument_types:
             try:
                 df = self._query(
-                    path=f"{camel_to_snake_case(ins_type.__name__)}.parquet",
+                    path=f"data/{camel_to_snake_case(ins_type.__name__)}.parquet",
                     filter_expr=filter_expr,
                     instrument_ids=instrument_ids,
                     raise_on_empty=False,
@@ -314,7 +311,7 @@ class DataCatalog:
         self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
     ):
         df = self._query(
-            "instrument_status_update.parquet",
+            "data/instrument_status_update.parquet",
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
             **kwargs,
@@ -328,7 +325,7 @@ class DataCatalog:
 
     def trade_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
-            "trade_tick.parquet",
+            "data/trade_tick.parquet",
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
             **kwargs,
@@ -339,7 +336,7 @@ class DataCatalog:
 
     def quote_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
-            "quote_tick.parquet",
+            "data/quote_tick.parquet",
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
             **kwargs,
@@ -350,7 +347,7 @@ class DataCatalog:
 
     def order_book_deltas(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
-            "order_book_data.parquet",
+            "data/order_book_data.parquet",
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
             **kwargs,
@@ -361,7 +358,7 @@ class DataCatalog:
 
     def generic_data(self, cls, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
-            path=class_to_filename(cls),
+            path=f"data/{class_to_filename(cls)}",
             filter_expr=filter_expr,
             **kwargs,
         )
@@ -372,7 +369,7 @@ class DataCatalog:
         ]
 
     def query(self, cls, filter_expr=None, instrument_ids=None, as_nautilus=False, **kwargs):
-        path = class_to_filename(cls)
+        path = f"{class_to_filename(cls)}.parquet"
         if path.startswith(GENERIC_DATA_PREFIX):
             # Special handling for generic data
             return self.generic_data(
@@ -383,7 +380,7 @@ class DataCatalog:
                 **kwargs,
             )
         df = self._query(
-            path=path,
+            path=f"data/{path}",
             filter_expr=filter_expr,
             instrument_ids=instrument_ids,
             **kwargs,

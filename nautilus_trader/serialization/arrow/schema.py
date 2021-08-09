@@ -38,6 +38,8 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.instruments.betting import BettingInstrument
+
+# from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.model.orderbook.data import OrderBookData
 
 
@@ -92,6 +94,9 @@ NAUTILUS_PARQUET_SCHEMA = {
         },
         metadata={"type": "BettingInstrument"},
     ),
+    # CurrencySpot: pa.schema(
+    #
+    # ),
     OrderBookData: pa.schema(
         {
             "instrument_id": pa.string(),

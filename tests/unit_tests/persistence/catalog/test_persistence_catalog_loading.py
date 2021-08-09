@@ -15,19 +15,25 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.data.wrangling import TradeTickDataWrangler
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.loading import load
 from nautilus_trader.persistence.catalog.loading import nautilus_chunk_to_dataframes
 from nautilus_trader.persistence.catalog.loading import process_files
 from nautilus_trader.persistence.catalog.loading import read_and_clear_existing_data
+from nautilus_trader.persistence.catalog.loading import write_chunk
 from nautilus_trader.persistence.catalog.loading import write_parquet
 from nautilus_trader.persistence.catalog.parsers import CSVReader
 from nautilus_trader.persistence.catalog.parsers import ParquetReader
+from nautilus_trader.persistence.catalog.parsers import RawFile
 from nautilus_trader.persistence.catalog.scanner import scan
 from nautilus_trader.persistence.util import SyncExecutor
 from nautilus_trader.persistence.util import get_catalog_fs
 from nautilus_trader.persistence.util import get_catalog_root
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
+from tests.test_kit.stubs import TestStubs
 
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
@@ -172,6 +178,30 @@ def test_write_parquet_partitions():
     assert dataset.files[1].startswith("/root/sample.parquet/instrument_id=b/")
 
 
+def test_write_parquet_determine_partitions_writes_instrument_id():
+    # Arrange
+    fs = get_catalog_fs()
+    rf = RawFile(fs=fs, path="/")
+
+    # Act
+    quote = QuoteTick(
+        instrument_id=TestStubs.audusd_id(),
+        bid=Price.from_str("0.80"),
+        ask=Price.from_str("0.81"),
+        bid_size=Quantity.from_int(1000),
+        ask_size=Quantity.from_int(1000),
+        ts_event=0,
+        ts_init=0,
+    )
+    chunk = [quote]
+    write_chunk(raw_file=rf, chunk=chunk)
+
+    # Assert
+    files = fs.ls("/root/data/quote_tick.parquet")
+    expected = "/root/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
+    assert expected in files
+
+
 def test_read_and_clear_existing_data_single_partition():
     # Arrange
     fs = get_catalog_fs()
@@ -196,7 +226,7 @@ def test_read_and_clear_existing_data_single_partition():
     dataset = ds.dataset(str(root.joinpath("sample.parquet")), filesystem=fs)
 
     # Assert
-    expected = df[df["instrument_id"] == "a"].astype({"instrument_id": "category"})
+    expected = df[df["instrument_id"] == "a"]
     assert result.equals(expected)
     assert len(dataset.files) == 1
     assert dataset.files[0].startswith("/root/sample.parquet/instrument_id=b/")
@@ -309,7 +339,7 @@ def test_load_text_betfair(betfair_reader):
 
 
 def test_data_catalog_instruments_no_partition(loaded_catalog):
-    path = str(loaded_catalog.path / "betting_instrument.parquet/")
+    path = str(loaded_catalog.path / "data" / "betting_instrument.parquet/")
     dataset = pq.ParquetDataset(
         path_or_paths=path,
         filesystem=loaded_catalog.fs,
@@ -320,20 +350,20 @@ def test_data_catalog_instruments_no_partition(loaded_catalog):
 
 def test_data_catalog_metadata(loaded_catalog):
     assert ds.parquet_dataset(
-        f"{loaded_catalog.path}/trade_tick.parquet/_metadata", filesystem=loaded_catalog.fs
+        f"{loaded_catalog.path}/data/trade_tick.parquet/_metadata", filesystem=loaded_catalog.fs
     )
     assert ds.parquet_dataset(
-        f"{loaded_catalog.path}/trade_tick.parquet/_common_metadata", filesystem=loaded_catalog.fs
+        f"{loaded_catalog.path}/data/trade_tick.parquet/_common_metadata",
+        filesystem=loaded_catalog.fs,
     )
 
 
 def test_data_catalog_dataset_types(loaded_catalog):
     dataset = ds.dataset(
-        str(loaded_catalog.path / "trade_tick.parquet"), filesystem=loaded_catalog.fs
+        str(loaded_catalog.path / "data" / "trade_tick.parquet"), filesystem=loaded_catalog.fs
     )
     schema = {n: t.__class__.__name__ for n, t in zip(dataset.schema.names, dataset.schema.types)}
     expected = {
-        "instrument_id": "DictionaryType",
         "price": "DataType",
         "size": "DataType",
         "aggressor_side": "DictionaryType",
