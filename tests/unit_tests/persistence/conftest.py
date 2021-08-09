@@ -1,16 +1,12 @@
 import inspect
 import os
 import sys
-from functools import partial
 
 import fsspec.implementations.memory
-import orjson
 import pandas as pd
 import pytest
 
-from nautilus_trader.adapters.betfair.parsing import on_market_update
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
 from nautilus_trader.data.wrangling import BarDataWrangler
 from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.model.data.bar import BarSpecification
@@ -19,13 +15,13 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.core import DataCatalog
-from nautilus_trader.persistence.catalog.loading import load
-from nautilus_trader.persistence.catalog.loading import process_files
-from nautilus_trader.persistence.catalog.metadata import load_processed_raw_files
-from nautilus_trader.persistence.catalog.parsers import TextReader
-from nautilus_trader.persistence.catalog.scanner import scan
+from nautilus_trader.persistence.backtest.loading import load
+from nautilus_trader.persistence.backtest.loading import process_files
+from nautilus_trader.persistence.backtest.metadata import load_processed_raw_files
+from nautilus_trader.persistence.backtest.scanner import scan
+from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.util import get_catalog_fs
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
@@ -106,20 +102,12 @@ def parse_json_bytes(data):
 
 
 def parse_betfair(line, instrument_provider):
-    yield from on_market_update(instrument_provider=instrument_provider, update=orjson.loads(line))
+    return BetfairTestStubs.betfair_reader()(instrument_provider)
 
 
 @pytest.fixture()
 def betfair_reader():
-    def inner(instrument_provider):
-        reader = TextReader(
-            line_parser=partial(parse_betfair, instrument_provider=instrument_provider),
-            instrument_provider=instrument_provider,
-            instrument_provider_update=historical_instrument_provider_loader,
-        )
-        return reader
-
-    return inner
+    return BetfairTestStubs.betfair_reader()
 
 
 @pytest.fixture()

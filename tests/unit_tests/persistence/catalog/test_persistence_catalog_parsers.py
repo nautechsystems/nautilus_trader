@@ -1,17 +1,16 @@
 import pathlib
 import sys
-from functools import partial
 from typing import Callable
 
 import fsspec.implementations.local
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
-from nautilus_trader.persistence.catalog.parsers import CSVReader
-from nautilus_trader.persistence.catalog.parsers import RawFile
-from nautilus_trader.persistence.catalog.parsers import TextReader
-from nautilus_trader.persistence.catalog.scanner import scan
+from nautilus_trader.persistence.backtest.parsers import CSVReader
+from nautilus_trader.persistence.backtest.parsers import RawFile
+from nautilus_trader.persistence.backtest.parsers import TextReader
+from nautilus_trader.persistence.backtest.scanner import scan
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 
 
@@ -109,12 +108,7 @@ def test_csv_quoter_parser(glob, parser, expected):
 )
 def test_byte_parser(glob, parser: Callable, expected):
     provider = BetfairInstrumentProvider.from_instruments([])
-    reader = TextReader(
-        line_parser=partial(parser, instrument_provider=provider),
-        instrument_provider=provider,
-        instrument_provider_update=historical_instrument_provider_loader,
-    )
-
+    reader = BetfairTestStubs.betfair_reader()(provider)
     files = scan(path=TEST_DATA_DIR, glob_pattern=glob)
     results = {}
     for f in files:

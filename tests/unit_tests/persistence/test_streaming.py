@@ -1,4 +1,7 @@
 import pathlib
+import sys
+
+import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -11,6 +14,9 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.persistence.streaming import read_feather
 from nautilus_trader.persistence.util import get_catalog_fs
+
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 
 
 def test_feather_writer(loaded_catalog):

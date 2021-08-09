@@ -19,8 +19,8 @@ from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.loading import write_chunk
-from nautilus_trader.persistence.catalog.parsers import RawFile
+from nautilus_trader.persistence.backtest.loading import write_chunk
+from nautilus_trader.persistence.backtest.parsers import RawFile
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
 

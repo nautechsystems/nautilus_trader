@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from nautilus_trader.persistence.catalog.scanner import scan
+from nautilus_trader.persistence.backtest.scanner import scan
 from tests.test_kit import PACKAGE_ROOT
 
 
@@ -42,7 +42,7 @@ def test_scan_file_filter():
     assert len(files) == 3
 
 
-@patch("nautilus_trader.persistence.catalog.scanner.load_processed_raw_files")
+@patch("nautilus_trader.persistence.backtest.scanner.load_processed_raw_files")
 def test_scan_processed(mock_load_processed_raw_files):
     mock_load_processed_raw_files.return_value = [
         TEST_DATA_DIR + "/truefx-audusd-ticks.csv",

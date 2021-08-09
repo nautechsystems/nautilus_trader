@@ -30,10 +30,10 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.core import DataCatalog
-from nautilus_trader.persistence.catalog.loading import load
-from nautilus_trader.persistence.catalog.metadata import load_processed_raw_files
-from nautilus_trader.persistence.catalog.parsers import CSVReader
+from nautilus_trader.persistence.backtest.loading import load
+from nautilus_trader.persistence.backtest.metadata import load_processed_raw_files
+from nautilus_trader.persistence.backtest.parsers import CSVReader
+from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.util import get_catalog_fs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
@@ -48,7 +48,7 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broke
 
 @pytest.fixture(autouse=True, scope="function")
 def nautilus_dir():
-    os.environ["NAUTILUS_DATA"] = "memory://root/"
+    os.environ["NAUTILUS_DATA"] = "memory:///root/"
 
 
 @pytest.fixture(autouse=True, scope="function")

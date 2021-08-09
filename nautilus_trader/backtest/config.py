@@ -21,7 +21,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.persistence.catalog.core import DataCatalog
+from nautilus_trader.persistence.catalog import DataCatalog
 
 
 PARTIAL_SUFFIX = "Partial-"

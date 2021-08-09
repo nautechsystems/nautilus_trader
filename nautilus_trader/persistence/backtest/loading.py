@@ -27,13 +27,13 @@ from tqdm import tqdm
 
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.persistence.catalog.core import DataCatalog
-from nautilus_trader.persistence.catalog.metadata import save_processed_raw_files
-from nautilus_trader.persistence.catalog.metadata import write_mappings
-from nautilus_trader.persistence.catalog.parsers import ByteReader
-from nautilus_trader.persistence.catalog.parsers import Reader
-from nautilus_trader.persistence.catalog.scanner import RawFile
-from nautilus_trader.persistence.catalog.scanner import scan
+from nautilus_trader.persistence.backtest.metadata import save_processed_raw_files
+from nautilus_trader.persistence.backtest.metadata import write_mappings
+from nautilus_trader.persistence.backtest.parsers import ByteReader
+from nautilus_trader.persistence.backtest.parsers import RawFile
+from nautilus_trader.persistence.backtest.parsers import Reader
+from nautilus_trader.persistence.backtest.scanner import scan
+from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.util import executor_queue_process
 from nautilus_trader.persistence.util import get_catalog_fs
 from nautilus_trader.persistence.util import get_catalog_root
@@ -63,9 +63,9 @@ def parse_raw_file(f: RawFile, reader: ByteReader, instrument_provider=None):
     yield {"raw_file": f, "chunk": None}
 
 
-def nautilus_chunk_to_dataframes(
+def nautilus_chunk_to_dataframes(  # noqa: C901
     chunk: Optional[List[object]],
-) -> Dict[type, dict[str, pd.DataFrame]]:
+) -> Dict[type, Dict[str, pd.DataFrame]]:
     """
     Split a chunk (list of nautilus objects) into a dict of their respective tables
     """
@@ -95,6 +95,8 @@ def nautilus_chunk_to_dataframes(
                 continue
             df = pd.DataFrame(data)
             df = df.sort_values("ts_init")
+            if "instrument_id" in df.columns:
+                df = df.astype({"instrument_id": "category"})
             tables[cls][ins_id] = df
     return tables
 

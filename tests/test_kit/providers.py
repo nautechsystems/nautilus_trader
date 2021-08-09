@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import bz2
 import os
 from decimal import Decimal
 from typing import List
@@ -224,36 +223,6 @@ class TestDataProvider:
             for data in orjson.loads(open(PACKAGE_ROOT + "/data/L3_feed.json").read())
             for msg in parser(data)
         ]
-
-    @staticmethod
-    def betfair_feed_raw(market_id="1.166810222"):
-        return [
-            bz2.open(str(f)).read().strip().split(b"\n")
-            for f in TestDataProvider.betfair_files()
-            if market_id in str(f)
-        ]
-
-    # @staticmethod
-    # def betfair_feed_parsed(market_id="1.166564490", folder="data"):
-    #     instrument_provider = BetfairInstrumentProvider.from_instruments([])
-    #     parser = TextReader(
-    #         parser=lambda x, state: on_market_update(
-    #             instrument_provider=instrument_provider, update=orjson.loads(x)
-    #         ),
-    #         instrument_provider_update=historical_instrument_provider_loader,
-    #     )
-    # loader = DataLoader(
-    #     path=f"{PACKAGE_ROOT}/{folder}",
-    #     parser=parser,
-    #     glob_pattern=f"{market_id}*",
-    #     instrument_provider=instrument_provider,
-    # )
-    # data = sum(loader.run(), list())
-    # return data
-
-    @staticmethod
-    def betfair_trade_ticks():
-        return [msg["trade"] for msg in TestDataProvider.l2_feed() if msg.get("op") == "trade"]
 
 
 class TestInstrumentProvider:

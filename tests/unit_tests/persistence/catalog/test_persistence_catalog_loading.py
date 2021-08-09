@@ -18,16 +18,16 @@ from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.loading import load
-from nautilus_trader.persistence.catalog.loading import nautilus_chunk_to_dataframes
-from nautilus_trader.persistence.catalog.loading import process_files
-from nautilus_trader.persistence.catalog.loading import read_and_clear_existing_data
-from nautilus_trader.persistence.catalog.loading import write_chunk
-from nautilus_trader.persistence.catalog.loading import write_parquet
-from nautilus_trader.persistence.catalog.parsers import CSVReader
-from nautilus_trader.persistence.catalog.parsers import ParquetReader
-from nautilus_trader.persistence.catalog.parsers import RawFile
-from nautilus_trader.persistence.catalog.scanner import scan
+from nautilus_trader.persistence.backtest.loading import load
+from nautilus_trader.persistence.backtest.loading import nautilus_chunk_to_dataframes
+from nautilus_trader.persistence.backtest.loading import process_files
+from nautilus_trader.persistence.backtest.loading import read_and_clear_existing_data
+from nautilus_trader.persistence.backtest.loading import write_chunk
+from nautilus_trader.persistence.backtest.loading import write_parquet
+from nautilus_trader.persistence.backtest.parsers import CSVReader
+from nautilus_trader.persistence.backtest.parsers import ParquetReader
+from nautilus_trader.persistence.backtest.parsers import RawFile
+from nautilus_trader.persistence.backtest.scanner import scan
 from nautilus_trader.persistence.util import SyncExecutor
 from nautilus_trader.persistence.util import get_catalog_fs
 from nautilus_trader.persistence.util import get_catalog_root
@@ -272,7 +272,7 @@ def test_process_files_csv(executor, get_parser):
     assert result == expected
 
 
-@patch("nautilus_trader.persistence.catalog.loading.tqdm")
+@patch("nautilus_trader.persistence.backtest.loading.tqdm")
 def test_load_progress(mock_tqdm: MagicMock, executor, get_parser):
     # Arrange
     files = scan(path=TEST_DATA_DIR, glob_pattern="truefx*.csv", chunk_size=1_000_000)

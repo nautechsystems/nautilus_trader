@@ -20,8 +20,8 @@ from typing import Callable, List
 import fsspec
 from tqdm import tqdm
 
-from nautilus_trader.persistence.catalog.metadata import load_processed_raw_files
-from nautilus_trader.persistence.catalog.parsers import RawFile
+from nautilus_trader.persistence.backtest.metadata import load_processed_raw_files
+from nautilus_trader.persistence.backtest.parsers import RawFile
 from nautilus_trader.serialization.arrow.util import identity
 
 
