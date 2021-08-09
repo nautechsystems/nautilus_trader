@@ -215,7 +215,7 @@ class DataCatalog:
 
     def _query(
         self,
-        filename,
+        path,
         filter_expr=None,
         instrument_ids=None,
         start=None,
@@ -235,7 +235,7 @@ class DataCatalog:
         if end is not None:
             filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
 
-        full_path = str(self.path.joinpath(filename))
+        full_path = str(self.path.joinpath(path))
         if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
             if raise_on_empty:
                 raise FileNotFoundError
@@ -285,7 +285,7 @@ class DataCatalog:
         for ins_type in instrument_types:
             try:
                 df = self._query(
-                    filename=f"{camel_to_snake_case(ins_type.__name__)}.parquet",
+                    path=f"{camel_to_snake_case(ins_type.__name__)}.parquet",
                     filter_expr=filter_expr,
                     instrument_ids=instrument_ids,
                     raise_on_empty=False,
@@ -361,7 +361,7 @@ class DataCatalog:
 
     def generic_data(self, cls, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
-            filename=class_to_filename(cls),
+            path=class_to_filename(cls),
             filter_expr=filter_expr,
             **kwargs,
         )
@@ -372,8 +372,8 @@ class DataCatalog:
         ]
 
     def query(self, cls, filter_expr=None, instrument_ids=None, as_nautilus=False, **kwargs):
-        name = class_to_filename(cls)
-        if name.startswith(GENERIC_DATA_PREFIX):
+        path = class_to_filename(cls)
+        if path.startswith(GENERIC_DATA_PREFIX):
             # Special handling for generic data
             return self.generic_data(
                 cls=cls,
@@ -383,7 +383,7 @@ class DataCatalog:
                 **kwargs,
             )
         df = self._query(
-            filename=name,
+            path=path,
             filter_expr=filter_expr,
             instrument_ids=instrument_ids,
             **kwargs,

@@ -17,6 +17,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from nautilus_trader.core.message import Event
 from nautilus_trader.model.data.base import Data
 
 
@@ -61,11 +62,11 @@ def is_nautilus_class(cls):
         # This object is defined outside of nautilus, definitely custom
         return False
     else:
-        is_data_subclass = issubclass(cls, Data)
+        is_data_or_event = issubclass(cls, (Data, Event))
         is_nautilus_builtin = any(
             (cls.__module__.startswith(p) for p in ("nautilus_trader.model",))
         )
-        return is_data_subclass and is_nautilus_builtin
+        return is_data_or_event and is_nautilus_builtin
 
 
 def check_partition_columns(

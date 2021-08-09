@@ -28,6 +28,7 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.serialization.arrow.core import _schemas
 from nautilus_trader.serialization.arrow.core import _serialize
+from nautilus_trader.serialization.arrow.util import is_nautilus_class
 from nautilus_trader.serialization.arrow.util import list_dicts_to_dict_lists
 
 
@@ -71,13 +72,9 @@ class FeatherWriter:
         self.flush_interval = flush_interval or datetime.timedelta(milliseconds=1000)
         self._last_flush = datetime.datetime(1970, 1, 1)
 
-    @staticmethod
-    def is_nautilus_builtin(cls):
-        return cls.__module__.startswith("nautilus_trader.model.")
-
     def _create_writers(self):
         for cls in self._schemas:
-            prefix = "genericdata_" if not self.is_nautilus_builtin(cls) else ""
+            prefix = "genericdata_" if not is_nautilus_class(cls) else ""
             schema = self._schemas[cls]
             f = self.fs.open(str(self.path.joinpath(f"{prefix}{cls.__name__}.feather")), "wb")
             self._files[cls] = f

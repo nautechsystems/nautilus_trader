@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
 from nautilus_trader.serialization.arrow.util import class_to_filename
@@ -14,6 +15,7 @@ from nautilus_trader.serialization.arrow.util import is_nautilus_class
     [
         (OrderBookData, True),
         (TradeTick, True),
+        (OrderAccepted, True),
         (pd.DataFrame, False),
     ],
 )

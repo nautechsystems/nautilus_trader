@@ -14,8 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 import copy
+import os
 import sys
 
+import fsspec
 import pytest
 
 from nautilus_trader.common.clock import TestClock
@@ -48,11 +50,24 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
+def _cleanup_fs():
+    os.environ["NAUTILUS_DATA"] = "memory://root/"
+    fs = get_catalog_fs()
+    assert isinstance(fs, fsspec.implementations.memory.MemoryFileSystem)
+    try:
+        fs.rm("/", recursive=True)
+    except FileNotFoundError:
+        pass
+    fs.mkdir("/root/data")
+    return fs
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="does not run on windows")
 class TestParquetSerializer:
     def setup(self):
-        self.catalog = DataCatalog(path="/", fs_protocol="memory")
-        self.catalog.fs = get_catalog_fs()
+        fs = _cleanup_fs()
+        self.catalog = DataCatalog(path="/root", fs_protocol="memory")
+        self.catalog.fs = fs
         self.raw_file = RawFile(fs=self.catalog.fs, path="/")  # placeholder only
         self.order_factory = OrderFactory(
             trader_id=TraderId("T-001"),
@@ -247,12 +262,12 @@ class TestParquetSerializer:
         cls = type(event)
 
         serialized = ParquetSerializer.serialize(event)
-        deserialized = ParquetSerializer.deserialize(cls=cls, chunk=serialized)
+        deserialized = ParquetSerializer.deserialize(cls=cls, chunk=[serialized])
 
         # Assert
         assert deserialized == [event]
         write_chunk(raw_file=self.raw_file, chunk=[event])
-        df = self.catalog._query(class_to_filename(cls))
+        df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
         assert len(df) == 1
 
     @pytest.mark.parametrize(
@@ -271,12 +286,12 @@ class TestParquetSerializer:
         cls = type(event)
 
         serialized = ParquetSerializer.serialize(event)
-        deserialized = ParquetSerializer.deserialize(cls=cls, chunk=serialized)
+        deserialized = ParquetSerializer.deserialize(cls=cls, chunk=[serialized])
 
         # Assert
         assert deserialized == [event]
         write_chunk(raw_file=self.raw_file, chunk=[event])
-        df = self.catalog._query(class_to_filename(cls))
+        df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
         assert len(df) == 1
 
     @pytest.mark.parametrize(
@@ -298,7 +313,7 @@ class TestParquetSerializer:
         # Assert
         # assert deserialized == [event]
         write_chunk(raw_file=self.raw_file, chunk=[event])
-        df = self.catalog._query(class_to_filename(cls))
+        df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
         assert len(df) == 1
 
     @pytest.mark.parametrize(
@@ -337,7 +352,7 @@ class TestParquetSerializer:
         # Assert
         # assert deserialized == [event]
         write_chunk(raw_file=self.raw_file, chunk=[event])
-        df = self.catalog._query(class_to_filename(cls))
+        df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
         assert len(df) == 1
 
     @pytest.mark.parametrize(
@@ -388,5 +403,5 @@ class TestParquetSerializer:
         # Assert
         # assert deserialized == [event]
         write_chunk(raw_file=self.raw_file, chunk=[event])
-        df = self.catalog._query(class_to_filename(cls))
+        df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
         assert len(df) == 1

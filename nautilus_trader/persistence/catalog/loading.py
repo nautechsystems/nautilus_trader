@@ -174,7 +174,7 @@ def read_and_clear_existing_data(
         catalog = DataCatalog(path=str(root))
         catalog.fs = fs
         existing = catalog._query(
-            filename=path,
+            path=path,
             instrument_ids=instrument_id,
             ts_column=TIMESTAMP_COLUMN,
             raise_on_empty=False,
