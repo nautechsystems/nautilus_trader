@@ -314,7 +314,7 @@ cdef class TradeTick(Tick):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> TradeTick:
         """
         Return a trade tick from the given dict values.
 
