@@ -220,10 +220,10 @@ cdef class BarBuilder:
 
         cdef Bar bar = Bar(
             bar_type=self._bar_type,
-            open_price=self._open,
-            high_price=self._high,
-            low_price=self._low,
-            close_price=self._close,
+            open=self._open,
+            high=self._high,
+            low=self._low,
+            close=self._close,
             volume=Quantity(self.volume, self.size_precision),
             ts_event=ts_event,  # TODO: Hardcoded identical for now...
             ts_init=ts_event,
