@@ -118,7 +118,6 @@ cdef class ExecutionClient(Component):
 
         if config is None:
             config = {}
-
         super().__init__(
             clock=clock,
             logger=logger,
@@ -158,6 +157,8 @@ cdef class ExecutionClient(Component):
         Condition.none(self._account, "_account")  # Account should not be registered twice
 
         self._account = account
+
+        self._log.info(f"Registered {account}.")
 
     cpdef Account get_account(self):
         """
@@ -226,6 +227,7 @@ cdef class ExecutionClient(Component):
         """
         # Generate event
         cdef AccountState account_state = AccountState(
+            client_id=self.id,
             account_id=self.account_id,
             account_type=self.account_type,
             base_currency=self.base_currency,

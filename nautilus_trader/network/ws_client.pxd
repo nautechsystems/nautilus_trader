@@ -13,34 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-
-import pytest
-
-from nautilus_trader.network.socket import SocketClient
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.common.logging cimport LoggerAdapter
 
 
-@pytest.mark.skip(reason="WIP")
-@pytest.mark.asyncio
-async def test_socket_base(socket_server, event_loop):
-    messages = []
+cdef class WebSocketClient:
+    cdef object _loop
+    cdef object _handler
+    cdef LoggerAdapter _log
+    cdef dict _ws_connect_kwargs
+    cdef object _ws
+    cdef object _session
+    cdef list _tasks
+    cdef bint _running
+    cdef bint _stopped
+    cdef bint _trigger_stop
 
-    def handler(raw):
-        messages.append(raw)
-        if len(messages) > 5:
-            client.stop()
-
-    host, port = socket_server.server_address
-    client = SocketClient(
-        host=host,
-        port=port,
-        loop=event_loop,
-        handler=handler,
-        logger=TestStubs.logger(),
-        ssl=False,
-    )
-    await client.start()
-    assert messages == [b"hello"] * 6
-    await asyncio.sleep(1)
-    client.stop()
+    cdef readonly str ws_url
+    """The client URL.\n\n:returns: `str`"""
+    cdef readonly bint is_connected
+    """If the client is connected.\n\n:returns: `bool`"""

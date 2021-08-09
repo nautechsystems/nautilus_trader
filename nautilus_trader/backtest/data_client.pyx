@@ -32,6 +32,7 @@ from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
+from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 
 
@@ -115,6 +116,7 @@ cdef class BacktestDataClient(DataClient):
             self._log.error(f"Cannot subscribe to {data_type} (not connected).")
             return
 
+        self._feeds_generic_data[data_type] = None
         # Do nothing else for backtest
 
     cpdef void unsubscribe(self, DataType data_type) except *:
@@ -133,6 +135,7 @@ cdef class BacktestDataClient(DataClient):
             self._log.error(f"Cannot unsubscribe from {data_type} (not connected).")
             return
 
+        self._feeds_generic_data.pop(data_type, None)
         # Do nothing else for backtest
 
 # -- REQUESTS --------------------------------------------------------------------------------------
@@ -229,6 +232,9 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        cdef Instrument instrument
+        for instrument in self._cache.instruments(Venue(self.id.value)):
+            self._feeds_instrument.add(instrument.id)
         # Do nothing else for backtest
 
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
@@ -250,6 +256,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument.add(instrument_id)
         # Do nothing else for backtest
 
     cpdef void subscribe_order_book_snapshots(
@@ -283,6 +290,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_order_book_snapshot[instrument_id] = None
         # Do nothing else for backtest
 
     cpdef void subscribe_order_book_deltas(
@@ -313,6 +321,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_order_book_delta[instrument_id] = None
         # Do nothing else for backtest
 
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
@@ -334,6 +343,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_quote_tick[instrument_id] = None
         # Do nothing else for backtest
 
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
@@ -355,6 +365,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_trade_tick[instrument_id] = None
         # Do nothing else for backtest
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
@@ -376,10 +387,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
-        self._log.error(
-            f"Cannot subscribe to externally aggregated bars "
-            f"(backtesting only supports internal aggregation at this stage).",
-        )
+        self._feeds_bar[bar_type] = None
 
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
         """
@@ -400,6 +408,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument_status_update[instrument_id] = None
         # Do nothing else for backtest
 
     cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
@@ -421,6 +430,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument_close_price[instrument_id] = None
         # Do nothing else for backtest
 
     cpdef void unsubscribe_instruments(self) except *:
@@ -434,6 +444,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument.clear()
         # Do nothing else for backtest
 
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
@@ -455,6 +466,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument.discard(instrument_id)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
@@ -476,6 +488,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_order_book_delta.pop(instrument_id, None)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
@@ -497,6 +510,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_order_book_snapshot.pop(instrument_id, None)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
@@ -518,6 +532,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_quote_tick.pop(instrument_id, None)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
@@ -539,6 +554,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_trade_tick.pop(instrument_id, None)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
@@ -564,6 +580,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             f"(backtesting only supports internal aggregation at this stage).",
         )
 
+        self._feeds_bar.pop(bar_type, None)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
@@ -585,6 +602,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument_status_update.pop(instrument_id, None)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
@@ -606,6 +624,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument_close_price.pop(instrument_id, None)
         # Do nothing else for backtest
 
 # -- REQUESTS --------------------------------------------------------------------------------------

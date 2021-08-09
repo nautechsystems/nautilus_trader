@@ -36,6 +36,7 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = "^3.7.9"
 cython = "^3.0.0a9"
+aiohttp = "^3.7.4"
 dask = "^2021.7.2"
 empyrical = "^0.5.5"
 fsspec = "^2021.7.0"
@@ -54,7 +55,7 @@ uvloop = { version = "^0.15.3", markers = "sys_platform != 'win32'" }
 bokeh = { version = "^2.3.2", optional = true }
 betfairlightweight = {extras = ["speed"], version = "^2.12.1", optional = true}
 distributed = { version = "^2021.7.1", optional = true }
-ccxt = { version = "^1.54.33", optional = true }
+ccxt = { version = "^1.54.60", optional = true }
 ib_insync = { version = "^0.9.66", optional = true }
 
 [tool.poetry.dev-dependencies]
@@ -62,7 +63,7 @@ ib_insync = { version = "^0.9.66", optional = true }
 # https://github.com/cython/cython/issues/3515
 coverage = "4.5.4"  # Pinned at 4.5.4 due Cython 3.0.0a9
 nox = "^2021.6.12"
-pre-commit = "^2.13.0"
+pre-commit = "^2.14.0"
 pytest = "^6.2.4"
 pytest-asyncio = "^0.15.1"
 pytest-benchmark = "^3.4.1"

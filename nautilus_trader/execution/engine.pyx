@@ -49,6 +49,7 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.time cimport unix_timestamp_ms
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
@@ -122,7 +123,9 @@ cdef class ExecutionEngine(Component):
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]
         self._oms_types = {}         # type: dict[StrategyId, OMSType]
+        self._account_types = {}     # type: dict[ClientId, type]
         self._default_client = None  # type: Optional[ExecutionClient]
+
         self._pos_id_generator = PositionIdGenerator(
             trader_id=msgbus.trader_id,
             clock=clock,
@@ -262,12 +265,12 @@ cdef class ExecutionEngine(Component):
             if self._default_client is None:
                 self._default_client = client
                 self._log.info(
-                    f"Registered {client} BROKERAGE_MULTI_VENUE as default client."
+                    f"Registered ExecutionClient {client} BROKERAGE_MULTI_VENUE."
                 )
         else:
             self._routing_map[client.venue] = client
             self._log.info(
-                f"Registered {client} {VenueTypeParser.to_str(client.venue_type)}."
+                f"Registered ExecutionClient {client} {VenueTypeParser.to_str(client.venue_type)}."
             )
 
     cpdef void register_default_client(self, ExecutionClient client) except *:
@@ -288,8 +291,8 @@ cdef class ExecutionEngine(Component):
         self._default_client = client
 
         self._log.info(
-            f"Registered {client} "
-            f"{VenueTypeParser.to_str(client.venue_type)}  as default client.",
+            f"Registered default ExecutionClient {client} "
+            f"{VenueTypeParser.to_str(client.venue_type)}.",
         )
 
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *:
@@ -316,7 +319,7 @@ cdef class ExecutionEngine(Component):
         self._routing_map[venue] = client
 
         self._log.info(
-            f"Registered {client} {VenueTypeParser.to_str(client.venue_type)} "
+            f"Registered ExecutionClient {client} {VenueTypeParser.to_str(client.venue_type)} "
             f"for routing to {venue}."
         )
 
@@ -333,6 +336,39 @@ cdef class ExecutionEngine(Component):
         Condition.not_none(strategy, "strategy")
 
         self._oms_types[strategy.id] = strategy.oms_type
+
+        self._log.info(
+            f"Registered OMS.{OMSTypeParser.to_str(strategy.oms_type)} "
+            f"for TradingStrategy {strategy}.",
+        )
+
+    cpdef void register_account_type(self, ClientId client_id, type account_type) except *:
+        """
+        Register the given custom account type associated with the client ID.
+
+        Parameters
+        ----------
+        client_id : ClientId
+            The client identifier to associate with the custom account type.
+        account_type : type
+            The custom account type to register.
+
+        Raises
+        ------
+        ValueError
+            If account_type is not a subclass of `Account`.
+
+        """
+        Condition.not_none(client_id, "client_id")
+        Condition.not_none(account_type, "account_type")
+        Condition.true(issubclass(account_type, Account), "account_type was not a subclass of `Account`")
+
+        self._account_types[client_id] = account_type
+
+        self._log.info(
+            f"Registered account type {account_type.__name__} "
+            f"for ExecutionClient {client_id}.",
+        )
 
     cpdef void deregister_client(self, ExecutionClient client) except *:
         """
@@ -360,7 +396,7 @@ cdef class ExecutionEngine(Component):
         else:
             del self._routing_map[client.venue]
 
-        self._log.info(f"Deregistered {client}.")
+        self._log.info(f"Deregistered ExecutionClient {client}.")
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -550,12 +586,24 @@ cdef class ExecutionEngine(Component):
         cdef Account account = self._cache.account(event.account_id)
         if account is None:
             # Generate account
-            account = Account(event)
+            cls = self._account_types.get(event.client_id)
+            if cls is None:
+                account = Account.create_c(event)
+            else:
+                account = cls(event)
+
+            # Add to cache
             self._cache.add_account(account)
-            for client in self._clients.values():
-                if client.account_id == account.id and client.get_account() is None:
-                    client.register_account(account)
-            self._log.info(f"Initialized {account}")
+
+            # Register with client
+            client = self._clients.get(event.client_id)
+            if client is None:
+                self._log.error(
+                    f"Cannot register account: "
+                    f"no client found for {repr(event.client_id)}",
+                )
+            elif client.get_account() is None:
+                client.register_account(account)
         else:
             account.apply(event=event)
             self._cache.update_account(account)
@@ -571,8 +619,8 @@ cdef class ExecutionEngine(Component):
         cdef Order order = self._cache.order(event.client_order_id)
         if order is None:
             self._log.warning(
-                f"{repr(event.client_order_id)} was not found in the cache "
-                f"for {repr(event.venue_order_id)} to apply {event}."
+                f"Order with {repr(event.client_order_id)} "
+                f"not found in the cache to apply {event}."
             )
 
             # Search cache for ClientOrderId matching the VenueOrderId
@@ -590,15 +638,15 @@ cdef class ExecutionEngine(Component):
             if order is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
-                    f"order for {repr(client_order_id)} not found in the cache."
+                    f"{repr(event.client_order_id)} and {repr(event.venue_order_id)} "
+                    f"not found in the cache."
                 )
                 return  # Cannot process event further
 
             # Set the correct ClientOrderId for the event
             event.client_order_id = client_order_id
             self._log.info(
-                f"{repr(client_order_id)} was found in the cache and "
-                f"applying event to order with {repr(order.venue_order_id)}.",
+                f"Order with {repr(client_order_id)} was found in the cache.",
                 color=LogColor.GREEN,
             )
 

@@ -13,34 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-
-import pytest
-
-from nautilus_trader.network.socket import SocketClient
-from tests.test_kit.stubs import TestStubs
+from nautilus_trader.common.logging cimport LoggerAdapter
 
 
-@pytest.mark.skip(reason="WIP")
-@pytest.mark.asyncio
-async def test_socket_base(socket_server, event_loop):
-    messages = []
-
-    def handler(raw):
-        messages.append(raw)
-        if len(messages) > 5:
-            client.stop()
-
-    host, port = socket_server.server_address
-    client = SocketClient(
-        host=host,
-        port=port,
-        loop=event_loop,
-        handler=handler,
-        logger=TestStubs.logger(),
-        ssl=False,
-    )
-    await client.start()
-    assert messages == [b"hello"] * 6
-    await asyncio.sleep(1)
-    client.stop()
+cdef class HTTPClient:
+    cdef object _loop
+    cdef LoggerAdapter _log
+    cdef int _ttl_dns_cache
+    cdef object _session

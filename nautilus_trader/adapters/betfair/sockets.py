@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+import asyncio
 from typing import Callable
 
 from betfairlightweight import APIClient
@@ -45,11 +47,11 @@ class BetfairStreamClient(SocketClient):
         encoding=None,
     ):
         super().__init__(
-            loop=loop,
             host=host or HOST,
             port=port or PORT,
-            logger_adapter=logger_adapter,
-            message_handler=message_handler,
+            loop=loop or asyncio.get_event_loop(),
+            handler=message_handler,
+            logger=logger_adapter.get_logger(),
             crlf=crlf or CRLF,
             encoding=encoding or ENCODING,
         )
@@ -61,7 +63,7 @@ class BetfairStreamClient(SocketClient):
             self.client.session_token
         ), f"Must login to APIClient before calling connect on {self.__class__}"
         await super().connect()
-        self.loop.create_task(self.start())
+        self._loop.create_task(self.start())
 
     def new_unique_id(self) -> int:
         global _UNIQUE_ID

@@ -17,30 +17,29 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.network.socket import SocketClient
+from nautilus_trader.network.http_client import HTTPClient
 from tests.test_kit.stubs import TestStubs
+
+
+@pytest.fixture()
+async def client():
+    client = HTTPClient(
+        loop=asyncio.get_event_loop(),
+        logger=TestStubs.logger(),
+    )
+    await client.connect()
+    return client
 
 
 @pytest.mark.skip(reason="WIP")
 @pytest.mark.asyncio
-async def test_socket_base(socket_server, event_loop):
-    messages = []
+async def test_client_get(client):
+    resp = await client.get("https://httpbin.org/get")
+    assert len(resp) > 100
 
-    def handler(raw):
-        messages.append(raw)
-        if len(messages) > 5:
-            client.stop()
 
-    host, port = socket_server.server_address
-    client = SocketClient(
-        host=host,
-        port=port,
-        loop=event_loop,
-        handler=handler,
-        logger=TestStubs.logger(),
-        ssl=False,
-    )
-    await client.start()
-    assert messages == [b"hello"] * 6
-    await asyncio.sleep(1)
-    client.stop()
+@pytest.mark.skip(reason="WIP")
+@pytest.mark.asyncio
+async def test_client_post(client):
+    resp = await client.get("https://httpbin.org/get")
+    assert len(resp) > 100

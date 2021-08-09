@@ -141,7 +141,7 @@ class TestLiveExecutionEngine:
 
         # Wired up components
         self.exec_engine.register_client(self.client)
-        self.exec_engine.process(TestStubs.event_account_state())
+        self.exec_engine.process(TestStubs.event_cash_account_state())
 
         self.cache.add_instrument(AUDUSD_SIM)
 

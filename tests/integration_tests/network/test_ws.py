@@ -11,36 +11,34 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-# -------------------------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------------------------import asyncio
 
 import asyncio
 
 import pytest
 
-from nautilus_trader.network.socket import SocketClient
+from nautilus_trader.network.ws_client import WebSocketClient
 from tests.test_kit.stubs import TestStubs
 
 
 @pytest.mark.skip(reason="WIP")
 @pytest.mark.asyncio
-async def test_socket_base(socket_server, event_loop):
-    messages = []
+async def test_client_recv():
+    NUM_MESSAGES = 3
+    lines = []
 
-    def handler(raw):
-        messages.append(raw)
-        if len(messages) > 5:
-            client.stop()
+    def record(*args, **kwargs):
+        lines.append((args, kwargs))
 
-    host, port = socket_server.server_address
-    client = SocketClient(
-        host=host,
-        port=port,
-        loop=event_loop,
-        handler=handler,
+    client = WebSocketClient(
+        ws_url="ws://echo.websocket.org",
+        loop=asyncio.get_event_loop(),
+        handler=record,
         logger=TestStubs.logger(),
-        ssl=False,
     )
-    await client.start()
-    assert messages == [b"hello"] * 6
+    await client.connect()
+    for _ in range(NUM_MESSAGES):
+        await client.send(b"Hello")
     await asyncio.sleep(1)
-    client.stop()
+    await client.close()
+    assert len(lines) == NUM_MESSAGES

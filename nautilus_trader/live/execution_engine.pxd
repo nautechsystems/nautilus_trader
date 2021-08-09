@@ -23,6 +23,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
     cdef Queue _queue
 
     cdef readonly bint is_running
+    """If the execution engine is running.\n\n:returns: `bool`"""
 
     cpdef int qsize(self) except *
 

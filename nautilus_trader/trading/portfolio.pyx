@@ -31,6 +31,7 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
@@ -154,26 +155,6 @@ cdef class Portfolio(PortfolioFacade):
         self.initialized = False
 
 # -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef void register_account(self, Account account) except *:
-        """
-        Register the given account with the portfolio.
-
-        Parameters
-        ----------
-        account : Account
-            The account to register.
-
-        Raises
-        ------
-        KeyError
-            If the account is already registered with the portfolio.
-
-        """
-        Condition.not_none(account, "account")
-
-        account.register_portfolio(self)
-        self._log.debug(f"Registered account {account.id}.")
 
     cpdef void initialize_orders(self) except *:
         """
@@ -780,11 +761,6 @@ cdef class Portfolio(PortfolioFacade):
         self._log.info(f"{instrument_id} net_position={net_position}")
 
     cdef bint _update_initial_margin(self, Venue venue, list orders_working) except *:
-        # Filter only passive orders
-        cdef list passive_orders_working = [o for o in orders_working if o.is_passive]
-        if not passive_orders_working:
-            return True  # Nothing to calculate
-
         cdef Account account = self._cache.account_for_venue(venue)
         if account is None:
             self._log.error(
@@ -792,6 +768,14 @@ cdef class Portfolio(PortfolioFacade):
                 f"no account registered for {venue}."
             )
             return False  # Cannot calculate
+
+        if account.type != AccountType.MARGIN:
+            return True  # Nothing to calculate
+
+        # Filter only passive orders
+        cdef list passive_orders_working = [o for o in orders_working if o.is_passive]
+        if not passive_orders_working:
+            return True  # Nothing to calculate
 
         cdef dict margins = {}  # type: dict[Currency, Decimal]
 
@@ -809,7 +793,8 @@ cdef class Portfolio(PortfolioFacade):
                 return False  # Cannot calculate
 
             # Calculate margin
-            margin = instrument.calculate_initial_margin(
+            margin = account.calculate_initial_margin(
+                instrument,
                 order.quantity,
                 order.price,
             )
@@ -849,9 +834,6 @@ cdef class Portfolio(PortfolioFacade):
         return True
 
     cdef bint _update_maint_margin(self, Venue venue, list positions_open) except *:
-        if not positions_open:
-            return True  # Nothing to calculate
-
         cdef Account account = self._cache.account_for_venue(venue)
         if account is None:
             self._log.error(
@@ -859,6 +841,9 @@ cdef class Portfolio(PortfolioFacade):
                 f"no account registered for {venue}."
             )
             return False  # Cannot calculate
+
+        if account.type != AccountType.MARGIN or not positions_open:
+            return True  # Nothing to calculate
 
         cdef dict margins = {}  # type: dict[Currency, Decimal]
 
@@ -886,7 +871,8 @@ cdef class Portfolio(PortfolioFacade):
                 return False  # Cannot calculate
 
             # Calculate margin
-            margin = instrument.calculate_maint_margin(
+            margin = account.calculate_maint_margin(
+                instrument,
                 position.side,
                 position.quantity,
                 last,

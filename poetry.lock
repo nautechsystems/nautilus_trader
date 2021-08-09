@@ -1,20 +1,20 @@
 [[package]]
 name = "aiodns"
-version = "2.0.0"
+version = "3.0.0"
 description = "Simple DNS resolver for asyncio"
 category = "main"
 optional = true
 python-versions = "*"
 
 [package.dependencies]
-pycares = ">=3.0.0"
+pycares = ">=4.0.0"
 
 [[package]]
 name = "aiohttp"
 version = "3.7.4.post0"
 description = "Async http client/server framework (asyncio)"
 category = "main"
-optional = true
+optional = false
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -55,7 +55,7 @@ name = "async-timeout"
 version = "3.0.1"
 description = "Timeout context manager for asyncio programs"
 category = "main"
-optional = true
+optional = false
 python-versions = ">=3.5.3"
 
 [[package]]
@@ -142,14 +142,14 @@ typing_extensions = ">=3.7.4"
 
 [[package]]
 name = "ccxt"
-version = "1.54.58"
+version = "1.54.62"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = true
 python-versions = "*"
 
 [package.dependencies]
-aiodns = {version = ">=1.1.1,<2.1", markers = "python_version >= \"3.5.2\""}
+aiodns = {version = ">=1.1.1", markers = "python_version >= \"3.5.2\""}
 aiohttp = {version = ">=3.7.4,<3.8", markers = "python_version >= \"3.5.2\""}
 certifi = ">=2018.1.18"
 cryptography = ">=2.6.1"
@@ -565,7 +565,7 @@ name = "multidict"
 version = "5.1.0"
 description = "multidict implementation"
 category = "main"
-optional = true
+optional = false
 python-versions = ">=3.6"
 
 [[package]]
@@ -1254,7 +1254,7 @@ name = "yarl"
 version = "1.6.3"
 description = "Yet another URL library"
 category = "main"
-optional = true
+optional = false
 python-versions = ">=3.6"
 
 [package.dependencies]
@@ -1295,12 +1295,12 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "7dda9fe321babbfdc3d0ce274df56f533bd53bdf29d3b321d66e59eb15dbe23c"
+content-hash = "54e2e2e63128da90b57c86325e7f3389686af0022d8a3fade89b403f42874757"
 
 [metadata.files]
 aiodns = [
-    {file = "aiodns-2.0.0-py2.py3-none-any.whl", hash = "sha256:aaa5ac584f40fe778013df0aa6544bf157799bd3f608364b451840ed2c8688de"},
-    {file = "aiodns-2.0.0.tar.gz", hash = "sha256:815fdef4607474295d68da46978a54481dd1e7be153c7d60f9e72773cd38d77d"},
+    {file = "aiodns-3.0.0-py3-none-any.whl", hash = "sha256:2b19bc5f97e5c936638d28e665923c093d8af2bf3aa88d35c43417fa25d136a2"},
+    {file = "aiodns-3.0.0.tar.gz", hash = "sha256:946bdfabe743fceeeb093c8a010f5d1645f708a241be849e17edfb0e49e08cd6"},
 ]
 aiohttp = [
     {file = "aiohttp-3.7.4.post0-cp36-cp36m-macosx_10_14_x86_64.whl", hash = "sha256:3cf75f7cdc2397ed4442594b935a11ed5569961333d49b7539ea741be2cc79d5"},
@@ -1377,8 +1377,8 @@ bokeh = [
     {file = "bokeh-2.3.3.tar.gz", hash = "sha256:a5fdcc181835561447fcc5a371300973fce4114692d5853addec284d1cdeb677"},
 ]
 ccxt = [
-    {file = "ccxt-1.54.58-py2.py3-none-any.whl", hash = "sha256:ec95027a95de1fba2406241c97f5033c27089e4916f3b22157b41f11f8082152"},
-    {file = "ccxt-1.54.58.tar.gz", hash = "sha256:fb664c91bffcf3db2081007db9fde46c01c53d4e4ed0e4ad2bb58795ebba962e"},
+    {file = "ccxt-1.54.62-py2.py3-none-any.whl", hash = "sha256:6cb89a1de47abcd506a066164c50e6bc6a865aec9fd2664f0e6df4d6a773e43a"},
+    {file = "ccxt-1.54.62.tar.gz", hash = "sha256:1dadf47226c564ca736971818db528a9c9297b519f0d8d40a13b5e45fc9c31ad"},
 ]
 certifi = [
     {file = "certifi-2021.5.30-py2.py3-none-any.whl", hash = "sha256:50b1e4f8446b06f41be7dd6338db18e0990601dce795c2b1686458aa7e8fa7d8"},

@@ -32,17 +32,14 @@ cdef class DataClient(Component):
     cdef Cache _cache
     cdef dict _config
 
-    cdef set _subscribed_instruments
-    cdef dict _subscribed_order_books
-    cdef dict _subscribed_quote_ticks
-    cdef dict _subscribed_trade_ticks
-    cdef dict _subscribed_bars
-    cdef object _update_instruments_task
+    cdef dict _feeds_generic_data
 
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef list subscribed_generic_data(self)
 
     cpdef void subscribe(self, DataType data_type) except *
     cpdef void unsubscribe(self, DataType data_type) except *
@@ -58,10 +55,29 @@ cdef class DataClient(Component):
 
 
 cdef class MarketDataClient(DataClient):
+    cdef dict _feeds_order_book_delta
+    cdef dict _feeds_order_book_snapshot
+    cdef dict _feeds_quote_tick
+    cdef dict _feeds_trade_tick
+    cdef dict _feeds_bar
+    cdef dict _feeds_instrument_status_update
+    cdef dict _feeds_instrument_close_price
+
+    cdef set _feeds_instrument
+    cdef object _update_instruments_task
 
     cpdef list unavailable_methods(self)
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef list subscribed_instruments(self)
+    cpdef list subscribed_order_book_deltas(self)
+    cpdef list subscribed_order_book_snapshots(self)
+    cpdef list subscribed_quote_ticks(self)
+    cpdef list subscribed_trade_ticks(self)
+    cpdef list subscribed_bars(self)
+    cpdef list subscribed_instrument_status_updates(self)
+    cpdef list subscribed_instrument_close_prices(self)
 
     cpdef void subscribe_instruments(self) except *
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *

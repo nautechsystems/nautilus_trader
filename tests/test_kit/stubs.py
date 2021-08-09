@@ -51,6 +51,7 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
@@ -68,6 +69,7 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveDataEngine
@@ -318,6 +320,16 @@ class TestStubs:
         return StrategyId("S-001")
 
     @staticmethod
+    def cash_account():
+        return Account.create(TestStubs.event_cash_account_state(account_id=TestStubs.account_id()))
+
+    @staticmethod
+    def margin_account():
+        return Account.create(
+            TestStubs.event_margin_account_state(account_id=TestStubs.account_id())
+        )
+
+    @staticmethod
     def limit_order(instrument_id=None, side=None, price=None, quantity=None) -> LimitOrder:
         strategy = TestStubs.trading_strategy()
         order = strategy.order_factory.limit(
@@ -329,13 +341,41 @@ class TestStubs:
         return order
 
     @staticmethod
-    def event_account_state(account_id=None) -> AccountState:
+    def event_cash_account_state(client_id=None, account_id=None) -> AccountState:
+        if client_id is None:
+            client_id = ClientId("SIM")
         if account_id is None:
             account_id = TestStubs.account_id()
 
         return AccountState(
+            client_id=client_id,
             account_id=account_id,
             account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,  # reported
+            balances=[
+                AccountBalance(
+                    USD,
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                )
+            ],
+            info={},
+            event_id=uuid4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def event_margin_account_state(account_id=None) -> AccountState:
+        if account_id is None:
+            account_id = TestStubs.account_id()
+
+        return AccountState(
+            client_id=ClientId("SIM"),
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
             base_currency=USD,
             reported=True,  # reported
             balances=[
@@ -435,6 +475,7 @@ class TestStubs:
         last_px=None,
         liquidity_side=LiquiditySide.TAKER,
         ts_filled_ns=0,
+        account=None,
     ) -> OrderFilled:
         if venue_order_id is None:
             venue_order_id = VenueOrderId("1")
@@ -448,8 +489,11 @@ class TestStubs:
             last_px = Price.from_str(f"{1:.{instrument.price_precision}f}")
         if last_qty is None:
             last_qty = order.quantity
+        if account is None:
+            account = TestStubs.cash_account()
 
-        commission = instrument.calculate_commission(
+        commission = account.calculate_commission(
+            instrument=instrument,
             last_qty=order.quantity,
             last_px=last_px,
             liquidity_side=liquidity_side,

@@ -13,6 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
+import pytest
+
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
@@ -22,21 +26,26 @@ from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
+from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.account import Account
+from nautilus_trader.trading.account import CashAccount
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -48,7 +57,7 @@ ADABTC_BINANCE = TestInstrumentProvider.adabtc_binance()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 
 
-class TestAccount:
+class TestCashAccount:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -85,45 +94,22 @@ class TestAccount:
         )
 
     def test_instantiated_accounts_basic_properties(self):
-        # Arrange
-        event = AccountState(
-            account_id=AccountId("SIM", "001"),
-            account_type=AccountType.CASH,
-            base_currency=USD,
-            reported=True,
-            balances=[
-                AccountBalance(
-                    USD,
-                    Money(1_000_000, USD),
-                    Money(0, USD),
-                    Money(1_000_000, USD),
-                ),
-            ],
-            info={},
-            event_id=uuid4(),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        # Act
-        account = Account(event)
-
-        # Prepare components
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
+        # Arrange, Act
+        account = TestStubs.cash_account()
 
         # Assert
-        assert account.id == AccountId("SIM", "001")
-        assert str(account) == "Account(id=SIM-001, type=CASH, base=USD)"
-        assert repr(account) == "Account(id=SIM-001, type=CASH, base=USD)"
+        assert account.id == AccountId("SIM", "000")
+        assert str(account) == "CashAccount(id=SIM-000, type=CASH, base=USD)"
+        assert repr(account) == "CashAccount(id=SIM-000, type=CASH, base=USD)"
         assert isinstance(hash(account), int)
         assert account == account
         assert not account != account
 
-    def test_instantiate_single_asset_account(self):
+    def test_instantiate_single_asset_cash_account(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "001"),
+            client_id=ClientId("SIM"),
+            account_id=AccountId("SIM", "000"),
             account_type=AccountType.CASH,
             base_currency=USD,
             reported=True,
@@ -142,11 +128,7 @@ class TestAccount:
         )
 
         # Act
-        account = Account(event)
-
-        # Prepare components
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
+        account = CashAccount(event)
 
         # Assert
         assert account.base_currency == USD
@@ -159,17 +141,12 @@ class TestAccount:
         assert account.balances_total() == {USD: Money(1_000_000, USD)}
         assert account.balances_free() == {USD: Money(1_000_000, USD)}
         assert account.balances_locked() == {USD: Money(0, USD)}
-        assert account.unrealized_pnl() == Money(0, USD)
-        assert account.equity() == Money(1_000_000, USD)
-        assert account.initial_margins() == {}
-        assert account.maint_margins() == {}
-        assert account.initial_margin() is None
-        assert account.maint_margin() is None
 
-    def test_instantiate_multi_asset_account(self):
+    def test_instantiate_multi_asset_cash_account(self):
         # Arrange
         event = AccountState(
-            account_id=AccountId("SIM", "001"),
+            client_id=ClientId("SIM"),
+            account_id=AccountId("SIM", "000"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
             reported=True,
@@ -194,14 +171,10 @@ class TestAccount:
         )
 
         # Act
-        account = Account(event)
-
-        # Prepare components
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
+        account = CashAccount(event)
 
         # Assert
-        assert account.id == AccountId("SIM", "001")
+        assert account.id == AccountId("SIM", "000")
         assert account.base_currency is None
         assert account.last_event == event
         assert account.events == [event]
@@ -224,20 +197,11 @@ class TestAccount:
             BTC: Money(0.00000000, BTC),
             ETH: Money(0.00000000, ETH),
         }
-        assert account.unrealized_pnl(BTC) == Money(0.00000000, BTC)
-        assert account.unrealized_pnl(ETH) == Money(0.00000000, ETH)
-        assert account.equity(BTC) == Money(10.00000000, BTC)
-        assert account.equity(ETH) == Money(20.00000000, ETH)
-        assert account.initial_margins() == {}
-        assert account.maint_margins() == {}
-        assert account.initial_margin(BTC) is None
-        assert account.initial_margin(ETH) is None
-        assert account.maint_margin(BTC) is None
-        assert account.maint_margin(ETH) is None
 
     def test_apply_given_new_state_event_updates_correctly(self):
         # Arrange
         event1 = AccountState(
+            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "001"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
@@ -263,13 +227,10 @@ class TestAccount:
         )
 
         # Act
-        account = Account(event1)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
+        account = CashAccount(event1)
 
         event2 = AccountState(
+            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "001"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
@@ -308,362 +269,10 @@ class TestAccount:
         assert account.balance_free(ETH) == Money(20.00000000, ETH)
         assert account.balance_locked(ETH) == Money(0.00000000, ETH)
 
-    def test_update_initial_margin(self):
-        # Arrange
-        event = AccountState(
-            account_id=AccountId("SIM", "001"),
-            account_type=AccountType.CASH,
-            base_currency=None,  # Multi-currency
-            reported=True,
-            balances=[
-                AccountBalance(
-                    BTC,
-                    Money(10.00000000, BTC),
-                    Money(0.00000000, BTC),
-                    Money(10.00000000, BTC),
-                ),
-                AccountBalance(
-                    ETH,
-                    Money(20.00000000, ETH),
-                    Money(0.00000000, ETH),
-                    Money(20.00000000, ETH),
-                ),
-            ],
-            info={},  # No default currency set
-            event_id=uuid4(),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        # Act
-        account = Account(event)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
-
-        margin = Money(0.00100000, BTC)
-
-        # Act
-        account.update_initial_margin(margin)
-
-        # Assert
-        assert account.initial_margin(BTC) == margin
-        assert account.initial_margins() == {BTC: margin}
-
-    def test_update_maint_margin(self):
-        # Arrange
-        event = AccountState(
-            account_id=AccountId("SIM", "001"),
-            account_type=AccountType.CASH,
-            base_currency=None,  # Multi-currency
-            reported=True,
-            balances=[
-                AccountBalance(
-                    BTC,
-                    Money(10.00000000, BTC),
-                    Money(0.00000000, BTC),
-                    Money(10.00000000, BTC),
-                ),
-                AccountBalance(
-                    ETH,
-                    Money(20.00000000, ETH),
-                    Money(0.00000000, ETH),
-                    Money(20.00000000, ETH),
-                ),
-            ],
-            info={},  # No default currency set
-            event_id=uuid4(),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        # Act
-        account = Account(event)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
-
-        margin = Money(0.00050000, BTC)
-
-        # Act
-        account.update_maint_margin(margin)
-
-        # Assert
-        assert account.maint_margin(BTC) == margin
-        assert account.maint_margins() == {BTC: margin}
-
-    def test_unrealized_pnl_with_single_asset_account_when_no_open_positions_returns_zero(
-        self,
-    ):
-        # Arrange
-        event = AccountState(
-            account_id=AccountId("SIM", "001"),
-            account_type=AccountType.CASH,
-            base_currency=USD,
-            reported=True,
-            balances=[
-                AccountBalance(
-                    USD,
-                    Money(1_000_000, USD),
-                    Money(0, USD),
-                    Money(1_000_000, USD),
-                ),
-            ],
-            info={},
-            event_id=uuid4(),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        account = Account(event)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
-
-        # Act
-        result = account.unrealized_pnl()
-
-        # Assert
-        assert result == Money(0, USD)
-
-    def test_unrealized_pnl_with_multi_asset_account_when_no_open_positions_returns_zero(
-        self,
-    ):
-        # Arrange
-        event = AccountState(
-            account_id=AccountId("SIM", "001"),
-            account_type=AccountType.CASH,
-            base_currency=None,  # Multi-currency
-            reported=True,
-            balances=[
-                AccountBalance(
-                    BTC,
-                    Money(10.00000000, BTC),
-                    Money(0.00000000, BTC),
-                    Money(10.00000000, BTC),
-                ),
-                AccountBalance(
-                    ETH,
-                    Money(20.00000000, ETH),
-                    Money(0.00000000, ETH),
-                    Money(20.00000000, ETH),
-                ),
-            ],
-            info={},  # No default currency set
-            event_id=uuid4(),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        account = Account(event)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
-
-        # Act
-        result = account.unrealized_pnl(BTC)
-
-        # Assert
-        assert result == Money(0.00000000, BTC)
-
-    def test_equity_with_single_asset_account_no_default_returns_none(self):
-        # Arrange
-        event = AccountState(
-            account_id=AccountId("SIM", "001"),
-            account_type=AccountType.CASH,
-            base_currency=USD,
-            reported=True,
-            balances=[
-                AccountBalance(
-                    USD,
-                    Money(100000.00, USD),
-                    Money(0.00, USD),
-                    Money(100000.00, USD),
-                ),
-            ],
-            info={},  # No default currency set
-            event_id=uuid4(),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        account = Account(event)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
-
-        # Act
-        result = account.equity(BTC)
-
-        # Assert
-        assert result is None
-
-    def test_equity_with_single_asset_account_returns_expected_money(self):
-        # Arrange
-        event = AccountState(
-            account_id=AccountId("SIM", "001"),
-            account_type=AccountType.CASH,
-            base_currency=USD,
-            reported=True,
-            balances=[
-                AccountBalance(
-                    USD,
-                    Money(100000.00, USD),
-                    Money(0.00, USD),
-                    Money(100000.00, USD),
-                ),
-            ],
-            info={},
-            event_id=uuid4(),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        account = Account(event)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
-
-        # Act
-        result = account.equity()
-
-        # Assert
-        assert result == Money(100000.00, USD)
-
-    def test_equity_with_multi_asset_account_returns_expected_money(self):
-        # Arrange
-        event = AccountState(
-            account_id=AccountId("SIM", "001"),
-            account_type=AccountType.CASH,
-            base_currency=None,  # Multi-currency
-            reported=True,
-            balances=[
-                AccountBalance(
-                    BTC,
-                    Money(10.00000000, BTC),
-                    Money(0.00000000, BTC),
-                    Money(10.00000000, BTC),
-                ),
-                AccountBalance(
-                    ETH,
-                    Money(20.00000000, ETH),
-                    Money(0.00000000, ETH),
-                    Money(20.00000000, ETH),
-                ),
-            ],
-            info={},  # No default currency set
-            event_id=uuid4(),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        account = Account(event)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
-
-        # Act
-        result = account.equity(BTC)
-
-        # Assert
-        assert result == Money(10.00000000, BTC)
-
-    def test_margin_available_for_single_asset_account(self):
-        # Arrange
-        event = AccountState(
-            account_id=AccountId("SIM", "001"),
-            account_type=AccountType.CASH,
-            base_currency=USD,
-            reported=True,
-            balances=[
-                AccountBalance(
-                    USD,
-                    Money(100000.00, USD),
-                    Money(0.00, USD),
-                    Money(100000.00, USD),
-                ),
-            ],
-            info={},
-            event_id=uuid4(),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        account = Account(event)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
-
-        # Act
-        result1 = account.margin_available()
-        account.update_initial_margin(Money(500.00, USD))
-        result2 = account.margin_available()
-        account.update_maint_margin(Money(1000.00, USD))
-        result3 = account.margin_available()
-
-        # Assert
-        assert result1 == Money(100000.00, USD)
-        assert result2 == Money(99500.00, USD)
-        assert result3 == Money(98500.00, USD)
-
-    def test_margin_available_for_multi_asset_account(self):
-        # Arrange
-        event = AccountState(
-            account_id=AccountId("SIM", "001"),
-            account_type=AccountType.CASH,
-            base_currency=None,  # Multi-currency
-            reported=True,
-            balances=[
-                AccountBalance(
-                    BTC,
-                    Money(10.00000000, BTC),
-                    Money(0.00000000, BTC),
-                    Money(10.00000000, BTC),
-                ),
-                AccountBalance(
-                    ETH,
-                    Money(20.00000000, ETH),
-                    Money(0.00000000, ETH),
-                    Money(20.00000000, ETH),
-                ),
-            ],
-            info={},  # No default currency set
-            event_id=uuid4(),
-            ts_event=0,
-            ts_init=0,
-        )
-
-        account = Account(event)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
-
-        # Act
-        result1 = account.margin_available(BTC)
-        account.update_initial_margin(Money(0.00010000, BTC))
-        result2 = account.margin_available(BTC)
-        account.update_maint_margin(Money(0.00020000, BTC))
-        result3 = account.margin_available(BTC)
-        result4 = account.margin_available(ETH)
-
-        # Assert
-        assert result1 == Money(10.00000000, BTC)
-        assert result2 == Money(9.99990000, BTC)
-        assert result3 == Money(9.99970000, BTC)
-        assert result4 == Money(20.00000000, ETH)
-
     def test_calculate_pnls_for_single_currency_cash_account(self):
         # Arrange
         event = AccountState(
+            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "001"),
             account_type=AccountType.CASH,
             base_currency=USD,
@@ -682,11 +291,7 @@ class TestAccount:
             ts_init=0,
         )
 
-        account = Account(event)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
+        account = CashAccount(event)
 
         order = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -717,6 +322,7 @@ class TestAccount:
     def test_calculate_pnls_for_multi_currency_cash_account_btcusdt(self):
         # Arrange
         event = AccountState(
+            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "001"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
@@ -741,11 +347,7 @@ class TestAccount:
             ts_init=0,
         )
 
-        account = Account(event)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
+        account = CashAccount(event)
 
         order = self.order_factory.market(
             BTCUSDT_BINANCE.id,
@@ -776,6 +378,7 @@ class TestAccount:
     def test_calculate_pnls_for_multi_currency_cash_account_adabtc(self):
         # Arrange
         event = AccountState(
+            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "001"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
@@ -800,11 +403,7 @@ class TestAccount:
             ts_init=0,
         )
 
-        account = Account(event)
-
-        # Wire up account to portfolio
-        account.register_portfolio(self.portfolio)
-        self.portfolio.register_account(account)
+        account = CashAccount(event)
 
         order = self.order_factory.market(
             ADABTC_BINANCE.id,
@@ -831,3 +430,230 @@ class TestAccount:
 
         # Assert
         assert result == [Money(100.000000, ADA), Money(-0.00410000, BTC)]
+
+    def test_calculate_commission_when_given_liquidity_side_none_raises_value_error(
+        self,
+    ):
+        # Arrange
+        account = TestStubs.cash_account()
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            account.calculate_commission(
+                instrument=instrument,
+                last_qty=Quantity.from_int(100000),
+                last_px=Decimal("11450.50"),
+                liquidity_side=LiquiditySide.NONE,
+            )
+
+    @pytest.mark.parametrize(
+        "inverse_as_quote, expected",
+        [
+            [False, Money(-0.00218331, BTC)],  # Negative commission = credit
+            [True, Money(-25.00, USD)],  # Negative commission = credit
+        ],
+    )
+    def test_calculate_commission_for_inverse_maker_crypto(self, inverse_as_quote, expected):
+        # Arrange
+        account = TestStubs.cash_account()
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        # Act
+        result = account.calculate_commission(
+            instrument=instrument,
+            last_qty=Quantity.from_int(100000),
+            last_px=Decimal("11450.50"),
+            liquidity_side=LiquiditySide.MAKER,
+            inverse_as_quote=inverse_as_quote,
+        )
+
+        # Assert
+        assert result == expected
+
+    def test_calculate_commission_for_taker_fx(self):
+        # Arrange
+        account = TestStubs.cash_account()
+        instrument = AUDUSD_SIM
+
+        # Act
+        result = account.calculate_commission(
+            instrument=instrument,
+            last_qty=Quantity.from_int(1500000),
+            last_px=Decimal("0.80050"),
+            liquidity_side=LiquiditySide.TAKER,
+        )
+
+        # Assert
+        assert result == Money(24.02, USD)
+
+    def test_calculate_commission_crypto_taker(self):
+        # Arrange
+        account = TestStubs.cash_account()
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        # Act
+        result = account.calculate_commission(
+            instrument=instrument,
+            last_qty=Quantity.from_int(100000),
+            last_px=Decimal("11450.50"),
+            liquidity_side=LiquiditySide.TAKER,
+        )
+
+        # Assert
+        assert result == Money(0.00654993, BTC)
+
+    def test_calculate_commission_fx_taker(self):
+        # Arrange
+        account = TestStubs.cash_account()
+        instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY", Venue("IDEALPRO"))
+
+        # Act
+        result = account.calculate_commission(
+            instrument=instrument,
+            last_qty=Quantity.from_int(2200000),
+            last_px=Decimal("120.310"),
+            liquidity_side=LiquiditySide.TAKER,
+        )
+
+        # Assert
+        assert result == Money(5294, JPY)
+
+
+class TestMarginAccount:
+    def setup(self):
+        # Fixture Setup
+        self.clock = TestClock()
+        self.logger = Logger(self.clock)
+
+        self.trader_id = TestStubs.trader_id()
+
+        self.order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("S-001"),
+            clock=TestClock(),
+        )
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.cache = TestStubs.cache()
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_engine = ExecutionEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+    def test_instantiated_accounts_basic_properties(self):
+        # Arrange, Act
+        account = TestStubs.margin_account()
+
+        # Assert
+        assert account.id == AccountId("SIM", "000")
+        assert str(account) == "MarginAccount(id=SIM-000, type=MARGIN, base=USD)"
+        assert repr(account) == "MarginAccount(id=SIM-000, type=MARGIN, base=USD)"
+        assert isinstance(hash(account), int)
+        assert account == account
+        assert not account != account
+
+    def test_set_leverage(self):
+        # Arrange
+        account = TestStubs.margin_account()
+
+        # Act
+        account.set_leverage(AUDUSD_SIM.id, Decimal(100))
+
+        # Assert
+        assert account.leverage(AUDUSD_SIM.id) == Decimal(100)
+        assert account.leverages() == {AUDUSD_SIM.id: Decimal(100)}
+
+    def test_update_initial_margin(self):
+        # Arrange
+        account = TestStubs.margin_account()
+        margin = Money(0.00100000, BTC)
+
+        # Act
+        account.update_initial_margin(margin)
+
+        # Assert
+        assert account.initial_margin(BTC) == margin
+        assert account.initial_margins() == {BTC: margin}
+
+    def test_update_maint_margin(self):
+        # Arrange
+        account = TestStubs.margin_account()
+        margin = Money(0.00050000, BTC)
+
+        # Act
+        account.update_maint_margin(margin)
+
+        # Assert
+        assert account.maint_margin(BTC) == margin
+        assert account.maint_margins() == {BTC: margin}
+
+    def test_calculate_initial_margin_with_leverage(self):
+        # Arrange
+        account = TestStubs.margin_account()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        account.set_leverage(instrument.id, Decimal(50))
+
+        result = account.calculate_initial_margin(
+            instrument=instrument,
+            quantity=Quantity.from_int(100000),
+            price=Price.from_str("0.80000"),
+        )
+
+        # Assert
+        assert result == Money(48.06, USD)
+
+    @pytest.mark.parametrize(
+        "inverse_as_quote, expected",
+        [
+            [False, Money(0.10005568, BTC)],
+            [True, Money(1150.00, USD)],
+        ],
+    )
+    def test_calculate_initial_margin_with_no_leverage_for_inverse(
+        self, inverse_as_quote, expected
+    ):
+        # Arrange
+        account = TestStubs.margin_account()
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        result = account.calculate_initial_margin(
+            instrument=instrument,
+            quantity=Quantity.from_int(100000),
+            price=Price.from_str("11493.60"),
+            inverse_as_quote=inverse_as_quote,
+        )
+
+        # Assert
+        assert result == expected
+
+    def test_calculate_maint_margin_with_no_leverage(self):
+        # Arrange
+        account = TestStubs.margin_account()
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+
+        # Act
+        result = account.calculate_maint_margin(
+            instrument=instrument,
+            side=PositionSide.LONG,
+            quantity=Quantity.from_int(100000),
+            last=Price.from_str("11493.60"),
+        )
+
+        # Assert
+        assert result == Money(0.03697710, BTC)

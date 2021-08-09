@@ -90,9 +90,9 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Raises
         ------
         ValueError
-            If the host is not a valid string.
+            If host is not a valid string.
         ValueError
-            If the port is not in range [0, 65535].
+            If port is not in range [0, 65535].
 
         """
         cdef str host = config["host"]
@@ -350,7 +350,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
             return None
 
         cdef bytes event
-        cdef Account account = Account(self._event_serializer.deserialize(events[0]))
+        cdef Account account = Account.create_c(self._event_serializer.deserialize(events[0]))
         for event in events[1:]:
             account.apply(event=self._event_serializer.deserialize(event))
 

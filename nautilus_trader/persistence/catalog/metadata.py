@@ -25,14 +25,14 @@ PARTITION_MAPPINGS_FN = "_partition_mappings.json"
 
 
 def load_mappings(fs, path) -> Dict:
-    if not fs.exists(path):
+    if not fs.exists(f"{path}/{PARTITION_MAPPINGS_FN}"):
         return {}
-    with fs.open(str(path / PARTITION_MAPPINGS_FN), "rb") as f:
+    with fs.open(f"{path}/{PARTITION_MAPPINGS_FN}", "rb") as f:
         return orjson.loads(f.read())
 
 
 def write_mappings(fs, path, mappings) -> None:
-    with fs.open(str(path / PARTITION_MAPPINGS_FN), "wb") as f:
+    with fs.open(f"{path}/{PARTITION_MAPPINGS_FN}", "wb") as f:
         f.write(orjson.dumps(mappings))
 
 

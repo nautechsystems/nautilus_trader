@@ -113,7 +113,7 @@ class TestRiskEngine:
 
         # Wire up components
         self.exec_engine.register_client(self.exec_client)
-        self.exec_engine.process(TestStubs.event_account_state(TestStubs.account_id()))
+        self.exec_engine.process(TestStubs.event_cash_account_state())
 
         # Prepare data
         self.cache.add_instrument(AUDUSD_SIM)

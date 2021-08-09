@@ -13,16 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.model.c_enums.account_type cimport AccountType
+from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
+from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.trading.portfolio cimport PortfolioFacade
 
 
 cdef class Account:
@@ -30,9 +36,6 @@ cdef class Account:
     cdef dict _starting_balances
     cdef dict _balances
     cdef dict _commissions
-    cdef dict _initial_margins
-    cdef dict _maint_margins
-    cdef PortfolioFacade _portfolio
 
     cdef readonly AccountId id
     """The accounts ID.\n\n:returns: `AccountId`"""
@@ -41,19 +44,18 @@ cdef class Account:
     cdef readonly Currency base_currency
     """The accounts base currency (None for multi-currency accounts).\n\n:returns: `Currency` or None"""
 
+    @staticmethod
+    cdef Account create_c(AccountState event)
+
+# -- INTERNAL --------------------------------------------------------------------------------------
+
+    cdef inline void _update_balances(self, list account_balances) except *
+
+# -- QUERIES ---------------------------------------------------------------------------------------
+
     cdef AccountState last_event_c(self)
     cdef list events_c(self)
     cdef int event_count_c(self)
-
-# -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef void register_portfolio(self, PortfolioFacade portfolio)
-    cpdef void apply(self, AccountState event) except *
-    cpdef void update_initial_margin(self, Money margin) except *
-    cpdef void update_maint_margin(self, Money margin) except *
-    cpdef void update_commissions(self, Money commission) except *
-
-# -- QUERIES-CASH ----------------------------------------------------------------------------------
 
     cpdef list currencies(self)
     cpdef dict starting_balances(self)
@@ -66,27 +68,64 @@ cdef class Account:
     cpdef Money balance_total(self, Currency currency=*)
     cpdef Money balance_free(self, Currency currency=*)
     cpdef Money balance_locked(self, Currency currency=*)
-    cpdef Money unrealized_pnl(self, Currency currency=*)
-    cpdef Money equity(self, Currency currency=*)
     cpdef Money commission(self, Currency currency)
 
-# -- QUERIES-MARGIN --------------------------------------------------------------------------------
+# -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef dict initial_margins(self)
-    cpdef dict maint_margins(self)
-    cpdef Money initial_margin(self, Currency currency=*)
-    cpdef Money maint_margin(self, Currency currency=*)
-    cpdef Money margin_available(self, Currency currency=*)
+    cpdef void apply(self, AccountState event) except *
+    cpdef void update_commissions(self, Money commission) except *
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
 
-    cpdef list calculate_pnls(self, Instrument instrument, Position position, OrderFilled fill)
-    cdef list _calculate_pnls_cash_account(self, Instrument instrument, OrderFilled fill)
-    cdef Money _calculate_pnl_margin_account(self, Instrument instrument, Position position, OrderFilled fill)
-
-# -- INTERNAL --------------------------------------------------------------------------------------
-
-    cdef inline void _update_balances(
+    cpdef Money calculate_commission(
         self,
-        list account_balances,
-    ) except *
+        Instrument instrument,
+        Quantity last_qty,
+        last_px: Decimal,
+        LiquiditySide liquidity_side,
+        bint inverse_as_quote=*,
+    )
+    cpdef list calculate_pnls(self, Instrument instrument, Position position, OrderFilled fill)
+
+
+cdef class CashAccount(Account):
+    pass
+
+
+cdef class MarginAccount(Account):
+    cdef dict _leverages
+    cdef dict _initial_margins
+    cdef dict _maint_margins
+
+# -- QUERIES ---------------------------------------------------------------------------------------
+
+    cpdef dict leverages(self)
+    cpdef dict initial_margins(self)
+    cpdef dict maint_margins(self)
+    cpdef object leverage(self, InstrumentId instrument_id)
+    cpdef Money initial_margin(self, Currency currency=*)
+    cpdef Money maint_margin(self, Currency currency=*)
+
+# -- COMMANDS --------------------------------------------------------------------------------------
+
+    cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal) except *
+    cpdef void update_initial_margin(self, Money margin) except *
+    cpdef void update_maint_margin(self, Money margin) except *
+
+# -- CALCULATIONS ----------------------------------------------------------------------------------
+
+    cpdef Money calculate_initial_margin(
+        self,
+        Instrument instrument,
+        Quantity quantity,
+        Price price,
+        bint inverse_as_quote=*,
+    )
+    cpdef Money calculate_maint_margin(
+        self,
+        Instrument instrument,
+        PositionSide side,
+        Quantity quantity,
+        Price last,
+        bint inverse_as_quote=*,
+    )
