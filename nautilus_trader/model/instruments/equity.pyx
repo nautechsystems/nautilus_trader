@@ -122,6 +122,19 @@ cdef class Equity(Instrument):
 
     @staticmethod
     def from_dict(dict values) -> Instrument:
+        """
+        Return an instrument from the given initialization values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values to initialize the instrument with.
+
+        Returns
+        -------
+        Instrument
+
+        """
         return Instrument.from_dict_c(values)
 
     @staticmethod
