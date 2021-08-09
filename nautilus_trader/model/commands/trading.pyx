@@ -163,7 +163,7 @@ cdef class SubmitOrder(TradingCommand):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> SubmitOrder:
         """
         Return a submit order command from the given dict values.
 
@@ -287,7 +287,7 @@ cdef class SubmitBracketOrder(TradingCommand):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> SubmitBracketOrder:
         """
         Return a submit bracket order command from the given dict values.
 
@@ -438,7 +438,7 @@ cdef class UpdateOrder(TradingCommand):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> UpdateOrder:
         """
         Return an update order command from the given dict values.
 
@@ -562,7 +562,7 @@ cdef class CancelOrder(TradingCommand):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> CancelOrder:
         """
         Return a cancel order command from the given dict values.
 

@@ -427,7 +427,7 @@ cdef class PositionOpened(PositionEvent):
         return PositionOpened.create_c(position, fill, event_id, ts_init)
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> PositionOpened:
         """
         Return a position opened event from the given dict values.
 
@@ -705,7 +705,7 @@ cdef class PositionChanged(PositionEvent):
         return PositionChanged.create_c(position, fill, event_id, ts_init)
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> PositionChanged:
         """
         Return a position changed event from the given dict values.
 
@@ -981,7 +981,7 @@ cdef class PositionClosed(PositionEvent):
         return PositionClosed.create_c(position, fill, event_id, ts_init)
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> PositionClosed:
         """
         Return a position closed event from the given dict values.
 

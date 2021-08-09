@@ -609,7 +609,7 @@ cdef class AccountBalance:
         )
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> AccountBalance:
         """
         Return an account balance from the given dict values.
 
