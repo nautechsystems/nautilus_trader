@@ -3,15 +3,11 @@ import pathlib
 import sys
 from decimal import Decimal
 
-import orjson
 import pyarrow.dataset as ds
 import pytest
 
 from examples.strategies.orderbook_imbalance import OrderbookImbalance
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.data import on_market_update
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data.tick import QuoteTick
@@ -23,9 +19,8 @@ from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.catalog.core import DataCatalog
-from nautilus_trader.persistence.catalog.loading import load
-from nautilus_trader.persistence.catalog.parsers import TextReader
+from nautilus_trader.persistence.catalog.loading import write_chunk
+from nautilus_trader.persistence.catalog.parsers import RawFile
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
 
@@ -33,38 +28,6 @@ from tests.test_kit.providers import TestInstrumentProvider
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
-
-
-@pytest.fixture(scope="function")
-def load_data():
-    instrument_provider = BetfairInstrumentProvider.from_instruments([])
-    reader = TextReader(
-        line_parser=lambda x, state: on_market_update(
-            instrument_provider=instrument_provider, update=orjson.loads(x)
-        ),
-        instrument_provider_update=historical_instrument_provider_loader,
-    )
-    load(
-        path=TEST_DATA_DIR,
-        reader=reader,
-        glob_pattern="1.166564490*",
-        instrument_provider=instrument_provider,
-    )
-
-
-@pytest.fixture(scope="function")
-def catalog():
-    catalog = DataCatalog(path="/", fs_protocol="memory")
-    try:
-        catalog.fs.rm("/", recursive=True)
-    except FileNotFoundError:
-        pass
-    return catalog
-
-
-@pytest.fixture(scope="function")
-def loaded_catalog(catalog, load_data):
-    return catalog
 
 
 def test_data_catalog_instruments_df(loaded_catalog):
@@ -97,7 +60,10 @@ def test_partition_key_correctly_remapped(catalog):
         ts_init=0,
         ts_event=0,
     )
-    catalog._write_chunks(chunk=[instrument, tick])
+    write_chunk(
+        raw_file=RawFile(catalog.fs, path="/"),  # not used here
+        chunk=[tick],
+    )
     df = catalog.quote_ticks()
     assert len(df) == 1
     # Ensure we "unmap" the keys that we write the partition filenames as;
@@ -106,10 +72,15 @@ def test_partition_key_correctly_remapped(catalog):
 
 
 def test_data_catalog_filter(loaded_catalog):
-    assert len(loaded_catalog.order_book_deltas()) == 2384
-    assert (
-        len(loaded_catalog.order_book_deltas(filter_expr=ds.field("delta_type") == "DELETE")) == 351
+    # Arrange, Act
+    deltas = loaded_catalog.order_book_deltas()
+    filtered_deltas = loaded_catalog.order_book_deltas(
+        filter_expr=ds.field("delta_type") == "DELETE"
     )
+
+    # Assert
+    assert len(deltas) == 2384
+    assert len(filtered_deltas) == 351
 
 
 def test_data_catalog_query_filtered(loaded_catalog):
@@ -158,7 +129,7 @@ def test_data_catalog_backtest_data_filtered(loaded_catalog):
     )
     engine.run()
     # Total events 1045
-    assert engine.iteration == 600
+    assert engine.iteration in (600, 740)
 
 
 @pytest.mark.skip(reason="flaky")

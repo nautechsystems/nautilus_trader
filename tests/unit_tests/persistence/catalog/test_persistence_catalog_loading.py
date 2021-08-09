@@ -1,6 +1,12 @@
 import pathlib
 import sys
+from unittest.mock import MagicMock
+from unittest.mock import call
+from unittest.mock import patch
 
+import numpy as np
+import pandas as pd
+import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
@@ -12,10 +18,14 @@ from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.persistence.catalog.loading import load
 from nautilus_trader.persistence.catalog.loading import nautilus_chunk_to_dataframes
 from nautilus_trader.persistence.catalog.loading import process_files
+from nautilus_trader.persistence.catalog.loading import read_and_clear_existing_data
+from nautilus_trader.persistence.catalog.loading import write_parquet
 from nautilus_trader.persistence.catalog.parsers import CSVReader
 from nautilus_trader.persistence.catalog.parsers import ParquetReader
 from nautilus_trader.persistence.catalog.scanner import scan
 from nautilus_trader.persistence.util import SyncExecutor
+from nautilus_trader.persistence.util import get_catalog_fs
+from nautilus_trader.persistence.util import get_catalog_root
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
 
@@ -37,6 +47,22 @@ def test_nautilus_chunk_to_dataframes(betfair_nautilus_objects):
         for ins in dfs[cls]:
             result[(cls.__name__, ins)] = len(dfs[cls][ins])
     expected = {
+        (
+            "BettingInstrument",
+            "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,237478,0.0.BETFAIR",
+        ): 1,
+        (
+            "BettingInstrument",
+            "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,60424,0.0.BETFAIR",
+        ): 1,
+        (
+            "BettingInstrument",
+            "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,2696769,0.0.BETFAIR",
+        ): 1,
+        (
+            "BettingInstrument",
+            "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,4297085,0.0.BETFAIR",
+        ): 1,
         (
             "InstrumentStatusUpdate",
             "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,2696769,0.0.BETFAIR",
@@ -105,16 +131,99 @@ def test_nautilus_chunk_to_dataframes(betfair_nautilus_objects):
     assert result == expected
 
 
-def test_write_parquet():
-    raise NotImplementedError
+def test_write_parquet_no_partitions():
+    fs = get_catalog_fs()
+    root = get_catalog_root()
+    df = pd.DataFrame({"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]})
+    write_parquet(
+        fs=fs,
+        root=root,
+        path="sample.parquet",
+        df=df,
+        instrument_id=None,
+        schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
+        partition_cols=None,
+        append=False,
+    )
+    result = ds.dataset(str(root.joinpath("sample.parquet")), filesystem=fs).to_table().to_pandas()
+    assert result.equals(df)
 
 
-def test_read_and_clear_existing_data():
-    raise NotImplementedError
+def test_write_parquet_partitions():
+    fs = get_catalog_fs()
+    root = get_catalog_root()
+    path = "sample.parquet"
+
+    df = pd.DataFrame({"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]})
+    write_parquet(
+        fs=fs,
+        root=root,
+        path=path,
+        df=df,
+        instrument_id=None,
+        schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
+        partition_cols=["instrument_id"],
+        append=False,
+    )
+    dataset = ds.dataset(str(root.joinpath("sample.parquet")), filesystem=fs)
+    result = dataset.to_table().to_pandas()
+    assert result.equals(df[["value"]])  # instrument_id is a partition now
+    assert dataset.files[0].startswith("/root/sample.parquet/instrument_id=a/")
+    assert dataset.files[1].startswith("/root/sample.parquet/instrument_id=b/")
 
 
-def test_determine_partition_cols():
-    raise NotImplementedError
+def test_read_and_clear_existing_data_single_partition():
+    # Arrange
+    fs = get_catalog_fs()
+    root = get_catalog_root()
+    path = "sample.parquet"
+    df = pd.DataFrame({"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]})
+    write_parquet(
+        fs=fs,
+        root=root,
+        path=path,
+        df=df,
+        instrument_id=None,
+        schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
+        partition_cols=["instrument_id"],
+        append=False,
+    )
+
+    # Act
+    result = read_and_clear_existing_data(
+        fs=fs, root=root, path=path, instrument_id="a", partition_cols=["instrument_id"]
+    )
+    dataset = ds.dataset(str(root.joinpath("sample.parquet")), filesystem=fs)
+
+    # Assert
+    expected = df[df["instrument_id"] == "a"].astype({"instrument_id": "category"})
+    assert result.equals(expected)
+    assert len(dataset.files) == 1
+    assert dataset.files[0].startswith("/root/sample.parquet/instrument_id=b/")
+
+
+def test_read_and_clear_existing_data_invalid_partition_column_raises():
+    # Arrange
+    fs = get_catalog_fs()
+    root = get_catalog_root()
+    path = "sample.parquet"
+    df = pd.DataFrame({"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]})
+    write_parquet(
+        fs=fs,
+        root=root,
+        path=path,
+        df=df,
+        instrument_id=None,
+        schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
+        partition_cols=["instrument_id"],
+        append=False,
+    )
+
+    # Assert
+    with pytest.raises(AssertionError):
+        read_and_clear_existing_data(
+            fs=fs, root=root, path=path, instrument_id="a", partition_cols=["value"]
+        )
 
 
 def test_process_files_csv(executor, get_parser):
@@ -133,6 +242,22 @@ def test_process_files_csv(executor, get_parser):
     assert result == expected
 
 
+@patch("nautilus_trader.persistence.catalog.loading.tqdm")
+def test_load_progress(mock_tqdm: MagicMock, executor, get_parser):
+    # Arrange
+    files = scan(path=TEST_DATA_DIR, glob_pattern="truefx*.csv", chunk_size=1_000_000)
+    num_chunks = sum(rf.num_chunks for rf in files)
+    reader = CSVReader(chunk_parser=get_parser("parse_csv_quotes"), as_dataframe=True)
+
+    # Act
+    process_files(files, reader=reader, executor=executor, progress=True)
+
+    # Assert
+    expected_calls = [call(total=num_chunks)] + [call().update()] * num_chunks
+    mock_tqdm.assert_has_calls(expected_calls)
+
+
+# TODO (cs)
 @pytest.mark.skip(reason="Not implemented")
 def test_data_loader_parquet():
     def filename_to_instrument(fn):
@@ -176,19 +301,20 @@ def test_load_text_betfair(betfair_reader):
         instrument_provider=instrument_provider,
     )
     expected = {
-        TEST_DATA_DIR + "/1.166564490.bz2": 2698,
-        TEST_DATA_DIR + "/betfair/1.180305278.bz2": 13797,
-        TEST_DATA_DIR + "/betfair/1.166811431.bz2": 20871,
+        TEST_DATA_DIR + "/1.166564490.bz2": 2700,
+        TEST_DATA_DIR + "/betfair/1.180305278.bz2": 13799,
+        TEST_DATA_DIR + "/betfair/1.166811431.bz2": 20873,
     }
     assert files == expected
 
 
 def test_data_catalog_instruments_no_partition(loaded_catalog):
-    ds = pq.ParquetDataset(
-        path_or_paths=str(loaded_catalog.path / "betting_instrument.parquet/"),
+    path = str(loaded_catalog.path / "betting_instrument.parquet/")
+    dataset = pq.ParquetDataset(
+        path_or_paths=path,
         filesystem=loaded_catalog.fs,
     )
-    partitions = ds.partitions
+    partitions = dataset.partitions
     assert not partitions.levels
 
 
@@ -207,6 +333,7 @@ def test_data_catalog_dataset_types(loaded_catalog):
     )
     schema = {n: t.__class__.__name__ for n, t in zip(dataset.schema.names, dataset.schema.types)}
     expected = {
+        "instrument_id": "DictionaryType",
         "price": "DataType",
         "size": "DataType",
         "aggressor_side": "DictionaryType",

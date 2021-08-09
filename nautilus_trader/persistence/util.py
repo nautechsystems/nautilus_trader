@@ -19,6 +19,7 @@ import pathlib
 from concurrent.futures import Executor
 from concurrent.futures import Future
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from queue import Queue
 from threading import Thread
 from typing import Callable, List
@@ -43,6 +44,7 @@ def _path() -> str:
     return os.environ[KEY]
 
 
+@lru_cache(1)
 def get_catalog_fs() -> fsspec.AbstractFileSystem:
     url = _path()
     protocol = fsspec.utils.get_protocol(url)
@@ -63,14 +65,14 @@ def get_catalog_root() -> pathlib.Path:
 
 
 class SyncExecutor(Executor):
-    def submit(self, fn, *args, **kwargs):  # pylint: disable=arguments-differ
-        """Immediately invokes `fn(*args, **kwargs)` and returns a future
+    def submit(self, func, *args, **kwargs):  # pylint: disable=arguments-differ
+        """Immediately invokes `func(*args, **kwargs)` and returns a future
         with the result (or exception)."""
 
         future = Future()
 
         try:
-            result = fn(*args, **kwargs)
+            result = func(*args, **kwargs)
             future.set_result(result)
         except Exception as e:
             print(f"ERR: {e}")
@@ -141,7 +143,6 @@ def executor_queue_process(
     inputs: List,
     process_func: Callable,
     output_func: Callable,
-    progress=True,
     executor: Executor = None,
 ):
     """

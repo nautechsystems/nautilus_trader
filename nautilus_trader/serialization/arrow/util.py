@@ -69,7 +69,7 @@ def is_nautilus_class(cls):
 
 
 def check_partition_columns(
-    df: pd.DataFrame, partition_columns: Optional[List[str]], cls: type
+    df: pd.DataFrame, partition_columns: Optional[List[str]]
 ) -> Dict[str, Dict[str, str]]:
     """
     When writing a parquet dataset, parquet uses the values in `partition_columns` as part of the filename. The values
@@ -79,7 +79,9 @@ def check_partition_columns(
     """
     if partition_columns:
         missing = [c for c in partition_columns if c not in df.columns]
-        assert not missing, f"Dataframe for {cls} missing partition_colums: {missing}"
+        assert (
+            not missing
+        ), f"Missing `partition_columns`: {missing} in dataframe columns: {df.columns}"
 
     mappings = {}
     for col in partition_columns or []:

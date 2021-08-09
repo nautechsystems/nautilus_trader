@@ -144,7 +144,7 @@ cdef class ParquetSerializer:
     """
 
     @staticmethod
-    def serialize(obj):
+    def serialize(object obj):
         if isinstance(obj, GenericData):
             obj = obj.data
         cdef type cls = type(obj)
@@ -171,9 +171,10 @@ cdef class ParquetSerializer:
                 f"deserialization method via `arrow.serializer.register_parquet()`"
             )
 
-        if not isinstance(chunk, list):
-            chunk = [chunk]
-        return [delegate(c) for c in chunk]
+        if cls in _CHUNK:
+            return delegate(chunk)
+        else:
+            return [delegate(c) for c in chunk]
 
 
 #################################################

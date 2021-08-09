@@ -37,6 +37,22 @@ def test_parse_raw_file_multiple_chunks():
     assert len(data[1]) == 51707
 
 
+def test_raw_file_num_chunks():
+    # Arrange
+    fs = fsspec.implementations.local.LocalFileSystem()
+    path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"  # total size = 151707
+
+    # Act
+    rf1 = RawFile(fs=fs, path=path, chunk_size=-1)
+    rf2 = RawFile(fs=fs, path=path, chunk_size=50_000)
+    rf3 = RawFile(fs=fs, path=path, chunk_size=100_000)
+
+    # Assert
+    assert rf1.num_chunks == 1
+    assert rf2.num_chunks == 4
+    assert rf3.num_chunks == 2
+
+
 @pytest.mark.parametrize(
     "glob, parser, expected",
     [
@@ -87,7 +103,7 @@ def test_csv_quoter_parser(glob, parser, expected):
 @pytest.mark.parametrize(
     "glob, parser, expected",
     [
-        ("betfair/*.bz2", "parse_betfair", {"1.166811431.bz2": 16027, "1.180305278.bz2": 12448}),
+        ("betfair/*.bz2", "parse_betfair", {"1.166811431.bz2": 16029, "1.180305278.bz2": 12450}),
     ],
     indirect=["parser"],
 )

@@ -17,7 +17,6 @@ import os
 import pathlib
 
 import fsspec
-import orjson
 import pandas as pd
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
@@ -32,6 +31,7 @@ from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
+from nautilus_trader.persistence.catalog.metadata import load_mappings
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
@@ -59,7 +59,7 @@ class DataCatalog:
         """
         self.fs = fsspec.filesystem(fs_protocol)
         self.path = pathlib.Path(path)
-        self._processed_files_fn = str(self.path / ".processed_raw_files.json")
+        self._processed_files_path = str(self.path / ".processed_raw_files.json")
 
     @classmethod
     def from_env(cls):
@@ -235,17 +235,17 @@ class DataCatalog:
         if end is not None:
             filters.append(ds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
 
-        path = self.path.joinpath(f"{filename}.parquet")
-        if not (self.fs.exists(str(path)) or self.fs.isdir(str(path))):
+        full_path = str(self.path.joinpath(filename))
+        if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
             if raise_on_empty:
                 raise FileNotFoundError
             else:
                 return pd.DataFrame()
 
-        dataset = ds.dataset(str(path), partitioning="hive", filesystem=self.fs)
+        dataset = ds.dataset(full_path, partitioning="hive", filesystem=self.fs)
         table = dataset.to_table(filter=combine_filters(*filters))
         df = table.to_pandas().drop_duplicates()
-        mappings = self._read_mappings(path=path)
+        mappings = load_mappings(fs=self.fs, path=full_path)
         for col in mappings:
             df.loc[:, col] = df[col].map({v: k for k, v in mappings[col].items()})
 
@@ -260,17 +260,6 @@ class DataCatalog:
             ]
             raise ValueError(f"Data empty for {kw}")
         return df
-
-    def _write_mappings(self, fn, mappings):
-        with self.fs.open(str(fn / "_partition_mappings.json"), "wb") as f:
-            f.write(orjson.dumps(mappings))
-
-    def _read_mappings(self, path):
-        try:
-            with self.fs.open(str(path / "_partition_mappings.json")) as f:
-                return orjson.loads(f.read())
-        except FileNotFoundError:
-            return {}
 
     @staticmethod
     def _make_objects(df, cls):
@@ -296,7 +285,7 @@ class DataCatalog:
         for ins_type in instrument_types:
             try:
                 df = self._query(
-                    camel_to_snake_case(ins_type.__name__),
+                    filename=f"{camel_to_snake_case(ins_type.__name__)}.parquet",
                     filter_expr=filter_expr,
                     instrument_ids=instrument_ids,
                     raise_on_empty=False,
@@ -325,7 +314,7 @@ class DataCatalog:
         self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
     ):
         df = self._query(
-            "instrument_status_update",
+            "instrument_status_update.parquet",
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
             **kwargs,
@@ -339,7 +328,7 @@ class DataCatalog:
 
     def trade_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
-            "trade_tick",
+            "trade_tick.parquet",
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
             **kwargs,
@@ -350,7 +339,7 @@ class DataCatalog:
 
     def quote_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
-            "quote_tick",
+            "quote_tick.parquet",
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
             **kwargs,
@@ -361,7 +350,7 @@ class DataCatalog:
 
     def order_book_deltas(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
         df = self._query(
-            "order_book_delta",
+            "order_book_data.parquet",
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
             **kwargs,

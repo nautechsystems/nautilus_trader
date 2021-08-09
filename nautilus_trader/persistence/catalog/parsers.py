@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 import copy
 import inspect
+import math
 import pathlib
 from io import BytesIO
 from typing import Callable, Generator, List, Optional, Union
@@ -43,10 +44,16 @@ class Reader:
             assert (
                 self.instrument_provider is not None
             ), "Passed `instrument_provider_update` but `instrument_provider` was None"
+            instruments = set(self.instrument_provider.get_all().values())
             r = self.instrument_provider_update(self.instrument_provider, data)
             # Check the user hasn't accidentally used a generator here also
             if isinstance(r, Generator):
                 raise Exception(f"{self.instrument_provider_update} func should not be generator")
+            new_instruments = set(self.instrument_provider.get_all().values()).difference(
+                instruments
+            )
+            if new_instruments:
+                return list(new_instruments)
 
     def parse(self, chunk: bytes):
         raise NotImplementedError
@@ -78,8 +85,10 @@ class ByteReader(Reader):
         self.parser = byte_parser
 
     def parse(self, chunk: bytes) -> Generator:
-        self.check_instrument_provider(data=chunk)
-        return self.parser(chunk)
+        instruments = self.check_instrument_provider(data=chunk)
+        if instruments:
+            yield from instruments
+        yield from self.parser(chunk)
 
 
 class TextReader(ByteReader):
@@ -125,7 +134,9 @@ class TextReader(ByteReader):
 
     def process_chunk(self, chunk):
         for line in map(self.line_preprocessor, chunk.split(b"\n")):
-            self.check_instrument_provider(data=line)
+            instruments = self.check_instrument_provider(data=line)
+            if instruments:
+                yield from instruments
             yield from self.parser(line)
 
 
@@ -245,6 +256,13 @@ class RawFile(fsspec.core.OpenFile):
     def reader(self, reader: Reader):
         assert isinstance(reader, Reader)
         self._reader = copy.copy(reader)
+
+    @property
+    def num_chunks(self):
+        if self.chunk_size == -1:
+            return 1
+        stat = self.fs.stat(self.path)
+        return math.ceil(stat["size"] / self.chunk_size)
 
     def __iter__(self):
         return self

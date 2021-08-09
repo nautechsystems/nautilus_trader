@@ -24,15 +24,15 @@ PROCESSED_FILES_FN = ".processed_raw_files.json"
 PARTITION_MAPPINGS_FN = "_partition_mappings.json"
 
 
-def _load_mappings(fs, fn) -> Dict:
-    if not fs.exists(fn):
+def load_mappings(fs, path) -> Dict:
+    if not fs.exists(path):
         return {}
-    with fs.open(str(fn / PARTITION_MAPPINGS_FN), "rb") as f:
+    with fs.open(str(path / PARTITION_MAPPINGS_FN), "rb") as f:
         return orjson.loads(f.read())
 
 
-def _write_mappings(fs, fn, mappings) -> None:
-    with fs.open(str(fn / PARTITION_MAPPINGS_FN), "wb") as f:
+def write_mappings(fs, path, mappings) -> None:
+    with fs.open(str(path / PARTITION_MAPPINGS_FN), "wb") as f:
         f.write(orjson.dumps(mappings))
 
 

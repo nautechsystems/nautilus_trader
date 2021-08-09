@@ -1,9 +1,9 @@
 import inspect
 import os
 import sys
+from functools import partial
 
 import fsspec.implementations.memory
-import numpy as np
 import orjson
 import pandas as pd
 import pytest
@@ -19,8 +19,9 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.catalog.core import DataCatalog
+from nautilus_trader.persistence.catalog.loading import load
 from nautilus_trader.persistence.catalog.loading import process_files
-from nautilus_trader.persistence.catalog.metadata import PROCESSED_FILES_FN
 from nautilus_trader.persistence.catalog.metadata import load_processed_raw_files
 from nautilus_trader.persistence.catalog.parsers import TextReader
 from nautilus_trader.persistence.catalog.scanner import scan
@@ -30,9 +31,12 @@ from tests.test_kit.stubs import TestStubs
 from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 
 
+ROOT = "/root"
+
+
 @pytest.fixture(autouse=True)
 def nautilus_dir():
-    os.environ["NAUTILUS_DATA"] = "memory:///"
+    os.environ["NAUTILUS_DATA"] = f"memory://{ROOT}"
 
 
 @pytest.fixture(autouse=True, scope="function")
@@ -40,10 +44,12 @@ def test_reset():
     """Cleanup resources before each test run"""
     fs = get_catalog_fs()
     assert isinstance(fs, fsspec.implementations.memory.MemoryFileSystem)
-    for f in list(fs.glob("**/*")):
-        fs.rm(f)
-    if fs.exists(PROCESSED_FILES_FN):
-        fs.rm(PROCESSED_FILES_FN)
+    try:
+        fs.rm("/", recursive=True)
+    except FileNotFoundError:
+        pass
+    fs.mkdir(f"{ROOT}/data")
+    assert fs.exists(ROOT)
     assert not load_processed_raw_files()
     yield
 
@@ -66,11 +72,6 @@ def get_parser():
 @pytest.fixture()
 def parser(request, get_parser):
     return get_parser(request.param)
-
-
-@pytest.fixture()
-def sample_df():
-    return pd.DataFrame({"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]})
 
 
 def parse_text(x):
@@ -111,13 +112,8 @@ def parse_betfair(line, instrument_provider):
 @pytest.fixture()
 def betfair_reader():
     def inner(instrument_provider):
-        def betfair_parser(chunk):
-            update = orjson.loads(chunk)
-            results = on_market_update(instrument_provider=instrument_provider, update=update)
-            yield from results
-
         reader = TextReader(
-            line_parser=betfair_parser,
+            line_parser=partial(parse_betfair, instrument_provider=instrument_provider),
             instrument_provider=instrument_provider,
             instrument_provider_update=historical_instrument_provider_loader,
         )
@@ -165,3 +161,29 @@ def parse_csv_bars(data):
         data=data.set_index("timestamp"),
     )
     yield from wrangler.build_bars_all()
+
+
+@pytest.fixture(scope="function")
+def load_data(betfair_reader):
+    instrument_provider = BetfairInstrumentProvider.from_instruments([])
+
+    load(
+        path=TEST_DATA_DIR,
+        reader=betfair_reader(instrument_provider),
+        glob_pattern="1.166564490*",
+        instrument_provider=instrument_provider,
+    )
+    fs = get_catalog_fs()
+    assert fs.isdir(f"{ROOT}/data/betting_instrument.parquet")
+
+
+@pytest.fixture(scope="function")
+def catalog():
+    catalog = DataCatalog(path="/root/data", fs_protocol="memory")
+    catalog.fs = get_catalog_fs()
+    return catalog
+
+
+@pytest.fixture(scope="function")
+def loaded_catalog(catalog, load_data):
+    return catalog
