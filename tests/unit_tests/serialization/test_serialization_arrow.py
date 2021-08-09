@@ -24,7 +24,6 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.c_enums.book_level import BookLevel
 from nautilus_trader.model.c_enums.delta_type import DeltaType
-from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import PositionId
@@ -36,9 +35,9 @@ from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.position import Position
-from nautilus_trader.persistence.catalog.core import DataCatalog
-from nautilus_trader.persistence.catalog.loading import write_chunk
-from nautilus_trader.persistence.catalog.parsers import RawFile
+from nautilus_trader.persistence.backtest.loading import write_chunk
+from nautilus_trader.persistence.backtest.parsers import RawFile
+from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.util import get_catalog_fs
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import class_to_filename
@@ -91,11 +90,16 @@ class TestParquetSerializer:
         self.order_cancelled = copy.copy(self.order_pending_cancel)
         self.order_cancelled.apply(TestStubs.event_order_canceled(self.order_pending_cancel))
 
-    def test_serialize_and_deserialize_trade_tick(self):
-        tick = TestStubs.trade_tick_5decimal()
-
+    @pytest.mark.parametrize(
+        "tick",
+        [
+            TestStubs.trade_tick_5decimal(),
+            TestStubs.quote_tick_5decimal(),
+        ],
+    )
+    def test_serialize_and_deserialize_tick(self, tick):
         serialized = ParquetSerializer.serialize(tick)
-        deserialized = ParquetSerializer.deserialize(cls=TradeTick, chunk=[serialized])
+        deserialized = ParquetSerializer.deserialize(cls=type(tick), chunk=[serialized])
 
         # Assert
         assert deserialized == [tick]
