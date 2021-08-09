@@ -183,10 +183,10 @@ class TestStubs:
     def bar_5decimal() -> Bar:
         return Bar(
             bar_type=TestStubs.bartype_audusd_1min_bid(),
-            open_price=Price.from_str("1.00002"),
-            high_price=Price.from_str("1.00004"),
-            low_price=Price.from_str("1.00001"),
-            close_price=Price.from_str("1.00003"),
+            open=Price.from_str("1.00002"),
+            high=Price.from_str("1.00004"),
+            low=Price.from_str("1.00001"),
+            close=Price.from_str("1.00003"),
             volume=Quantity.from_int(1_000_000),
             ts_event=0,
             ts_init=0,
@@ -196,10 +196,10 @@ class TestStubs:
     def bar_3decimal() -> Bar:
         return Bar(
             bar_type=TestStubs.bartype_usdjpy_1min_bid(),
-            open_price=Price.from_str("90.002"),
-            high_price=Price.from_str("90.004"),
-            low_price=Price.from_str("90.001"),
-            close_price=Price.from_str("90.003"),
+            open=Price.from_str("90.002"),
+            high=Price.from_str("90.004"),
+            low=Price.from_str("90.001"),
+            close=Price.from_str("90.003"),
             volume=Quantity.from_int(1_000_000),
             ts_event=0,
             ts_init=0,

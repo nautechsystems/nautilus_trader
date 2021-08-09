@@ -286,10 +286,10 @@ cdef class Bar(Data):
     def __init__(
         self,
         BarType bar_type not None,
-        Price open_price not None,
-        Price high_price not None,
-        Price low_price not None,
-        Price close_price not None,
+        Price open not None,
+        Price high not None,
+        Price low not None,
+        Price close not None,
         Quantity volume not None,
         int64_t ts_event,
         int64_t ts_init,
@@ -302,13 +302,13 @@ cdef class Bar(Data):
         ----------
         bar_type : BarType
             The bar type for this bar.
-        open_price : Price
+        open : Price
             The bars open price.
-        high_price : Price
+        high : Price
             The bars high price.
-        low_price : Price
+        low : Price
             The bars low price.
-        close_price : Price
+        close : Price
             The bars close price.
         volume : Quantity
             The bars volume.
@@ -322,24 +322,24 @@ cdef class Bar(Data):
         Raises
         ------
         ValueError
-            If check True and the high_price is not >= low_price.
+            If check True and the high is not >= low.
         ValueError
-            If check True and the high_price is not >= close_price.
+            If check True and the high is not >= close.
         ValueError
-            If check True and the low_price is not <= close_price.
+            If check True and the low is not <= close.
 
         """
         if check:
-            Condition.true(high_price >= low_price, 'high_price was < low_price')
-            Condition.true(high_price >= close_price, 'high_price was < close_price')
-            Condition.true(low_price <= close_price, 'low_price was > close_price')
+            Condition.true(high >= low, 'high was < low')
+            Condition.true(high >= close, 'high was < close')
+            Condition.true(low <= close, 'low was > close')
         super().__init__(ts_event, ts_init)
 
         self.type = bar_type
-        self.open = open_price
-        self.high = high_price
-        self.low = low_price
-        self.close = close_price
+        self.open = open
+        self.high = high
+        self.low = low
+        self.close = close
         self.volume = volume
         self.checked = check
 
@@ -360,10 +360,10 @@ cdef class Bar(Data):
         Condition.not_none(values, "values")
         return Bar(
             bar_type=BarType.from_str_c(values["bar_type"]),
-            open_price=Price.from_str_c(values["open"]),
-            high_price=Price.from_str_c(values["high"]),
-            low_price=Price.from_str_c(values["low"]),
-            close_price=Price.from_str_c(values["close"]),
+            open=Price.from_str_c(values["open"]),
+            high=Price.from_str_c(values["high"]),
+            low=Price.from_str_c(values["low"]),
+            close=Price.from_str_c(values["close"]),
             volume=Quantity.from_str_c(values["volume"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],

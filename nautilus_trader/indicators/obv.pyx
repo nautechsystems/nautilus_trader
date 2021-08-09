@@ -68,8 +68,8 @@ cdef class OnBalanceVolume(Indicator):
 
     cpdef void update_raw(
         self,
-        double open_price,
-        double close_price,
+        double open,
+        double close,
         double volume,
     ) except *:
         """
@@ -77,17 +77,17 @@ cdef class OnBalanceVolume(Indicator):
 
         Parameters
         ----------
-        open_price : double
+        open : double
             The high price.
-        close_price : double
+        close : double
             The low price.
         volume : double
             The close price.
 
         """
-        if close_price > open_price:
+        if close > open:
             self._obv.append(volume)
-        elif close_price < open_price:
+        elif close < open:
             self._obv.append(-volume)
         else:
             self._obv.append(0)
