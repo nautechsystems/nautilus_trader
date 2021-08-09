@@ -128,7 +128,7 @@ cdef class AccountState(Event):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> AccountState:
         """
         Return an account state event from the given dict values.
 

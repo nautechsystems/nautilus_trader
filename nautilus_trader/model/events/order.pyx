@@ -223,7 +223,7 @@ cdef class OrderInitialized(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderInitialized:
         """
         Return an order initialized event from the given dict values.
 
@@ -355,7 +355,7 @@ cdef class OrderDenied(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderDenied:
         """
         Return an order denied event from the given dict values.
 
@@ -486,7 +486,7 @@ cdef class OrderSubmitted(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderSubmitted:
         """
         Return an order submitted event from the given dict values.
 
@@ -628,7 +628,7 @@ cdef class OrderAccepted(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderAccepted:
         """
         Return an order accepted event from the given dict values.
 
@@ -771,7 +771,7 @@ cdef class OrderRejected(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderRejected:
         """
         Return an order rejected event from the given dict values.
 
@@ -906,7 +906,7 @@ cdef class OrderCanceled(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderCanceled:
         """
         Return an order canceled event from the given dict values.
 
@@ -1041,7 +1041,7 @@ cdef class OrderExpired(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderExpired:
         """
         Return an order expired event from the given dict values.
 
@@ -1178,7 +1178,7 @@ cdef class OrderTriggered(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderTriggered:
         """
         Return an order triggered event from the given dict values.
 
@@ -1314,9 +1314,9 @@ cdef class OrderPendingUpdate(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderPendingUpdate:
         """
-        Return an order pending replace event from the given dict values.
+        Return an order pending update event from the given dict values.
 
         Parameters
         ----------
@@ -1450,7 +1450,7 @@ cdef class OrderPendingCancel(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderPendingCancel:
         """
         Return an order pending cancel event from the given dict values.
 
@@ -1612,7 +1612,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderUpdateRejected:
         """
         Return an order update rejected event from the given dict values.
 
@@ -1774,7 +1774,7 @@ cdef class OrderCancelRejected(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderCancelRejected:
         """
         Return an order cancel rejected event from the given dict values.
 
@@ -1935,7 +1935,7 @@ cdef class OrderUpdated(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderUpdated:
         """
         Return an order updated event from the given dict values.
 
@@ -2156,7 +2156,7 @@ cdef class OrderFilled(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderFilled:
         """
         Return an order filled event from the given dict values.
 

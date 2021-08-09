@@ -141,7 +141,7 @@ cdef class OrderBookSnapshot(OrderBookData):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderBookSnapshot:
         """
         Return an order book snapshot from the given dict values.
 
@@ -241,7 +241,7 @@ cdef class OrderBookDeltas(OrderBookData):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderBookDeltas:
         """
         Return order book deltas from the given dict values.
 
@@ -358,7 +358,7 @@ cdef class OrderBookDelta(OrderBookData):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> OrderBookDelta:
         """
         Return an order book delta from the given dict values.
 
@@ -511,7 +511,7 @@ cdef class Order:
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> Order:
         """
         Return an order from the given dict values.
 
