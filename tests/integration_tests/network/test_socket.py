@@ -21,7 +21,6 @@ from nautilus_trader.network.socket import SocketClient
 from tests.test_kit.stubs import TestStubs
 
 
-@pytest.mark.skip(reason="WIP")
 @pytest.mark.asyncio
 async def test_socket_base(socket_server, event_loop):
     messages = []
@@ -31,7 +30,7 @@ async def test_socket_base(socket_server, event_loop):
         if len(messages) > 5:
             client.stop()
 
-    host, port = socket_server.server_address
+    host, port = socket_server
     client = SocketClient(
         host=host,
         port=port,
@@ -40,7 +39,8 @@ async def test_socket_base(socket_server, event_loop):
         logger=TestStubs.logger(),
         ssl=False,
     )
-    await client.start()
+    await client.connect()
+    await asyncio.sleep(5)
     assert messages == [b"hello"] * 6
     await asyncio.sleep(1)
     client.stop()

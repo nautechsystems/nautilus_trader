@@ -16,13 +16,11 @@
 import asyncio
 import os
 
-from betfairlightweight import APIClient
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.live.data_client cimport LiveDataClientFactory
 from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory
-from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 
@@ -31,6 +29,8 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
 from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient
 from nautilus_trader.msgbus.message_bus cimport MessageBus
+
+from nautilus_trader.adapters.betfair.client import BetfairClient
 
 
 cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
@@ -73,12 +73,11 @@ cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
 
         """
         # Create client
-        client = APIClient(
+        client = BetfairClient(
             username=os.getenv(config.get("username", ""), ""),
             password=os.getenv(config.get("password", ""), ""),
             app_key=os.getenv(config.get("app_key", ""), ""),
-            certs=os.getenv(config.get("cert_dir", ""), ""),
-            lightweight=True,
+            cert_dur=os.getenv(config.get("cert_dir", ""), ""),
         )
 
         data_client = BetfairDataClient(
@@ -137,12 +136,11 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
 
         """
         # Create client
-        client = APIClient(
+        client = BetfairClient(
             username=os.getenv(config.get("username", ""), ""),
             password=os.getenv(config.get("password", ""), ""),
             app_key=os.getenv(config.get("app_key", ""), ""),
             certs=os.getenv(config.get("cert_dir", ""), ""),
-            lightweight=True,
         )
 
         # Get account ID env variable or set default

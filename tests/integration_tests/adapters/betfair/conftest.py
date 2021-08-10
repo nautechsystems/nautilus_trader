@@ -38,65 +38,20 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.account import CashAccount
 from nautilus_trader.trading.portfolio import Portfolio
-from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-@pytest.fixture(autouse=True)
-def betfairlightweight_mocks(mocker):
-
-    # Betfair client login
-    mocker.patch("betfairlightweight.endpoints.login.Login.__call__")
-
-    # Mock Navigation / market catalogue endpoints
-    mocker.patch(
-        "betfairlightweight.endpoints.navigation.Navigation.list_navigation",
-        return_value=BetfairDataProvider.navigation(),
-    )
-    mocker.patch(
-        "betfairlightweight.endpoints.betting.Betting.list_market_catalogue",
-        return_value=BetfairDataProvider.market_catalogue_short(),
-    )
-
-    # Mock Account endpoints
-    mocker.patch(
-        "betfairlightweight.endpoints.account.Account.get_account_details",
-        return_value=BetfairDataProvider.account_detail(),
-    )
-    mocker.patch(
-        "betfairlightweight.endpoints.account.Account.get_account_funds",
-        return_value=BetfairDataProvider.account_funds_no_exposure(),
-    )
-
-    # Mock Betting endpoints
-    mocker.patch(
-        "betfairlightweight.endpoints.betting.Betting.place_orders",
-        return_value=BetfairDataProvider.place_orders_success(),
-    )
-    mocker.patch(
-        "betfairlightweight.endpoints.betting.Betting.replace_orders",
-        return_value=BetfairDataProvider.replace_orders_success(),
-    )
-    mocker.patch(
-        "betfairlightweight.endpoints.betting.Betting.cancel_orders",
-        return_value=BetfairDataProvider.cancel_orders_success(),
-    )
-
-    # Streaming endpoint
-    mocker.patch(
-        "nautilus_trader.adapters.betfair.sockets.HOST",
-        return_value=BetfairTestStubs.integration_endpoint(),
-    )
+@pytest.fixture()
+@pytest.mark.asyncio
+async def betfair_client(event_loop, live_logger):
+    return BetfairTestStubs.betfair_client(loop=event_loop, logger=live_logger)
 
 
-@pytest.fixture(scope="session")
-def betfair_client():
-    return BetfairTestStubs.betfair_client()
-
-
-@pytest.fixture(scope="session")
+@pytest.fixture()
 def provider(betfair_client) -> BetfairInstrumentProvider:
-    return BetfairTestStubs.instrument_provider(betfair_client)
+    provider = BetfairTestStubs.instrument_provider(betfair_client)
+    provider.add(instrument=BetfairTestStubs.betting_instrument())
+    return provider
 
 
 @pytest.fixture()

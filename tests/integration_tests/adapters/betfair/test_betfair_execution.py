@@ -14,17 +14,22 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import os
+from unittest.mock import patch
 
-import betfairlightweight
 import orjson
 import pytest
 
+from nautilus_trader.adapters.betfair.client import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
-from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.currencies import GBP
-from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -32,16 +37,18 @@ from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderUpdated
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.trading.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
+from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-
-
-# Execution test helpers
+from tests.test_kit.stubs import TestStubs
 
 
 def _prefill_venue_order_id_to_client_order_id(raw):
@@ -76,99 +83,93 @@ def setup_exec_client_and_cache(mocker, exec_client, cache, logger, raw):
             logger.debug("adding to cache")
             cache.add_order(order, position_id=PositionId(v_id))
             cache.add_instrument(BetfairTestStubs.betting_instrument())
-
     mocker.patch.object(
         exec_client,
         "venue_order_id_to_client_order_id",
         venue_order_id_to_client_order_id,
     )
+    print("\n".join(map(str, [(o.venue_order_id, o.client_order_id) for o in cache.orders()])))
     return
 
 
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="Local testing only")
-async def test_client_connect(live_logger):
-    betfair_client = betfairlightweight.APIClient(
-        username=os.environ["BETFAIR_USERNAME"],
-        password=os.environ["BETFAIR_PW"],
-        app_key=os.environ["BETFAIR_APP_KEY"],
-        certs=os.environ["BETFAIR_CERT_DIR"],
-    )
-    #  mock login won't let you login - need to comment out in conftest.py to run
-    betfair_client.login()
-    socket = BetfairMarketStreamClient(
-        client=betfair_client, logger=live_logger, message_handler=print
-    )
-    await socket.connect()
-    await socket.send_subscription_message(market_ids=["1.180634014"])
-    await asyncio.sleep(15)
+class TestBetfairExecutionClient:
+    def setup(self):
+        # Fixture Setup
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
 
+        self.clock = LiveClock()
+        self.uuid_factory = UUIDFactory()
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "time_in_force, order, orderType, orderKey, order_kw",
-    [
-        (
-            TimeInForce.GTC,
-            None,
-            "LIMIT",
-            "limitOrder",
-            {"persistenceType": "PERSIST", "size": 10.0, "minFillSize": 0, "price": 3.05},
-        ),
-        (
-            TimeInForce.OC,
-            None,
-            "LIMIT_ON_CLOSE",
-            "limitOnCloseOrder",
-            {"price": 3.05, "liability": 10.0},
-        ),
-        (
-            TimeInForce.OC,
-            BetfairTestStubs.market_on_close_order(),
-            "MARKET_ON_CLOSE",
-            "marketOnCloseOrder",
-            {"liability": 10.0},
-        ),
-    ],
-)
-async def test_submit_order(
-    mocker,
-    cache,
-    msgbus,
-    execution_client,
-    time_in_force,
-    order,
-    orderType,
-    orderKey,
-    order_kw,
-):
-    cache.add_instrument(BetfairTestStubs.betting_instrument())
-    mock_place_orders = mocker.patch(
-        "betfairlightweight.endpoints.betting.Betting.place_orders",
-        return_value=BetfairDataProvider.place_orders_success(),
-    )
-    command = BetfairTestStubs.submit_order_command(time_in_force=time_in_force, order=order)
-    execution_client.submit_order(command)
-    await asyncio.sleep(0.2)
-    assert isinstance(msgbus.exec_engine_events[0], OrderSubmitted)
+        self.trader_id = TestStubs.trader_id()
+        self.account_id = AccountId(BETFAIR_VENUE.value, "001")
 
-    expected = {
-        "market_id": "1.179082386",
-        "customer_ref": command.id.value.replace("-", ""),
-        "customer_strategy_ref": "S-001",
-        "instructions": [
-            {
-                "orderType": orderType,
-                "selectionId": "50214",
-                "side": "BACK",
-                "handicap": "",
-                orderKey: order_kw,
-                "customerOrderRef": "O-20210410-022422-001-001-S",
-            }
-        ],
-    }
-    result = mock_place_orders.call_args[1]
-    assert result == expected
+        # Setup logging
+        self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.DEBUG)
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        self.messages = []
+
+        def handler(x):
+            self.messages.append(x)
+
+        self.msgbus.subscribe("*", handler=handler)
+
+        self.cache = TestStubs.cache()
+        self.cache.add_instrument(BetfairTestStubs.betting_instrument())
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_engine = LiveExecutionEngine(
+            loop=self.loop,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.betfair_client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
+        with patch.object(BetfairClient, "request", return_value=BetfairResponses.cert_login()):
+            self.betfair_client.login()
+
+        self.client = BetfairExecutionClient(
+            loop=asyncio.get_event_loop(),
+            client=self.betfair_client,
+            account_id=self.account_id,
+            base_currency=GBP,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            market_filter={},
+            load_instruments=False,
+        )
+
+        self.instrument_provider: BetfairInstrumentProvider = self.client.instrument_provider()
+
+        self.exec_engine.register_client(self.client)
+
+    @pytest.mark.asyncio
+    async def test_submit_order(self):
+        patch.object(self.instrument_provider, "get_account_currency", return_value="AUD")
+        # with patch.object(BetfairClient, "request", return_value=BetfairResponses.cert_login()):
+        await self.instrument_provider.load_all_async()
+        patch.object(
+            BetfairClient, "request", return_value=BetfairResponses.betting_place_order_success()
+        )
+        command = BetfairTestStubs.submit_order_command()
+        self.client.submit_order(command)
+        await asyncio.sleep(1)
+        assert isinstance(self.messages[0], OrderSubmitted)
 
 
 @pytest.mark.asyncio
@@ -290,6 +291,74 @@ async def test_cancel_order(mocker, cache, execution_client, msgbus):
     }
 
     mock_cancel_orders.assert_called_with(**expected)
+
+
+@pytest.mark.asyncio
+async def test_post_cancel_order_success(cache, execution_client, msgbus):
+    # Add fake order to cache
+    order = BetfairTestStubs.make_order()
+    order.apply(BetfairTestStubs.event_order_submitted(order=order))
+    order.apply(
+        BetfairTestStubs.event_order_accepted(
+            order=order,
+            venue_order_id=VenueOrderId("229435133092"),
+        )
+    )
+    cache.add_order(order, PositionId("1"))
+    client_order_id = cache.orders()[0].client_order_id
+
+    f = asyncio.Future()
+    f.set_result(BetfairDataProvider.cancel_orders_success())
+    execution_client._post_cancel_order(
+        f,
+        BetfairTestStubs.strategy_id(),
+        BetfairTestStubs.instrument_id(),
+        client_order_id,
+    )
+    await asyncio.sleep(0)
+    event = msgbus.exec_engine_events[0]
+    assert isinstance(event, OrderCanceled)
+
+
+@pytest.mark.asyncio
+async def test_cancel_resp_and_streaming_update(mocker, cache, execution_client, msgbus, logger):
+    # Arrange
+    order = BetfairTestStubs.make_order()
+    order.apply(BetfairTestStubs.event_order_submitted(order=order))
+    order.apply(
+        BetfairTestStubs.event_order_accepted(
+            order=order,
+            venue_order_id=VenueOrderId("229435133092"),
+        )
+    )
+    cache.add_order(order, PositionId("1"))
+    cache.add_instrument(BetfairTestStubs.betting_instrument())
+    client_order_id = cache.orders()[0].client_order_id
+
+    # Act
+    # Send response cancel
+    f = asyncio.Future()
+    f.set_result(BetfairDataProvider.cancel_orders_success())
+    execution_client._post_cancel_order(
+        f,
+        BetfairTestStubs.strategy_id(),
+        BetfairTestStubs.instrument_id(),
+        client_order_id,
+    )
+    await asyncio.sleep(0.01)
+    assert isinstance(msgbus.exec_engine_events[0], OrderCanceled)
+
+    # Send socket cancel
+    raw = BetfairDataProvider.streaming_ocm_CANCEL()
+    setup_exec_client_and_cache(
+        mocker=mocker,
+        exec_client=execution_client,
+        cache=cache,
+        logger=logger,
+        raw=raw,
+    )
+    update = orjson.loads(raw)
+    await execution_client._handle_order_stream_update(update)
 
 
 @pytest.mark.asyncio

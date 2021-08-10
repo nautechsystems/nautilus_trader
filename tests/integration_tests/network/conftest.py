@@ -12,11 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-import socketserver
-import threading
-import time
-from typing import Generator
+import asyncio
 
 import pytest
 
@@ -24,31 +20,27 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 
 
-class ThreadedTCPRequestHandler(socketserver.StreamRequestHandler):
-    def handle(self):
+async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    async def write():
         while True:
-            response = bytes("hello\r\n", "ascii")
-            print("Sending response", response)
-            self.request.sendall(response)
-            time.sleep(0.1)
+            writer.write(b"hello\r\n")
+            await asyncio.sleep(0.1)
 
+    asyncio.get_event_loop().create_task(write())
 
-class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
-    pass
+    while True:
+        req = await reader.readline()
+        if req == b"CLOSE_STREAM":
+            writer.close()
 
 
 @pytest.fixture()
-def socket_server() -> Generator:
-    server = ThreadedTCPServer(("localhost", 0), ThreadedTCPRequestHandler)
-    with server:
-        # Start a thread with the server -- that thread will then start one
-        # more thread for each request
-        server_thread = threading.Thread(target=server.serve_forever)
-        # Exit the server thread when the main thread terminates
-        server_thread.daemon = True
-        server_thread.start()
-        yield server
-        server.shutdown()
+async def socket_server():
+    server = await asyncio.start_server(handle_echo, "127.0.0.1", 0)
+    addr = server.sockets[0].getsockname()
+    async with server:
+        await server.start_serving()
+        yield addr
 
 
 @pytest.fixture()

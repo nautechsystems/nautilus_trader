@@ -12,14 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from unittest.mock import patch
 
+import pytest
+
+from nautilus_trader.adapters.betfair.client import BetfairClient
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import build_market_update_messages
 from nautilus_trader.adapters.betfair.parsing import make_order
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
-from nautilus_trader.core.uuid import UUID
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
@@ -28,19 +31,11 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import StrategyId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
-from nautilus_trader.model.orders.limit import LimitOrder
+from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
@@ -53,12 +48,11 @@ def test_order_submit_to_betfair(betting_instrument):
         "instructions": [
             {
                 "customerOrderRef": "O-20210410-022422-001-001-S",
-                "handicap": "",
+                "handicap": "0.0",
                 "limitOrder": {
-                    "minFillSize": 0,
                     "persistenceType": "PERSIST",
-                    "price": 3.05,
-                    "size": 10.0,
+                    "price": "3.05",
+                    "size": "10.0",
                 },
                 "orderType": "LIMIT",
                 "selectionId": "50214",
@@ -102,9 +96,14 @@ def test_order_cancel_to_betfair(betting_instrument):
     assert result == expected
 
 
-def test_account_statement(betfair_client, uuid, clock):
-    detail = betfair_client.account.get_account_details()
-    funds = betfair_client.account.get_account_funds()
+@pytest.mark.asyncio
+async def test_account_statement(betfair_client: BetfairClient, uuid, clock):
+    with patch.object(BetfairClient, "request", return_value=BetfairResponses.account_details()):
+        detail = await betfair_client.get_account_details()
+    with patch.object(
+        BetfairClient, "request", return_value=BetfairResponses.account_funds_no_exposure()
+    ):
+        funds = await betfair_client.get_account_funds()
     result = betfair_account_to_account_state(
         account_detail=detail,
         account_funds=funds,
@@ -127,8 +126,8 @@ def test_account_statement(betfair_client, uuid, clock):
     assert result == expected
 
 
-def test__merge_order_book_deltas(provider):
-    provider.load_all()
+@pytest.mark.asyncio
+async def test_merge_order_book_deltas(provider):
     raw = {
         "op": "mcm",
         "clk": "792361654",
@@ -153,29 +152,61 @@ def test__merge_order_book_deltas(provider):
     assert len(updates[1].deltas) == 2
 
 
-def test_make_order():
-    order = LimitOrder(
-        trader_id=TraderId("TESTER-001"),
-        strategy_id=StrategyId("Quoter-Warwick(AUS)2ndAug | R2800m3yo | 7.DubaiClassic"),
-        instrument_id=InstrumentId(
-            Symbol("HorseRacing,,30747950,20210802-034000,ODDS,WIN,1.185880713,40372921,0.0"),
-            Venue("BETFAIR"),
-        ),
-        client_order_id=ClientOrderId(
-            "O-20210802-033429-001-Warwick(AUS)2ndAug | R2800m3yo | 7.DubaiClassic-25"
-        ),
-        order_side=OrderSide.BUY,
-        quantity=Quantity.from_str("1.0"),
-        price=Price.from_str("0.125"),
-        time_in_force=TimeInForce.GTC,
-        expire_time=None,
-        init_id=UUID.from_str("91de5795-8c64-334f-4f9c-16e01572249d"),
-        ts_init=1627875270563974000,
-        # account_id='BETFAIR-001'
-    )
+def test_make_order_limit():
+    order = BetfairTestStubs.limit_order()
     result = make_order(order)
     expected = {
-        "limit_order": {"minFillSize": 0, "persistenceType": "PERSIST", "price": 8.0, "size": 1.0},
-        "order_type": "LIMIT",
+        "limitOrder": {"persistenceType": "PERSIST", "price": "3.05", "size": "10.0"},
+        "orderType": "LIMIT",
+    }
+    assert result == expected
+
+
+def test_make_order_limit_on_close():
+    order = BetfairTestStubs.limit_order(time_in_force=TimeInForce.OC)
+    result = make_order(order)
+    expected = {
+        "limitOnCloseOrder": {"price": "3.05", "liability": "10.0"},
+        "orderType": "LIMIT_ON_CLOSE",
+    }
+    assert result == expected
+
+
+def test_make_order_market_buy():
+    order = BetfairTestStubs.market_order(side=OrderSide.BUY)
+    result = make_order(order)
+    expected = {
+        "limitOrder": {
+            "persistenceType": "LAPSE",
+            "price": "1.01",
+            "size": "10.0",
+            "timeInForce": "FILL_OR_KILL",
+        },
+        "orderType": "LIMIT",
+    }
+    assert result == expected
+
+
+def test_make_order_market_sell():
+    order = BetfairTestStubs.market_order(side=OrderSide.SELL)
+    result = make_order(order)
+    expected = {
+        "limitOrder": {
+            "persistenceType": "LAPSE",
+            "price": "1000.0",
+            "size": "10.0",
+            "timeInForce": "FILL_OR_KILL",
+        },
+        "orderType": "LIMIT",
+    }
+    assert result == expected
+
+
+def test_make_order_market_on_close():
+    order = BetfairTestStubs.market_order(time_in_force=TimeInForce.OC)
+    result = make_order(order)
+    expected = {
+        "marketOnCloseOrder": {"liability": "10.0"},
+        "orderType": "MARKET_ON_CLOSE",
     }
     assert result == expected

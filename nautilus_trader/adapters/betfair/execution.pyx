@@ -20,7 +20,6 @@ from datetime import datetime
 from functools import partial
 from typing import Dict, List, Optional, Set
 
-import betfairlightweight
 import orjson
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
@@ -32,11 +31,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.core.datetime cimport nanos_to_secs
 from nautilus_trader.core.datetime cimport secs_to_nanos
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.messages cimport ExecutionReport
 from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
-from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -58,6 +55,7 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 
+from nautilus_trader.adapters.betfair.client import BetfairClient
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
@@ -81,7 +79,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     def __init__(
         self,
         loop not None: asyncio.AbstractEventLoop,
-        client not None,
+        client not None: BetfairClient,
         AccountId account_id not None,
         Currency base_currency not None,
         MessageBus msgbus not None,
@@ -98,8 +96,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
-        client : betfairlightweight.APIClient
-            The Betfair client.
+        client : BetfairClient
+            The Betfair HTTPClient.
         account_id : AccountId
             The account ID for the client.
         base_currency : Currency
@@ -114,13 +112,11 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             The logger for the client.
 
         """
-        self._client = client  # type: betfairlightweight.APIClient
-        self._client.login()
+        self._client = client  # type: BetfairClient
 
         cdef BetfairInstrumentProvider instrument_provider = BetfairInstrumentProvider(
             client=client,
             logger=logger,
-            load_all=load_instruments,
             market_filter=market_filter
         )
 
@@ -155,11 +151,13 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._account_currency = None
 
     cpdef void _start(self) except *:
+        self._log.info("Connecting...")
         self._loop.create_task(self._connect())
 
     async def _connect(self):
-        self._log.info("Connecting to Betfair APIClient...")
-        self._log.info("Betfair APIClient login successful.", LogColor.GREEN)
+        self._log.info("Connecting to BetfairClient...")
+        await self._client.connect()
+        self._log.info("BetfairClient login successful.", LogColor.GREEN)
 
         aws = [
             self._stream.connect(),
@@ -182,7 +180,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         # Ensure client closed
         self._log.info("Closing APIClient...")
-        self._client.client_logout()
+        self._client.disconnect()
 
         self.is_connected = False
         self._log.info("Disconnected.")
@@ -191,8 +189,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     async def connection_account_state(self):
         aws = [
-            self._loop.run_in_executor(None, self._get_account_details),
-            self._loop.run_in_executor(None, self._get_account_funds),
+            self._loop.create_task(self._get_account_details),
+            self._loop.create_task(self._get_account_funds),
         ]
         result = await asyncio.gather(*aws)
         account_details, account_funds = result
@@ -208,18 +206,22 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
     cpdef dict _get_account_details(self):
         self._log.debug("Sending get_account_details request")
-        return self._client.account.get_account_details()
+        return self._client.get_account_details()
 
     cpdef dict _get_account_funds(self):
         self._log.debug("Sending get_account_funds request")
-        return self._client.account.get_account_funds()
+        return self._client.get_account_funds()
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     # TODO - #  Do want to throttle updates into a bulk update if they're coming faster than x / sec? Maybe this is for risk engine?
     #  We could use some heuristics about the avg network latency and add an optional flag for throttle inserts etc.
-
     cpdef void submit_order(self, SubmitOrder command) except *:
+        Condition.not_none(command, "command")
+
+        self._loop.create_task(self._submit_order(command))
+
+    async def _submit_order(self, SubmitOrder command):
         self._log.debug(f"Received submit_order {command}")
 
         self.generate_order_submitted(
@@ -230,51 +232,39 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         )
         self._log.debug(f"Generated _generate_order_submitted")
 
-        f = self._loop.run_in_executor(None, self._submit_order, command)  # type: asyncio.Future
-        self._log.debug(f"future: {f}")
-        f.add_done_callback(partial(
-            self._post_submit_order,
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.order.client_order_id,
-        ))
-
-    def _submit_order(self, SubmitOrder command):
         instrument = self._cache.instrument(command.instrument_id)
         Condition.not_none(instrument, "instrument")
-        kw = order_submit_to_betfair(command=command, instrument=instrument)
-        self._log.debug(f"{kw}")
-        return self._client.betting.place_orders(**kw)
+        client_order_id = command.order.client_order_id
 
-    def _post_submit_order(self, f: asyncio.Future, strategy_id, instrument_id, client_order_id):
-        self._log.debug(f"inside _post_submit_order for {client_order_id}")
+        place_order = order_submit_to_betfair(command=command, instrument=instrument)
         try:
-            resp = f.result()
-            self._log.debug(f"resp: {resp}")
+            resp = await self._client.place_orders(**place_order)
         except Exception as e:
-            self._log.error(f"_post_submit_order strategy_id={strategy_id}, client_order_id={client_order_id} exception={e}")
+            self._log.error(f"submit_order strategy_id={command.strategy_id}, "
+                            f"client_order_id={client_order_id} exception={e}")
             return
+
         assert len(resp['instructionReports']) == 1, "Should only be a single order"
 
         if resp["status"] == "FAILURE":
             reason = f"{resp['errorCode']}: {resp['instructionReports'][0]['errorCode']}"
             self._log.warning(f"Submit failed - {reason}")
             self.generate_order_rejected(
-                strategy_id=strategy_id,
-                instrument_id=instrument_id,
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
                 client_order_id=client_order_id,
-                reason=reason,
+                reason=reason,  # type: ignore
                 ts_event=self._clock.timestamp_ns(),
             )
             return
         bet_id = resp['instructionReports'][0]['betId']
         self._log.debug(f"Matching venue_order_id: {bet_id} to client_order_id: {client_order_id}")
-        self.venue_order_id_to_client_order_id[bet_id] = client_order_id
+        self.venue_order_id_to_client_order_id[bet_id] = client_order_id  # type: ignore
         self.generate_order_accepted(
-            strategy_id=strategy_id,
-            instrument_id=instrument_id,
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
             client_order_id=client_order_id,
-            venue_order_id=VenueOrderId(bet_id),
+            venue_order_id=VenueOrderId(bet_id),  # type: ignore
             ts_event=self._clock.timestamp_ns(),
         )
 
@@ -316,7 +306,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         )
         self._log.debug(f"update kw: {kw}")
         self.pending_update_order_client_ids.add((command.client_order_id, existing_order.venue_order_id))
-        return self._client.betting.replace_orders(**kw)
+        return self._client.replace_orders(**kw)
 
     def _post_update_order(
         self,
@@ -375,10 +365,41 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             venue_order_id=command.venue_order_id,
             ts_event=self._clock.timestamp_ns(),
         )
+        f = self._loop.run_in_executor(None, self._cancel_order, command)  # type: asyncio.Future
+        self._log.debug(f"future: {f}")
+        f.add_done_callback(partial(
+            self._post_cancel_order,
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.client_order_id,
+        ))
+
+    def _cancel_order(self, CancelOrder command):
         instrument = self._cache.instrument(command.instrument_id)
+        Condition.not_none(instrument, "instrument")
         kw = order_cancel_to_betfair(command=command, instrument=instrument)
-        resp = self._client.betting.cancel_orders(**kw)
-        self._log.debug(f"cancel: {resp}")
+        self._log.debug(f"{kw}")
+        return self._client.cancel_orders(**kw)
+
+    def _post_cancel_order(self, f: asyncio.Future, strategy_id, instrument_id, client_order_id):
+        self._log.debug(f"inside _post_cancel_order for {client_order_id}")
+        try:
+            resp = f.result()
+            self._log.debug(f"resp: {resp}")
+        except Exception as e:
+            self._log.error(f"_post_cancel_order client_order_id={client_order_id} exception={e}")
+            return
+
+        bet_id = resp['instructionReports'][0]['instruction']['betId']
+        self._log.debug(f"Matching venue_order_id: {bet_id} to client_order_id: {client_order_id}")
+        self.venue_order_id_to_client_order_id[bet_id] = client_order_id
+        self.generate_order_canceled(
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=VenueOrderId(bet_id),
+            ts_event=self._clock.timestamp_ns(),
+        )
 
     # cpdef void bulk_submit_order(self, list commands):
     # betfair allows up to 200 inserts per request
@@ -411,7 +432,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.exception(f"Unhandled exception: {e}")
 
-    cpdef object client(self):
+    cpdef HTTPClient client(self):
         return self._client
 
     cpdef BetfairInstrumentProvider instrument_provider(self):
@@ -507,7 +528,9 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             cancel_qty = sum([order_update[k] for k in ("sc", "sl", "sv")])
                             assert order_update['sm'] + cancel_qty == order_update["s"], f"Size matched + canceled != total: {order_update}"
                             # If this is the result of a UpdateOrder, we don't want to emit a cancel
-                            key = (ClientOrderId(order_update.get("rfo")), VenueOrderId(order_update["id"]))
+                            venue_order_id = VenueOrderId(str(order_update["id"]))
+                            client_order_id = self._cache.client_order_id(venue_order_id=venue_order_id)
+                            key = (client_order_id, venue_order_id)
                             self._log.debug(f"cancel key: {key}, pending_update_order_client_ids: {self.pending_update_order_client_ids}")
                             if key not in self.pending_update_order_client_ids:
                                 # The remainder of this order has been canceled

@@ -16,7 +16,6 @@
 import asyncio
 
 import orjson
-from betfairlightweight import APIClient
 
 from nautilus_trader.adapters.betfair.providers cimport BetfairInstrumentProvider
 from nautilus_trader.cache.cache cimport Cache
@@ -35,6 +34,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
 from nautilus_trader.msgbus.message_bus cimport MessageBus
 
+from nautilus_trader.adapters.betfair.client import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.parsing import on_market_update
@@ -65,7 +65,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     def __init__(
         self,
         loop not None: asyncio.AbstractEventLoop,
-        client not None,
+        client not None: BetfairClient,
         MessageBus msgbus not None,
         Cache cache not None,
         LiveClock clock not None,
@@ -81,8 +81,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         ----------
         loop : asyncio.AbstractEventLoop
             The event loop for the client.
-        client : APIClient
-            The betfairlightweight client.
+        client : BetfairClient
+            The betfair HTTPClient
         msgbus : MessageBus
             The message bus for the client.
         cache : Cache
@@ -93,7 +93,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             The logger for the client.
 
         """
-        self._client = client  # type: APIClient
+        self._client = client  # type: BetfairClient
         self._client.login()
 
         cdef BetfairInstrumentProvider instrument_provider = BetfairInstrumentProvider(
@@ -146,6 +146,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._log.debug("scheduling heartbeat")
         self._loop.create_task(self._post_connect_heartbeat())
 
+        self.is_connected = True
         self._log.info("Connected.")
 
     async def _post_connect_heartbeat(self):

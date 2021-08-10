@@ -12,52 +12,64 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import orjson
+
 import pytest
 
+from nautilus_trader.adapters.betfair.client import BetfairClient
 from nautilus_trader.adapters.betfair.parsing import on_market_update
 from nautilus_trader.adapters.betfair.providers import load_markets
 from nautilus_trader.adapters.betfair.providers import load_markets_metadata
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.model.enums import InstrumentStatus
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
+from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
+from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 
 
 @pytest.fixture(autouse=True)
-def fix_mocks(mocker):
-    """
-    Override the `_short` version of `list_market_catalogue` used by the
-    top-level conftest.
-    """
-    # Mock market catalogue endpoints
-    mocker.patch(
-        "betfairlightweight.endpoints.betting.Betting.list_market_catalogue",
-        return_value=BetfairDataProvider.market_catalogue(),
+def mock_data(mocker):
+    mocker.patch.object(
+        BetfairClient,
+        "list_navigation",
+        return_value=BetfairResponses.navigation_list_navigation(),
+    )
+    mocker.patch.object(
+        BetfairClient,
+        "list_market_catalogue",
+        return_value=BetfairDataProvider.market_catalogue_short(),
+    )
+    mocker.patch.object(
+        BetfairClient,
+        "get_account_details",
+        return_value=BetfairResponses.account_details()["result"],
     )
 
 
 @pytest.fixture()
-def market_metadata(betfair_client):
-    markets = load_markets(betfair_client, market_filter={"event_type_name": "Basketball"})
-    return load_markets_metadata(client=betfair_client, markets=markets)
+@pytest.mark.asyncio
+async def market_metadata(betfair_client):
+    markets = await load_markets(betfair_client, market_filter={"event_type_name": "Basketball"})
+    return await load_markets_metadata(client=betfair_client, markets=markets)
 
 
-def test_load_markets(provider, betfair_client):
-    markets = load_markets(betfair_client, market_filter={})
+@pytest.mark.asyncio
+async def test_load_markets(provider, betfair_client):
+    markets = await load_markets(betfair_client, market_filter={})
     assert len(markets) == 13227
 
-    markets = load_markets(betfair_client, market_filter={"event_type_name": "Basketball"})
+    markets = await load_markets(betfair_client, market_filter={"event_type_name": "Basketball"})
     assert len(markets) == 302
 
-    markets = load_markets(betfair_client, market_filter={"market_id": "1.177125728"})
+    markets = await load_markets(betfair_client, market_filter={"market_id": "1.177125728"})
     assert len(markets) == 1
 
 
-def test_load_markets_metadata(betfair_client):
-    markets = load_markets(betfair_client, market_filter={"event_type_name": "Basketball"})
-    market_metadata = load_markets_metadata(client=betfair_client, markets=markets)
+@pytest.mark.asyncio
+async def test_load_markets_metadata(betfair_client):
+    markets = await load_markets(betfair_client, market_filter={"event_type_name": "Basketball"})
+    market_metadata = await load_markets_metadata(client=betfair_client, markets=markets)
     assert isinstance(market_metadata, dict)
-    assert len(market_metadata) == 12035
+    assert len(market_metadata) == 685
 
 
 def test_load_instruments(market_metadata):
@@ -66,41 +78,43 @@ def test_load_instruments(market_metadata):
         for metadata in market_metadata.values()
         for instrument in make_instruments(metadata, currency="GBP")
     ]
-    assert len(instruments) == 172535
+    assert len(instruments) == 10250
 
 
-def test_load_all(provider):
-    provider.load_all()
+@pytest.mark.asyncio
+async def test_load_all(provider):
+    await provider.load_all_async()
+    assert len(provider.list_instruments()) == 10250
 
 
-def test_search_instruments(provider):
-    markets = provider.search_markets(market_filter={"market_marketType": "MATCH_ODDS"})
-    assert len(markets) == 1000
+# def test_search_instruments(provider):
+#     markets = provider.search_markets(market_filter={"market_marketType": "MATCH_ODDS"})
+#     assert len(markets) == 1000
 
 
-def test_get_betting_instrument(provider):
-    provider.load_all()
-    instrument = provider.get_betting_instrument(
-        market_id="1.180294978", selection_id="6146434", handicap="0.0"
+@pytest.mark.asyncio
+async def test_get_betting_instrument(provider):
+    await provider.load_all_async()
+    kw = dict(
+        market_id="1.180736294",
+        selection_id="38849165",
+        handicap="0.0",
     )
-    assert instrument.market_id == "1.180294978"
+    instrument = provider.get_betting_instrument(**kw)
+    assert instrument.market_id == "1.180736294"
 
     # Test throwing warning
-    instrument = provider.get_betting_instrument(
-        market_id="1.180294978", selection_id="6146434", handicap="-100"
-    )
+    kw["handicap"] = "-1000"
+    instrument = provider.get_betting_instrument(**kw)
     assert instrument is None
 
     # Test already in self._subscribed_instruments
-    instrument = provider.get_betting_instrument(
-        market_id="1.180294978", selection_id="6146434", handicap="-100"
-    )
+    instrument = provider.get_betting_instrument(**kw)
     assert instrument is None
 
 
 def test_market_update_runner_removed(provider):
-    raw = BetfairDataProvider.streaming_market_definition_runner_removed()
-    update = orjson.loads(raw)
+    update = BetfairStreaming.market_definition_runner_removed()
 
     # Setup
     market_def = update["mc"][0]["marketDefinition"]

@@ -42,7 +42,7 @@ empyrical = "^0.5.5"
 fsspec = "^2021.7.0"
 msgpack = "^1.0.2"
 numpy = "^1.21.1"
-orjson = "3.5.1"  # Pinned at 3.5.1 due betfairlightweight
+orjson = "^3.6.1"
 pandas = "^1.3.1"
 psutil = "^5.8.0"
 pyarrow = "^4.0.1"
@@ -53,10 +53,10 @@ tabulate = "^0.8.9"
 tqdm = "^4.62.0"
 uvloop = { version = "^0.15.3", markers = "sys_platform != 'win32'" }
 bokeh = { version = "^2.3.2", optional = true }
-betfairlightweight = {extras = ["speed"], version = "^2.12.1", optional = true}
 distributed = { version = "^2021.7.1", optional = true }
 ccxt = { version = "^1.54.60", optional = true }
 ib_insync = { version = "^0.9.66", optional = true }
+aiodns = "^3.0.0"
 
 [tool.poetry.dev-dependencies]
 # coverage 5.x is currently broken for Cython
@@ -76,7 +76,6 @@ sphinx-rtd-theme = { version = "^0.5.1", optional = true }
 more-executors = "^2.8.1"
 
 [tool.poetry.extras]
-betfair = ["betfairlightweight"]
 ccxt = ["ccxt"]
 distributed = ["distributed", "bokeh"]
 docs = ["numpydoc", "sphinx", "sphinx-rtd-theme"]

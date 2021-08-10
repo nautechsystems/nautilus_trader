@@ -14,31 +14,35 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import asyncio
+import datetime
 import os
+import pathlib
 import sys
 from decimal import Decimal
+from functools import partial
 
 import betfairlightweight
+import orjson
 
-from nautilus_trader.adapters.betfair.factory import BetfairLiveDataClientFactory
-from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientFactory
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.live.node import TradingNode
+from nautilus_trader.persistence.streaming import FeatherWriter
+from tests.test_kit.strategies import RepeatedOrders
 
 
 sys.path.insert(
     0, str(os.path.abspath(__file__ + "/../../../"))
 )  # Allows relative imports from examples
 
-from examples.strategies.orderbook_imbalance import OrderbookImbalance
+from nautilus_trader.adapters.betfair.factory import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientFactory
+from nautilus_trader.live.node import TradingNode
 
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.
-
-market_id = "1.186281814"
+market_id = "1.186182608"
 config = {
     "trader": {
         "name": "TESTER",  # Not sent beyond system boundary
@@ -49,8 +53,8 @@ config = {
         "timeout_connection": 30.0,  # Timeout for all clients to connect and initialize
         "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
         "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
-        "timeout_disconnection": 30.0,  # Timeout for all engine clients to disconnect
-        "check_residuals_delay": 15.0,  # Delay to await residual events after stopping engines
+        "timeout_disconnection": 1.0,  # Timeout for all engine clients to disconnect
+        "check_residuals_delay": 1.0,  # Delay to await residual events after stopping engines
     },
     "logging": {
         "level_stdout": "DBG",
@@ -85,16 +89,18 @@ config = {
         },
     },
 }
+os.environ.update(
+    {
+        "BETFAIR_USERNAME": "Scholarship2021E",
+        "BETFAIR_PW": "dRlkj2756!",
+        "BETFAIR_APP_KEY": "q6VebE8rN7ZYra1w",
+    }
+)
 
-
-# Instantiate your strategies to pass into the trading node. You could add
-# custom options into the configuration file or even use another configuration
-# file.
-
-# Load instruments
+# Find instruments
 client = betfairlightweight.APIClient(
     username=os.getenv("BETFAIR_USERNAME"),
-    password=os.getenv("BETFAIR_PASSWORD"),
+    password=os.getenv("BETFAIR_PW"),
     app_key=os.getenv("BETFAIR_APP_KEY"),
     certs=os.getenv("BETFAIR_CERT_DIR"),
     lightweight=True,
@@ -103,20 +109,41 @@ client.login()
 logger = LiveLogger(loop=asyncio.get_event_loop(), clock=LiveClock())
 
 provider = BetfairInstrumentProvider(
-    client=client, logger=logger, market_filter={"market_id": market_id}
+    client=client,
+    logger=logger,
+    market_filter={"market_id": market_id},
 )
+all_instruments = provider.list_instruments()
 
-instrument = provider.list_instruments()[0]
+# Instantiate your strategies to pass into the trading node. You could add
+# custom options into the configuration file or even use another configuration
+# file.
 
-strategy = OrderbookImbalance(
-    instrument=instrument,
-    max_trade_size=Decimal(10.0),
-    order_id_tag="001",
-    trigger_min_size=50,
+
+strategy = RepeatedOrders(
+    instrument_id=all_instruments[0].id,
+    trade_size=Decimal(10.0),
 )
 
 # Instantiate the node passing a list of strategies and configuration
 node = TradingNode(config=config)  # type: ignore
+
+# Setup persistence
+now = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+name = f"betfair-order-tests-{now}"
+root = pathlib.Path(os.environ["NAUTILUS_DATA"])
+live_folder = root.joinpath("live")
+writer = FeatherWriter(path=f"{live_folder}/{name}.feather")
+node.trader.subscribe("*", writer.write)
+
+
+# Setup logging
+def sink(record, f):
+    f.write(orjson.dumps(record) + b"\n")
+
+
+log_sink = open(f"{root}/logs/{name}.log", "wb")
+node.get_logger().register_sink(partial(sink, f=log_sink))
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
@@ -128,8 +155,17 @@ node.build()
 
 
 # Stop and dispose of the node with SIGINT/CTRL+C
+
 if __name__ == "__main__":
+    #
+    # tracer = VizTracer(
+    #     output_file="profile.json",
+    #     exclude_files=["/Users/bradleymcelroy/.pyenv/versions/3.9.6/lib/python3.9/"],
+    #     tracer_entries=3_000_000
+    # )
+
     try:
+        # with tracer:
         node.start()
     finally:
         node.dispose()

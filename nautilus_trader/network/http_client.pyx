@@ -14,8 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import itertools
+import socket
+from typing import Dict, List, Union
 
 import aiohttp
+import orjson
+from aiohttp import ClientResponse
+from aiohttp import ClientResponseError
+from aiohttp import ClientSession
 
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -34,7 +41,11 @@ cdef class HTTPClient:
         self,
         loop not None: asyncio.AbstractEventLoop,
         Logger logger not None,
+        list addresses=None,
+        list nameservers=None,
         int ttl_dns_cache=ONE_DAY,
+        object ssl=False,
+        dict connector_kwargs=None,
     ):
         """
         Initialize a new instance of the ``HTTPClient`` class.
@@ -45,6 +56,8 @@ cdef class HTTPClient:
             The event loop for the client.
         logger : Logger
             The logger for the client.
+        ssl: SSL Context (Optional)
+            Optional ssl context to use for HTTPS (default=False)
         ttl_dns_cache : int
             The time to live for the DNS cache.
 
@@ -61,24 +74,70 @@ cdef class HTTPClient:
             component_name=type(self).__name__,
             logger=logger,
         )
-
+        self._addresses = addresses or ['0.0.0.0']
+        self._nameservers = nameservers or ['8.8.8.8', '8.8.4.4']
+        self._ssl = ssl
         self._ttl_dns_cache = ttl_dns_cache
-        self._session = None
+        self._connector_kwargs = connector_kwargs or {}
+        self._sessions: List[ClientSession] = []
+
+    @property
+    def session(self) -> aiohttp.ClientSession:
+        assert self._sessions, "No sessions, need to connect?"
+        return next(self._sessions)
 
     async def connect(self):
-        connector = aiohttp.TCPConnector(ttl_dns_cache=300)
-        self._session = aiohttp.ClientSession(loop=self._loop, connector=connector)
+        self._sessions = itertools.cycle([aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(
+                limit=0,
+                resolver=aiohttp.AsyncResolver(
+                    nameservers=self._nameservers
+                ),
+                local_addr=(address, 0),
+                ttl_dns_cache=self._ttl_dns_cache,
+                family=socket.AF_INET,
+                ssl=self._ssl,
+                **self._connector_kwargs
+            )) for address in self._addresses
+        ])
 
-    async def _request(self, method, url, **kwargs) -> bytes:
-        resp = await self._session._request(method=method, str_or_url=url, **kwargs)
-        # TODO - Do something with status code?
-        # assert resp.status
-        return await resp.read()
+    async def disconnect(self):
+        for session in self._sessions:
+            self._log.debug(f"Closing session: {session}")
+            await session.close()
+
+    # TODO clean this up
+    async def request(self, method, url, headers=None, json=None, as_json=False, **kwargs) -> Union[bytes, Dict]:
+        self._log.debug(f"Request: {method=}, {url=}, {headers=}, {json=}, {kwargs if kwargs else ''}")
+        async with self.session.request(
+            method=method,
+            url=url,
+            headers=headers,
+            json=json,
+            **kwargs
+        ) as resp:
+            raw = await resp.read()
+            try:
+                resp.raise_for_status()
+                if as_json:
+                    return orjson.loads(raw)
+                return raw
+            except ClientResponseError as e:
+                self._log.exception(e)
+                raise ResponseException(resp=resp, raw=raw, client_response_error=e)
 
     async def get(self, url, **kwargs):
-        return await self._request(method="GET", url=url, **kwargs)
+        return await self.request(method="GET", url=url, **kwargs)
 
     async def post(self, url, **kwargs):
-        return await self._request(method="POST", url=url, **kwargs)
+        return await self.request(method="POST", url=url, **kwargs)
 
     # TODO more convenience methods?
+
+
+class ResponseException(BaseException):
+    def __init__(self, resp: ClientResponse, raw: bytes, client_response_error: ClientResponseError):
+        super().__init__()
+        self.resp = resp
+        self.raw = raw
+        self.client_response_error = client_response_error

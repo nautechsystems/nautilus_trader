@@ -21,12 +21,6 @@ from typing import List, Optional, Union
 
 import orjson
 import pandas as pd
-from betfairlightweight.filters import cancel_instruction
-from betfairlightweight.filters import limit_on_close_order
-from betfairlightweight.filters import limit_order
-from betfairlightweight.filters import market_on_close_order
-from betfairlightweight.filters import place_instruction
-from betfairlightweight.filters import replace_instruction
 
 from nautilus_trader.adapters.betfair.common import B2N_MARKET_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import B_ASK_KINDS
@@ -91,7 +85,7 @@ def make_custom_order_ref(client_order_id, strategy_id):
     return client_order_id.value.rsplit("-" + strategy_id.get_tag(), maxsplit=1)[0]
 
 
-def determine_order_price(order: Order):
+def determine_order_price(order: Union[LimitOrder, MarketOrder]):
     """
     Determine the correct price to send for a given order. Betfair doesn't support market orders, so if this order is a
     MarketOrder, we generate a MIN/MAX price based on the side
@@ -111,38 +105,64 @@ def parse_betfair_timestamp(pt):
     return pt * MILLIS_TO_NANOS
 
 
-def make_order(order: Order):
-    if isinstance(order, LimitOrder):
-        price = determine_order_price(order)
-        price = float(probability_to_price(probability=price, side=order.side))
-        if order.time_in_force != TimeInForce.OC:
-            return {
-                "order_type": "LIMIT",
-                "limit_order": limit_order(
-                    price=price,
-                    size=float(order.quantity),
-                    min_fill_size=0,
-                    persistence_type="PERSIST",
-                    time_in_force=N2B_TIME_IN_FORCE[order.time_in_force],
-                ),
-            }
-        else:
-            return {
-                "order_type": "LIMIT_ON_CLOSE",
-                "limit_on_close_order": limit_on_close_order(
-                    price=price, liability=float(order.quantity)
-                ),
-            }
-    elif isinstance(order, MarketOrder) and order.time_in_force == TimeInForce.OC:
+def _make_limit_order(order: Union[LimitOrder, MarketOrder]):
+    price = determine_order_price(order)
+    price = str(float(probability_to_price(probability=price, side=order.side)))
+    size = str(float(order.quantity))
+    if order.time_in_force == TimeInForce.OC:
         return {
-            "order_type": "MARKET_ON_CLOSE",
-            "market_on_close_order": market_on_close_order(liability=float(order.quantity)),
+            "orderType": "LIMIT_ON_CLOSE",
+            "limitOnCloseOrder": {"price": price, "liability": size},
         }
+    else:
+        parsed = {
+            "orderType": "LIMIT",
+            "limitOrder": {"price": price, "size": size, "persistenceType": "PERSIST"},
+        }
+        if order.time_in_force in N2B_TIME_IN_FORCE:
+            parsed["limitOrder"]["timeInForce"] = N2B_TIME_IN_FORCE[  # type: ignore
+                order.time_in_force
+            ]
+            parsed["limitOrder"]["persistenceType"] = "LAPSE"  # type: ignore
+        return parsed
+
+
+def _make_market_order(order: Union[LimitOrder, MarketOrder]):
+    if order.time_in_force == TimeInForce.OC:
+        return {
+            "orderType": "MARKET_ON_CLOSE",
+            "marketOnCloseOrder": {"liability": str(float(order.quantity))},
+        }
+    else:
+        # Betfair doesn't really support market orders, return a limit order with min/max price
+        limit_order = LimitOrder(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            order_side=order.side,
+            quantity=order.quantity,
+            price=MAX_BET_PROB if order.side == OrderSide.BUY else MIN_BET_PROB,
+            time_in_force=TimeInForce.FOK,
+            expire_time=None,
+            init_id=order.init_id,
+            ts_init=order.ts_init,
+        )
+        return _make_limit_order(order=limit_order)
+
+
+def make_order(order: Union[LimitOrder, MarketOrder]):
+    if isinstance(order, LimitOrder):
+        return _make_limit_order(order=order)
+    elif isinstance(order, MarketOrder):
+        return _make_market_order(order=order)
+    else:
+        raise TypeError(f"Unknown order type: {type(order)}")
 
 
 def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument):
     """
-    Convert a SubmitOrder command into the data required by betfairlightweight
+    Convert a SubmitOrder command into the data required by BetfairClient
     """
 
     order = make_order(command.order)
@@ -153,18 +173,18 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
         "customer_ref": command.id.value.replace("-", ""),
         "customer_strategy_ref": command.strategy_id.value[:15],
         "instructions": [
-            place_instruction(
+            {
                 **order,
-                selection_id=instrument.selection_id,
-                side=N2B_SIDE[command.order.side],
-                handicap=instrument.selection_handicap,
+                "selectionId": instrument.selection_id,
+                "side": N2B_SIDE[command.order.side],
+                "handicap": instrument.selection_handicap,
                 # Remove the strategy name from customer_order_ref; it has a limited size and we don't control what
                 # length the strategy might be or what characters users might append
-                customer_order_ref=make_custom_order_ref(
+                "customerOrderRef": make_custom_order_ref(
                     client_order_id=command.order.client_order_id,
                     strategy_id=command.strategy_id,
                 ),
-            )
+            }
         ],
     }
     return place_order
@@ -177,28 +197,28 @@ def order_update_to_betfair(
     instrument: BettingInstrument,
 ):
     """
-    Convert an UpdateOrder command into the data required by betfairlightweight
+    Convert an UpdateOrder command into the data required by BetfairClient
     """
     return {
         "market_id": instrument.market_id,
         "customer_ref": command.id.value.replace("-", ""),
         "instructions": [
-            replace_instruction(
-                bet_id=venue_order_id.value,
-                new_price=float(probability_to_price(probability=command.price, side=side)),
-            )
+            {
+                "betId": venue_order_id.value,
+                "newPrice": float(probability_to_price(probability=command.price, side=side)),
+            }
         ],
     }
 
 
 def order_cancel_to_betfair(command: CancelOrder, instrument: BettingInstrument):
     """
-    Convert a SubmitOrder command into the data required by betfairlightweight
+    Convert a SubmitOrder command into the data required by BetfairClient
     """
     return {
         "market_id": instrument.market_id,
         "customer_ref": command.id.value.replace("-", ""),
-        "instructions": [cancel_instruction(bet_id=command.venue_order_id.value)],
+        "instructions": [{"betId": command.venue_order_id.value}],
     }
 
 

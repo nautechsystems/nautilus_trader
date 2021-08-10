@@ -1,0 +1,25 @@
+{
+  "jsonrpc": "2.0",
+  "method": "SportsAPING/v1.0/placeOrders",
+  "params": {
+    "customerRef": "ec8d483851d12172ed4846c7f0f9d91b",
+    "customerStrategyRef": "S-001",
+    "marketId": "1.109850906",
+    "instructions": [
+      {
+        "customerOrderRef": "O-20210811-112151-000",
+        "selectionId": "237486",
+        "handicap": "0",
+        "side": "BACK",
+        "orderType": "LIMIT",
+        "limitOrder": {
+          "minFillSize": 0,
+          "size": "10.0",
+          "price": "2.0",
+          "persistenceType": "PERSIST"
+        }
+      }
+    ]
+  },
+  "id": 1
+}

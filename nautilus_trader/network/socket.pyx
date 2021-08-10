@@ -89,7 +89,6 @@ cdef class SocketClient:
         self._encoding = encoding
         self._running = False
         self._stopped = False
-
         self.is_connected = False
 
     async def connect(self):
@@ -101,6 +100,8 @@ cdef class SocketClient:
                 ssl=self.ssl,
             )
             await self.post_connection()
+            self._loop.create_task(self.start())
+            self._running = True
             self.is_connected = True
 
     async def disconnect(self):
@@ -127,23 +128,23 @@ cdef class SocketClient:
         await asyncio.sleep(0)
 
     async def send(self, bytes raw):
+        self._log.debug("[SEND] " + raw.decode())
         self._writer.write(raw + self._crlf)
         await self._writer.drain()
 
     async def start(self):
-        if not self.is_connected:
-            await self.connect()
-
         cdef bytes partial = b""
-        cdef:
-            bytes raw
+        cdef bytes raw
+
+        self._log.debug("Starting recv loop")
+
         while self._running:
             try:
                 raw = await self._reader.readuntil(separator=self._crlf)
                 if partial:
                     raw = partial + raw
                     partial = b""
-                self._log.debug(f"RECV: {raw.decode()}")
+                self._log.debug("[RECV] " + raw.decode())
                 self._handler(raw.rstrip(self._crlf))
                 await asyncio.sleep(0)
             except asyncio.IncompleteReadError as ex:
