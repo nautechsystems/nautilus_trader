@@ -227,11 +227,11 @@ class ParquetReader(ByteReader):
         self.filename = None
         self.data_type = data_type
 
-    def parse(self, chunk: bytes, instrument_provider=None) -> Generator:
+    def parse(self, chunk: bytes) -> Generator:
         df = pd.read_parquet(BytesIO(chunk))
         if self.instrument_provider_update is not None:
             self.instrument_provider_update(
-                instrument_provider=instrument_provider,
+                instrument_provider=self.instrument_provider,
                 df=df,
                 filename=self.filename,
             )

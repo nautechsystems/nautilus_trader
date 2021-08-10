@@ -25,7 +25,7 @@ def test_executor_process(executor_cls):
     def process(name: str, count: int):
         # Simulate loading / processing some data
         for chunk in range(count):
-            time.sleep(random.random() / 5)  # noqa: S311
+            time.sleep(random.random() / 5)  # noqa: S311, B311
             yield {"x": f"{name}-{chunk}"}
 
     results = []
