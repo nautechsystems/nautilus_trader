@@ -27,6 +27,8 @@ from tqdm import tqdm
 
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.persistence.backtest.metadata import save_processed_raw_files
+from nautilus_trader.persistence.backtest.metadata import write_mappings
 from nautilus_trader.persistence.backtest.parsers import ByteReader
 from nautilus_trader.persistence.backtest.parsers import RawFile
 from nautilus_trader.persistence.backtest.parsers import Reader
@@ -193,10 +195,11 @@ def read_and_clear_existing_data(
 
 
 def write_chunk(raw_file: RawFile, chunk, catalog=None, append=False, **parquet_dataset_kwargs):
-    if chunk is None:  # EOF
-        save_processed_raw_files(files=[raw_file.path])
-        return
     catalog = catalog or DataCatalog.from_env()
+
+    if chunk is None:  # EOF
+        save_processed_raw_files(fs=catalog.fs, root=catalog.path, files=[raw_file.path])
+        return
 
     fs = catalog.fs
     root = catalog.path.joinpath("data")

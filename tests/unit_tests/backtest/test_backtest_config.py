@@ -31,7 +31,6 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.backtest.loading import load
-from nautilus_trader.persistence.backtest.metadata import load_processed_raw_files
 from nautilus_trader.persistence.backtest.parsers import CSVReader
 from nautilus_trader.persistence.catalog import DataCatalog
 from tests.test_kit import PACKAGE_ROOT
@@ -94,8 +93,7 @@ def data_loader():
 
 @pytest.fixture(scope="function")
 def catalog(data_loader):
-    catalog = DataCatalog(path="/root/", fs_protocol="memory")
-    catalog.fs = get_catalog_fs()
+    catalog = DataCatalog.from_env()
     # assert len(catalog.instruments()) == 1
     assert len(catalog.quote_ticks()) == 100000
     return catalog

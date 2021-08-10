@@ -39,7 +39,7 @@ def write_mappings(fs, path, mappings) -> None:
 def save_processed_raw_files(fs: fsspec.AbstractFileSystem, root: str, files: List[str]):
     existing = load_processed_raw_files(fs=fs)
     new = set(files + existing)
-    with fs.open(PROCESSED_FILES_FN, "wb") as f:
+    with fs.open(f"{root}/{PROCESSED_FILES_FN}", "wb") as f:
         return f.write(orjson.dumps(sorted(new)))
 
 
