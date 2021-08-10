@@ -55,7 +55,7 @@ class Reader:
             if new_instruments:
                 return list(new_instruments)
 
-    def parse(self, chunk: bytes):
+    def parse(self, chunk: bytes) -> Generator:
         raise NotImplementedError
 
 
@@ -178,7 +178,7 @@ class CSVReader(Reader):
         self.chunked = chunked
         self.as_dataframe = as_dataframe
 
-    def parse(self, chunk: bytes):
+    def parse(self, chunk: bytes) -> Generator:
         if self.header is None:
             header, chunk = chunk.split(b"\n", maxsplit=1)
             self.header = header.decode().split(",")
@@ -263,9 +263,6 @@ class RawFile(fsspec.core.OpenFile):
             return 1
         stat = self.fs.stat(self.path)
         return math.ceil(stat["size"] / self.chunk_size)
-
-    def __iter__(self):
-        return self
 
     def iter_raw(self):
         with self.open() as f:

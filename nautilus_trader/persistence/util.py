@@ -15,42 +15,6 @@
 import inspect
 
 
-# import os
-# import pathlib
-# from functools import lru_cache
-#
-# import fsspec.utils
-
-# KEY = "NAUTILUS_CATALOG"
-# _CATALOGS = {}
-
-
-# def _path() -> str:
-#     if KEY not in os.environ:
-#         raise KeyError(f"`{KEY}` env variable not set")
-#     return os.environ[KEY]
-#
-#
-# @lru_cache(1)
-# def get_catalog_fs() -> fsspec.AbstractFileSystem:
-#     url = _path()
-#     protocol = fsspec.utils.get_protocol(url)
-#     return fsspec.filesystem(
-#         protocol=protocol,
-#     )
-#
-#
-# def get_catalog_root() -> pathlib.Path:
-#     fs = get_catalog_fs()
-#     url = _path()
-#     protocol = fsspec.utils.get_protocol(url)
-#     root = pathlib.Path(url.replace(f"{protocol}://", ""))
-#     assert fs.exists(str(root))
-#     for folder in ("data",):
-#         fs.mkdirs(path=f"{root}/{folder}", exist_ok=True)
-#     return root
-
-
 def resolve_kwargs(func, *args, **kwargs):
     sig = inspect.signature(func)
     bound_args = sig.bind(*args, **kwargs)
@@ -59,8 +23,8 @@ def resolve_kwargs(func, *args, **kwargs):
 
 
 class Singleton(type):
-    def __init__(cls, name, bases, dict):
-        super(Singleton, cls).__init__(name, bases, dict)
+    def __init__(cls, name, bases, dict_like):
+        super(Singleton, cls).__init__(name, bases, dict_like)
         cls._instances = {}
 
     def __call__(cls, *args, **kw):

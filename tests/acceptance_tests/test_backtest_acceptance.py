@@ -38,7 +38,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.persistence.util import get_catalog_fs
+from nautilus_trader.persistence.catalog import DataCatalog
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestDataProvider
@@ -392,7 +392,8 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
     def setup(self):
         # Fixture Setup
         os.environ["NAUTILUS_DATA"] = "memory:///root/"
-        fs = get_catalog_fs()
+        catalog = DataCatalog.from_env()
+        fs = catalog.fs
         fs.mkdir("/root/data")
         self.engine = BacktestEngine(
             bypass_logging=True,
