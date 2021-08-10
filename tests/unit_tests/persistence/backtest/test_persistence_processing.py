@@ -1,34 +1,21 @@
 import random
 import time
 from concurrent.futures import ThreadPoolExecutor
-from queue import Queue
 
 import pytest
 from distributed import Client
 from distributed import LocalCluster
 from distributed.cfexecutor import ClientExecutor
 
-from nautilus_trader.persistence.util import SyncExecutor
-from nautilus_trader.persistence.util import _determine_workers
-from nautilus_trader.persistence.util import executor_queue_process
-from nautilus_trader.persistence.util import merge_queues
+from nautilus_trader.persistence.backtest.processing import SyncExecutor
+from nautilus_trader.persistence.backtest.processing import _determine_workers
+from nautilus_trader.persistence.backtest.processing import executor_queue_process
 
 
 def test_determine_workers():
     assert _determine_workers(SyncExecutor()) == 1
     assert _determine_workers(ThreadPoolExecutor(max_workers=2)) == 2
     assert _determine_workers(ClientExecutor(Client(LocalCluster(n_workers=4)))) == 4
-
-
-def test_merge_queues():
-    ins = [Queue() for _ in range(3)]
-    out = merge_queues(*ins)
-    for q in ins:
-        for i in range(3):
-            q.put(i)
-    result = [out.get() for _ in range(9)]
-    expected = [0, 1, 2] * 3
-    assert result == expected
 
 
 @pytest.mark.parametrize(

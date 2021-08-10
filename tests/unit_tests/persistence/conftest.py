@@ -2,9 +2,9 @@ import inspect
 import os
 import sys
 
-import fsspec.implementations.memory
 import pandas as pd
 import pytest
+from fsspec.implementations.memory import MemoryFileSystem
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.data.wrangling import BarDataWrangler
@@ -17,10 +17,8 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.backtest.loading import load
 from nautilus_trader.persistence.backtest.loading import process_files
-from nautilus_trader.persistence.backtest.metadata import load_processed_raw_files
 from nautilus_trader.persistence.backtest.scanner import scan
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.util import get_catalog_fs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -36,17 +34,17 @@ def nautilus_dir():
 
 
 @pytest.fixture(autouse=True, scope="function")
-def test_reset():
+def reset():
     """Cleanup resources before each test run"""
-    fs = get_catalog_fs()
-    assert isinstance(fs, fsspec.implementations.memory.MemoryFileSystem)
+    os.environ["NAUTILUS_CATALOG"] = "memory:///root/"
+    catalog = DataCatalog.from_env()
+    assert isinstance(catalog.fs, MemoryFileSystem)
     try:
-        fs.rm("/", recursive=True)
+        catalog.fs.rm("/", recursive=True)
     except FileNotFoundError:
         pass
-    fs.mkdir(f"{ROOT}/data")
-    assert fs.exists(ROOT)
-    assert not load_processed_raw_files()
+    catalog.fs.mkdir("/root/data")
+    assert catalog.fs.exists("/root/")
     yield
 
 
@@ -161,14 +159,13 @@ def load_data(betfair_reader):
         glob_pattern="1.166564490*",
         instrument_provider=instrument_provider,
     )
-    fs = get_catalog_fs()
+    fs = DataCatalog.from_env().fs
     assert fs.isdir(f"{ROOT}/data/betting_instrument.parquet")
 
 
 @pytest.fixture(scope="function")
 def catalog():
     catalog = DataCatalog(path="/root", fs_protocol="memory")
-    catalog.fs = get_catalog_fs()
     return catalog
 
 

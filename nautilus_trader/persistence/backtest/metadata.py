@@ -15,9 +15,8 @@
 
 from typing import Dict, List
 
+import fsspec
 import orjson
-
-from nautilus_trader.persistence.util import get_catalog_fs
 
 
 PROCESSED_FILES_FN = ".processed_raw_files.json"
@@ -37,16 +36,14 @@ def write_mappings(fs, path, mappings) -> None:
 
 
 # TODO(bm): We should save a hash of the contents alongside the filename to check for changes
-def save_processed_raw_files(files: List[str]):
-    fs = get_catalog_fs()
-    existing = load_processed_raw_files()
+def save_processed_raw_files(fs: fsspec.AbstractFileSystem, root: str, files: List[str]):
+    existing = load_processed_raw_files(fs=fs)
     new = set(files + existing)
     with fs.open(PROCESSED_FILES_FN, "wb") as f:
         return f.write(orjson.dumps(sorted(new)))
 
 
-def load_processed_raw_files():
-    fs = get_catalog_fs()
+def load_processed_raw_files(fs):
     if fs.exists(PROCESSED_FILES_FN):
         with fs.open(PROCESSED_FILES_FN, "rb") as f:
             return orjson.loads(f.read())

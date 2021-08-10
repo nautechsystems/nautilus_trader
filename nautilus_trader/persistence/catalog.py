@@ -15,8 +15,10 @@
 
 import os
 import pathlib
+from typing import Dict, List
 
 import fsspec
+import orjson
 import pandas as pd
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
@@ -32,6 +34,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.persistence.backtest.metadata import load_mappings
+from nautilus_trader.persistence.util import Singleton
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
@@ -40,14 +43,13 @@ from nautilus_trader.serialization.arrow.util import clean_key
 from nautilus_trader.serialization.arrow.util import is_nautilus_class
 
 
-class DataCatalog:
-    """
-    Provides a searchable data catalogue.
-    """
+class DataCatalog(metaclass=Singleton):
+    PROCESSED_FILES_FN = ".processed_raw_files.json"
+    PARTITION_MAPPINGS_FN = "_partition_mappings.json"
 
     def __init__(self, path: str, fs_protocol: str = "file"):
         """
-        Initialize a new instance of the ``DataCatalog`` class.
+        Provides a queryable data catalogue.
 
         Parameters
         ----------
@@ -55,11 +57,9 @@ class DataCatalog:
             The root path to the data.
         fs_protocol : str
             The file system protocol to use.
-
         """
         self.fs = fsspec.filesystem(fs_protocol)
         self.path = pathlib.Path(path)
-        self._processed_files_path = str(self.path / ".processed_raw_files.json")
 
     @classmethod
     def from_env(cls):
@@ -409,6 +409,30 @@ class DataCatalog:
         for level in dataset.partitions.levels:
             partitions[level.name] = level.keys
         return partitions
+
+    def load_mappings(self, path) -> Dict:
+        if not self.fs.exists(f"{path}/{self.PARTITION_MAPPINGS_FN}"):
+            return {}
+        with self.fs.open(f"{path}/{self.PARTITION_MAPPINGS_FN}", "rb") as f:
+            return orjson.loads(f.read())
+
+    def write_mappings(self, path, mappings) -> None:
+        with self.fs.open(f"{path}/{self.PARTITION_MAPPINGS_FN}", "wb") as f:
+            f.write(orjson.dumps(mappings))
+
+    def save_processed_raw_files(self, files: List[str]):
+        # TODO(bm): We should save a hash of the contents alongside the filename to check for changes
+        existing = self.load_processed_raw_files()
+        new = set(files + existing)
+        with self.fs.open(self.PROCESSED_FILES_FN, "wb") as f:
+            return f.write(orjson.dumps(sorted(new)))
+
+    def load_processed_raw_files(self):
+        if self.fs.exists(self.PROCESSED_FILES_FN):
+            with self.fs.open(self.PROCESSED_FILES_FN, "rb") as f:
+                return orjson.loads(f.read())
+        else:
+            return []
 
 
 def combine_filters(*filters):

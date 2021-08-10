@@ -34,7 +34,6 @@ from nautilus_trader.persistence.backtest.loading import load
 from nautilus_trader.persistence.backtest.metadata import load_processed_raw_files
 from nautilus_trader.persistence.backtest.parsers import CSVReader
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.util import get_catalog_fs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
@@ -47,22 +46,17 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broke
 
 
 @pytest.fixture(autouse=True, scope="function")
-def nautilus_dir():
-    os.environ["NAUTILUS_DATA"] = "memory:///root/"
-
-
-@pytest.fixture(autouse=True, scope="function")
 def reset():
     """Cleanup resources before each test run"""
-    fs = get_catalog_fs()
-    assert isinstance(fs, MemoryFileSystem)
+    os.environ["NAUTILUS_CATALOG"] = "memory:///root/"
+    catalog = DataCatalog.from_env()
+    assert isinstance(catalog.fs, MemoryFileSystem)
     try:
-        fs.rm("/", recursive=True)
+        catalog.fs.rm("/", recursive=True)
     except FileNotFoundError:
         pass
-    fs.mkdir("/root/data")
-    assert fs.exists("/root/")
-    assert not load_processed_raw_files()
+    catalog.fs.mkdir("/root/data")
+    assert catalog.fs.exists("/root/")
     yield
 
 
@@ -70,7 +64,7 @@ def reset():
 def data_loader():
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
 
-    def parse_csv_tick(df, instrument_id, state=None):
+    def parse_csv_tick(df, instrument_id):
         yield instrument
         for r in df.values:
             ts = secs_to_nanos(pd.Timestamp(r[0]).timestamp())

@@ -27,10 +27,9 @@ from nautilus_trader.persistence.backtest.loading import write_parquet
 from nautilus_trader.persistence.backtest.parsers import CSVReader
 from nautilus_trader.persistence.backtest.parsers import ParquetReader
 from nautilus_trader.persistence.backtest.parsers import RawFile
+from nautilus_trader.persistence.backtest.processing import SyncExecutor
 from nautilus_trader.persistence.backtest.scanner import scan
-from nautilus_trader.persistence.util import SyncExecutor
-from nautilus_trader.persistence.util import get_catalog_fs
-from nautilus_trader.persistence.util import get_catalog_root
+from nautilus_trader.persistence.catalog import DataCatalog
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -138,9 +137,11 @@ def test_nautilus_chunk_to_dataframes(betfair_nautilus_objects):
 
 
 def test_write_parquet_no_partitions():
-    fs = get_catalog_fs()
-    root = get_catalog_root()
     df = pd.DataFrame({"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]})
+    catalog = DataCatalog.from_env()
+    fs = catalog.fs
+    root = catalog.path
+
     write_parquet(
         fs=fs,
         root=root,
@@ -156,8 +157,9 @@ def test_write_parquet_no_partitions():
 
 
 def test_write_parquet_partitions():
-    fs = get_catalog_fs()
-    root = get_catalog_root()
+    catalog = DataCatalog.from_env()
+    fs = catalog.fs
+    root = catalog.path
     path = "sample.parquet"
 
     df = pd.DataFrame({"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]})
@@ -180,7 +182,8 @@ def test_write_parquet_partitions():
 
 def test_write_parquet_determine_partitions_writes_instrument_id():
     # Arrange
-    fs = get_catalog_fs()
+    catalog = DataCatalog.from_env()
+    fs = catalog.fs
     rf = RawFile(fs=fs, path="/")
 
     # Act
@@ -204,8 +207,10 @@ def test_write_parquet_determine_partitions_writes_instrument_id():
 
 def test_read_and_clear_existing_data_single_partition():
     # Arrange
-    fs = get_catalog_fs()
-    root = get_catalog_root()
+    catalog = DataCatalog.from_env()
+    fs = catalog.fs
+    root = catalog.path
+
     path = "sample.parquet"
     df = pd.DataFrame({"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]})
     write_parquet(
@@ -234,8 +239,10 @@ def test_read_and_clear_existing_data_single_partition():
 
 def test_read_and_clear_existing_data_invalid_partition_column_raises():
     # Arrange
-    fs = get_catalog_fs()
-    root = get_catalog_root()
+    catalog = DataCatalog.from_env()
+    fs = catalog.fs
+    root = catalog.path
+
     path = "sample.parquet"
     df = pd.DataFrame({"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]})
     write_parquet(

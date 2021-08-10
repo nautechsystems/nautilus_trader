@@ -27,16 +27,12 @@ from tqdm import tqdm
 
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.persistence.backtest.metadata import save_processed_raw_files
-from nautilus_trader.persistence.backtest.metadata import write_mappings
 from nautilus_trader.persistence.backtest.parsers import ByteReader
 from nautilus_trader.persistence.backtest.parsers import RawFile
 from nautilus_trader.persistence.backtest.parsers import Reader
+from nautilus_trader.persistence.backtest.processing import executor_queue_process
 from nautilus_trader.persistence.backtest.scanner import scan
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.util import executor_queue_process
-from nautilus_trader.persistence.util import get_catalog_fs
-from nautilus_trader.persistence.util import get_catalog_root
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import get_partition_keys
@@ -196,14 +192,14 @@ def read_and_clear_existing_data(
             return existing
 
 
-def write_chunk(raw_file: RawFile, chunk, append=False, **parquet_dataset_kwargs):
+def write_chunk(raw_file: RawFile, chunk, catalog=None, append=False, **parquet_dataset_kwargs):
     if chunk is None:  # EOF
         save_processed_raw_files(files=[raw_file.path])
         return
+    catalog = catalog or DataCatalog.from_env()
 
-    fs = get_catalog_fs()
-    root = get_catalog_root().joinpath("data")
-
+    fs = catalog.fs
+    root = catalog.path.joinpath("data")
     shape = 0
     tables = nautilus_chunk_to_dataframes(chunk)
 
@@ -248,6 +244,7 @@ def progress_wrapper(f, total):
 def process_files(
     files: List[RawFile],
     reader: Reader,
+    catalog=None,
     progress=True,
     executor: Executor = None,
     instrument_provider=None,
@@ -260,8 +257,9 @@ def process_files(
     parallelisation.
 
     """
+    catalog = catalog or DataCatalog.from_env()
     executor = executor or ThreadPoolExecutor()
-    output_func = output_func or write_chunk
+    output_func = output_func or partial(write_chunk, catalog=catalog)
     if progress:
         output_func = progress_wrapper(output_func, total=sum([f.num_chunks for f in files]))
     return executor_queue_process(
@@ -277,6 +275,7 @@ def process_files(
 def load(
     path: str,
     reader: Reader,
+    catalog=None,
     fs_protocol="file",
     glob_pattern="**",
     progress=True,
@@ -290,6 +289,7 @@ def load(
     """
     Scan and process files
     """
+    catalog = catalog or DataCatalog.from_env()
     files = scan(
         path=path,
         fs_protocol=fs_protocol,
