@@ -51,7 +51,6 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
@@ -341,14 +340,11 @@ class TestStubs:
         return order
 
     @staticmethod
-    def event_cash_account_state(client_id=None, account_id=None) -> AccountState:
-        if client_id is None:
-            client_id = ClientId("SIM")
+    def event_cash_account_state(account_id=None) -> AccountState:
         if account_id is None:
             account_id = TestStubs.account_id()
 
         return AccountState(
-            client_id=client_id,
             account_id=account_id,
             account_type=AccountType.CASH,
             base_currency=USD,
@@ -373,7 +369,6 @@ class TestStubs:
             account_id = TestStubs.account_id()
 
         return AccountState(
-            client_id=ClientId("SIM"),
             account_id=account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,

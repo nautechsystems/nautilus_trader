@@ -458,7 +458,7 @@ def test_data_catalog_append(catalog):
             min_notional=data["min_notional"],
             max_price=data["max_price"],
             min_price=data["min_price"],
-            margin_init=Decimal(1.0),
+            margin_initial=Decimal(1.0),
             margin_maint=Decimal(1.0),
             maker_fee=Decimal(1.0),
             taker_fee=Decimal(1.0),

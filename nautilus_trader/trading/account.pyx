@@ -53,11 +53,12 @@ cdef class Account:
         self.id = event.account_id
         self.type = account_type
         self.base_currency = event.base_currency
+        self.calculate_account_state = False
 
         self._starting_balances = {b.currency: b.total for b in event.balances}
-        self._events = [event]                    # type: list[AccountState]
-        self._balances = {}                       # type: dict[Currency, AccountBalance]
-        self._commissions = {}                    # type: dict[Currency, Money]
+        self._events = [event]  # type: list[AccountState]
+        self._balances = {}     # type: dict[Currency, AccountBalance]
+        self._commissions = {}  # type: dict[Currency, Money]
 
         self._update_balances(event.balances)
 
@@ -390,9 +391,21 @@ cdef class Account:
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
+    cpdef void set_calculate_account_state(self, bint value) except *:
+        """
+        Set the `calculate_account_state` flag.
+
+        Parameters
+        ----------
+        value : bool
+            The value to set.
+
+        """
+        self.calculate_account_state = value
+
     cpdef void apply(self, AccountState event) except *:
         """
-        Applies the given account event to the account.
+        Apply the given account event to the account.
 
         Parameters
         ----------
@@ -440,7 +453,68 @@ cdef class Account:
         total_commissions: Decimal = self._commissions.get(currency, Decimal())
         self._commissions[currency] = Money(total_commissions + commission, currency)
 
+    cpdef void update_margin_initial(self, Money margin_initial) except *:
+        """
+        Update the initial (order) margin.
+
+        Parameters
+        ----------
+        margin_initial : Money
+            The current initial (order) margin for the currency.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(margin_initial, "margin_initial")
+
+        cdef Currency currency = margin_initial.currency
+        cdef AccountBalance current_balance = self._balances.get(currency)
+        if current_balance is None:
+            raise RuntimeError("Cannot apply initial margin when no current balance")
+
+        cdef AccountBalance new_balance = AccountBalance(
+            currency,
+            current_balance.total,
+            margin_initial,
+            Money(current_balance.total.as_decimal() - margin_initial.as_decimal(), currency),
+        )
+
+        self._balances[currency] = new_balance
+
 # -- CALCULATIONS ----------------------------------------------------------------------------------
+
+    cpdef Money calculate_margin_initial(
+        self,
+        Instrument instrument,
+        Quantity quantity,
+        Price price,
+        bint inverse_as_quote=False,
+    ):
+        """
+        Calculate the initial (order) margin from the given parameters.
+
+        Result will be in quote currency for standard instruments, or base
+        currency for inverse instruments.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the calculation.
+        quantity : Quantity
+            The order quantity.
+        price : Price
+            The order price.
+        inverse_as_quote : bool
+            If inverse instrument calculations use quote currency (instead of base).
+
+        Returns
+        -------
+        Money
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Money calculate_commission(
         self,
@@ -555,6 +629,55 @@ cdef class CashAccount:
 
         super().__init__(AccountType.CASH, event)
 
+# -- CALCULATIONS ----------------------------------------------------------------------------------
+
+    cpdef Money calculate_margin_initial(
+        self,
+        Instrument instrument,
+        Quantity quantity,
+        Price price,
+        bint inverse_as_quote=False,
+    ):
+        """
+        Calculate the initial (order) margin from the given parameters.
+
+        Result will be in quote currency for standard instruments, or base
+        currency for inverse instruments.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the calculation.
+        quantity : Quantity
+            The order quantity.
+        price : Price
+            The order price.
+        inverse_as_quote : bool
+            If inverse instrument calculations use quote currency (instead of base).
+
+        Returns
+        -------
+        Money
+
+        """
+        Condition.not_none(instrument, "instrument")
+        Condition.not_none(quantity, "quantity")
+        Condition.not_none(price, "price")
+
+        notional: Decimal = instrument.notional_value(
+            quantity=quantity,
+            price=price.as_decimal(),
+            inverse_as_quote=inverse_as_quote,
+        ).as_decimal()
+
+        margin: Decimal = notional
+        margin += (notional * instrument.taker_fee * 2)
+
+        if instrument.is_inverse and not inverse_as_quote:
+            return Money(margin, instrument.base_currency)
+        else:
+            return Money(margin, instrument.quote_currency)
+
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
@@ -622,12 +745,12 @@ cdef class MarginAccount(Account):
 
         super().__init__(AccountType.MARGIN, event)
 
-        cdef dict initial_margins = event.info.get("initial_margins", {})
-        cdef dict maint_margins = event.info.get("maint_margins", {})
+        cdef dict margins_initial = event.info.get("margins_initial", {})
+        cdef dict margins_maint = event.info.get("margins_maint", {})
 
-        self._leverages = {}                      # type: dict[InstrumentId, Decimal]
-        self._initial_margins = initial_margins   # type: dict[Currency, Money]
-        self._maint_margins = maint_margins       # type: dict[Currency, Money]
+        self._leverages = {}                     # type: dict[InstrumentId, Decimal]
+        self._margins_maint = margins_maint      # type: dict[Currency, Money]
+        self._margins_initial = margins_initial  # type: dict[Currency, Money]
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
@@ -642,27 +765,27 @@ cdef class MarginAccount(Account):
         """
         return self._leverages.copy()
 
-    cpdef dict initial_margins(self):
+    cpdef dict margins_initial(self):
         """
-        Return the initial margins for the account.
+        Return the initial (order) margins for the account.
 
         Returns
         -------
         dict[Currency, Money]
 
         """
-        return self._initial_margins.copy()
+        return self._margins_initial.copy()
 
-    cpdef dict maint_margins(self):
+    cpdef dict margins_maint(self):
         """
-        Return the maintenance margins for the account.
+        Return the maintenance (position) margins for the account.
 
         Returns
         -------
         dict[Currency, Money]
 
         """
-        return self._maint_margins.copy()
+        return self._margins_maint.copy()
 
     cpdef object leverage(self, InstrumentId instrument_id):
         """
@@ -680,9 +803,9 @@ cdef class MarginAccount(Account):
         """
         return self._leverages.get(instrument_id)
 
-    cpdef Money initial_margin(self, Currency currency=None):
+    cpdef Money margin_initial(self, Currency currency=None):
         """
-        Return the current initial margin.
+        Return the current initial (order) margin.
 
         For multi-currency accounts, specify the currency for the query.
 
@@ -711,11 +834,11 @@ cdef class MarginAccount(Account):
             currency = self.base_currency
         Condition.not_none(currency, "currency")
 
-        return self._initial_margins.get(currency)
+        return self._margins_initial.get(currency)
 
-    cpdef Money maint_margin(self, Currency currency=None):
+    cpdef Money margin_maint(self, Currency currency=None):
         """
-        Return the current maintenance margin.
+        Return the current maintenance (position) margin.
 
         For multi-currency accounts, specify the currency for the query.
 
@@ -744,7 +867,7 @@ cdef class MarginAccount(Account):
             currency = self.base_currency
         Condition.not_none(currency, "currency")
 
-        return self._maint_margins.get(currency)
+        return self._margins_maint.get(currency)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
@@ -773,41 +896,71 @@ cdef class MarginAccount(Account):
 
         self._leverages[instrument_id] = leverage
 
-    cpdef void update_initial_margin(self, Money margin) except *:
+    cpdef void update_margin_initial(self, Money margin_initial) except *:
         """
-        Update the initial margin.
+        Update the initial (order) margin.
 
         Parameters
         ----------
-        margin : Money
-            The current initial margin for the currency.
+        margin_initial : Money
+            The current initial (order) margin for the currency.
 
         Warnings
         --------
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(margin, "money")
+        Condition.not_none(margin_initial, "margin_initial")
 
-        self._initial_margins[margin.currency] = margin
+        cdef Currency currency = margin_initial.currency
+        cdef AccountBalance current_balance = self._balances.get(currency)
+        if current_balance is None:
+            raise RuntimeError("Cannot update initial margin when no current balance")
 
-    cpdef void update_maint_margin(self, Money margin) except *:
+        cdef Money margin_maint = self._margins_maint.get(currency, Money(0, currency))
+        cdef Money margin_total = Money(margin_initial.as_decimal() + margin_maint.as_decimal(), currency)
+        cdef AccountBalance new_balance = AccountBalance(
+            currency,
+            current_balance.total,
+            margin_total,
+            Money(current_balance.total.as_decimal() - margin_total, currency),
+        )
+
+        self._margins_initial[currency] = margin_initial
+        self._balances[currency] = new_balance
+
+    cpdef void update_margin_maint(self, Money margin_maint) except *:
         """
-        Update the maintenance margin.
+        Update the maintenance (position) margin.
 
         Parameters
         ----------
-        margin : Money
-            The current maintenance margin for the currency.
+        margin_maint : Money
+            The current maintenance (position) margin for the currency.
 
         Warnings
         --------
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(margin, "money")
+        Condition.not_none(margin_maint, "margin_maint")
 
-        self._maint_margins[margin.currency] = margin
+        cdef Currency currency = margin_maint.currency
+        cdef AccountBalance current_balance = self._balances.get(currency)
+        if current_balance is None:
+            raise RuntimeError("Cannot update maintenance margin when no current balance")
+
+        cdef Money margin_initial = self._margins_initial.get(currency, Money(0, currency))
+        cdef Money margin_total = Money(margin_initial.as_decimal() + margin_maint.as_decimal(), currency)
+        cdef AccountBalance new_balance = AccountBalance(
+            currency,
+            current_balance.total,
+            margin_total,
+            Money(current_balance.total.as_decimal() - margin_total, currency),
+        )
+
+        self._margins_maint[currency] = margin_maint
+        self._balances[currency] = new_balance
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
 
@@ -844,7 +997,7 @@ cdef class MarginAccount(Account):
         else:
             return [Money(0, instrument.get_cost_currency())]
 
-    cpdef Money calculate_initial_margin(
+    cpdef Money calculate_margin_initial(
         self,
         Instrument instrument,
         Quantity quantity,
@@ -852,7 +1005,7 @@ cdef class MarginAccount(Account):
         bint inverse_as_quote=False,
     ):
         """
-        Calculate the initial margin from the given parameters.
+        Calculate the initial (order) margin from the given parameters.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.
@@ -890,7 +1043,7 @@ cdef class MarginAccount(Account):
 
         adjusted_notional: Decimal = notional / leverage
 
-        margin: Decimal = adjusted_notional * instrument.margin_init
+        margin: Decimal = adjusted_notional * instrument.margin_initial
         margin += (adjusted_notional * instrument.taker_fee * 2)
 
         if instrument.is_inverse and not inverse_as_quote:
@@ -898,7 +1051,7 @@ cdef class MarginAccount(Account):
         else:
             return Money(margin, instrument.quote_currency)
 
-    cpdef Money calculate_maint_margin(
+    cpdef Money calculate_margin_maint(
         self,
         Instrument instrument,
         PositionSide side,
@@ -907,7 +1060,7 @@ cdef class MarginAccount(Account):
         bint inverse_as_quote=False,
     ):
         """
-        Calculate the maintenance margin from the given parameters.
+        Calculate the maintenance (position) margin from the given parameters.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.

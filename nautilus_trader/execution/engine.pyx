@@ -45,7 +45,6 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.time cimport unix_timestamp_ms
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -57,7 +56,6 @@ from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport UpdateOrder
-from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.position cimport PositionChanged
@@ -74,7 +72,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.trading.account cimport Account
 
 
 cdef class ExecutionEngine(Component):
@@ -123,7 +120,6 @@ cdef class ExecutionEngine(Component):
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]
         self._oms_types = {}         # type: dict[StrategyId, OMSType]
-        self._account_types = {}     # type: dict[ClientId, type]
         self._default_client = None  # type: Optional[ExecutionClient]
 
         self._pos_id_generator = PositionIdGenerator(
@@ -342,34 +338,6 @@ cdef class ExecutionEngine(Component):
             f"for TradingStrategy {strategy}.",
         )
 
-    cpdef void register_account_type(self, ClientId client_id, type account_type) except *:
-        """
-        Register the given custom account type associated with the client ID.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The client identifier to associate with the custom account type.
-        account_type : type
-            The custom account type to register.
-
-        Raises
-        ------
-        ValueError
-            If account_type is not a subclass of `Account`.
-
-        """
-        Condition.not_none(client_id, "client_id")
-        Condition.not_none(account_type, "account_type")
-        Condition.true(issubclass(account_type, Account), "account_type was not a subclass of `Account`")
-
-        self._account_types[client_id] = account_type
-
-        self._log.info(
-            f"Registered account type {account_type.__name__} "
-            f"for ExecutionClient {client_id}.",
-        )
-
     cpdef void deregister_client(self, ExecutionClient client) except *:
         """
         Deregister the given execution client from the execution engine.
@@ -470,14 +438,14 @@ cdef class ExecutionEngine(Component):
 
         self._execute_command(command)
 
-    cpdef void process(self, Event event) except *:
+    cpdef void process(self, OrderEvent event) except *:
         """
-        Process the given event.
+        Process the given order event.
 
         Parameters
         ----------
-        event : Event
-            The event to process.
+        event : OrderEvent
+            The order event to process.
 
         """
         Condition.not_none(event, "event")
@@ -571,49 +539,10 @@ cdef class ExecutionEngine(Component):
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, Event event) except *:
+    cdef void _handle_event(self, OrderEvent event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
         self.event_count += 1
 
-        if isinstance(event, OrderEvent):
-            self._handle_order_event(event)
-        elif isinstance(event, AccountState):
-            self._handle_account_event(event)
-        else:
-            self._log.error(f"Cannot handle event: unrecognized {event}.")
-
-    cdef void _handle_account_event(self, AccountState event) except *:
-        cdef Account account = self._cache.account(event.account_id)
-        if account is None:
-            # Generate account
-            cls = self._account_types.get(event.client_id)
-            if cls is None:
-                account = Account.create_c(event)
-            else:
-                account = cls(event)
-
-            # Add to cache
-            self._cache.add_account(account)
-
-            # Register with client
-            client = self._clients.get(event.client_id)
-            if client is None:
-                self._log.error(
-                    f"Cannot register account: "
-                    f"no client found for {repr(event.client_id)}",
-                )
-            elif client.get_account() is None:
-                client.register_account(account)
-        else:
-            account.apply(event=event)
-            self._cache.update_account(account)
-
-        self._msgbus.publish_c(
-            topic=f"events.account.{event.account_id.value}",
-            msg=event,
-        )
-
-    cdef void _handle_order_event(self, OrderEvent event) except *:
         # Fetch Order from cache
         cdef ClientOrderId client_order_id = event.client_order_id
         cdef Order order = self._cache.order(event.client_order_id)

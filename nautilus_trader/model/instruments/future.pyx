@@ -104,7 +104,7 @@ cdef class Future(Instrument):
             min_notional=None,
             max_price=None,
             min_price=None,
-            margin_init=Decimal(),
+            margin_initial=Decimal(),
             margin_maint=Decimal(),
             maker_fee=Decimal(),
             taker_fee=Decimal(),

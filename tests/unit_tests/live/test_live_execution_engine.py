@@ -138,10 +138,8 @@ class TestLiveExecutionEngine:
             clock=self.clock,
             logger=self.logger,
         )
-
-        # Wired up components
+        self.client.apply_account_state(TestStubs.event_cash_account_state())
         self.exec_engine.register_client(self.client)
-        self.exec_engine.process(TestStubs.event_cash_account_state())
 
         self.cache.add_instrument(AUDUSD_SIM)
 
@@ -284,7 +282,7 @@ class TestLiveExecutionEngine:
         self.exec_engine.kill()
 
         # Assert
-        assert self.exec_engine.qsize() == 1  # <-- AccountState event
+        assert self.exec_engine.qsize() == 0
 
     @pytest.mark.asyncio
     async def test_execute_command_places_command_on_queue(self):
