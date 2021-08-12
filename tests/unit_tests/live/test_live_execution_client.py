@@ -87,8 +87,6 @@ class TestLiveExecutionClientFactory:
             logger=self.logger,
         )
 
-        self.exec_engine.process(TestStubs.event_cash_account_state())
-
         # Act, Assert
         with pytest.raises(NotImplementedError):
             LiveExecutionClientFactory.create(
@@ -172,13 +170,11 @@ class TestLiveExecutionClient:
             clock=self.clock,
             logger=self.logger,
         )
-
-        # Wire up components
+        self.client.apply_account_state(TestStubs.event_cash_account_state())
         self.exec_engine.register_client(self.client)
 
         # Prepare components
         self.cache.add_instrument(AUDUSD_SIM)
-        self.exec_engine.process(TestStubs.event_cash_account_state())
 
     def teardown(self):
         self.client.dispose()

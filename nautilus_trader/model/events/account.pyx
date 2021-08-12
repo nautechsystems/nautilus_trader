@@ -34,7 +34,6 @@ cdef class AccountState(Event):
 
     def __init__(
         self,
-        ClientId client_id not None,
         AccountId account_id not None,
         AccountType account_type,
         Currency base_currency,
@@ -50,8 +49,6 @@ cdef class AccountState(Event):
 
         Parameters
         ----------
-        client_id : ClientId
-            The client ID.
         account_id : AccountId
             The account ID.
         account_type : AccountId
@@ -75,7 +72,6 @@ cdef class AccountState(Event):
         Condition.not_empty(balances, "balances")
         super().__init__(event_id, ts_event, ts_init)
 
-        self.client_id = client_id
         self.account_id = account_id
         self.account_type = account_type
         self.base_currency = base_currency
@@ -85,7 +81,6 @@ cdef class AccountState(Event):
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
-                f"client_id={self.client_id.value}, "
                 f"account_id={self.account_id.value}, "
                 f"account_type={AccountTypeParser.to_str(self.account_type)}, "
                 f"base_currency={self.base_currency}, "
@@ -98,7 +93,6 @@ cdef class AccountState(Event):
         Condition.not_none(values, "values")
         cdef str base_str = values["base_currency"]
         return AccountState(
-            client_id=ClientId(values["client_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
             account_type=AccountTypeParser.from_str(values["account_type"]),
             base_currency=Currency.from_str_c(base_str) if base_str is not None else None,
@@ -115,7 +109,6 @@ cdef class AccountState(Event):
         Condition.not_none(obj, "obj")
         return {
             "type": "AccountState",
-            "client_id": obj.client_id.value,
             "account_id": obj.account_id.value,
             "account_type": AccountTypeParser.to_str(obj.account_type),
             "base_currency": obj.base_currency.code if obj.base_currency else None,

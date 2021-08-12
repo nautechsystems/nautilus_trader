@@ -24,7 +24,6 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.execution.engine cimport ExecutionEngine
@@ -33,6 +32,7 @@ from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
 from nautilus_trader.model.c_enums.order_state cimport OrderState
 from nautilus_trader.model.commands.trading cimport TradingCommand
+from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.orders.base cimport Order
@@ -269,7 +269,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             )
             self._loop.create_task(self._queue.put(command))  # Blocking until qsize reduces
 
-    cpdef void process(self, Event event) except *:
+    cpdef void process(self, OrderEvent event) except *:
         """
         Process the given event.
 
@@ -278,7 +278,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         Parameters
         ----------
-        event : Event
+        event : OrderEvent
             The event to process.
 
         Warnings

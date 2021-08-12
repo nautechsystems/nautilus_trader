@@ -226,7 +226,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                 min_notional=min_notional,
                 max_price=max_price,
                 min_price=min_price,
-                margin_init=Decimal(),   # Margin trading not implemented
+                margin_initial=Decimal(),  # Margin trading not implemented
                 margin_maint=Decimal(),  # Margin trading not implemented
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
@@ -251,7 +251,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                 min_notional=min_notional,
                 max_price=max_price,
                 min_price=min_price,
-                margin_init=Decimal(),   # Margin trading not implemented
+                margin_initial=Decimal(),  # Margin trading not implemented
                 margin_maint=Decimal(),  # Margin trading not implemented
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,

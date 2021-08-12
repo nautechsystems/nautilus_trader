@@ -43,6 +43,8 @@ cdef class Account:
     """The accounts type.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
     """The accounts base currency (None for multi-currency accounts).\n\n:returns: `Currency` or None"""
+    cdef readonly bint calculate_account_state
+    """If the accounts state should be calculated by Nautilus.\n\n:returns: `bool`"""
 
     @staticmethod
     cdef Account create_c(AccountState event)
@@ -72,10 +74,20 @@ cdef class Account:
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
+    cpdef void set_calculate_account_state(self, bint value) except *
     cpdef void apply(self, AccountState event) except *
     cpdef void update_commissions(self, Money commission) except *
+    cpdef void update_margin_initial(self, Money margin_initial) except *
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
+
+    cpdef Money calculate_margin_initial(
+        self,
+        Instrument instrument,
+        Quantity quantity,
+        Price price,
+        bint inverse_as_quote=*,
+    )
 
     cpdef Money calculate_commission(
         self,
@@ -85,7 +97,12 @@ cdef class Account:
         LiquiditySide liquidity_side,
         bint inverse_as_quote=*,
     )
-    cpdef list calculate_pnls(self, Instrument instrument, Position position, OrderFilled fill)
+    cpdef list calculate_pnls(
+        self,
+        Instrument instrument,
+        Position position,
+        OrderFilled fill,
+    )
 
 
 cdef class CashAccount(Account):
@@ -94,34 +111,26 @@ cdef class CashAccount(Account):
 
 cdef class MarginAccount(Account):
     cdef dict _leverages
-    cdef dict _initial_margins
-    cdef dict _maint_margins
+    cdef dict _margins_initial
+    cdef dict _margins_maint
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef dict leverages(self)
-    cpdef dict initial_margins(self)
-    cpdef dict maint_margins(self)
+    cpdef dict margins_initial(self)
+    cpdef dict margins_maint(self)
     cpdef object leverage(self, InstrumentId instrument_id)
-    cpdef Money initial_margin(self, Currency currency=*)
-    cpdef Money maint_margin(self, Currency currency=*)
+    cpdef Money margin_initial(self, Currency currency=*)
+    cpdef Money margin_maint(self, Currency currency=*)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal) except *
-    cpdef void update_initial_margin(self, Money margin) except *
-    cpdef void update_maint_margin(self, Money margin) except *
+    cpdef void update_margin_maint(self, Money margin_maint) except *
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
 
-    cpdef Money calculate_initial_margin(
-        self,
-        Instrument instrument,
-        Quantity quantity,
-        Price price,
-        bint inverse_as_quote=*,
-    )
-    cpdef Money calculate_maint_margin(
+    cpdef Money calculate_margin_maint(
         self,
         Instrument instrument,
         PositionSide side,

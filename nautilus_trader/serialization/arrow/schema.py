@@ -132,7 +132,6 @@ NAUTILUS_PARQUET_SCHEMA = {
     ),
     AccountState: pa.schema(
         {
-            "client_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
             "account_type": pa.dictionary(pa.int8(), pa.string()),
             "base_currency": pa.dictionary(pa.int8(), pa.string()),
