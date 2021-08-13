@@ -30,7 +30,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
@@ -112,7 +111,6 @@ async def test_account_statement(betfair_client: BetfairClient, uuid, clock):
         ts_init=clock.timestamp_ns(),
     )
     expected = AccountState(
-        client_id=ClientId("BETFAIR"),
         account_id=AccountId(issuer="BETFAIR", number="Testy-McTest"),
         account_type=AccountType.CASH,
         base_currency=GBP,

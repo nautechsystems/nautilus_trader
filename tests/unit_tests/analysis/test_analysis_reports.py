@@ -22,7 +22,6 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
@@ -56,7 +55,6 @@ class TestReportProvider:
     def test_generate_accounts_report_with_initial_account_state_returns_expected(self):
         # Arrange
         state = AccountState(
-            client_id=ClientId("BITMEX"),
             account_id=AccountId("BITMEX", "1513111"),
             account_type=AccountType.MARGIN,
             base_currency=BTC,

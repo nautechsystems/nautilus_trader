@@ -110,10 +110,8 @@ class TestRiskEngine:
             clock=self.clock,
             logger=self.logger,
         )
-
-        # Wire up components
+        self.exec_client.apply_account_state(TestStubs.event_margin_account_state())
         self.exec_engine.register_client(self.exec_client)
-        self.exec_engine.process(TestStubs.event_cash_account_state())
 
         # Prepare data
         self.cache.add_instrument(AUDUSD_SIM)
@@ -228,7 +226,7 @@ class TestRiskEngine:
             ts_init=self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.process(random)
+        self.risk_engine.process(random)
 
     # -- SUBMIT ORDER TESTS ----------------------------------------------------------------------------
 

@@ -740,7 +740,7 @@ class TestSimulatedExchange:
         self.exchange.handle_cancel_order(command)
 
         # Assert
-        assert self.exec_engine.event_count == 2
+        assert self.exec_engine.event_count == 1
 
     def test_update_stop_order_when_order_does_not_exist(self):
         # Arrange
@@ -761,7 +761,7 @@ class TestSimulatedExchange:
         self.exchange.handle_update_order(command)
 
         # Assert
-        assert self.exec_engine.event_count == 2
+        assert self.exec_engine.event_count == 1
 
     def test_update_order_with_zero_quantity_rejects_amendment(self):
         # Arrange: Prepare market

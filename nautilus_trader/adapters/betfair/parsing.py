@@ -58,7 +58,6 @@ from nautilus_trader.model.enums import OrderState
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import Symbol
@@ -235,7 +234,6 @@ def betfair_account_to_account_state(
     locked = -float(account_funds["exposure"])
     free = balance - locked
     return AccountState(
-        client_id=ClientId(BETFAIR_VENUE.value),
         account_id=AccountId(issuer=BETFAIR_VENUE.value, number=account_id),
         account_type=AccountType.CASH,
         base_currency=currency,

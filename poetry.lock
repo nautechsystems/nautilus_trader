@@ -126,7 +126,7 @@ typing_extensions = ">=3.7.4"
 
 [[package]]
 name = "ccxt"
-version = "1.54.74"
+version = "1.54.87"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = true
@@ -1205,16 +1205,16 @@ socks = ["PySocks (>=1.5.6,!=1.5.7,<2.0)"]
 
 [[package]]
 name = "uvloop"
-version = "0.15.3"
+version = "0.16.0"
 description = "Fast implementation of asyncio event loop on top of libuv"
 category = "main"
 optional = false
 python-versions = ">=3.7"
 
 [package.extras]
-dev = ["Cython (>=0.29.20,<0.30.0)", "pytest (>=3.6.0)", "Sphinx (>=1.7.3,<1.8.0)", "sphinxcontrib-asyncio (>=0.2.0,<0.3.0)", "sphinx-rtd-theme (>=0.2.4,<0.3.0)", "aiohttp", "flake8 (>=3.8.4,<3.9.0)", "psutil", "pycodestyle (>=2.6.0,<2.7.0)", "pyOpenSSL (>=19.0.0,<19.1.0)", "mypy (>=0.800)"]
-docs = ["Sphinx (>=1.7.3,<1.8.0)", "sphinxcontrib-asyncio (>=0.2.0,<0.3.0)", "sphinx-rtd-theme (>=0.2.4,<0.3.0)"]
-test = ["aiohttp", "flake8 (>=3.8.4,<3.9.0)", "psutil", "pycodestyle (>=2.6.0,<2.7.0)", "pyOpenSSL (>=19.0.0,<19.1.0)", "mypy (>=0.800)"]
+dev = ["Cython (>=0.29.24,<0.30.0)", "pytest (>=3.6.0)", "Sphinx (>=4.1.2,<4.2.0)", "sphinxcontrib-asyncio (>=0.3.0,<0.4.0)", "sphinx-rtd-theme (>=0.5.2,<0.6.0)", "aiohttp", "flake8 (>=3.9.2,<3.10.0)", "psutil", "pycodestyle (>=2.7.0,<2.8.0)", "pyOpenSSL (>=19.0.0,<19.1.0)", "mypy (>=0.800)"]
+docs = ["Sphinx (>=4.1.2,<4.2.0)", "sphinxcontrib-asyncio (>=0.3.0,<0.4.0)", "sphinx-rtd-theme (>=0.5.2,<0.6.0)"]
+test = ["aiohttp", "flake8 (>=3.9.2,<3.10.0)", "psutil", "pycodestyle (>=2.7.0,<2.8.0)", "pyOpenSSL (>=19.0.0,<19.1.0)", "mypy (>=0.800)"]
 
 [[package]]
 name = "virtualenv"
@@ -1281,7 +1281,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "d0b6b87e71403f60025f85ed6ef22798d2dfd68e9fad52b14d5725ecdef2929a"
+content-hash = "064cd4ea06383983ba98112cadf02e5a580d32954a25783b47245d9cc51b1df4"
 
 [metadata.files]
 aiodns = [
@@ -1359,8 +1359,8 @@ bokeh = [
     {file = "bokeh-2.3.3.tar.gz", hash = "sha256:a5fdcc181835561447fcc5a371300973fce4114692d5853addec284d1cdeb677"},
 ]
 ccxt = [
-    {file = "ccxt-1.54.74-py2.py3-none-any.whl", hash = "sha256:f84e5e0dbc98a37a03010f8e24c9c8ba07f44f49b724ac4e591489f8cd77df41"},
-    {file = "ccxt-1.54.74.tar.gz", hash = "sha256:c705a2770a194d7b31018b1696eb39a2ff8816771c144471ca14f696dc044422"},
+    {file = "ccxt-1.54.87-py2.py3-none-any.whl", hash = "sha256:2b88b275b16cd696397aec142c9697bc84f6e557f8ae7f3cd7ab0e907f157aa8"},
+    {file = "ccxt-1.54.87.tar.gz", hash = "sha256:18b86ea9d990b0e82d999c0ccb9c49d54bdc943cece5bec00b5e7c3051ec5a87"},
 ]
 certifi = [
     {file = "certifi-2021.5.30-py2.py3-none-any.whl", hash = "sha256:50b1e4f8446b06f41be7dd6338db18e0990601dce795c2b1686458aa7e8fa7d8"},
@@ -2231,16 +2231,22 @@ urllib3 = [
     {file = "urllib3-1.26.6.tar.gz", hash = "sha256:f57b4c16c62fa2760b7e3d97c35b255512fb6b59a259730f36ba32ce9f8e342f"},
 ]
 uvloop = [
-    {file = "uvloop-0.15.3-cp37-cp37m-macosx_10_14_x86_64.whl", hash = "sha256:e71fb9038bfcd7646ca126c5ef19b17e48d4af9e838b2bcfda7a9f55a6552a32"},
-    {file = "uvloop-0.15.3-cp37-cp37m-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:7522df4e45e4f25b50adbbbeb5bb9847495c438a628177099d2721f2751ff825"},
-    {file = "uvloop-0.15.3-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ae2b325c0f6d748027f7463077e457006b4fdb35a8788f01754aadba825285ee"},
-    {file = "uvloop-0.15.3-cp38-cp38-macosx_10_14_x86_64.whl", hash = "sha256:0de811931e90ae2da9e19ce70ffad73047ab0c1dba7c6e74f9ae1a3aabeb89bd"},
-    {file = "uvloop-0.15.3-cp38-cp38-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:7f4b8a905df909a407c5791fb582f6c03b0d3b491ecdc1cdceaefbc9bf9e08f6"},
-    {file = "uvloop-0.15.3-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:2d8ffe44ae709f839c54bacf14ed283f41bee90430c3b398e521e10f8d117b3a"},
-    {file = "uvloop-0.15.3-cp39-cp39-macosx_10_14_x86_64.whl", hash = "sha256:63a3288abbc9c8ee979d7e34c34e780b2fbab3e7e53d00b6c80271119f277399"},
-    {file = "uvloop-0.15.3-cp39-cp39-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:5cda65fc60a645470b8525ce014516b120b7057b576fa876cdfdd5e60ab1efbb"},
-    {file = "uvloop-0.15.3-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:1ff05116ede1ebdd81802df339e5b1d4cab1dfbd99295bf27e90b4cec64d70e9"},
-    {file = "uvloop-0.15.3.tar.gz", hash = "sha256:905f0adb0c09c9f44222ee02f6b96fd88b493478fffb7a345287f9444e926030"},
+    {file = "uvloop-0.16.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:6224f1401025b748ffecb7a6e2652b17768f30b1a6a3f7b44660e5b5b690b12d"},
+    {file = "uvloop-0.16.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:30ba9dcbd0965f5c812b7c2112a1ddf60cf904c1c160f398e7eed3a6b82dcd9c"},
+    {file = "uvloop-0.16.0-cp310-cp310-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:bd53f7f5db562f37cd64a3af5012df8cac2c464c97e732ed556800129505bd64"},
+    {file = "uvloop-0.16.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:772206116b9b57cd625c8a88f2413df2fcfd0b496eb188b82a43bed7af2c2ec9"},
+    {file = "uvloop-0.16.0-cp37-cp37m-macosx_10_9_x86_64.whl", hash = "sha256:b572256409f194521a9895aef274cea88731d14732343da3ecdb175228881638"},
+    {file = "uvloop-0.16.0-cp37-cp37m-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:04ff57aa137230d8cc968f03481176041ae789308b4d5079118331ab01112450"},
+    {file = "uvloop-0.16.0-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:3a19828c4f15687675ea912cc28bbcb48e9bb907c801873bd1519b96b04fb805"},
+    {file = "uvloop-0.16.0-cp38-cp38-macosx_10_9_universal2.whl", hash = "sha256:e814ac2c6f9daf4c36eb8e85266859f42174a4ff0d71b99405ed559257750382"},
+    {file = "uvloop-0.16.0-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:bd8f42ea1ea8f4e84d265769089964ddda95eb2bb38b5cbe26712b0616c3edee"},
+    {file = "uvloop-0.16.0-cp38-cp38-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:647e481940379eebd314c00440314c81ea547aa636056f554d491e40503c8464"},
+    {file = "uvloop-0.16.0-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8e0d26fa5875d43ddbb0d9d79a447d2ace4180d9e3239788208527c4784f7cab"},
+    {file = "uvloop-0.16.0-cp39-cp39-macosx_10_9_universal2.whl", hash = "sha256:6ccd57ae8db17d677e9e06192e9c9ec4bd2066b77790f9aa7dede2cc4008ee8f"},
+    {file = "uvloop-0.16.0-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:089b4834fd299d82d83a25e3335372f12117a7d38525217c2258e9b9f4578897"},
+    {file = "uvloop-0.16.0-cp39-cp39-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:98d117332cc9e5ea8dfdc2b28b0a23f60370d02e1395f88f40d1effd2cb86c4f"},
+    {file = "uvloop-0.16.0-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:1e5f2e2ff51aefe6c19ee98af12b4ae61f5be456cd24396953244a30880ad861"},
+    {file = "uvloop-0.16.0.tar.gz", hash = "sha256:f74bc20c7b67d1c27c72601c78cf95be99d5c2cdd4514502b4f3eb0933ff1228"},
 ]
 virtualenv = [
     {file = "virtualenv-20.7.2-py2.py3-none-any.whl", hash = "sha256:e4670891b3a03eb071748c569a87cceaefbf643c5bac46d996c5a45c34aa0f06"},
