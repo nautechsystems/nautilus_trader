@@ -94,12 +94,10 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         """
         self._client = client  # type: BetfairClient
-        self._client.login()
 
         cdef BetfairInstrumentProvider instrument_provider = BetfairInstrumentProvider(
             client=client,
             logger=logger,
-            load_all=load_instruments,
             market_filter=market_filter
         )
         super().__init__(
@@ -114,7 +112,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._stream = BetfairMarketStreamClient(
             client=self._client,
             logger=logger,
-            message_handler=self._on_market_update,
+            message_handler=self.on_market_update,
         )
 
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
@@ -325,9 +323,11 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._handle_data(data=data)
 
 # -- STREAMS ---------------------------------------------------------------------------------------
-
-    cpdef void _on_market_update(self, bytes raw) except *:
+    cpdef void on_market_update(self, bytes raw) except *:
         cdef dict update = orjson.loads(raw)  # type: dict
+        self._on_market_update(update=update)
+
+    cpdef void _on_market_update(self, dict update) except *:
         updates = on_market_update(
             instrument_provider=self._instrument_provider,
             update=update,

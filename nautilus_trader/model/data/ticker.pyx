@@ -33,20 +33,20 @@ cdef class Ticker(Data):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        Price open not None,  # noqa (shadows built-in name open)
-        Price high not None,
-        Price low not None,
-        Price close not None,
-        Quantity volume_quote not None,
-        Quantity volume_base,  # Can be None
-        Price bid not None,
-        Price ask not None,
-        Quantity bid_size not None,
-        Quantity ask_size not None,
-        Price last_px not None,
-        Quantity last_qty not None,
         int64_t ts_event,
         int64_t ts_init,
+        Price open=None,  # noqa (shadows built-in name open)
+        Price high=None,
+        Price low=None,
+        Price close=None,
+        Quantity volume_quote=None,
+        Quantity volume_base=None,  # Can be None
+        Price bid=None,
+        Price ask=None,
+        Quantity bid_size=None,
+        Quantity ask_size=None,
+        Price last_px=None,
+        Quantity last_qty=None,
         dict info=None,
     ):
         """

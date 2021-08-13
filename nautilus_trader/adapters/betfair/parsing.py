@@ -17,6 +17,7 @@ import datetime
 import hashlib
 import itertools
 from collections import defaultdict
+from functools import lru_cache
 from typing import List, Optional, Union
 
 import orjson
@@ -44,6 +45,7 @@ from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
@@ -499,6 +501,19 @@ def _handle_market_runners_status(instrument_provider, market, ts_event, ts_init
     return updates
 
 
+def _handle_ticker(runner: dict, instrument: BettingInstrument, ts_event, ts_init):
+    last_px = None
+    if "ltp" in runner:
+        last_px = price_to_probability(runner["ltp"], side=B2N_MARKET_STREAM_SIDE["atb"])
+    return Ticker(
+        instrument_id=instrument.id,
+        last_px=last_px,
+        last_qty=Quantity(value=runner.get("tv"), precision=instrument.size_precision),
+        ts_init=ts_init,
+        ts_event=ts_event,
+    )
+
+
 def build_market_snapshot_messages(
     instrument_provider, raw
 ) -> List[Union[OrderBookSnapshot, InstrumentStatusUpdate]]:
@@ -596,6 +611,7 @@ def build_market_update_messages(
                     ts_init=ts_event,
                 )
             )
+
             if "trd" in runner:
                 updates.extend(
                     _handle_market_trades(
@@ -605,6 +621,16 @@ def build_market_update_messages(
                         ts_init=ts_event,
                     )
                 )
+            if "ltp" in runner or "tv" in runner:
+                updates.append(
+                    _handle_ticker(
+                        runner=runner,
+                        instrument=instrument,
+                        ts_event=ts_event,
+                        ts_init=ts_event,
+                    )
+                )
+
             if "spb" in runner or "spl" in runner:
                 updates.extend(
                     _handle_bsp_updates(
@@ -672,6 +698,7 @@ async def generate_trades_list(
     ]
 
 
+@lru_cache(None)
 def parse_handicap(x) -> str:
     """
     Ensure consistent parsing of the various handicap sources we get

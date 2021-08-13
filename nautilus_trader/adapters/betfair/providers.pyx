@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import logging
 from typing import Dict, List
 
 import pandas as pd

@@ -199,8 +199,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._handle_event(account_state)
-
+        self._log.debug(f"Received account state: {account_state}, applying")
+        self.apply_account_state(account_state)
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
@@ -380,7 +380,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         # Parse response
         bet_id = resp['instructionReports'][0]['instruction']['betId']
         self._log.debug(f"Matching venue_order_id: {bet_id} to client_order_id: {command.client_order_id}")
-        self.venue_order_id_to_client_order_id[bet_id] = command.client_order_id  # type: ignore
+        self.venue_order_id_to_client_order_id[VenueOrderId(bet_id)] = command.client_order_id  # type: ignore
         self.generate_order_canceled(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
@@ -388,6 +388,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             venue_order_id=VenueOrderId(bet_id),  # type: ignore
             ts_event=self._clock.timestamp_ns(),
         )
+        self._log.debug("Sent order cancel")
 
     # cpdef void bulk_submit_order(self, list commands):
     # betfair allows up to 200 inserts per request
@@ -443,7 +444,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             for selection in market.get("orc", []):
                 if selection.get("fullImage", False):
                     # TODO (bm) - need to replace orders for this selection
-                    pass
+                    self._log.warning("Received full order image, SKIPPING!")
                 for order_update in selection.get("uo", []):
                     await self._check_order_update(order_update)
                     if order_update["status"] == "E":
@@ -476,12 +477,12 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         Handle update containing "E" (executable) order update
         """
         cdef VenueOrderId venue_order_id = VenueOrderId(update['id'])
-        cdef ClientOrderId client_order_id = self.venue_order_id_to_client_order_id[update['id']]
-        cdef Order order = self.cache.order(client_order_id)
+        cdef ClientOrderId client_order_id = self.venue_order_id_to_client_order_id[VenueOrderId(update['id'])]
+        cdef Order order = self._cache.order(client_order_id)
         cdef BettingInstrument instrument = self._cache.instrument(order.instrument_id)
 
         # Check if this is the first time seeing this order (backtest or replay)
-        if update['id'] in self.venue_order_id_to_client_order_id:
+        if venue_order_id in self.venue_order_id_to_client_order_id:
             # We've already sent an accept for this order in self._submit_order
             self._log.debug(f"Skipping order_accept as order exists: venue_order_id={update['id']}")
         else:
