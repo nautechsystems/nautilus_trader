@@ -18,6 +18,7 @@ import os
 
 import pytest
 
+from nautilus_trader.accounting.cash import CashAccount
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.execution import betfair_account_to_account_state
@@ -36,7 +37,6 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.account import CashAccount
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 

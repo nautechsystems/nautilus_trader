@@ -19,6 +19,7 @@ from typing import List
 
 import pytz
 
+from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -69,7 +70,6 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveDataEngine
@@ -321,11 +321,13 @@ class TestStubs:
 
     @staticmethod
     def cash_account():
-        return Account.create(TestStubs.event_cash_account_state(account_id=TestStubs.account_id()))
+        return AccountFactory.create(
+            TestStubs.event_cash_account_state(account_id=TestStubs.account_id())
+        )
 
     @staticmethod
     def margin_account():
-        return Account.create(
+        return AccountFactory.create(
             TestStubs.event_margin_account_state(account_id=TestStubs.account_id())
         )
 

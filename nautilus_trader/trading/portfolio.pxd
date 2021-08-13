@@ -15,6 +15,7 @@
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.accounting.base cimport Account
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -31,7 +32,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.message_bus cimport MessageBus
-from nautilus_trader.trading.account cimport Account
 
 
 cdef class PortfolioFacade:
