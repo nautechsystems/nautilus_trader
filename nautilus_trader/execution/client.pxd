@@ -15,6 +15,7 @@
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.accounting.base cimport Account
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.message cimport Event
@@ -43,7 +44,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.msgbus.message_bus cimport MessageBus
-from nautilus_trader.trading.account cimport Account
 
 
 cdef class ExecutionClient(Component):

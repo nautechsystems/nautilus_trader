@@ -17,6 +17,7 @@ import inspect
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from nautilus_trader.accounting.base import Account
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.execution.client import ExecutionClient
@@ -40,7 +41,6 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
-from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
