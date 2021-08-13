@@ -17,6 +17,7 @@ import asyncio
 import bz2
 import pathlib
 from functools import partial
+from typing import Optional
 from unittest.mock import patch
 
 import orjson
@@ -44,6 +45,7 @@ from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
@@ -242,7 +244,12 @@ class BetfairTestStubs:
 
     @staticmethod
     def make_order(
-        factory=None, instrument_id=None, side=None, price=None, quantity=None, client_order_id=None
+        factory=None,
+        instrument_id: Optional[InstrumentId] = None,
+        side: Optional[OrderSide] = None,
+        price: Optional[Price] = None,
+        quantity: Optional[Quantity] = None,
+        client_order_id: Optional[ClientOrderId] = None,
     ) -> LimitOrder:
         order_factory = factory or BetfairTestStubs.order_factory()
 
@@ -264,7 +271,9 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def make_submitted_order(ts_event=0, ts_init=0, factory=None, client_order_id=None):
+    def make_submitted_order(
+        ts_event=0, ts_init=0, factory=None, client_order_id: Optional[ClientOrderId] = None
+    ):
         order = BetfairTestStubs.make_order(factory=factory, client_order_id=client_order_id)
         submitted = OrderSubmitted(
             trader_id=TestStubs.trader_id(),
@@ -281,7 +290,11 @@ class BetfairTestStubs:
 
     @staticmethod
     def make_accepted_order(
-        venue_order_id="1", ts_event=0, ts_init=0, factory=None, client_order_id=None
+        venue_order_id: Optional[VenueOrderId] = None,
+        ts_event=0,
+        ts_init=0,
+        factory=None,
+        client_order_id: Optional[ClientOrderId] = None,
     ) -> LimitOrder:
         order = BetfairTestStubs.make_submitted_order(
             factory=factory, client_order_id=client_order_id
@@ -292,7 +305,7 @@ class BetfairTestStubs:
             account_id=BetfairTestStubs.account_id(),
             instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId(venue_order_id),
+            venue_order_id=venue_order_id or VenueOrderId("1"),
             event_id=BetfairTestStubs.uuid(),
             ts_event=ts_event,
             ts_init=ts_init,
@@ -346,7 +359,11 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def update_order_command(instrument_id=None, client_order_id=None, venue_order_id=None):
+    def update_order_command(
+        instrument_id: Optional[InstrumentId] = None,
+        client_order_id: Optional[ClientOrderId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
+    ):
         if instrument_id is None:
             instrument_id = BetfairTestStubs.instrument_id()
         return UpdateOrder(
@@ -562,6 +579,10 @@ class BetfairStreaming:
     @staticmethod
     def ocm_FULL_IMAGE():
         return BetfairStreaming.load("streaming_ocm_FULL_IMAGE.json")
+
+    @staticmethod
+    def ocm_FULL_IMAGE_STRATEGY():
+        return BetfairStreaming.load("streaming_ocm_FULL_IMAGE_STRATEGY.json")
 
     @staticmethod
     def ocm_EMPTY_IMAGE():
