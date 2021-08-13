@@ -6,7 +6,9 @@
 - Removed redundant `Portfolio.register_account`.
 
 ## Enhancements
+- Extracted `accounting` subpackage.
 - Subclassed `Account` with `CashAccount` and `MarginAccount`.
+- Added `AccountFactory`.
 - Added registration of OMS type per trading strategy.
 - Added `ExecutionClient.create_account` for custom account classes.
 

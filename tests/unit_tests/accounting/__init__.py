@@ -12,12 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.accounting.base cimport Account
-
-
-cdef class ReportProvider:
-    cpdef object generate_orders_report(self, list orders)
-    cpdef object generate_order_fills_report(self, list orders)
-    cpdef object generate_positions_report(self, list positions)
-    cpdef object generate_account_report(self, Account account)

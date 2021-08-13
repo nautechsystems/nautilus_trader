@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -170,7 +171,7 @@ cdef class ExecutionClient(Component):
         Condition.equal(event.account_id, self.account_id, "event.account_id", "self.account_id")
         Condition.equal(event.account_type, self.account_type, "event.account_type", "self.account_type")
 
-        return Account.create_c(event)
+        return AccountFactory.create_c(event)
 
     cpdef Account get_account(self):
         """
