@@ -67,6 +67,8 @@ class DataCatalog(metaclass=Singleton):
 
     @classmethod
     def from_uri(cls, uri):
+        if "://" not in uri:
+            uri = "file://" + uri
         protocol, path = uri.split("://")
         return cls(path=path, fs_protocol=protocol)
 

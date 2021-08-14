@@ -25,14 +25,6 @@ from tests.test_kit.stubs import TestStubs
 from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 
 
-ROOT = "/root"
-
-
-@pytest.fixture(autouse=True)
-def nautilus_dir():
-    os.environ["NAUTILUS_DATA"] = f"memory://{ROOT}"
-
-
 @pytest.fixture(autouse=True, scope="function")
 def reset():
     """Cleanup resources before each test run"""
@@ -160,12 +152,12 @@ def load_data(betfair_reader):
         instrument_provider=instrument_provider,
     )
     fs = DataCatalog.from_env().fs
-    assert fs.isdir(f"{ROOT}/data/betting_instrument.parquet")
+    assert fs.isdir("/root/data/betting_instrument.parquet")
 
 
 @pytest.fixture(scope="function")
 def catalog():
-    catalog = DataCatalog(path="/root", fs_protocol="memory")
+    catalog = DataCatalog.from_env()
     return catalog
 
 

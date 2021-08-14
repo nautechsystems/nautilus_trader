@@ -298,6 +298,7 @@ def test_build_graph_shared_nodes(backtest_configs):
     assert result == expected
 
 
+@pytest.mark.local
 def test_backtest_against_example(catalog):
     # Replicate examples/fx_ema_cross_audusd_ticks.py backtest result
 

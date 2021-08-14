@@ -51,7 +51,7 @@ redis = "^3.5.3"
 scipy = "1.6.1"  # Pinned at 1.6.1 due Python 3.7.9
 tabulate = "^0.8.9"
 tqdm = "^4.62.0"
-uvloop = { version = "^0.15.3", markers = "sys_platform != 'win32'" }
+uvloop = { version = "^0.16.0", markers = "sys_platform != 'win32'" }
 bokeh = { version = "^2.3.2", optional = true }
 betfairlightweight = {extras = ["speed"], version = "^2.12.1", optional = true}
 distributed = { version = "^2021.7.1", optional = true }
@@ -73,7 +73,6 @@ pytest-xdist = { version = "^2.3.0", extras = ["psutil"] }
 numpydoc = { version = "^1.1.0", optional = true }
 sphinx = { version = "^4.1.2", optional = true }
 sphinx-rtd-theme = { version = "^0.5.1", optional = true }
-more-executors = "^2.8.1"
 
 [tool.poetry.extras]
 betfair = ["betfairlightweight"]

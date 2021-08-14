@@ -31,5 +31,6 @@ class Singleton(type):
         full_kwargs = resolve_kwargs(cls, *args, **kw)
         key = tuple(full_kwargs.items())
         if key not in cls._instances:
+            print(f"CREATING NEW SINGLETON!!!! {kw}")
             cls._instances[key] = super(Singleton, cls).__call__(*args, **kw)
         return cls._instances[key]
