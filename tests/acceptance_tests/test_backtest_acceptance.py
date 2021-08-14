@@ -38,9 +38,9 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.persistence.catalog import DataCatalog
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
@@ -391,10 +391,7 @@ class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQ:
 class TestBacktestAcceptanceTestsOrderBookImbalance:
     def setup(self):
         # Fixture Setup
-        os.environ["NAUTILUS_DATA"] = "memory:///root/"
-        catalog = DataCatalog.from_env()
-        fs = catalog.fs
-        fs.mkdir("/root/data")
+        data_catalog_setup()
         self.engine = BacktestEngine(
             bypass_logging=True,
             run_analysis=False,

@@ -49,7 +49,7 @@ def test_feather_writer(loaded_catalog):
         if persisted is not None:
             result[name] = persisted.shape
     expected = {
-        "AccountState.feather": (1, 13),
+        "AccountState.feather": (1, 12),
         "InstrumentStatusUpdate.feather": (2, 4),
         "OrderBookData.feather": (2384, 11),
         "TradeTick.feather": (624, 7),

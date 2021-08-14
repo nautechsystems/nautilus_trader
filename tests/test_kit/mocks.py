@@ -14,8 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
+import os
 from datetime import datetime
 from typing import Dict, List, Optional
+
+from fsspec.implementations.memory import MemoryFileSystem
 
 from nautilus_trader.accounting.base import Account
 from nautilus_trader.cache.database import CacheDatabase
@@ -41,6 +44,8 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
+from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.util import clear_singleton_instances
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -659,3 +664,20 @@ class MockLiveRiskEngine(LiveRiskEngine):
 
     def process(self, event):
         self.events.append(event)
+
+
+def data_catalog_setup():
+    """
+    Reset the filesystem and DataCatalog to a clean state
+    """
+    clear_singleton_instances(DataCatalog)
+
+    os.environ["NAUTILUS_CATALOG"] = "memory:///root/"
+    catalog = DataCatalog.from_env()
+    assert isinstance(catalog.fs, MemoryFileSystem)
+    try:
+        catalog.fs.rm("/", recursive=True)
+    except FileNotFoundError:
+        pass
+    catalog.fs.mkdir("/root/data")
+    assert catalog.fs.exists("/root/")

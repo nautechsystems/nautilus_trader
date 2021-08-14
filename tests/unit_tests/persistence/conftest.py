@@ -1,10 +1,8 @@
 import inspect
-import os
 import sys
 
 import pandas as pd
 import pytest
-from fsspec.implementations.memory import MemoryFileSystem
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.data.wrangling import BarDataWrangler
@@ -20,6 +18,7 @@ from nautilus_trader.persistence.backtest.loading import process_files
 from nautilus_trader.persistence.backtest.scanner import scan
 from nautilus_trader.persistence.catalog import DataCatalog
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
@@ -27,16 +26,7 @@ from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 
 @pytest.fixture(autouse=True, scope="function")
 def reset():
-    """Cleanup resources before each test run"""
-    os.environ["NAUTILUS_CATALOG"] = "memory:///root/"
-    catalog = DataCatalog.from_env()
-    assert isinstance(catalog.fs, MemoryFileSystem)
-    try:
-        catalog.fs.rm("/", recursive=True)
-    except FileNotFoundError:
-        pass
-    catalog.fs.mkdir("/root/data")
-    assert catalog.fs.exists("/root/")
+    data_catalog_setup()
     yield
 
 

@@ -1,6 +1,5 @@
 import copy
 import dataclasses
-import os
 import pathlib
 import pickle
 import sys
@@ -11,7 +10,6 @@ from typing import Optional
 import pandas as pd
 import pytest
 from dask.base import tokenize
-from fsspec.implementations.memory import MemoryFileSystem
 
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.config import BacktestDataConfig
@@ -34,6 +32,7 @@ from nautilus_trader.persistence.backtest.loading import load
 from nautilus_trader.persistence.backtest.parsers import CSVReader
 from nautilus_trader.persistence.catalog import DataCatalog
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.stubs import TestStubs
@@ -47,15 +46,7 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broke
 @pytest.fixture(autouse=True, scope="function")
 def reset():
     """Cleanup resources before each test run"""
-    os.environ["NAUTILUS_CATALOG"] = "memory:///root/"
-    catalog = DataCatalog.from_env()
-    assert isinstance(catalog.fs, MemoryFileSystem)
-    try:
-        catalog.fs.rm("/", recursive=True)
-    except FileNotFoundError:
-        pass
-    catalog.fs.mkdir("/root/data")
-    assert catalog.fs.exists("/root/")
+    data_catalog_setup()
     yield
 
 
