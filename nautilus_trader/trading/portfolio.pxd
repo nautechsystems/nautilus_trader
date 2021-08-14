@@ -13,12 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport int64_t
+
+from nautilus_trader.accounting.base cimport Account
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -28,7 +32,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.message_bus cimport MessageBus
-from nautilus_trader.trading.account cimport Account
 
 
 cdef class PortfolioFacade:
@@ -40,8 +43,8 @@ cdef class PortfolioFacade:
 
     cpdef Account account(self, Venue venue)
 
-    cpdef dict initial_margins(self, Venue venue)
-    cpdef dict maint_margins(self, Venue venue)
+    cpdef dict margins_initial(self, Venue venue)
+    cpdef dict margins_maint(self, Venue venue)
     cpdef dict unrealized_pnls(self, Venue venue)
     cpdef dict net_exposures(self, Venue venue)
 
@@ -79,8 +82,9 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef object _net_position(self, InstrumentId instrument_id)
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *
-    cdef bint _update_initial_margin(self, Venue venue, list orders_working) except *
-    cdef bint _update_maint_margin(self, Venue venue, list positions_open) except *
+    cdef bint _update_margin_initial(self, Venue venue, list orders_working) except *
+    cdef bint _update_margin_maint(self, Venue venue, list positions_open) except *
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id)
+    cdef AccountState _generate_account_state(self, Account account, int64_t now)
     cdef object _calculate_xrate_to_base(self, Instrument instrument, Account account, OrderSide side)
     cdef Price _get_last_price(self, Position position)

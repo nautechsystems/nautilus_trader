@@ -13,13 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.accounting.cash import CashAccount
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.core.message import Event
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands.trading import CancelOrder
@@ -47,7 +47,6 @@ from nautilus_trader.model.orders.bracket import BracketOrder
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.account import CashAccount
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockCacheDatabase
@@ -144,9 +143,8 @@ class TestExecutionEngine:
             clock=self.clock,
             logger=self.logger,
         )
-
+        self.exec_client.apply_account_state(TestStubs.event_margin_account_state())
         self.exec_engine.register_client(self.exec_client)
-        self.exec_engine.process(TestStubs.event_cash_account_state())
 
     def test_registered_clients_returns_expected(self):
         # Arrange
@@ -204,36 +202,6 @@ class TestExecutionEngine:
             exec_client.id,
             self.exec_client.id,
         ]
-
-    def test_register_account_type_then_account_event_instantiates_type(self):
-        # Arrange
-        client_id = ClientId("CRYPTO_X")
-        account_id = AccountId.from_str("CRYPTO_X-001")
-
-        exec_client = MockExecutionClient(
-            client_id=client_id,
-            venue_type=VenueType.EXCHANGE,
-            account_id=account_id,
-            account_type=AccountType.CASH,
-            base_currency=USD,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-        self.exec_engine.register_client(exec_client)
-
-        # Act
-        self.exec_engine.register_account_type(exec_client.id, MyAccount)
-
-        account_event = TestStubs.event_cash_account_state(
-            client_id=client_id,
-            account_id=account_id,
-        )
-        self.exec_engine.process(account_event)
-
-        # Assert
-        assert isinstance(exec_client.get_account(), MyAccount)
 
     def test_deregister_client_removes_client(self):
         # Arrange, Act
@@ -337,16 +305,6 @@ class TestExecutionEngine:
         )
 
         self.exec_engine.execute(random)
-
-    def test_given_random_event_logs_and_continues(self):
-        # Arrange
-        random = Event(
-            event_id=self.uuid_factory.generate(),
-            ts_event=self.clock.timestamp_ns(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        self.exec_engine.process(random)
 
     def test_submit_order_with_duplicate_client_order_id_logs(self):
         # Arrange
@@ -884,7 +842,7 @@ class TestExecutionEngine:
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
         # Assert
-        assert self.exec_engine.event_count == 2
+        assert self.exec_engine.event_count == 1
         assert order.state == OrderState.INITIALIZED
 
     def test_cancel_order_for_already_completed_order_logs_and_does_nothing(self):

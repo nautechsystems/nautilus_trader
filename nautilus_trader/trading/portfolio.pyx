@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `Portfolio` facilitate the management of trading operations.
+The `Portfolio` facilitates the management of trading operations.
 
 The intended use case is for a single `Portfolio` instance per running system,
 a fleet of trading strategies will organize around a portfolio with the help
@@ -26,6 +26,9 @@ total risk exposures and total net positions.
 
 from decimal import Decimal
 
+from libc.stdint cimport int64_t
+
+from nautilus_trader.accounting.base cimport Account
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -39,6 +42,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -49,7 +53,6 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.message_bus cimport MessageBus
-from nautilus_trader.trading.account cimport Account
 
 
 cdef class PortfolioFacade:
@@ -63,11 +66,11 @@ cdef class PortfolioFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef dict initial_margins(self, Venue venue):
+    cpdef dict margins_initial(self, Venue venue):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef dict maint_margins(self, Venue venue):
+    cpdef dict margins_maint(self, Venue venue):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -168,10 +171,10 @@ cdef class Portfolio(PortfolioFacade):
         for order in orders_working:
             venues.add(order.instrument_id.venue)
 
-        # Update initial margins to initialize portfolio
+        # Update initial (order) margins to initialize portfolio
         initialized = True
         for venue in venues:
-            result = self._update_initial_margin(
+            result = self._update_margin_initial(
                 venue=venue,
                 orders_working=self._cache.orders_working(venue=venue),
             )
@@ -203,10 +206,10 @@ cdef class Portfolio(PortfolioFacade):
             venues.add(position.instrument_id.venue)
             instruments.add(position.instrument_id)
 
-        # Update maintenance margins to initialize portfolio
+        # Update maintenance (position) margins to initialize portfolio
         initialized = True
         for venue in venues:
-            result = self._update_maint_margin(
+            result = self._update_margin_maint(
                 venue=venue,
                 positions_open=self._cache.positions_open(venue=venue),
             )
@@ -256,14 +259,14 @@ cdef class Portfolio(PortfolioFacade):
                 instrument_id=tick.instrument_id,
             )
 
-            # Initialize initial margin
-            result_init = self._update_initial_margin(
+            # Initialize initial (order) margin
+            result_init = self._update_margin_initial(
                 venue=tick.instrument_id.venue,
                 orders_working=orders_working,
             )
 
-            # Initialize maintenance margin
-            result_maint = self._update_maint_margin(
+            # Initialize maintenance (position) margin
+            result_maint = self._update_margin_maint(
                 venue=tick.instrument_id.venue,
                 positions_open=positions_open,
             )
@@ -301,7 +304,7 @@ cdef class Portfolio(PortfolioFacade):
             venue=None,  # Faster query filtering
             instrument_id=event.instrument_id,
         )
-        self._update_initial_margin(event.instrument_id.venue, orders_working)
+        self._update_margin_initial(event.instrument_id.venue, orders_working)
 
     cpdef void update_position(self, PositionEvent event) except *:
         """
@@ -323,7 +326,7 @@ cdef class Portfolio(PortfolioFacade):
             instrument_id=event.instrument_id,
             positions_open=positions_open
         )
-        self._update_maint_margin(
+        self._update_margin_maint(
             venue=event.instrument_id.venue,
             positions_open=positions_open,
         )
@@ -368,7 +371,7 @@ cdef class Portfolio(PortfolioFacade):
         Condition.not_none(self._cache, "self._cache")
 
         cdef Account account = self._cache.account_for_venue(venue)
-        # TODO(cs): Assumption that account.id.issues = venue
+        # TODO(cs): Assumption that account.id.issuer = venue
         if account is None:
             self._log.error(
                 f"Cannot get account: "
@@ -379,9 +382,9 @@ cdef class Portfolio(PortfolioFacade):
 
 # -- QUERIES ---------------------------------------------------------------------------------
 
-    cpdef dict initial_margins(self, Venue venue):
+    cpdef dict margins_initial(self, Venue venue):
         """
-        Return the initial margins for the given venue (if found).
+        Return the initial (order) margins for the given venue (if found).
 
         Parameters
         ----------
@@ -404,11 +407,11 @@ cdef class Portfolio(PortfolioFacade):
             )
             return None
 
-        return account.initial_margins()
+        return account.margins_initial()
 
-    cpdef dict maint_margins(self, Venue venue):
+    cpdef dict margins_maint(self, Venue venue):
         """
-        Return the maintenance margins for the given venue (if found).
+        Return the maintenance (position) margins for the given venue (if found).
 
         Parameters
         ----------
@@ -431,7 +434,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             return None
 
-        return account.maint_margins()
+        return account.margins_maint()
 
     cpdef dict unrealized_pnls(self, Venue venue):
         """
@@ -760,16 +763,16 @@ cdef class Portfolio(PortfolioFacade):
         self._net_positions[instrument_id] = net_position
         self._log.info(f"{instrument_id} net_position={net_position}")
 
-    cdef bint _update_initial_margin(self, Venue venue, list orders_working) except *:
+    cdef bint _update_margin_initial(self, Venue venue, list orders_working) except *:
         cdef Account account = self._cache.account_for_venue(venue)
         if account is None:
             self._log.error(
-                f"Cannot update initial margin: "
+                f"Cannot update initial (order) margin: "
                 f"no account registered for {venue}."
             )
             return False  # Cannot calculate
 
-        if account.type != AccountType.MARGIN:
+        if not account.calculate_account_state:
             return True  # Nothing to calculate
 
         # Filter only passive orders
@@ -786,14 +789,14 @@ cdef class Portfolio(PortfolioFacade):
             instrument = self._cache.instrument(order.instrument_id)
             if instrument is None:
                 self._log.error(
-                    f"Cannot calculate initial margin: "
+                    f"Cannot calculate initial (order) margin: "
                     f"no instrument for {order.instrument_id}."
                 )
                 self._pending_calcs.add(instrument.id)
                 return False  # Cannot calculate
 
             # Calculate margin
-            margin = account.calculate_initial_margin(
+            margin = account.calculate_margin_initial(
                 instrument,
                 order.quantity,
                 order.price,
@@ -809,7 +812,7 @@ cdef class Portfolio(PortfolioFacade):
 
                 if xrate == 0:
                     self._log.debug(
-                        f"Cannot calculate initial margin: "
+                        f"Cannot calculate initial (order) margin: "
                         f"insufficient data for {instrument.get_cost_currency()}/{account.base_currency}."
                     )
                     self._pending_calcs.add(instrument.id)
@@ -827,22 +830,36 @@ cdef class Portfolio(PortfolioFacade):
         cdef Money total_margin_money
         for currency, total_margin in margins.items():
             total_margin_money = Money(total_margin, currency)
-            account.update_initial_margin(total_margin_money)
+            account.update_margin_initial(total_margin_money)
 
-            self._log.info(f"{venue} initial_margin={total_margin_money.to_str()}")
+            self._log.info(f"{venue} margin_initial={total_margin_money.to_str()}")
+
+        cdef AccountState account_state = self._generate_account_state(
+            account=account,
+            now=self._clock.timestamp_ns(),
+        )
+
+        self._msgbus.publish_c(
+            topic=f"events.account.{account.id.value}",
+            msg=account_state,
+        )
 
         return True
 
-    cdef bint _update_maint_margin(self, Venue venue, list positions_open) except *:
+    cdef bint _update_margin_maint(self, Venue venue, list positions_open) except *:
         cdef Account account = self._cache.account_for_venue(venue)
         if account is None:
             self._log.error(
-                f"Cannot update position maintenance margin: "
+                f"Cannot update maintenance (position) margin: "
                 f"no account registered for {venue}."
             )
             return False  # Cannot calculate
 
-        if account.type != AccountType.MARGIN or not positions_open:
+        if (
+            account.type != AccountType.MARGIN
+            or not account.calculate_account_state
+            or not positions_open,
+        ):
             return True  # Nothing to calculate
 
         cdef dict margins = {}  # type: dict[Currency, Decimal]
@@ -855,7 +872,7 @@ cdef class Portfolio(PortfolioFacade):
             instrument = self._cache.instrument(position.instrument_id)
             if instrument is None:
                 self._log.error(
-                    f"Cannot calculate position maintenance margin: "
+                    f"Cannot calculate maintenance (position) margin: "
                     f"no instrument for {position.instrument_id}."
                 )
                 self._pending_calcs.add(instrument.id)
@@ -864,14 +881,14 @@ cdef class Portfolio(PortfolioFacade):
             last = self._get_last_price(position)
             if last is None:
                 self._log.debug(
-                    f"Cannot calculate position maintenance margin: "
+                    f"Cannot calculate maintenance (position) margin: "
                     f"no prices for {position.instrument_id}."
                 )
                 self._pending_calcs.add(instrument.id)
                 return False  # Cannot calculate
 
             # Calculate margin
-            margin = account.calculate_maint_margin(
+            margin = account.calculate_margin_maint(
                 instrument,
                 position.side,
                 position.quantity,
@@ -906,9 +923,19 @@ cdef class Portfolio(PortfolioFacade):
         cdef Money total_margin_money
         for currency, total_margin in margins.items():
             total_margin_money = Money(total_margin, currency)
-            account.update_maint_margin(total_margin_money)
+            account.update_margin_maint(total_margin_money)
 
-            self._log.info(f"{venue} maint_margin={total_margin_money.to_str()}")
+            self._log.info(f"{venue} margin_maint={total_margin_money.to_str()}")
+
+        cdef AccountState account_state = self._generate_account_state(
+            account=account,
+            now=self._clock.timestamp_ns(),
+        )
+
+        self._msgbus.publish_c(
+            topic=f"events.account.{account.id.value}",
+            msg=account_state,
+        )
 
         return True
 
@@ -983,6 +1010,20 @@ cdef class Portfolio(PortfolioFacade):
             total_pnl += pnl
 
         return Money(total_pnl, currency)
+
+    cdef AccountState _generate_account_state(self, Account account, int64_t now):
+        # Generate event
+        return AccountState(
+            account_id=account.id,
+            account_type=account.type,
+            base_currency=account.base_currency,
+            reported=False,
+            balances=list(account.balances().values()),
+            info={},
+            event_id=self._uuid_factory.generate(),
+            ts_event=now,
+            ts_init=now,
+        )
 
     cdef object _calculate_xrate_to_base(self, Instrument instrument, Account account, OrderSide side):
         if account.base_currency is not None:

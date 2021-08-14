@@ -102,7 +102,7 @@ cdef class Equity(Instrument):
             min_notional=None,
             max_price=None,
             min_price=None,
-            margin_init=Decimal(),
+            margin_initial=Decimal(),
             margin_maint=Decimal(),
             maker_fee=Decimal(),
             taker_fee=Decimal(),
@@ -122,6 +122,19 @@ cdef class Equity(Instrument):
 
     @staticmethod
     def from_dict(dict values) -> Instrument:
+        """
+        Return an instrument from the given initialization values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values to initialize the instrument with.
+
+        Returns
+        -------
+        Instrument
+
+        """
         return Instrument.from_dict_c(values)
 
     @staticmethod

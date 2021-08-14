@@ -15,6 +15,7 @@
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.accounting.base cimport Account
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.cache.base cimport CacheFacade
@@ -51,7 +52,6 @@ from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
-from nautilus_trader.trading.account cimport Account
 
 
 cdef class SimulatedExchange:

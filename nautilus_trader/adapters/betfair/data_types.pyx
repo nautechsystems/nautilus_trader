@@ -37,7 +37,7 @@ class InstrumentSearch(Data):
 
 cdef class BSPOrderBookDelta(OrderBookDelta):
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> BSPOrderBookDelta:
         return BSPOrderBookDelta.from_dict_c(values)
 
     @staticmethod

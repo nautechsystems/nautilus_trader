@@ -51,7 +51,7 @@ cdef class CryptoSwap(Instrument):
         Money min_notional,     # Can be None
         Price max_price,        # Can be None
         Price min_price,        # Can be None
-        margin_init not None: Decimal,
+        margin_initial not None: Decimal,
         margin_maint not None: Decimal,
         maker_fee not None: Decimal,
         taker_fee not None: Decimal,
@@ -94,10 +94,10 @@ cdef class CryptoSwap(Instrument):
             The maximum allowable printed price.
         min_price : Price, optional
             The minimum allowable printed price.
-        margin_init : Decimal
-            The initial margin requirement in percentage of order value.
+        margin_initial : Decimal
+            The initial (order) margin requirement in percentage of order value.
         margin_maint : Decimal
-            The maintenance margin in percentage of position value.
+            The maintenance (position) margin in percentage of position value.
         maker_fee : Decimal
             The fee rate for liquidity makers as a percentage of order value.
         taker_fee : Decimal
@@ -157,7 +157,7 @@ cdef class CryptoSwap(Instrument):
             min_notional=min_notional,
             max_price=max_price,
             min_price=min_price,
-            margin_init=margin_init,
+            margin_initial=margin_initial,
             margin_maint=margin_maint,
             maker_fee=maker_fee,
             taker_fee=taker_fee,
@@ -210,7 +210,7 @@ cdef class CryptoSwap(Instrument):
             min_notional=Money.from_str_c(min_n) if min_n is not None else None,
             max_price=Price.from_str_c(max_p) if max_p is not None else None,
             min_price=Price.from_str_c(min_p) if min_p is not None else None,
-            margin_init=Decimal(values["margin_init"]),
+            margin_initial=Decimal(values["margin_initial"]),
             margin_maint=Decimal(values["margin_maint"]),
             maker_fee=Decimal(values["maker_fee"]),
             taker_fee=Decimal(values["taker_fee"]),
@@ -239,7 +239,7 @@ cdef class CryptoSwap(Instrument):
             "min_notional": obj.min_notional.to_str() if obj.min_notional is not None else None,
             "max_price": str(obj.max_price) if obj.max_price is not None else None,
             "min_price": str(obj.min_price) if obj.min_price is not None else None,
-            "margin_init": str(obj.margin_init),
+            "margin_initial": str(obj.margin_initial),
             "margin_maint": str(obj.margin_maint),
             "maker_fee": str(obj.maker_fee),
             "taker_fee": str(obj.taker_fee),

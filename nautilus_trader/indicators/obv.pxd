@@ -24,4 +24,4 @@ cdef class OnBalanceVolume(Indicator):
     cdef readonly double value
     """The current value.\n\n:returns: `double`"""
 
-    cpdef void update_raw(self, double open_price, double close_price, double volume) except *
+    cpdef void update_raw(self, double open, double close, double volume) except *

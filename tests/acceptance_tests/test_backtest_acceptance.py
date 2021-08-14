@@ -312,7 +312,7 @@ class TestBacktestAcceptanceTestsETHUSDTWithT:
             venue=self.venue,
             venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
-            account_type=AccountType.CASH,
+            account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-currency account
             starting_balances=[Money(1_000_000, USDT)],
         )
@@ -337,7 +337,7 @@ class TestBacktestAcceptanceTestsETHUSDTWithT:
         assert strategy.fast_ema.count == 279
         assert self.engine.iteration == 69806
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == Money(
-            998462.61716820, USDT
+            998717.75496820, USDT
         )
 
 
@@ -359,7 +359,7 @@ class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQ:
             venue=self.venue,
             venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
-            account_type=AccountType.CASH,
+            account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-currency account
             starting_balances=[Money(1_000_000, USDT), Money(10, BTC)],
         )
@@ -384,7 +384,7 @@ class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQ:
         assert strategy.fast_ema.count == 39
         assert self.engine.iteration == 19998
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == Money(
-            999843.73560000, USDT
+            999921.16730000, USDT
         )
 
 
@@ -421,7 +421,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         self.engine.add_venue(
             venue=self.venue,
             venue_type=VenueType.EXCHANGE,
-            account_type=AccountType.CASH,
+            account_type=AccountType.MARGIN,
             base_currency=None,
             oms_type=OMSType.NETTING,
             starting_balances=[Money(10000, GBP)],
@@ -443,7 +443,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
 
         # Assert
         assert self.engine.iteration == 9319
-        expected = Money("14611.96", GBP)
+        expected = Money(9992.48, GBP)
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == expected
 
 
@@ -476,7 +476,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
         self.engine.add_venue(
             venue=self.venue,
             venue_type=VenueType.EXCHANGE,
-            account_type=AccountType.CASH,
+            account_type=AccountType.MARGIN,
             base_currency=None,
             oms_type=OMSType.NETTING,
             starting_balances=[Money(10000, GBP)],
@@ -486,7 +486,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
     def teardown(self):
         self.engine.dispose()
 
-    @pytest.mark.skip(reason="balance_total value change??")
+    @pytest.mark.skip(reason="none deterministic ending balance")
     def test_run_market_maker(self):
         # Arrange
         strategy = MarketMaker(
@@ -500,5 +500,6 @@ class TestBacktestAcceptanceTestsMarketMaking:
 
         # Assert
         assert self.engine.iteration == 9319
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money("4357.43", GBP)
-        # assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money("3510.46", GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
+            "10183.49", GBP
+        )

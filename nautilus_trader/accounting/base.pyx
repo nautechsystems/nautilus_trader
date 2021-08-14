@@ -18,9 +18,7 @@ from decimal import Decimal
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.events.account cimport AccountState
-from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 
@@ -30,14 +28,12 @@ cdef class Account:
     The base class for all trading accounts.
     """
 
-    def __init__(self, AccountType account_type, AccountState event):
+    def __init__(self, AccountState event):
         """
         Initialize a new instance of the ``Account`` class.
 
         Parameters
         ----------
-        account_type : AccountType
-            The account type.
         event : AccountState
             The initial account state event.
 
@@ -48,16 +44,16 @@ cdef class Account:
 
         """
         Condition.not_none(event, "event")
-        Condition.equal(account_type, event.account_type, "account_type", "event.account_type")
 
         self.id = event.account_id
-        self.type = account_type
+        self.type = event.account_type
         self.base_currency = event.base_currency
+        self.calculate_account_state = False
 
         self._starting_balances = {b.currency: b.total for b in event.balances}
-        self._events = [event]                    # type: list[AccountState]
-        self._balances = {}                       # type: dict[Currency, AccountBalance]
-        self._commissions = {}                    # type: dict[Currency, Money]
+        self._events = [event]  # type: list[AccountState]
+        self._balances = {}     # type: dict[Currency, AccountBalance]
+        self._commissions = {}  # type: dict[Currency, Money]
 
         self._update_balances(event.balances)
 
@@ -73,34 +69,6 @@ cdef class Account:
                 f"id={self.id.value}, "
                 f"type={AccountTypeParser.to_str(self.type)}, "
                 f"base={base_str})")
-
-    @staticmethod
-    cdef Account create_c(AccountState event):
-        Condition.not_none(event, "event")
-
-        if event.account_type == AccountType.CASH:
-            return CashAccount(event)
-        elif event.account_type == AccountType.MARGIN:
-            return MarginAccount(event)
-        else:
-            raise RuntimeError("invalid account type")
-
-    @staticmethod
-    def create(AccountState event) -> Account:
-        """
-        Create an account based on the events account type.
-
-        Parameters
-        ----------
-        event : AccountState
-            The account state event for the creation.
-
-        Returns
-        -------
-        Account
-
-        """
-        return Account.create_c(event)
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
@@ -390,9 +358,21 @@ cdef class Account:
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
+    cpdef void set_calculate_account_state(self, bint value) except *:
+        """
+        Set the `calculate_account_state` flag.
+
+        Parameters
+        ----------
+        value : bool
+            The value to set.
+
+        """
+        self.calculate_account_state = value
+
     cpdef void apply(self, AccountState event) except *:
         """
-        Applies the given account event to the account.
+        Apply the given account event to the account.
 
         Parameters
         ----------
@@ -440,7 +420,68 @@ cdef class Account:
         total_commissions: Decimal = self._commissions.get(currency, Decimal())
         self._commissions[currency] = Money(total_commissions + commission, currency)
 
+    cpdef void update_margin_initial(self, Money margin_initial) except *:
+        """
+        Update the initial (order) margin.
+
+        Parameters
+        ----------
+        margin_initial : Money
+            The current initial (order) margin for the currency.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(margin_initial, "margin_initial")
+
+        cdef Currency currency = margin_initial.currency
+        cdef AccountBalance current_balance = self._balances.get(currency)
+        if current_balance is None:
+            raise RuntimeError("Cannot apply initial margin when no current balance")
+
+        cdef AccountBalance new_balance = AccountBalance(
+            currency,
+            current_balance.total,
+            margin_initial,
+            Money(current_balance.total.as_decimal() - margin_initial.as_decimal(), currency),
+        )
+
+        self._balances[currency] = new_balance
+
 # -- CALCULATIONS ----------------------------------------------------------------------------------
+
+    cpdef Money calculate_margin_initial(
+        self,
+        Instrument instrument,
+        Quantity quantity,
+        Price price,
+        bint inverse_as_quote=False,
+    ):
+        """
+        Calculate the initial (order) margin from the given parameters.
+
+        Result will be in quote currency for standard instruments, or base
+        currency for inverse instruments.
+
+        Parameters
+        ----------
+        instrument : Instrument
+            The instrument for the calculation.
+        quantity : Quantity
+            The order quantity.
+        price : Price
+            The order price.
+        inverse_as_quote : bool
+            If inverse instrument calculations use quote currency (instead of base).
+
+        Returns
+        -------
+        Money
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Money calculate_commission(
         self,
@@ -508,7 +549,7 @@ cdef class Account:
     cpdef list calculate_pnls(
         self,
         Instrument instrument,
-        Position position,
+        Position position,  # Can be None
         OrderFilled fill,
     ):
         """
@@ -529,428 +570,3 @@ cdef class Account:
 
         """
         raise NotImplementedError("method must be implemented in the subclass")
-
-
-cdef class CashAccount:
-    """
-    Provides a cash account.
-    """
-
-    def __init__(self, AccountState event):
-        """
-        Initialize a new instance of the ``Account`` class.
-
-        Parameters
-        ----------
-        event : AccountState
-            The initial account state event.
-
-        Raises
-        ------
-        ValueError
-            If account_type is not equal to event.account_type.
-
-        """
-        Condition.not_none(event, "event")
-
-        super().__init__(AccountType.CASH, event)
-
-    cpdef list calculate_pnls(
-        self,
-        Instrument instrument,
-        Position position,
-        OrderFilled fill,
-    ):
-        """
-        Return the calculated immediate PnL.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        position : Position, optional
-            The position for the calculation (can be None).
-        fill : OrderFilled
-            The fill for the calculation.
-
-        Returns
-        -------
-        list[Money] or None
-
-        """
-        cdef list pnls = []
-
-        cdef Currency quote_currency = instrument.quote_currency
-        cdef Currency base_currency = instrument.get_base_currency()
-
-        fill_qty: Decimal = fill.last_qty.as_decimal()
-        fill_px: Decimal = fill.last_px.as_decimal()
-
-        if fill.side == OrderSide.BUY:
-            if base_currency:
-                pnls.append(Money(fill_qty, base_currency))
-            pnls.append(Money(-(fill_px * fill_qty), quote_currency))
-        else:  # OrderSide.SELL
-            if base_currency:
-                pnls.append(Money(-fill_qty, base_currency))
-            pnls.append(Money(fill_px * fill_qty, quote_currency))
-
-        return pnls
-
-
-cdef class MarginAccount(Account):
-    """
-    Provides a margin account.
-    """
-
-    def __init__(self, AccountState event):
-        """
-        Initialize a new instance of the ``Account`` class.
-
-        Parameters
-        ----------
-        event : AccountState
-            The initial account state event.
-
-        Raises
-        ------
-        ValueError
-            If account_type is not equal to event.account_type.
-
-        """
-        Condition.not_none(event, "event")
-
-        super().__init__(AccountType.MARGIN, event)
-
-        cdef dict initial_margins = event.info.get("initial_margins", {})
-        cdef dict maint_margins = event.info.get("maint_margins", {})
-
-        self._leverages = {}                      # type: dict[InstrumentId, Decimal]
-        self._initial_margins = initial_margins   # type: dict[Currency, Money]
-        self._maint_margins = maint_margins       # type: dict[Currency, Money]
-
-# -- QUERIES ---------------------------------------------------------------------------------------
-
-    cpdef dict leverages(self):
-        """
-        Return the account leverages.
-
-        Returns
-        -------
-        dict[InstrumentId, Decimal]
-
-        """
-        return self._leverages.copy()
-
-    cpdef dict initial_margins(self):
-        """
-        Return the initial margins for the account.
-
-        Returns
-        -------
-        dict[Currency, Money]
-
-        """
-        return self._initial_margins.copy()
-
-    cpdef dict maint_margins(self):
-        """
-        Return the maintenance margins for the account.
-
-        Returns
-        -------
-        dict[Currency, Money]
-
-        """
-        return self._maint_margins.copy()
-
-    cpdef object leverage(self, InstrumentId instrument_id):
-        """
-        Return the leverage for the given instrument (if found).
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the leverage.
-
-        Returns
-        -------
-        Decimal or None
-
-        """
-        return self._leverages.get(instrument_id)
-
-    cpdef Money initial_margin(self, Currency currency=None):
-        """
-        Return the current initial margin.
-
-        For multi-currency accounts, specify the currency for the query.
-
-        Parameters
-        ----------
-        currency : Currency, optional
-            The currency for the query. If None then will use the default
-            currency (if set).
-
-        Returns
-        -------
-        Money or None
-
-        Raises
-        ------
-        ValueError
-            If currency is None and base_currency is None.
-
-        Warnings
-        --------
-        Returns `None` if there is no applicable information for the query,
-        rather than `Money` of zero amount.
-
-        """
-        if currency is None:
-            currency = self.base_currency
-        Condition.not_none(currency, "currency")
-
-        return self._initial_margins.get(currency)
-
-    cpdef Money maint_margin(self, Currency currency=None):
-        """
-        Return the current maintenance margin.
-
-        For multi-currency accounts, specify the currency for the query.
-
-        Parameters
-        ----------
-        currency : Currency, optional
-            The currency for the query. If None then will use the default
-            currency (if set).
-
-        Returns
-        -------
-        Money or None
-
-        Raises
-        ------
-        ValueError
-            If currency is None and base_currency is None.
-
-        Warnings
-        --------
-        Returns `None` if there is no applicable information for the query,
-        rather than `Money` of zero amount.
-
-        """
-        if currency is None:
-            currency = self.base_currency
-        Condition.not_none(currency, "currency")
-
-        return self._maint_margins.get(currency)
-
-# -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal) except *:
-        """
-        Set the leverage for the given instrument.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument for the leverage.
-        leverage : Decimal
-            The leverage value
-
-        Returns
-        -------
-        TypeError
-            If leverage is not of type Decimal.
-        ValueError
-            If leverage is not >= 1.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.type(leverage, Decimal, "leverage")
-        Condition.true(leverage >= 1, "leverage was not >= 1")
-
-        self._leverages[instrument_id] = leverage
-
-    cpdef void update_initial_margin(self, Money margin) except *:
-        """
-        Update the initial margin.
-
-        Parameters
-        ----------
-        margin : Money
-            The current initial margin for the currency.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(margin, "money")
-
-        self._initial_margins[margin.currency] = margin
-
-    cpdef void update_maint_margin(self, Money margin) except *:
-        """
-        Update the maintenance margin.
-
-        Parameters
-        ----------
-        margin : Money
-            The current maintenance margin for the currency.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(margin, "money")
-
-        self._maint_margins[margin.currency] = margin
-
-# -- CALCULATIONS ----------------------------------------------------------------------------------
-
-    cpdef list calculate_pnls(
-        self,
-        Instrument instrument,
-        Position position,
-        OrderFilled fill,
-    ):
-        """
-        Return the calculated immediate PnL.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        position : Position, optional
-            The position for the calculation (can be None).
-        fill : OrderFilled
-            The fill for the calculation.
-
-        Returns
-        -------
-        list[Money] or None
-
-        """
-        if position and position.entry != fill.side:
-            # Calculate positional PnL
-            return [position.calculate_pnl(
-                avg_px_open=position.avg_px_open,
-                avg_px_close=fill.last_px,
-                quantity=fill.last_qty,
-            )]
-        else:
-            return [Money(0, instrument.get_cost_currency())]
-
-    cpdef Money calculate_initial_margin(
-        self,
-        Instrument instrument,
-        Quantity quantity,
-        Price price,
-        bint inverse_as_quote=False,
-    ):
-        """
-        Calculate the initial margin from the given parameters.
-
-        Result will be in quote currency for standard instruments, or base
-        currency for inverse instruments.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        quantity : Quantity
-            The order quantity.
-        price : Price
-            The order price.
-        inverse_as_quote : bool
-            If inverse instrument calculations use quote currency (instead of base).
-
-        Returns
-        -------
-        Money
-
-        """
-        Condition.not_none(instrument, "instrument")
-        Condition.not_none(quantity, "quantity")
-        Condition.not_none(price, "price")
-
-        notional: Decimal = instrument.notional_value(
-            quantity=quantity,
-            price=price.as_decimal(),
-            inverse_as_quote=inverse_as_quote,
-        ).as_decimal()
-
-        leverage: Decimal = self._leverages.get(instrument.id)
-        if leverage is None:
-            leverage = Decimal(1)
-            self._leverages[instrument.id] = leverage
-
-        adjusted_notional: Decimal = notional / leverage
-
-        margin: Decimal = adjusted_notional * instrument.margin_init
-        margin += (adjusted_notional * instrument.taker_fee * 2)
-
-        if instrument.is_inverse and not inverse_as_quote:
-            return Money(margin, instrument.base_currency)
-        else:
-            return Money(margin, instrument.quote_currency)
-
-    cpdef Money calculate_maint_margin(
-        self,
-        Instrument instrument,
-        PositionSide side,
-        Quantity quantity,
-        Price last,
-        bint inverse_as_quote=False,
-    ):
-        """
-        Calculate the maintenance margin from the given parameters.
-
-        Result will be in quote currency for standard instruments, or base
-        currency for inverse instruments.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        side : PositionSide
-            The currency position side.
-        quantity : Quantity
-            The currency position quantity.
-        last : Price
-            The position instruments last price.
-        inverse_as_quote : bool
-            If inverse instrument calculations use quote currency (instead of base).
-
-        Returns
-        -------
-        Money
-
-        """
-        Condition.not_none(instrument, "instrument")
-        Condition.not_none(quantity, "quantity")
-        Condition.not_none(last, "last")
-
-        notional: Decimal = instrument.notional_value(
-            quantity=quantity,
-            price=last.as_decimal(),
-            inverse_as_quote=inverse_as_quote
-        ).as_decimal()
-
-        leverage: Decimal = self._leverages.get(instrument.id)
-        if leverage is None:
-            leverage = Decimal(1)
-            self._leverages[instrument.id] = leverage
-
-        adjusted_notional: Decimal = notional / leverage
-
-        margin: Decimal = adjusted_notional * instrument.margin_maint
-        margin += adjusted_notional * instrument.taker_fee
-
-        if instrument.is_inverse and not inverse_as_quote:
-            return Money(margin, instrument.base_currency)
-        else:
-            return Money(margin, instrument.quote_currency)

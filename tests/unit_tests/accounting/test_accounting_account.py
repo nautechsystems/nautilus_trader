@@ -17,6 +17,7 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.accounting.cash import CashAccount
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
@@ -35,7 +36,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
@@ -45,7 +45,6 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.account import CashAccount
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -108,7 +107,6 @@ class TestCashAccount:
     def test_instantiate_single_asset_cash_account(self):
         # Arrange
         event = AccountState(
-            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "000"),
             account_type=AccountType.CASH,
             base_currency=USD,
@@ -145,7 +143,6 @@ class TestCashAccount:
     def test_instantiate_multi_asset_cash_account(self):
         # Arrange
         event = AccountState(
-            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "000"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
@@ -201,7 +198,6 @@ class TestCashAccount:
     def test_apply_given_new_state_event_updates_correctly(self):
         # Arrange
         event1 = AccountState(
-            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "001"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
@@ -230,7 +226,6 @@ class TestCashAccount:
         account = CashAccount(event1)
 
         event2 = AccountState(
-            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "001"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
@@ -272,7 +267,6 @@ class TestCashAccount:
     def test_calculate_pnls_for_single_currency_cash_account(self):
         # Arrange
         event = AccountState(
-            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "001"),
             account_type=AccountType.CASH,
             base_currency=USD,
@@ -322,7 +316,6 @@ class TestCashAccount:
     def test_calculate_pnls_for_multi_currency_cash_account_btcusdt(self):
         # Arrange
         event = AccountState(
-            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "001"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
@@ -378,7 +371,6 @@ class TestCashAccount:
     def test_calculate_pnls_for_multi_currency_cash_account_adabtc(self):
         # Arrange
         event = AccountState(
-            client_id=ClientId("SIM"),
             account_id=AccountId("SIM", "001"),
             account_type=AccountType.CASH,
             base_currency=None,  # Multi-currency
@@ -579,37 +571,37 @@ class TestMarginAccount:
         assert account.leverage(AUDUSD_SIM.id) == Decimal(100)
         assert account.leverages() == {AUDUSD_SIM.id: Decimal(100)}
 
-    def test_update_initial_margin(self):
+    def test_update_margin_initial(self):
         # Arrange
         account = TestStubs.margin_account()
-        margin = Money(0.00100000, BTC)
+        margin = Money(1_000.00, USD)
 
         # Act
-        account.update_initial_margin(margin)
+        account.update_margin_initial(margin)
 
         # Assert
-        assert account.initial_margin(BTC) == margin
-        assert account.initial_margins() == {BTC: margin}
+        assert account.margin_initial(USD) == margin
+        assert account.margins_initial() == {USD: margin}
 
-    def test_update_maint_margin(self):
+    def test_update_margin_maint(self):
         # Arrange
         account = TestStubs.margin_account()
-        margin = Money(0.00050000, BTC)
+        margin = Money(1_000.00, USD)
 
         # Act
-        account.update_maint_margin(margin)
+        account.update_margin_maint(margin)
 
         # Assert
-        assert account.maint_margin(BTC) == margin
-        assert account.maint_margins() == {BTC: margin}
+        assert account.margin_maint(USD) == margin
+        assert account.margins_maint() == {USD: margin}
 
-    def test_calculate_initial_margin_with_leverage(self):
+    def test_calculate_margin_initial_with_leverage(self):
         # Arrange
         account = TestStubs.margin_account()
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         account.set_leverage(instrument.id, Decimal(50))
 
-        result = account.calculate_initial_margin(
+        result = account.calculate_margin_initial(
             instrument=instrument,
             quantity=Quantity.from_int(100000),
             price=Price.from_str("0.80000"),
@@ -625,14 +617,14 @@ class TestMarginAccount:
             [True, Money(1150.00, USD)],
         ],
     )
-    def test_calculate_initial_margin_with_no_leverage_for_inverse(
+    def test_calculate_margin_initial_with_no_leverage_for_inverse(
         self, inverse_as_quote, expected
     ):
         # Arrange
         account = TestStubs.margin_account()
         instrument = TestInstrumentProvider.xbtusd_bitmex()
 
-        result = account.calculate_initial_margin(
+        result = account.calculate_margin_initial(
             instrument=instrument,
             quantity=Quantity.from_int(100000),
             price=Price.from_str("11493.60"),
@@ -642,13 +634,13 @@ class TestMarginAccount:
         # Assert
         assert result == expected
 
-    def test_calculate_maint_margin_with_no_leverage(self):
+    def test_calculate_margin_maint_with_no_leverage(self):
         # Arrange
         account = TestStubs.margin_account()
         instrument = TestInstrumentProvider.xbtusd_bitmex()
 
         # Act
-        result = account.calculate_maint_margin(
+        result = account.calculate_margin_maint(
             instrument=instrument,
             side=PositionSide.LONG,
             quantity=Quantity.from_int(100000),

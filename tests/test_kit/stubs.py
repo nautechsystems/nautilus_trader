@@ -19,6 +19,7 @@ from typing import List
 
 import pytz
 
+from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -51,7 +52,6 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
@@ -69,7 +69,6 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.account import Account
 from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveDataEngine
@@ -183,10 +182,10 @@ class TestStubs:
     def bar_5decimal() -> Bar:
         return Bar(
             bar_type=TestStubs.bartype_audusd_1min_bid(),
-            open_price=Price.from_str("1.00002"),
-            high_price=Price.from_str("1.00004"),
-            low_price=Price.from_str("1.00001"),
-            close_price=Price.from_str("1.00003"),
+            open=Price.from_str("1.00002"),
+            high=Price.from_str("1.00004"),
+            low=Price.from_str("1.00001"),
+            close=Price.from_str("1.00003"),
             volume=Quantity.from_int(1_000_000),
             ts_event=0,
             ts_init=0,
@@ -196,10 +195,10 @@ class TestStubs:
     def bar_3decimal() -> Bar:
         return Bar(
             bar_type=TestStubs.bartype_usdjpy_1min_bid(),
-            open_price=Price.from_str("90.002"),
-            high_price=Price.from_str("90.004"),
-            low_price=Price.from_str("90.001"),
-            close_price=Price.from_str("90.003"),
+            open=Price.from_str("90.002"),
+            high=Price.from_str("90.004"),
+            low=Price.from_str("90.001"),
+            close=Price.from_str("90.003"),
             volume=Quantity.from_int(1_000_000),
             ts_event=0,
             ts_init=0,
@@ -321,11 +320,13 @@ class TestStubs:
 
     @staticmethod
     def cash_account():
-        return Account.create(TestStubs.event_cash_account_state(account_id=TestStubs.account_id()))
+        return AccountFactory.create(
+            TestStubs.event_cash_account_state(account_id=TestStubs.account_id())
+        )
 
     @staticmethod
     def margin_account():
-        return Account.create(
+        return AccountFactory.create(
             TestStubs.event_margin_account_state(account_id=TestStubs.account_id())
         )
 
@@ -341,14 +342,11 @@ class TestStubs:
         return order
 
     @staticmethod
-    def event_cash_account_state(client_id=None, account_id=None) -> AccountState:
-        if client_id is None:
-            client_id = ClientId("SIM")
+    def event_cash_account_state(account_id=None) -> AccountState:
         if account_id is None:
             account_id = TestStubs.account_id()
 
         return AccountState(
-            client_id=client_id,
             account_id=account_id,
             account_type=AccountType.CASH,
             base_currency=USD,
@@ -373,7 +371,6 @@ class TestStubs:
             account_id = TestStubs.account_id()
 
         return AccountState(
-            client_id=ClientId("SIM"),
             account_id=account_id,
             account_type=AccountType.MARGIN,
             base_currency=USD,

@@ -15,6 +15,8 @@
 
 import redis
 
+from nautilus_trader.accounting.base cimport Account
+from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
@@ -35,7 +37,6 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.serialization.base cimport CommandSerializer
 from nautilus_trader.serialization.base cimport EventSerializer
 from nautilus_trader.serialization.base cimport InstrumentSerializer
-from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -350,7 +351,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
             return None
 
         cdef bytes event
-        cdef Account account = Account.create_c(self._event_serializer.deserialize(events[0]))
+        cdef Account account = AccountFactory.create_c(self._event_serializer.deserialize(events[0]))
         for event in events[1:]:
             account.apply(event=self._event_serializer.deserialize(event))
 

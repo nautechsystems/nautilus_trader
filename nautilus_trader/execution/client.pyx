@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -143,22 +144,34 @@ cdef class ExecutionClient(Component):
     def __repr__(self) -> str:
         return f"{type(self).__name__}-{self.id.value}"
 
-    cpdef void register_account(self, Account account) except *:
+    cpdef Account create_account(self, AccountState event):
         """
-        Register the given account with the client.
+        Return a new account from the given account state event.
+
+        Override for custom accounts.
 
         Parameters
         ----------
-        account : Account
-            The account to register.
+        event : AccountState
+            The genesis account state event.
+
+        Returns
+        -------
+        Account
+
+        Raises
+        ------
+        ValueError
+            If event.account_id is not equal to self.account_id.
+        ValueError
+            If event.account_type is not equal to self.account_type.
 
         """
-        Condition.not_none(account, "account")
-        Condition.none(self._account, "_account")  # Account should not be registered twice
+        Condition.not_none(event, "event")
+        Condition.equal(event.account_id, self.account_id, "event.account_id", "self.account_id")
+        Condition.equal(event.account_type, self.account_type, "event.account_type", "self.account_type")
 
-        self._account = account
-
-        self._log.info(f"Registered {account}.")
+        return AccountFactory.create_c(event)
 
     cpdef Account get_account(self):
         """
@@ -203,6 +216,41 @@ cdef class ExecutionClient(Component):
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
+    cpdef void apply_account_state(self, AccountState event) except *:
+        """
+        Apply the given account state.
+
+        Parameters
+        ----------
+        event : AccountState
+            The account state to apply.
+
+        Raises
+        ------
+        ValueError
+            If event.account_id does not equal self.account_id.
+        ValueError
+            If event.account_type does not equal self.account_type.
+
+        """
+        Condition.not_none(event, "event")
+        Condition.equal(event.account_id, self.account_id, "event.account_id", "self.account_id")
+        Condition.equal(event.account_type, self.account_type, "event.account_type", "self.account_type")
+
+        if self._account is None:
+            # Generate account
+            self._account = self.create_account(event)
+
+            # Add to cache
+            self._cache.add_account(self._account)
+        else:
+            self._account.apply(event)
+
+        self._msgbus.publish_c(
+            topic=f"events.account.{event.account_id.value}",
+            msg=event,
+        )
+
     cpdef void generate_account_state(
         self,
         list balances,
@@ -211,7 +259,7 @@ cdef class ExecutionClient(Component):
         dict info=None,
     ) except *:
         """
-        Generate an `AccountState` event and send it to the `ExecutionEngine`.
+        Generate an `AccountState` event and publish on the message bus.
 
         Parameters
         ----------
@@ -227,7 +275,6 @@ cdef class ExecutionClient(Component):
         """
         # Generate event
         cdef AccountState account_state = AccountState(
-            client_id=self.id,
             account_id=self.account_id,
             account_type=self.account_type,
             base_currency=self.base_currency,
@@ -239,7 +286,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(account_state)
+        self.apply_account_state(account_state)
 
     cpdef void generate_order_submitted(
         self,

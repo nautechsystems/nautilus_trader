@@ -17,12 +17,10 @@ from decimal import Decimal
 
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
@@ -43,9 +41,8 @@ cdef class Account:
     """The accounts type.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
     """The accounts base currency (None for multi-currency accounts).\n\n:returns: `Currency` or None"""
-
-    @staticmethod
-    cdef Account create_c(AccountState event)
+    cdef readonly bint calculate_account_state
+    """If the accounts state should be calculated by Nautilus.\n\n:returns: `bool`"""
 
 # -- INTERNAL --------------------------------------------------------------------------------------
 
@@ -72,10 +69,20 @@ cdef class Account:
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
+    cpdef void set_calculate_account_state(self, bint value) except *
     cpdef void apply(self, AccountState event) except *
     cpdef void update_commissions(self, Money commission) except *
+    cpdef void update_margin_initial(self, Money margin_initial) except *
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
+
+    cpdef Money calculate_margin_initial(
+        self,
+        Instrument instrument,
+        Quantity quantity,
+        Price price,
+        bint inverse_as_quote=*,
+    )
 
     cpdef Money calculate_commission(
         self,
@@ -85,47 +92,9 @@ cdef class Account:
         LiquiditySide liquidity_side,
         bint inverse_as_quote=*,
     )
-    cpdef list calculate_pnls(self, Instrument instrument, Position position, OrderFilled fill)
-
-
-cdef class CashAccount(Account):
-    pass
-
-
-cdef class MarginAccount(Account):
-    cdef dict _leverages
-    cdef dict _initial_margins
-    cdef dict _maint_margins
-
-# -- QUERIES ---------------------------------------------------------------------------------------
-
-    cpdef dict leverages(self)
-    cpdef dict initial_margins(self)
-    cpdef dict maint_margins(self)
-    cpdef object leverage(self, InstrumentId instrument_id)
-    cpdef Money initial_margin(self, Currency currency=*)
-    cpdef Money maint_margin(self, Currency currency=*)
-
-# -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal) except *
-    cpdef void update_initial_margin(self, Money margin) except *
-    cpdef void update_maint_margin(self, Money margin) except *
-
-# -- CALCULATIONS ----------------------------------------------------------------------------------
-
-    cpdef Money calculate_initial_margin(
+    cpdef list calculate_pnls(
         self,
         Instrument instrument,
-        Quantity quantity,
-        Price price,
-        bint inverse_as_quote=*,
-    )
-    cpdef Money calculate_maint_margin(
-        self,
-        Instrument instrument,
-        PositionSide side,
-        Quantity quantity,
-        Price last,
-        bint inverse_as_quote=*,
+        Position position,
+        OrderFilled fill,
     )

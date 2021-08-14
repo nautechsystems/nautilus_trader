@@ -651,7 +651,7 @@ cdef class BacktestEngine:
         bint is_frozen_account=False,
         list modules=None,
         FillModel fill_model=None,
-        BookLevel order_book_level=BookLevel.L1
+        BookLevel order_book_level=BookLevel.L1,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.

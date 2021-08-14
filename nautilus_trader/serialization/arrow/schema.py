@@ -17,6 +17,7 @@ import pyarrow as pa
 
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.events.account import AccountState
@@ -68,6 +69,26 @@ NAUTILUS_PARQUET_SCHEMA = {
         },
         metadata={"type": "QuoteTick"},
     ),
+    Ticker: pa.schema(
+        {
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "open": pa.string(),
+            "high": pa.string(),
+            "low": pa.string(),
+            "close": pa.string(),
+            "volume_quote": pa.string(),
+            "volume_base": pa.string(),
+            "bid": pa.string(),
+            "ask": pa.string(),
+            "bid_size": pa.string(),
+            "ask_size": pa.string(),
+            "last_px": pa.string(),
+            "last_qty": pa.string(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+        metadata={"type": "Ticker"},
+    ),
     BettingInstrument: pa.schema(
         {
             "venue_name": pa.string(),
@@ -116,7 +137,6 @@ NAUTILUS_PARQUET_SCHEMA = {
     ),
     AccountState: pa.schema(
         {
-            "client_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
             "account_type": pa.dictionary(pa.int8(), pa.string()),
             "base_currency": pa.dictionary(pa.int8(), pa.string()),

@@ -97,7 +97,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             logger=self.logger,
         )
 
-        exec_client = MockExecutionClient(
+        self.exec_client = MockExecutionClient(
             client_id=ClientId("BINANCE"),
             venue_type=VenueType.EXCHANGE,
             account_id=self.account_id,
@@ -108,10 +108,10 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             clock=self.clock,
             logger=self.logger,
         )
-
-        # Wire up components
-        self.exec_engine.register_client(exec_client)
-        self.exec_engine.process(TestStubs.event_cash_account_state(account_id=self.account_id))
+        self.exec_client.apply_account_state(
+            TestStubs.event_cash_account_state(account_id=self.account_id)
+        )
+        self.exec_engine.register_client(self.exec_client)
 
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register(

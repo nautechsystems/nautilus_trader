@@ -15,6 +15,7 @@
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.accounting.base cimport Account
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.message cimport Event
@@ -28,6 +29,7 @@ from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -42,7 +44,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.msgbus.message_bus cimport MessageBus
-from nautilus_trader.trading.account cimport Account
 
 
 cdef class ExecutionClient(Component):
@@ -64,11 +65,11 @@ cdef class ExecutionClient(Component):
     cdef readonly Currency base_currency
     """The clients account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or None"""
     cdef readonly bint calculate_account_state
-    """If the account state is calculated on order fill.\n\n:returns: `bool`"""
+    """If the account state is calculated.\n\n:returns: `bool`"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 
-    cpdef void register_account(self, Account account) except *
+    cpdef Account create_account(self, AccountState event)
     cpdef Account get_account(self)
 
     cpdef void _set_connected(self, bint value=*) except *
@@ -82,6 +83,7 @@ cdef class ExecutionClient(Component):
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
+    cpdef void apply_account_state(self, AccountState event) except *
     cpdef void generate_account_state(
         self,
         list balances,
