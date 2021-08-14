@@ -16,8 +16,6 @@
 import asyncio
 from decimal import Decimal
 
-import pytest
-
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -46,7 +44,7 @@ class TestBettingAccount:
         self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.DEBUG)
 
         self.msgbus = MessageBus(
-            trader_id=self.trader_id,
+            trader_id=TestStubs.trader_id(),
             clock=self.clock,
             logger=self.logger,
         )
@@ -99,49 +97,3 @@ class TestBettingAccount:
         assert long == Money(250.00, GBP)
         assert short == Money(125.00, GBP)
         assert very_short == Money(1000.00, GBP)
-
-    @pytest.mark.asyncio
-    async def test_betfair_order_reduces_balance(self):
-        # Arrange
-        balance = self.cache.account_for_venue(self.value).balances()[GBP]
-        expected = {
-            "type": "AccountBalance",
-            "currency": "GBP",
-            "total": "1000.00",
-            "locked": "-0.00",
-            "free": "1000.00",
-        }
-        assert balance.to_dict() == expected
-
-        # Create an order to buy at 0.5 ($2.0) for $10 - exposure is $20
-        order = BetfairTestStubs.make_order(
-            price=Price.from_str("0.5"), quantity=Quantity.from_int(10)
-        )
-
-        # Order accepted - expect balance to drop by exposure
-        order_accepted = TestStubs.event_order_accepted(order=order)
-        self.msgbus._handle_event(order_accepted)
-        await asyncio.sleep(0.1)
-        balance = self.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
-        expected = {
-            "type": "AccountBalance",
-            "currency": "GBP",
-            "total": "1000.00",
-            "locked": "20.00",
-            "free": "980.00",
-        }
-        assert balance.to_dict() == expected
-
-        # Cancel the order, balance should return
-        cancelled = TestStubs.event_order_canceled(order=order)
-        self.msgbus._handle_event(cancelled)
-        await asyncio.sleep(0.1)
-        balance = self.client.engine.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
-        expected = {
-            "type": "AccountBalance",
-            "currency": "GBP",
-            "total": "1000.00",
-            "locked": "-0.00",
-            "free": "1080.00",
-        }
-        assert balance.to_dict() == expected

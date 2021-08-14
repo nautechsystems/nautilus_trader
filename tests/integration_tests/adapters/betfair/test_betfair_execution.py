@@ -46,7 +46,9 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
@@ -113,6 +115,11 @@ class TestBetfairExecutionClient:
         self.betfair_client = MagicMock(spec=BetfairClient)
         mock_async(
             self.betfair_client, "get_account_details", BetfairResponses.account_details()["result"]
+        )
+        mock_async(
+            self.betfair_client,
+            "get_account_funds",
+            BetfairResponses.account_funds_no_exposure()["result"],
         )
         mock_async(
             self.betfair_client, "list_navigation", BetfairResponses.navigation_list_navigation()
@@ -591,3 +598,39 @@ class TestBetfairExecutionClient:
             isinstance(fill2, OrderFilled)
             and fill2.execution_id.value == "8b3e65be779968a3fdf2d72731c848c5153e88cd"
         )
+
+    @pytest.mark.asyncio
+    async def test_betfair_order_reduces_balance(self):
+        # Arrange
+        await self._setup_account()
+        mock_async(
+            self.betfair_client, "place_orders", BetfairResponses.betting_place_order_success()
+        )
+        mock_async(
+            self.betfair_client, "cancel_orders", BetfairResponses.betting_cancel_orders_success()
+        )
+
+        # Act
+        balance = self.cache.account_for_venue(self.venue).balances()[GBP]
+
+        # submit order
+        order = BetfairTestStubs.make_order(
+            price=Price.from_str("0.5"), quantity=Quantity.from_int(10)
+        )
+        command = BetfairTestStubs.submit_order_command(order=order)
+        self.client.submit_order(command)
+        await asyncio.sleep(0.01)
+        balance_order = self.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
+
+        # Cancel the order, balance should return
+        command = BetfairTestStubs.cancel_order_command(
+            client_order_id=order.client_order_id, venue_order_id=VenueOrderId("228302937743")
+        )
+        self.client.cancel_order(command)
+        await asyncio.sleep(0)
+        balance_cancel = self.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
+
+        # Assert
+        assert balance.free == Money(1000.0, GBP)
+        assert balance_order.free == Money(980.0, GBP)
+        assert balance_cancel.free == Money(1000.0, GBP)
