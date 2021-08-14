@@ -4,15 +4,6 @@ Trading
 .. automodule:: nautilus_trader.trading
 
 
-Account
--------
-
-.. automodule:: nautilus_trader.trading.account
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Calculators
 -----------
 
