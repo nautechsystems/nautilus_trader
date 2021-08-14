@@ -7,6 +7,7 @@ from decimal import Decimal
 from functools import partial
 from typing import Optional
 
+import dask
 import pandas as pd
 import pytest
 from dask.base import tokenize
@@ -47,6 +48,7 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broke
 def reset():
     """Cleanup resources before each test run"""
     data_catalog_setup()
+    dask.config.set(scheduler="single-threaded")
     yield
 
 
@@ -85,6 +87,7 @@ def data_loader():
 @pytest.fixture(scope="function")
 def catalog(data_loader):
     catalog = DataCatalog.from_env()
+    print(f"Catalog fixture: {catalog}, {id(catalog)}")
     # assert len(catalog.instruments()) == 1
     assert len(catalog.quote_ticks()) == 100000
     return catalog
@@ -349,17 +352,16 @@ def test_backtest_against_example(catalog):
     assert account_result == expected
 
 
-def test_backtest_run_sync(backtest_configs):
+def test_backtest_run_sync(backtest_configs, catalog):
     tasks = build_graph(backtest_configs)
     result = tasks.compute()
     assert len(result) == 2
 
 
-@pytest.mark.local
-def test_backtest_run_distributed(backtest_configs):
+def test_backtest_run_distributed(backtest_configs, catalog):
     from distributed import Client
 
-    _ = Client(processes=False)
-    tasks = build_graph(backtest_configs)
-    result = tasks.compute()
-    assert result
+    with Client(processes=False):
+        tasks = build_graph(backtest_configs)
+        result = tasks.compute()
+        assert result

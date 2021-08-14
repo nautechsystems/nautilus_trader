@@ -127,6 +127,7 @@ class BacktestConfig(Partialable):
 
 def _load(config: BacktestDataConfig):
     catalog = DataCatalog(path=config.catalog_path, fs_protocol=config.catalog_fs_protocol)
+    print(f"Catalog _load: {catalog}, {id(catalog)}")
     query = config.query
     return {
         "type": query["cls"],

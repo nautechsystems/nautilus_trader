@@ -681,3 +681,4 @@ def data_catalog_setup():
         pass
     catalog.fs.mkdir("/root/data")
     assert catalog.fs.exists("/root/")
+    assert not catalog.fs.ls("/root/data")
