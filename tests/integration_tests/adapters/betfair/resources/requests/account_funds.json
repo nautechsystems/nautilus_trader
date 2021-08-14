@@ -13,6 +13,5 @@
     "id": 1,
     "method": "AccountAPING/v1.0/getAccountFunds",
     "params": {}
-  },
-  "as_json": true
+  }
 }

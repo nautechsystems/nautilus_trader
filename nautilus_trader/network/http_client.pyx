@@ -107,7 +107,7 @@ cdef class HTTPClient:
             await session.close()
 
     # TODO clean this up
-    async def request(self, method, url, headers=None, json=None, as_json=False, **kwargs) -> Union[bytes, Dict]:
+    async def request(self, method, url, headers=None, json=None, **kwargs) -> Union[bytes, Dict]:
         self._log.debug(f"Request: {method=}, {url=}, {headers=}, {json=}, {kwargs if kwargs else ''}")
         async with self.session.request(
             method=method,
@@ -116,15 +116,14 @@ cdef class HTTPClient:
             json=json,
             **kwargs
         ) as resp:
-            raw = await resp.read()
             try:
+                data = await resp.read()
+                resp.data = data
                 resp.raise_for_status()
-                if as_json:
-                    return orjson.loads(raw)
-                return raw
+                return resp
             except ClientResponseError as e:
                 self._log.exception(e)
-                raise ResponseException(resp=resp, raw=raw, client_response_error=e)
+                raise ResponseException(resp=resp, client_response_error=e)
 
     async def get(self, url, **kwargs):
         return await self.request(method="GET", url=url, **kwargs)
@@ -136,8 +135,7 @@ cdef class HTTPClient:
 
 
 class ResponseException(BaseException):
-    def __init__(self, resp: ClientResponse, raw: bytes, client_response_error: ClientResponseError):
+    def __init__(self, resp: ClientResponse, client_response_error: ClientResponseError):
         super().__init__()
         self.resp = resp
-        self.raw = raw
         self.client_response_error = client_response_error

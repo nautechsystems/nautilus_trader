@@ -101,7 +101,6 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         """ Search for betfair markets. Useful for debugging / interactive use """
         return load_markets(client=self._client, market_filter=market_filter)
 
-    # TODO - Needs to be async
     cpdef list search_instruments(self, dict instrument_filter=None, bint load=True):
         """ Search for instruments within the cache. Useful for debugging / interactive use """
         key = tuple((instrument_filter or {}).items())

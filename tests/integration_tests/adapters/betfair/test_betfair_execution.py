@@ -373,6 +373,7 @@ class TestBetfairExecutionClient:
         await self.client._handle_order_stream_update(update)
 
         # Assert
+        assert len(self.messages) == 2  # Should only be two messages, one cancel
         pending_cancel, cancelled = self.messages
         assert isinstance(pending_cancel, OrderPendingCancel)
         assert isinstance(pending_cancel, OrderCanceled)
@@ -440,7 +441,7 @@ class TestBetfairExecutionClient:
         self._setup_exec_client_and_cache(update=update)
 
         # Act
-        await self.client._handle_order_stream_update(update=update)
+        await self.client._handlex_order_stream_update(update=update)
         await asyncio.sleep(0)
 
         # Assert

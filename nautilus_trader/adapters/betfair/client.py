@@ -3,6 +3,8 @@ import pathlib
 import ssl
 from typing import Dict, List, Optional, Union
 
+import orjson
+
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.network.http_client import HTTPClient
 from nautilus_trader.network.http_client import ResponseException
@@ -25,11 +27,12 @@ class BetfairClient(HTTPClient):
         loop: asyncio.AbstractEventLoop,
         logger: Logger,
         locale=None,
+        ssl=None,
     ):
         super().__init__(
             loop=loop,
             logger=logger,
-            ssl=self._ssl_context(cert_dir=cert_dir),
+            ssl=ssl or self._ssl_context(cert_dir=cert_dir),
             connector_kwargs={"enable_cleanup_closed": True, "force_close": True},
         )
         self.username = username
@@ -64,13 +67,18 @@ class BetfairClient(HTTPClient):
     ) -> Dict:
         data = {**self.JSON_RPC_DEFAULTS, "method": method, **(data or {}), "params": params or {}}
         try:
-            resp = await self.request(
-                method="POST", url=url, headers=self.headers, json=data, as_json=True
-            )
-            if isinstance(resp, dict):
-                return resp
+            resp = await self.request(method="POST", url=url, headers=self.headers, json=data)
+            data = orjson.loads(resp.data)  # type: ignore
+            if "error" in data:
+                raise BetfairAPIError(code=data["error"]["code"], message=data["error"]["message"])
+            if isinstance(data, dict):
+                return data
             else:
                 raise TypeError("Unexpected type:" + str(resp))
+        except BetfairError as e:
+            self._log.error(str(e))
+            raise e
+
         except ResponseException as e:
             self._log.error(
                 f"Err on {method} status={e.resp.status}, message={e.client_response_error.message}, "
@@ -89,15 +97,17 @@ class BetfairClient(HTTPClient):
             **{k: v for k, v in self.headers.items() if k not in ("content-type",)},
             **{"Content-Type": "application/x-www-form-urlencoded"},
         }
-        resp = await self.post(url=url, data=data, headers=headers, as_json=True)
-        if resp["loginStatus"] == "SUCCESS":
-            self.session_token = resp["sessionToken"]
+        resp = await self.post(url=url, data=data, headers=headers)
+        data = orjson.loads(resp.data)
+        if data["loginStatus"] == "SUCCESS":
+            self.session_token = data["sessionToken"]
 
     async def list_navigation(self):
         """
         List the tree (navigation) of all betfair markets
         """
-        return await self.get(url=self.NAVIGATION_URL, headers=self.headers, as_json=True)
+        resp = await self.get(url=self.NAVIGATION_URL, headers=self.headers, as_json=True)
+        return orjson.loads(resp.data)
 
     async def list_market_catalogue(
         self,
@@ -279,3 +289,17 @@ def parse_market_filter(market_filter):
         for v in market_filter[key]:
             assert isinstance(v, str), f"{v} should be type `str` not {type(v)}"
     return market_filter
+
+
+class BetfairError(Exception):
+    pass
+
+
+class BetfairAPIError(BetfairError):
+    def __init__(self, code: str, message: str):
+        super().__init__()
+        self.code = code
+        self.message = message
+
+    def __str__(self):
+        return f"BetfairAPIError(code={self.code}, message={self.message})"

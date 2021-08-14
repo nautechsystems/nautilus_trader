@@ -15,13 +15,16 @@
 
 import asyncio
 import bz2
+import contextlib
 import pathlib
 from functools import partial
 from typing import Optional
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import orjson
 import pandas as pd
+from aiohttp import ClientResponse
 
 from nautilus_trader.adapters.betfair.client import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -515,6 +518,10 @@ class BetfairResponses:
         return BetfairResponses.load_wrap_result("account_funds_with_exposure.json")
 
     @staticmethod
+    def account_funds_error():
+        return BetfairResponses.load_wrap_result("account_funds_error.json")
+
+    @staticmethod
     def betting_cancel_orders_success():
         return BetfairResponses.load("betting_cancel_orders_success.json")
 
@@ -840,3 +847,14 @@ class BetfairDataProvider:
     @staticmethod
     def betfair_trade_ticks():
         return [msg["trade"] for msg in TestDataProvider.l2_feed() if msg.get("op") == "trade"]
+
+
+@contextlib.contextmanager
+def mock_client_request(response):
+    """
+    Patch BetfairClient.request with a correctly formatted `response`
+    """
+    mock_response = MagicMock(ClientResponse)
+    mock_response.data = orjson.dumps(response)
+    with patch.object(BetfairClient, "request", return_value=mock_response) as mock_request:
+        yield mock_request

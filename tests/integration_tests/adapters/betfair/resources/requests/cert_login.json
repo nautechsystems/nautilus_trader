@@ -10,6 +10,5 @@
     "X-Application": "app_key"
   },
   "method": "POST",
-  "url": "https://identitysso-cert.betfair.com/api/certlogin",
-  "as_json": true
+  "url": "https://identitysso-cert.betfair.com/api/certlogin"
 }

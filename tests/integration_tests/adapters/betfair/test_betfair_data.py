@@ -447,5 +447,5 @@ class TestBetfairExecutionClient:
     def test_betfair_ticker(self, load_instruments):
         self.client._on_market_update(BetfairStreaming.mcm_UPDATE_tv())
         ticker = self.messages[1]
-        assert ticker.last_px == Price("0.31746")
-        assert ticker.last_qty == Quantity("364.45")
+        assert ticker.last_px == Price.from_str("0.31746")
+        assert ticker.last_qty == Quantity.from_str("364.45")

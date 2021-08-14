@@ -23,6 +23,5 @@
       },
       "maxResults": 1000
     }
-  },
-  "as_json": true
+  }
 }
