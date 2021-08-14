@@ -276,6 +276,7 @@ class TestBacktestEngineData:
         # assert ETHUSDT_BINANCE.id in data.trade_ticks
         # assert len(data.trade_ticks[ETHUSDT_BINANCE.id]) == 69806
 
+    @pytest.mark.skip()
     def test_add_trade_tick_objects_adds_to_container(self, capsys):
         # Arrange
         with capsys.disabled():
