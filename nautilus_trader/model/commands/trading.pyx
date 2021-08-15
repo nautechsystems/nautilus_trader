@@ -122,7 +122,7 @@ cdef class SubmitOrder(TradingCommand):
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.order.client_order_id.value}, "
                 f"position_id={self.position_id}, "
-                f"order={self.order.status_string_c()})")
+                f"order={self.order.info()})")
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -131,7 +131,7 @@ cdef class SubmitOrder(TradingCommand):
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.order.client_order_id.value}, "
                 f"position_id={self.position_id}, "
-                f"order={self.order.status_string_c()}, "
+                f"order={self.order.info()}, "
                 f"command_id={self.id}, "
                 f"ts_init={self.ts_init})")
 
@@ -240,9 +240,9 @@ cdef class SubmitBracketOrder(TradingCommand):
         return (f"{type(self).__name__}("
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_link_id={self.bracket_order.id.value}, "
-                f"entry={self.bracket_order.entry.status_string_c()}, "
-                f"stop_loss={self.bracket_order.stop_loss.status_string_c()}, "
-                f"take_profit={self.bracket_order.take_profit.status_string_c()})")
+                f"entry={self.bracket_order.entry.info()}, "
+                f"stop_loss={self.bracket_order.stop_loss.info()}, "
+                f"take_profit={self.bracket_order.take_profit.info()})")
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -250,9 +250,9 @@ cdef class SubmitBracketOrder(TradingCommand):
                 f"strategy_id={self.strategy_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_link_id={self.bracket_order.id.value}, "
-                f"entry={self.bracket_order.entry.status_string_c()}, "
-                f"stop_loss={self.bracket_order.stop_loss.status_string_c()}, "
-                f"take_profit={self.bracket_order.take_profit.status_string_c()}, "
+                f"entry={self.bracket_order.entry.info()}, "
+                f"stop_loss={self.bracket_order.stop_loss.info()}, "
+                f"take_profit={self.bracket_order.take_profit.info()}, "
                 f"command_id={self.id}, "
                 f"ts_init={self.ts_init})")
 

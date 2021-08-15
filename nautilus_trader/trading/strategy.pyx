@@ -624,7 +624,7 @@ cdef class TradingStrategy(Actor):
             or order.is_pending_cancel_c()
         ):
             self.log.warning(
-                f"Cannot create command UpdateOrder: state is {order.state_string_c()}, {order}.",
+                f"Cannot create command UpdateOrder: state is {order.status_string_c()}, {order}.",
             )
             return  # Cannot send command
 
@@ -669,7 +669,7 @@ cdef class TradingStrategy(Actor):
 
         if order.is_completed_c() or order.is_pending_cancel_c():
             self.log.warning(
-                f"Cannot cancel order: state is {order.state_string_c()}, {order}.",
+                f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
             )
             return  # Cannot send command
 

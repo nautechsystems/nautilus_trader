@@ -29,7 +29,7 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import StrategyId
@@ -177,7 +177,7 @@ class TestBacktestExecClientTests:
         self.exec_client.submit_order(command)
 
         # Assert
-        assert order.state == OrderState.INITIALIZED
+        assert order.status == OrderStatus.INITIALIZED
 
     def test_submit_bracket_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange
@@ -206,7 +206,7 @@ class TestBacktestExecClientTests:
         self.exec_client.submit_bracket_order(command)
 
         # Assert
-        assert entry.state == OrderState.INITIALIZED
+        assert entry.status == OrderStatus.INITIALIZED
 
     def test_cancel_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange

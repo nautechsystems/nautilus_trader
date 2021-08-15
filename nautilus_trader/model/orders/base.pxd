@@ -20,7 +20,7 @@ from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -51,7 +51,7 @@ cdef class Order:
     cdef list _events
     cdef list _execution_ids
     cdef FiniteStateMachine _fsm
-    cdef OrderState _rollback_state
+    cdef OrderStatus _rollback_status
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the position.\n\n:returns: `TraderId`"""
@@ -90,15 +90,15 @@ cdef class Order:
     cdef readonly int64_t ts_init
     """The UNIX timestamp (nanoseconds) when the order was initialized.\n\n:returns: `int64`"""
 
+    cpdef str info(self)
     cpdef dict to_dict(self)
 
-    cdef OrderState state_c(self) except *
+    cdef OrderStatus status_c(self) except *
     cdef OrderInitialized init_event_c(self)
     cdef OrderEvent last_event_c(self)
     cdef list events_c(self)
     cdef list execution_ids_c(self)
     cdef int event_count_c(self) except *
-    cdef str state_string_c(self)
     cdef str status_string_c(self)
     cdef bint is_buy_c(self) except *
     cdef bint is_sell_c(self) except *

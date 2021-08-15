@@ -43,8 +43,8 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OMSTypeParser
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderSideParser
-from nautilus_trader.model.enums import OrderState
-from nautilus_trader.model.enums import OrderStateParser
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderStatusParser
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import OrderTypeParser
 from nautilus_trader.model.enums import PositionSide
@@ -621,38 +621,38 @@ class TestOrderSide:
         assert expected == result
 
 
-class TestOrderState:
+class TestOrderStatus:
     def test_order_state_parser_given_invalid_value_raises_value_error(self):
         # Arrange
         # Act
         # Assert
         with pytest.raises(ValueError):
-            OrderStateParser.to_str_py(0)
+            OrderStatusParser.to_str_py(0)
 
         with pytest.raises(ValueError):
-            OrderStateParser.from_str_py("")
+            OrderStatusParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [OrderState.INITIALIZED, "INITIALIZED"],
-            [OrderState.DENIED, "DENIED"],
-            [OrderState.SUBMITTED, "SUBMITTED"],
-            [OrderState.ACCEPTED, "ACCEPTED"],
-            [OrderState.REJECTED, "REJECTED"],
-            [OrderState.CANCELED, "CANCELED"],
-            [OrderState.EXPIRED, "EXPIRED"],
-            [OrderState.TRIGGERED, "TRIGGERED"],
-            [OrderState.PENDING_CANCEL, "PENDING_CANCEL"],
-            [OrderState.PENDING_UPDATE, "PENDING_UPDATE"],
-            [OrderState.PARTIALLY_FILLED, "PARTIALLY_FILLED"],
-            [OrderState.FILLED, "FILLED"],
+            [OrderStatus.INITIALIZED, "INITIALIZED"],
+            [OrderStatus.DENIED, "DENIED"],
+            [OrderStatus.SUBMITTED, "SUBMITTED"],
+            [OrderStatus.ACCEPTED, "ACCEPTED"],
+            [OrderStatus.REJECTED, "REJECTED"],
+            [OrderStatus.CANCELED, "CANCELED"],
+            [OrderStatus.EXPIRED, "EXPIRED"],
+            [OrderStatus.TRIGGERED, "TRIGGERED"],
+            [OrderStatus.PENDING_CANCEL, "PENDING_CANCEL"],
+            [OrderStatus.PENDING_UPDATE, "PENDING_UPDATE"],
+            [OrderStatus.PARTIALLY_FILLED, "PARTIALLY_FILLED"],
+            [OrderStatus.FILLED, "FILLED"],
         ],
     )
     def test_order_state_to_str(self, enum, expected):
         # Arrange
         # Act
-        result = OrderStateParser.to_str_py(enum)
+        result = OrderStatusParser.to_str_py(enum)
 
         # Assert
         assert expected == result
@@ -660,24 +660,24 @@ class TestOrderState:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["INITIALIZED", OrderState.INITIALIZED],
-            ["DENIED", OrderState.DENIED],
-            ["SUBMITTED", OrderState.SUBMITTED],
-            ["ACCEPTED", OrderState.ACCEPTED],
-            ["REJECTED", OrderState.REJECTED],
-            ["CANCELED", OrderState.CANCELED],
-            ["EXPIRED", OrderState.EXPIRED],
-            ["TRIGGERED", OrderState.TRIGGERED],
-            ["PENDING_CANCEL", OrderState.PENDING_CANCEL],
-            ["PENDING_UPDATE", OrderState.PENDING_UPDATE],
-            ["PARTIALLY_FILLED", OrderState.PARTIALLY_FILLED],
-            ["FILLED", OrderState.FILLED],
+            ["INITIALIZED", OrderStatus.INITIALIZED],
+            ["DENIED", OrderStatus.DENIED],
+            ["SUBMITTED", OrderStatus.SUBMITTED],
+            ["ACCEPTED", OrderStatus.ACCEPTED],
+            ["REJECTED", OrderStatus.REJECTED],
+            ["CANCELED", OrderStatus.CANCELED],
+            ["EXPIRED", OrderStatus.EXPIRED],
+            ["TRIGGERED", OrderStatus.TRIGGERED],
+            ["PENDING_CANCEL", OrderStatus.PENDING_CANCEL],
+            ["PENDING_UPDATE", OrderStatus.PENDING_UPDATE],
+            ["PARTIALLY_FILLED", OrderStatus.PARTIALLY_FILLED],
+            ["FILLED", OrderStatus.FILLED],
         ],
     )
     def test_order_state_from_str(self, string, expected):
         # Arrange
         # Act
-        result = OrderStateParser.from_str_py(string)
+        result = OrderStatusParser.from_str_py(string)
 
         # Assert
         assert expected == result

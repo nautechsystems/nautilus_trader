@@ -31,8 +31,8 @@ from nautilus_trader.execution.messages cimport ExecutionReport
 from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.order_state cimport OrderState
-from nautilus_trader.model.c_enums.order_state cimport OrderStateParser
+from nautilus_trader.model.c_enums.order_status cimport OrderStatus
+from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
@@ -267,7 +267,7 @@ cdef class LiveExecutionClient(ExecutionClient):
             if order_report:
                 mass_status.add_order_report(order_report)
 
-            if order_report.order_state in (OrderState.PARTIALLY_FILLED, OrderState.FILLED):
+            if order_report.order_status in (OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED):
                 exec_reports = await self.generate_exec_reports(
                     venue_order_id=order.venue_order_id,
                     symbol=order.instrument_id.symbol,
@@ -291,7 +291,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         Parameters
         ----------
         report : OrderStatusReport
-            The order state report for reconciliation.
+            The order status report for reconciliation.
         order : Order, optional
             The order for reconciliation. If not supplied then will try to be
             fetched from cache.
@@ -330,7 +330,7 @@ cdef class LiveExecutionClient(ExecutionClient):
 
         self._log.info(f"Reconciling state for {repr(order.venue_order_id)}...", color=LogColor.BLUE)
 
-        if report.order_state == OrderState.REJECTED:
+        if report.order_status == OrderStatus.REJECTED:
             # No VenueOrderId would have been assigned from the exchange
             self._log.info("Generating OrderRejected event...", color=LogColor.BLUE)
             self.generate_order_rejected(
@@ -341,7 +341,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 report.ts_init,
             )
             return True
-        elif report.order_state == OrderState.EXPIRED:
+        elif report.order_status == OrderStatus.EXPIRED:
             self._log.info("Generating OrderExpired event...", color=LogColor.BLUE)
             self.generate_order_expired(
                 order.strategy_id,
@@ -351,7 +351,7 @@ cdef class LiveExecutionClient(ExecutionClient):
                 report.ts_init,
             )
             return True
-        elif report.order_state == OrderState.CANCELED:
+        elif report.order_status == OrderStatus.CANCELED:
             self._log.info("Generating OrderCanceled event...", color=LogColor.BLUE)
             self.generate_order_canceled(
                 order.strategy_id,
@@ -361,8 +361,8 @@ cdef class LiveExecutionClient(ExecutionClient):
                 report.ts_init,
             )
             return True
-        elif report.order_state == OrderState.ACCEPTED:
-            if order.state_c() == OrderState.SUBMITTED:
+        elif report.order_status == OrderStatus.ACCEPTED:
+            if order.status_c() == OrderStatus.SUBMITTED:
                 self._log.info("Generating OrderAccepted event...", color=LogColor.BLUE)
                 self.generate_order_accepted(
                     order.strategy_id,
@@ -373,11 +373,11 @@ cdef class LiveExecutionClient(ExecutionClient):
                 )
             return True
 
-        # OrderState.PARTIALLY_FILLED or FILLED
+        # OrderStatus.PARTIALLY_FILLED or FILLED
         if exec_reports is None:
             self._log.error(
                 f"Cannot reconcile state for {repr(report.venue_order_id)}, "
-                f"no trades given for {OrderStateParser.to_str(report.order_state)} order.")
+                f"no trades given for {OrderStatusParser.to_str(report.order_status)} order.")
             return False  # Cannot reconcile state
 
         cdef ExecutionReport exec_report
