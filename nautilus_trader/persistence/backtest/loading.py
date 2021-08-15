@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import pathlib
 from collections import defaultdict
 from concurrent.futures import Executor
@@ -254,10 +255,11 @@ def process_files(
     output_func=None,
 ):
     """
-    Load data in chunks from `files`, parsing with the `parser` function using `executor`.
+    Load data in chunks from `files`, parsing with the `parser` function using
+    `executor`.
 
-    Utilises queues to block the executors reading too many chunks (limiting memory use), while also allowing easy
-    parallelisation.
+    Utilises queues to block the executors reading too many chunks (limiting
+    memory use), while also allowing easy parallelization.
 
     """
     catalog = catalog or DataCatalog.from_env()
