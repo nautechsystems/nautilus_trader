@@ -248,6 +248,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 reason=reason,  # type: ignore
                 ts_event=self._clock.timestamp_ns(),
             )
+            self._log.debug(f"Generated _generate_order_rejected")
             return
         bet_id = resp['instructionReports'][0]['betId']
         self._log.debug(f"Matching venue_order_id: {bet_id} to client_order_id: {client_order_id}")
@@ -259,6 +260,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             venue_order_id=VenueOrderId(bet_id),  # type: ignore
             ts_event=self._clock.timestamp_ns(),
         )
+        self._log.debug(f"Generated _generate_order_accepted")
+
     cpdef void update_order(self, UpdateOrder command) except *:
         Condition.not_none(command, "command")
 

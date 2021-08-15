@@ -518,29 +518,6 @@ optional = true
 python-versions = ">=3.6"
 
 [[package]]
-name = "monotonic"
-version = "1.6"
-description = "An implementation of time.monotonic() for Python 2 & < 3.3"
-category = "dev"
-optional = false
-python-versions = "*"
-
-[[package]]
-name = "more-executors"
-version = "2.8.1"
-description = "A library of composable Python executors and futures"
-category = "dev"
-optional = false
-python-versions = "*"
-
-[package.dependencies]
-monotonic = "*"
-six = "*"
-
-[package.extras]
-prometheus = ["prometheus-client"]
-
-[[package]]
 name = "msgpack"
 version = "1.0.2"
 description = "MessagePack (de)serializer."
@@ -1282,7 +1259,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "064cd4ea06383983ba98112cadf02e5a580d32954a25783b47245d9cc51b1df4"
+content-hash = "83bf51ac971ea8af511fde39e8edf92a06c4edbb2b30561eef1eaea14614f5a2"
 
 [metadata.files]
 aiodns = [
@@ -1675,13 +1652,6 @@ markupsafe = [
     {file = "MarkupSafe-2.0.1-cp39-cp39-win32.whl", hash = "sha256:10f82115e21dc0dfec9ab5c0223652f7197feb168c940f3ef61563fc2d6beb74"},
     {file = "MarkupSafe-2.0.1-cp39-cp39-win_amd64.whl", hash = "sha256:693ce3f9e70a6cf7d2fb9e6c9d8b204b6b39897a2c4a1aa65728d5ac97dcc1d8"},
     {file = "MarkupSafe-2.0.1.tar.gz", hash = "sha256:594c67807fb16238b30c44bdf74f36c02cdf22d1c8cda91ef8a0ed8dabf5620a"},
-]
-monotonic = [
-    {file = "monotonic-1.6-py2.py3-none-any.whl", hash = "sha256:68687e19a14f11f26d140dd5c86f3dba4bf5df58003000ed467e0e2a69bca96c"},
-]
-more-executors = [
-    {file = "more-executors-2.8.1.tar.gz", hash = "sha256:4438f60e79b713a6160e2d710d28379f5ae38c9ca45e2058665250ee2a15ab4b"},
-    {file = "more_executors-2.8.1-py2.py3-none-any.whl", hash = "sha256:5d0be55f193a7667dd93852093737dffd797397e3097ade57a1110cf2382c713"},
 ]
 msgpack = [
     {file = "msgpack-1.0.2-cp35-cp35m-manylinux1_i686.whl", hash = "sha256:b6d9e2dae081aa35c44af9c4298de4ee72991305503442a5c74656d82b581fe9"},

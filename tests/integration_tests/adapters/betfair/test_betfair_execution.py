@@ -531,6 +531,16 @@ class TestBetfairExecutionClient:
         command = BetfairTestStubs.submit_order_command(order=order)
         self.client.submit_order(command)
         await asyncio.sleep(0)
+
+        # accept order - balance should reduce
+        self.client.generate_order_accepted(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId("1"),  # type: ignore
+            ts_event=0,
+        )
+        await asyncio.sleep(0.1)
         balance_order = self.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
 
         # Cancel the order, balance should return
