@@ -20,6 +20,7 @@ Index
     :caption: API Reference
     :hidden:
 
+    api_reference/accounting
     api_reference/analysis
     api_reference/backtest
     api_reference/cache
@@ -33,6 +34,7 @@ Index
     api_reference/model
     api_reference/msgbus
     api_reference/network
+    api_reference/portfolio
     api_reference/risk
     api_reference/serialization
     api_reference/trading

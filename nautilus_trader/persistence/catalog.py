@@ -32,6 +32,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.persistence.backtest.metadata import load_mappings
+from nautilus_trader.persistence.util import Singleton
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
@@ -40,14 +41,13 @@ from nautilus_trader.serialization.arrow.util import clean_key
 from nautilus_trader.serialization.arrow.util import is_nautilus_class
 
 
-class DataCatalog:
-    """
-    Provides a searchable data catalogue.
-    """
+class DataCatalog(metaclass=Singleton):
+    PROCESSED_FILES_FN = ".processed_raw_files.json"
+    PARTITION_MAPPINGS_FN = "_partition_mappings.json"
 
     def __init__(self, path: str, fs_protocol: str = "file"):
         """
-        Initialize a new instance of the ``DataCatalog`` class.
+        Provides a queryable data catalogue.
 
         Parameters
         ----------
@@ -55,11 +55,9 @@ class DataCatalog:
             The root path to the data.
         fs_protocol : str
             The file system protocol to use.
-
         """
         self.fs = fsspec.filesystem(fs_protocol)
         self.path = pathlib.Path(path)
-        self._processed_files_path = str(self.path / ".processed_raw_files.json")
 
     @classmethod
     def from_env(cls):
@@ -67,6 +65,8 @@ class DataCatalog:
 
     @classmethod
     def from_uri(cls, uri):
+        if "://" not in uri:
+            uri = "file://" + uri
         protocol, path = uri.split("://")
         return cls(path=path, fs_protocol=protocol)
 
@@ -238,7 +238,7 @@ class DataCatalog:
         full_path = str(self.path.joinpath(path))
         if not (self.fs.exists(full_path) or self.fs.isdir(full_path)):
             if raise_on_empty:
-                raise FileNotFoundError
+                raise FileNotFoundError(f"protocol={self.fs.protocol}, path={full_path}")
             else:
                 return pd.DataFrame()
 

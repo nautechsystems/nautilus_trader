@@ -39,7 +39,7 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -65,7 +65,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -249,20 +249,20 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         # Determine state
         status = response["status"]
         if status == "open" and filled_qty > 0:
-            state = OrderState.PARTIALLY_FILLED
+            state = OrderStatus.PARTIALLY_FILLED
         elif status == "closed":
-            state = OrderState.FILLED
+            state = OrderStatus.FILLED
         elif status == "canceled":
-            state = OrderState.CANCELED
+            state = OrderStatus.CANCELED
         elif status == "expired":
-            state = OrderState.EXPIRED
+            state = OrderStatus.EXPIRED
         else:
-            state = OrderState.ACCEPTED
+            state = OrderStatus.ACCEPTED
 
         return OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            order_state=state,
+            order_status=state,
             filled_qty=filled_qty,
             ts_init=millis_to_nanos(millis=response["timestamp"]),
         )
@@ -568,7 +568,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return  # Cannot cancel
 
         if not order.is_working_c():
-            self._log.error(f"Cannot cancel order, state=OrderState.{order.state_string_c()}.")
+            self._log.error(f"Cannot cancel order, status={order.status_string_c()}.")
             return  # Cannot cancel
 
         self.generate_order_pending_cancel(

@@ -1,17 +1,30 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import random
 import time
 from concurrent.futures import ThreadPoolExecutor
-from queue import Queue
 
 import pytest
 from distributed import Client
 from distributed import LocalCluster
 from distributed.cfexecutor import ClientExecutor
 
-from nautilus_trader.persistence.util import SyncExecutor
-from nautilus_trader.persistence.util import _determine_workers
-from nautilus_trader.persistence.util import executor_queue_process
-from nautilus_trader.persistence.util import merge_queues
+from nautilus_trader.persistence.backtest.processing import SyncExecutor
+from nautilus_trader.persistence.backtest.processing import _determine_workers
+from nautilus_trader.persistence.backtest.processing import executor_queue_process
 
 
 def test_determine_workers():
@@ -20,24 +33,14 @@ def test_determine_workers():
     assert _determine_workers(ClientExecutor(Client(LocalCluster(n_workers=4)))) == 4
 
 
-def test_merge_queues():
-    ins = [Queue() for _ in range(3)]
-    out = merge_queues(*ins)
-    for q in ins:
-        for i in range(3):
-            q.put(i)
-    result = [out.get() for _ in range(9)]
-    expected = [0, 1, 2] * 3
-    assert result == expected
-
-
 @pytest.mark.parametrize(
     "executor_cls", (SyncExecutor, ThreadPoolExecutor, lambda: ClientExecutor(Client()))
 )
 def test_executor_process(executor_cls):
     def process(name: str, count: int):
+        # Simulate loading / processing some data
         for chunk in range(count):
-            time.sleep(random.random() / 5)  # Simulate loading / processing some data # noqa: S311
+            time.sleep(random.random() / 5)  # noqa: S311, B311
             yield {"x": f"{name}-{chunk}"}
 
     results = []

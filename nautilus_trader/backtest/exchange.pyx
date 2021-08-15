@@ -19,7 +19,7 @@ from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
 from libc.stdint cimport int64_t
 
-from nautilus_trader.accounting.base cimport Account
+from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
@@ -1268,7 +1268,7 @@ cdef class SimulatedExchange:
         # order is the OCO order to reject
         # other_oco is the linked ClientOrderId
         if order.is_completed_c():
-            self._log.debug(f"Cannot reject order: state was already {order.state_string_c()}.")
+            self._log.debug(f"Cannot reject order: state was already {order.status_string_c()}.")
             return
 
         # Generate event
@@ -1277,7 +1277,7 @@ cdef class SimulatedExchange:
     cdef void _cancel_oco_order(self, PassiveOrder order) except *:
         # order is the OCO order to cancel
         if order.is_completed_c():
-            self._log.debug(f"Cannot cancel order: state was already {order.state_string_c()}.")
+            self._log.debug(f"Cannot cancel order: state was already {order.status_string_c()}.")
             return
 
         # Generate event

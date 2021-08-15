@@ -27,7 +27,7 @@ from nautilus_trader.live.data_client cimport LiveDataClientFactory
 from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class CCXTDataClientFactory(LiveDataClientFactory):

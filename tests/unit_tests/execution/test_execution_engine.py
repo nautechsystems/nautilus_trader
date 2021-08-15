@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.accounting.cash import CashAccount
+from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -30,7 +30,7 @@ from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderUpdated
@@ -45,9 +45,9 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.bracket import BracketOrder
 from nautilus_trader.model.position import Position
-from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockCacheDatabase
 from tests.test_kit.mocks import MockExecutionClient
@@ -143,7 +143,7 @@ class TestExecutionEngine:
             clock=self.clock,
             logger=self.logger,
         )
-        self.exec_client.apply_account_state(TestStubs.event_margin_account_state())
+        self.portfolio.update_account(TestStubs.event_margin_account_state())
         self.exec_engine.register_client(self.exec_client)
 
     def test_registered_clients_returns_expected(self):
@@ -257,10 +257,6 @@ class TestExecutionEngine:
         # Assert
         assert result  # No exceptions raised
 
-    def test_loading_account_from_cache_registers_with_portfolio(self):
-        # Arrange, Act, Assert
-        assert self.portfolio.account(self.venue).id == AccountId("SIM", "000")
-
     def test_setting_of_position_id_counts(self):
         # Arrange
         strategy_id = StrategyId("S-001")
@@ -341,7 +337,7 @@ class TestExecutionEngine:
         self.risk_engine.execute(submit_order)  # Duplicate command
 
         # Assert
-        assert order.state == OrderState.SUBMITTED
+        assert order.status == OrderStatus.SUBMITTED
 
     def test_submit_order_for_random_venue_logs(self):
         # Arrange
@@ -378,7 +374,7 @@ class TestExecutionEngine:
 
         # Assert
         assert self.exec_engine.command_count == 1
-        assert order.state == OrderState.INITIALIZED
+        assert order.status == OrderStatus.INITIALIZED
 
     def test_submit_order_for_none_existent_position_id_invalidates_order(self):
         # Arrange
@@ -413,7 +409,7 @@ class TestExecutionEngine:
         self.risk_engine.execute(submit_order)
 
         # Assert
-        assert order.state == OrderState.DENIED
+        assert order.status == OrderStatus.DENIED
 
     def test_order_filled_with_unrecognized_strategy_id(self):
         # Arrange
@@ -456,7 +452,7 @@ class TestExecutionEngine:
         )
 
         # Assert (does not send to strategy)
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
 
     def test_submit_bracket_order_with_all_duplicate_client_order_id_logs_does_not_submit(
         self,
@@ -516,9 +512,9 @@ class TestExecutionEngine:
         self.risk_engine.execute(submit_bracket)  # <-- Duplicate command
 
         # Assert
-        assert entry.state == OrderState.SUBMITTED  # Did not invalidate originals
-        assert stop_loss.state == OrderState.SUBMITTED  # Did not invalidate originals
-        assert take_profit.state == OrderState.SUBMITTED  # Did not invalidate originals
+        assert entry.status == OrderStatus.SUBMITTED  # Did not invalidate originals
+        assert stop_loss.status == OrderStatus.SUBMITTED  # Did not invalidate originals
+        assert take_profit.status == OrderStatus.SUBMITTED  # Did not invalidate originals
         assert self.exec_engine.command_count == 1
 
     def test_submit_bracket_order_with_duplicate_take_profit_client_order_id_logs_does_not_submit(
@@ -609,10 +605,10 @@ class TestExecutionEngine:
         self.risk_engine.execute(submit_bracket2)  # SL and TP
 
         # Assert
-        assert entry2.state == OrderState.DENIED
-        assert entry1.state == OrderState.ACCEPTED
-        assert stop_loss1.state == OrderState.ACCEPTED
-        assert take_profit1.state == OrderState.ACCEPTED  # Did not invalidate original
+        assert entry2.status == OrderStatus.DENIED
+        assert entry1.status == OrderStatus.ACCEPTED
+        assert stop_loss1.status == OrderStatus.ACCEPTED
+        assert take_profit1.status == OrderStatus.ACCEPTED  # Did not invalidate original
 
     def test_submit_bracket_order_with_duplicate_stop_loss_client_order_id_logs_does_not_submit(
         self,
@@ -703,11 +699,11 @@ class TestExecutionEngine:
         self.risk_engine.execute(submit_bracket2)  # SL and TP
 
         # Assert
-        assert entry2.state == OrderState.DENIED
-        assert entry1.state == OrderState.ACCEPTED  # Did not invalidate original
-        assert stop_loss1.state == OrderState.ACCEPTED  # Did not invalidate original
-        assert take_profit1.state == OrderState.ACCEPTED  # Did not invalidate original
-        assert take_profit2.state == OrderState.DENIED
+        assert entry2.status == OrderStatus.DENIED
+        assert entry1.status == OrderStatus.ACCEPTED  # Did not invalidate original
+        assert stop_loss1.status == OrderStatus.ACCEPTED  # Did not invalidate original
+        assert take_profit1.status == OrderStatus.ACCEPTED  # Did not invalidate original
+        assert take_profit2.status == OrderStatus.DENIED
 
     def test_submit_order(self):
         # Arrange
@@ -780,7 +776,7 @@ class TestExecutionEngine:
         self.exec_engine.process(TestStubs.event_order_accepted(order))
 
         # Assert
-        assert order.state == OrderState.INITIALIZED
+        assert order.status == OrderStatus.INITIALIZED
 
     def test_when_applying_event_to_order_with_invalid_state_trigger_logs(self):
         # Arrange
@@ -816,7 +812,7 @@ class TestExecutionEngine:
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
         # Assert
-        assert order.state == OrderState.INITIALIZED
+        assert order.status == OrderStatus.INITIALIZED
 
     def test_order_filled_event_when_order_not_found_in_cache_logs(self):
         # Arrange
@@ -843,7 +839,7 @@ class TestExecutionEngine:
 
         # Assert
         assert self.exec_engine.event_count == 1
-        assert order.state == OrderState.INITIALIZED
+        assert order.status == OrderStatus.INITIALIZED
 
     def test_cancel_order_for_already_completed_order_logs_and_does_nothing(self):
         # Arrange
@@ -859,7 +855,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        # Push to OrderState.FILLED (completed)
+        # Push to OrderStatus.FILLED (completed)
         order = strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -894,7 +890,7 @@ class TestExecutionEngine:
         self.exec_engine.execute(cancel_order)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
 
     def test_update_order_for_already_completed_order_logs_and_does_nothing(self):
         # Arrange
@@ -910,7 +906,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        # Push to OrderState.FILLED (completed)
+        # Push to OrderStatus.FILLED (completed)
         order = strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -949,7 +945,7 @@ class TestExecutionEngine:
         self.exec_engine.execute(update_order)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert order.quantity == Quantity.from_int(100000)
 
     def test_handle_order_event_with_random_client_order_id_and_order_id_cached(self):
@@ -1001,7 +997,7 @@ class TestExecutionEngine:
         self.exec_engine.process(canceled)
 
         # Assert (order was found and OrderCanceled event was applied)
-        assert order.state == OrderState.CANCELED
+        assert order.status == OrderStatus.CANCELED
 
     def test_handle_order_event_with_random_client_order_id_and_order_id_not_cached(
         self,
@@ -1054,7 +1050,7 @@ class TestExecutionEngine:
         self.exec_engine.process(canceled)
 
         # Assert (order was not found, engine did not crash)
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
 
     def test_handle_duplicate_order_events_logs_error_and_does_not_apply(self):
         # Arrange
@@ -1106,7 +1102,7 @@ class TestExecutionEngine:
         self.exec_engine.process(canceled)
 
         # Assert (order was found and OrderCanceled event was applied)
-        assert order.state == OrderState.CANCELED
+        assert order.status == OrderStatus.CANCELED
         assert order.event_count == 4
 
     def test_handle_order_fill_event_with_no_position_id_correctly_handles_fill(self):
@@ -1959,7 +1955,7 @@ class TestExecutionEngine:
         self.risk_engine.execute(submit_order3)
 
         # Assert
-        assert order3.state == OrderState.DENIED
+        assert order3.status == OrderStatus.DENIED
 
     def test_handle_updated_order_event(self):
         # Arrange

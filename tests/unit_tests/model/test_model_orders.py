@@ -23,7 +23,7 @@ from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
@@ -204,7 +204,7 @@ class TestOrders:
         assert order.symbol == AUDUSD_SIM.id.symbol
         assert order.venue == AUDUSD_SIM.id.venue
         assert order.type == OrderType.MARKET
-        assert order.state == OrderState.INITIALIZED
+        assert order.status == OrderStatus.INITIALIZED
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
         assert not order.is_inflight
@@ -228,7 +228,7 @@ class TestOrders:
 
         # Assert
         assert order.type == OrderType.MARKET
-        assert order.state == OrderState.INITIALIZED
+        assert order.status == OrderStatus.INITIALIZED
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
         assert len(order.events) == 1
@@ -263,11 +263,11 @@ class TestOrders:
         assert isinstance(hash(order), int)
         assert (
             str(order)
-            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
+            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
         )
         assert (
             repr(order)
-            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
+            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
         )
 
     def test_market_order_to_dict(self):
@@ -314,7 +314,7 @@ class TestOrders:
 
         # Assert
         assert order.type == OrderType.LIMIT
-        assert order.state == OrderState.INITIALIZED
+        assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.is_passive
         assert not order.is_aggressive
@@ -322,11 +322,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
         )
         assert (
             repr(order)
-            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
         )
 
     def test_limit_order_to_dict(self):
@@ -384,7 +384,7 @@ class TestOrders:
         assert order.instrument_id == AUDUSD_SIM.id
         assert order.type == OrderType.LIMIT
         assert order.price == Price.from_str("1.00000")
-        assert order.state == OrderState.INITIALIZED
+        assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTD
         assert order.expire_time == UNIX_EPOCH
         assert not order.is_completed
@@ -401,7 +401,7 @@ class TestOrders:
 
         # Assert
         assert order.type == OrderType.STOP_MARKET
-        assert order.state == OrderState.INITIALIZED
+        assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.is_passive
         assert not order.is_aggressive
@@ -409,11 +409,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
+            == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
         )
         assert (
             repr(order)
-            == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
+            == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
         )
 
     def test_stop_market_order_to_dict(self):
@@ -466,7 +466,7 @@ class TestOrders:
 
         # Assert
         assert order.type == OrderType.STOP_LIMIT
-        assert order.state == OrderState.INITIALIZED
+        assert order.status == OrderStatus.INITIALIZED
         assert order.time_in_force == TimeInForce.GTC
         assert order.is_passive
         assert not order.is_aggressive
@@ -474,11 +474,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.00000 GTC, trigger=1.10010, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
+            == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.00000 GTC, trigger=1.10010, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
         )
         assert (
             repr(order)
-            == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.00000 GTC, trigger=1.10010, state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
+            == "StopLimitOrder(BUY 100_000 AUD/USD.SIM STOP_LIMIT @ 1.00000 GTC, trigger=1.10010, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1)"  # noqa
         )
 
     def test_stop_limit_order_to_dict(self):
@@ -609,13 +609,13 @@ class TestOrders:
         assert str(bracket_order) == (
             "BracketOrder(id=BO-19700101-000000-000-001-1, "
             "EntryMarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, "
-            "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None), "
+            "status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None), "
             "SL=0.99990, TP=1.00010)"
         )
         assert repr(bracket_order) == (
             "BracketOrder(id=BO-19700101-000000-000-001-1, "
             "EntryMarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, "
-            "state=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None), "
+            "status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None), "
             "SL=0.99990, TP=1.00010)"
         )
 
@@ -641,7 +641,7 @@ class TestOrders:
         order.apply(denied)
 
         # Assert
-        assert order.state == OrderState.DENIED
+        assert order.status == OrderStatus.DENIED
         assert order.event_count == 2
         assert order.last_event == denied
         assert order.is_completed
@@ -660,7 +660,7 @@ class TestOrders:
         order.apply(submitted)
 
         # Assert
-        assert order.state == OrderState.SUBMITTED
+        assert order.status == OrderStatus.SUBMITTED
         assert order.event_count == 2
         assert order.last_event == submitted
         assert order.is_inflight
@@ -683,17 +683,17 @@ class TestOrders:
         order.apply(TestStubs.event_order_accepted(order))
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
         assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
         assert (
             str(order)
-            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=ACCEPTED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=1)"  # noqa
+            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=ACCEPTED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=1)"  # noqa
         )
         assert (
             repr(order)
-            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, state=ACCEPTED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=1)"  # noqa
+            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=ACCEPTED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=1)"  # noqa
         )
 
     def test_apply_order_rejected_event(self):
@@ -710,7 +710,7 @@ class TestOrders:
         order.apply(TestStubs.event_order_rejected(order))
 
         # Assert
-        assert order.state == OrderState.REJECTED
+        assert order.status == OrderStatus.REJECTED
         assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
@@ -733,7 +733,7 @@ class TestOrders:
         order.apply(TestStubs.event_order_expired(order))
 
         # Assert
-        assert order.state == OrderState.EXPIRED
+        assert order.status == OrderStatus.EXPIRED
         assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
@@ -757,7 +757,7 @@ class TestOrders:
         order.apply(TestStubs.event_order_triggered(order))
 
         # Assert
-        assert order.state == OrderState.TRIGGERED
+        assert order.status == OrderStatus.TRIGGERED
         assert not order.is_inflight
         assert order.is_working
         assert not order.is_completed
@@ -777,7 +777,7 @@ class TestOrders:
         order.apply(TestStubs.event_order_pending_cancel(order))
 
         # Assert
-        assert order.state == OrderState.PENDING_CANCEL
+        assert order.status == OrderStatus.PENDING_CANCEL
         assert order.is_inflight
         assert order.is_working
         assert not order.is_completed
@@ -801,7 +801,7 @@ class TestOrders:
         order.apply(TestStubs.event_order_canceled(order))
 
         # Assert
-        assert order.state == OrderState.CANCELED
+        assert order.status == OrderStatus.CANCELED
         assert not order.is_inflight
         assert not order.is_working
         assert order.is_completed
@@ -824,7 +824,7 @@ class TestOrders:
         order.apply(TestStubs.event_order_pending_update(order))
 
         # Assert
-        assert order.state == OrderState.PENDING_UPDATE
+        assert order.status == OrderStatus.PENDING_UPDATE
         assert order.is_inflight
         assert order.is_working
         assert not order.is_completed
@@ -864,7 +864,7 @@ class TestOrders:
         order.apply(updated)
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
         assert order.venue_order_id == VenueOrderId("1")
         assert order.quantity == Quantity.from_int(120000)
         assert order.price == Price.from_str("1.00001")
@@ -931,7 +931,7 @@ class TestOrders:
         order.apply(filled)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.00001")
         assert len(order.execution_ids) == 1
@@ -963,7 +963,7 @@ class TestOrders:
         order.apply(filled)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.00001")
         assert len(order.execution_ids) == 1
@@ -1010,7 +1010,7 @@ class TestOrders:
         order.apply(fill2)
 
         # Assert
-        assert order.state == OrderState.PARTIALLY_FILLED
+        assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_int(60000)
         assert order.avg_px == Decimal("1.000014")
         assert len(order.execution_ids) == 2
@@ -1066,7 +1066,7 @@ class TestOrders:
         order.apply(fill3)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.avg_px == Decimal("1.000018571428571428571428571")
         assert len(order.execution_ids) == 3
@@ -1112,7 +1112,7 @@ class TestOrders:
         order.apply(filled)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
         assert order.price == Price.from_str("1.00000")
         assert order.avg_px == Decimal("1.00001")
@@ -1159,7 +1159,7 @@ class TestOrders:
         order.apply(partially)
 
         # Assert
-        assert order.state == OrderState.PARTIALLY_FILLED
+        assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_int(50000)
         assert order.price == Price.from_str("1.00000")
         assert order.avg_px == Decimal("0.999999")

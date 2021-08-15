@@ -17,8 +17,8 @@ import copy
 import os
 import sys
 
-import fsspec
 import pytest
+from fsspec.implementations.memory import MemoryFileSystem
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -38,7 +38,6 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.persistence.backtest.loading import write_chunk
 from nautilus_trader.persistence.backtest.parsers import RawFile
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.util import get_catalog_fs
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import class_to_filename
 from tests.test_kit.providers import TestInstrumentProvider
@@ -49,24 +48,24 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-def _cleanup_fs():
-    os.environ["NAUTILUS_DATA"] = "memory://root/"
-    fs = get_catalog_fs()
-    assert isinstance(fs, fsspec.implementations.memory.MemoryFileSystem)
+def _reset():
+    """Cleanup resources before each test run"""
+    os.environ["NAUTILUS_CATALOG"] = "memory:///root/"
+    catalog = DataCatalog.from_env()
+    assert isinstance(catalog.fs, MemoryFileSystem)
     try:
-        fs.rm("/", recursive=True)
+        catalog.fs.rm("/", recursive=True)
     except FileNotFoundError:
         pass
-    fs.mkdir("/root/data")
-    return fs
+    catalog.fs.mkdir("/root/data")
+    assert catalog.fs.exists("/root/")
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="does not run on windows")
 class TestParquetSerializer:
     def setup(self):
-        fs = _cleanup_fs()
+        _reset()
         self.catalog = DataCatalog(path="/root", fs_protocol="memory")
-        self.catalog.fs = fs
         self.raw_file = RawFile(fs=self.catalog.fs, path="/")  # placeholder only
         self.order_factory = OrderFactory(
             trader_id=TraderId("T-001"),

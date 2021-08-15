@@ -148,6 +148,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         AccountFactory.register_calculated_account(account_id.issuer)
 
+        AccountFactory.register_calculated_account(account_id.issuer)
+
     cpdef void _start(self) except *:
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())

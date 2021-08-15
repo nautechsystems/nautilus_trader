@@ -126,7 +126,7 @@ typing_extensions = ">=3.7.4"
 
 [[package]]
 name = "ccxt"
-version = "1.54.87"
+version = "1.55.2"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = true
@@ -266,7 +266,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
 [[package]]
 name = "dask"
-version = "2021.7.2"
+version = "2021.8.0"
 description = "Parallel PyData with Task Scheduling"
 category = "main"
 optional = false
@@ -281,11 +281,11 @@ pyyaml = "*"
 toolz = ">=0.8.2"
 
 [package.extras]
-array = ["numpy (>=1.16)"]
-complete = ["bokeh (>=1.0.0,!=2.0.0)", "distributed (==2021.07.2)", "numpy (>=1.16)", "pandas (>=0.25.0)"]
-dataframe = ["numpy (>=1.16)", "pandas (>=0.25.0)"]
+array = ["numpy (>=1.18)"]
+complete = ["bokeh (>=1.0.0,!=2.0.0)", "distributed (==2021.08.0)", "numpy (>=1.18)", "pandas (>=1.0)"]
+dataframe = ["numpy (>=1.18)", "pandas (>=1.0)"]
 diagnostics = ["bokeh (>=1.0.0,!=2.0.0)"]
-distributed = ["distributed (==2021.07.2)"]
+distributed = ["distributed (==2021.08.0)"]
 test = ["pytest", "pytest-rerunfailures", "pytest-xdist"]
 
 [[package]]
@@ -298,7 +298,7 @@ python-versions = "*"
 
 [[package]]
 name = "distributed"
-version = "2021.7.2"
+version = "2021.8.0"
 description = "Distributed scheduler for Dask"
 category = "main"
 optional = true
@@ -307,7 +307,8 @@ python-versions = ">=3.7"
 [package.dependencies]
 click = ">=6.6"
 cloudpickle = ">=1.5.0"
-dask = "2021.07.2"
+dask = "2021.08.0"
+jinja2 = "*"
 msgpack = ">=0.6.0"
 psutil = ">=5.0"
 pyyaml = "*"
@@ -449,7 +450,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
 
 [[package]]
 name = "importlib-metadata"
-version = "4.6.3"
+version = "4.6.4"
 description = "Read metadata from Python packages"
 category = "main"
 optional = false
@@ -1168,7 +1169,7 @@ python-versions = ">= 3.5"
 
 [[package]]
 name = "tqdm"
-version = "4.62.0"
+version = "4.62.1"
 description = "Fast, Extensible Progress Meter"
 category = "main"
 optional = false
@@ -1359,8 +1360,8 @@ bokeh = [
     {file = "bokeh-2.3.3.tar.gz", hash = "sha256:a5fdcc181835561447fcc5a371300973fce4114692d5853addec284d1cdeb677"},
 ]
 ccxt = [
-    {file = "ccxt-1.54.87-py2.py3-none-any.whl", hash = "sha256:2b88b275b16cd696397aec142c9697bc84f6e557f8ae7f3cd7ab0e907f157aa8"},
-    {file = "ccxt-1.54.87.tar.gz", hash = "sha256:18b86ea9d990b0e82d999c0ccb9c49d54bdc943cece5bec00b5e7c3051ec5a87"},
+    {file = "ccxt-1.55.2-py2.py3-none-any.whl", hash = "sha256:c77f9e5ec2dbf2f7ff8a977231eb947a6a2d4ac32567b85b2675cf179d30b125"},
+    {file = "ccxt-1.55.2.tar.gz", hash = "sha256:251be93412c11937eb800e84eb0445005ffb499f7d5982aeec7d96ab2b15beef"},
 ]
 certifi = [
     {file = "certifi-2021.5.30-py2.py3-none-any.whl", hash = "sha256:50b1e4f8446b06f41be7dd6338db18e0990601dce795c2b1686458aa7e8fa7d8"},
@@ -1531,16 +1532,16 @@ cython = [
     {file = "Cython-3.0.0a9.tar.gz", hash = "sha256:23931c45877432097cef9de2db2dc66322cbc4fc3ebbb42c476bb2c768cecff0"},
 ]
 dask = [
-    {file = "dask-2021.7.2-py3-none-any.whl", hash = "sha256:63a6e56cd64ae6f9cee2cdddd756a31222a563ea7a4cfee472ca5ce25ec02179"},
-    {file = "dask-2021.7.2.tar.gz", hash = "sha256:41727347fb4c098c5cafe3e1e24634b086461603cc3b6f6f71f335abf15833c8"},
+    {file = "dask-2021.8.0-py3-none-any.whl", hash = "sha256:8c1cb9771231bb04d07ed497875e7c62b35faba783e23e3a817fb627aa0afa5c"},
+    {file = "dask-2021.8.0.tar.gz", hash = "sha256:3d4c7f4c29f20ed8ee7bc4ed98b7fb8384accd9a1a166716392d81db9d9e2782"},
 ]
 distlib = [
     {file = "distlib-0.3.2-py2.py3-none-any.whl", hash = "sha256:23e223426b28491b1ced97dc3bbe183027419dfc7982b4fa2f05d5f3ff10711c"},
     {file = "distlib-0.3.2.zip", hash = "sha256:106fef6dc37dd8c0e2c0a60d3fca3e77460a48907f335fa28420463a6f799736"},
 ]
 distributed = [
-    {file = "distributed-2021.7.2-py3-none-any.whl", hash = "sha256:2453f1bb8b5380689c620260eede2dfd6f69517a30ffda1030f27052e8cf9d3b"},
-    {file = "distributed-2021.7.2.tar.gz", hash = "sha256:5c03aae2f2ba7b0945b423162db4f2b2ec01faf73f91e0e38c1bc5b2f9ed216d"},
+    {file = "distributed-2021.8.0-py3-none-any.whl", hash = "sha256:492a447ce98e7077687c25442251023f76bdc4ad5f5c485342a1c30326a09738"},
+    {file = "distributed-2021.8.0.tar.gz", hash = "sha256:d2011547f9105e33cee8736a06163d0463fa59ba57dfc30924ffc73c40636329"},
 ]
 docutils = [
     {file = "docutils-0.16-py2.py3-none-any.whl", hash = "sha256:0c5b78adfbf7762415433f5515cd5c9e762339e23369dbe8000d84a4bf4ab3af"},
@@ -1586,8 +1587,8 @@ imagesize = [
     {file = "imagesize-1.2.0.tar.gz", hash = "sha256:b1f6b5a4eab1f73479a50fb79fcf729514a900c341d8503d62a62dbc4127a2b1"},
 ]
 importlib-metadata = [
-    {file = "importlib_metadata-4.6.3-py3-none-any.whl", hash = "sha256:51c6635429c77cf1ae634c997ff9e53ca3438b495f10a55ba28594dd69764a8b"},
-    {file = "importlib_metadata-4.6.3.tar.gz", hash = "sha256:0645585859e9a6689c523927a5032f2ba5919f1f7d0e84bd4533312320de1ff9"},
+    {file = "importlib_metadata-4.6.4-py3-none-any.whl", hash = "sha256:ed5157fef23a4bc4594615a0dd8eba94b2bb36bf2a343fa3d8bb2fa0a62a99d5"},
+    {file = "importlib_metadata-4.6.4.tar.gz", hash = "sha256:7b30a78db2922d78a6f47fb30683156a14f3c6aa5cc23f77cc8967e9ab2d002f"},
 ]
 iniconfig = [
     {file = "iniconfig-1.1.1-py2.py3-none-any.whl", hash = "sha256:011e24c64b7f47f6ebd835bb12a743f2fbe9a26d4cecaa7f53bc4f35ee9da8b3"},
@@ -2218,8 +2219,8 @@ tornado = [
     {file = "tornado-6.1.tar.gz", hash = "sha256:33c6e81d7bd55b468d2e793517c909b139960b6c790a60b7991b9b6b76fb9791"},
 ]
 tqdm = [
-    {file = "tqdm-4.62.0-py2.py3-none-any.whl", hash = "sha256:706dea48ee05ba16e936ee91cb3791cd2ea6da348a0e50b46863ff4363ff4340"},
-    {file = "tqdm-4.62.0.tar.gz", hash = "sha256:3642d483b558eec80d3c831e23953582c34d7e4540db86d9e5ed9dad238dabc6"},
+    {file = "tqdm-4.62.1-py2.py3-none-any.whl", hash = "sha256:07856e19a1fe4d2d9621b539d3f072fa88c9c1ef1f3b7dd4d4953383134c3164"},
+    {file = "tqdm-4.62.1.tar.gz", hash = "sha256:35540feeaca9ac40c304e916729e6b78045cbbeccd3e941b2868f09306798ac9"},
 ]
 typing-extensions = [
     {file = "typing_extensions-3.10.0.0-py2-none-any.whl", hash = "sha256:0ac0f89795dd19de6b97debb0c6af1c70987fd80a2d62d1958f7e56fcc31b497"},

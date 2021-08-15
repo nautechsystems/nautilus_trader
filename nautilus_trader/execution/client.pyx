@@ -13,19 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
-
-from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
-from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
@@ -33,7 +30,6 @@ from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.account cimport AccountState
-from nautilus_trader.model.events.order cimport Event
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -54,13 +50,10 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.position cimport Position
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class ExecutionClient(Component):
@@ -137,41 +130,11 @@ cdef class ExecutionClient(Component):
         self.account_id = account_id
         self.account_type = account_type
         self.base_currency = base_currency
-        self.calculate_account_state = config.get("calculate_account_state", False)
 
         self.is_connected = False
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}-{self.id.value}"
-
-    cpdef Account create_account(self, AccountState event):
-        """
-        Return a new account from the given account state event.
-
-        Override for custom accounts.
-
-        Parameters
-        ----------
-        event : AccountState
-            The genesis account state event.
-
-        Returns
-        -------
-        Account
-
-        Raises
-        ------
-        ValueError
-            If event.account_id is not equal to self.account_id.
-        ValueError
-            If event.account_type is not equal to self.account_type.
-
-        """
-        Condition.not_none(event, "event")
-        Condition.equal(event.account_id, self.account_id, "event.account_id", "self.account_id")
-        Condition.equal(event.account_type, self.account_type, "event.account_type", "self.account_type")
-
-        return AccountFactory.create_c(event)
 
     cpdef Account get_account(self):
         """
@@ -182,6 +145,17 @@ cdef class ExecutionClient(Component):
         Account or None
 
         """
+        # Check account
+        if self._account is None:
+            account = self._cache.account_for_venue(self.venue)
+            if account is None:
+                self._log.error(
+                    "Cannot generate OrderFilled: "
+                    f"no account found for venue {self.venue}."
+                )
+                return
+            self._account = account
+
         return self._account
 
     cpdef void _set_connected(self, bint value=True) except *:
@@ -215,41 +189,6 @@ cdef class ExecutionClient(Component):
         raise NotImplementedError("method must be implemented in the subclass")
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
-
-    cpdef void apply_account_state(self, AccountState event) except *:
-        """
-        Apply the given account state.
-
-        Parameters
-        ----------
-        event : AccountState
-            The account state to apply.
-
-        Raises
-        ------
-        ValueError
-            If event.account_id does not equal self.account_id.
-        ValueError
-            If event.account_type does not equal self.account_type.
-
-        """
-        Condition.not_none(event, "event")
-        Condition.equal(event.account_id, self.account_id, "event.account_id", "self.account_id")
-        Condition.equal(event.account_type, self.account_type, "event.account_type", "self.account_type")
-
-        if self._account is None:
-            # Generate account
-            self._account = self.create_account(event)
-
-            # Add to cache
-            self._cache.add_account(self._account)
-        else:
-            self._account.apply(event)
-
-        self._msgbus.publish_c(
-            topic=f"events.account.{event.account_id.value}",
-            msg=event,
-        )
 
     cpdef void generate_account_state(
         self,
@@ -286,7 +225,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self.apply_account_state(account_state)
+        self._send_account_state(account_state)
 
     cpdef void generate_order_submitted(
         self,
@@ -322,7 +261,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(submitted)
+        self._send_order_event(submitted)
 
     cpdef void generate_order_rejected(
         self,
@@ -362,7 +301,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(rejected)
+        self._send_order_event(rejected)
 
     cpdef void generate_order_accepted(
         self,
@@ -402,7 +341,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(accepted)
+        self._send_order_event(accepted)
 
     cpdef void generate_order_pending_update(
         self,
@@ -442,7 +381,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(pending_replace)
+        self._send_order_event(pending_replace)
 
     cpdef void generate_order_pending_cancel(
         self,
@@ -482,7 +421,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(pending_cancel)
+        self._send_order_event(pending_cancel)
 
     cpdef void generate_order_update_rejected(
         self,
@@ -530,7 +469,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(update_rejected)
+        self._send_order_event(update_rejected)
 
     cpdef void generate_order_cancel_rejected(
         self,
@@ -578,7 +517,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(cancel_rejected)
+        self._send_order_event(cancel_rejected)
 
     cpdef void generate_order_updated(
         self,
@@ -641,7 +580,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(updated)
+        self._send_order_event(updated)
 
     cpdef void generate_order_canceled(
         self,
@@ -681,7 +620,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(canceled)
+        self._send_order_event(canceled)
 
     cpdef void generate_order_triggered(
         self,
@@ -721,7 +660,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(triggered)
+        self._send_order_event(triggered)
 
     cpdef void generate_order_expired(
         self,
@@ -761,7 +700,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._handle_event(expired)
+        self._send_order_event(expired)
 
     cpdef void generate_order_filled(
         self,
@@ -820,17 +759,6 @@ cdef class ExecutionClient(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        # Check account
-        if self._account is None:
-            account = self._cache.account_for_venue(instrument_id.venue)
-            if account is None:
-                self._log.error(
-                    "Cannot generate OrderFilled: "
-                    f"no account found for venue {instrument_id.venue}."
-                )
-                return
-            self._account = account
-
         # Generate event
         cdef OrderFilled fill = OrderFilled(
             trader_id=self.trader_id,
@@ -853,164 +781,18 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        # Update commissions
-        self._account.update_commissions(fill.commission)
+        self._send_order_event(fill)
 
-        cdef list balances
-        if self.calculate_account_state:
-            # Calculate balances prior to handling fill event
-            balances = self._calculate_balances(fill)
-            self._handle_event(fill)
-            if balances:
-                self.generate_account_state(
-                    balances=balances,
-                    reported=False,  # Calculated
-                    ts_event=self._clock.timestamp_ns(),
-                )
-        else:
-            self._handle_event(fill)
+# --------------------------------------------------------------------------------------------------
 
-# -- EVENT HANDLERS --------------------------------------------------------------------------------
-
-    cdef void _handle_event(self, Event event) except *:
-        self._msgbus.send(endpoint="ExecEngine.process", msg=event)
-
-    cdef list _calculate_balances(self, OrderFilled fill):
-        # Determine any position
-        cdef PositionId position_id = fill.position_id
-        if fill.position_id is None:
-            # Check for open positions
-            positions_open = self._cache.positions_open(
-                venue=None,  # Faster query filtering
-                instrument_id=fill.instrument_id,
-            )
-            if positions_open:
-                position_id = positions_open[0].id
-
-        # Determine any position
-        cdef Position position = None
-        if position_id is not None:
-            position = self._cache.position(position_id)
-        # *** position could still be None here ***
-
-        cdef Instrument instrument = self._cache.instrument(fill.instrument_id)
-        if instrument is None:
-            self._log.error(
-                "Cannot calculate account state: "
-                f"no instrument found for {fill.instrument_id}."
-            )
-            return
-
-        cdef list pnls = self._account.calculate_pnls(instrument, position, fill)
-
-        # Calculate final PnL
-        if self.base_currency is not None:
-            # Check single-currency PnLs
-            assert len(pnls) == 1
-            return self._calculate_balance_single_currency(fill=fill, pnl=pnls[0])
-        else:
-            return self._calculate_balance_multi_currency(fill=fill, pnls=pnls)
-
-    cdef list _calculate_balance_single_currency(self, OrderFilled fill, Money pnl):
-        cdef Money commission = fill.commission
-        cdef list balances = []
-        if commission.currency != self.base_currency:
-            xrate: Decimal = self._cache.get_xrate(
-                venue=fill.instrument_id.venue,
-                from_currency=fill.commission.currency,
-                to_currency=self.base_currency,
-                price_type=PriceType.BID if fill.side is OrderSide.SELL else PriceType.ASK,
-            )
-            if xrate == 0:
-                self._log.error(
-                    f"Cannot calculate account state: "
-                    f"insufficient data for {fill.commission.currency}/{self.base_currency}."
-                )
-                return None  # Cannot calculate
-
-            # Convert to account base currency
-            commission = Money(commission * xrate, self.base_currency)
-
-        if pnl.currency != self.base_currency:
-            xrate: Decimal = self._cache.get_xrate(
-                venue=fill.instrument_id.venue,
-                from_currency=pnl.currency,
-                to_currency=self.base_currency,
-                price_type=PriceType.BID if fill.side is OrderSide.SELL else PriceType.ASK,
-            )
-            if xrate == 0:
-                self._log.error(
-                    f"Cannot calculate account state: "
-                    f"insufficient data for {pnl.currency}/{self.base_currency}."
-                )
-                return None  # Cannot calculate
-
-            # Convert to account base currency
-            pnl = Money(pnl * xrate, self.base_currency)
-
-        pnl = Money(pnl - commission, self.base_currency)
-        if pnl.as_decimal() == 0:
-            return balances  # Nothing to adjust
-
-        cdef AccountBalance balance = self._account.balance()
-        cdef AccountBalance new_balance = AccountBalance(
-            currency=self.base_currency,
-            total=Money(balance.total + pnl, self.base_currency),
-            locked=balance.locked,
-            free=Money(balance.free + pnl, self.base_currency),
+    cdef void _send_account_state(self, AccountState account_state) except *:
+        self._msgbus.send(
+            endpoint=f"Portfolio.update_account",
+            msg=account_state,
         )
-        balances.append(new_balance)
 
-        return balances
-
-    cdef list _calculate_balance_multi_currency(self, OrderFilled fill, list pnls):
-        cdef list balances = []
-
-        cdef Money commission = fill.commission
-        cdef AccountBalance balance = None
-        cdef AccountBalance new_balance = None
-        cdef Money pnl
-        for pnl in pnls:
-            currency = pnl.currency
-            if commission.currency != currency and commission.as_decimal() > 0:
-                balance = self._account.balance(commission.currency)
-                if balance is None:
-                    self._log.error(
-                        "Cannot calculate account state: "
-                        f"no cached balances for {currency}."
-                    )
-                    return
-                balance.total = Money(balance.total - commission, currency)
-                balance.free = Money(balance.free - commission, currency)
-                balances.append(balance)
-            else:
-                pnl = Money(pnl - commission, currency)
-
-            if not balances and pnl.as_decimal() == 0:
-                return  # No adjustment
-
-            balance = self._account.balance(currency)
-            if balance is None:
-                if pnl.as_decimal() < 0:
-                    self._log.error(
-                        "Cannot calculate account state: "
-                        f"no cached balances for {currency}."
-                    )
-                    return
-                new_balance = AccountBalance(
-                    currency=currency,
-                    total=Money(pnl, currency),
-                    locked=Money(0, currency),
-                    free=Money(pnl, currency),
-                )
-            else:
-                new_balance = AccountBalance(
-                    currency=currency,
-                    total=Money(balance.total + pnl, currency),
-                    locked=balance.locked,
-                    free=Money(balance.free + pnl, currency),
-                )
-
-            balances.append(new_balance)
-
-        return balances
+    cdef void _send_order_event(self, OrderEvent event) except *:
+        self._msgbus.send(
+            endpoint="ExecEngine.process",
+            msg=event,
+        )

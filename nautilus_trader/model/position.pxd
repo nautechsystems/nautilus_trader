@@ -99,6 +99,7 @@ cdef class Position:
     cdef readonly Money realized_pnl
     """The current realized PnL for the position (including commissions).\n\n:returns: `Money`"""
 
+    cpdef str info(self)
     cpdef dict to_dict(self)
 
     cdef list client_order_ids_c(self)
@@ -108,7 +109,6 @@ cdef class Position:
     cdef OrderFilled last_event_c(self)
     cdef ExecutionId last_execution_id_c(self)
     cdef int event_count_c(self) except *
-    cdef str status_string_c(self)
     cdef bint is_long_c(self) except *
     cdef bint is_short_c(self) except *
     cdef bint is_open_c(self) except *

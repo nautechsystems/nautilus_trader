@@ -13,8 +13,26 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.accounting.base cimport Account
+
+cpdef enum OrderStatus:
+    INITIALIZED = 1,
+    DENIED = 2,
+    SUBMITTED = 3,
+    ACCEPTED = 4,
+    REJECTED = 5,
+    CANCELED = 6,
+    EXPIRED = 7,
+    TRIGGERED = 8,
+    PENDING_UPDATE = 9,
+    PENDING_CANCEL = 10,
+    PARTIALLY_FILLED = 11,
+    FILLED = 12,
 
 
-cdef class CashAccount(Account):
-    pass
+cdef class OrderStatusParser:
+
+    @staticmethod
+    cdef str to_str(int value)
+
+    @staticmethod
+    cdef OrderStatus from_str(str value) except *

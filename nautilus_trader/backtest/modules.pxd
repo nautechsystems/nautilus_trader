@@ -16,9 +16,9 @@
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
+from nautilus_trader.accounting.calculators cimport RolloverInterestCalculator
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 
 
 cdef class SimulationModule:

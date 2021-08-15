@@ -4,17 +4,25 @@
 ## Breaking Changes
 - Moved margin calculation methods from `Instrument` to `Account`.
 - Removed redundant `Portfolio.register_account`.
+- Renamed `OrderState` to `OrderStatus`.
+- Renamed `Order.state` to `Order.status`.
+- Renamed `msgbus.message_bus` to `msgbus.bus`.
 
 ## Enhancements
 - Extracted `accounting` subpackage.
 - Subclassed `Account` with `CashAccount` and `MarginAccount`.
+- Added `AccountsManager`.
 - Added `AccountFactory`.
+- Moved registration of custom account cls to `AccountFactory`.
+- Moved registration of calculated account to `AccountFactory`.
 - Added registration of OMS type per trading strategy.
 - Added `ExecutionClient.create_account` for custom account classes.
+- Separate `PortfolioFacade` from `Portfolio`.
 
 ## Fixes
 - Data subscription handling in `DataEngine`.
-- Cash accounts no longer generate spurious margins.
+- `Cash` accounts no longer generate spurious margins.
+- Fix `TimeBarAggregator._stored_close_ns` property name.
 
 ---
 

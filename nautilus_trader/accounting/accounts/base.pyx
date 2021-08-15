@@ -17,7 +17,6 @@ from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
@@ -28,7 +27,11 @@ cdef class Account:
     The base class for all trading accounts.
     """
 
-    def __init__(self, AccountState event):
+    def __init__(
+        self,
+        AccountState event,
+        bint calculate_account_state,
+    ):
         """
         Initialize a new instance of the ``Account`` class.
 
@@ -36,6 +39,8 @@ cdef class Account:
         ----------
         event : AccountState
             The initial account state event.
+        calculate_account_state : bool
+            If the account state should be calculated from order fills.
 
         Raises
         ------
@@ -48,14 +53,14 @@ cdef class Account:
         self.id = event.account_id
         self.type = event.account_type
         self.base_currency = event.base_currency
-        self.calculate_account_state = False
+        self.calculate_account_state = calculate_account_state
 
         self._starting_balances = {b.currency: b.total for b in event.balances}
         self._events = [event]  # type: list[AccountState]
         self._balances = {}     # type: dict[Currency, AccountBalance]
         self._commissions = {}  # type: dict[Currency, Money]
 
-        self._update_balances(event.balances)
+        self.update_balances(event.balances)
 
     def __eq__(self, Account other) -> bool:
         return self.id.value == other.id.value
@@ -69,16 +74,6 @@ cdef class Account:
                 f"id={self.id.value}, "
                 f"type={AccountTypeParser.to_str(self.type)}, "
                 f"base={base_str})")
-
-# -- INTERNAL --------------------------------------------------------------------------------------
-
-    cdef void _update_balances(self, list balances) except *:
-        # Update the balances. Note that there is no guarantee that every
-        # account currency is included in the event, which is why we don't just
-        # assign a dict.
-        cdef AccountBalance balance
-        for balance in balances:
-            self._balances[balance.currency] = balance
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
@@ -358,18 +353,6 @@ cdef class Account:
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void set_calculate_account_state(self, bint value) except *:
-        """
-        Set the `calculate_account_state` flag.
-
-        Parameters
-        ----------
-        value : bool
-            The value to set.
-
-        """
-        self.calculate_account_state = value
-
     cpdef void apply(self, AccountState event) except *:
         """
         Apply the given account event to the account.
@@ -394,11 +377,32 @@ cdef class Account:
             Condition.equal(event.balances[0].currency, self.base_currency, "event.balances[0].currency", "self.base_currency")
 
         self._events.append(event)
-        self._update_balances(event.balances)
+        self.update_balances(event.balances)
+
+    cpdef void update_balances(self, list balances) except *:
+        """
+        Update the account balances.
+
+        There is no guarantee that every account currency is included in the
+        given balances, therefore we only update included balances.
+
+        Parameters
+        ----------
+        balances : list[AccountBalance]
+
+        """
+        Condition.not_none(balances, "balances")
+        Condition.not_empty(balances, "balances")
+
+        cdef AccountBalance balance
+        for balance in balances:
+            self._balances[balance.currency] = balance
 
     cpdef void update_commissions(self, Money commission) except *:
         """
         Update the commissions.
+
+        Can be negative which represents credited commission.
 
         Parameters
         ----------
@@ -420,68 +424,18 @@ cdef class Account:
         total_commissions: Decimal = self._commissions.get(currency, Decimal())
         self._commissions[currency] = Money(total_commissions + commission, currency)
 
-    cpdef void update_margin_initial(self, Money margin_initial) except *:
-        """
-        Update the initial (order) margin.
+    cpdef void update_margin_initial(self, InstrumentId instrument_id, Money margin_initial) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
 
-        Parameters
-        ----------
-        margin_initial : Money
-            The current initial (order) margin for the currency.
+    cpdef void clear_margin_initial(self, InstrumentId instrument_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
 
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(margin_initial, "margin_initial")
-
-        cdef Currency currency = margin_initial.currency
-        cdef AccountBalance current_balance = self._balances.get(currency)
-        if current_balance is None:
-            raise RuntimeError("Cannot apply initial margin when no current balance")
-
-        cdef AccountBalance new_balance = AccountBalance(
-            currency,
-            current_balance.total,
-            margin_initial,
-            Money(current_balance.total.as_decimal() - margin_initial.as_decimal(), currency),
-        )
-
-        self._balances[currency] = new_balance
+    cdef void _recalculate_balance(self, Currency currency) except *:
+        raise NotImplementedError("method must be implemented in the subclass")
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
-
-    cpdef Money calculate_margin_initial(
-        self,
-        Instrument instrument,
-        Quantity quantity,
-        Price price,
-        bint inverse_as_quote=False,
-    ):
-        """
-        Calculate the initial (order) margin from the given parameters.
-
-        Result will be in quote currency for standard instruments, or base
-        currency for inverse instruments.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        quantity : Quantity
-            The order quantity.
-        price : Price
-            The order price.
-        inverse_as_quote : bool
-            If inverse instrument calculations use quote currency (instead of base).
-
-        Returns
-        -------
-        Money
-
-        """
-        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Money calculate_commission(
         self,
@@ -491,60 +445,8 @@ cdef class Account:
         LiquiditySide liquidity_side,
         bint inverse_as_quote=False,
     ):
-        """
-        Calculate the commission generated from a transaction with the given
-        parameters.
-
-        Result will be in quote currency for standard instruments, or base
-        currency for inverse instruments.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        last_qty : Quantity
-            The transaction quantity.
-        last_px : Decimal or Price
-            The transaction price.
-        liquidity_side : LiquiditySide
-            The liquidity side for the transaction.
-        inverse_as_quote : bool
-            If inverse instrument calculations use quote currency (instead of base).
-
-        Returns
-        -------
-        Money
-
-        Raises
-        ------
-        ValueError
-            If liquidity_side is NONE.
-
-        """
-        Condition.not_none(instrument, "instrument")
-        Condition.not_none(last_qty, "last_qty")
-        Condition.type(last_px, (Decimal, Price), "last_px")
-        Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
-
-        notional: Decimal = instrument.notional_value(
-            quantity=last_qty,
-            price=last_px,
-            inverse_as_quote=inverse_as_quote,
-        ).as_decimal()
-
-        if liquidity_side == LiquiditySide.MAKER:
-            commission: Decimal = notional * instrument.maker_fee
-        elif liquidity_side == LiquiditySide.TAKER:
-            commission: Decimal = notional * instrument.taker_fee
-        else:
-            raise ValueError(
-                f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
-            )
-
-        if instrument.is_inverse and not inverse_as_quote:
-            return Money(commission, instrument.base_currency)
-        else:
-            return Money(commission, instrument.quote_currency)
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef list calculate_pnls(
         self,
@@ -552,21 +454,5 @@ cdef class Account:
         Position position,  # Can be None
         OrderFilled fill,
     ):
-        """
-        Return the calculated PnLs.
-
-        Parameters
-        ----------
-        instrument : Instrument
-            The instrument for the calculation.
-        position : Position, optional
-            The position for the calculation (can be None).
-        fill : OrderFilled
-            The fill for the calculation.
-
-        Returns
-        -------
-        list[Money] or None
-
-        """
+        """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")

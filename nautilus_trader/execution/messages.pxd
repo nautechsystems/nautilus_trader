@@ -16,7 +16,7 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
@@ -35,8 +35,8 @@ cdef class OrderStatusReport:
     """The client order ID for the report.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The reported venue order ID.\n\n:returns: `VenueOrderId`"""
-    cdef readonly OrderState order_state
-    """The reported order state at the exchange.\n\n:returns: `OrderState`"""
+    cdef readonly OrderStatus order_status
+    """The reported order status at the exchange.\n\n:returns: `OrderStatus`"""
     cdef readonly Quantity filled_qty
     """The reported filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly int64_t ts_init

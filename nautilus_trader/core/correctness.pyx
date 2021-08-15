@@ -386,7 +386,7 @@ cdef class Condition:
             ex_default=TypeError,
             ex_type=ex_type,
             msg=(f"The \'{param}\' collection contained an element with "
-                 f"a type other than {expected_type}, was {type(argument)}"),
+                 f"a type other than {expected_type}"),
         )
 
     @staticmethod

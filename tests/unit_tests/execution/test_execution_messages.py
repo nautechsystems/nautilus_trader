@@ -16,7 +16,7 @@
 from nautilus_trader.execution.messages import ExecutionMassStatus
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.execution.messages import PositionStatusReport
-from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -64,7 +64,7 @@ class TestExecutionStateReport:
         order_report = OrderStatusReport(
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=venue_order_id,
-            order_state=OrderState.REJECTED,
+            order_status=OrderStatus.REJECTED,
             filled_qty=Quantity.zero(),
             ts_init=0,
         )
@@ -76,11 +76,11 @@ class TestExecutionStateReport:
         assert report.order_reports()[venue_order_id] == order_report
         assert (
             repr(report)
-            == "ExecutionMassStatus(client_id=IB, account_id=SIM-000, order_reports={VenueOrderId('1'): OrderStatusReport(client_order_id=O-123456, venue_order_id=1, order_state=REJECTED, filled_qty=0, ts_init=0)}, exec_reports={}, position_reports={}, ts_init=0)"  # noqa
+            == "ExecutionMassStatus(client_id=IB, account_id=SIM-000, order_reports={VenueOrderId('1'): OrderStatusReport(client_order_id=O-123456, venue_order_id=1, order_status=REJECTED, filled_qty=0, ts_init=0)}, exec_reports={}, position_reports={}, ts_init=0)"  # noqa
         )
         assert (
             repr(order_report)
-            == "OrderStatusReport(client_order_id=O-123456, venue_order_id=1, order_state=REJECTED, filled_qty=0, ts_init=0)"  # noqa
+            == "OrderStatusReport(client_order_id=O-123456, venue_order_id=1, order_status=REJECTED, filled_qty=0, ts_init=0)"  # noqa
         )
 
     def test_add_position_state_report(self):

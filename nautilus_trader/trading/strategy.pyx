@@ -64,7 +64,7 @@ from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 # Events for WRN log level
@@ -86,14 +86,16 @@ cdef class TradingStrategy(Actor):
     type which determines how positions are handled by the `ExecutionEngine`.
 
     - OMSType.HEDGING: A position ID will be assigned for each new position
-    which is opened - per instrument.
+      which is opened per instrument.
 
     - OMSType.NETTING: There will only ever be a single position for the strategy
-    per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
+      per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
+
     """
 
     def __init__(
-        self, str order_id_tag not None,
+        self,
+        str order_id_tag not None,
         OMSType oms_type=OMSType.HEDGING,
     ):
         """
@@ -624,7 +626,7 @@ cdef class TradingStrategy(Actor):
             or order.is_pending_cancel_c()
         ):
             self.log.warning(
-                f"Cannot create command UpdateOrder: state is {order.state_string_c()}, {order}.",
+                f"Cannot create command UpdateOrder: state is {order.status_string_c()}, {order}.",
             )
             return  # Cannot send command
 
@@ -669,7 +671,7 @@ cdef class TradingStrategy(Actor):
 
         if order.is_completed_c() or order.is_pending_cancel_c():
             self.log.warning(
-                f"Cannot cancel order: state is {order.state_string_c()}, {order}.",
+                f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
             )
             return  # Cannot send command
 

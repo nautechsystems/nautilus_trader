@@ -22,6 +22,7 @@ from tqdm import tqdm
 
 from nautilus_trader.persistence.backtest.metadata import load_processed_raw_files
 from nautilus_trader.persistence.backtest.parsers import RawFile
+from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.serialization.arrow.util import identity
 
 
@@ -119,7 +120,8 @@ def scan(
     fs = fsspec.filesystem(fs_protocol)
     paths = _resolve_path(fs=fs, path=path, glob_pattern=glob_pattern)
     if skip_already_processed:
-        existing = load_processed_raw_files()
+        catalog = DataCatalog.from_env()
+        existing = load_processed_raw_files(fs=catalog.fs)
         paths = [p for p in paths if str(p) not in existing]
     return _scan_threaded(
         fs=fs,

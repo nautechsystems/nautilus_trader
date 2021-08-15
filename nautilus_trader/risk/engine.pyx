@@ -31,7 +31,7 @@ from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.c_enums.trading_state cimport TradingStateParser
@@ -51,8 +51,8 @@ from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.msgbus.message_bus cimport MessageBus
-from nautilus_trader.trading.portfolio cimport PortfolioFacade
+from nautilus_trader.msgbus.bus cimport MessageBus
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class RiskEngine(Component):
@@ -685,7 +685,7 @@ cdef class RiskEngine(Component):
             # Nothing to deny
             return
 
-        if order.state_c() != OrderState.INITIALIZED:
+        if order.status_c() != OrderStatus.INITIALIZED:
             # Already denied or duplicated (INITIALIZED -> DENIED only valid state transition)
             return
 

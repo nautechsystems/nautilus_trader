@@ -35,10 +35,10 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
-from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.filters import NewsImpact
-from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 

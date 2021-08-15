@@ -35,8 +35,8 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
 from tests.test_kit.providers import TestInstrumentProvider

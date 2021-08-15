@@ -31,7 +31,7 @@ from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -40,8 +40,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveExecutionClient
 from tests.test_kit.providers import TestInstrumentProvider
@@ -170,7 +170,7 @@ class TestLiveExecutionClient:
             clock=self.clock,
             logger=self.logger,
         )
-        self.client.apply_account_state(TestStubs.event_cash_account_state())
+        self.portfolio.update_account(TestStubs.event_cash_account_state())
         self.exec_engine.register_client(self.client)
 
         # Prepare components
@@ -185,7 +185,7 @@ class TestLiveExecutionClient:
         report = OrderStatusReport(
             client_order_id=ClientOrderId("O-123456"),
             venue_order_id=VenueOrderId("1"),
-            order_state=OrderState.FILLED,
+            order_status=OrderStatus.FILLED,
             filled_qty=Quantity.from_int(100000),
             ts_init=0,
         )
@@ -240,7 +240,7 @@ class TestLiveExecutionClient:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.REJECTED,
+            order_status=OrderStatus.REJECTED,
             filled_qty=Quantity.zero(),
             ts_init=0,
         )
@@ -293,7 +293,7 @@ class TestLiveExecutionClient:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.EXPIRED,
+            order_status=OrderStatus.EXPIRED,
             filled_qty=Quantity.zero(),
             ts_init=0,
         )
@@ -346,7 +346,7 @@ class TestLiveExecutionClient:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.CANCELED,
+            order_status=OrderStatus.CANCELED,
             filled_qty=Quantity.zero(),
             ts_init=0,
         )
@@ -401,7 +401,7 @@ class TestLiveExecutionClient:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.CANCELED,
+            order_status=OrderStatus.CANCELED,
             filled_qty=Quantity.zero(),
             ts_init=0,
         )
@@ -456,7 +456,7 @@ class TestLiveExecutionClient:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.FILLED,
+            order_status=OrderStatus.FILLED,
             filled_qty=Quantity.from_int(100000),
             ts_init=0,
         )
@@ -511,7 +511,7 @@ class TestLiveExecutionClient:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.FILLED,
+            order_status=OrderStatus.FILLED,
             filled_qty=Quantity.from_int(100000),
             ts_init=0,
         )

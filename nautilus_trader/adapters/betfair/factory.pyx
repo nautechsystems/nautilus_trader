@@ -16,7 +16,6 @@
 import asyncio
 import os
 
-
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
@@ -24,8 +23,10 @@ from nautilus_trader.live.data_client cimport LiveDataClientFactory
 from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+
 
 from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
 from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient

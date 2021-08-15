@@ -12,10 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import copy
 import inspect
 import math
 import pathlib
+import sys
 from io import BytesIO
 from typing import Callable, Generator, List, Optional, Union
 
@@ -24,6 +26,9 @@ import pandas as pd
 
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.serialization.arrow.util import identity
+
+
+PY37 = sys.version_info < (3, 8)
 
 
 class Reader:
@@ -55,7 +60,7 @@ class Reader:
             if new_instruments:
                 return list(new_instruments)
 
-    def parse(self, chunk: bytes):
+    def parse(self, chunk: bytes) -> Generator:
         raise NotImplementedError
 
 
@@ -81,7 +86,8 @@ class ByteReader(Reader):
             instrument_provider_update=instrument_provider_update,
             instrument_provider=instrument_provider,
         )
-        assert inspect.isgeneratorfunction(byte_parser)
+        if not PY37:
+            assert inspect.isgeneratorfunction(byte_parser)
         self.parser = byte_parser
 
     def parse(self, chunk: bytes) -> Generator:
@@ -178,7 +184,7 @@ class CSVReader(Reader):
         self.chunked = chunked
         self.as_dataframe = as_dataframe
 
-    def parse(self, chunk: bytes):
+    def parse(self, chunk: bytes) -> Generator:
         if self.header is None:
             header, chunk = chunk.split(b"\n", maxsplit=1)
             self.header = header.decode().split(",")
@@ -227,11 +233,11 @@ class ParquetReader(ByteReader):
         self.filename = None
         self.data_type = data_type
 
-    def parse(self, chunk: bytes, instrument_provider=None) -> Generator:
+    def parse(self, chunk: bytes) -> Generator:
         df = pd.read_parquet(BytesIO(chunk))
         if self.instrument_provider_update is not None:
             self.instrument_provider_update(
-                instrument_provider=instrument_provider,
+                instrument_provider=self.instrument_provider,
                 df=df,
                 filename=self.filename,
             )
@@ -263,9 +269,6 @@ class RawFile(fsspec.core.OpenFile):
             return 1
         stat = self.fs.stat(self.path)
         return math.ceil(stat["size"] / self.chunk_size)
-
-    def __iter__(self):
-        return self
 
     def iter_raw(self):
         with self.open() as f:

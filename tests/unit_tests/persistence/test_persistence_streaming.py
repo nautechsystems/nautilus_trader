@@ -11,9 +11,9 @@ from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.objects import Money
+from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.persistence.streaming import read_feather
-from nautilus_trader.persistence.util import get_catalog_fs
 
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
@@ -21,7 +21,7 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broke
 
 def test_feather_writer(loaded_catalog):
     # Arrange
-    fs = get_catalog_fs()
+    fs = DataCatalog.from_env().fs
     path = "/root/backtest001"
     instruments = loaded_catalog.instruments(as_nautilus=True)
     engine = BacktestEngine()
@@ -49,7 +49,6 @@ def test_feather_writer(loaded_catalog):
         if persisted is not None:
             result[name] = persisted.shape
     expected = {
-        "AccountState.feather": (1, 13),
         "InstrumentStatusUpdate.feather": (2, 4),
         "OrderBookData.feather": (2384, 11),
         "TradeTick.feather": (624, 7),

@@ -39,6 +39,7 @@ from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.trading.strategy import TradingStrategy
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import MyData
@@ -275,16 +276,20 @@ class TestBacktestEngineData:
         # assert ETHUSDT_BINANCE.id in data.trade_ticks
         # assert len(data.trade_ticks[ETHUSDT_BINANCE.id]) == 69806
 
-    def test_add_trade_tick_objects_adds_to_container(self):
+    @pytest.mark.skip()
+    def test_add_trade_tick_objects_adds_to_container(self, capsys):
         # Arrange
-        engine = BacktestEngine()
-        engine.add_instrument(ETHUSDT_BINANCE)
+        with capsys.disabled():
+            engine = BacktestEngine()
+            engine.add_instrument(ETHUSDT_BINANCE)
 
         # Act
         engine.add_trade_tick_objects(
             instrument_id=ETHUSDT_BINANCE.id,
-            data=TestDataProvider.betfair_trade_ticks(),
+            data=BetfairDataProvider.betfair_trade_ticks(),
         )
+        log = "".join(capsys.readouterr())
+        assert "Added 17798 ETH/USDT.BINANCE TradeTick data elements." in log
 
     def test_add_bars_adds_to_container(self):
         # Arrange

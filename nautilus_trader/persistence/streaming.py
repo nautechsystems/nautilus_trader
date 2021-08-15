@@ -36,14 +36,10 @@ from nautilus_trader.serialization.arrow.util import list_dicts_to_dict_lists
 class FeatherWriter:
     def __init__(self, path: str, fs_protocol: str = "file", flush_interval=None):
         """
-        Write a stream of nautilus objects into feather files under `path`
+        Write a stream of nautilus objects into feather files under `path`.
         """
-        self.fs = fsspec.filesystem(fs_protocol)
-        self.path = pathlib.Path(path)
-        assert self.fs.exists(
-            str(self.path.parent)
-        ), f"Parent of path {self.path} does not exist, please create it"
-        assert self.path.is_dir() or not self.path.exists(), "Path must be directory or empty"
+        self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
+        self.path = self._check_path(path)
         self.fs.mkdir(str(self.path), exist_ok=True)
         self._schemas = list_schemas()
         self._schemas.update(
@@ -53,25 +49,19 @@ class FeatherWriter:
                 OrderBookSnapshot: self._schemas[OrderBookData],
             }
         )
-        self._ignore_keys = {
-            OrderBookDelta: (
-                "_last",
-                "type",
-            ),
-            OrderBookDeltas: (
-                "_last",
-                "type",
-            ),
-            OrderBookSnapshot: (
-                "_last",
-                "type",
-            ),
-        }
         self._files: Dict[type, BinaryIO] = {}
         self._writers: Dict[type, RecordBatchStreamWriter] = {}
         self._create_writers()
         self.flush_interval = flush_interval or datetime.timedelta(milliseconds=1000)
         self._last_flush = datetime.datetime(1970, 1, 1)
+
+    def _check_path(self, p):
+        path = pathlib.Path(p)
+        err_parent = f"Parent of path {path} does not exist, please create it"
+        assert self.fs.exists(str(path.parent)), err_parent
+        err_dir_empty = "Path must be directory or empty"
+        assert self.fs.isdir(str(path)) or not self.fs.exists(str(path)), err_dir_empty
+        return path
 
     def _create_writers(self):
         for cls in self._schemas:

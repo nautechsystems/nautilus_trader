@@ -33,8 +33,8 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.msgbus.message_bus cimport MessageBus
-from nautilus_trader.trading.portfolio cimport PortfolioFacade
+from nautilus_trader.msgbus.bus cimport MessageBus
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class TradingStrategy(Actor):
@@ -54,7 +54,7 @@ cdef class TradingStrategy(Actor):
     cdef readonly OrderFactory order_factory
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
     cdef readonly OMSType oms_type
-    """The order management system type for the strategy.\n\n:returns: `OMSType`"""
+    """The order management system for the strategy.\n\n:returns: `OMSType`"""
 
     cpdef bint indicators_initialized(self) except *
 

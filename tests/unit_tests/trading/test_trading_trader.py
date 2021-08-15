@@ -33,9 +33,9 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from nautilus_trader.trading.trader import Trader
 from tests.test_kit.providers import TestInstrumentProvider
@@ -288,7 +288,7 @@ class TestTrader:
         self.trader.subscribe("events*", consumer.append)
 
         # Assert
-        assert len(self.msgbus.subscriptions("events*")) == 5
+        assert len(self.msgbus.subscriptions("events*")) == 6
         assert "events*" in self.msgbus.topics()
         assert self.msgbus.subscriptions("events*")[-1].handler == consumer.append
 
@@ -301,4 +301,4 @@ class TestTrader:
         self.trader.unsubscribe("events*", consumer.append)
 
         # Assert
-        assert len(self.msgbus.subscriptions("events*")) == 4
+        assert len(self.msgbus.subscriptions("events*")) == 5
