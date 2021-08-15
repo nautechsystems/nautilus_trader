@@ -69,9 +69,6 @@ from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
 
 
-cdef int _SECONDS_IN_HOUR = 60 * 60
-
-
 cdef class BetfairExecutionClient(LiveExecutionClient):
     """
     Provides an execution client for Betfair.

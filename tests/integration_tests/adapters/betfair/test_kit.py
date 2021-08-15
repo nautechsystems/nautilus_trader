@@ -17,6 +17,7 @@ import asyncio
 import bz2
 import contextlib
 import pathlib
+from asyncio import Future
 from functools import partial
 from typing import Optional
 from unittest.mock import MagicMock
@@ -69,6 +70,19 @@ from tests.test_kit.stubs import TestStubs
 
 TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/resources/")
 DATA_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/test_kit/data/betfair")
+
+
+# monkey patch MagicMock
+async def async_magic():
+    pass
+
+
+MagicMock.__await__ = lambda x: async_magic().__await__()
+
+
+def mock_async(obj, method, value):
+    setattr(obj, method, MagicMock(return_value=Future()))
+    getattr(obj, method).return_value.set_result(value)
 
 
 class BetfairTestStubs:
@@ -198,16 +212,20 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def betfair_client(loop, logger):
-        with patch.object(BetfairClient, "_ssl_context", return_value=None):
-            return BetfairClient(  # noqa (S106 Possible hardcoded password: 'password')
-                username="username",
-                password="password",
-                app_key="app_key",
-                cert_dir="cert_location",
-                loop=loop,
-                logger=logger,
-            )
+    def betfair_client():
+        client = MagicMock(spec=BetfairClient)
+        mock_async(
+            client,
+            "list_market_catalogue",
+            BetfairResponses.betting_list_market_catalogue()["result"],
+        )
+        mock_async(client, "list_navigation", BetfairResponses.navigation_list_navigation())
+        mock_async(client, "get_account_details", BetfairResponses.account_details()["result"])
+        mock_async(
+            client, "get_account_funds", BetfairResponses.account_funds_no_exposure()["result"]
+        )
+        mock_async(client, "place_orders", BetfairResponses.betting_place_order_success())
+        return client
 
     @staticmethod
     async def execution_client(

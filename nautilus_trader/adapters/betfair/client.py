@@ -112,7 +112,7 @@ class BetfairClient(HTTPClient):
     async def list_market_catalogue(
         self,
         market_filter: dict,
-        market_projection: list[str] = None,
+        market_projection: List[str] = None,
         sort: str = None,
         max_results: int = 1000,
         locale: str = None,

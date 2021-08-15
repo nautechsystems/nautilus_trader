@@ -12,12 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from asyncio import Future
-from unittest.mock import MagicMock
 
 import pytest
 
-from nautilus_trader.adapters.betfair.client import BetfairClient
 from nautilus_trader.adapters.betfair.parsing import on_market_update
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import load_markets
@@ -27,31 +24,12 @@ from nautilus_trader.model.enums import InstrumentStatus
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-
-
-# monkey patch MagicMock
-async def async_magic():
-    pass
-
-
-MagicMock.__await__ = lambda x: async_magic().__await__()
-
-
-def mock_async(obj, method, value):
-    setattr(obj, method, MagicMock(return_value=Future()))
-    getattr(obj, method).return_value.set_result(value)
+from tests.integration_tests.adapters.betfair.test_kit import mock_async
 
 
 class TestBetfairInstrumentProvider:
     def setup(self):
-        self.client: BetfairClient = MagicMock(spec=BetfairClient)
-        mock_async(self.client, "list_navigation", BetfairResponses.navigation_list_navigation())
-        mock_async(
-            self.client,
-            "list_market_catalogue",
-            BetfairResponses.betting_list_market_catalogue()["result"],
-        )
-        mock_async(self.client, "get_account_details", BetfairResponses.account_details()["result"])
+        self.client = BetfairTestStubs.betfair_client()
         self.market_filter = {"event_type_name": "Tennis"}
         self.provider = BetfairInstrumentProvider(
             client=self.client,

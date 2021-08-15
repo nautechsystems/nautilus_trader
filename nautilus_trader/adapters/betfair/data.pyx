@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Dict
 
 import orjson
 
@@ -39,9 +40,6 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.parsing import on_market_update
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
-
-
-cdef int _SECONDS_IN_HOUR = 60 * 60
 
 
 # Notes
@@ -93,9 +91,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             The logger for the client.
 
         """
-        self._client = client  # type: BetfairClient
-
-        cdef BetfairInstrumentProvider instrument_provider = BetfairInstrumentProvider(
+        self._client: BetfairClient = client
+        self._instrument_provider = BetfairInstrumentProvider(
             client=client,
             logger=logger,
             market_filter=market_filter
@@ -108,7 +105,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
             clock=clock,
             logger=logger,
         )
-        self._instrument_provider = instrument_provider
         self._stream = BetfairMarketStreamClient(
             client=self._client,
             logger=logger,
@@ -192,20 +188,24 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     cpdef void request(self, DataType data_type, UUID correlation_id) except *:
         if data_type.type == InstrumentSearch:
             # Strategy has requested a list of instruments
-            instruments = self._instrument_provider.search_instruments(instrument_filter=data_type.metadata)
-            now = self._clock.timestamp_ns()
-            search = InstrumentSearch(
-                instruments=instruments,
-                ts_event=now,
-                ts_init=now,
-            )
-            self._handle_data_response(
-                data_type=data_type,
-                data=search,
-                correlation_id=correlation_id
-            )
+            self._loop.create_task(self._handle_instrument_search(data_type=data_type, correlation_id=correlation_id))
         else:
             super().request(data_type=data_type, correlation_id=correlation_id)
+
+    async def _handle_instrument_search(self, data_type: DataType, correlation_id: UUID):
+        await self._instrument_provider.load_all_async(market_filter=data_type.metadata)
+        instruments = self._instrument_provider.search_instruments(instrument_filter=data_type.metadata)
+        now = self._clock.timestamp_ns()
+        search = InstrumentSearch(
+            instruments=instruments,
+            ts_event=now,
+            ts_init=now,
+        )
+        self._handle_data_response(
+            data_type=data_type,
+            data=search,
+            correlation_id=correlation_id
+        )
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 

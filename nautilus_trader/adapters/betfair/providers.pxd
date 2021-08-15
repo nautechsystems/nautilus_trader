@@ -30,8 +30,8 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     cdef readonly venue
 
     cpdef void _assert_loaded_instruments(self) except *
-    cpdef list search_markets(self, dict market_filter=*)
-    cpdef list search_instruments(self, dict instrument_filter=*, bint load=*)
+    cpdef list load_markets(self, dict market_filter=*)
+    cpdef list search_instruments(self, dict instrument_filter=*)
     cpdef list list_instruments(self)
     cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap)
     cpdef void set_instruments(self, list instruments) except *

@@ -14,14 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from asyncio import Future
 from functools import partial
-from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
 
-from nautilus_trader.adapters.betfair.client import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
@@ -55,20 +52,8 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvide
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+from tests.integration_tests.adapters.betfair.test_kit import mock_async
 from tests.test_kit.stubs import TestStubs
-
-
-# monkey patch MagicMock
-async def async_magic():
-    pass
-
-
-MagicMock.__await__ = lambda x: async_magic().__await__()
-
-
-def mock_async(obj, method, value):
-    setattr(obj, method, MagicMock(return_value=Future()))
-    getattr(obj, method).return_value.set_result(value)
 
 
 class TestBetfairExecutionClient:
@@ -112,18 +97,7 @@ class TestBetfairExecutionClient:
             logger=self.logger,
         )
 
-        self.betfair_client = MagicMock(spec=BetfairClient)
-        mock_async(
-            self.betfair_client, "get_account_details", BetfairResponses.account_details()["result"]
-        )
-        mock_async(
-            self.betfair_client,
-            "get_account_funds",
-            BetfairResponses.account_funds_no_exposure()["result"],
-        )
-        mock_async(
-            self.betfair_client, "list_navigation", BetfairResponses.navigation_list_navigation()
-        )
+        self.betfair_client = BetfairTestStubs.betfair_client()
 
         self.client = BetfairExecutionClient(
             loop=asyncio.get_event_loop(),
@@ -441,7 +415,7 @@ class TestBetfairExecutionClient:
         self._setup_exec_client_and_cache(update=update)
 
         # Act
-        await self.client._handlex_order_stream_update(update=update)
+        await self.client._handle_order_stream_update(update=update)
         await asyncio.sleep(0)
 
         # Assert

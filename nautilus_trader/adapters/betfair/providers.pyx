@@ -57,7 +57,6 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         self._log = LoggerAdapter("BetfairInstrumentProvider", logger)
         self._instruments = {}
         self._cache = {}
-        self._searched_filters = set()
         self._account_currency = None
 
         self.market_filter = market_filter or {}
@@ -71,14 +70,15 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         instance.set_instruments(instruments)
         return instance
 
-    async def load_all_async(self):
+    async def load_all_async(self, market_filter=None):
         """
         Load all instruments for the venue.
         """
         currency = await self.get_account_currency()
+        market_filter = market_filter or self.market_filter
 
-        self._log.info(f"Loading markets with market_filter={self.market_filter}")
-        markets = await load_markets(self._client, market_filter=self.market_filter)
+        self._log.info(f"Loading markets with market_filter={market_filter}")
+        markets = await load_markets(self._client, market_filter=market_filter)
 
         self._log.info(f"Found {len(markets)} markets, loading metadata")
         market_metadata = await load_markets_metadata(client=self._client, markets=markets)
@@ -97,22 +97,19 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     cpdef void _assert_loaded_instruments(self) except *:
         assert self._instruments, "Instruments empty, has `load_all()` been called?"
 
-    cpdef list search_markets(self, dict market_filter=None):
+    cpdef list load_markets(self, dict market_filter=None):
         """ Search for betfair markets. Useful for debugging / interactive use """
         return load_markets(client=self._client, market_filter=market_filter)
 
-    cpdef list search_instruments(self, dict instrument_filter=None, bint load=True):
+    cpdef list search_instruments(self, dict instrument_filter=None):
+
         """ Search for instruments within the cache. Useful for debugging / interactive use """
-        key = tuple((instrument_filter or {}).items())
-        if key not in self._searched_filters and load:
-            self._log.info(f"Searching for instruments with filter: {instrument_filter}")
-            self._load_instruments(market_filter=instrument_filter)
-            self._searched_filters.add(key)
-        instruments = [
-            ins for ins in self.list_instruments() if all([getattr(ins, k) == v for k, v in instrument_filter.items()])
-        ]
-        for ins in instruments:
-            self._log.debug(f"Found instrument: {ins}")
+        instruments = self.list_instruments()
+        if instrument_filter:
+            instruments = [
+                ins for ins in instruments
+                if all([getattr(ins, k) == v for k, v in instrument_filter.items()])
+            ]
         return instruments
 
     cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap):
@@ -122,7 +119,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
             instrument_filter = {
                 'market_id': market_id, 'selection_id': selection_id, 'selection_handicap': parse_handicap(handicap)
             }
-            instruments = self.search_instruments(instrument_filter=instrument_filter, load=False)
+            instruments = self.search_instruments(instrument_filter=instrument_filter)
             count = len(instruments)
             if count < 1:
                 key = (market_id, selection_id, parse_handicap(handicap))

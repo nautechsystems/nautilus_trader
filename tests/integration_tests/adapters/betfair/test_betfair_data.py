@@ -14,14 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from asyncio import Future
 from collections import Counter
 from functools import partial
-from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
 
-from nautilus_trader.adapters.betfair.client import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
@@ -34,6 +32,7 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.uuid import UUID
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import TradeTick
@@ -54,23 +53,9 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.message_bus import MessageBus
 from nautilus_trader.trading.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
-from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.stubs import TestStubs
-
-
-# monkey patch MagicMock
-async def async_magic():
-    pass
-
-
-MagicMock.__await__ = lambda x: async_magic().__await__()
-
-
-def mock_async(obj, method, value):
-    setattr(obj, method, MagicMock(return_value=Future()))
-    getattr(obj, method).return_value.set_result(value)
 
 
 INSTRUMENTS: List[BettingInstrument] = []
@@ -86,6 +71,7 @@ class TestBetfairExecutionClient:
         self.uuid_factory = UUIDFactory()
 
         self.trader_id = TestStubs.trader_id()
+        self.uuid = UUID(uuid4().bytes)
         self.venue = BETFAIR_VENUE
         self.account_id = AccountId(self.venue.value, "001")
 
@@ -117,18 +103,7 @@ class TestBetfairExecutionClient:
             logger=self.logger,
         )
 
-        self.betfair_client = MagicMock(spec=BetfairClient)
-        mock_async(
-            self.betfair_client, "list_navigation", BetfairResponses.navigation_list_navigation()
-        )
-        mock_async(
-            self.betfair_client,
-            "list_market_catalogue",
-            BetfairResponses.betting_list_market_catalogue()["result"],
-        )
-        mock_async(
-            self.betfair_client, "get_account_details", BetfairResponses.account_details()["result"]
-        )
+        self.betfair_client = BetfairTestStubs.betfair_client()
 
         self.client = BetfairDataClient(
             loop=asyncio.get_event_loop(),
@@ -153,6 +128,8 @@ class TestBetfairExecutionClient:
                 self.data_engine.execute(x)
             elif endpoint == "process":
                 self.data_engine.process(x)
+            elif endpoint == "response":
+                self.data_engine.response(x)
 
         self.msgbus.deregister(endpoint="DataEngine.execute", handler=self.data_engine.execute)  # type: ignore
         self.msgbus.register(
@@ -162,6 +139,11 @@ class TestBetfairExecutionClient:
         self.msgbus.deregister(endpoint="DataEngine.process", handler=self.data_engine.process)  # type: ignore
         self.msgbus.register(
             endpoint="DataEngine.process", handler=partial(handler, endpoint="process")  # type: ignore
+        )
+
+        self.msgbus.deregister(endpoint="DataEngine.response", handler=self.data_engine.response)  # type: ignore
+        self.msgbus.register(
+            endpoint="DataEngine.response", handler=partial(handler, endpoint="response")  # type: ignore
         )
 
     @pytest.yield_fixture(scope="class")
@@ -182,16 +164,8 @@ class TestBetfairExecutionClient:
         """
         global INSTRUMENTS
 
-        betfair_client = MagicMock(spec=BetfairClient)
-        mock_async(betfair_client, "list_navigation", BetfairResponses.navigation_list_navigation())
-        mock_async(
-            betfair_client,
-            "list_market_catalogue",
-            BetfairResponses.betting_list_market_catalogue()["result"],
-        )
-        mock_async(
-            betfair_client, "get_account_details", BetfairResponses.account_details()["result"]
-        )
+        betfair_client = BetfairTestStubs.betfair_client()
+
         logger = LiveLogger(loop=event_loop, clock=LiveClock(), level_stdout=LogLevel.DEBUG)
         instrument_provider = BetfairInstrumentProvider(
             client=betfair_client, logger=logger, market_filter={}
@@ -319,14 +293,14 @@ class TestBetfairExecutionClient:
         assert result == expected
 
     @pytest.mark.asyncio
-    async def test_request_search_instruments(self, uuid):
+    async def test_request_search_instruments(self):
         req = DataType(
             type=InstrumentSearch,
             metadata={"event_type_id": "7"},
         )
-        self.client.request(req, uuid)
+        self.client.request(req, self.uuid)
         await asyncio.sleep(0)
-        resp = self.responses[0]
+        resp = self.messages[0]
         assert len(resp.data.instruments) == 9416
 
     def test_orderbook_repr(self, load_instruments):

@@ -31,9 +31,9 @@ class TestBetfairClient:
         self.clock = LiveClock()
         self.logger = LiveLogger(loop=self.loop, clock=self.clock)
         self.client = BetfairClient(  # noqa: S106
-            username="username",  # os.environ["BETFAIR_USERNAME"],
-            password="password",  # os.environ["BETFAIR_PASSWORD"],
-            app_key="app_key",  # os.environ["BETFAIR_APP_KEY"],
+            username="username",
+            password="password",
+            app_key="app_key",
             cert_dir="/certs",
             loop=self.loop,
             logger=self.logger,
@@ -182,7 +182,6 @@ class TestBetfairClient:
             side=OrderSide.BUY,
             instrument=instrument,
         )
-
         with mock_client_request(response=BetfairResponses.betting_place_order_success()) as req:
             resp = await self.client.replace_orders(**replace_order)
             assert resp
