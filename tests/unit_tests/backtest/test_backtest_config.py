@@ -102,7 +102,6 @@ def data_loader():
 @pytest.fixture(scope="function")
 def catalog(data_loader):
     catalog = DataCatalog.from_env()
-    print(f"Catalog fixture: {catalog}, {id(catalog)}")
     # assert len(catalog.instruments()) == 1
     assert len(catalog.quote_ticks()) == 100000
     return catalog
