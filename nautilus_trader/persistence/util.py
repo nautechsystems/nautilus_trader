@@ -36,5 +36,5 @@ class Singleton(type):
 
 
 def clear_singleton_instances(cls: type):
-    assert type(cls) == Singleton
+    assert isinstance(cls, Singleton)
     cls._instances = {}
