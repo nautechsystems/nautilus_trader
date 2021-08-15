@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import copy
+import functools
 import inspect
 import math
 import pathlib
@@ -81,7 +82,7 @@ class ByteReader(Reader):
             instrument_provider_update=instrument_provider_update,
             instrument_provider=instrument_provider,
         )
-        assert inspect.isgeneratorfunction(byte_parser)
+        assert inspect.isgeneratorfunction(maybe_unwrap(byte_parser))
         self.parser = byte_parser
 
     def parse(self, chunk: bytes) -> Generator:
@@ -277,3 +278,9 @@ class RawFile(fsspec.core.OpenFile):
         for chunk in self.iter_raw():
             parsed = list(filter(None, self.reader.parse(chunk)))
             yield parsed
+
+
+def maybe_unwrap(f):
+    while inspect.ismethod(f):
+        f = f.__func__
+    return functools._unwrap_partial(f)
