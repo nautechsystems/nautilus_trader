@@ -16,7 +16,7 @@ Index
 
 .. toctree::
     :glob:
-    :maxdepth: 2
+    :maxdepth: 3
     :caption: API Reference
     :hidden:
 
