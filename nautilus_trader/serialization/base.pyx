@@ -81,6 +81,7 @@ _OBJECT_TO_DICT_MAP = {
     CryptoSwap.__name__: CryptoSwap.to_dict_c,
     CurrencySpot.__name__: CurrencySpot.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
+    QuoteTick.__name__: QuoteTick.to_dict_c,
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.to_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.to_dict_c,
     InstrumentClosePrice.__name__: InstrumentClosePrice.to_dict_c,
@@ -155,13 +156,6 @@ cpdef inline void register_serializable_object(
 
     _OBJECT_TO_DICT_MAP[obj.__name__] = to_dict
     _OBJECT_FROM_DICT_MAP[obj.__name__] = from_dict
-
-
-cpdef inline object get_to_dict(str obj_name):
-    return _OBJECT_TO_DICT_MAP.get(obj_name)
-
-cpdef inline object get_from_dict(str obj_name):
-    return _OBJECT_FROM_DICT_MAP.get(obj_name)
 
 
 cdef class InstrumentSerializer:

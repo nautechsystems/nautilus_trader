@@ -16,6 +16,7 @@
 import asyncio
 import bz2
 import pathlib
+from functools import partial
 from unittest import mock
 
 import betfairlightweight
@@ -28,6 +29,7 @@ from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
+from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
@@ -49,10 +51,14 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
+from nautilus_trader.persistence.backtest.parsers import TextReader
+from nautilus_trader.persistence.backtest.scanner import scan
 from nautilus_trader.portfolio.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
+from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.mocks import MockLiveRiskEngine
+from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
 
@@ -382,6 +388,26 @@ class BetfairTestStubs(TestStubs):
             ],
         }
 
+    @staticmethod
+    def parse_betfair(line, instrument_provider):
+        yield from on_market_update(
+            instrument_provider=instrument_provider, update=orjson.loads(line)
+        )
+
+    @staticmethod
+    def betfair_reader():
+        def inner(instrument_provider):
+            reader = TextReader(
+                line_parser=partial(
+                    BetfairTestStubs.parse_betfair, instrument_provider=instrument_provider
+                ),
+                instrument_provider=instrument_provider,
+                instrument_provider_update=historical_instrument_provider_loader,
+            )
+            return reader
+
+        return inner
+
 
 class BetfairDataProvider:
     @staticmethod
@@ -681,3 +707,25 @@ class BetfairDataProvider:
             command_id=BetfairTestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
+
+    @staticmethod
+    def betfair_feed_parsed(market_id="1.166564490", folder="data"):
+        instrument_provider = BetfairInstrumentProvider.from_instruments([])
+        reader = BetfairTestStubs.betfair_reader()
+        files = scan(
+            path=f"{PACKAGE_ROOT}/{folder}",
+            glob_pattern=f"{market_id}*",
+        )
+        reader = reader(instrument_provider=instrument_provider)
+
+        data = []
+        for rf in files:
+            rf.reader = reader
+            for chunk in rf.iter_parsed():
+                data.extend(chunk)
+
+        return data
+
+    @staticmethod
+    def betfair_trade_ticks():
+        return [msg["trade"] for msg in TestDataProvider.l2_feed() if msg.get("op") == "trade"]
