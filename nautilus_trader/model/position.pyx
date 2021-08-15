@@ -109,7 +109,19 @@ cdef class Position:
         return hash(self.id.value)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self.status_string_c()}, id={self.id.value})"
+        return f"{type(self).__name__}({self.info()}, id={self.id.value})"
+
+    cpdef str info(self):
+        """
+        Return a summary description of the position.
+
+        Returns
+        -------
+        str
+
+        """
+        cdef str quantity = " " if self.net_qty == 0 else f" {self.quantity.to_str()} "
+        return f"{PositionSideParser.to_str(self.side)}{quantity}{self.instrument_id}"
 
     cpdef dict to_dict(self):
         """
@@ -168,10 +180,6 @@ cdef class Position:
 
     cdef int event_count_c(self) except *:
         return len(self._events)
-
-    cdef str status_string_c(self):
-        cdef str quantity = " " if self.net_qty == 0 else f" {self.quantity.to_str()} "
-        return f"{PositionSideParser.to_str(self.side)}{quantity}{self.instrument_id}"
 
     cdef bint is_open_c(self) except *:
         return self.side != PositionSide.FLAT

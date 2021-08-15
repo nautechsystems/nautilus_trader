@@ -33,7 +33,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -385,7 +385,7 @@ class TestLiveExecutionEngine:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.ACCEPTED,
+            order_status=OrderStatus.ACCEPTED,
             filled_qty=Quantity.zero(),
             ts_init=0,
         )
@@ -439,7 +439,7 @@ class TestLiveExecutionEngine:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.CANCELED,
+            order_status=OrderStatus.CANCELED,
             filled_qty=Quantity.zero(),
             ts_init=0,
         )
@@ -493,7 +493,7 @@ class TestLiveExecutionEngine:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.EXPIRED,
+            order_status=OrderStatus.EXPIRED,
             filled_qty=Quantity.zero(),
             ts_init=0,
         )
@@ -548,7 +548,7 @@ class TestLiveExecutionEngine:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.PARTIALLY_FILLED,
+            order_status=OrderStatus.PARTIALLY_FILLED,
             filled_qty=Quantity.from_int(70000),
             ts_init=0,
         )
@@ -630,7 +630,7 @@ class TestLiveExecutionEngine:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.FILLED,
+            order_status=OrderStatus.FILLED,
             filled_qty=Quantity.from_int(100000),
             ts_init=0,
         )

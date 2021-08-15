@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class OrderStateParser:
+cdef class OrderStatusParser:
 
     @staticmethod
     cdef str to_str(int value):
@@ -46,38 +46,38 @@ cdef class OrderStateParser:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef OrderState from_str(str value) except *:
+    cdef OrderStatus from_str(str value) except *:
         if value == "INITIALIZED":
-            return OrderState.INITIALIZED
+            return OrderStatus.INITIALIZED
         elif value == "DENIED":
-            return OrderState.DENIED
+            return OrderStatus.DENIED
         elif value == "SUBMITTED":
-            return OrderState.SUBMITTED
+            return OrderStatus.SUBMITTED
         elif value == "ACCEPTED":
-            return OrderState.ACCEPTED
+            return OrderStatus.ACCEPTED
         elif value == "REJECTED":
-            return OrderState.REJECTED
+            return OrderStatus.REJECTED
         elif value == "CANCELED":
-            return OrderState.CANCELED
+            return OrderStatus.CANCELED
         elif value == "EXPIRED":
-            return OrderState.EXPIRED
+            return OrderStatus.EXPIRED
         elif value == "TRIGGERED":
-            return OrderState.TRIGGERED
+            return OrderStatus.TRIGGERED
         elif value == "PENDING_UPDATE":
-            return OrderState.PENDING_UPDATE
+            return OrderStatus.PENDING_UPDATE
         elif value == "PENDING_CANCEL":
-            return OrderState.PENDING_CANCEL
+            return OrderStatus.PENDING_CANCEL
         elif value == "PARTIALLY_FILLED":
-            return OrderState.PARTIALLY_FILLED
+            return OrderStatus.PARTIALLY_FILLED
         elif value == "FILLED":
-            return OrderState.FILLED
+            return OrderStatus.FILLED
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):
-        return OrderStateParser.to_str(value)
+        return OrderStatusParser.to_str(value)
 
     @staticmethod
     def from_str_py(str value):
-        return OrderStateParser.from_str(value)
+        return OrderStatusParser.from_str(value)

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum OrderState:
+cpdef enum OrderStatus:
     INITIALIZED = 1,
     DENIED = 2,
     SUBMITTED = 3,
@@ -29,10 +29,10 @@ cpdef enum OrderState:
     FILLED = 12,
 
 
-cdef class OrderStateParser:
+cdef class OrderStatusParser:
 
     @staticmethod
     cdef str to_str(int value)
 
     @staticmethod
-    cdef OrderState from_str(str value) except *
+    cdef OrderStatus from_str(str value) except *

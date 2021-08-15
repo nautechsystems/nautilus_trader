@@ -4,6 +4,8 @@
 ## Breaking Changes
 - Moved margin calculation methods from `Instrument` to `Account`.
 - Removed redundant `Portfolio.register_account`.
+- Renamed `OrderState` to `OrderStatus`.
+- Renamed `Order.state` to `Order.status`.
 - Renamed `msgbus.message_bus` to `msgbus.bus`.
 
 ## Enhancements
