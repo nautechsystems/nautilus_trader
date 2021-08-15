@@ -445,8 +445,8 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
 
         # Assert
         assert self.engine.iteration in (8825, 9319)
-        expected = Money(9996.52, GBP)
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == expected
+        expected = (Money(9996.52, GBP), Money(9992.48, GBP))
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) in expected
 
 
 class TestBacktestAcceptanceTestsMarketMaking:
