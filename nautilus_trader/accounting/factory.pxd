@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.accounting.base cimport Account
+from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.model.events.account cimport AccountState
 
 

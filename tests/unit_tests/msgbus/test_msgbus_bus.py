@@ -18,7 +18,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Request
 from nautilus_trader.core.message import Response
-from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.bus import MessageBus
 from tests.test_kit.stubs import TestStubs
 
 

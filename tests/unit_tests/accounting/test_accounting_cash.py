@@ -17,7 +17,7 @@ from decimal import Decimal
 
 import pytest
 
-from nautilus_trader.accounting.cash import CashAccount
+from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
@@ -33,7 +33,6 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
@@ -44,8 +43,8 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -510,142 +509,3 @@ class TestCashAccount:
 
         # Assert
         assert result == Money(5294, JPY)
-
-
-class TestMarginAccount:
-    def setup(self):
-        # Fixture Setup
-        self.clock = TestClock()
-        self.logger = Logger(self.clock)
-
-        self.trader_id = TestStubs.trader_id()
-
-        self.order_factory = OrderFactory(
-            trader_id=self.trader_id,
-            strategy_id=StrategyId("S-001"),
-            clock=TestClock(),
-        )
-
-        self.msgbus = MessageBus(
-            trader_id=self.trader_id,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.cache = TestStubs.cache()
-
-        self.portfolio = Portfolio(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exec_engine = ExecutionEngine(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-    def test_instantiated_accounts_basic_properties(self):
-        # Arrange, Act
-        account = TestStubs.margin_account()
-
-        # Assert
-        assert account.id == AccountId("SIM", "000")
-        assert str(account) == "MarginAccount(id=SIM-000, type=MARGIN, base=USD)"
-        assert repr(account) == "MarginAccount(id=SIM-000, type=MARGIN, base=USD)"
-        assert isinstance(hash(account), int)
-        assert account == account
-        assert not account != account
-
-    def test_set_leverage(self):
-        # Arrange
-        account = TestStubs.margin_account()
-
-        # Act
-        account.set_leverage(AUDUSD_SIM.id, Decimal(100))
-
-        # Assert
-        assert account.leverage(AUDUSD_SIM.id) == Decimal(100)
-        assert account.leverages() == {AUDUSD_SIM.id: Decimal(100)}
-
-    def test_update_margin_initial(self):
-        # Arrange
-        account = TestStubs.margin_account()
-        margin = Money(1_000.00, USD)
-
-        # Act
-        account.update_margin_initial(margin)
-
-        # Assert
-        assert account.margin_initial(USD) == margin
-        assert account.margins_initial() == {USD: margin}
-
-    def test_update_margin_maint(self):
-        # Arrange
-        account = TestStubs.margin_account()
-        margin = Money(1_000.00, USD)
-
-        # Act
-        account.update_margin_maint(margin)
-
-        # Assert
-        assert account.margin_maint(USD) == margin
-        assert account.margins_maint() == {USD: margin}
-
-    def test_calculate_margin_initial_with_leverage(self):
-        # Arrange
-        account = TestStubs.margin_account()
-        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-        account.set_leverage(instrument.id, Decimal(50))
-
-        result = account.calculate_margin_initial(
-            instrument=instrument,
-            quantity=Quantity.from_int(100000),
-            price=Price.from_str("0.80000"),
-        )
-
-        # Assert
-        assert result == Money(48.06, USD)
-
-    @pytest.mark.parametrize(
-        "inverse_as_quote, expected",
-        [
-            [False, Money(0.10005568, BTC)],
-            [True, Money(1150.00, USD)],
-        ],
-    )
-    def test_calculate_margin_initial_with_no_leverage_for_inverse(
-        self, inverse_as_quote, expected
-    ):
-        # Arrange
-        account = TestStubs.margin_account()
-        instrument = TestInstrumentProvider.xbtusd_bitmex()
-
-        result = account.calculate_margin_initial(
-            instrument=instrument,
-            quantity=Quantity.from_int(100000),
-            price=Price.from_str("11493.60"),
-            inverse_as_quote=inverse_as_quote,
-        )
-
-        # Assert
-        assert result == expected
-
-    def test_calculate_margin_maint_with_no_leverage(self):
-        # Arrange
-        account = TestStubs.margin_account()
-        instrument = TestInstrumentProvider.xbtusd_bitmex()
-
-        # Act
-        result = account.calculate_margin_maint(
-            instrument=instrument,
-            side=PositionSide.LONG,
-            quantity=Quantity.from_int(100000),
-            last=Price.from_str("11493.60"),
-        )
-
-        # Assert
-        assert result == Money(0.03697710, BTC)

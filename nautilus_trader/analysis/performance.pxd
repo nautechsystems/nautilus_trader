@@ -15,7 +15,7 @@
 
 from cpython.datetime cimport datetime
 
-from nautilus_trader.accounting.base cimport Account
+from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.objects cimport Money

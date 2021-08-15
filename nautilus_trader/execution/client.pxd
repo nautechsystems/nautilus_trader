@@ -15,10 +15,9 @@
 
 from libc.stdint cimport int64_t
 
-from nautilus_trader.accounting.base cimport Account
+from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -30,7 +29,7 @@ from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.account cimport AccountState
-from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -43,7 +42,7 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class ExecutionClient(Component):
@@ -64,12 +63,9 @@ cdef class ExecutionClient(Component):
     """The clients account type.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
     """The clients account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or None"""
-    cdef readonly bint calculate_account_state
-    """If the account state is calculated.\n\n:returns: `bool`"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 
-    cpdef Account create_account(self, AccountState event)
     cpdef Account get_account(self)
 
     cpdef void _set_connected(self, bint value=*) except *
@@ -83,7 +79,6 @@ cdef class ExecutionClient(Component):
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void apply_account_state(self, AccountState event) except *
     cpdef void generate_account_state(
         self,
         list balances,
@@ -206,7 +201,5 @@ cdef class ExecutionClient(Component):
 
 # --------------------------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, Event event) except *
-    cdef list _calculate_balances(self, OrderFilled fill)
-    cdef list _calculate_balance_single_currency(self, OrderFilled fill, Money pnl)
-    cdef list _calculate_balance_multi_currency(self, OrderFilled fill, list pnls)
+    cdef void _send_account_state(self, AccountState account_state) except *
+    cdef void _send_order_event(self, OrderEvent event) except *

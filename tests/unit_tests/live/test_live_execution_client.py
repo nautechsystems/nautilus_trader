@@ -40,8 +40,8 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveExecutionClient
 from tests.test_kit.providers import TestInstrumentProvider
@@ -170,7 +170,7 @@ class TestLiveExecutionClient:
             clock=self.clock,
             logger=self.logger,
         )
-        self.client.apply_account_state(TestStubs.event_cash_account_state())
+        self.portfolio.update_account(TestStubs.event_cash_account_state())
         self.exec_engine.register_client(self.client)
 
         # Prepare components

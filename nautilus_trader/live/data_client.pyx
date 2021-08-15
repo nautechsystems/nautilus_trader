@@ -22,7 +22,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class LiveDataClientFactory:
