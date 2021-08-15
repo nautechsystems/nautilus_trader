@@ -13,10 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
-
-from nautilus_trader.accounting.base cimport Account
-from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.manager cimport AccountsManager
+from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
@@ -26,36 +25,12 @@ from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.msgbus.message_bus cimport MessageBus
-
-
-cdef class PortfolioFacade:
-
-# -- QUERIES ---------------------------------------------------------------------------------------  # noqa
-
-    cdef readonly bint initialized
-    """If the portfolio is initialized.\n\n:returns: `bool`"""
-
-    cpdef Account account(self, Venue venue)
-
-    cpdef dict margins_initial(self, Venue venue)
-    cpdef dict margins_maint(self, Venue venue)
-    cpdef dict unrealized_pnls(self, Venue venue)
-    cpdef dict net_exposures(self, Venue venue)
-
-    cpdef Money unrealized_pnl(self, InstrumentId instrument_id)
-    cpdef Money net_exposure(self, InstrumentId instrument_id)
-    cpdef object net_position(self, InstrumentId instrument_id)
-
-    cpdef bint is_net_long(self, InstrumentId instrument_id) except *
-    cpdef bint is_net_short(self, InstrumentId instrument_id) except *
-    cpdef bint is_flat(self, InstrumentId instrument_id) except *
-    cpdef bint is_completely_flat(self) except *
+from nautilus_trader.msgbus.bus cimport MessageBus
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class Portfolio(PortfolioFacade):
@@ -63,7 +38,8 @@ cdef class Portfolio(PortfolioFacade):
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef MessageBus _msgbus
-    cdef CacheFacade _cache
+    cdef Cache _cache
+    cdef AccountsManager _accounts
 
     cdef dict _unrealized_pnls
     cdef dict _net_positions
@@ -74,6 +50,7 @@ cdef class Portfolio(PortfolioFacade):
     cpdef void initialize_orders(self) except *
     cpdef void initialize_positions(self) except *
     cpdef void update_tick(self, QuoteTick tick) except *
+    cpdef void update_account(self, AccountState event) except *
     cpdef void update_order(self, OrderEvent event) except *
     cpdef void update_position(self, PositionEvent event) except *
     cpdef void reset(self) except *
@@ -82,9 +59,6 @@ cdef class Portfolio(PortfolioFacade):
 
     cdef object _net_position(self, InstrumentId instrument_id)
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *
-    cdef bint _update_margin_initial(self, Venue venue, list orders_working) except *
-    cdef bint _update_margin_maint(self, Venue venue, list positions_open) except *
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id)
-    cdef AccountState _generate_account_state(self, Account account, int64_t now)
-    cdef object _calculate_xrate_to_base(self, Instrument instrument, Account account, OrderSide side)
+    cdef object _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)
     cdef Price _get_last_price(self, Position position)

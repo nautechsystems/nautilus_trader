@@ -19,7 +19,7 @@ from nautilus_trader.common.logging cimport LiveLogger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.live.data_engine cimport LiveDataEngine
 from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class TradingNodeBuilder:

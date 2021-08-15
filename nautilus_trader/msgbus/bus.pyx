@@ -185,6 +185,8 @@ cdef class MessageBus:
 
         self._endpoints[endpoint] = handler
 
+        self._log.debug(f"Added endpoint {endpoint} {handler}.")
+
     cpdef void deregister(self, str endpoint, handler: Callable[[Any], None]) except *:
         """
         De-register the given handler from the endpoint address.
@@ -214,6 +216,8 @@ cdef class MessageBus:
         Condition.equal(handler, self._endpoints[endpoint], "handler", "self._endpoints[endpoint]")
 
         del self._endpoints[endpoint]
+
+        self._log.debug(f"Removed endpoint {endpoint} {handler}.")
 
     cpdef void send(self, str endpoint, msg: Any) except *:
         """

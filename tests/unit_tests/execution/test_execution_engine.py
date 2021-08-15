@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.accounting.cash import CashAccount
+from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -45,9 +45,9 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.bracket import BracketOrder
 from nautilus_trader.model.position import Position
-from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockCacheDatabase
 from tests.test_kit.mocks import MockExecutionClient
@@ -143,7 +143,7 @@ class TestExecutionEngine:
             clock=self.clock,
             logger=self.logger,
         )
-        self.exec_client.apply_account_state(TestStubs.event_margin_account_state())
+        self.portfolio.update_account(TestStubs.event_margin_account_state())
         self.exec_engine.register_client(self.exec_client)
 
     def test_registered_clients_returns_expected(self):
@@ -256,10 +256,6 @@ class TestExecutionEngine:
 
         # Assert
         assert result  # No exceptions raised
-
-    def test_loading_account_from_cache_registers_with_portfolio(self):
-        # Arrange, Act, Assert
-        assert self.portfolio.account(self.venue).id == AccountId("SIM", "000")
 
     def test_setting_of_position_id_counts(self):
         # Arrange

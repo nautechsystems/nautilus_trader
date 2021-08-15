@@ -64,7 +64,7 @@ from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 # Events for WRN log level

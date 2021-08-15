@@ -44,8 +44,8 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveExecutionClient
 from tests.test_kit.providers import TestInstrumentProvider
@@ -138,7 +138,7 @@ class TestLiveExecutionEngine:
             clock=self.clock,
             logger=self.logger,
         )
-        self.client.apply_account_state(TestStubs.event_cash_account_state())
+        self.portfolio.update_account(TestStubs.event_cash_account_state())
         self.exec_engine.register_client(self.client)
 
         self.cache.add_instrument(AUDUSD_SIM)
@@ -509,6 +509,7 @@ class TestLiveExecutionEngine:
         # Assert
         assert result
 
+    @pytest.mark.skip(reason="reimplement reconciliation")
     @pytest.mark.asyncio
     async def test_reconcile_state_when_partially_filled_reconciles(self):
         # Arrange
@@ -590,6 +591,7 @@ class TestLiveExecutionEngine:
         # Assert
         assert result
 
+    @pytest.mark.skip(reason="reimplement reconciliation")
     @pytest.mark.asyncio
     async def test_reconcile_state_when_filled_reconciles(self):
         # Arrange

@@ -97,7 +97,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 NautilusTrader is designed to work with modular adapters which provide integrations with data
 publishers and/or trading venues (exchanges/brokers).
 
-See the [integrations](https://docs.nautilustrader.io/integrations) documentation for further details.
+Refer to the [integrations](https://docs.nautilustrader.io/integrations) documentation.
 
 ## Installation
 
@@ -105,18 +105,16 @@ To install the latest binary wheel (or sdist package) from PyPI:
 
     pip install -U nautilus_trader
 
-Refer to the [installation guide](https://docs.nautilustrader.io/getting-started/installation) for further details.
+Refer to the [installation guide](https://docs.nautilustrader.io/getting-started/installation).
 
 ## Examples
 
 Examples of both backtest and live trading launch scripts are available in the `examples` directory.
-These can run through your IDE, or from the command line:
-
-    python <name_of_script>.py
 
 ## Development
 
-See the [developer guides](https://docs.nautilustrader.io/developer-guides) for further information.
+We aim to make the developer experience for this hybrid codebase of Cython and Python
+as pleasant as possible. Please refer to the [developer guides](https://docs.nautilustrader.io/developer-guides) for helpful information.
 
 ## Contributing
 
@@ -124,9 +122,13 @@ Involvement from the trading community is a goal for this project. All help is w
 Developers can open issues on GitHub to discuss proposed enhancements/changes, or
 to make bug reports.
 
+Refer to the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/master/CONTRIBUTING.md) for further information.
+
 Please make all pull requests to the `develop` branch.
 
-Refer to the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/master/CONTRIBUTING.md) for further information.
+## Release schedule
+
+NautilusTrader is currently following a bi-weekly release schedule.
 
 ## License
 

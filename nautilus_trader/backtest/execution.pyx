@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport TestClock
@@ -26,7 +27,7 @@ from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -81,8 +82,10 @@ cdef class BacktestExecClient(ExecutionClient):
             cache=cache,
             clock=clock,
             logger=logger,
-            config={"calculate_account_state": False if is_frozen_account else True},
         )
+
+        if not is_frozen_account:
+            AccountFactory.register_calculated_account(account_id.issuer)
 
         self._exchange = exchange
         self.is_connected = False

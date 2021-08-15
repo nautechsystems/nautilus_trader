@@ -24,7 +24,7 @@ from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class DataClient(Component):

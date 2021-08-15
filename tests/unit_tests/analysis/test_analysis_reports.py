@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.accounting.margin import MarginAccount
+from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.analysis.reports import ReportProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory

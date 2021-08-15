@@ -25,7 +25,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from nautilus_trader.accounting.base cimport Account
+from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.actor cimport Actor
@@ -38,7 +38,7 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.strategy cimport TradingStrategy
 

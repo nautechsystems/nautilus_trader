@@ -42,9 +42,9 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.bracket import BracketOrder
-from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
 from tests.test_kit.providers import TestInstrumentProvider
@@ -110,7 +110,7 @@ class TestRiskEngine:
             clock=self.clock,
             logger=self.logger,
         )
-        self.exec_client.apply_account_state(TestStubs.event_margin_account_state())
+        self.portfolio.update_account(TestStubs.event_margin_account_state())
         self.exec_engine.register_client(self.exec_client)
 
         # Prepare data
@@ -228,7 +228,7 @@ class TestRiskEngine:
 
         self.risk_engine.process(random)
 
-    # -- SUBMIT ORDER TESTS ----------------------------------------------------------------------------
+    # -- SUBMIT ORDER TESTS ------------------------------------------------------------------------
 
     def test_submit_order_with_default_settings_then_sends_to_client(self):
         # Arrange
@@ -947,7 +947,7 @@ class TestRiskEngine:
         # Assert
         assert self.risk_engine.command_count == 1  # <-- command never reaches engine
 
-    # -- SUBMIT BRACKET ORDER TESTS --------------------------------------------------------------------
+    # -- SUBMIT BRACKET ORDER TESTS ----------------------------------------------------------------
 
     def test_submit_bracket_with_default_settings_sends_to_client(self):
         # Arrange
@@ -1238,7 +1238,7 @@ class TestRiskEngine:
         # Assert
         assert self.exec_engine.command_count == 0  # <-- command never reaches engine
 
-    # -- UPDATE ORDER TESTS ----------------------------------------------------------------------------
+    # -- UPDATE ORDER TESTS ------------------------------------------------------------------------
 
     def test_update_order_when_no_order_found_denies(self):
         # Arrange
@@ -1440,7 +1440,7 @@ class TestRiskEngine:
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2
 
-    # -- CANCEL ORDER TESTS ----------------------------------------------------------------------------
+    # -- CANCEL ORDER TESTS ------------------------------------------------------------------------
 
     def test_cancel_order_when_order_does_not_exist_then_denies(self):
         # Arrange
