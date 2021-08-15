@@ -24,6 +24,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import MyData
@@ -141,7 +142,7 @@ class TestBacktestDataProducer:
 
     def test_producer_run_start_stop_parsed_correctly(self):
         instrument = AUDUSD_SIM
-        example = TestDataProvider.betfair_trade_ticks()[0]
+        example = BetfairDataProvider.betfair_trade_ticks()[0]
         tick = TradeTick.from_dict(
             {
                 **example.to_dict(example),

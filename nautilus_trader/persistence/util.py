@@ -12,7 +12,29 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import pytest
+import inspect
 
 
-pytest.importorskip("ib_insync")
+def resolve_kwargs(func, *args, **kwargs):
+    return inspect.getcallargs(func, *args, **kwargs)
+
+
+class Singleton(type):
+    def __init__(cls, name, bases, dict_like):
+        super(Singleton, cls).__init__(name, bases, dict_like)
+        cls._instances = {}
+
+    def __call__(cls, *args, **kw):
+        full_kwargs = resolve_kwargs(cls.__init__, None, *args, **kw)
+        if full_kwargs == {"self": None, "args": (), "kwargs": {}}:
+            full_kwargs = {}
+        full_kwargs.pop("self", None)
+        key = tuple(full_kwargs.items())
+        if key not in cls._instances:
+            cls._instances[key] = super(Singleton, cls).__call__(*args, **kw)
+        return cls._instances[key]
+
+
+def clear_singleton_instances(cls: type):
+    assert isinstance(cls, Singleton)
+    cls._instances = {}
