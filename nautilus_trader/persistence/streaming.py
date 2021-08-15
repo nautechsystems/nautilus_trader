@@ -38,7 +38,7 @@ class FeatherWriter:
         """
         Write a stream of nautilus objects into feather files under `path`
         """
-        self.fs = fsspec.filesystem(fs_protocol)
+        self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.path = self._check_path(path)
         self.fs.mkdir(str(self.path), exist_ok=True)
         self._schemas = list_schemas()
@@ -60,7 +60,7 @@ class FeatherWriter:
         err_parent = f"Parent of path {path} does not exist, please create it"
         assert self.fs.exists(str(path.parent)), err_parent
         err_dir_empty = "Path must be directory or empty"
-        assert path.is_dir() or not path.exists(), err_dir_empty
+        assert self.fs.isdir(str(path)) or not self.fs.exists(str(path)), err_dir_empty
         return path
 
     def _create_writers(self):
