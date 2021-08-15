@@ -727,7 +727,7 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._builder.update(price, size, ts_event)
         if self._build_on_next_tick:  # (fast C-level check)
-            self._build_and_send(self._stored_close)
+            self._build_and_send(self._stored_close_ns)
             # Reset flag and clear stored close
             self._build_on_next_tick = False
             self._stored_close = 0

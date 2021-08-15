@@ -21,10 +21,10 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.position cimport Position
 
@@ -43,10 +43,6 @@ cdef class Account:
     """The accounts base currency (None for multi-currency accounts).\n\n:returns: `Currency` or None"""
     cdef readonly bint calculate_account_state
     """If the accounts state should be calculated by Nautilus.\n\n:returns: `bool`"""
-
-# -- INTERNAL --------------------------------------------------------------------------------------
-
-    cdef inline void _update_balances(self, list account_balances) except *
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
@@ -69,20 +65,14 @@ cdef class Account:
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef void set_calculate_account_state(self, bint value) except *
     cpdef void apply(self, AccountState event) except *
+    cpdef void update_balances(self, list balances) except *
     cpdef void update_commissions(self, Money commission) except *
-    cpdef void update_margin_initial(self, Money margin_initial) except *
+    cpdef void update_margin_initial(self, InstrumentId instrument_id, Money locked) except *
+    cpdef void clear_margin_initial(self, InstrumentId instrument_id) except *
+    cdef void _recalculate_balance(self, Currency currency) except *
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
-
-    cpdef Money calculate_margin_initial(
-        self,
-        Instrument instrument,
-        Quantity quantity,
-        Price price,
-        bint inverse_as_quote=*,
-    )
 
     cpdef Money calculate_commission(
         self,
@@ -92,6 +82,7 @@ cdef class Account:
         LiquiditySide liquidity_side,
         bint inverse_as_quote=*,
     )
+
     cpdef list calculate_pnls(
         self,
         Instrument instrument,

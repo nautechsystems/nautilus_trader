@@ -32,11 +32,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport millis_to_nanos
 from nautilus_trader.core.datetime cimport nanos_to_secs
 from nautilus_trader.core.datetime cimport secs_to_nanos
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.messages cimport ExecutionReport
 from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
-from nautilus_trader.live.execution_engine cimport LiveExecutionEngine
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -56,8 +54,9 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
+from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability
@@ -136,10 +135,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             cache=cache,
             clock=clock,
             logger=logger,
-            config={
-                "name": "BetfairExecClient",
-                "calculate_account_state": True,
-            }
+            config={"name": "BetfairExecClient"}
         )
 
         self.venue = BETFAIR_VENUE
@@ -153,6 +149,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.pending_update_order_client_ids = set()  # type: Set[(ClientOrderId, VenueOrderId)]
         self.published_executions = defaultdict(list)  # type: Dict[ClientOrderId, ExecutionId]
         self._account_currency = None
+
+        AccountFactory.register_calculated_account(account_id.issuer)
 
     cpdef void _start(self) except *:
         self._loop.create_task(self._connect())
@@ -204,7 +202,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._handle_event(account_state)
+        self._send_account_state(account_state)
 
     cpdef dict _get_account_details(self):
         self._log.debug("Sending get_account_details request")

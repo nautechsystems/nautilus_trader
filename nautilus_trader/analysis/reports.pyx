@@ -15,7 +15,7 @@
 
 import pandas as pd
 
-from nautilus_trader.accounting.base cimport Account
+from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_timedelta
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt

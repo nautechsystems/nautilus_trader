@@ -17,7 +17,7 @@ import inspect
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from nautilus_trader.accounting.base import Account
+from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.execution.client import ExecutionClient

@@ -12,9 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.accounting.base cimport Account
-
-
-cdef class CashAccount(Account):
-    pass

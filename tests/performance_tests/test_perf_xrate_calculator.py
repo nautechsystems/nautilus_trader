@@ -15,10 +15,10 @@
 
 from decimal import Decimal
 
+from nautilus_trader.accounting.calculators import ExchangeRateCalculator
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import PriceType
-from nautilus_trader.trading.calculators import ExchangeRateCalculator
 from tests.test_kit.performance import PerformanceHarness
 
 

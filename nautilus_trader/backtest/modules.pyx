@@ -21,6 +21,7 @@ from decimal import Decimal
 import pandas as pd
 import pytz
 
+from nautilus_trader.accounting.calculators cimport RolloverInterestCalculator
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
@@ -34,7 +35,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.trading.calculators cimport RolloverInterestCalculator
 
 
 cdef class SimulationModule:

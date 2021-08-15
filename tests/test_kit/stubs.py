@@ -68,8 +68,8 @@ from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orders.limit import LimitOrder
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
@@ -464,24 +464,29 @@ class TestStubs:
     def event_order_filled(
         order,
         instrument,
+        strategy_id=None,
+        account_id=None,
         venue_order_id=None,
         execution_id=None,
         position_id=None,
-        strategy_id=None,
         last_qty=None,
         last_px=None,
         liquidity_side=LiquiditySide.TAKER,
         ts_filled_ns=0,
         account=None,
     ) -> OrderFilled:
+        if strategy_id is None:
+            strategy_id = order.strategy_id
+        if account_id is None:
+            account_id = order.account_id
+            if account_id is None:
+                account_id = TestStubs.account_id()
         if venue_order_id is None:
             venue_order_id = VenueOrderId("1")
         if execution_id is None:
             execution_id = ExecutionId(order.client_order_id.value.replace("O", "E"))
         if position_id is None:
             position_id = order.position_id
-        if strategy_id is None:
-            strategy_id = order.strategy_id
         if last_px is None:
             last_px = Price.from_str(f"{1:.{instrument.price_precision}f}")
         if last_qty is None:
@@ -499,7 +504,7 @@ class TestStubs:
         return OrderFilled(
             trader_id=TestStubs.trader_id(),
             strategy_id=strategy_id,
-            account_id=TestStubs.account_id(),
+            account_id=account_id,
             instrument_id=instrument.id,
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
