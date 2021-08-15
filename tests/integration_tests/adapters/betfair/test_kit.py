@@ -59,7 +59,7 @@ from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.persistence.backtest.parsers import TextReader
 from nautilus_trader.persistence.backtest.scanner import scan
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.portfolio.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
@@ -226,6 +226,8 @@ class BetfairTestStubs:
         )
         mock_async(client, "place_orders", BetfairResponses.betting_place_order_success())
         mock_async(client, "cancel_orders", BetfairResponses.betting_cancel_orders_success())
+        patch.object(client, "session_token", return_value="xxxsessionToken=")
+
         return client
 
     @staticmethod

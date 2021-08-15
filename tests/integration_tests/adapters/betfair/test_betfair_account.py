@@ -25,7 +25,7 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.bus import MessageBus
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.stubs import TestStubs
 
@@ -78,19 +78,19 @@ class TestBettingAccount:
             instrument=self.instrument,
             side=PositionSide.LONG,
             quantity=Quantity.from_int(100),
-            last=Price.from_str("0.4"),
+            avg_open_px=Price.from_str("0.4"),
         )
         short = self.account.calculate_margin_maint(
             instrument=self.instrument,
             side=PositionSide.SHORT,
             quantity=Quantity.from_int(100),
-            last=Price.from_str("0.8"),
+            avg_open_px=Price.from_str("0.8"),
         )
         very_short = self.account.calculate_margin_maint(
             instrument=self.instrument,
             side=PositionSide.SHORT,
             quantity=Quantity.from_int(100),
-            last=Price.from_str("0.1"),
+            avg_open_px=Price.from_str("0.1"),
         )
 
         # Assert

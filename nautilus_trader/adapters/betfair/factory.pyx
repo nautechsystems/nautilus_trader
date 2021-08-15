@@ -16,6 +16,7 @@
 import asyncio
 import os
 
+
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LiveLogger
@@ -28,7 +29,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 
 from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
 from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 from nautilus_trader.adapters.betfair.client import BetfairClient
 
@@ -77,7 +78,9 @@ cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
             username=os.getenv(config.get("username", ""), ""),
             password=os.getenv(config.get("password", ""), ""),
             app_key=os.getenv(config.get("app_key", ""), ""),
-            cert_dur=os.getenv(config.get("cert_dir", ""), ""),
+            cert_dir=os.getenv(config.get("cert_dir", ""), ""),
+            loop=loop,
+            logger=logger,
         )
 
         data_client = BetfairDataClient(
@@ -140,7 +143,9 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
             username=os.getenv(config.get("username", ""), ""),
             password=os.getenv(config.get("password", ""), ""),
             app_key=os.getenv(config.get("app_key", ""), ""),
-            certs=os.getenv(config.get("cert_dir", ""), ""),
+            cert_dir=os.getenv(config.get("cert_dir", ""), ""),
+            loop=loop,
+            logger=logger,
         )
 
         # Get account ID env variable or set default

@@ -56,7 +56,7 @@ from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
@@ -663,7 +663,7 @@ async def generate_order_status_report(self, order) -> Optional[OrderStatusRepor
         OrderStatusReport(
             client_order_id=ClientOrderId(),
             venue_order_id=VenueOrderId(),
-            order_state=OrderState(),
+            order_status=OrderStatus(),
             filled_qty=Quantity.zero(),
             ts_init=SECS_TO_NANOS * pd.Timestamp(order["timestamp"]).timestamp(),
         )

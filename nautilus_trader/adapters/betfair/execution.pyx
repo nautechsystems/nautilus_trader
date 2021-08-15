@@ -41,19 +41,21 @@ from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
+
+from nautilus_trader.model.events.account import AccountState
+
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
+from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client import BetfairClient
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
@@ -130,10 +132,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             cache=cache,
             clock=clock,
             logger=logger,
-            config={
-                "name": "BetfairExecClient",
-                "calculate_account_state": True,
-            }
+            config={"name": "BetfairExecClient"}
         )
 
         self.venue = BETFAIR_VENUE
@@ -146,6 +145,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self.venue_order_id_to_client_order_id = {}  # type: Dict[str, ClientOrderId]
         self.pending_update_order_client_ids = set()  # type: Set[(ClientOrderId, VenueOrderId)]
         self.published_executions = defaultdict(list)  # type: Dict[ClientOrderId, ExecutionId]
+
+        AccountFactory.register_calculated_account(account_id.issuer)
 
     cpdef void _start(self) except *:
         self._log.info("Connecting...")
@@ -189,15 +190,15 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         account_details = await self._client.get_account_details()
         account_funds = await self._client.get_account_funds()
         timestamp = self._clock.timestamp_ns()
-        account_state = betfair_account_to_account_state(
+        account_state: AccountState = betfair_account_to_account_state(
             account_detail=account_details,
             account_funds=account_funds,
             event_id=self._uuid_factory.generate(),
             ts_event=timestamp,
             ts_init=timestamp,
         )
-        self._log.debug(f"Received account state: {account_state}, applying")
-        self.apply_account_state(account_state)
+        self._log.debug(f"Received account state: {account_state}, sending")
+        self._send_account_state(account_state)
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 

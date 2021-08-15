@@ -32,7 +32,7 @@ class BetfairClient(HTTPClient):
         super().__init__(
             loop=loop,
             logger=logger,
-            ssl=ssl or self._ssl_context(cert_dir=cert_dir),
+            ssl=ssl or self.ssl_context(cert_dir=cert_dir),
             connector_kwargs={"enable_cleanup_closed": True, "force_close": True},
         )
         self.username = username
@@ -52,13 +52,14 @@ class BetfairClient(HTTPClient):
             **auth,
         }
 
-    def _ssl_context(self, cert_dir):
+    @staticmethod
+    def ssl_context(cert_dir):
         certs = [p for p in pathlib.Path(cert_dir).glob("*") if p.suffix in (".crt", ".key")]
-        ssl_context = ssl.create_default_context()
-        ssl_context.load_cert_chain(*certs)
-        return ssl_context
+        context = ssl.create_default_context()
+        context.load_cert_chain(*certs)
+        return context
 
-    # TODO - testing purposes, can't mock HTTPClient.request due to cython
+    # For testing purposes, can't mock HTTPClient.request due to cython
     async def request(self, method, url, **kwargs) -> Union[bytes, List, Dict]:
         return await super().request(method=method, url=url, **kwargs)
 
@@ -81,8 +82,7 @@ class BetfairClient(HTTPClient):
 
         except ResponseException as e:
             self._log.error(
-                f"Err on {method} status={e.resp.status}, message={e.client_response_error.message}, "
-                f"raw={e.raw.decode()}"
+                f"Err on {method} status={e.resp.status}, message={e.client_response_error.message}"
             )
             raise e
 
