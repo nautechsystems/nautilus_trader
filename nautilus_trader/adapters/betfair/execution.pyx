@@ -451,11 +451,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                     else:
                         self._log.warning(f"Unknown order state: {order_update}")
 
-                # TODO - Should be no difference for fullImage at this stage.
-                #  We just send all updates individually.
-                if selection.get("fullImage", False):
-                    pass
-
     async def _check_order_update(self, dict update):
         """
         Ensure we have a client_order_id, instrument and order for this venue order update

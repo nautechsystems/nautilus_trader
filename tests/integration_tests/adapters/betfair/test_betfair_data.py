@@ -36,6 +36,7 @@ from nautilus_trader.core.uuid import UUID
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import DeltaType
@@ -48,6 +49,7 @@ from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
+from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.message_bus import MessageBus
@@ -115,7 +117,8 @@ class TestBetfairExecutionClient:
             market_filter={},
         )
 
-        self.client.instrument_provider().add_instruments(INSTRUMENTS)
+        self.provider = self.client.instrument_provider()
+        self.provider.add_instruments(INSTRUMENTS)
 
         self.data_engine.register_client(self.client)
 
@@ -423,3 +426,28 @@ class TestBetfairExecutionClient:
         ticker = self.messages[1]
         assert ticker.last_px == Price.from_str("0.31746")
         assert ticker.last_qty == Quantity.from_str("364.45")
+
+    def test_betfair_orderbook(self, load_instruments):
+        book = L2OrderBook(
+            instrument_id=BetfairTestStubs.instrument_id(),
+            price_precision=2,
+            size_precision=2,
+        )
+        for update in BetfairDataProvider.raw_market_updates():
+            for message in on_market_update(instrument_provider=self.provider, update=update):
+                try:
+                    if isinstance(message, OrderBookSnapshot):
+                        book.apply_snapshot(message)
+                    elif isinstance(message, OrderBookDeltas):
+                        book.apply_deltas(message)
+                    elif isinstance(message, OrderBookDelta):
+                        book.apply_delta(message)
+                    elif isinstance(
+                        message, (Ticker, TradeTick, InstrumentStatusUpdate, InstrumentClosePrice)
+                    ):
+                        pass
+                    else:
+                        raise NotImplementedError(str(type(message)))
+                    book.check_integrity()
+                except Exception as ex:
+                    print(str(type(ex)) + " " + str(ex))

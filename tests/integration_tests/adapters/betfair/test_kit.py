@@ -225,6 +225,7 @@ class BetfairTestStubs:
             client, "get_account_funds", BetfairResponses.account_funds_no_exposure()["result"]
         )
         mock_async(client, "place_orders", BetfairResponses.betting_place_order_success())
+        mock_async(client, "cancel_orders", BetfairResponses.betting_cancel_orders_success())
         return client
 
     @staticmethod
