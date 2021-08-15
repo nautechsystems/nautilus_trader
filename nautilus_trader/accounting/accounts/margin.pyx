@@ -258,7 +258,7 @@ cdef class MarginAccount(Account):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument for the command.
+            The instrument for the initial margin to clear.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -274,7 +274,7 @@ cdef class MarginAccount(Account):
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument for the command.
+            The instrument for the maintenance margin to clear.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
