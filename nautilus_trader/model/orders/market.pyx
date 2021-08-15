@@ -180,7 +180,15 @@ cdef class MarketOrder(Order):
             ts_init=init.ts_init,
         )
 
-    cdef str status_string_c(self):
+    cpdef str info(self):
+        """
+        Return a summary description of the order.
+
+        Returns
+        -------
+        str
+
+        """
         return (f"{OrderSideParser.to_str(self.side)} {self.quantity.to_str()} {self.instrument_id} "
                 f"{OrderTypeParser.to_str(self.type)} "
                 f"{TimeInForceParser.to_str(self.time_in_force)}")

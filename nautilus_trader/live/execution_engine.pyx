@@ -30,7 +30,7 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.execution.messages cimport ExecutionMassStatus
 from nautilus_trader.execution.messages cimport OrderStatusReport
 from nautilus_trader.live.execution_client cimport LiveExecutionClient
-from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.identifiers cimport ClientId
@@ -117,7 +117,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
 
         The execution engine will collect all cached active orders and send
         those to the relevant execution client(s) for a comparison with the
-        exchange(s) order states.
+        exchange(s) order status.
 
         If a cached order does not match the exchanges order status then
         the missing events will be generated. If there is not enough information
@@ -153,12 +153,12 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             color=LogColor.BLUE,
         )
 
-        # Initialize order state map
+        # Initialize order status map
         cdef dict client_orders = {
             name: [] for name in self._clients.keys()
         }   # type: dict[ClientId, list[Order]]
 
-        # Build order state map
+        # Build order status map
         cdef Order order
         cdef LiveExecutionClient client
         for order in active_orders.values():
@@ -177,23 +177,23 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         for name, client in self._clients.items():
             client_mass_status[name] = await client.generate_mass_status(client_orders[name])
 
-        # Reconcile order states
+        # Reconcile order status
         cdef ExecutionMassStatus mass_status
-        cdef OrderStatusReport order_state_report
+        cdef OrderStatusReport order_status_report
         for name, mass_status in client_mass_status.items():
             order_reports = mass_status.order_reports()
             if not order_reports:
                 continue
-            for order_state_report in order_reports.values():
-                order = active_orders.get(order_state_report.client_order_id)
+            for order_status_report in order_reports.values():
+                order = active_orders.get(order_status_report.client_order_id)
                 if order is None:
                     self._log.error(
                         f"Cannot reconcile state: "
-                        f"No order found for {repr(order_state_report.client_order_id)}."
+                        f"No order found for {repr(order_status_report.client_order_id)}."
                     )
                     continue
                 exec_reports = mass_status.exec_reports().get(order.venue_order_id, [])
-                await self._clients[name].reconcile_state(order_state_report, order, exec_reports)
+                await self._clients[name].reconcile_state(order_status_report, order, exec_reports)
 
         # Wait for state resolution until timeout...
         cdef datetime timeout = self._clock.utc_now() + timedelta(seconds=timeout_secs)
@@ -214,9 +214,9 @@ cdef class LiveExecutionEngine(ExecutionEngine):
                 report = mass_status.order_reports().get(order.venue_order_id)
                 if report is None:
                     return False  # Will never reconcile
-                if order.state_c() != report.order_state:
+                if order.status_c() != report.order_status:
                     reconciled = False  # Incorrect state on this loop
-                if report.order_state in (OrderState.FILLED, OrderState.PARTIALLY_FILLED):
+                if report.order_status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED):
                     if order.filled_qty != report.filled_qty:
                         reconciled = False  # Incorrect filled quantity on this loop
             if reconciled:
