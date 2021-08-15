@@ -54,7 +54,7 @@ cdef class TradingStrategy(Actor):
     cdef readonly OrderFactory order_factory
     """The order factory for the strategy.\n\n:returns: `OrderFactory`"""
     cdef readonly OMSType oms_type
-    """The order management system type for the strategy.\n\n:returns: `OMSType`"""
+    """The order management system for the strategy.\n\n:returns: `OMSType`"""
 
     cpdef bint indicators_initialized(self) except *
 
