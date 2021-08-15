@@ -233,13 +233,13 @@ def betfair_account_to_account_state(
 ) -> AccountState:
     currency = Currency.from_str(account_detail["currencyCode"])
     balance = float(account_funds["availableToBetBalance"])
-    locked = -float(account_funds["exposure"])
+    locked = -float(account_funds["exposure"]) if account_funds["exposure"] else 0.0
     free = balance - locked
     return AccountState(
         account_id=AccountId(issuer=BETFAIR_VENUE.value, number=account_id),
         account_type=AccountType.CASH,
         base_currency=currency,
-        reported=True,
+        reported=False,
         balances=[
             AccountBalance(
                 currency=currency,

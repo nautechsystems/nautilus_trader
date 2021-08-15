@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from functools import partial
 from unittest.mock import patch
 
 import pytest
@@ -117,22 +116,26 @@ class TestBetfairExecutionClient:
         # Re-route exec engine messages through `handler`
         self.messages = []
 
-        def handler(x, endpoint):
-            self.messages.append(x)
-            if endpoint == "execute":
-                self.exec_engine.execute(x)
-            elif endpoint == "process":
-                self.exec_engine.process(x)
+        def handler(func):
+            def inner(x):
+                self.messages.append(x)
+                return func(x)
+
+            return inner
+
+        def listener(x):
+            print(x)
+
+        self.msgbus.subscribe("*", listener)
 
         self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)  # type: ignore
-        self.msgbus.register(
-            endpoint="ExecEngine.execute", handler=partial(handler, endpoint="execute")  # type: ignore
-        )
+        self.msgbus.register(endpoint="ExecEngine.execute", handler=handler(self.exec_engine.execute))  # type: ignore
 
         self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)  # type: ignore
-        self.msgbus.register(
-            endpoint="ExecEngine.process", handler=partial(handler, endpoint="process")  # type: ignore
-        )
+        self.msgbus.register(endpoint="ExecEngine.process", handler=handler(self.exec_engine.process))  # type: ignore
+
+        self.msgbus.deregister(endpoint="Portfolio.update_account", handler=self.portfolio.update_account)  # type: ignore
+        self.msgbus.register(endpoint="Portfolio.update_account", handler=handler(self.portfolio.update_account))  # type: ignore
 
     def _prefill_venue_order_id_to_client_order_id(self, update):
         order_ids = [
@@ -514,17 +517,8 @@ class TestBetfairExecutionClient:
     async def test_betfair_order_reduces_balance(self):
         # Arrange
         await self._setup_account()
-        mock_async(
-            self.betfair_client, "place_orders", BetfairResponses.betting_place_order_success()
-        )
-        mock_async(
-            self.betfair_client, "cancel_orders", BetfairResponses.betting_cancel_orders_success()
-        )
-
-        # Act
         balance = self.cache.account_for_venue(self.venue).balances()[GBP]
 
-        # submit order
         order = BetfairTestStubs.make_order(
             price=Price.from_str("0.5"), quantity=Quantity.from_int(10)
         )
@@ -532,7 +526,7 @@ class TestBetfairExecutionClient:
         self.client.submit_order(command)
         await asyncio.sleep(0)
 
-        # accept order - balance should reduce
+        # Act
         self.client.generate_order_accepted(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
@@ -540,7 +534,7 @@ class TestBetfairExecutionClient:
             venue_order_id=VenueOrderId("1"),  # type: ignore
             ts_event=0,
         )
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0)
         balance_order = self.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
 
         # Cancel the order, balance should return
