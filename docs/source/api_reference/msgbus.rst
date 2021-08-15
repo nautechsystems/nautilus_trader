@@ -12,3 +12,12 @@ Message Bus
    :inherited-members:
    :members:
    :member-order: bysource
+
+Subscription
+------------
+
+.. automodule:: nautilus_trader.msgbus.subscription
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
