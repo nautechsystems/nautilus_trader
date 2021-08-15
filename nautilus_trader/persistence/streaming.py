@@ -36,7 +36,7 @@ from nautilus_trader.serialization.arrow.util import list_dicts_to_dict_lists
 class FeatherWriter:
     def __init__(self, path: str, fs_protocol: str = "file", flush_interval=None):
         """
-        Write a stream of nautilus objects into feather files under `path`
+        Write a stream of nautilus objects into feather files under `path`.
         """
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.path = self._check_path(path)
