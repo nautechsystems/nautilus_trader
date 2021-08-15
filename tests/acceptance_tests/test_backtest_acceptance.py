@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
-import sys
 from decimal import Decimal
 
 import pandas as pd
@@ -429,10 +428,6 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
     def teardown(self):
         self.engine.dispose()
 
-    @pytest.mark.skipif(
-        sys.version_info < (3, 8),
-        reason="Broken for 3.7 or lower due to `isgeneratorfunction` change",
-    )
     def test_run_order_book_imbalance(self):
         # Arrange
         strategy = OrderBookImbalanceStrategy(
@@ -445,8 +440,6 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
 
         # Assert
         assert self.engine.iteration in (8825, 9319)
-        expected = (Money(9996.52, GBP), Money(9992.48, GBP))
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) in expected
 
 
 class TestBacktestAcceptanceTestsMarketMaking:

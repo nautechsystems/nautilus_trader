@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
+import sys
 from concurrent.futures import Executor
 from concurrent.futures import Future
 from concurrent.futures import ThreadPoolExecutor
@@ -28,6 +29,9 @@ try:
     distributed_installed = True
 except ImportError:
     distributed_installed = False
+
+
+PY37 = sys.version_info < (3, 8)
 
 
 class SyncExecutor(Executor):
@@ -102,7 +106,8 @@ def executor_queue_process(
     assert inputs and isinstance(
         inputs[0], dict
     ), f"`inputs` should be List[dict] of kwargs for `process_func`, was: {inputs}"
-    assert inspect.isgeneratorfunction(process_func)
+    if not PY37:
+        assert inspect.isgeneratorfunction(process_func)
     executor = executor or ThreadPoolExecutor()
     queue_cls = Queue
     if distributed_installed and isinstance(executor, ClientExecutor):

@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import copy
-import functools
 import inspect
 import math
 import pathlib
+import sys
 from io import BytesIO
 from typing import Callable, Generator, List, Optional, Union
 
@@ -25,6 +25,9 @@ import pandas as pd
 
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.serialization.arrow.util import identity
+
+
+PY37 = sys.version_info < (3, 8)
 
 
 class Reader:
@@ -82,7 +85,8 @@ class ByteReader(Reader):
             instrument_provider_update=instrument_provider_update,
             instrument_provider=instrument_provider,
         )
-        assert inspect.isgeneratorfunction(maybe_unwrap(byte_parser))
+        if not PY37:
+            assert inspect.isgeneratorfunction(byte_parser)
         self.parser = byte_parser
 
     def parse(self, chunk: bytes) -> Generator:
@@ -278,9 +282,3 @@ class RawFile(fsspec.core.OpenFile):
         for chunk in self.iter_raw():
             parsed = list(filter(None, self.reader.parse(chunk)))
             yield parsed
-
-
-def maybe_unwrap(f):
-    while inspect.ismethod(f):
-        f = f.__func__
-    return functools._unwrap_partial(f)
