@@ -24,8 +24,6 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data import on_market_update
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.adapters.betfair.providers import List
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -45,7 +43,6 @@ from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import L2OrderBook
@@ -54,16 +51,14 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from tests.integration_tests.adapters.betfair.conftest import INSTRUMENTS
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.stubs import TestStubs
 
 
-INSTRUMENTS: List[BettingInstrument] = []
-
-
-class TestBetfairExecutionClient:
+class TestBetfairDataClient:
     def setup(self):
         # Fixture Setup
         self.loop = asyncio.get_event_loop()
@@ -108,7 +103,7 @@ class TestBetfairExecutionClient:
         self.betfair_client = BetfairTestStubs.betfair_client()
 
         self.client = BetfairDataClient(
-            loop=asyncio.get_event_loop(),
+            loop=self.loop,
             client=self.betfair_client,
             msgbus=self.msgbus,
             cache=self.cache,
@@ -149,33 +144,6 @@ class TestBetfairExecutionClient:
             endpoint="DataEngine.response", handler=partial(handler, endpoint="response")  # type: ignore
         )
 
-    @pytest.yield_fixture(scope="class")
-    def event_loop(self):
-        """
-        This fixture is a hack for the event loop to allow the class-level async fixture `load_instruments`
-        See https://github.com/pytest-dev/pytest-asyncio/issues/68
-        """
-        loop = asyncio.get_event_loop_policy().new_event_loop()
-        yield loop
-        loop.close()
-
-    @pytest.fixture(scope="class")
-    async def load_instruments(self, event_loop):
-        """
-        This fixture loads `once` all of the instruments from file - it is called BEFORE the `setup`, hence the need
-        for the global `INSTRUMENTS` variable.
-        """
-        global INSTRUMENTS
-
-        betfair_client = BetfairTestStubs.betfair_client()
-
-        logger = LiveLogger(loop=event_loop, clock=LiveClock(), level_stdout=LogLevel.DEBUG)
-        instrument_provider = BetfairInstrumentProvider(
-            client=betfair_client, logger=logger, market_filter={}
-        )
-        await instrument_provider.load_all_async()
-        INSTRUMENTS = instrument_provider.list_instruments()
-
     def test_subscriptions(self):
         self.client.subscribe_trade_ticks(BetfairTestStubs.instrument_id())
         self.client.subscribe_instrument_status_updates(BetfairTestStubs.instrument_id())
@@ -185,7 +153,7 @@ class TestBetfairExecutionClient:
         self.client._on_market_update(BetfairStreaming.mcm_HEARTBEAT())
 
     @pytest.mark.asyncio
-    async def test_market_sub_image_market_def(self, load_instruments):
+    async def test_market_sub_image_market_def(self):
         update = BetfairStreaming.mcm_SUB_IMAGE()
         self.client._on_market_update(update)
         result = [type(event).__name__ for event in self.messages]
@@ -216,7 +184,7 @@ class TestBetfairExecutionClient:
         )
         assert result == expected
 
-    def test_market_sub_image_no_market_def(self, load_instruments):
+    def test_market_sub_image_no_market_def(self):
         self.client._on_market_update(BetfairStreaming.mcm_SUB_IMAGE_no_market_def())
         result = Counter([type(event).__name__ for event in self.messages])
         expected = Counter(
@@ -228,13 +196,13 @@ class TestBetfairExecutionClient:
         )
         assert result == expected
 
-    def test_market_resub_delta(self, load_instruments):
+    def test_market_resub_delta(self):
         self.client._on_market_update(BetfairStreaming.mcm_RESUB_DELTA())
         result = [type(event).__name__ for event in self.messages]
         expected = ["InstrumentStatusUpdate"] * 12 + ["OrderBookDeltas"] * 269
         assert result == expected
 
-    def test_market_update(self, load_instruments):
+    def test_market_update(self):
         self.client._on_market_update(BetfairStreaming.mcm_UPDATE())
         result = [type(event).__name__ for event in self.messages]
         expected = ["OrderBookDeltas"] * 1
@@ -246,20 +214,20 @@ class TestBetfairExecutionClient:
         update_op = self.messages[0].deltas[0]
         assert update_op.order.price == 0.21277
 
-    def test_market_update_md(self, load_instruments):
+    def test_market_update_md(self):
         self.client._on_market_update(BetfairStreaming.mcm_UPDATE_md())
         result = [type(event).__name__ for event in self.messages]
         expected = ["InstrumentStatusUpdate"] * 2
         assert result == expected
 
     @pytest.mark.skip  # We don't do anything with traded volume at this stage
-    def test_market_update_tv(self, load_instruments):
+    def test_market_update_tv(self):
         self.client._on_market_update(BetfairStreaming.mcm_UPDATE_tv())
         result = [type(event).__name__ for event in self.messages]
         expected = [] * 7
         assert result == expected
 
-    def test_market_update_live_image(self, load_instruments):
+    def test_market_update_live_image(self):
         self.client._on_market_update(BetfairStreaming.mcm_live_IMAGE())
         result = [type(event).__name__ for event in self.messages]
         expected = (
@@ -267,7 +235,7 @@ class TestBetfairExecutionClient:
         )
         assert result == expected
 
-    def test_market_update_live_update(self, load_instruments):
+    def test_market_update_live_update(self):
         self.client._on_market_update(BetfairStreaming.mcm_live_UPDATE())
         result = [type(event).__name__ for event in self.messages]
         expected = ["TradeTick", "OrderBookDeltas"]
@@ -306,7 +274,7 @@ class TestBetfairExecutionClient:
         resp = self.messages[0]
         assert len(resp.data.instruments) == 9416
 
-    def test_orderbook_repr(self, load_instruments):
+    def test_orderbook_repr(self):
         self.client._on_market_update(BetfairStreaming.mcm_live_IMAGE())
         ob_snap = self.messages[14]
         ob = L2OrderBook(InstrumentId(Symbol("1"), BETFAIR_VENUE), 5, 5)
@@ -315,7 +283,7 @@ class TestBetfairExecutionClient:
         assert ob.best_ask_price() == 0.58824
         assert ob.best_bid_price() == 0.58480
 
-    def test_orderbook_updates(self, load_instruments):
+    def test_orderbook_updates(self):
         order_books = {}
         for raw_update in BetfairStreaming.market_updates():
             for update in on_market_update(
@@ -351,7 +319,7 @@ class TestBetfairExecutionClient:
         result = book.pprint()
         assert result == expected
 
-    def test_instrument_opening_events(self, load_instruments):
+    def test_instrument_opening_events(self):
         updates = BetfairDataProvider.raw_market_updates()
         messages = on_market_update(
             instrument_provider=self.client.instrument_provider(), update=updates[0]
@@ -366,7 +334,7 @@ class TestBetfairExecutionClient:
             and messages[0].status == InstrumentStatus.PRE_OPEN
         )
 
-    def test_instrument_in_play_events(self, load_instruments):
+    def test_instrument_in_play_events(self):
         events = [
             msg
             for update in BetfairDataProvider.raw_market_updates()
@@ -395,7 +363,7 @@ class TestBetfairExecutionClient:
         ]
         assert result == expected
 
-    def test_instrument_closing_events(self, load_instruments):
+    def test_instrument_closing_events(self):
         updates = BetfairDataProvider.raw_market_updates()
         messages = on_market_update(
             instrument_provider=self.client.instrument_provider(),
@@ -421,13 +389,13 @@ class TestBetfairExecutionClient:
             and messages[3].close_type == InstrumentCloseType.EXPIRED
         )
 
-    def test_betfair_ticker(self, load_instruments):
+    def test_betfair_ticker(self):
         self.client._on_market_update(BetfairStreaming.mcm_UPDATE_tv())
         ticker = self.messages[1]
         assert ticker.last_px == Price.from_str("0.31746")
         assert ticker.last_qty == Quantity.from_str("364.45")
 
-    def test_betfair_orderbook(self, load_instruments):
+    def test_betfair_orderbook(self):
         book = L2OrderBook(
             instrument_id=BetfairTestStubs.instrument_id(),
             price_precision=2,
