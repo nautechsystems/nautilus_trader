@@ -74,7 +74,7 @@ class TestBetfairDataClient:
         self.account_id = AccountId(self.venue.value, "001")
 
         # Setup logging
-        self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.DEBUG)
+        self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.ERROR)
         self._log = LoggerAdapter("TestBetfairExecutionClient", self.logger)
 
         self.msgbus = MessageBus(
@@ -260,7 +260,7 @@ class TestBetfairDataClient:
             "OrderBookSnapshot": 903,
             "BSPOrderBookDelta": 643,
             "OrderBookDeltas": 545,
-            "Ticker": 35,
+            "BetfairTicker": 35,
         }
         assert result == expected
 
