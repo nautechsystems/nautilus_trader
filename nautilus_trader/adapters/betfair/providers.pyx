@@ -94,9 +94,6 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
 
         self._log.info(f"{len(instruments)} Instruments created")
 
-    cpdef void _assert_loaded_instruments(self) except *:
-        assert self._instruments, "Instruments empty, has `load_all()` been called?"
-
     cpdef list load_markets(self, dict market_filter=None):
         """ Search for betfair markets. Useful for debugging / interactive use """
         return load_markets(client=self._client, market_filter=market_filter)
@@ -132,7 +129,6 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         return self._cache[key]
 
     cpdef list list_instruments(self):
-        self._assert_loaded_instruments()
         return list(self._instruments.values())
 
     async def get_account_currency(self) -> str:

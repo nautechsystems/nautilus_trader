@@ -103,6 +103,11 @@ class TestBetfairDataClient:
 
         self.betfair_client = BetfairTestStubs.betfair_client()
 
+        self.instrument_provider = BetfairTestStubs.instrument_provider(
+            betfair_client=self.betfair_client
+        )
+        self.instrument_provider.add_instruments(INSTRUMENTS)
+
         self.client = BetfairDataClient(
             loop=self.loop,
             client=self.betfair_client,
@@ -110,11 +115,9 @@ class TestBetfairDataClient:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            instrument_provider=self.instrument_provider,
             market_filter={},
         )
-
-        self.provider = self.client.instrument_provider()
-        self.provider.add_instruments(INSTRUMENTS)
 
         self.data_engine.register_client(self.client)
 
@@ -403,7 +406,9 @@ class TestBetfairDataClient:
             size_precision=2,
         )
         for update in BetfairDataProvider.raw_market_updates():
-            for message in on_market_update(instrument_provider=self.provider, update=update):
+            for message in on_market_update(
+                instrument_provider=self.instrument_provider, update=update
+            ):
                 try:
                     if isinstance(message, OrderBookSnapshot):
                         book.apply_snapshot(message)

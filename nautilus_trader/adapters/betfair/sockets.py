@@ -57,7 +57,7 @@ class BetfairStreamClient(SocketClient):
         self.unique_id = self.new_unique_id()
 
     def connect(self):
-        err = f"Must login to APIClient before calling connect on {self.__class__}"
+        err = f"Must login to BetfairClient before calling connect on {self.__class__}"
         assert self.client.session_token, err
         return super().connect()
 

@@ -26,7 +26,6 @@ class BetfairClient(HTTPClient):
         cert_dir: str,
         loop: asyncio.AbstractEventLoop,
         logger: Logger,
-        locale=None,
         ssl=None,
     ):
         super().__init__(
@@ -39,7 +38,6 @@ class BetfairClient(HTTPClient):
         self.password = password
         self.app_key = app_key
         self.session_token: Optional[str] = None
-        self._locale = locale
 
     @property
     def headers(self):
@@ -90,7 +88,15 @@ class BetfairClient(HTTPClient):
         await super().connect()
         await self.login()
 
+    async def disconnect(self):
+        self.session_token = None
+        await super().disconnect()
+
     async def login(self):
+        self._log.debug("BetfairClient login")
+        if self.session_token is not None:
+            self._log.warning("Already logged in, returning")
+            return
         url = self.IDENTITY_URL + "certlogin"
         data = {"username": self.username, "password": self.password}
         headers = {
@@ -106,7 +112,7 @@ class BetfairClient(HTTPClient):
         """
         List the tree (navigation) of all betfair markets
         """
-        resp = await self.get(url=self.NAVIGATION_URL, headers=self.headers, as_json=True)
+        resp = await self.get(url=self.NAVIGATION_URL, headers=self.headers)
         return orjson.loads(resp.data)
 
     async def list_market_catalogue(

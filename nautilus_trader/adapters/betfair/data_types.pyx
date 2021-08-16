@@ -72,40 +72,6 @@ cdef class BetfairTicker(Ticker):
         self.last_traded_price = last_traded_price
         self.traded_volume = traded_volume
 
-    @staticmethod
-    def from_dict(dict values) -> BetfairTicker:
-        return BetfairTicker.from_dict_c(values)
-
-    @staticmethod
-    def to_dict(BetfairTicker obj):
-        return BetfairTicker.to_dict_c(obj)
-
-    @staticmethod
-    cdef BetfairTicker from_dict_c(dict values):
-        Condition.not_none(values, "values")
-        cdef bytes info = values["info"]
-        return BetfairTicker(
-            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            ts_event=values["ts_event"],
-            ts_init=values["ts_init"],
-            last_traded_price=Price.from_str_c(values["last_traded_price"]),
-            traded_volume=Quantity.from_str_c(values["traded_volume"]),
-            info=orjson.loads(info) if info is not None else None,
-        )
-
-    @staticmethod
-    cdef dict to_dict_c(BetfairTicker obj):
-        Condition.not_none(obj, "obj")
-        return {
-            "type": type(obj).__name__,
-            "instrument_id": obj.instrument_id.value,
-            "ts_event": obj.ts_event,
-            "ts_init": obj.ts_init,
-            "last_traded_price": str(obj.last_traded_price),
-            "traded_volume": str(obj.traded_volume),
-            "info": orjson.dumps(obj.info) if obj.info is not None else None,
-        }
-
     @classmethod
     def schema(cls):
         return pa.schema(
@@ -120,6 +86,29 @@ cdef class BetfairTicker(Ticker):
         )
 
 
+def betfair_ticker_from_dict(values: dict):
+    return BetfairTicker(
+        instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+        ts_event=values["ts_event"],
+        ts_init=values["ts_init"],
+        last_traded_price=Price.from_str_c(values["last_traded_price"]),
+        traded_volume=Quantity.from_str_c(values["traded_volume"]),
+        info=orjson.loads(values['info']) if values['info'] is not None else None,
+    )
+
+
+def betfair_ticker_to_dict(ticker: BetfairTicker):
+    return {
+        "type": type(ticker).__name__,
+        "instrument_id": ticker.instrument_id.value,
+        "ts_event": ticker.ts_event,
+        "ts_init": ticker.ts_init,
+        "last_traded_price": str(ticker.last_traded_price),
+        "traded_volume": str(ticker.traded_volume),
+        "info": orjson.dumps(ticker.info) if ticker.info is not None else None,
+    }
+
+
 register_serializable_object(BSPOrderBookDelta, BSPOrderBookDelta.to_dict, BSPOrderBookDelta.from_dict)
-register_serializable_object(BetfairTicker, BetfairTicker.to_dict, BetfairTicker.from_dict)
+register_serializable_object(BetfairTicker, betfair_ticker_to_dict, betfair_ticker_from_dict)
 register_parquet(cls=BetfairTicker, schema=BetfairTicker.schema())

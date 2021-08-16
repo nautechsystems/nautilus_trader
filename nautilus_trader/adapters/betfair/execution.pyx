@@ -87,7 +87,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         LiveClock clock not None,
         Logger logger not None,
         dict market_filter not None,
-        bint load_instruments=True,
+        BetfairInstrumentProvider instrument_provider not None,
     ):
         """
         Initialize a new instance of the ``BetfairExecutionClient`` class.
@@ -113,8 +113,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         """
         self._client = client  # type: BetfairClient
-
-        cdef BetfairInstrumentProvider instrument_provider = BetfairInstrumentProvider(
+        self._instrument_provider: BetfairInstrumentProvider = instrument_provider or BetfairInstrumentProvider(
             client=client,
             logger=logger,
             market_filter=market_filter
@@ -127,7 +126,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             account_id=account_id,
             account_type=AccountType.CASH,
             base_currency=base_currency,
-            instrument_provider=instrument_provider,
+            instrument_provider=self._instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -180,7 +179,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         await self.stream.disconnect()
 
         # Ensure client closed
-        self._log.info("Closing APIClient...")
+        self._log.info("Closing BetfairClient...")
         self._client.disconnect()
 
         self.is_connected = False

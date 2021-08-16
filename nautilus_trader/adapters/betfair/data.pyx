@@ -69,7 +69,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         LiveClock clock not None,
         Logger logger not None,
         dict market_filter not None,
-        bint load_instruments=True,
+        BetfairInstrumentProvider instrument_provider not None,
         bint strict_handling=False,
     ):
         """
@@ -92,7 +92,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
         """
         self._client: BetfairClient = client
-        self._instrument_provider = BetfairInstrumentProvider(
+        self._instrument_provider: BetfairInstrumentProvider = instrument_provider or BetfairInstrumentProvider(
             client=client,
             logger=logger,
             market_filter=market_filter
@@ -123,16 +123,22 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._loop.create_task(self._connect())
 
     async def _connect(self):
-        self._log.info("Connecting to Betfair APIClient...")
-        self._client.login()
-        self._log.info("Betfair APIClient login successful.", LogColor.GREEN)
+        self._log.info("Connecting to BetfairClient...")
+        await self._client.connect()
+        self._log.info("BetfairClient login successful.", LogColor.GREEN)
 
         # Connect market data socket
         await self._stream.connect()
 
         # Pass any preloaded instruments into the engine
-        for instrument in self._instrument_provider.get_all().values():
+        instruments = self._instrument_provider.list_instruments()
+        if not instruments:
+            await self._instrument_provider.load_all_async()
+        instruments = self._instrument_provider.list_instruments()
+        self._log.debug(f"Loading {len(instruments)} instruments from provider into cache, ")
+        for instrument in instruments:
             self._handle_data(instrument)
+            self._cache.add_instrument(instrument)
 
         self._log.debug(f"DataEngine has {len(self._cache.instruments(BETFAIR_VENUE))} Betfair instruments")
 
@@ -159,22 +165,16 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         await self._stream.disconnect()
 
         # Ensure client closed
-        self._log.info("Closing APIClient...")
+        self._log.info("Closing BetfairClient...")
         self._client.client_logout()
 
+        self.is_connected = False
         self._log.info("Disconnected.")
 
     cpdef void _reset(self) except *:
         if self.is_connected:
             self._log.error("Cannot reset a connected data client.")
             return
-
-        # TODO: Reset client ?
-
-        self._instrument_provider = BetfairInstrumentProvider(
-            client=self._client,
-            load_all=False,
-        )
 
         self._subscribed_instrument_ids = set()
 

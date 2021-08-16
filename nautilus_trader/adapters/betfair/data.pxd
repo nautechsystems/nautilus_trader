@@ -26,12 +26,12 @@ cpdef enum SubscriptionStatus:
 
 cdef class BetfairDataClient(LiveMarketDataClient):
     cdef object _client
+    cdef BetfairInstrumentProvider _instrument_provider
     cdef object _stream
     cdef set _subscribed_instrument_ids
     cdef set _subscribed_market_ids
     cdef bint _strict_handling
     cdef SubscriptionStatus subscription_status
-    cdef BetfairInstrumentProvider _instrument_provider
 
     cpdef BetfairInstrumentProvider instrument_provider(self)
     cpdef void handle_data(self, Data data) except *

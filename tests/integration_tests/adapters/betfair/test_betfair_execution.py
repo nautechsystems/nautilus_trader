@@ -100,6 +100,9 @@ class TestBetfairExecutionClient:
 
         self.betfair_client: BetfairClient = BetfairTestStubs.betfair_client()
         assert self.betfair_client.session_token
+        self.instrument_provider = BetfairTestStubs.instrument_provider(
+            betfair_client=self.betfair_client
+        )
 
         self.client = BetfairExecutionClient(
             loop=asyncio.get_event_loop(),
@@ -110,8 +113,8 @@ class TestBetfairExecutionClient:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            instrument_provider=self.instrument_provider,
             market_filter={},
-            load_instruments=False,
         )
 
         self.exec_engine.register_client(self.client)

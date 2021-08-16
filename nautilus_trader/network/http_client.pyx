@@ -19,7 +19,6 @@ import socket
 from typing import Dict, List, Union
 
 import aiohttp
-import orjson
 from aiohttp import ClientResponse
 from aiohttp import ClientResponseError
 from aiohttp import ClientSession
@@ -82,12 +81,14 @@ cdef class HTTPClient:
         self._sessions: List[ClientSession] = []
 
     @property
-    def session(self) -> aiohttp.ClientSession:
+    def session(self) -> ClientSession:
         assert self._sessions, "No sessions, need to connect?"
-        return next(self._sessions)
+        session = next(self._sessions)  # type: ClientSession
+        return session
 
     async def connect(self):
-        self._sessions = itertools.cycle([aiohttp.ClientSession(
+        self._log.debug("Connecting sessions")
+        sessions = [aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(
                 limit=0,
                 resolver=aiohttp.AsyncResolver(
@@ -99,17 +100,22 @@ cdef class HTTPClient:
                 ssl=self._ssl,
                 **self._connector_kwargs
             )) for address in self._addresses
-        ])
+        ]
+        self._sessions = itertools.cycle(sessions)
+        self._log.debug(f"Connected sessions: {sessions}")
 
     async def disconnect(self):
         for session in self._sessions:
             self._log.debug(f"Closing session: {session}")
             await session.close()
 
-    # TODO clean this up
     async def request(self, method, url, headers=None, json=None, **kwargs) -> Union[bytes, Dict]:
-        self._log.debug(f"Request: {method=}, {url=}, {headers=}, {json=}, {kwargs if kwargs else ''}")
-        async with self.session.request(
+        # self._log.debug(f"Request: {method=}, {url=}, {headers=}, {json=}, {kwargs if kwargs else ''}")
+        session = self.session
+        if session.closed:
+            self._log.warning("Session closed! reconnecting")
+            await self.connect()
+        async with session.request(
             method=method,
             url=url,
             headers=headers,

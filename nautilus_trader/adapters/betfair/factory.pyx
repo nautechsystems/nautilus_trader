@@ -15,6 +15,9 @@
 
 import asyncio
 import os
+from functools import lru_cache
+
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
@@ -23,16 +26,51 @@ from nautilus_trader.live.data_client cimport LiveDataClientFactory
 from nautilus_trader.live.execution_client cimport LiveExecutionClientFactory
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-
 
 from nautilus_trader.adapters.betfair.data cimport BetfairDataClient
 from nautilus_trader.adapters.betfair.execution cimport BetfairExecutionClient
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 from nautilus_trader.adapters.betfair.client import BetfairClient
+from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.logging import LoggerAdapter
+
+
+CLIENTS = {}
+
+
+@lru_cache(1)
+def get_betfair_client(
+    username: str,
+    password: str,
+    app_key: str,
+    cert_dir: str,
+    loop: asyncio.AbstractEventLoop,
+    logger: Logger,
+) -> BetfairClient:
+    global CLIENTS
+    key = (username, password, app_key, cert_dir)
+    if key not in CLIENTS:
+        LoggerAdapter("BetfairFactory", logger).warning("Creating new instance of BetfairClient")
+        client = BetfairClient(
+            username=username,
+            password=password,
+            app_key=app_key,
+            cert_dir=cert_dir,
+            loop=loop,
+            logger=logger,
+        )
+        CLIENTS[key] = client
+    return CLIENTS[key]
+
+
+@lru_cache(1)
+def get_instrument_provider(client: BetfairClient, logger: Logger, market_filter: tuple):
+    LoggerAdapter("BetfairFactory", logger).warning("Creating new instance of BetfairInstrumentProvider")
+    # LoggerAdapter("BetfairFactory", logger).warning(f"kwargs: {locals()}")
+    return BetfairInstrumentProvider(client=client, logger=logger, market_filter=dict(market_filter))
 
 
 cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
@@ -74,8 +112,10 @@ cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
         BetfairDataClient
 
         """
+        market_filter = config.get("market_filter", {})
+
         # Create client
-        client = BetfairClient(
+        client = get_betfair_client(
             username=os.getenv(config.get("username", ""), ""),
             password=os.getenv(config.get("password", ""), ""),
             app_key=os.getenv(config.get("app_key", ""), ""),
@@ -83,6 +123,10 @@ cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
             loop=loop,
             logger=logger,
         )
+        provider = get_instrument_provider(client=client, logger=logger, market_filter=tuple(market_filter.items()))
+
+        print(f"PROVIDER: {provider}")
+        print(f"CLIENT: {client}")
 
         data_client = BetfairDataClient(
             loop=loop,
@@ -91,7 +135,8 @@ cdef class BetfairLiveDataClientFactory(LiveDataClientFactory):
             cache=cache,
             clock=clock,
             logger=logger,
-            market_filter=config.get("market_filter", {})
+            market_filter=market_filter,
+            instrument_provider=provider,
         )
         return data_client
 
@@ -139,8 +184,9 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
         BetfairExecClient
 
         """
-        # Create client
-        client = BetfairClient(
+        market_filter = config.get("market_filter", {})
+
+        client = get_betfair_client(
             username=os.getenv(config.get("username", ""), ""),
             password=os.getenv(config.get("password", ""), ""),
             app_key=os.getenv(config.get("app_key", ""), ""),
@@ -148,6 +194,10 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
             loop=loop,
             logger=logger,
         )
+        provider = get_instrument_provider(client=client, logger=logger, market_filter=tuple(market_filter.items()))
+
+        print(f"PROVIDER: {provider}")
+        print(f"CLIENT: {client}")
 
         # Get account ID env variable or set default
         account_id_env_var = os.getenv(config.get("account_id", ""), "001")
@@ -165,6 +215,7 @@ cdef class BetfairLiveExecutionClientFactory(LiveExecutionClientFactory):
             cache=cache,
             clock=clock,
             logger=logger,
-            market_filter=config.get("market_filter", {})
+            market_filter=market_filter,
+            instrument_provider=provider
         )
         return exec_client
