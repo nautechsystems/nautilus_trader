@@ -1,4 +1,5 @@
 import asyncio
+import sys
 
 import pytest
 
@@ -23,6 +24,9 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.integration_tests.adapters.betfair.test_kit import mock_client_request
 from tests.test_kit.stubs import TestStubs
+
+
+pytestmark = pytest.mark.skipif(sys.version_info < (3, 8), reason="Mock client broken on 3.7")
 
 
 class TestBetfairClient:
