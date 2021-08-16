@@ -86,10 +86,10 @@ cdef class TradingStrategy(Actor):
     type which determines how positions are handled by the `ExecutionEngine`.
 
     - OMSType.HEDGING: A position ID will be assigned for each new position
-      which is opened per instrument.
+    which is opened per instrument.
 
     - OMSType.NETTING: There will only ever be a single position for the strategy
-      per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
+    per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
 
     """
 
