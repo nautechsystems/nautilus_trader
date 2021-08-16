@@ -1,5 +1,5 @@
-Analysis
-========
+Accounting
+==========
 
 .. automodule:: nautilus_trader.accounting
 
