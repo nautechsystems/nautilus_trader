@@ -36,4 +36,5 @@ Index
     api_reference/network
     api_reference/portfolio
     api_reference/risk
+    api_reference/serialization
     api_reference/trading
