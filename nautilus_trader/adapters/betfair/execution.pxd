@@ -20,7 +20,7 @@ from nautilus_trader.network.http_client cimport HTTPClient
 
 cdef class BetfairExecutionClient(LiveExecutionClient):
     cdef object _client
-    cdef object _stream
+    cdef public object stream
 
     cdef public object venue_order_id_to_client_order_id
     cdef public set pending_update_order_client_ids

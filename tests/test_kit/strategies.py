@@ -13,11 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import datetime
-import threading
 from datetime import timedelta
 from decimal import Decimal
 from typing import Dict, Optional
 
+from nautilus_trader.adapters.betfair.common import MAX_BET_PROB
 from nautilus_trader.adapters.betfair.common import MIN_BET_PROB
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
@@ -34,6 +34,7 @@ from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
@@ -604,14 +605,10 @@ class RepeatedOrders(TradingStrategy):
         self.clock.set_timer(
             name="submit_order",
             handler=self.send_order,
-            interval=datetime.timedelta(milliseconds=5000),
+            interval=datetime.timedelta(milliseconds=10),
         )
 
-    def send_order(self, _):
-        all_threads = list(threading.enumerate())
-        for thread in all_threads:
-            print(thread.name)
-
+    def send_orders(self, _):
         self.log.debug("Checking order send")
 
         if self.cache.orders_working():
@@ -623,18 +620,28 @@ class RepeatedOrders(TradingStrategy):
             return
 
         self.log.debug("Sending order! ")
-        order = self.order_factory.limit(
+
+        buy = self.order_factory.limit(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             price=Price(MIN_BET_PROB, precision=self.instrument.price_precision),
             quantity=self.instrument.make_qty(self.trade_size),
         )
-        self.submit_order(order)
+        sell = self.order_factory.limit(
+            instrument_id=self.instrument_id,
+            order_side=OrderSide.SELL,
+            price=Price(MAX_BET_PROB, precision=self.instrument.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+        )
+        self.submit_order(buy)
+        self.submit_order(sell)
 
     def on_event(self, event: Event):
         if isinstance(event, OrderAccepted):
             order = self.cache.order(event.client_order_id)
             self.cancel_order(order=order)
+        elif isinstance(event, OrderCanceled):
+            self.send_orders(None)
 
     def on_stop(self):
         """

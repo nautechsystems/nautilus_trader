@@ -212,7 +212,7 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def betfair_client():
+    def betfair_client() -> BetfairClient:
         client = MagicMock(spec=BetfairClient)
         mock_async(
             client,
@@ -226,7 +226,7 @@ class BetfairTestStubs:
         )
         mock_async(client, "place_orders", BetfairResponses.betting_place_order_success())
         mock_async(client, "cancel_orders", BetfairResponses.betting_cancel_orders_success())
-        patch.object(client, "session_token", return_value="xxxsessionToken=")
+        client.session_token = "xxxsessionToken="
 
         return client
 

@@ -136,13 +136,13 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         )
 
         self.venue = BETFAIR_VENUE
-        self._stream = BetfairOrderStreamClient(
+        self.stream = BetfairOrderStreamClient(
             client=self._client,
             logger=logger,
             message_handler=self.handle_order_stream_update,
         )
         self.is_connected = False
-        self.venue_order_id_to_client_order_id = {}  # type: Dict[str, ClientOrderId]
+        self.venue_order_id_to_client_order_id = {}  # type: Dict[VenueOrderId, ClientOrderId]
         self.pending_update_order_client_ids = set()  # type: Set[(ClientOrderId, VenueOrderId)]
         self.published_executions = defaultdict(list)  # type: Dict[ClientOrderId, ExecutionId]
 
@@ -160,7 +160,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("BetfairClient login successful.", LogColor.GREEN)
 
         aws = [
-            self._stream.connect(),
+            self.stream.connect(),
             self.connection_account_state(),
             self.check_account_currency(),
         ]
@@ -177,7 +177,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         # Close socket
         self._log.info("Closing streaming socket...")
-        await self._stream.disconnect()
+        await self.stream.disconnect()
 
         # Ensure client closed
         self._log.info("Closing APIClient...")
@@ -250,14 +250,14 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             )
             self._log.debug(f"Generated _generate_order_rejected")
             return
-        bet_id = resp['instructionReports'][0]['betId']
-        self._log.debug(f"Matching venue_order_id: {bet_id} to client_order_id: {client_order_id}")
-        self.venue_order_id_to_client_order_id[bet_id] = client_order_id  # type: ignore
+        venue_order_id = VenueOrderId(resp['instructionReports'][0]['betId'])
+        self._log.debug(f"Matching venue_order_id: {venue_order_id} to client_order_id: {client_order_id}")
+        self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id  # type: ignore
         self.generate_order_accepted(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
             client_order_id=client_order_id,
-            venue_order_id=VenueOrderId(bet_id),  # type: ignore
+            venue_order_id=venue_order_id,  # type: ignore
             ts_event=self._clock.timestamp_ns(),
         )
         self._log.debug(f"Generated _generate_order_accepted")
@@ -342,7 +342,8 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         assert existing_order.venue_order_id == VenueOrderId(deleted_bet_id)
 
         instructions = resp["instructionReports"][0]["placeInstructionReport"]
-        self.venue_order_id_to_client_order_id[instructions["betId"]] = client_order_id
+        venue_order_id = VenueOrderId(instructions["betId"])
+        self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
         self.generate_order_updated(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
@@ -375,20 +376,22 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         # Format
         cancel_orders = order_cancel_to_betfair(command=command, instrument=instrument)  # type: ignore
-        self._log.debug(str(cancel_orders))
+        self._log.debug(f"cancel_orders {cancel_orders}")
 
         # Send to client
         resp = await self._client.cancel_orders(**cancel_orders)
 
+        self._log.debug(f"cancel_order resp {resp}")
+
         # Parse response
-        bet_id = resp['instructionReports'][0]['instruction']['betId']
-        self._log.debug(f"Matching venue_order_id: {bet_id} to client_order_id: {command.client_order_id}")
-        self.venue_order_id_to_client_order_id[VenueOrderId(bet_id)] = command.client_order_id  # type: ignore
+        venue_order_id = VenueOrderId(resp['instructionReports'][0]['instruction']['betId'])
+        self._log.debug(f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}")
+        self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id  # type: ignore
         self.generate_order_canceled(
             strategy_id=command.strategy_id,
             instrument_id=command.instrument_id,
             client_order_id=command.client_order_id,
-            venue_order_id=VenueOrderId(bet_id),  # type: ignore
+            venue_order_id=venue_order_id,  # type: ignore
             ts_event=self._clock.timestamp_ns(),
         )
         self._log.debug("Sent order cancel")
@@ -439,7 +442,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
     cpdef void handle_order_stream_update(self, bytes raw) except *:
         """ Handle an update from the order stream socket """
         cdef dict update = orjson.loads(raw)  # type: dict
-        self._loop.create_task(self._handle_order_stream_update(update=update))
+        self.create_task(self._handle_order_stream_update(update=update))
 
     async def _handle_order_stream_update(self, update):
         for market in update.get("oc", []):
@@ -475,7 +478,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         Handle update containing "E" (executable) order update
         """
         cdef VenueOrderId venue_order_id = VenueOrderId(update['id'])
-        cdef ClientOrderId client_order_id = self.venue_order_id_to_client_order_id[VenueOrderId(update['id'])]
+        cdef ClientOrderId client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
         cdef Order order = self._cache.order(client_order_id)
         cdef BettingInstrument instrument = self._cache.instrument(order.instrument_id)
 

@@ -14,11 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.execution import BetfairClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.parsing import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing import generate_trades_list
@@ -96,7 +98,8 @@ class TestBetfairExecutionClient:
             logger=self.logger,
         )
 
-        self.betfair_client = BetfairTestStubs.betfair_client()
+        self.betfair_client: BetfairClient = BetfairTestStubs.betfair_client()
+        assert self.betfair_client.session_token
 
         self.client = BetfairExecutionClient(
             loop=asyncio.get_event_loop(),
@@ -354,7 +357,7 @@ class TestBetfairExecutionClient:
         await asyncio.sleep(0)
 
         # Assert
-        assert len(self.messages) == 6
+        assert len(self.messages) == 7
 
     @pytest.mark.asyncio
     async def test_order_stream_empty_image(self):
@@ -368,7 +371,7 @@ class TestBetfairExecutionClient:
         await asyncio.sleep(0)
 
         # Assert
-        assert len(self.messages) == 0
+        assert len(self.messages) == 1
 
     @pytest.mark.asyncio
     async def test_order_stream_new_full_image(self):
@@ -378,7 +381,7 @@ class TestBetfairExecutionClient:
 
         await self.client._handle_order_stream_update(update=update)
         await asyncio.sleep(0)
-        assert len(self.messages) == 3
+        assert len(self.messages) == 4
 
     @pytest.mark.asyncio
     @pytest.mark.skip("Not implemented")
@@ -407,7 +410,7 @@ class TestBetfairExecutionClient:
         await asyncio.sleep(0)
 
         # Assert
-        assert len(self.messages) == 1
+        assert len(self.messages) == 2
 
     @pytest.mark.asyncio
     async def test_order_stream_filled(self):
@@ -421,9 +424,9 @@ class TestBetfairExecutionClient:
         await asyncio.sleep(0)
 
         # Assert
-        assert len(self.messages) == 1
-        assert isinstance(self.messages[0], OrderFilled)
-        assert self.messages[0].last_px == Price(0.90909, precision=5)
+        assert len(self.messages) == 2
+        assert isinstance(self.messages[1], OrderFilled)
+        assert self.messages[1].last_px == Price(0.90909, precision=5)
 
     @pytest.mark.asyncio
     async def test_order_stream_mixed(self):
@@ -437,7 +440,7 @@ class TestBetfairExecutionClient:
         await asyncio.sleep(0)
 
         # Assert
-        fill1, fill2, cancel = self.messages
+        _, fill1, fill2, cancel = self.messages
         assert isinstance(fill1, OrderFilled) and fill1.venue_order_id.value == "229430281341"
         assert isinstance(fill2, OrderFilled) and fill2.venue_order_id.value == "229430281339"
         assert isinstance(cancel, OrderCanceled) and cancel.venue_order_id.value == "229430281339"
@@ -499,7 +502,7 @@ class TestBetfairExecutionClient:
             await asyncio.sleep(0)
 
         # Assert
-        fill1, cancel, fill2, fill3 = self.messages
+        _, fill1, cancel, fill2, fill3 = self.messages
         # First order example, partial fill followed by remainder canceled
         assert isinstance(fill1, OrderFilled)
         assert isinstance(cancel, OrderCanceled)
@@ -516,36 +519,35 @@ class TestBetfairExecutionClient:
     @pytest.mark.asyncio
     async def test_betfair_order_reduces_balance(self):
         # Arrange
-        await self._setup_account()
+        self.client.stream = MagicMock()
+        self.exec_engine.start()
+        await asyncio.sleep(1)
+
         balance = self.cache.account_for_venue(self.venue).balances()[GBP]
 
         order = BetfairTestStubs.make_order(
             price=Price.from_str("0.5"), quantity=Quantity.from_int(10)
         )
+        self.cache.add_order(order=order, position_id=None)
         command = BetfairTestStubs.submit_order_command(order=order)
         self.client.submit_order(command)
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.01)
 
         # Act
-        self.client.generate_order_accepted(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId("1"),  # type: ignore
-            ts_event=0,
-        )
-        await asyncio.sleep(0)
         balance_order = self.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
 
         # Cancel the order, balance should return
         command = BetfairTestStubs.cancel_order_command(
-            client_order_id=order.client_order_id, venue_order_id=VenueOrderId("228302937743")
+            client_order_id=order.client_order_id, venue_order_id=order.venue_order_id
         )
         self.client.cancel_order(command)
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.1)
         balance_cancel = self.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
 
         # Assert
         assert balance.free == Money(1000.0, GBP)
         assert balance_order.free == Money(980.0, GBP)
         assert balance_cancel.free == Money(1000.0, GBP)
+
+        self.exec_engine.kill()
+        await asyncio.sleep(1)
