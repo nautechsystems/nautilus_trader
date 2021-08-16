@@ -35,10 +35,6 @@ cdef class Ticker(Data):
         InstrumentId instrument_id not None,
         int64_t ts_event,
         int64_t ts_init,
-        Price open=None,  # noqa (shadows built-in name open)
-        Price high=None,
-        Price low=None,
-        Price close=None,
         Quantity volume_quote=None,
         Quantity volume_base=None,  # Can be None
         Price bid=None,
@@ -56,14 +52,6 @@ cdef class Ticker(Data):
         ----------
         instrument_id : InstrumentId
             The instrument ID.
-        open : Price
-            The open price for the previous 24hr period.
-        high : Price
-            The high price for the previous 24hr period.
-        low : Price
-            The low price for the previous 24hr period.
-        close : Price
-            The close price for the previous 24hr period.
         volume_quote : Quantity
             The traded quote asset volume for the previous 24hr period.
         volume_base : Quantity
@@ -91,10 +79,6 @@ cdef class Ticker(Data):
         super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id
-        self.open = open
-        self.high = high
-        self.low = low
-        self.close = close
         self.volume_quote = volume_quote
         self.volume_base = volume_base
         self.bid = bid
@@ -114,10 +98,6 @@ cdef class Ticker(Data):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}"
                 f"(instrument_id={self.instrument_id.value}, "
-                f"open={self.open}, "
-                f"high={self.high}, "
-                f"low={self.low}, "
-                f"close={self.close}, "
                 f"volume_quote={self.volume_quote}, "
                 f"volume_base={self.volume_base}, "
                 f"bid={self.bid}, "
@@ -136,10 +116,6 @@ cdef class Ticker(Data):
         cdef bytes info = values["info"]
         return Ticker(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            open=Price.from_str_c(values["open"]),
-            high=Price.from_str_c(values["high"]),
-            low=Price.from_str_c(values["low"]),
-            close=Price.from_str_c(values["close"]),
             volume_quote=Quantity.from_str_c(values["volume_quote"]),
             volume_base=Quantity.from_str_c(vol_b) if vol_b is not None else None,
             bid=Price.from_str_c(values["bid"]),
@@ -159,10 +135,6 @@ cdef class Ticker(Data):
         return {
             "type": type(obj).__name__,
             "instrument_id": obj.instrument_id.value,
-            "open": str(obj.open),
-            "high": str(obj.high),
-            "low": str(obj.low),
-            "close": str(obj.close),
             "volume_quote": str(obj.volume_quote),
             "volume_base": str(obj.volume_base),
             "bid": str(obj.bid),

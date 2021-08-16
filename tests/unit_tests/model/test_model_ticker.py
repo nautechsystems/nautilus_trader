@@ -27,10 +27,8 @@ class TestQuoteTick:
         # Arrange
         ticker = Ticker(
             ETHUSDT_BINANCE.id,
-            Price.from_str("10000.00000000"),
-            Price.from_str("10000.00000000"),
-            Price.from_str("10000.00000000"),
-            Price.from_str("10000.00000000"),
+            0,
+            0,
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             Price.from_str("10000.00000000"),
@@ -39,29 +37,25 @@ class TestQuoteTick:
             Quantity.from_str("100"),
             Price.from_str("10000.00000000"),
             Quantity.from_str("50"),
-            0,
-            0,
         )
 
         # Act, Assert
         assert isinstance(hash(ticker), int)
         assert (
             str(ticker)
-            == "Ticker(instrument_id=ETH/USDT.BINANCE, open=10000.00000000, high=10000.00000000, low=10000.00000000, close=10000.00000000, volume_quote=100000, volume_base=100000, bid=10000.00000000, ask=10000.00000000, bid_size=100, ask_size=100, last_px=10000.00000000, last_qty=50, ts_event=0, info=None)"  # noqa
+            == "Ticker(instrument_id=ETH/USDT.BINANCE, volume_quote=100000, volume_base=100000, bid=10000.00000000, ask=10000.00000000, bid_size=100, ask_size=100, last_px=10000.00000000, last_qty=50, ts_event=0, info=None)"  # noqa
         )
         assert (
             repr(ticker)
-            == "Ticker(instrument_id=ETH/USDT.BINANCE, open=10000.00000000, high=10000.00000000, low=10000.00000000, close=10000.00000000, volume_quote=100000, volume_base=100000, bid=10000.00000000, ask=10000.00000000, bid_size=100, ask_size=100, last_px=10000.00000000, last_qty=50, ts_event=0, info=None)"  # noqa
+            == "Ticker(instrument_id=ETH/USDT.BINANCE, volume_quote=100000, volume_base=100000, bid=10000.00000000, ask=10000.00000000, bid_size=100, ask_size=100, last_px=10000.00000000, last_qty=50, ts_event=0, info=None)"  # noqa
         )
 
     def test_to_dict_returns_expected_dict(self):
         # Arrange
         ticker = Ticker(
             ETHUSDT_BINANCE.id,
-            Price.from_str("10000.00000000"),
-            Price.from_str("10000.00000000"),
-            Price.from_str("10000.00000000"),
-            Price.from_str("10000.00000000"),
+            0,
+            0,
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             Price.from_str("10000.00000000"),
@@ -70,8 +64,6 @@ class TestQuoteTick:
             Quantity.from_str("100"),
             Price.from_str("10000.00000000"),
             Quantity.from_str("50"),
-            0,
-            0,
         )
 
         # Act
@@ -81,10 +73,6 @@ class TestQuoteTick:
         assert result == {
             "type": "Ticker",
             "instrument_id": "ETH/USDT.BINANCE",
-            "open": "10000.00000000",
-            "high": "10000.00000000",
-            "low": "10000.00000000",
-            "close": "10000.00000000",
             "volume_quote": "100000",
             "volume_base": "100000",
             "bid": "10000.00000000",
@@ -102,10 +90,8 @@ class TestQuoteTick:
         # Arrange
         ticker = Ticker(
             ETHUSDT_BINANCE.id,
-            Price.from_str("10000.00000000"),
-            Price.from_str("10000.00000000"),
-            Price.from_str("10000.00000000"),
-            Price.from_str("10000.00000000"),
+            0,
+            0,
             Quantity.from_int(100000),
             Quantity.from_int(100000),
             Price.from_str("10000.00000000"),
@@ -114,8 +100,6 @@ class TestQuoteTick:
             Quantity.from_str("100"),
             Price.from_str("10000.00000000"),
             Quantity.from_str("50"),
-            0,
-            0,
         )
 
         # Act
