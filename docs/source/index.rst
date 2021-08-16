@@ -20,7 +20,6 @@ Index
     :caption: API Reference
     :hidden:
 
-    api_reference/accounting
     api_reference/analysis
     api_reference/backtest
     api_reference/cache

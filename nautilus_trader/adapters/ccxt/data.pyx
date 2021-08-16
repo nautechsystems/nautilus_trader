@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Any
 
 from cpython.datetime cimport datetime
 
@@ -1056,7 +1057,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         del data[-1]
 
         cdef list bars = []  # type: list[Bar]
-        cdef list values     # type: list[object]
+        cdef list values     # type: list[Any]
         for values in data:
             bars.append(self._parse_bar(
                 bar_type,
