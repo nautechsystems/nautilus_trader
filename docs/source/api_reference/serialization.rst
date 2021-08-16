@@ -30,12 +30,3 @@ Arrow
    :inherited-members:
    :members:
    :member-order: bysource
-
-Arrow - Schema
---------------
-
-.. automodule:: nautilus_trader.serialization.arrow.schema
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
