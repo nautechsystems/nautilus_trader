@@ -84,8 +84,8 @@ written in Cython, however the libraries can be accessed from both pure Python a
 ## Architecture Quality Attributes
 
 - Reliability
-- Performance
 - Testability
+- Performance
 - Modularity
 - Maintainability
 - Deployability
