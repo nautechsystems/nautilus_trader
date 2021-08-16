@@ -410,7 +410,7 @@ class BetfairTestStubs:
             strategy_id=TestStubs.strategy_id(),
             instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
             client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
-            venue_order_id=venue_order_id or VenueOrderId("229597791245"),
+            venue_order_id=venue_order_id or VenueOrderId("228302937743"),
             command_id=BetfairTestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )

@@ -95,7 +95,7 @@ class TestBetfairParsing:
             "customer_ref": result["customer_ref"],
             "instructions": [
                 {
-                    "betId": "229597791245",
+                    "betId": "228302937743",
                 }
             ],
         }
