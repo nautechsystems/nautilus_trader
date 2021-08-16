@@ -604,7 +604,7 @@ class RepeatedOrders(TradingStrategy):
 
         self.clock.set_timer(
             name="submit_order",
-            handler=self.send_order,
+            handler=self.send_orders,
             interval=datetime.timedelta(milliseconds=10),
         )
 
