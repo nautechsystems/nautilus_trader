@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -41,7 +41,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         self,
         client not None: BetfairClient,
         logger: Logger,
-        market_filter not None: dict,
+        market_filter: Optional[Dict] = None,
     ):
         """
         Initialize a new instance of the ``BetfairInstrumentProvider`` class.
