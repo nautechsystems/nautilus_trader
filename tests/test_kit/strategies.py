@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import datetime
 from datetime import timedelta
 from decimal import Decimal
 from typing import Dict, Optional
@@ -602,13 +601,13 @@ class RepeatedOrders(TradingStrategy):
             self.stop()
             return
 
-        self.clock.set_timer(
-            name="submit_order",
-            handler=self.send_orders,
-            interval=datetime.timedelta(milliseconds=10),
-        )
+        self.subscribe_order_book_deltas(instrument_id=self.instrument_id)
 
-    def send_orders(self, _):
+    def on_order_book_delta(self, data: OrderBookData):
+        if not self.cache.orders_inflight():
+            self.send_orders()
+
+    def send_orders(self):
         self.log.debug("Checking order send")
 
         if self.cache.orders_working():
@@ -619,7 +618,7 @@ class RepeatedOrders(TradingStrategy):
             self.log.debug("Order inflight, skipping")
             return
 
-        self.log.debug("Sending order! ")
+        self.log.info("Sending order! ")
 
         buy = self.order_factory.limit(
             instrument_id=self.instrument_id,
@@ -639,9 +638,11 @@ class RepeatedOrders(TradingStrategy):
     def on_event(self, event: Event):
         if isinstance(event, OrderAccepted):
             order = self.cache.order(event.client_order_id)
+            self.log.info(f"Cancelling order: {order}")
             self.cancel_order(order=order)
         elif isinstance(event, OrderCanceled):
-            self.send_orders(None)
+            self.log.info("Got cancel, sending again")
+            self.send_orders()
 
     def on_stop(self):
         """

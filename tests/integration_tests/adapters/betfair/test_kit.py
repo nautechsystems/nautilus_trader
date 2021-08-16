@@ -547,6 +547,10 @@ class BetfairResponses:
         return BetfairResponses.load("betting_cancel_orders_success.json")
 
     @staticmethod
+    def betting_cancel_orders_error():
+        return BetfairResponses.load("betting_cancel_orders_error.json")
+
+    @staticmethod
     def betting_place_order_error():
         return BetfairResponses.load("betting_place_order_error.json")
 

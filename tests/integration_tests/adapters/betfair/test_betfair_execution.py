@@ -33,6 +33,7 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
+from nautilus_trader.model.events.order import OrderCancelRejected
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.events.order import OrderPendingCancel
 from nautilus_trader.model.events.order import OrderPendingUpdate
@@ -191,7 +192,7 @@ class TestBetfairExecutionClient:
         return account_state
 
     @pytest.mark.asyncio
-    async def test_submit_order_success(self):
+    async def test_submit_order_success(self, resp):
         # Arrange
         command = BetfairTestStubs.submit_order_command()
 
@@ -326,9 +327,28 @@ class TestBetfairExecutionClient:
         assert isinstance(cancelled, OrderCanceled)
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Needs input data")
     async def test_cancel_order_fail(self):
-        pass
+        # Arrange
+        order = BetfairTestStubs.make_submitted_order()
+        self.cache.add_order(order, position_id=BetfairTestStubs.position_id())
+
+        command = BetfairTestStubs.cancel_order_command(
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=VenueOrderId("228302937743"),
+        )
+
+        # Act
+        mock_async(
+            self.betfair_client, "cancel_orders", BetfairResponses.betting_cancel_orders_error()
+        )
+        self.client.cancel_order(command)
+        await asyncio.sleep(0)
+
+        # Assert
+        pending_cancel, cancelled = self.messages
+        assert isinstance(pending_cancel, OrderPendingCancel)
+        assert isinstance(cancelled, OrderCancelRejected)
 
     @pytest.mark.asyncio
     @pytest.mark.skip(reason="Not implemented")

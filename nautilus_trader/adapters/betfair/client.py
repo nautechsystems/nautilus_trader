@@ -185,7 +185,7 @@ class BetfairClient(HTTPClient):
         resp = await self.rpc_post(
             url=self.BETTING_URL, method="SportsAPING/v1.0/placeOrders", params=params
         )
-        return resp
+        return resp["result"]
 
     async def replace_orders(
         self,
@@ -205,7 +205,7 @@ class BetfairClient(HTTPClient):
         resp = await self.rpc_post(
             url=self.BETTING_URL, method="SportsAPING/v1.0/replaceOrders", params=params
         )
-        return resp
+        return resp["result"]
 
     async def cancel_orders(
         self,
@@ -222,7 +222,7 @@ class BetfairClient(HTTPClient):
         resp = await self.rpc_post(
             url=self.BETTING_URL, method="SportsAPING/v1.0/cancelOrders", params=params
         )
-        return resp
+        return resp["result"]
 
 
 MARKET_PROJECTIONS = [

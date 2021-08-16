@@ -235,31 +235,33 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                             f"client_order_id={client_order_id} exception={e}")
             return
 
-        assert len(resp['instructionReports']) == 1, f"Should only be a single order, got: {resp['instructionReports']}"
+        self._log.info(f"resp: {resp}")
 
-        if resp["status"] == "FAILURE":
-            reason = f"{resp['errorCode']}: {resp['instructionReports'][0]['errorCode']}"
-            self._log.warning(f"Submit failed - {reason}")
-            self.generate_order_rejected(
-                strategy_id=command.strategy_id,
-                instrument_id=command.instrument_id,
-                client_order_id=client_order_id,
-                reason=reason,  # type: ignore
-                ts_event=self._clock.timestamp_ns(),
-            )
-            self._log.debug(f"Generated _generate_order_rejected")
-            return
-        venue_order_id = VenueOrderId(resp['instructionReports'][0]['betId'])
-        self._log.debug(f"Matching venue_order_id: {venue_order_id} to client_order_id: {client_order_id}")
-        self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id  # type: ignore
-        self.generate_order_accepted(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=client_order_id,
-            venue_order_id=venue_order_id,  # type: ignore
-            ts_event=self._clock.timestamp_ns(),
-        )
-        self._log.debug(f"Generated _generate_order_accepted")
+        for report in resp['instructionReports']:
+            if resp["status"] == "FAILURE":
+                reason = f"{resp['errorCode']}: {report['errorCode']}"
+                self._log.warning(f"Submit failed - {reason}")
+                self.generate_order_rejected(
+                    strategy_id=command.strategy_id,
+                    instrument_id=command.instrument_id,
+                    client_order_id=client_order_id,
+                    reason=reason,  # type: ignore
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                self._log.debug(f"Generated _generate_order_rejected")
+                return
+            else:
+                venue_order_id = VenueOrderId(report['betId'])
+                self._log.debug(f"Matching venue_order_id: {venue_order_id} to client_order_id: {client_order_id}")
+                self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id  # type: ignore
+                self.generate_order_accepted(
+                    strategy_id=command.strategy_id,
+                    instrument_id=command.instrument_id,
+                    client_order_id=client_order_id,
+                    venue_order_id=venue_order_id,  # type: ignore
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                self._log.debug(f"Generated _generate_order_accepted")
 
     cpdef void update_order(self, UpdateOrder command) except *:
         Condition.not_none(command, "command")
@@ -322,38 +324,38 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         resp = await self._client.replace_orders(**kw)
 
         # Check response
-        assert len(resp['instructionReports']) == 1, "Should only be a single order"
-        if resp["status"] == "FAILURE":
-            reason = f"{resp['errorCode']}: {resp['instructionReports'][0]['errorCode']}"
-            self._log.warning(f"Submit failed - {reason}")
-            self.generate_order_rejected(
+        for report in resp['instructionReports']:
+            if report["status"] == "FAILURE":
+                reason = f"{resp['errorCode']}: {report['errorCode']}"
+                self._log.warning(f"Submit failed - {reason}")
+                self.generate_order_rejected(
+                    strategy_id=command.strategy_id,
+                    instrument_id=command.instrument_id,
+                    client_order_id=command.client_order_id,
+                    reason=reason,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                return
+
+            # Check the venue_order_id that has been deleted currently exists on our order
+            deleted_bet_id = report["cancelInstructionReport"]["instruction"]["betId"]
+            self._log.debug(f"{existing_order}, {deleted_bet_id}")
+            assert existing_order.venue_order_id == VenueOrderId(deleted_bet_id)
+
+            update_instruction = report["placeInstructionReport"]
+            venue_order_id = VenueOrderId(update_instruction["betId"])
+            self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+            self.generate_order_updated(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
-                client_order_id=command.client_order_id,
-                reason=reason,
+                client_order_id=client_order_id,
+                venue_order_id=VenueOrderId(update_instruction["betId"]),
+                quantity=Quantity(update_instruction["instruction"]['limitOrder']["size"], precision=4),
+                price=price_to_probability(update_instruction["instruction"]['limitOrder']["price"]),
+                trigger=None,  # Not applicable for Betfair
                 ts_event=self._clock.timestamp_ns(),
+                venue_order_id_modified=True,
             )
-            return
-
-        # Check the venue_order_id that has been deleted currently exists on our order
-        deleted_bet_id = resp["instructionReports"][0]["cancelInstructionReport"]["instruction"]["betId"]
-        self._log.debug(f"{existing_order}, {deleted_bet_id}")
-        assert existing_order.venue_order_id == VenueOrderId(deleted_bet_id)
-
-        instructions = resp["instructionReports"][0]["placeInstructionReport"]
-        venue_order_id = VenueOrderId(instructions["betId"])
-        self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
-        self.generate_order_updated(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=client_order_id,
-            venue_order_id=VenueOrderId(instructions["betId"]),
-            quantity=Quantity(instructions["instruction"]['limitOrder']["size"], precision=4),
-            price=price_to_probability(instructions["instruction"]['limitOrder']["price"]),
-            trigger=None,  # Not applicable for Betfair
-            ts_event=self._clock.timestamp_ns(),
-            venue_order_id_modified=True,
-        )
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         Condition.not_none(command, "command")
@@ -383,17 +385,31 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"cancel_order resp {resp}")
 
         # Parse response
-        venue_order_id = VenueOrderId(resp['instructionReports'][0]['instruction']['betId'])
-        self._log.debug(f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}")
-        self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id  # type: ignore
-        self.generate_order_canceled(
-            strategy_id=command.strategy_id,
-            instrument_id=command.instrument_id,
-            client_order_id=command.client_order_id,
-            venue_order_id=venue_order_id,  # type: ignore
-            ts_event=self._clock.timestamp_ns(),
-        )
-        self._log.debug("Sent order cancel")
+        for report in resp['instructionReports']:
+            venue_order_id = VenueOrderId(report['instruction']['betId'])
+            if report["status"] == "FAILURE":
+                reason = f"{resp.get('errorCode', 'Error')}: {report['errorCode']}"
+                self.generate_order_cancel_rejected(
+                    strategy_id=command.strategy_id,
+                    instrument_id=command.instrument_id,
+                    client_order_id=command.client_order_id,
+                    venue_order_id=venue_order_id,
+                    response_to=command.id.value,
+                    reason=reason,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                return
+
+            self._log.debug(f"Matching venue_order_id: {venue_order_id} to client_order_id: {command.client_order_id}")
+            self.venue_order_id_to_client_order_id[venue_order_id] = command.client_order_id  # type: ignore
+            self.generate_order_canceled(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=venue_order_id,  # type: ignore
+                ts_event=self._clock.timestamp_ns(),
+            )
+            self._log.debug("Sent order cancel")
 
     # cpdef void bulk_submit_order(self, list commands):
     # betfair allows up to 200 inserts per request
