@@ -18,7 +18,7 @@ from collections import defaultdict
 from concurrent.futures import Executor
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import fsspec
 import pandas as pd
@@ -63,7 +63,7 @@ def parse_raw_file(f: RawFile, reader: ByteReader, instrument_provider=None):
 
 
 def nautilus_chunk_to_dataframes(  # noqa: C901
-    chunk: Optional[List[object]],
+    chunk: Optional[List[Any]],
 ) -> Dict[type, Dict[str, pd.DataFrame]]:
     """
     Split a chunk (list of nautilus objects) into a dict of their respective tables
@@ -71,7 +71,7 @@ def nautilus_chunk_to_dataframes(  # noqa: C901
     if chunk is None:
         return {}
     # Split objects into their respective tables
-    values: Dict[type, Dict[str, List[object]]] = {}
+    values: Dict[type, Dict[str, List[Any]]] = {}
     for obj in chunk:
         cls = get_cls_table(type(obj))
         if cls not in values:
