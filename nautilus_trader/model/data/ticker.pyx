@@ -19,15 +19,13 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class Ticker(Data):
     """
     The base class for all tickers.
 
-    Represents a market ticker for the previous 24hr period.
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -35,14 +33,6 @@ cdef class Ticker(Data):
         InstrumentId instrument_id not None,
         int64_t ts_event,
         int64_t ts_init,
-        Quantity volume_quote=None,
-        Quantity volume_base=None,  # Can be None
-        Price bid=None,
-        Price ask=None,
-        Quantity bid_size=None,
-        Quantity ask_size=None,
-        Price last_px=None,
-        Quantity last_qty=None,
         dict info=None,
     ):
         """
@@ -52,22 +42,6 @@ cdef class Ticker(Data):
         ----------
         instrument_id : InstrumentId
             The instrument ID.
-        volume_quote : Quantity
-            The traded quote asset volume for the previous 24hr period.
-        volume_base : Quantity
-            The traded base asset volume for the previous 24hr period.
-        bid : Price
-            The top of book bid price.
-        ask : Price
-            The top of book ask price.
-        bid_size : Quantity
-            The top of book bid size.
-        ask_size : Quantity
-            The top of book ask size.
-        last_px : Price
-            The last traded price.
-        last_qty : Quantity
-            The last traded quantity.
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the ticker event occurred.
         ts_init : int64
@@ -79,14 +53,6 @@ cdef class Ticker(Data):
         super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id
-        self.volume_quote = volume_quote
-        self.volume_base = volume_base
-        self.bid = bid
-        self.ask = ask
-        self.bid_size = bid_size
-        self.ask_size = ask_size
-        self.last_px = last_px
-        self.last_qty = last_qty
         self.info = info
 
     def __eq__(self, Ticker other) -> bool:
@@ -98,32 +64,15 @@ cdef class Ticker(Data):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}"
                 f"(instrument_id={self.instrument_id.value}, "
-                f"volume_quote={self.volume_quote}, "
-                f"volume_base={self.volume_base}, "
-                f"bid={self.bid}, "
-                f"ask={self.ask}, "
-                f"bid_size={self.bid_size}, "
-                f"ask_size={self.ask_size}, "
-                f"last_px={self.last_px}, "
-                f"last_qty={self.last_qty}, "
                 f"ts_event={self.ts_event}, "
                 f"info={self.info})")
 
     @staticmethod
     cdef Ticker from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef str vol_b = values["volume_base"]
         cdef bytes info = values["info"]
         return Ticker(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            volume_quote=Quantity.from_str_c(values["volume_quote"]),
-            volume_base=Quantity.from_str_c(vol_b) if vol_b is not None else None,
-            bid=Price.from_str_c(values["bid"]),
-            ask=Price.from_str_c(values["ask"]),
-            bid_size=Quantity.from_str_c(values["bid_size"]),
-            ask_size=Quantity.from_str_c(values["ask_size"]),
-            last_px=Price.from_str_c(values["last_px"]),
-            last_qty=Quantity.from_str_c(values["last_qty"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             info=orjson.loads(info) if info is not None else None,
@@ -135,14 +84,6 @@ cdef class Ticker(Data):
         return {
             "type": type(obj).__name__,
             "instrument_id": obj.instrument_id.value,
-            "volume_quote": str(obj.volume_quote),
-            "volume_base": str(obj.volume_base),
-            "bid": str(obj.bid),
-            "ask": str(obj.ask),
-            "bid_size": str(obj.bid_size),
-            "ask_size": str(obj.ask_size),
-            "last_px": str(obj.last_px),
-            "last_qty": str(obj.last_qty),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "info": orjson.dumps(obj.info) if obj.info is not None else None,

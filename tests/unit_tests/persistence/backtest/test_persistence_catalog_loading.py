@@ -116,19 +116,19 @@ def test_nautilus_chunk_to_dataframes(betfair_nautilus_objects):
             "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,237478,0.0.BETFAIR",
         ): 9348,
         (
-            "Ticker",
+            "BetfairTicker",
             "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,237478,0.0.BETFAIR",
         ): 852,
         (
-            "Ticker",
+            "BetfairTicker",
             "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,60424,0.0.BETFAIR",
         ): 967,
         (
-            "Ticker",
+            "BetfairTicker",
             "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,2696769,0.0.BETFAIR",
         ): 2305,
         (
-            "Ticker",
+            "BetfairTicker",
             "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,4297085,0.0.BETFAIR",
         ): 981,
         (

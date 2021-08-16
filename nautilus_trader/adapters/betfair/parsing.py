@@ -34,6 +34,7 @@ from nautilus_trader.adapters.betfair.common import N2B_SIDE
 from nautilus_trader.adapters.betfair.common import N2B_TIME_IN_FORCE
 from nautilus_trader.adapters.betfair.common import price_to_probability
 from nautilus_trader.adapters.betfair.common import probability_to_price
+from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.util import hash_json
 from nautilus_trader.adapters.betfair.util import one
@@ -45,7 +46,6 @@ from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
@@ -502,13 +502,15 @@ def _handle_market_runners_status(instrument_provider, market, ts_event, ts_init
 
 
 def _handle_ticker(runner: dict, instrument: BettingInstrument, ts_event, ts_init):
-    last_px = None
+    last_traded_price, traded_volume = None, None
     if "ltp" in runner:
-        last_px = price_to_probability(runner["ltp"], side=B2N_MARKET_STREAM_SIDE["atb"])
-    return Ticker(
+        last_traded_price = price_to_probability(runner["ltp"], side=B2N_MARKET_STREAM_SIDE["atb"])
+    if "tv" in runner:
+        traded_volume = Quantity(value=runner.get("tv"), precision=instrument.size_precision)
+    return BetfairTicker(
         instrument_id=instrument.id,
-        last_px=last_px,
-        last_qty=Quantity(value=runner.get("tv"), precision=instrument.size_precision),
+        last_traded_price=last_traded_price,
+        traded_volume=traded_volume,
         ts_init=ts_init,
         ts_event=ts_event,
     )

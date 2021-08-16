@@ -24,6 +24,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data import on_market_update
+from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -391,9 +392,9 @@ class TestBetfairDataClient:
 
     def test_betfair_ticker(self):
         self.client._on_market_update(BetfairStreaming.mcm_UPDATE_tv())
-        ticker = self.messages[1]
-        assert ticker.last_px == Price.from_str("0.31746")
-        assert ticker.last_qty == Quantity.from_str("364.45")
+        ticker: BetfairTicker = self.messages[1]
+        assert ticker.last_traded_price == Price.from_str("0.31746")
+        assert ticker.traded_volume == Quantity.from_str("364.45")
 
     def test_betfair_orderbook(self):
         book = L2OrderBook(
