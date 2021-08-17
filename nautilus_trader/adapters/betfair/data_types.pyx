@@ -15,8 +15,8 @@
 
 from libc.stdint cimport int64_t
 
+import orjson
 import pyarrow as pa
-from orjson import orjson
 
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 

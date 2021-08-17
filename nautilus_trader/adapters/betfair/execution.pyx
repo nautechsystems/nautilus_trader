@@ -242,7 +242,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 self._log.debug(f"Generated _generate_order_rejected")
                 return
             else:
-                venue_order_id = VenueOrderId(report['instruction']['betId'])
+                venue_order_id = VenueOrderId(report['betId'])
                 self._log.debug(f"Matching venue_order_id: {venue_order_id} to client_order_id: {client_order_id}")
                 self.venue_order_id_to_client_order_id[venue_order_id] = client_order_id  # type: ignore
                 self.generate_order_accepted(
