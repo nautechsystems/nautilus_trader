@@ -28,7 +28,7 @@ cdef class PortfolioFacade:
 
     cpdef Account account(self, Venue venue)
 
-    cpdef dict margins_initial(self, Venue venue)
+    cpdef dict margins_init(self, Venue venue)
     cpdef dict margins_maint(self, Venue venue)
     cpdef dict unrealized_pnls(self, Venue venue)
     cpdef dict net_exposures(self, Venue venue)

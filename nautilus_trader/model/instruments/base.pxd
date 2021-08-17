@@ -60,7 +60,7 @@ cdef class Instrument(Data):
     """The maximum printable price for the instrument.\n\n:returns: `Price` or None"""
     cdef readonly Price min_price
     """The minimum printable price for the instrument.\n\n:returns: `Price` or None"""
-    cdef readonly object margin_initial
+    cdef readonly object margin_init
     """The initial (order) margin rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object margin_maint
     """The maintenance (position) margin rate for the instrument.\n\n:returns: `Decimal`"""

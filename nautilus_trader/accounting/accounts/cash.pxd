@@ -25,7 +25,7 @@ cdef class CashAccount(Account):
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef Money calculate_margin_initial(
+    cpdef Money calculate_margin_init(
         self,
         Instrument instrument,
         Quantity quantity,

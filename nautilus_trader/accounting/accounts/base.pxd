@@ -68,8 +68,8 @@ cdef class Account:
     cpdef void apply(self, AccountState event) except *
     cpdef void update_balances(self, list balances) except *
     cpdef void update_commissions(self, Money commission) except *
-    cpdef void update_margin_initial(self, InstrumentId instrument_id, Money locked) except *
-    cpdef void clear_margin_initial(self, InstrumentId instrument_id) except *
+    cpdef void update_margin_init(self, InstrumentId instrument_id, Money locked) except *
+    cpdef void clear_margin_init(self, InstrumentId instrument_id) except *
     cdef void _recalculate_balance(self, Currency currency) except *
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------

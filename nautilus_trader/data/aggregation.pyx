@@ -86,7 +86,7 @@ cdef class BarBuilder:
         self._high = None
         self._low = None
         self._close = None
-        self.volume = Decimal()
+        self.volume = Decimal(0)
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -184,7 +184,7 @@ cdef class BarBuilder:
             self._low = None
             self._close = None
 
-        self.volume = Decimal()
+        self.volume = Decimal(0)
         self.count = 0
 
     cpdef Bar build_now(self):
@@ -496,7 +496,7 @@ cdef class ValueBarAggregator(BarAggregator):
             use_previous_close=False,
         )
 
-        self._cum_value = Decimal()  # Cumulative value
+        self._cum_value = Decimal(0)  # Cumulative value
 
     cpdef object get_cumulative_value(self):
         """
@@ -535,7 +535,7 @@ cdef class ValueBarAggregator(BarAggregator):
 
             # Build a bar and reset builder and cumulative value
             self._build_now_and_send()
-            self._cum_value = Decimal()
+            self._cum_value = Decimal(0)
 
             # Decrement the update size
             size_update -= size_diff

@@ -56,7 +56,7 @@ cdef class AccountsManager:
         self._log = log
         self._cache = cache
 
-    cdef AccountState update_margin_initial(
+    cdef AccountState update_margin_init(
         self,
         Account account,
         Instrument instrument,
@@ -75,6 +75,7 @@ cdef class AccountsManager:
         instrument : Instrument
             The instrument for the update.
         passive_orders_working : list[PassiveOrder]
+            The passive working orders for the update.
 
         Returns
         -------
@@ -84,28 +85,28 @@ cdef class AccountsManager:
         Condition.not_none(account, "account")
         Condition.not_none(instrument, "instrument")
         Condition.not_none(passive_orders_working, "orders_working")
-        Condition.list_type(passive_orders_working, PassiveOrder, "orders_working")
 
         if not passive_orders_working:
-            account.clear_margin_initial(instrument.id)
+            account.clear_margin_init(instrument.id)
             return self._generate_account_state(
                 account=account,
                 ts_event=account.last_event_c().ts_event,
             )
 
-        total_margin_initial: Decimal = Decimal(0)
+        total_margin_init: Decimal = Decimal(0)
         cdef Currency currency = instrument.get_cost_currency()
 
         cdef PassiveOrder order
         for order in passive_orders_working:
             assert order.instrument_id == instrument.id
+            assert order.is_working_c()
 
             # Calculate initial margin
-            margin_initial = account.calculate_margin_initial(
+            margin_init: Decimal = account.calculate_margin_init(
                 instrument,
                 order.quantity,
                 order.price,
-            )
+            ).as_decimal()
 
             if account.base_currency is not None:
                 currency = account.base_currency
@@ -123,15 +124,15 @@ cdef class AccountsManager:
                     )
                     return None  # Cannot calculate
 
-                margin_initial *= xrate
+                margin_init *= xrate
 
             # Increment total initial margin
-            total_margin_initial += margin_initial
+            total_margin_init += margin_init
 
-        cdef Money margin_initial_money = Money(total_margin_initial, currency)
-        account.update_margin_initial(instrument.id, margin_initial_money)
+        cdef Money margin_init_money = Money(total_margin_init, currency)
+        account.update_margin_init(instrument.id, margin_init_money)
 
-        self._log.info(f"{instrument.id} margin_initial={margin_initial_money.to_str()}")
+        self._log.info(f"{instrument.id} margin_init={margin_init_money.to_str()}")
 
         return self._generate_account_state(
             account=account,
@@ -179,14 +180,15 @@ cdef class AccountsManager:
         cdef Position position
         for position in positions_open:
             assert position.instrument_id == instrument.id
+            assert position.is_open_c()
 
             # Calculate margin
-            margin_maint = account.calculate_margin_maint(
+            margin_maint: Decimal = account.calculate_margin_maint(
                 instrument,
                 position.side,
                 position.quantity,
                 position.avg_px_open,
-            )
+            ).as_decimal()
 
             if account.base_currency is not None:
                 currency = account.base_currency
@@ -260,9 +262,7 @@ cdef class AccountsManager:
                 position_id = positions_open[0].id
 
         # Determine any position
-        cdef Position position = None
-        if position_id is not None:
-            position = self._cache.position(position_id)
+        cdef Position position = self._cache.position(position_id)
         # *** position could still be None here ***
 
         cdef list pnls = account.calculate_pnls(instrument, position, fill)
@@ -282,6 +282,8 @@ cdef class AccountsManager:
                 fill=fill,
                 pnls=pnls,
             )
+
+        account.update_commissions(fill.commission)
 
         return self._generate_account_state(account, fill.ts_event)
 
@@ -417,13 +419,18 @@ cdef class AccountsManager:
             ts_init=self._clock.timestamp_ns(),
         )
 
-    cdef object _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side):
-        if account.base_currency is not None:
+    cdef object _calculate_xrate_to_base(
+        self,
+        Account account,
+        Instrument instrument,
+        OrderSide side,
+    ):
+        if account.base_currency is None:
+            return Decimal(1)  # No conversion needed
+        else:
             return self._cache.get_xrate(
                 venue=instrument.id.venue,
                 from_currency=instrument.get_cost_currency(),
                 to_currency=account.base_currency,
                 price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
             )
-
-        return Decimal(1)  # No conversion needed

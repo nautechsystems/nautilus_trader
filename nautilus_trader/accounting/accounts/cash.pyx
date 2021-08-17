@@ -65,7 +65,7 @@ cdef class CashAccount(Account):
 
         self._balances_locked = {}  # type: dict[InstrumentId, Money]
 
-    cpdef void update_margin_initial(self, InstrumentId instrument_id, Money margin_initial) except *:
+    cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init) except *:
         """
         Update the initial (order) margin.
 
@@ -73,7 +73,7 @@ cdef class CashAccount(Account):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the margin.
-        margin_initial : Money
+        margin_init : Money
             The current initial (order) margin for the currency.
 
         Raises
@@ -87,13 +87,13 @@ cdef class CashAccount(Account):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(margin_initial, "margin_initial")
-        Condition.not_negative(margin_initial.as_decimal(), "margin_initial")
+        Condition.not_none(margin_init, "margin_init")
+        Condition.not_negative(margin_init.as_decimal(), "margin_init")
 
-        self._balances_locked[instrument_id] = margin_initial
-        self._recalculate_balance(margin_initial.currency)
+        self._balances_locked[instrument_id] = margin_init
+        self._recalculate_balance(margin_init.currency)
 
-    cpdef void clear_margin_initial(self, InstrumentId instrument_id) except *:
+    cpdef void clear_margin_init(self, InstrumentId instrument_id) except *:
         """
         Clear the locked balances for the given instrument ID.
 
@@ -199,7 +199,7 @@ cdef class CashAccount(Account):
         else:
             return Money(commission, instrument.quote_currency)
 
-    cpdef Money calculate_margin_initial(
+    cpdef Money calculate_margin_init(
         self,
         Instrument instrument,
         Quantity quantity,

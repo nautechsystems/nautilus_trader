@@ -229,7 +229,7 @@ def test_backtest_config_pickle(backtest_config):
 def test_tokenization(backtest_config):
     # All inputs to dask delayed functions must be deterministically tokenizable
     required = [
-        (backtest_config.instruments, "6b09b95fa1f857de7ef78b9a8888b124"),
+        (backtest_config.instruments, "cc57fd760292e5ada6c2f56247e1d292"),
         (backtest_config.venues, "70b12a5d8ef1300bc8db494f8378df77"),
     ]
     for inputs, value in required:

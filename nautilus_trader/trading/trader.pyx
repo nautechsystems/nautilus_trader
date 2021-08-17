@@ -293,13 +293,11 @@ cdef class Trader(Component):
         ------
         ValueError
             If strategies is None or empty.
-        TypeError
-            If strategies contains a type other than TradingStrategy.
 
         """
         Condition.not_empty(strategies, "strategies")
-        Condition.list_type(strategies, TradingStrategy, "strategies")
 
+        cdef TradingStrategy strategy
         for strategy in strategies:
             self.add_strategy(strategy)
 
@@ -354,13 +352,11 @@ cdef class Trader(Component):
         ------
         ValueError
             If components is None or empty.
-        TypeError
-            If components contains a type other than Actor.
 
         """
         Condition.not_empty(components, "components")
-        Condition.list_type(components, Actor, "components")
 
+        cdef Actor component
         for component in components:
             self.add_component(component)
 
