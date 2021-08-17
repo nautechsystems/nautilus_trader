@@ -258,13 +258,6 @@ class TestBetfairDataClient:
         expected = ["InstrumentStatusUpdate"] * 2
         assert result == expected
 
-    @pytest.mark.skip  # We don't do anything with traded volume at this stage
-    def test_market_update_tv(self):
-        self.client._on_market_update(BetfairStreaming.mcm_UPDATE_tv())
-        result = [type(event).__name__ for event in self.messages]
-        expected = [] * 7
-        assert result == expected
-
     def test_market_update_live_image(self):
         self.client._on_market_update(BetfairStreaming.mcm_live_IMAGE())
         result = [type(event).__name__ for event in self.messages]
