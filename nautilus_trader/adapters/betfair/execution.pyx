@@ -41,15 +41,14 @@ from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
-
-from nautilus_trader.model.events.account import AccountState
-
+from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport VenueOrderId
+from nautilus_trader.model.instruments.betting cimport BettingInstrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
@@ -67,8 +66,6 @@ from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
-
-from nautilus_trader.model.instruments.betting cimport BettingInstrument
 
 
 cdef class BetfairExecutionClient(LiveExecutionClient):
