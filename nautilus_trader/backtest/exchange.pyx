@@ -19,6 +19,7 @@ from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
 from libc.stdint cimport int64_t
 
+from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.backtest.execution cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
@@ -62,7 +63,6 @@ from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.trading.account cimport Account
 
 
 cdef class SimulatedExchange:
@@ -142,7 +142,7 @@ cdef class SimulatedExchange:
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(
-            component=f"{type(self).__name__}({venue})",
+            component_name=f"{type(self).__name__}({venue})",
             logger=logger,
         )
 
@@ -327,7 +327,7 @@ cdef class SimulatedExchange:
 
         self.exec_client = client
 
-        self._log.info(f"Registered {client}.")
+        self._log.info(f"Registered ExecutionClient {client}.")
 
     cpdef void set_fill_model(self, FillModel fill_model) except *:
         """
@@ -499,7 +499,7 @@ cdef class SimulatedExchange:
         Condition.not_none(command, "command")
 
         self._log.error("bracket orders are currently broken in this version.")
-        cdef PositionId position_id = self._generate_position_id(command.bracket_order.entry.instrument_id)
+        cdef PositionId position_id = self._generate_venue_position_id(command.bracket_order.entry.instrument_id)
 
         cdef list bracket_orders = [command.bracket_order.stop_loss]
         self._position_oco_orders[position_id] = []
@@ -565,7 +565,7 @@ cdef class SimulatedExchange:
             for instrument_id, book in self._books.items() if book.best_ask_price()
         }
 
-    cdef PositionId _generate_position_id(self, InstrumentId instrument_id):
+    cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id):
         cdef int pos_count = self._symbol_pos_count.get(instrument_id, 0)
         pos_count += 1
         self._symbol_pos_count[instrument_id] = pos_count
@@ -929,7 +929,7 @@ cdef class SimulatedExchange:
                     order.venue_order_id,
                     "update order",
                     f"STOP_LIMIT {OrderSideParser.to_str(order.side)} order "
-                    f"new stop px trigger of {price} was in the market: "
+                    f"new trigger stop px of {price} was in the market: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
                 )
@@ -1171,8 +1171,8 @@ cdef class SimulatedExchange:
         if OMSType.HEDGING and position_id is None:
             position_id = self.cache.position_id(order.client_order_id)
             if position_id is None:
-                # Generate a position ID
-                position_id = self._generate_position_id(order.instrument_id)
+                # Generate a venue position ID
+                position_id = self._generate_venue_position_id(order.instrument_id)
         elif OMSType.NETTING:
             # Check for open positions
             positions_open = self.cache.positions_open(
@@ -1180,8 +1180,6 @@ cdef class SimulatedExchange:
                 instrument_id=order.instrument_id,
             )
             if positions_open:
-                # Design-time invariant: netting OMS maintains a single position
-                assert len(positions_open) == 1
                 position_id = positions_open[0].id
 
         # Determine any position
@@ -1192,7 +1190,8 @@ cdef class SimulatedExchange:
 
         # Calculate commission
         cdef Instrument instrument = self.instruments[order.instrument_id]
-        cdef Money commission = instrument.calculate_commission(
+        cdef Money commission = self.exec_client.get_account().calculate_commission(
+            instrument=instrument,
             last_qty=order.quantity,
             last_px=last_px,
             liquidity_side=liquidity_side,
@@ -1204,8 +1203,8 @@ cdef class SimulatedExchange:
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id or self._generate_venue_order_id(order.instrument_id),
+            venue_position_id=None if self.oms_type == OMSType.NETTING else position_id,  # noqa
             execution_id=self._generate_execution_id(),
-            position_id=None if self.oms_type == OMSType.NETTING else position_id,
             order_side=order.side,
             order_type=order.type,
             last_qty=last_qty,
@@ -1269,7 +1268,7 @@ cdef class SimulatedExchange:
         # order is the OCO order to reject
         # other_oco is the linked ClientOrderId
         if order.is_completed_c():
-            self._log.debug(f"Cannot reject order: state was already {order.state_string_c()}.")
+            self._log.debug(f"Cannot reject order: state was already {order.status_string_c()}.")
             return
 
         # Generate event
@@ -1278,7 +1277,7 @@ cdef class SimulatedExchange:
     cdef void _cancel_oco_order(self, PassiveOrder order) except *:
         # order is the OCO order to cancel
         if order.is_completed_c():
-            self._log.debug(f"Cannot cancel order: state was already {order.state_string_c()}.")
+            self._log.debug(f"Cannot cancel order: state was already {order.status_string_c()}.")
             return
 
         # Generate event

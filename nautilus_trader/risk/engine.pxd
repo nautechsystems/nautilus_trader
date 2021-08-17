@@ -32,8 +32,8 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.bracket cimport BracketOrder
-from nautilus_trader.msgbus.message_bus cimport MessageBus
-from nautilus_trader.trading.portfolio cimport PortfolioFacade
+from nautilus_trader.msgbus.bus cimport MessageBus
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class RiskEngine(Component):

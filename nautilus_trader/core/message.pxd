@@ -59,7 +59,7 @@ cdef class Event(Message):
 
 cdef class Request(Message):
     cdef readonly object callback
-    """The callback for the response.\n\n:returns: `callable`"""
+    """The callback for the response.\n\n:returns: `Callable`"""
 
 
 cdef class Response(Message):

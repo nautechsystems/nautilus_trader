@@ -63,8 +63,8 @@ cdef class Position:
 
         self._events = []         # type: list[OrderFilled]
         self._execution_ids = []  # type: list[ExecutionId]
-        self._buy_qty = Decimal()
-        self._sell_qty = Decimal()
+        self._buy_qty = Decimal(0)
+        self._sell_qty = Decimal(0)
         self._commissions = {}
 
         # Identifiers
@@ -78,7 +78,7 @@ cdef class Position:
         # Properties
         self.entry = fill.side
         self.side = Position.side_from_order_side(fill.side)
-        self.net_qty = Decimal()
+        self.net_qty = Decimal(0)
         self.quantity = Quantity.zero_c(precision=instrument.size_precision)
         self.peak_qty = Quantity.zero_c(precision=instrument.size_precision)
         self.ts_init = fill.ts_init
@@ -96,8 +96,8 @@ cdef class Position:
         self.base_currency = instrument.get_base_currency()  # Can be None
         self.cost_currency = instrument.get_cost_currency()
 
-        self.realized_points = Decimal()
-        self.realized_return = Decimal()
+        self.realized_points = Decimal(0)
+        self.realized_return = Decimal(0)
         self.realized_pnl = Money(0, self.cost_currency)
 
         self.apply(fill)
@@ -109,7 +109,19 @@ cdef class Position:
         return hash(self.id.value)
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self.status_string_c()}, id={self.id.value})"
+        return f"{type(self).__name__}({self.info()}, id={self.id.value})"
+
+    cpdef str info(self):
+        """
+        Return a summary description of the position.
+
+        Returns
+        -------
+        str
+
+        """
+        cdef str quantity = " " if self.net_qty == 0 else f" {self.quantity.to_str()} "
+        return f"{PositionSideParser.to_str(self.side)}{quantity}{self.instrument_id}"
 
     cpdef dict to_dict(self):
         """
@@ -168,10 +180,6 @@ cdef class Position:
 
     cdef int event_count_c(self) except *:
         return len(self._events)
-
-    cdef str status_string_c(self):
-        cdef str quantity = " " if self.net_qty == 0 else f" {self.quantity.to_str()} "
-        return f"{PositionSideParser.to_str(self.side)}{quantity}{self.instrument_id}"
 
     cdef bint is_open_c(self) except *:
         return self.side != PositionSide.FLAT
@@ -419,7 +427,7 @@ cdef class Position:
 
         # Calculate cumulative commission
         cdef Currency currency = fill.commission.currency
-        cdef Money cum_commission = Money(self._commissions.get(currency, Decimal()) + fill.commission, currency)
+        cdef Money cum_commission = Money(self._commissions.get(currency, Decimal(0)) + fill.commission, currency)
         self._commissions[currency] = cum_commission
 
         # Calculate avg prices, points, return, PnL
@@ -435,9 +443,15 @@ cdef class Position:
 
         # Set state
         if self.net_qty > 0:
+            self.entry = OrderSide.BUY
             self.side = PositionSide.LONG
+            self.ts_closed = 0
+            self.duration_ns = 0
         elif self.net_qty < 0:
+            self.entry = OrderSide.SELL
             self.side = PositionSide.SHORT
+            self.ts_closed = 0
+            self.duration_ns = 0
         else:
             self.side = PositionSide.FLAT
             self.ts_closed = fill.ts_event
@@ -574,7 +588,7 @@ cdef class Position:
         if fill.commission.currency == self.cost_currency:
             realized_pnl: Decimal = -fill.commission.as_decimal()
         else:
-            realized_pnl: Decimal = Decimal()
+            realized_pnl: Decimal = Decimal(0)
 
         # LONG POSITION
         if self.net_qty > 0:
@@ -597,7 +611,7 @@ cdef class Position:
         if fill.commission.currency == self.cost_currency:
             realized_pnl: Decimal = -fill.commission.as_decimal()
         else:
-            realized_pnl: Decimal = Decimal()
+            realized_pnl: Decimal = Decimal(0)
 
         # SHORT POSITION
         if self.net_qty < 0:
@@ -641,7 +655,7 @@ cdef class Position:
         elif self.side == PositionSide.SHORT:
             return avg_px_open - avg_px_close
         else:
-            return Decimal()  # FLAT
+            return Decimal(0)  # FLAT
 
     cdef object _calculate_points_inverse(self, avg_px_open: Decimal, avg_px_close: Decimal):
         if self.side == PositionSide.LONG:
@@ -649,7 +663,7 @@ cdef class Position:
         elif self.side == PositionSide.SHORT:
             return (1 / avg_px_close) - (1 / avg_px_open)
         else:
-            return Decimal()  # FLAT
+            return Decimal(0)  # FLAT
 
     cdef object _calculate_return(self, avg_px_open: Decimal, avg_px_close: Decimal):
         return self._calculate_points(avg_px_open, avg_px_close) / avg_px_open

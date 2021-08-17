@@ -25,6 +25,7 @@ cdef class LiveDataEngine(DataEngine):
     cdef Queue _message_queue
 
     cdef readonly bint is_running
+    """If the data engine is running.\n\n:returns: `bool`"""
 
     cpdef int data_qsize(self) except *
     cpdef int message_qsize(self) except *

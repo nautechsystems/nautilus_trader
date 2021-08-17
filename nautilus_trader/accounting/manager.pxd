@@ -1,0 +1,43 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
+from libc.stdint cimport int64_t
+
+from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.accounts.margin cimport MarginAccount
+from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.events.account cimport AccountState
+from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Money
+
+
+cdef class AccountsManager:
+    cdef Clock _clock
+    cdef UUIDFactory _uuid_factory
+    cdef LoggerAdapter _log
+    cdef CacheFacade _cache
+
+    cdef AccountState update_margin_init(self, Account account, Instrument instrument, list passive_orders_working)
+    cdef AccountState update_margin_maint(self, MarginAccount account, Instrument instrument, list positions_open)
+    cdef AccountState update_balances(self, Account account, Instrument instrument, OrderFilled fill)
+    cdef void _update_balance_single_currency(self, Account account, OrderFilled fill, Money pnl) except *
+    cdef void _update_balance_multi_currency(self, Account account, OrderFilled fill, list pnls) except *
+    cdef AccountState _generate_account_state(self, Account account, int64_t ts_event)
+    cdef object _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)

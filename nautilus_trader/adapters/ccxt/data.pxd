@@ -28,14 +28,6 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     cdef object _client
     cdef CCXTInstrumentProvider _instrument_provider
 
-    cdef set _subscribed_instruments
-    cdef dict _subscribed_order_books
-    cdef dict _subscribed_quote_ticks
-    cdef dict _subscribed_trade_ticks
-    cdef dict _subscribed_bars
-
-    cdef object _update_instruments_task
-
     cdef void _log_ccxt_error(self, ex, str method_name) except *
     cdef int64_t _ccxt_to_timestamp_ns(self, int64_t millis) except *
     cdef void _on_quote_tick(
@@ -65,10 +57,10 @@ cdef class CCXTDataClient(LiveMarketDataClient):
     cdef void _on_bar(
         self,
         BarType bar_type,
-        double open_price,
-        double high_price,
-        double low_price,
-        double close_price,
+        double open,
+        double high,
+        double low,
+        double close,
         double volume,
         int64_t ts_event,
         int64_t ts_init,

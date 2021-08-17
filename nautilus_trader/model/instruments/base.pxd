@@ -17,8 +17,6 @@ from decimal import Decimal
 
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -63,9 +61,9 @@ cdef class Instrument(Data):
     cdef readonly Price min_price
     """The minimum printable price for the instrument.\n\n:returns: `Price` or None"""
     cdef readonly object margin_init
-    """The initial margin rate for the instrument.\n\n:returns: `Decimal`"""
+    """The initial (order) margin rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object margin_maint
-    """The maintenance margin rate for the instrument.\n\n:returns: `Decimal`"""
+    """The maintenance (position) margin rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object maker_fee
     """The maker fee rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object taker_fee
@@ -84,6 +82,3 @@ cdef class Instrument(Data):
     cpdef Price make_price(self, value)
     cpdef Quantity make_qty(self, value)
     cpdef Money notional_value(self, Quantity quantity, price: Decimal, bint inverse_as_quote=*)
-    cpdef Money calculate_initial_margin(self, Quantity quantity, Price price, leverage=*, bint inverse_as_quote=*)
-    cpdef Money calculate_maint_margin(self, PositionSide side, Quantity quantity, Price last, leverage=*, bint inverse_as_quote=*)
-    cpdef Money calculate_commission(self, Quantity last_qty, last_px: Decimal, LiquiditySide liquidity_side, bint inverse_as_quote=*)

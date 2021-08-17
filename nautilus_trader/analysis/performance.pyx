@@ -37,12 +37,12 @@ import pandas as pd
 from scipy.stats import kurtosis
 from scipy.stats import skew
 
+from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.trading.account cimport Account
 
 
 cdef class PerformanceAnalyzer:

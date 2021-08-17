@@ -7,7 +7,16 @@ Message Bus
 Message Bus
 -----------
 
-.. automodule:: nautilus_trader.msgbus.message_bus
+.. automodule:: nautilus_trader.msgbus.bus
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Subscription
+------------
+
+.. automodule:: nautilus_trader.msgbus.subscription
    :show-inheritance:
    :inherited-members:
    :members:

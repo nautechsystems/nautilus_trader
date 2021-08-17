@@ -23,9 +23,6 @@ from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.c_enums.asset_type cimport AssetTypeParser
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
-from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
-from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Quantity
@@ -90,24 +87,24 @@ cdef class Instrument(Data):
             The minimum size increment.
         multiplier : Decimal
             The contract value multiplier (determines tick value).
-        lot_size : Quantity
+        lot_size : Quantity, optional
             The rounded lot unit size (standard/board).
-        max_quantity : Quantity
+        max_quantity : Quantity, optional
             The maximum allowable order quantity.
-        min_quantity : Quantity
+        min_quantity : Quantity, optional
             The minimum allowable order quantity.
-        max_notional : Money
+        max_notional : Money, optional
             The maximum allowable order notional value.
-        min_notional : Money
+        min_notional : Money, optional
             The minimum allowable order notional value.
-        max_price : Price
+        max_price : Price, optional
             The maximum allowable printed price.
-        min_price : Price
+        min_price : Price, optional
             The minimum allowable printed price.
         margin_init : Decimal
-            The initial margin requirement in percentage of order value.
+            The initial (order) margin requirement in percentage of order value.
         margin_maint : Decimal
-            The maintenance margin in percentage of position value.
+            The maintenance (position) margin in percentage of position value.
         maker_fee : Decimal
             The fee rate for liquidity makers as a percentage of order value.
         taker_fee : Decimal
@@ -450,162 +447,3 @@ cdef class Instrument(Data):
         else:
             notional_value: Decimal = quantity * self.multiplier * price
             return Money(notional_value, self.quote_currency)
-
-    cpdef Money calculate_initial_margin(
-        self,
-        Quantity quantity,
-        Price price,
-        leverage: Decimal=Decimal(1),
-        bint inverse_as_quote=False,
-    ):
-        """
-        Calculate the initial margin from the given parameters.
-
-        Result will be in quote currency for standard instruments, or base
-        currency for inverse instruments.
-
-        Parameters
-        ----------
-        quantity : Quantity
-            The order quantity.
-        price : Price
-            The order price.
-        leverage : Decimal, optional
-            The current account leverage for the instrument.
-        inverse_as_quote : bool
-            If inverse instrument calculations use quote currency (instead of base).
-
-        Returns
-        -------
-        Money
-
-        """
-        Condition.not_none(quantity, "quantity")
-        Condition.not_none(price, "price")
-
-        notional: Decimal = self.notional_value(
-            quantity=quantity,
-            price=price.as_decimal(),
-            inverse_as_quote=inverse_as_quote,
-        ).as_decimal()
-
-        adjusted_notional: Decimal = notional / leverage
-
-        margin: Decimal = adjusted_notional * self.margin_init
-        margin += (adjusted_notional * self.taker_fee * 2)
-
-        if self.is_inverse and not inverse_as_quote:
-            return Money(margin, self.base_currency)
-        else:
-            return Money(margin, self.quote_currency)
-
-    cpdef Money calculate_maint_margin(
-        self,
-        PositionSide side,
-        Quantity quantity,
-        Price last,
-        leverage: Decimal=Decimal(1),
-        bint inverse_as_quote=False,
-    ):
-        """
-        Calculate the maintenance margin from the given parameters.
-
-        Result will be in quote currency for standard instruments, or base
-        currency for inverse instruments.
-
-        Parameters
-        ----------
-        side : PositionSide
-            The currency position side.
-        quantity : Quantity
-            The currency position quantity.
-        last : Price
-            The position instruments last price.
-        leverage : Decimal, optional
-            The current account leverage for the instrument.
-        inverse_as_quote : bool
-            If inverse instrument calculations use quote currency (instead of base).
-
-        Returns
-        -------
-        Money
-
-        """
-        # side checked in _get_close_price
-        Condition.not_none(quantity, "quantity")
-        Condition.not_none(last, "last")
-
-        notional: Decimal = self.notional_value(
-            quantity=quantity,
-            price=last.as_decimal(),
-            inverse_as_quote=inverse_as_quote
-        ).as_decimal()
-
-        adjusted_notional: Decimal = notional / leverage
-
-        margin: Decimal = adjusted_notional * self.margin_maint
-        margin += adjusted_notional * self.taker_fee
-
-        if self.is_inverse and not inverse_as_quote:
-            return Money(margin, self.base_currency)
-        else:
-            return Money(margin, self.quote_currency)
-
-    cpdef Money calculate_commission(
-        self,
-        Quantity last_qty,
-        last_px: Decimal,
-        LiquiditySide liquidity_side,
-        bint inverse_as_quote=False,
-    ):
-        """
-        Calculate the commission generated from a transaction with the given
-        parameters.
-
-        Result will be in quote currency for standard instruments, or base
-        currency for inverse instruments.
-
-        Parameters
-        ----------
-        last_qty : Quantity
-            The transaction quantity.
-        last_px : Decimal or Price
-            The transaction price.
-        liquidity_side : LiquiditySide
-            The liquidity side for the transaction.
-        inverse_as_quote : bool
-            If inverse instrument calculations use quote currency (instead of base).
-
-        Returns
-        -------
-        Money
-
-        Raises
-        ------
-        ValueError
-            If liquidity_side is NONE.
-
-        """
-        Condition.not_none(last_qty, "last_qty")
-        Condition.type(last_px, (Decimal, Price), "last_px")
-        Condition.not_equal(liquidity_side, LiquiditySide.NONE, "liquidity_side", "NONE")
-
-        notional: Decimal = self.notional_value(
-            quantity=last_qty,
-            price=last_px,
-            inverse_as_quote=inverse_as_quote,
-        ).as_decimal()
-
-        if liquidity_side == LiquiditySide.MAKER:
-            commission: Decimal = notional * self.maker_fee
-        elif liquidity_side == LiquiditySide.TAKER:
-            commission: Decimal = notional * self.taker_fee
-        else:
-            raise ValueError(
-                f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
-            )
-
-        if self.is_inverse and not inverse_as_quote:
-            return Money(commission, self.base_currency)
-        else:
-            return Money(commission, self.quote_currency)

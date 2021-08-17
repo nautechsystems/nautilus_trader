@@ -67,7 +67,7 @@ cdef class PositionSizer:
         Price stop_loss,
         Money equity,
         risk: Decimal,
-        commission_rate: Decimal=Decimal(),
+        commission_rate: Decimal=Decimal(0),
         exchange_rate: Decimal=Decimal(1),
         hard_limit: Decimal=None,
         unit_batch_size: Decimal=Decimal(1),
@@ -86,7 +86,7 @@ cdef class PositionSizer:
             commission_rate: Decimal,
     ):
         if equity <= 0:
-            return Decimal()
+            return Decimal(0)
         risk_money: Decimal = equity * risk
         commission: Decimal = risk_money * commission_rate * 2  # (round turn)
 
@@ -116,7 +116,7 @@ cdef class FixedRiskSizer(PositionSizer):
         Price stop_loss,
         Money equity,
         risk: Decimal,
-        commission_rate: Decimal=Decimal(),
+        commission_rate: Decimal=Decimal(0),
         exchange_rate: Decimal=Decimal(1),
         hard_limit: Decimal=None,
         unit_batch_size: Decimal=Decimal(1),
@@ -199,7 +199,7 @@ cdef class FixedRiskSizer(PositionSizer):
             position_size = min(position_size, hard_limit)
 
         # Batch into units
-        position_size_batched: Decimal = max(Decimal(), position_size / units)
+        position_size_batched: Decimal = max(Decimal(0), position_size / units)
 
         if unit_batch_size > 0:
             # Round position size to nearest unit batch size

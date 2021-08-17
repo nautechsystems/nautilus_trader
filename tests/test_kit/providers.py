@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import bz2
 import os
 from decimal import Decimal
 from typing import List
@@ -225,18 +224,6 @@ class TestDataProvider:
             for msg in parser(data)
         ]
 
-    @staticmethod
-    def betfair_feed_raw(market_id="1.166810222"):
-        return [
-            bz2.open(str(f)).read().strip().split(b"\n")
-            for f in TestDataProvider.betfair_files()
-            if market_id in str(f)
-        ]
-
-    @staticmethod
-    def betfair_trade_ticks():
-        return [msg["trade"] for msg in TestDataProvider.l2_feed() if msg.get("op") == "trade"]
-
 
 class TestInstrumentProvider:
     """
@@ -271,8 +258,8 @@ class TestInstrumentProvider:
             min_notional=Money(10.00000000, USDT),
             max_price=Price(1000000, precision=2),
             min_price=Price(0.01, precision=2),
-            margin_init=Decimal(),
-            margin_maint=Decimal(),
+            margin_init=Decimal(0),
+            margin_maint=Decimal(0),
             maker_fee=Decimal("0.001"),
             taker_fee=Decimal("0.001"),
             ts_event=0,

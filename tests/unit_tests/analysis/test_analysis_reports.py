@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.analysis.reports import ReportProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
@@ -31,7 +32,6 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from nautilus_trader.trading.account import Account
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs import TestStubs
@@ -73,7 +73,7 @@ class TestReportProvider:
             ts_init=0,
         )
 
-        account = Account(state)
+        account = MarginAccount(state)
 
         report_provider = ReportProvider()
 

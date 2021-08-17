@@ -17,6 +17,8 @@ import pyarrow as pa
 
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
@@ -64,6 +66,14 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_init": pa.int64(),
         },
         metadata={"type": "QuoteTick"},
+    ),
+    Ticker: pa.schema(
+        {
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+        metadata={"type": "Ticker"},
     ),
     BettingInstrument: pa.schema(
         {
@@ -122,7 +132,8 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
-        }
+        },
+        metadata={"type": "AccountState"},
     ),
     InstrumentStatusUpdate: pa.schema(
         {
@@ -130,7 +141,8 @@ NAUTILUS_PARQUET_SCHEMA = {
             "status": pa.dictionary(pa.int8(), pa.string()),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
-        }
+        },
+        metadata={"type": "InstrumentStatusUpdate"},
     ),
     OrderInitialized: pa.schema(
         {
@@ -151,7 +163,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "hidden": pa.bool_(),
             "price": pa.float64(),
             "trigger": pa.bool_(),
-        }
+        },
     ),
     OrderDenied: pa.schema(
         {
@@ -168,8 +180,8 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "event_id": pa.string(),
             "ts_event": pa.int64(),
@@ -180,8 +192,8 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "event_id": pa.string(),
@@ -193,8 +205,8 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "reason": pa.dictionary(pa.int8(), pa.string()),
             "event_id": pa.string(),
@@ -206,8 +218,8 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "event_id": pa.string(),
@@ -219,8 +231,8 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "event_id": pa.string(),
@@ -232,8 +244,8 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "response_to": pa.string(),
@@ -247,8 +259,8 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "event_id": pa.string(),
@@ -260,8 +272,8 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "event_id": pa.string(),
@@ -273,8 +285,8 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "event_id": pa.string(),
@@ -286,8 +298,8 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "response_to": pa.dictionary(pa.int8(), pa.string()),
@@ -301,8 +313,8 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "price": pa.float64(),
@@ -316,8 +328,8 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "account_id": pa.dictionary(pa.int8(), pa.string()),
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
             "execution_id": pa.string(),
@@ -336,9 +348,9 @@ NAUTILUS_PARQUET_SCHEMA = {
     ),
     PositionOpened: pa.schema(
         {
-            "position_id": pa.string(),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
             "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "position_id": pa.string(),
             "entry": pa.string(),
             "side": pa.string(),
             "net_qty": pa.float64(),
@@ -352,9 +364,9 @@ NAUTILUS_PARQUET_SCHEMA = {
     ),
     PositionChanged: pa.schema(
         {
-            "position_id": pa.string(),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
             "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "position_id": pa.string(),
             "entry": pa.string(),
             "side": pa.string(),
             "net_qty": pa.float64(),
@@ -369,9 +381,9 @@ NAUTILUS_PARQUET_SCHEMA = {
     ),
     PositionClosed: pa.schema(
         {
-            "position_id": pa.string(),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),
             "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "position_id": pa.string(),
             "entry": pa.string(),
             "side": pa.string(),
             "net_qty": pa.float64(),
@@ -386,6 +398,11 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_init": pa.int64(),
         }
     ),
+    InstrumentClosePrice: pa.schema(
+        {
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "close_type": pa.dictionary(pa.int8(), pa.string()),
+            "close_price": pa.float64(),
+        }
+    ),
 }
-
-# SCHEMA_TO_TYPE = {v.metadata[b"type"]: k for k, v in TYPE_TO_SCHEMA.items()}

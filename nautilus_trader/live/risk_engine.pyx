@@ -24,8 +24,8 @@ from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
-from nautilus_trader.msgbus.message_bus cimport MessageBus
-from nautilus_trader.trading.portfolio cimport PortfolioFacade
+from nautilus_trader.msgbus.bus cimport MessageBus
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class LiveRiskEngine(RiskEngine):
@@ -66,8 +66,6 @@ cdef class LiveRiskEngine(RiskEngine):
         """
         if config is None:
             config = {}
-        if "qsize" not in config:
-            config["qsize"] = 10000
         super().__init__(
             portfolio=portfolio,
             msgbus=msgbus,
@@ -78,7 +76,7 @@ cdef class LiveRiskEngine(RiskEngine):
         )
 
         self._loop = loop
-        self._queue = Queue(maxsize=config.get("qsize"))
+        self._queue = Queue(maxsize=config.get("qsize", 10000))
 
         self._run_queue_task = None
         self.is_running = False

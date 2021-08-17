@@ -32,7 +32,8 @@ from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class BacktestDataClient(DataClient):
@@ -79,44 +80,23 @@ cdef class BacktestDataClient(DataClient):
 
         self.is_connected = False
 
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
+    cpdef void _start(self) except *:
         self._log.info(f"Connecting...")
-
         self.is_connected = True
         self._log.info(f"Connected.")
 
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+    cpdef void _stop(self) except *:
         self._log.info(f"Disconnecting...")
-
         self.is_connected = False
         self._log.info(f"Disconnected.")
 
-    cpdef void reset(self) except *:
-        """
-        Reset the data client.
-
-        All stateful fields are reset to their initial value.
-        """
-        self._log.debug(f"Resetting...")
-
+    cpdef void _reset(self) except *:
+        pass
         # Nothing to reset
-        self._log.info("Reset.")
 
-    cpdef void dispose(self) except *:
-        """
-        Dispose of the data client.
-
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-        """
+    cpdef void _dispose(self) except *:
+        pass
         # Nothing to dispose
-        self._log.info(f"Disposed.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -136,6 +116,7 @@ cdef class BacktestDataClient(DataClient):
             self._log.error(f"Cannot subscribe to {data_type} (not connected).")
             return
 
+        self._feeds_generic_data[data_type] = None
         # Do nothing else for backtest
 
     cpdef void unsubscribe(self, DataType data_type) except *:
@@ -154,6 +135,7 @@ cdef class BacktestDataClient(DataClient):
             self._log.error(f"Cannot unsubscribe from {data_type} (not connected).")
             return
 
+        self._feeds_generic_data.pop(data_type, None)
         # Do nothing else for backtest
 
 # -- REQUESTS --------------------------------------------------------------------------------------
@@ -219,52 +201,23 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
         self.is_connected = False
 
-# -- COMMANDS --------------------------------------------------------------------------------------
-
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
+    cpdef void _start(self) except *:
         self._log.info(f"Connecting...")
-
-        # Return all instruments in the cache for this venue
-        cdef list instruments = self._cache.instruments(Venue(self.id.value))
-
-        for instrument in instruments:
-            self._handle_data(instrument)
-
         self.is_connected = True
         self._log.info(f"Connected.")
 
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+    cpdef void _stop(self) except *:
         self._log.info(f"Disconnecting...")
-
         self.is_connected = False
         self._log.info(f"Disconnected.")
 
-    cpdef void reset(self) except *:
-        """
-        Reset the data client.
-
-        All stateful fields are reset to their initial value.
-        """
-        self._log.debug(f"Resetting...")
-
+    cpdef void _reset(self) except *:
+        pass
         # Nothing to reset
-        self._log.info("Reset.")
 
-    cpdef void dispose(self) except *:
-        """
-        Dispose of the data client.
-
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-        """
+    cpdef void _dispose(self) except *:
+        pass
         # Nothing to dispose
-        self._log.info(f"Disposed.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -279,6 +232,9 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        cdef Instrument instrument
+        for instrument in self._cache.instruments(Venue(self.id.value)):
+            self._feeds_instrument.add(instrument.id)
         # Do nothing else for backtest
 
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
@@ -300,6 +256,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument.add(instrument_id)
         # Do nothing else for backtest
 
     cpdef void subscribe_order_book_snapshots(
@@ -333,6 +290,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_order_book_snapshot[instrument_id] = None
         # Do nothing else for backtest
 
     cpdef void subscribe_order_book_deltas(
@@ -363,6 +321,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_order_book_delta[instrument_id] = None
         # Do nothing else for backtest
 
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
@@ -384,6 +343,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_quote_tick[instrument_id] = None
         # Do nothing else for backtest
 
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
@@ -405,6 +365,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_trade_tick[instrument_id] = None
         # Do nothing else for backtest
 
     cpdef void subscribe_bars(self, BarType bar_type) except *:
@@ -426,10 +387,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
-        self._log.error(
-            f"Cannot subscribe to externally aggregated bars "
-            f"(backtesting only supports internal aggregation at this stage).",
-        )
+        self._feeds_bar[bar_type] = None
 
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
         """
@@ -450,6 +408,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument_status_update[instrument_id] = None
         # Do nothing else for backtest
 
     cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
@@ -471,6 +430,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument_close_price[instrument_id] = None
         # Do nothing else for backtest
 
     cpdef void unsubscribe_instruments(self) except *:
@@ -484,6 +444,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument.clear()
         # Do nothing else for backtest
 
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
@@ -505,6 +466,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument.discard(instrument_id)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
@@ -526,6 +488,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_order_book_delta.pop(instrument_id, None)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
@@ -547,6 +510,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_order_book_snapshot.pop(instrument_id, None)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
@@ -568,6 +532,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_quote_tick.pop(instrument_id, None)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
@@ -589,6 +554,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_trade_tick.pop(instrument_id, None)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_bars(self, BarType bar_type) except *:
@@ -614,6 +580,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             f"(backtesting only supports internal aggregation at this stage).",
         )
 
+        self._feeds_bar.pop(bar_type, None)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
@@ -635,6 +602,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument_status_update.pop(instrument_id, None)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
@@ -656,6 +624,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             )
             return
 
+        self._feeds_instrument_close_price.pop(instrument_id, None)
         # Do nothing else for backtest
 
 # -- REQUESTS --------------------------------------------------------------------------------------

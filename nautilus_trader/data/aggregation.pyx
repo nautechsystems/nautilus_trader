@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Callable
+
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
@@ -84,7 +86,7 @@ cdef class BarBuilder:
         self._high = None
         self._low = None
         self._close = None
-        self.volume = Decimal()
+        self.volume = Decimal(0)
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -182,7 +184,7 @@ cdef class BarBuilder:
             self._low = None
             self._close = None
 
-        self.volume = Decimal()
+        self.volume = Decimal(0)
         self.count = 0
 
     cpdef Bar build_now(self):
@@ -218,10 +220,10 @@ cdef class BarBuilder:
 
         cdef Bar bar = Bar(
             bar_type=self._bar_type,
-            open_price=self._open,
-            high_price=self._high,
-            low_price=self._low,
-            close_price=self._close,
+            open=self._open,
+            high=self._high,
+            low=self._low,
+            close=self._close,
             volume=Quantity(self.volume, self.size_precision),
             ts_event=ts_event,  # TODO: Hardcoded identical for now...
             ts_init=ts_event,
@@ -241,7 +243,7 @@ cdef class BarAggregator:
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         Logger logger not None,
         bint use_previous_close,
     ):
@@ -254,7 +256,7 @@ cdef class BarAggregator:
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         logger : Logger
             The logger for the aggregator.
@@ -272,7 +274,7 @@ cdef class BarAggregator:
         self.bar_type = bar_type
         self._handler = handler
         self._log = LoggerAdapter(
-            component=type(self).__name__,
+            component_name=type(self).__name__,
             logger=logger,
         )
         self._builder = BarBuilder(
@@ -341,7 +343,7 @@ cdef class TickBarAggregator(BarAggregator):
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         Logger logger not None,
     ):
         """
@@ -353,7 +355,7 @@ cdef class TickBarAggregator(BarAggregator):
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         logger : Logger
             The logger for the aggregator.
@@ -391,7 +393,7 @@ cdef class VolumeBarAggregator(BarAggregator):
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         Logger logger not None,
     ):
         """
@@ -403,7 +405,7 @@ cdef class VolumeBarAggregator(BarAggregator):
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         logger : Logger
             The logger for the aggregator.
@@ -463,7 +465,7 @@ cdef class ValueBarAggregator(BarAggregator):
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         Logger logger not None,
     ):
         """
@@ -475,7 +477,7 @@ cdef class ValueBarAggregator(BarAggregator):
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         logger : Logger
             The logger for the aggregator.
@@ -494,7 +496,7 @@ cdef class ValueBarAggregator(BarAggregator):
             use_previous_close=False,
         )
 
-        self._cum_value = Decimal()  # Cumulative value
+        self._cum_value = Decimal(0)  # Cumulative value
 
     cpdef object get_cumulative_value(self):
         """
@@ -533,7 +535,7 @@ cdef class ValueBarAggregator(BarAggregator):
 
             # Build a bar and reset builder and cumulative value
             self._build_now_and_send()
-            self._cum_value = Decimal()
+            self._cum_value = Decimal(0)
 
             # Decrement the update size
             size_update -= size_diff
@@ -551,7 +553,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        handler not None: callable,
+        handler not None: Callable[[Bar], None],
         bint use_previous_close,
         Clock clock not None,
         Logger logger not None,
@@ -565,7 +567,7 @@ cdef class TimeBarAggregator(BarAggregator):
             The instrument for the aggregator.
         bar_type : BarType
             The bar type for the aggregator.
-        handler : callable
+        handler : Callable[[Bar], None]
             The bar handler for the aggregator.
         use_previous_close : bool
             If the previous close should set the next open.
@@ -725,10 +727,10 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._builder.update(price, size, ts_event)
         if self._build_on_next_tick:  # (fast C-level check)
-            self._build_and_send(self._stored_close)
+            self._build_and_send(self._stored_close_ns)
             # Reset flag and clear stored close
             self._build_on_next_tick = False
-            self._stored_close = 0
+            self._stored_close_ns = 0
 
     cpdef void _build_bar(self, int64_t ts_event) except *:
         cdef TestTimer timer = self._clock.timer(str(self.bar_type))
@@ -756,7 +758,7 @@ cdef class BulkTickBarBuilder:
         Instrument instrument not None,
         BarType bar_type not None,
         Logger logger not None,
-        callback not None: callable,
+        callback not None: Callable[[Bar], None],
     ):
         """
         Initialize a new instance of the ``BulkTickBarBuilder`` class.
@@ -769,13 +771,13 @@ cdef class BulkTickBarBuilder:
             The bar_type to build.
         logger : Logger
             The logger for the bar aggregator.
-        callback : callable
-            The callback to send the built bars to.
+        callback : Callable[[Bar], None]
+            The delegate to call with the built bars.
 
         Raises
         ------
         ValueError
-            If callback is not of type callable.
+            If callback is not of type Callable.
         ValueError
             If instrument.id != bar_type.instrument_id.
 

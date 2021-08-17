@@ -18,8 +18,8 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
-from nautilus_trader.model.c_enums.order_state cimport OrderState
-from nautilus_trader.model.c_enums.order_state cimport OrderStateParser
+from nautilus_trader.model.c_enums.order_status cimport OrderStatus
+from nautilus_trader.model.c_enums.order_status cimport OrderStatusParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.identifiers cimport AccountId
@@ -38,7 +38,7 @@ cdef class OrderStatusReport:
         self,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        OrderState order_state,
+        OrderStatus order_status,
         Quantity filled_qty not None,
         int64_t ts_init,
     ):
@@ -51,8 +51,8 @@ cdef class OrderStatusReport:
             The reported client order ID.
         venue_order_id : VenueOrderId
             The reported order ID.
-        order_state : OrderState
-            The reported order state at the exchange.
+        order_status : OrderStatus
+            The reported order status at the exchange.
         filled_qty : Quantity
             The reported filled quantity at the exchange.
         ts_init : int64
@@ -61,7 +61,7 @@ cdef class OrderStatusReport:
         """
         self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
-        self.order_state = order_state
+        self.order_status = order_status
         self.filled_qty = filled_qty
         self.ts_init = ts_init
 
@@ -69,7 +69,7 @@ cdef class OrderStatusReport:
         return (f"{type(self).__name__}("
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id}, "
-                f"order_state={OrderStateParser.to_str(self.order_state)}, "
+                f"order_status={OrderStatusParser.to_str(self.order_status)}, "
                 f"filled_qty={self.filled_qty}, "
                 f"ts_init={self.ts_init})")
 
@@ -122,6 +122,7 @@ cdef class ExecutionReport:
         self,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
+        PositionId venue_position_id,  # Can be None
         ExecutionId execution_id not None,
         Quantity last_qty not None,
         Price last_px not None,
@@ -139,6 +140,11 @@ cdef class ExecutionReport:
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID.
+        venue_position_id : PositionId, optional
+            The venue position ID associated with the order. If the trading
+            venue has assigned a position ID / ticket then pass that here,
+            otherwise pass `None` and the execution engine OMS will handle
+            position ID resolution.
         execution_id : ExecutionId
             The execution ID for the trade.
         last_qty : Quantity
@@ -155,6 +161,7 @@ cdef class ExecutionReport:
         """
         self.client_order_id = client_order_id
         self.venue_order_id = venue_order_id
+        self.venue_position_id = venue_position_id
         self.id = execution_id
         self.last_qty = last_qty
         self.last_px = last_px
@@ -167,6 +174,7 @@ cdef class ExecutionReport:
         return (f"{type(self).__name__}("
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id}, "
+                f"venue_position_id={self.venue_position_id}, "
                 f"id={self.id.value}, "
                 f"last_qty={self.last_qty}, "
                 f"last_px={self.last_px}, "
@@ -224,7 +232,7 @@ cdef class ExecutionMassStatus:
 
     cpdef dict order_reports(self):
         """
-        Return the order state reports.
+        Return the order status reports.
 
         Returns
         -------
@@ -257,7 +265,7 @@ cdef class ExecutionMassStatus:
 
     cpdef void add_order_report(self, OrderStatusReport report) except *:
         """
-        Add the order state report.
+        Add the order status report.
 
         Parameters
         ----------

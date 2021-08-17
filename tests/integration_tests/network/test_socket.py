@@ -13,15 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
+
 import pytest
 
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.network.socket import SocketClient
+from tests.test_kit.stubs import TestStubs
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip  # Flaky
-async def test_socket_base(socket_server, logger, event_loop):
+async def test_socket_base(socket_server, event_loop):
     messages = []
 
     def handler(raw):
@@ -29,14 +30,17 @@ async def test_socket_base(socket_server, logger, event_loop):
         if len(messages) > 5:
             client.stop()
 
-    host, port = socket_server.server_address
+    host, port = socket_server
     client = SocketClient(
         host=host,
         port=port,
-        message_handler=handler,
         loop=event_loop,
-        logger_adapter=LoggerAdapter("Socket", logger),
+        handler=handler,
+        logger=TestStubs.logger(),
         ssl=False,
     )
-    await client.start()
+    await client.connect()
+    await asyncio.sleep(5)
     assert messages == [b"hello"] * 6
+    await asyncio.sleep(1)
+    client.stop()

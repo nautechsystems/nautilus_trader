@@ -22,19 +22,10 @@ MsgPack
    :members:
    :member-order: bysource
 
-Arrow - Core
-------------
+Arrow
+-----
 
-.. automodule:: nautilus_trader.serialization.arrow.core
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
-Arrow - Schema
---------------
-
-.. automodule:: nautilus_trader.serialization.arrow.schema
+.. automodule:: nautilus_trader.serialization.arrow.serializer
    :show-inheritance:
    :inherited-members:
    :members:

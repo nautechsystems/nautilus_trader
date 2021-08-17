@@ -47,8 +47,8 @@ config = {
         "timeout_connection": 10.0,  # Timeout for all clients to connect and initialize
         "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
         "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
-        "timeout_disconnection": 5.0,  # Timeout for all engine clients to disconnect
-        "check_residuals_delay": 5.0,  # Delay to await residual events after stopping engines
+        "timeout_disconnection": 10.0,  # Timeout for all engine clients to disconnect
+        "check_residuals_delay": 10.0,  # Delay to await residual events after stopping engines
     },
     "logging": {
         "level_stdout": "INF",

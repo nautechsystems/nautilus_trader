@@ -202,14 +202,17 @@ cdef class Queue:
 
         Returns
         -------
-        list[object]
+        list[Any]
 
         """
         return list(self._queue)
 
     @types.coroutine
     def _sleep0(self):
-        yield  # Skip one event loop run cycle
+        # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
+        # of the pure Python function call and integer comparison <= 0.
+        # Skip one event loop run cycle
+        yield
 
     cdef int _qsize(self) except *:
         return self.count

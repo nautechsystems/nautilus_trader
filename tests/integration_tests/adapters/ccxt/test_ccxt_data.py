@@ -37,8 +37,8 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.mocks import ObjectStorer
 from tests.test_kit.stubs import TestStubs
@@ -141,7 +141,7 @@ class TestCCXTDataClient:
     async def test_connect(self):
         # Arrange
         # Act
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         # Assert
@@ -154,27 +154,24 @@ class TestCCXTDataClient:
     @pytest.mark.asyncio
     async def test_disconnect(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         # Act
-        self.client.disconnect()
+        self.data_engine.stop()  # Also stops client which disconnects
+        await self.data_engine.get_run_queue_task()
         await asyncio.sleep(0.3)
 
         # Assert
         assert not self.client.is_connected
 
-        # Tear down
-        self.data_engine.stop()
-        await self.data_engine.get_run_queue_task()
-
     @pytest.mark.asyncio
     async def test_reset_when_not_connected_successfully_resets(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
-        self.data_engine.stop()
+        self.data_engine.stop()  # Also stops client which disconnects
         await asyncio.sleep(0.3)  # Allow engine message queue to stop
 
         # Act
@@ -184,48 +181,16 @@ class TestCCXTDataClient:
         assert not self.client.is_connected
 
     @pytest.mark.asyncio
-    async def test_reset_when_connected_does_not_reset(self):
-        # Arrange
-        self.data_engine.start()  # Also starts client
-        await asyncio.sleep(0.3)  # Allow engine message queue to start
-
-        # Act
-        self.client.reset()
-
-        # Assert
-        assert self.client.is_connected
-
-        # Tear Down
-        self.data_engine.stop()
-        await self.data_engine.get_run_queue_task()
-
-    @pytest.mark.asyncio
-    async def test_dispose_when_not_connected_does_not_dispose(self):
-        # Arrange
-        self.data_engine.start()  # Also starts client
-        await asyncio.sleep(0.3)  # Allow engine message queue to start
-
-        # Act
-        self.client.dispose()
-
-        # Assert
-        assert self.client.is_connected
-
-        # Tear Down
-        self.data_engine.stop()
-        await self.data_engine.get_run_queue_task()
-
-    @pytest.mark.asyncio
     async def test_subscribe_instruments(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         # Act
         self.client.subscribe_instruments()
 
         # Assert
-        assert len(self.client.subscribed_instruments) == 1236
+        assert len(self.client.subscribed_instruments()) == 1236
 
         # Tear Down
         self.data_engine.stop()
@@ -234,14 +199,14 @@ class TestCCXTDataClient:
     @pytest.mark.asyncio
     async def test_subscribe_instrument(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         # Act
         self.client.subscribe_instrument(BTCUSDT)
 
         # Assert
-        assert BTCUSDT in self.client.subscribed_instruments
+        assert BTCUSDT in self.client.subscribed_instruments()
 
         # Tear Down
         self.data_engine.stop()
@@ -250,7 +215,7 @@ class TestCCXTDataClient:
     @pytest.mark.asyncio
     async def test_subscribe_quote_ticks(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         # Act
@@ -258,7 +223,7 @@ class TestCCXTDataClient:
         await asyncio.sleep(0.3)
 
         # Assert
-        assert ETHUSDT in self.client.subscribed_quote_ticks
+        assert ETHUSDT in self.client.subscribed_quote_ticks()
         assert self.cache.has_quote_ticks(ETHUSDT)
 
         # Tear Down
@@ -268,7 +233,7 @@ class TestCCXTDataClient:
     @pytest.mark.asyncio
     async def test_subscribe_trade_ticks(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         # Act
@@ -276,7 +241,7 @@ class TestCCXTDataClient:
         await asyncio.sleep(0.3)
 
         # Assert
-        assert ETHUSDT in self.client.subscribed_trade_ticks
+        assert ETHUSDT in self.client.subscribed_trade_ticks()
         assert self.cache.has_trade_ticks(ETHUSDT)
 
         # Tear Down
@@ -286,7 +251,7 @@ class TestCCXTDataClient:
     @pytest.mark.asyncio
     async def test_subscribe_bars(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.5)  # Allow engine message queue to start
 
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
@@ -295,7 +260,7 @@ class TestCCXTDataClient:
         self.client.subscribe_bars(bar_type)
 
         # Assert
-        assert bar_type in self.client.subscribed_bars
+        assert bar_type in self.client.subscribed_bars()
 
         # Tear Down
         self.data_engine.stop()
@@ -304,7 +269,7 @@ class TestCCXTDataClient:
     @pytest.mark.asyncio
     async def test_unsubscribe_instruments(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         self.client.subscribe_instruments()
@@ -313,7 +278,7 @@ class TestCCXTDataClient:
         self.client.unsubscribe_instruments()
 
         # Assert
-        assert len(self.client.subscribed_instruments) == 0
+        assert not self.client.subscribed_instruments()
 
         # Tear Down
         self.data_engine.stop()
@@ -322,7 +287,7 @@ class TestCCXTDataClient:
     @pytest.mark.asyncio
     async def test_unsubscribe_instrument(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         self.client.subscribe_instrument(BTCUSDT)
@@ -331,7 +296,7 @@ class TestCCXTDataClient:
         self.client.unsubscribe_instrument(BTCUSDT)
 
         # Assert
-        assert BTCUSDT not in self.client.subscribed_instruments
+        assert BTCUSDT not in self.client.subscribed_instruments()
 
         # Tear Down
         self.data_engine.stop()
@@ -340,7 +305,7 @@ class TestCCXTDataClient:
     @pytest.mark.asyncio
     async def test_unsubscribe_quote_ticks(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         self.client.subscribe_quote_ticks(ETHUSDT)
@@ -350,7 +315,7 @@ class TestCCXTDataClient:
         self.client.unsubscribe_quote_ticks(ETHUSDT)
 
         # Assert
-        assert ETHUSDT not in self.client.subscribed_quote_ticks
+        assert ETHUSDT not in self.client.subscribed_quote_ticks()
 
         # Tear Down
         self.data_engine.stop()
@@ -359,7 +324,7 @@ class TestCCXTDataClient:
     @pytest.mark.asyncio
     async def test_unsubscribe_trade_ticks(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         self.client.subscribe_trade_ticks(ETHUSDT)
@@ -368,7 +333,7 @@ class TestCCXTDataClient:
         self.client.unsubscribe_trade_ticks(ETHUSDT)
 
         # Assert
-        assert ETHUSDT not in self.client.subscribed_trade_ticks
+        assert ETHUSDT not in self.client.subscribed_trade_ticks()
 
         # Tear Down
         self.data_engine.stop()
@@ -377,7 +342,7 @@ class TestCCXTDataClient:
     @pytest.mark.asyncio
     async def test_unsubscribe_bars(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
@@ -387,7 +352,7 @@ class TestCCXTDataClient:
         self.client.unsubscribe_bars(bar_type)
 
         # Assert
-        assert bar_type not in self.client.subscribed_bars
+        assert bar_type not in self.client.subscribed_bars()
 
         # Tear Down
         self.data_engine.stop()
@@ -396,7 +361,7 @@ class TestCCXTDataClient:
     @pytest.mark.asyncio
     async def test_request_quote_ticks(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         # Act
@@ -412,7 +377,7 @@ class TestCCXTDataClient:
     @pytest.mark.asyncio
     async def test_request_trade_ticks(self):
         # Arrange
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         handler = ObjectStorer()
@@ -453,7 +418,7 @@ class TestCCXTDataClient:
 
         self.mock_ccxt.fetch_ohlcv = fetch_ohlcv
 
-        self.data_engine.start()  # Also starts client
+        self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         handler = ObjectStorer()

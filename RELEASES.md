@@ -1,3 +1,43 @@
+# NautilusTrader 1.127.0 Beta - Release Notes
+
+This release has again focused on core areas of the platform, including a 
+significant overhaul of accounting and portfolio components. The wiring between 
+the `DataEngine` and `DataClient`(s) has also received attention, and should now 
+exhibit correct subscription mechanics.
+
+The Betfair adapter has been completely re-written, providing various fixes and
+enhancements, increased performance, and full async support.
+
+There has also been some further renaming to continue to align the platform
+as closely as possible with established terminology in the domain.
+
+## Breaking Changes
+- Moved margin calculation methods from `Instrument` to `Account`.
+- Removed redundant `Portfolio.register_account`.
+- Renamed `OrderState` to `OrderStatus`.
+- Renamed `Order.state` to `Order.status`.
+- Renamed `msgbus.message_bus` to `msgbus.bus`.
+
+## Enhancements
+- Betfair adapter re-write.
+- Extracted `accounting` subpackage.
+- Extracted `portfolio` subpackage.
+- Subclassed `Account` with `CashAccount` and `MarginAccount`.
+- Added `AccountsManager`.
+- Added `AccountFactory`.
+- Moved registration of custom account classes to `AccountFactory`.
+- Moved registration of calculated account to `AccountFactory`.
+- Added registration of OMS type per trading strategy.
+- Added `ExecutionClient.create_account` for custom account classes.
+- Separate `PortfolioFacade` from `Portfolio`.
+
+## Fixes
+- Data subscription handling in `DataEngine`.
+- `Cash` accounts no longer generate spurious margins.
+- Fix `TimeBarAggregator._stored_close_ns` property name.
+
+---
+
 # NautilusTrader 1.126.1 Beta - Release Notes
 
 This is a patch release which fixes a bug involving `NotImplementedError` 
@@ -80,7 +120,7 @@ the message bus, please see the related issue for further details on this enhanc
 
 Another notable feature is the introduction of the order 'in-flight' concept, 
 which is a submitted order which has not yet been acknowledged by the 
-exchange/broker. Several properties on `Order`, and methods on `Cache`, now exist
+trading venue. Several properties on `Order`, and methods on `Cache`, now exist
 to support this.
 
 The `Throttler` has been refactored and optimized further. There has also been

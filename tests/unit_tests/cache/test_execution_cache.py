@@ -39,10 +39,9 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.account import Account
-from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
@@ -180,8 +179,7 @@ class TestCache:
 
     def test_add_account(self):
         # Arrange
-        initial = TestStubs.event_account_state()
-        account = Account(initial)
+        account = TestStubs.cash_account()
 
         # Act
         self.cache.add_account(account)
@@ -201,8 +199,7 @@ class TestCache:
 
     def test_load_account(self):
         # Arrange
-        initial = TestStubs.event_account_state()
-        account = Account(initial)
+        account = TestStubs.cash_account()
 
         self.cache.add_account(account)
 
@@ -358,7 +355,7 @@ class TestCache:
         position = Position(instrument=AUDUSD_SIM, fill=fill)
 
         # Act
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
 
         # Assert
         assert self.cache.position_exists(position.id)
@@ -396,7 +393,7 @@ class TestCache:
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill)
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
 
         # Act
         result = self.cache.load_position(position.id)
@@ -576,7 +573,7 @@ class TestCache:
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
 
         # Act
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
 
         # Assert
         assert self.cache.position_exists(position.id)
@@ -622,7 +619,7 @@ class TestCache:
         )
 
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position)
+        self.cache.add_position(position, OMSType.HEDGING)
 
         order2 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -692,7 +689,7 @@ class TestCache:
         )
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position1)
+        self.cache.add_position(position1, OMSType.HEDGING)
 
         # -- Position 2 --------------------------------------------------------
 
@@ -715,7 +712,7 @@ class TestCache:
         )
 
         position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
-        self.cache.add_position(position2)
+        self.cache.add_position(position2, OMSType.HEDGING)
 
         # Assert
         assert position1.is_open
@@ -762,7 +759,7 @@ class TestCache:
         )
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
-        self.cache.add_position(position1)
+        self.cache.add_position(position1, OMSType.HEDGING)
 
         # -- Position 2 --------------------------------------------------------
 
@@ -785,7 +782,7 @@ class TestCache:
         )
 
         position2 = Position(instrument=GBPUSD_SIM, fill=fill2)
-        self.cache.add_position(position2)
+        self.cache.add_position(position2, OMSType.HEDGING)
 
         order3 = self.strategy.order_factory.market(
             GBPUSD_SIM.id,
@@ -826,8 +823,7 @@ class TestCache:
 
     def test_update_account(self):
         # Arrange
-        event = TestStubs.event_account_state()
-        account = Account(event)
+        account = TestStubs.cash_account()
 
         self.cache.add_account(account)
 
@@ -873,7 +869,7 @@ class TestCache:
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
-        self.cache.add_position(position1)
+        self.cache.add_position(position1, OMSType.HEDGING)
 
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -922,7 +918,7 @@ class TestCache:
         )
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
-        self.cache.add_position(position1)
+        self.cache.add_position(position1, OMSType.HEDGING)
 
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -976,7 +972,7 @@ class TestCache:
 
         position1 = Position(instrument=AUDUSD_SIM, fill=fill1)
         self.cache.update_order(order1)
-        self.cache.add_position(position1)
+        self.cache.add_position(position1, OMSType.HEDGING)
 
         order2 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,

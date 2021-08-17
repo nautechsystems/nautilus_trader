@@ -39,7 +39,7 @@ from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.c_enums.order_state cimport OrderState
+from nautilus_trader.model.c_enums.order_status cimport OrderStatus
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.order_type cimport OrderTypeParser
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
@@ -65,7 +65,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef int _SECONDS_IN_HOUR = 60 * 60
@@ -151,10 +151,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self._cached_orders = {}  # type: {VenueOrderId: Order}
         self._cached_filled = {}  # type: {VenueOrderId: Decimal}
 
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
+    cpdef void _start(self) except *:
         self._log.info("Connecting...")
 
         # Re-cache orders
@@ -221,7 +218,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         if order.venue_order_id is None:
             self._log.error(
-                f"Cannot reconcile state for {repr(order.client_order_id)}, "
+                f"Cannot reconcile state for order {repr(order.client_order_id)}, "
                 f"VenueOrderId was None.",
             )
             return None  # Cannot generate state report
@@ -229,7 +226,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef Instrument instrument = self._instrument_provider.find(order.instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot reconcile state for {repr(order.client_order_id)}, "
+                f"Cannot reconcile state for order {repr(order.client_order_id)}, "
                 f"instrument for {order.instrument_id} not found.",
             )
             return None  # Cannot generate state report
@@ -252,20 +249,20 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         # Determine state
         status = response["status"]
         if status == "open" and filled_qty > 0:
-            state = OrderState.PARTIALLY_FILLED
+            state = OrderStatus.PARTIALLY_FILLED
         elif status == "closed":
-            state = OrderState.FILLED
+            state = OrderStatus.FILLED
         elif status == "canceled":
-            state = OrderState.CANCELED
+            state = OrderStatus.CANCELED
         elif status == "expired":
-            state = OrderState.EXPIRED
+            state = OrderStatus.EXPIRED
         else:
-            state = OrderState.ACCEPTED
+            state = OrderStatus.ACCEPTED
 
         return OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
-            order_state=state,
+            order_status=state,
             filled_qty=filled_qty,
             ts_init=millis_to_nanos(millis=response["timestamp"]),
         )
@@ -331,7 +328,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot reconcile state for {repr(client_order_id)}, "
+                f"Cannot reconcile state for order {repr(client_order_id)}, "
                 f"instrument for {instrument_id} not found."
             )
             return  # Cannot generate state report
@@ -342,6 +339,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             report = ExecutionReport(
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
+                venue_position_id=None,  # Can be None
                 execution_id=ExecutionId(str(fill["id"])),
                 last_qty=Quantity(fill["amount"], instrument.size_precision),
                 last_px=Price(fill["price"], instrument.price_precision),
@@ -354,10 +352,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         return reports
 
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+    cpdef void _stop(self) except *:
         self._loop.create_task(self._disconnect())
 
     async def _disconnect(self):
@@ -573,7 +568,7 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             return  # Cannot cancel
 
         if not order.is_working_c():
-            self._log.error(f"Cannot cancel order, state=OrderState.{order.state_string_c()}.")
+            self._log.error(f"Cannot cancel order, status={order.status_string_c()}.")
             return  # Cannot cancel
 
         self.generate_order_pending_cancel(
@@ -727,8 +722,10 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
 
         cdef Instrument instrument = self._instrument_provider.find(order.instrument_id)
         if instrument is None:
-            self._log.error(f"Cannot reconcile state for {repr(order.client_order_id)}, "
-                            f"instrument for {order.instrument_id} not found.")
+            self._log.error(
+                f"Cannot reconcile state for order {repr(order.client_order_id)}, "
+                f"instrument for {order.instrument_id} not found.",
+            )
             return  # Cannot generate state report
 
         self.generate_order_filled(
@@ -736,8 +733,8 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
+            venue_position_id=None,  # Can be None
             execution_id=ExecutionId(event["id"]),
-            position_id=None,  # Assigned in engine
             order_side=order.side,
             order_type=order.type,
             last_qty=Quantity(event["amount"], instrument.size_precision),
@@ -766,12 +763,12 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
     cdef void _cache_order(self, VenueOrderId venue_order_id, Order order) except *:
         self._cached_orders[venue_order_id] = order
         self._cached_filled[venue_order_id] = order.filled_qty
-        self._log.debug(f"Cached {repr(venue_order_id)} {order}.")
+        self._log.debug(f"Cached order {repr(venue_order_id)} {order}.")
 
     cdef void _decache_order(self, VenueOrderId venue_order_id) except *:
         self._cached_orders.pop(venue_order_id, None)
         self._cached_filled.pop(venue_order_id, None)
-        self._log.debug(f"De-cached {repr(venue_order_id)}.")
+        self._log.debug(f"De-cached order {repr(venue_order_id)}.")
 
 
 cdef class BinanceCCXTExecutionClient(CCXTExecutionClient):

@@ -31,8 +31,8 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
 from tests.test_kit.performance import PerformanceHarness
@@ -97,7 +97,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             logger=self.logger,
         )
 
-        exec_client = MockExecutionClient(
+        self.exec_client = MockExecutionClient(
             client_id=ClientId("BINANCE"),
             venue_type=VenueType.EXCHANGE,
             account_id=self.account_id,
@@ -108,10 +108,8 @@ class TestLiveExecutionPerformance(PerformanceHarness):
             clock=self.clock,
             logger=self.logger,
         )
-
-        # Wire up components
-        self.exec_engine.register_client(exec_client)
-        self.exec_engine.process(TestStubs.event_account_state(self.account_id))
+        self.portfolio.update_account(TestStubs.event_margin_account_state())
+        self.exec_engine.register_client(self.exec_client)
 
         self.strategy = TradingStrategy(order_id_tag="001")
         self.strategy.register(

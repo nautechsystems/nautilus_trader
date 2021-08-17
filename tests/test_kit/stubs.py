@@ -19,6 +19,7 @@ from typing import List
 
 import pytz
 
+from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -37,6 +38,7 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -67,8 +69,8 @@ from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder import Ladder
 from nautilus_trader.model.orders.limit import LimitOrder
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveDataEngine
 from tests.test_kit.mocks import MockLiveExecutionEngine
@@ -181,10 +183,10 @@ class TestStubs:
     def bar_5decimal() -> Bar:
         return Bar(
             bar_type=TestStubs.bartype_audusd_1min_bid(),
-            open_price=Price.from_str("1.00002"),
-            high_price=Price.from_str("1.00004"),
-            low_price=Price.from_str("1.00001"),
-            close_price=Price.from_str("1.00003"),
+            open=Price.from_str("1.00002"),
+            high=Price.from_str("1.00004"),
+            low=Price.from_str("1.00001"),
+            close=Price.from_str("1.00003"),
             volume=Quantity.from_int(1_000_000),
             ts_event=0,
             ts_init=0,
@@ -194,10 +196,10 @@ class TestStubs:
     def bar_3decimal() -> Bar:
         return Bar(
             bar_type=TestStubs.bartype_usdjpy_1min_bid(),
-            open_price=Price.from_str("90.002"),
-            high_price=Price.from_str("90.004"),
-            low_price=Price.from_str("90.001"),
-            close_price=Price.from_str("90.003"),
+            open=Price.from_str("90.002"),
+            high=Price.from_str("90.004"),
+            low=Price.from_str("90.001"),
+            close=Price.from_str("90.003"),
             volume=Quantity.from_int(1_000_000),
             ts_event=0,
             ts_init=0,
@@ -318,18 +320,33 @@ class TestStubs:
         return StrategyId("S-001")
 
     @staticmethod
-    def limit_order(instrument_id=None, side=None, price=None, quantity=None) -> LimitOrder:
+    def cash_account():
+        return AccountFactory.create(
+            TestStubs.event_cash_account_state(account_id=TestStubs.account_id())
+        )
+
+    @staticmethod
+    def margin_account():
+        return AccountFactory.create(
+            TestStubs.event_margin_account_state(account_id=TestStubs.account_id())
+        )
+
+    @staticmethod
+    def limit_order(
+        instrument_id=None, side=None, price=None, quantity=None, time_in_force=None
+    ) -> LimitOrder:
         strategy = TestStubs.trading_strategy()
         order = strategy.order_factory.limit(
             instrument_id or TestStubs.audusd_id(),
             side or OrderSide.BUY,
             quantity or Quantity.from_int(10),
             price or Price.from_str("0.50"),
+            time_in_force=time_in_force or TimeInForce.GTC,
         )
         return order
 
     @staticmethod
-    def event_account_state(account_id=None) -> AccountState:
+    def event_cash_account_state(account_id=None) -> AccountState:
         if account_id is None:
             account_id = TestStubs.account_id()
 
@@ -353,12 +370,36 @@ class TestStubs:
         )
 
     @staticmethod
+    def event_margin_account_state(account_id=None) -> AccountState:
+        if account_id is None:
+            account_id = TestStubs.account_id()
+
+        return AccountState(
+            account_id=account_id,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            reported=True,  # reported
+            balances=[
+                AccountBalance(
+                    USD,
+                    Money(1_000_000, USD),
+                    Money(0, USD),
+                    Money(1_000_000, USD),
+                )
+            ],
+            info={},
+            event_id=uuid4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
     def event_order_submitted(order) -> OrderSubmitted:
         return OrderSubmitted(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             ts_event=0,
             event_id=uuid4(),
@@ -372,8 +413,8 @@ class TestStubs:
         return OrderAccepted(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
             ts_event=0,
@@ -386,8 +427,8 @@ class TestStubs:
         return OrderRejected(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             reason="ORDER_REJECTED",
             ts_event=0,
@@ -400,8 +441,8 @@ class TestStubs:
         return OrderPendingUpdate(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,
@@ -414,8 +455,8 @@ class TestStubs:
         return OrderPendingCancel(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,
@@ -427,29 +468,38 @@ class TestStubs:
     def event_order_filled(
         order,
         instrument,
+        strategy_id=None,
+        account_id=None,
         venue_order_id=None,
         execution_id=None,
         position_id=None,
-        strategy_id=None,
         last_qty=None,
         last_px=None,
         liquidity_side=LiquiditySide.TAKER,
         ts_filled_ns=0,
+        account=None,
     ) -> OrderFilled:
+        if strategy_id is None:
+            strategy_id = order.strategy_id
+        if account_id is None:
+            account_id = order.account_id
+            if account_id is None:
+                account_id = TestStubs.account_id()
         if venue_order_id is None:
             venue_order_id = VenueOrderId("1")
         if execution_id is None:
             execution_id = ExecutionId(order.client_order_id.value.replace("O", "E"))
         if position_id is None:
             position_id = order.position_id
-        if strategy_id is None:
-            strategy_id = order.strategy_id
         if last_px is None:
             last_px = Price.from_str(f"{1:.{instrument.price_precision}f}")
         if last_qty is None:
             last_qty = order.quantity
+        if account is None:
+            account = TestStubs.cash_account()
 
-        commission = instrument.calculate_commission(
+        commission = account.calculate_commission(
+            instrument=instrument,
             last_qty=order.quantity,
             last_px=last_px,
             liquidity_side=liquidity_side,
@@ -458,8 +508,8 @@ class TestStubs:
         return OrderFilled(
             trader_id=TestStubs.trader_id(),
             strategy_id=strategy_id,
+            account_id=account_id,
             instrument_id=instrument.id,
-            account_id=TestStubs.account_id(),
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
             execution_id=execution_id,
@@ -481,8 +531,8 @@ class TestStubs:
         return OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,
@@ -495,8 +545,8 @@ class TestStubs:
         return OrderExpired(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,
@@ -509,8 +559,8 @@ class TestStubs:
         return OrderTriggered(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
             account_id=TestStubs.account_id(),
+            instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,

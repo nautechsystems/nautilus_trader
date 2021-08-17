@@ -99,8 +99,7 @@ cdef class Symbol(Identifier):
 
 cdef class Venue(Identifier):
     """
-    Represents a valid trading venue ID for a tradeable financial market
-    instrument.
+    Represents a valid trading venue ID.
     """
 
     def __init__(self, str name):
@@ -110,7 +109,7 @@ cdef class Venue(Identifier):
         Parameters
         ----------
         name : str
-            The venue name ID value.
+            The venue ID value.
 
         Raises
         ------
@@ -328,7 +327,7 @@ cdef class AccountId(Identifier):
         Parameters
         ----------
         issuer : str
-            The account issuer (exchange/broker) ID value.
+            The account issuer (trading venue) ID value.
         number : str
             The account 'number' ID value.
 
@@ -381,7 +380,7 @@ cdef class AccountId(Identifier):
 
 cdef class ClientOrderId(Identifier):
     """
-    Represents a valid client order ID.
+    Represents a valid client order ID (assigned by the Nautilus system).
 
     The ID value must be unique at the firm level.
     """
@@ -406,7 +405,7 @@ cdef class ClientOrderId(Identifier):
 
 cdef class ClientOrderLinkId(Identifier):
     """
-    Represents a valid client order link ID.
+    Represents a valid client order link ID (assigned by the Nautilus system).
 
     The ID value must be unique for a trading venue.
 
@@ -440,7 +439,7 @@ cdef class ClientOrderLinkId(Identifier):
 
 cdef class VenueOrderId(Identifier):
     """
-    Represents a valid venue order ID.
+    Represents a valid venue order ID (assigned by a trading venue).
     """
 
     def __init__(self, str value):
@@ -456,11 +455,6 @@ cdef class VenueOrderId(Identifier):
         ------
         ValueError
             If value is not a valid string.
-
-        References
-        ----------
-        Null Object Pattern
-        https://deviq.com/null-object-pattern/
 
         """
         super().__init__(value)
@@ -484,11 +478,6 @@ cdef class PositionId(Identifier):
         ------
         ValueError
             If value is not a valid string.
-
-        References
-        ----------
-        Null Object Pattern
-        https://deviq.com/null-object-pattern/
 
         """
         super().__init__(value)

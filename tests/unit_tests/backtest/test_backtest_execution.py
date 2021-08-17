@@ -29,7 +29,7 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import StrategyId
@@ -38,8 +38,8 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -124,17 +124,17 @@ class TestBacktestExecClientTests:
     def test_connect(self):
         # Arrange
         # Act
-        self.exec_client.connect()
+        self.exec_client.start()
 
         # Assert
         assert self.exec_client.is_connected
 
     def test_disconnect(self):
         # Arrange
-        self.exec_client.connect()
+        self.exec_client.start()
 
         # Act
-        self.exec_client.disconnect()
+        self.exec_client.stop()
 
         # Assert
         assert not self.exec_client.is_connected
@@ -177,7 +177,7 @@ class TestBacktestExecClientTests:
         self.exec_client.submit_order(command)
 
         # Assert
-        assert order.state == OrderState.INITIALIZED
+        assert order.status == OrderStatus.INITIALIZED
 
     def test_submit_bracket_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange
@@ -206,7 +206,7 @@ class TestBacktestExecClientTests:
         self.exec_client.submit_bracket_order(command)
 
         # Assert
-        assert entry.state == OrderState.INITIALIZED
+        assert entry.status == OrderStatus.INITIALIZED
 
     def test_cancel_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange

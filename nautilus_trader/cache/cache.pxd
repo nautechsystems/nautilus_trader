@@ -13,9 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -30,8 +33,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.trading.account cimport Account
-from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -116,7 +117,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_account(self, Account account) except *
     cpdef void add_order(self, Order order, PositionId position_id) except *
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id) except *
-    cpdef void add_position(self, Position position) except *
+    cpdef void add_position(self, Position position, OMSType oms_type) except *
 
     cpdef void update_account(self, Account account) except *
     cpdef void update_order(self, Order order) except *

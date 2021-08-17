@@ -29,8 +29,8 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit.stubs import TestStubs
 
@@ -153,15 +153,12 @@ class TestBinanceExecutionClient:
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         # Act
-        self.client.disconnect()
+        self.exec_engine.stop()
+        await self.exec_engine.get_run_queue_task()
         await asyncio.sleep(0.3)
 
         # Assert
         assert not self.client.is_connected
-
-        # Tear down
-        self.exec_engine.stop()
-        await self.exec_engine.get_run_queue_task()
 
     @pytest.mark.asyncio
     async def test_reset_when_not_connected_successfully_resets(self):
