@@ -197,6 +197,7 @@ class TestBetfairExecutionClient:
     async def test_submit_order_success(self):
         # Arrange
         command = BetfairTestStubs.submit_order_command()
+        mock_betfair_request(self.betfair_client, BetfairResponses.betting_place_order_success())
 
         # Act
         self.client.submit_order(command)
@@ -534,6 +535,7 @@ class TestBetfairExecutionClient:
             price=Price.from_str("0.5"), quantity=Quantity.from_int(10)
         )
         self.cache.add_order(order=order, position_id=None)
+        mock_betfair_request(self.betfair_client, BetfairResponses.betting_place_order_success())
         command = BetfairTestStubs.submit_order_command(order=order)
         self.client.submit_order(command)
         await asyncio.sleep(0.01)
@@ -545,6 +547,7 @@ class TestBetfairExecutionClient:
         command = BetfairTestStubs.cancel_order_command(
             client_order_id=order.client_order_id, venue_order_id=order.venue_order_id
         )
+        mock_betfair_request(self.betfair_client, BetfairResponses.betting_cancel_orders_success())
         self.client.cancel_order(command)
         await asyncio.sleep(0.1)
         balance_cancel = self.cache.account_for_venue(BETFAIR_VENUE).balances()[GBP]
