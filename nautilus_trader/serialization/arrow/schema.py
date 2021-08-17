@@ -70,18 +70,6 @@ NAUTILUS_PARQUET_SCHEMA = {
     Ticker: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int8(), pa.string()),
-            "open": pa.string(),
-            "high": pa.string(),
-            "low": pa.string(),
-            "close": pa.string(),
-            "volume_quote": pa.string(),
-            "volume_base": pa.string(),
-            "bid": pa.string(),
-            "ask": pa.string(),
-            "bid_size": pa.string(),
-            "ask_size": pa.string(),
-            "last_px": pa.string(),
-            "last_qty": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
         },
@@ -144,7 +132,8 @@ NAUTILUS_PARQUET_SCHEMA = {
             "event_id": pa.string(),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
-        }
+        },
+        metadata={"type": "AccountState"},
     ),
     InstrumentStatusUpdate: pa.schema(
         {
@@ -152,7 +141,8 @@ NAUTILUS_PARQUET_SCHEMA = {
             "status": pa.dictionary(pa.int8(), pa.string()),
             "ts_event": pa.int64(),
             "ts_init": pa.int64(),
-        }
+        },
+        metadata={"type": "InstrumentStatusUpdate"},
     ),
     OrderInitialized: pa.schema(
         {
@@ -173,7 +163,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "hidden": pa.bool_(),
             "price": pa.float64(),
             "trigger": pa.bool_(),
-        }
+        },
     ),
     OrderDenied: pa.schema(
         {

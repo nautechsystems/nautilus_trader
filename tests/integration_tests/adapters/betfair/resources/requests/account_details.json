@@ -1,0 +1,17 @@
+{
+  "method": "POST",
+  "url": "https://api.betfair.com/exchange/account/json-rpc/v1",
+  "headers": {
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+    "content-type": "application/json",
+    "X-Application": "app_key",
+    "X-Authentication": "xxxsessionToken="
+  },
+  "json": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "AccountAPING/v1.0/getAccountDetails",
+    "params": {}
+  }
+}

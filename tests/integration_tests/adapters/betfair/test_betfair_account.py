@@ -13,21 +13,44 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from decimal import Decimal
 
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.msgbus.bus import MessageBus
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.stubs import TestStubs
 
 
 class TestBettingAccount:
     def setup(self):
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
+
+        self.clock = LiveClock()
+        self.venue = BETFAIR_VENUE
         self.account = TestStubs.margin_account()  # TODO(bm): Implement betting account
         self.instrument = BetfairTestStubs.betting_instrument()
+
+        # Setup logging
+        self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.DEBUG)
+
+        self.msgbus = MessageBus(
+            trader_id=TestStubs.trader_id(),
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.cache = TestStubs.cache()
+        self.cache.add_instrument(BetfairTestStubs.betting_instrument())
 
     def test_betting_instrument_notional_value(self):
         notional = self.instrument.notional_value(

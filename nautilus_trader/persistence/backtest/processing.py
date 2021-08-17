@@ -45,6 +45,7 @@ class SyncExecutor(Executor):
             result = func(*args, **kwargs)
             future.set_result(result)
         except Exception as e:
+            print(e.__traceback__)
             print(f"ERR: {e}")
             future.set_exception(e)
 
