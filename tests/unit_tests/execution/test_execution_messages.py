@@ -52,7 +52,7 @@ class TestExecutionStateReport:
             == "ExecutionMassStatus(client_id=IB, account_id=SIM-000, order_reports={}, exec_reports={}, position_reports={}, ts_init=0)"  # noqa
         )  # noqa
 
-    def test_add_order_state_report(self):
+    def test_add_order_status_report(self):
         # Arrange
         report = ExecutionMassStatus(
             client_id=ClientId("IB"),

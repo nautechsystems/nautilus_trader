@@ -622,7 +622,7 @@ class TestOrderSide:
 
 
 class TestOrderStatus:
-    def test_order_state_parser_given_invalid_value_raises_value_error(self):
+    def test_order_status_parser_given_invalid_value_raises_value_error(self):
         # Arrange
         # Act
         # Assert
@@ -649,7 +649,7 @@ class TestOrderStatus:
             [OrderStatus.FILLED, "FILLED"],
         ],
     )
-    def test_order_state_to_str(self, enum, expected):
+    def test_order_status_to_str(self, enum, expected):
         # Arrange
         # Act
         result = OrderStatusParser.to_str_py(enum)
@@ -674,7 +674,7 @@ class TestOrderStatus:
             ["FILLED", OrderStatus.FILLED],
         ],
     )
-    def test_order_state_from_str(self, string, expected):
+    def test_order_status_from_str(self, string, expected):
         # Arrange
         # Act
         result = OrderStatusParser.from_str_py(string)
