@@ -25,6 +25,7 @@ from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import InstrumentSearch
 from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
@@ -52,11 +53,25 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from tests.integration_tests.adapters.betfair.conftest import INSTRUMENTS
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.stubs import TestStubs
+
+
+INSTRUMENTS = []
+
+
+@pytest.fixture(scope="session", autouse=True)
+def instrument_list(loop: asyncio.AbstractEventLoop):
+    global INSTRUMENTS
+    client = BetfairTestStubs.betfair_client()
+    logger = LiveLogger(loop=loop, clock=LiveClock(), level_stdout=LogLevel.DEBUG)
+    instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, market_filter={})
+    t = loop.create_task(instrument_provider.load_all_async())
+    loop.run_until_complete(t)
+    INSTRUMENTS.extend(instrument_provider.list_instruments())
+    assert INSTRUMENTS
 
 
 class TestBetfairDataClient:

@@ -229,17 +229,17 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         place_order = order_submit_to_betfair(command=command, instrument=instrument)
         try:
-            resp = await self._client.place_orders(**place_order)
+            response = await self._client.place_orders(**place_order)
         except Exception as e:
             self._log.error(f"submit_order strategy_id={command.strategy_id}, "
                             f"client_order_id={client_order_id} exception={e}")
             return
 
-        self._log.info(f"resp: {resp}")
-
-        for report in resp['instructionReports']:
-            if resp["status"] == "FAILURE":
-                reason = f"{resp['errorCode']}: {report['errorCode']}"
+        self._log.debug(f"response={response}")
+        result = response['result']
+        for report in result['instructionReports']:
+            if result["status"] == "FAILURE":
+                reason = f"{result['errorCode']}: {report['errorCode']}"
                 self._log.warning(f"Submit failed - {reason}")
                 self.generate_order_rejected(
                     strategy_id=command.strategy_id,
@@ -321,12 +321,14 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             instrument=instrument
         )
         self.pending_update_order_client_ids.add((command.client_order_id, existing_order.venue_order_id))
-        resp = await self._client.replace_orders(**kw)
+        response = await self._client.replace_orders(**kw)
 
-        # Check response
-        for report in resp['instructionReports']:
+        self._log.debug(f"response={response}")
+
+        result = response['result']
+        for report in result['instructionReports']:
             if report["status"] == "FAILURE":
-                reason = f"{resp['errorCode']}: {report['errorCode']}"
+                reason = f"{result['errorCode']}: {report['errorCode']}"
                 self._log.warning(f"Submit failed - {reason}")
                 self.generate_order_rejected(
                     strategy_id=command.strategy_id,
@@ -380,15 +382,15 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"cancel_orders {cancel_orders}")
 
         # Send to client
-        resp = await self._client.cancel_orders(**cancel_orders)
+        response = await self._client.cancel_orders(**cancel_orders)
+        self._log.debug(f"response={response}")
 
-        self._log.debug(f"cancel_order resp {resp}")
-
+        result = response['result']
         # Parse response
-        for report in resp['instructionReports']:
+        for report in result['instructionReports']:
             venue_order_id = VenueOrderId(report['instruction']['betId'])
             if report["status"] == "FAILURE":
-                reason = f"{resp.get('errorCode', 'Error')}: {report['errorCode']}"
+                reason = f"{result.get('errorCode', 'Error')}: {report['errorCode']}"
                 self.generate_order_cancel_rejected(
                     strategy_id=command.strategy_id,
                     instrument_id=command.instrument_id,

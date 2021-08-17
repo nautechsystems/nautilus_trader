@@ -1,10 +1,16 @@
 import asyncio
+import datetime
 import pathlib
 import ssl
 from typing import Dict, List, Optional, Union
 
 import orjson
 
+from nautilus_trader.adapters.betfair.client.enums import MarketProjections
+from nautilus_trader.adapters.betfair.client.enums import MarketSort
+from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
+from nautilus_trader.adapters.betfair.client.exceptions import BetfairError
+from nautilus_trader.adapters.betfair.client.util import parse_params
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.network.http_client import HTTPClient
 from nautilus_trader.network.http_client import ResponseException
@@ -65,6 +71,7 @@ class BetfairClient(HTTPClient):
         self, url, method, params: Optional[Dict] = None, data: Optional[Dict] = None
     ) -> Dict:
         data = {**self.JSON_RPC_DEFAULTS, "method": method, **(data or {}), "params": params or {}}
+        self._log.debug(f"{url=}, {params=}, {data=}")
         try:
             resp = await self.request(method="POST", url=url, headers=self.headers, json=data)
             data = orjson.loads(resp.data)  # type: ignore
@@ -117,8 +124,8 @@ class BetfairClient(HTTPClient):
 
     async def list_market_catalogue(
         self,
-        market_filter: dict,
-        market_projection: List[str] = None,
+        filter: dict,
+        market_projection: List[MarketProjections] = None,
         sort: str = None,
         max_results: int = 1000,
         locale: str = None,
@@ -128,18 +135,12 @@ class BetfairClient(HTTPClient):
         """
         assert 0 < max_results <= 1000
 
-        params: Dict = {
-            "filter": parse_market_filter(market_filter),
-            "maxResults": max_results,
-        }
-        if market_projection is not None:
-            assert all([m in MARKET_PROJECTIONS for m in market_projection])
-            params["marketProjection"] = market_projection
-        if sort is not None:
-            assert sort in MARKET_SORT
-            params["sort"] = sort
-        if locale is not None:
-            params["locale"] = locale
+        params = parse_params(**locals())
+
+        if "marketProjection" in params:
+            assert all([isinstance(m, MarketProjections) for m in params["marketProjection"]])
+        if "sort" in params:
+            assert isinstance(sort, MarketSort)
         resp = await self.rpc_post(
             url=self.BETTING_URL, method="SportsAPING/v1.0/listMarketCatalogue", params=params
         )
@@ -153,9 +154,7 @@ class BetfairClient(HTTPClient):
         return resp["result"]
 
     async def get_account_funds(self, wallet: Optional[str] = None):
-        params = None
-        if wallet:
-            params = {"wallet": wallet}
+        params = parse_params(**locals())
         resp = await self.rpc_post(
             url=self.ACCOUNT_URL, method="AccountAPING/v1.0/getAccountFunds", params=params
         )
@@ -172,16 +171,7 @@ class BetfairClient(HTTPClient):
         """
         Place a new order
         """
-        params = {
-            "marketId": market_id,
-            "instructions": instructions,
-        }
-        if customer_ref is not None:
-            params["customerRef"] = customer_ref
-        if market_version is not None:
-            params["marketVersion"] = market_version  # type: ignore
-        if customer_strategy_ref is not None:
-            params["customerStrategyRef"] = customer_strategy_ref
+        params = parse_params(**locals())
         resp = await self.rpc_post(
             url=self.BETTING_URL, method="SportsAPING/v1.0/placeOrders", params=params
         )
@@ -194,14 +184,7 @@ class BetfairClient(HTTPClient):
         customer_ref: str = None,
         market_version: Optional[dict] = None,
     ):
-        params = {
-            "marketId": market_id,
-            "instructions": instructions,
-        }
-        if customer_ref is not None:
-            params["customerRef"] = customer_ref
-        if market_version is not None:
-            params["marketVersion"] = market_version  # type: ignore
+        params = parse_params(**locals())
         resp = await self.rpc_post(
             url=self.BETTING_URL, method="SportsAPING/v1.0/replaceOrders", params=params
         )
@@ -213,99 +196,74 @@ class BetfairClient(HTTPClient):
         instructions: list = None,
         customer_ref: str = None,
     ):
-        params = {
-            "marketId": market_id,
-            "instructions": instructions,
-        }
-        if customer_ref is not None:
-            params["customerRef"] = customer_ref
+        params = parse_params(**locals())
         resp = await self.rpc_post(
             url=self.BETTING_URL, method="SportsAPING/v1.0/cancelOrders", params=params
         )
         return resp["result"]
 
+    async def list_current_orders(
+        self,
+        bet_ids: list = None,
+        market_ids: list = None,
+        order_projection: str = None,
+        customer_order_refs: list = None,
+        customer_strategy_refs: list = None,
+        date_from: datetime.datetime = None,
+        date_to: datetime.datetime = None,
+        order_by: str = "BY_PLACE_TIME",
+        sort_dir: str = None,
+        from_record: int = None,
+        record_count: int = None,
+        include_item_description: bool = None,
+    ) -> List[Dict]:
+        params = parse_params(**locals())
+        current_orders = []
+        more_available = True
+        index = from_record or 0
+        while more_available:
+            params["fromRecord"] = index
+            resp = await self.rpc_post(
+                url=self.BETTING_URL, method="SportsAPING/v1.0/listCurrentOrders", params=params
+            )
+            order_chunk = resp["result"]["currentOrders"]
+            current_orders.extend(order_chunk)
+            more_available = resp["result"]["moreAvailable"]
+            index += len(order_chunk)
+        return current_orders
 
-MARKET_PROJECTIONS = [
-    "COMPETITION",
-    "EVENT",
-    "EVENT_TYPE",
-    "MARKET_START_TIME",
-    "MARKET_DESCRIPTION",
-    "RUNNER_DESCRIPTION",
-    "RUNNER_METADATA",
-]
-
-MARKET_SORT = [
-    "MINIMUM_TRADED",
-    "MAXIMUM_TRADED",
-    "MINIMUM_AVAILABLE",
-    "MAXIMUM_AVAILABLE",
-    "FIRST_TO_START",
-    "LAST_TO_START",
-]
-
-MARKET_BETTING_TYPE = [
-    "ODDS",
-    "LINE",
-    "RANGE",
-    "ASIAN_HANDICAP_DOUBLE_LINE",
-    "ASIAN_HANDICAP_SINGLE_LINE",
-    "FIXED_ODDS",
-]
-
-ORDER_STATUS = [
-    "PENDING",
-    "EXECUTION_COMPLETE",
-    "EXECUTABLE",
-    "EXPIRED",
-]
-
-
-def parse_market_filter(market_filter):
-    string_keys = ("textQuery",)
-    bool_keys = ("bspOnly", "turnInPlayEnabled", "inPlayOnly")
-    list_string_keys = (
-        "exchangeIds",
-        "eventTypeIds",
-        "eventIds",
-        "competitionIds",
-        "marketIds",
-        "venues",
-        "marketBettingTypes",
-        "marketCountries",
-        "marketTypeCodes",
-        "withOrders",
-        "raceTypes",
-    )
-    for key in string_keys:
-        if key not in market_filter:
-            continue
-        # Condition.type(market_filter[key], str, key)
-        assert isinstance(market_filter[key], str), f"{key} should be type `str` not {type(key)}"
-    for key in bool_keys:
-        if key not in market_filter:
-            continue
-        # Condition.type(market_filter[key], bool, key)
-        assert isinstance(market_filter[key], bool), f"{key} should be type `bool` not {type(key)}"
-    for key in list_string_keys:
-        if key not in market_filter:
-            continue
-        # Condition.list_type(market_filter[key], str, key)
-        assert isinstance(market_filter[key], list), f"{key} should be type `list` not {type(key)}"
-        for v in market_filter[key]:
-            assert isinstance(v, str), f"{v} should be type `str` not {type(v)}"
-    return market_filter
-
-
-class BetfairError(Exception):
-    pass
-
-
-class BetfairAPIError(BetfairError):
-    def __init__(self, code: str, message: str):
-        super().__init__()
-        self.code = code
-        self.message = message
-
-    def __str__(self):
-        return f"BetfairAPIError(code={self.code}, message={self.message})"
+    async def list_cleared_orders(
+        self,
+        bet_status: str = "SETTLED",
+        event_type_ids: list = None,
+        event_ids: list = None,
+        market_ids: list = None,
+        runner_ids: list = None,
+        bet_ids: list = None,
+        customer_order_refs: list = None,
+        customer_strategy_refs: list = None,
+        side: str = None,
+        settled_date_from: datetime.datetime = None,
+        settled_date_to: datetime.datetime = None,
+        group_by: str = None,
+        include_item_description: bool = None,
+        locale: str = None,
+        from_record: int = None,
+        record_count: int = None,
+    ) -> List[Dict]:
+        params = parse_params(**locals())
+        cleared_orders = []
+        more_available = True
+        index = from_record or 0
+        while more_available:
+            params["fromRecord"] = index
+            if settled_date_from or settled_date_to:
+                params["settledDateRange"] = {"from": settled_date_from, "to": settled_date_to}
+            resp = await self.rpc_post(
+                url=self.BETTING_URL, method="SportsAPING/v1.0/listClearedOrders", params=params
+            )
+            order_chunk = resp["result"]["clearedOrders"]
+            cleared_orders.extend(order_chunk)
+            more_available = resp["result"]["moreAvailable"]
+            index += len(order_chunk)
+        return cleared_orders

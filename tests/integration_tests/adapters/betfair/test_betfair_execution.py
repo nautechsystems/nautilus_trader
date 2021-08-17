@@ -192,7 +192,7 @@ class TestBetfairExecutionClient:
         return account_state
 
     @pytest.mark.asyncio
-    async def test_submit_order_success(self, resp):
+    async def test_submit_order_success(self):
         # Arrange
         command = BetfairTestStubs.submit_order_command()
 
@@ -474,11 +474,7 @@ class TestBetfairExecutionClient:
         # Betfair client login
         patch(
             "betfairlightweight.endpoints.betting.Betting.list_current_orders",
-            return_value=BetfairDataProvider.current_orders(),
-        )
-        patch(
-            "betfairlightweight.endpoints.betting.Betting.list_current_orders",
-            return_value=BetfairDataProvider.current_orders(),
+            return_value=BetfairResponses.list_current_orders(),
         )
         result = await self.client.generate_order_status_report()
         assert result

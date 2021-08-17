@@ -563,12 +563,12 @@ class BetfairResponses:
         return BetfairResponses.load("betting_place_orders_old.json")
 
     @staticmethod
-    def betting_post_replace_order_success():
-        return BetfairResponses.load("betting_post_replace_order_success.json")
-
-    @staticmethod
     def betting_replace_orders_success():
         return BetfairResponses.load("betting_replace_orders_success.json")
+
+    @staticmethod
+    def betting_replace_orders_success_multi():
+        return BetfairResponses.load("betting_replace_orders_success_multi.json")
 
     @staticmethod
     def cert_login():

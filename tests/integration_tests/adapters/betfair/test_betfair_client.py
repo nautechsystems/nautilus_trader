@@ -3,8 +3,8 @@ import sys
 
 import pytest
 
-from nautilus_trader.adapters.betfair.client import BetfairAPIError
 from nautilus_trader.adapters.betfair.client import BetfairClient
+from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
@@ -84,7 +84,7 @@ class TestBetfairClient:
         with mock_client_request(
             response=BetfairResponses.betting_list_market_catalogue()
         ) as mock_request:
-            catalogue = await self.client.list_market_catalogue(market_filter=market_filter)
+            catalogue = await self.client.list_market_catalogue(filter=market_filter)
             assert catalogue
         result = mock_request.call_args.kwargs
         expected = BetfairRequests.betting_list_market_catalogue()
@@ -174,7 +174,7 @@ class TestBetfairClient:
         assert result == expected
 
     @pytest.mark.asyncio
-    async def test_replace_orders(self):
+    async def test_replace_orders_single(self):
         instrument = BetfairTestStubs.betting_instrument()
         update_order_command = BetfairTestStubs.update_order_command(
             instrument_id=instrument.id,
@@ -186,9 +186,32 @@ class TestBetfairClient:
             side=OrderSide.BUY,
             instrument=instrument,
         )
-        with mock_client_request(response=BetfairResponses.betting_place_order_success()) as req:
+        with mock_client_request(response=BetfairResponses.betting_replace_orders_success()) as req:
             resp = await self.client.replace_orders(**replace_order)
             assert resp
+
+        expected = BetfairRequests.betting_replace_order()
+        result = req.call_args.kwargs["json"]
+        assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_replace_orders_multi(self):
+        instrument = BetfairTestStubs.betting_instrument()
+        update_order_command = BetfairTestStubs.update_order_command(
+            instrument_id=instrument.id,
+            client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
+        )
+        replace_order = order_update_to_betfair(
+            command=update_order_command,
+            venue_order_id=VenueOrderId("240718603398"),
+            side=OrderSide.BUY,
+            instrument=instrument,
+        )
+        with mock_client_request(
+            response=BetfairResponses.betting_replace_orders_success_multi()
+        ) as req:
+            resp = await self.client.replace_orders(**replace_order)
+            assert len(resp["oc"][0]["orc"][0]["uo"]) == 2
 
         expected = BetfairRequests.betting_replace_order()
         result = req.call_args.kwargs["json"]
@@ -204,5 +227,35 @@ class TestBetfairClient:
             assert resp
 
         expected = BetfairRequests.betting_cancel_order()
+        result = req.call_args.kwargs["json"]
+        assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_list_current_orders(self):
+        with mock_client_request(response=BetfairResponses.list_current_orders()) as req:
+            current_orders = await self.client.list_current_orders()
+            assert len(current_orders) == 4
+
+        expected = {
+            "id": 1,
+            "jsonrpc": "2.0",
+            "method": "SportsAPING/v1.0/listCurrentOrders",
+            "params": {"fromRecord": 0, "orderBy": "BY_PLACE_TIME"},
+        }
+        result = req.call_args.kwargs["json"]
+        assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_list_cleared_orders(self):
+        with mock_client_request(response=BetfairResponses.list_cleared_orders()) as req:
+            cleared_orders = await self.client.list_cleared_orders()
+            assert len(cleared_orders) == 14
+
+        expected = {
+            "id": 1,
+            "jsonrpc": "2.0",
+            "method": "SportsAPING/v1.0/listClearedOrders",
+            "params": {"betStatus": "SETTLED", "fromRecord": 0},
+        }
         result = req.call_args.kwargs["json"]
         assert result == expected

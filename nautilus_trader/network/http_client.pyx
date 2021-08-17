@@ -126,7 +126,7 @@ cdef class HTTPClient:
                 data = await resp.read()
                 resp.data = data
                 resp.raise_for_status()
-                self._log.debug(str(data))
+                # self._log.debug(str(data))
                 return resp
             except ClientResponseError as e:
                 self._log.exception(e)
