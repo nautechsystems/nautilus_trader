@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import sys
 from collections import Counter
 from functools import partial
 from unittest.mock import patch
@@ -59,6 +60,9 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.stubs import TestStubs
+
+
+pytestmark = pytest.mark.skipif(sys.version_info < (3, 8), reason="requires python3.8 or higher")
 
 
 INSTRUMENTS = []
