@@ -798,28 +798,6 @@ cdef class Condition:
                  f", was \'{argument}\'"),
         )
 
-    @staticmethod
-    cdef void valid_port(int value, str param, ex_type=None) except *:
-        """
-        Check the port value is valid in range [49152, 65535].
-
-        Parameters
-        ----------
-        value : int
-            The port value to check.
-        param : str
-            The name of the ports parameter.
-        ex_type : Exception, optional
-            The custom exception type to be raised on a failed check.
-
-        Raises
-        -------
-        ValueError
-              If value is not in range [49152, 65535].
-
-        """
-        Condition.in_range_int(value, 49152, 65535, param, ex_type)
-
 
 class PyCondition:
 
@@ -1363,25 +1341,3 @@ class PyCondition:
 
         """
         Condition.valid_string(argument, param, ex_type)
-
-    @staticmethod
-    def valid_port(int value, str param, ex_type=None):
-        """
-        Check the port integer value is valid in range [49152, 65535].
-
-        Parameters
-        ----------
-        value : int
-            The port value to check.
-        param : str
-            The name of the ports parameter.
-        ex_type : Exception, optional
-            The custom exception type to be raised on a failed check.
-
-        Raises
-        -------
-        ValueError
-              If value is not in range [49152, 65535].
-
-        """
-        Condition.valid_port(value, param, ex_type)
