@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import types
 from typing import Callable, Optional
 
 from nautilus_trader.common.logging cimport Logger
@@ -67,11 +68,11 @@ cdef class SocketClient:
         ValueError
             If host is not a valid string.
         ValueError
-            If port is not in range [0, 65535].
+            If port is not positive (> 0).
 
         """
-        # Condition.valid_string(host, "host")  # TODO(cs): Temporary
-        # Condition.valid_port(port, "port")  # TODO(cs): Temporary
+        Condition.valid_string(host, "host")
+        Condition.positive_int(port, "port")
 
         self.host = host
         self.port = port
@@ -125,7 +126,7 @@ cdef class SocketClient:
         """
         The actions to perform post-connection. i.e. sending further connection messages.
         """
-        await asyncio.sleep(0)
+        await self._sleep0()
 
     async def send(self, bytes raw):
         self._log.debug("[SEND] " + raw.decode())
@@ -146,12 +147,19 @@ cdef class SocketClient:
                     partial = b""
                 self._log.debug("[RECV] " + raw.decode())
                 self._handler(raw.rstrip(self._crlf))
-                await asyncio.sleep(0)
+                await self._sleep0()
             except asyncio.IncompleteReadError as ex:
                 partial = ex.partial
                 self._log.warning(str(ex))
-                await asyncio.sleep(0)
+                await self._sleep0()
                 continue
             except ConnectionResetError:
                 await self.connect()
         self._stopped = True
+
+    @types.coroutine
+    def _sleep0(self):
+        # This is equivalent to `asyncio.sleep(0)` however avoids the overhead
+        # of the pure Python function call and integer comparison <= 0.
+        # Skip one event loop run cycle
+        yield

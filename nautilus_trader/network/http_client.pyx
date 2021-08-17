@@ -43,7 +43,7 @@ cdef class HTTPClient:
         list addresses=None,
         list nameservers=None,
         int ttl_dns_cache=ONE_DAY,
-        object ssl=False,
+        ssl=False,
         dict connector_kwargs=None,
     ):
         """
