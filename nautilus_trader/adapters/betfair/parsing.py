@@ -659,7 +659,6 @@ def on_market_update(instrument_provider, update: dict):
     return []
 
 
-# TODO - Need to handle pagination > 1000 orders
 async def generate_order_status_report(self, order) -> Optional[OrderStatusReport]:
     return [
         OrderStatusReport(

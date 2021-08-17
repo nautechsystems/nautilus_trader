@@ -54,7 +54,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvide
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.integration_tests.adapters.betfair.test_kit import mock_async
+from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
 from tests.test_kit.stubs import TestStubs
 
 
@@ -99,7 +99,9 @@ class TestBetfairExecutionClient:
             logger=self.logger,
         )
 
-        self.betfair_client: BetfairClient = BetfairTestStubs.betfair_client()
+        self.betfair_client: BetfairClient = BetfairTestStubs.betfair_client(
+            loop=self.loop, logger=self.logger
+        )
         assert self.betfair_client.session_token
         self.instrument_provider = BetfairTestStubs.instrument_provider(
             betfair_client=self.betfair_client
@@ -197,9 +199,6 @@ class TestBetfairExecutionClient:
         command = BetfairTestStubs.submit_order_command()
 
         # Act
-        mock_async(
-            self.betfair_client, "place_orders", BetfairResponses.betting_place_order_success()
-        )
         self.client.submit_order(command)
         await asyncio.sleep(0)
 
@@ -213,11 +212,9 @@ class TestBetfairExecutionClient:
     async def test_submit_order_error(self):
         # Arrange
         command = BetfairTestStubs.submit_order_command()
+        mock_betfair_request(self.betfair_client, BetfairResponses.betting_place_order_error())
 
         # Act
-        mock_async(
-            self.betfair_client, "place_orders", BetfairResponses.betting_place_order_error()
-        )
         self.client.submit_order(command)
         await asyncio.sleep(0)
 
@@ -237,12 +234,10 @@ class TestBetfairExecutionClient:
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
         )
+        mock_betfair_request(self.betfair_client, BetfairResponses.betting_replace_orders_success())
 
         # Act
         self.cache.add_order(order, PositionId("1"))
-        mock_async(
-            self.betfair_client, "replace_orders", BetfairResponses.betting_replace_orders_success()
-        )
         self.client.update_order(command)
         await asyncio.sleep(0)
 
@@ -263,11 +258,9 @@ class TestBetfairExecutionClient:
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
         )
+        mock_betfair_request(self.betfair_client, BetfairResponses.betting_replace_orders_success())
 
         # Act
-        mock_async(
-            self.betfair_client, "replace_orders", BetfairResponses.betting_replace_orders_success()
-        )
         self.client.update_order(command)
         await asyncio.sleep(0)
 
@@ -288,11 +281,9 @@ class TestBetfairExecutionClient:
             client_order_id=order.client_order_id,
             venue_order_id="",
         )
+        mock_betfair_request(self.betfair_client, BetfairResponses.betting_replace_orders_success())
 
         # Act
-        mock_async(
-            self.betfair_client, "replace_orders", BetfairResponses.betting_replace_orders_success()
-        )
         self.client.update_order(command)
         await asyncio.sleep(0)
 
@@ -313,11 +304,9 @@ class TestBetfairExecutionClient:
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("240564968665"),
         )
+        mock_betfair_request(self.betfair_client, BetfairResponses.betting_cancel_orders_success())
 
         # Act
-        mock_async(
-            self.betfair_client, "cancel_orders", BetfairResponses.betting_cancel_orders_success()
-        )
         self.client.cancel_order(command)
         await asyncio.sleep(0)
 
@@ -337,11 +326,9 @@ class TestBetfairExecutionClient:
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("228302937743"),
         )
+        mock_betfair_request(self.betfair_client, BetfairResponses.betting_cancel_orders_error())
 
         # Act
-        mock_async(
-            self.betfair_client, "cancel_orders", BetfairResponses.betting_cancel_orders_error()
-        )
         self.client.cancel_order(command)
         await asyncio.sleep(0)
 
@@ -358,6 +345,7 @@ class TestBetfairExecutionClient:
     @pytest.mark.asyncio
     async def test_connection_account_state(self):
         # Arrange, Act, Assert
+
         await self.client.connection_account_state()
 
         # Assert
@@ -472,11 +460,9 @@ class TestBetfairExecutionClient:
     @pytest.mark.skip(reason="Not implemented")
     async def test_generate_order_status_report(self):
         # Betfair client login
-        patch(
-            "betfairlightweight.endpoints.betting.Betting.list_current_orders",
-            return_value=BetfairResponses.list_current_orders(),
-        )
-        result = await self.client.generate_order_status_report()
+        orders = await self.betfair_client.list_current_orders()
+        for order in orders:
+            result = await self.client.generate_order_status_report(order=order)
         assert result
         raise NotImplementedError()
 

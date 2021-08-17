@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Union
 
 import orjson
 
-from nautilus_trader.adapters.betfair.client.enums import MarketProjections
+from nautilus_trader.adapters.betfair.client.enums import MarketProjection
 from nautilus_trader.adapters.betfair.client.enums import MarketSort
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairError
@@ -71,14 +71,13 @@ class BetfairClient(HTTPClient):
         self, url, method, params: Optional[Dict] = None, data: Optional[Dict] = None
     ) -> Dict:
         data = {**self.JSON_RPC_DEFAULTS, "method": method, **(data or {}), "params": params or {}}
-        self._log.debug(f"{url=}, {params=}, {data=}")
         try:
             resp = await self.request(method="POST", url=url, headers=self.headers, json=data)
             data = orjson.loads(resp.data)  # type: ignore
             if "error" in data:
                 raise BetfairAPIError(code=data["error"]["code"], message=data["error"]["message"])
             if isinstance(data, dict):
-                return data
+                return data["result"]
             else:
                 raise TypeError("Unexpected type:" + str(resp))
         except BetfairError as e:
@@ -125,7 +124,7 @@ class BetfairClient(HTTPClient):
     async def list_market_catalogue(
         self,
         filter_: dict,
-        market_projection: List[MarketProjections] = None,
+        market_projection: List[MarketProjection] = None,
         sort: str = None,
         max_results: int = 1000,
         locale: str = None,
@@ -138,27 +137,26 @@ class BetfairClient(HTTPClient):
         params = parse_params(**locals())
 
         if "marketProjection" in params:
-            assert all([isinstance(m, MarketProjections) for m in params["marketProjection"]])
+            assert all([isinstance(m, MarketProjection) for m in params["marketProjection"]])
         if "sort" in params:
             assert isinstance(sort, MarketSort)
         resp = await self.rpc_post(
             url=self.BETTING_URL, method="SportsAPING/v1.0/listMarketCatalogue", params=params
         )
-        if isinstance(resp, dict):
-            return resp["result"]
+        return resp
 
     async def get_account_details(self):
         resp = await self.rpc_post(
             url=self.ACCOUNT_URL, method="AccountAPING/v1.0/getAccountDetails"
         )
-        return resp["result"]
+        return resp
 
     async def get_account_funds(self, wallet: Optional[str] = None):
         params = parse_params(**locals())
         resp = await self.rpc_post(
             url=self.ACCOUNT_URL, method="AccountAPING/v1.0/getAccountFunds", params=params
         )
-        return resp["result"]
+        return resp
 
     async def place_orders(
         self,
@@ -175,7 +173,7 @@ class BetfairClient(HTTPClient):
         resp = await self.rpc_post(
             url=self.BETTING_URL, method="SportsAPING/v1.0/placeOrders", params=params
         )
-        return resp["result"]
+        return resp
 
     async def replace_orders(
         self,
@@ -188,7 +186,7 @@ class BetfairClient(HTTPClient):
         resp = await self.rpc_post(
             url=self.BETTING_URL, method="SportsAPING/v1.0/replaceOrders", params=params
         )
-        return resp["result"]
+        return resp
 
     async def cancel_orders(
         self,
@@ -200,7 +198,7 @@ class BetfairClient(HTTPClient):
         resp = await self.rpc_post(
             url=self.BETTING_URL, method="SportsAPING/v1.0/cancelOrders", params=params
         )
-        return resp["result"]
+        return resp
 
     async def list_current_orders(
         self,
@@ -226,9 +224,9 @@ class BetfairClient(HTTPClient):
             resp = await self.rpc_post(
                 url=self.BETTING_URL, method="SportsAPING/v1.0/listCurrentOrders", params=params
             )
-            order_chunk = resp["result"]["currentOrders"]
+            order_chunk = resp["currentOrders"]
             current_orders.extend(order_chunk)
-            more_available = resp["result"]["moreAvailable"]
+            more_available = resp["moreAvailable"]
             index += len(order_chunk)
         return current_orders
 
@@ -262,8 +260,8 @@ class BetfairClient(HTTPClient):
             resp = await self.rpc_post(
                 url=self.BETTING_URL, method="SportsAPING/v1.0/listClearedOrders", params=params
             )
-            order_chunk = resp["result"]["clearedOrders"]
+            order_chunk = resp["clearedOrders"]
             cleared_orders.extend(order_chunk)
-            more_available = resp["result"]["moreAvailable"]
+            more_available = resp["moreAvailable"]
             index += len(order_chunk)
         return cleared_orders

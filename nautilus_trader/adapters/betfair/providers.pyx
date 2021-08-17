@@ -18,6 +18,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.client.enums import MarketProjection
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import EVENT_TYPE_TO_NAME
 from nautilus_trader.adapters.betfair.parsing import parse_handicap
@@ -274,15 +275,15 @@ async def load_markets_metadata(client: BetfairClient, markets: List[Dict]) -> D
     for market_id_chunk in chunk(list(set([m["market_id"] for m in markets])), 50):
         results = await client.list_market_catalogue(
             market_projection=[
-                "EVENT_TYPE",
-                "EVENT",
-                "COMPETITION",
-                "MARKET_DESCRIPTION",
-                "RUNNER_METADATA",
-                "RUNNER_DESCRIPTION",
-                "MARKET_START_TIME",
+                MarketProjection.EVENT_TYPE,
+                MarketProjection.EVENT,
+                MarketProjection.COMPETITION,
+                MarketProjection.MARKET_DESCRIPTION,
+                MarketProjection.RUNNER_METADATA,
+                MarketProjection.RUNNER_DESCRIPTION,
+                MarketProjection.MARKET_START_TIME,
             ],
-            market_filter={"marketIds": market_id_chunk},
+            filter_={"marketIds": market_id_chunk},
             max_results=len(market_id_chunk),
         )
         all_results.update({r["marketId"]: r for r in results})

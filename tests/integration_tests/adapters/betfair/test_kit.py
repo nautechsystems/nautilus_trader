@@ -80,9 +80,12 @@ async def async_magic():
 MagicMock.__await__ = lambda x: async_magic().__await__()
 
 
-def mock_async(obj, method, value):
-    setattr(obj, method, MagicMock(return_value=Future()))
-    getattr(obj, method).return_value.set_result(value)
+def mock_betfair_request(obj, response, attr="request"):
+    mock_resp = MagicMock(spec=ClientResponse)
+    mock_resp.data = orjson.dumps(response)
+
+    setattr(obj, attr, MagicMock(return_value=Future()))
+    getattr(obj, attr).return_value.set_result(mock_resp)
 
 
 class BetfairTestStubs:
@@ -212,20 +215,31 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def betfair_client() -> BetfairClient:
-        client = MagicMock(spec=BetfairClient)
-        mock_async(
-            client,
-            "list_market_catalogue",
-            BetfairResponses.betting_list_market_catalogue()["result"],
-        )
-        mock_async(client, "list_navigation", BetfairResponses.navigation_list_navigation())
-        mock_async(client, "get_account_details", BetfairResponses.account_details()["result"])
-        mock_async(
-            client, "get_account_funds", BetfairResponses.account_funds_no_exposure()["result"]
-        )
-        mock_async(client, "place_orders", BetfairResponses.betting_place_order_success())
-        mock_async(client, "cancel_orders", BetfairResponses.betting_cancel_orders_success())
+    def betfair_client(loop, logger) -> BetfairClient:
+        client = BetfairClient("", "", "", "", loop=loop, logger=logger, ssl=True)
+
+        async def request(method, url, **kwargs):
+            rpc_method = kwargs.get("json", {}).get("method") or url
+            responses = {
+                "https://api.betfair.com/exchange/betting/rest/v1/en/navigation/menu.json": BetfairResponses.navigation_list_navigation,
+                "AccountAPING/v1.0/getAccountDetails": BetfairResponses.account_details,
+                "AccountAPING/v1.0/getAccountFunds": BetfairResponses.account_funds_no_exposure,
+                "SportsAPING/v1.0/listMarketCatalogue": BetfairResponses.betting_list_market_catalogue,
+                "SportsAPING/v1.0/list": BetfairResponses.betting_list_market_catalogue,
+                "SportsAPING/v1.0/placeOrders": BetfairResponses.betting_cancel_orders_success,
+                "SportsAPING/v1.0/replaceOrders": BetfairResponses.betting_place_order_success,
+                "SportsAPING/v1.0/cancelOrders": BetfairResponses.betting_cancel_orders_success,
+                "SportsAPING/v1.0/listCurrentOrders": BetfairResponses.list_current_orders,
+                "SportsAPING/v1.0/listClearedOrders": BetfairResponses.list_cleared_orders,
+            }
+            if rpc_method in responses:
+                resp = MagicMock(spec=ClientResponse)
+                resp.data = orjson.dumps(responses[rpc_method]())
+                return resp
+            raise KeyError(rpc_method)
+
+        client.request = MagicMock()  # type: ignore
+        client.request.side_effect = request
         client.session_token = "xxxsessionToken="
 
         return client
@@ -522,25 +536,20 @@ class BetfairResponses:
         return orjson.loads((TEST_PATH / "responses" / filename).read_bytes())
 
     @staticmethod
-    def load_wrap_result(filename):
-        result = BetfairResponses.load(filename=filename)
-        return {"jsonrpc": "2.0", "result": result, "id": 1}
-
-    @staticmethod
     def account_details():
-        return BetfairResponses.load_wrap_result("account_details.json")
+        return BetfairResponses.load("account_details.json")
 
     @staticmethod
     def account_funds_no_exposure():
-        return BetfairResponses.load_wrap_result("account_funds_no_exposure.json")
+        return BetfairResponses.load("account_funds_no_exposure.json")
 
     @staticmethod
     def account_funds_with_exposure():
-        return BetfairResponses.load_wrap_result("account_funds_with_exposure.json")
+        return BetfairResponses.load("account_funds_with_exposure.json")
 
     @staticmethod
     def account_funds_error():
-        return BetfairResponses.load_wrap_result("account_funds_error.json")
+        return BetfairResponses.load("account_funds_error.json")
 
     @staticmethod
     def betting_cancel_orders_success():
@@ -588,7 +597,8 @@ class BetfairResponses:
 
     @staticmethod
     def betting_list_market_catalogue():
-        return BetfairResponses.load_wrap_result("betting_list_market_catalogue.json")
+        result = BetfairResponses.load("betting_list_market_catalogue.json")
+        return {"jsonrpc": "2.0", "result": result, "id": 1}
 
     @staticmethod
     def navigation_list_navigation():

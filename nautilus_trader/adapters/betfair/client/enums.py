@@ -1,7 +1,7 @@
 from enum import Enum
 
 
-class MarketProjections(Enum):
+class MarketProjection(Enum):
     COMPETITION = "COMPETITION"
     EVENT = "EVENT"
     EVENT_TYPE = "EVENT_TYPE"

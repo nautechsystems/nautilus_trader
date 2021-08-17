@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import asyncio
 
 import pytest
 
@@ -20,16 +21,20 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import load_markets
 from nautilus_trader.adapters.betfair.providers import load_markets_metadata
 from nautilus_trader.adapters.betfair.providers import make_instruments
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.model.enums import InstrumentStatus
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
-from tests.integration_tests.adapters.betfair.test_kit import mock_async
 
 
 class TestBetfairInstrumentProvider:
     def setup(self):
-        self.client = BetfairTestStubs.betfair_client()
+        self.loop = asyncio.get_event_loop()
+        self.clock = LiveClock()
+        self.logger = LiveLogger(loop=self.loop, clock=self.clock)
+        self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
         self.market_filter = {"event_type_name": "Tennis"}
         self.provider = BetfairInstrumentProvider(
             client=self.client,
@@ -59,22 +64,22 @@ class TestBetfairInstrumentProvider:
         assert len(market_metadata) == 12035
 
     @pytest.mark.asyncio
-    async def test_load_instruments(self):
-        list_market_catalogue_data = [
-            m
+    async def test_make_instruments(self):
+        # Arrange
+        list_market_catalogue_data = {
+            m["marketId"]: m
             for m in BetfairResponses.betting_list_market_catalogue()["result"]
             if m["eventType"]["name"] == "Basketball"
-        ]
-        mock_async(self.client, "list_market_catalogue", list_market_catalogue_data)
+        }
 
-        markets = await load_markets(self.client, market_filter={"event_type_name": "Basketball"})
-        market_metadata = await load_markets_metadata(client=self.client, markets=markets)
-
+        # Act
         instruments = [
             instrument
-            for metadata in market_metadata.values()
+            for metadata in list_market_catalogue_data.values()
             for instrument in make_instruments(metadata, currency="GBP")
         ]
+
+        # Assert
         assert len(instruments) == 30412
 
     @pytest.mark.asyncio

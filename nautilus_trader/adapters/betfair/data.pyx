@@ -337,7 +337,6 @@ cdef class BetfairDataClient(LiveMarketDataClient):
                 self._log.warning(f"Received event: {data}, DataEngine not yet setup to send events")
 
     cpdef bint _check_stream_unhealthy(self, dict update) except *:
-        print(f"check unhealthy: {update}", update.get("status") == 503, update.get("con", False))
         conflated = update.get("con", False)  # Consuming data slower than the rate of deliver
         if conflated:
             print('!conflated')

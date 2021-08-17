@@ -26,7 +26,7 @@ class TestBetfairSockets:
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
         self.logger = LiveLogger(loop=self.loop, clock=self.clock)
-        self.client = BetfairTestStubs.betfair_client()
+        self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
 
     def test_unique_id(self):
         clients = [

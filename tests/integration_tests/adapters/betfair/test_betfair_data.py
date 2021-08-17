@@ -16,6 +16,7 @@
 import asyncio
 from collections import Counter
 from functools import partial
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -54,6 +55,7 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
+from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.stubs import TestStubs
@@ -63,13 +65,24 @@ INSTRUMENTS = []
 
 
 @pytest.fixture(scope="session", autouse=True)
-def instrument_list(loop: asyncio.AbstractEventLoop):
+@patch("nautilus_trader.adapters.betfair.providers.load_markets_metadata")
+def instrument_list(mock_load_markets_metadata, loop: asyncio.AbstractEventLoop):
+    """Prefill `INSTRUMENTS` cache for tests"""
     global INSTRUMENTS
-    client = BetfairTestStubs.betfair_client()
+
+    # Setup
+    logger = LiveLogger(loop=loop, clock=LiveClock(), level_stdout=LogLevel.ERROR)
+    client = BetfairTestStubs.betfair_client(loop=loop, logger=logger)
     logger = LiveLogger(loop=loop, clock=LiveClock(), level_stdout=LogLevel.DEBUG)
     instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, market_filter={})
+
+    # Load instruments
+    catalog = {r["marketId"]: r for r in BetfairResponses.betting_list_market_catalogue()["result"]}
+    mock_load_markets_metadata.return_value = catalog
     t = loop.create_task(instrument_provider.load_all_async())
     loop.run_until_complete(t)
+
+    # Fill INSTRUMENTS global cache
     INSTRUMENTS.extend(instrument_provider.list_instruments())
     assert INSTRUMENTS
 
@@ -116,7 +129,7 @@ class TestBetfairDataClient:
             logger=self.logger,
         )
 
-        self.betfair_client = BetfairTestStubs.betfair_client()
+        self.betfair_client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
 
         self.instrument_provider = BetfairTestStubs.instrument_provider(
             betfair_client=self.betfair_client
@@ -285,12 +298,11 @@ class TestBetfairDataClient:
             self.client._on_market_update(update)
         result = Counter([type(event).__name__ for event in self.messages])
         expected = {
-            "TradeTick": 1645,
-            "InstrumentStatusUpdate": 976,
-            "OrderBookSnapshot": 903,
-            "BSPOrderBookDelta": 643,
-            "OrderBookDeltas": 545,
-            "BetfairTicker": 35,
+            "TradeTick": 95,
+            "BSPOrderBookDelta": 30,
+            "InstrumentStatusUpdate": 9,
+            "OrderBookSnapshot": 8,
+            "OrderBookDeltas": 2,
         }
         assert result == expected
 
