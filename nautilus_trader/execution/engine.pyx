@@ -585,11 +585,18 @@ cdef class ExecutionEngine(Component):
             self._confirm_position_id(event, oms_type)
 
         try:
-            # Protected against duplicate OrderFilled
             order.apply(event)
-        except (KeyError, InvalidStateTrigger) as ex:
-            self._log.exception(ex)
-            return  # Not re-raising to avoid crashing engine
+        except InvalidStateTrigger as ex:
+            self._log.warning(f"InvalidStateTrigger: {ex}, did not apply {event}")
+            return
+        except ValueError as ex:
+            # Protection against invalid IDs
+            self._log.error(str(ex))
+            return
+        except KeyError as ex:
+            # Protection against duplicate fills
+            self._log.error(str(ex))
+            return
 
         self._cache.update_order(order)
         self._msgbus.publish_c(

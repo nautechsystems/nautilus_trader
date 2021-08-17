@@ -19,6 +19,7 @@ import pyarrow as pa
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.data.base cimport GenericData
+from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -30,7 +31,6 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.serialization.base cimport _OBJECT_FROM_DICT_MAP
 from nautilus_trader.serialization.base cimport _OBJECT_TO_DICT_MAP
 
-from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.serialization.arrow.implementations import account_state
 from nautilus_trader.serialization.arrow.implementations import closing_prices
 from nautilus_trader.serialization.arrow.implementations import order_book
@@ -106,7 +106,8 @@ def register_parquet(
         we write each object as multiple rows in parquet, ie OrderBook or AccountState).
     table : type, optional
         Optional table override for `cls`. Used if `cls` is going to be transformed and stored in a table other than
-        its own. (for example, OrderBookSnapshots are stored as OrderBookDeltas, so we use table=OrderBookDeltas)
+        its own. (for example, OrderBookSnapshots are stored as OrderBookDeltas, so we use table=OrderBookDeltas).
+
     """
     Condition.type_or_none(serializer, Callable, "serializer")
     Condition.type_or_none(deserializer, Callable, "deserializer")

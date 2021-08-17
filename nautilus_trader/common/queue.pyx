@@ -202,7 +202,7 @@ cdef class Queue:
 
         Returns
         -------
-        list[object]
+        list[Any]
 
         """
         return list(self._queue)

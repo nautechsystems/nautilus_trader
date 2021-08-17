@@ -357,7 +357,7 @@ def test_backtest_against_example(catalog):
     tasks = build_graph(config)
     results = tasks.compute()
     result = results[list(results)[0]]
-    assert len(result["account"]) == 289
+    assert len(result["account"]) == 193
     assert len(result["positions"]) == 48
     assert len(result["fills"]) == 96
     expected = b'[{"type":"AccountBalance","currency":"USD","total":"997652.94","locked":"20096.29","free":"977556.65"}]'

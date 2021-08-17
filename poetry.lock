@@ -126,7 +126,7 @@ typing_extensions = ">=3.7.4"
 
 [[package]]
 name = "ccxt"
-version = "1.55.3"
+version = "1.55.8"
 description = "A JavaScript / Python / PHP cryptocurrency trading library with support for 130+ exchanges"
 category = "main"
 optional = true
@@ -1259,7 +1259,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7.9"
-content-hash = "83bf51ac971ea8af511fde39e8edf92a06c4edbb2b30561eef1eaea14614f5a2"
+content-hash = "532f15a3084a8627baa8fd937b206ee4b0e3f0e4036a4e4664611b84427b1c9b"
 
 [metadata.files]
 aiodns = [
@@ -1337,8 +1337,8 @@ bokeh = [
     {file = "bokeh-2.3.3.tar.gz", hash = "sha256:a5fdcc181835561447fcc5a371300973fce4114692d5853addec284d1cdeb677"},
 ]
 ccxt = [
-    {file = "ccxt-1.55.3-py2.py3-none-any.whl", hash = "sha256:138313dc2c59d197271c195438ed91a23648a914fd07bfe26c2881041683aaaa"},
-    {file = "ccxt-1.55.3.tar.gz", hash = "sha256:608f0590ca02f3c5a70ece3f17e89d9aed0e54fd78ac6398c5f89cf96d996930"},
+    {file = "ccxt-1.55.8-py2.py3-none-any.whl", hash = "sha256:9120d62125c0ed279a6fc350bab56ad7aa6efc49ff954cb43846196618be22d9"},
+    {file = "ccxt-1.55.8.tar.gz", hash = "sha256:021455bdf9952f60e95ad1a91d500f19c69e8515e8f439f98b20856ee5a9041f"},
 ]
 certifi = [
     {file = "certifi-2021.5.30-py2.py3-none-any.whl", hash = "sha256:50b1e4f8446b06f41be7dd6338db18e0990601dce795c2b1686458aa7e8fa7d8"},

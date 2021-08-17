@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 from datetime import timedelta
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from nautilus_trader.adapters.betfair.common import MAX_BET_PROB
 from nautilus_trader.adapters.betfair.common import MIN_BET_PROB
@@ -66,7 +66,7 @@ class TickTock(TradingStrategy):
 
         self.instrument = instrument
         self.bar_type = bar_type
-        self.store = []  # type: list[object]
+        self.store = []  # type: list[Any]
         self.timer_running = False
         self.time_alert_counter = 0
 

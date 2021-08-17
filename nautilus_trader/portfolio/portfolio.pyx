@@ -36,6 +36,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
+from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSideParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -43,8 +44,11 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.account cimport AccountState
+from nautilus_trader.model.events.order cimport OrderAccepted
+from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
@@ -54,6 +58,14 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
+
+
+cdef tuple _UPDATE_ORDER_EVENTS = (
+    OrderAccepted,
+    OrderCanceled,
+    OrderRejected,
+    OrderFilled,
+)
 
 
 cdef class Portfolio(PortfolioFacade):
@@ -335,10 +347,6 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(event, "event")
 
-        cdef Order order = self._cache.order(event.client_order_id)
-        if order is None:
-            return  # Nothing to update
-
         if event.account_id is None:
             return  # No account assigned yet
 
@@ -352,6 +360,20 @@ cdef class Portfolio(PortfolioFacade):
 
         if not account.calculate_account_state:
             return  # Nothing to calculate
+
+        if not isinstance(event, _UPDATE_ORDER_EVENTS):
+            return  # No change to account state
+
+        cdef Order order = self._cache.order(event.client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot update order: "
+                f"{repr(event.client_order_id)} not found in the cache."
+            )
+            return  # No order found
+
+        if isinstance(event, OrderRejected) and order.type != OrderType.STOP_LIMIT:
+            return  # No change to account state
 
         cdef Instrument instrument = self._cache.instrument(event.instrument_id)
         if instrument is None:
