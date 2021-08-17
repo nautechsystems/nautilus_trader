@@ -12,7 +12,20 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from libc.stdint cimport int64_t
+
+import pyarrow as pa
+from orjson import orjson
+
+from nautilus_trader.serialization.arrow.serializer import register_parquet
+
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.model.data.ticker cimport Ticker
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.data cimport OrderBookDelta
 
 from nautilus_trader.serialization.base import register_serializable_object
@@ -45,4 +58,57 @@ cdef class BSPOrderBookDelta(OrderBookDelta):
         return BSPOrderBookDelta.to_dict_c(obj)
 
 
+cdef class BetfairTicker(Ticker):
+    def __init__(
+        self,
+        InstrumentId instrument_id not None,
+        int64_t ts_event,
+        int64_t ts_init,
+        Price last_traded_price=None,
+        Quantity traded_volume=None,
+        dict info=None,
+    ):
+        super().__init__(instrument_id=instrument_id, ts_event=ts_event, ts_init=ts_init, info=info)
+        self.last_traded_price = last_traded_price
+        self.traded_volume = traded_volume
+
+    @classmethod
+    def schema(cls):
+        return pa.schema(
+            {
+                "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+                "ts_event": pa.int64(),
+                "ts_init": pa.int64(),
+                "last_traded_price": pa.string(),
+                "traded_volume": pa.string(),
+            },
+            metadata={"type": "BetfairTicker"}
+        )
+
+
+def betfair_ticker_from_dict(values: dict):
+    return BetfairTicker(
+        instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+        ts_event=values["ts_event"],
+        ts_init=values["ts_init"],
+        last_traded_price=Price.from_str_c(values["last_traded_price"]),
+        traded_volume=Quantity.from_str_c(values["traded_volume"]),
+        info=orjson.loads(values['info']) if values['info'] is not None else None,
+    )
+
+
+def betfair_ticker_to_dict(ticker: BetfairTicker):
+    return {
+        "type": type(ticker).__name__,
+        "instrument_id": ticker.instrument_id.value,
+        "ts_event": ticker.ts_event,
+        "ts_init": ticker.ts_init,
+        "last_traded_price": str(ticker.last_traded_price),
+        "traded_volume": str(ticker.traded_volume),
+        "info": orjson.dumps(ticker.info) if ticker.info is not None else None,
+    }
+
+
 register_serializable_object(BSPOrderBookDelta, BSPOrderBookDelta.to_dict, BSPOrderBookDelta.from_dict)
+register_serializable_object(BetfairTicker, betfair_ticker_to_dict, betfair_ticker_from_dict)
+register_parquet(cls=BetfairTicker, schema=BetfairTicker.schema())

@@ -24,6 +24,7 @@ from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport VenueStatusUpdate
@@ -81,6 +82,7 @@ _OBJECT_TO_DICT_MAP = {
     CryptoSwap.__name__: CryptoSwap.to_dict_c,
     CurrencySpot.__name__: CurrencySpot.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
+    Ticker.__name__: Ticker.to_dict_c,
     QuoteTick.__name__: QuoteTick.to_dict_c,
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.to_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.to_dict_c,
@@ -117,6 +119,7 @@ _OBJECT_FROM_DICT_MAP = {
     CryptoSwap.__name__: CryptoSwap.from_dict_c,
     CurrencySpot.__name__: CurrencySpot.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,
+    Ticker.__name__: Ticker.from_dict_c,
     QuoteTick.__name__: QuoteTick.from_dict_c,
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.from_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.from_dict_c,

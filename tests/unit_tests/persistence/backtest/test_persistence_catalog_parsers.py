@@ -117,7 +117,7 @@ def test_csv_quoter_parser(glob, parser, expected):
 @pytest.mark.parametrize(
     "glob, parser, expected",
     [
-        ("betfair/*.bz2", "parse_betfair", {"1.166811431.bz2": 16029, "1.180305278.bz2": 12450}),
+        ("betfair/*.bz2", "parse_betfair", {"1.166811431.bz2": 17848, "1.180305278.bz2": 15736}),
     ],
     indirect=["parser"],
 )

@@ -1,0 +1,14 @@
+{
+  "data": {
+    "password": "password",
+    "username": "username"
+  },
+  "headers": {
+    "Accept-Encoding": "gzip, deflate",
+    "Connection": "keep-alive",
+    "Content-Type": "application/x-www-form-urlencoded",
+    "X-Application": "app_key"
+  },
+  "method": "POST",
+  "url": "https://identitysso-cert.betfair.com/api/certlogin"
+}
