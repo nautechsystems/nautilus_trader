@@ -147,6 +147,3 @@ cdef class Condition:
 
     @staticmethod
     cdef void valid_string(str argument, str param, ex_type=*) except *
-
-    @staticmethod
-    cdef void valid_port(int value, str param, ex_type=*) except *
