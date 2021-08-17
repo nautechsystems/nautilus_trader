@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport TestClock
@@ -26,7 +27,7 @@ from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -81,52 +82,31 @@ cdef class BacktestExecClient(ExecutionClient):
             cache=cache,
             clock=clock,
             logger=logger,
-            config={"calculate_account_state": False if is_frozen_account else True},
         )
+
+        if not is_frozen_account:
+            AccountFactory.register_calculated_account(account_id.issuer)
 
         self._exchange = exchange
         self.is_connected = False
 
-    cpdef void connect(self) except *:
-        """
-        Connect the client.
-        """
+    cpdef void _start(self) except *:
         self._log.info("Connecting...")
-
         self.is_connected = True
         self._log.info("Connected.")
 
-    cpdef void disconnect(self) except *:
-        """
-        Disconnect the client.
-        """
+    cpdef void _stop(self) except *:
         self._log.info("Disconnecting...")
-
         self.is_connected = False
         self._log.info("Disconnected.")
 
-    cpdef void reset(self) except *:
-        """
-        Reset the client.
-
-        All stateful fields are reset to their initial value.
-        """
-        self._log.info(f"Resetting...")
-
+    cpdef void _reset(self) except *:
+        pass
         # Nothing to reset
-        self._log.info("Reset.")
 
-    cpdef void dispose(self) except *:
-        """
-        Dispose of the client.
-
-        This method is idempotent and irreversible. No other methods should be
-        called after disposal.
-        """
-        self._log.info(f"Disposing.")
-
+    cpdef void _dispose(self) except *:
+        pass
         # Nothing to dispose
-        self._log.info(f"Disposed.")
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 

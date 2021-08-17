@@ -20,8 +20,8 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -72,17 +72,17 @@ class TestBacktestDataClient:
     def test_connect(self):
         # Arrange
         # Act
-        self.client.connect()
+        self.client.start()
 
         # Assert
         assert self.client.is_connected
 
     def test_disconnect(self):
         # Arrange
-        self.client.connect()
+        self.client.start()
 
         # Act
-        self.client.disconnect()
+        self.client.stop()
 
         # Assert
         assert not self.client.is_connected
@@ -107,7 +107,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.subscribe_instruments()
-        self.client.connect()
+        self.client.start()
         self.client.subscribe_instruments()
 
         # Assert
@@ -117,7 +117,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.subscribe_instrument(USDJPY_SIM.id)
-        self.client.connect()
+        self.client.start()
         self.client.subscribe_instrument(USDJPY_SIM.id)
 
         # Assert
@@ -127,7 +127,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.subscribe_quote_ticks(USDJPY_SIM.id)
-        self.client.connect()
+        self.client.start()
         self.client.subscribe_quote_ticks(USDJPY_SIM.id)
 
         # Assert
@@ -137,7 +137,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.subscribe_trade_ticks(USDJPY_SIM.id)
-        self.client.connect()
+        self.client.start()
         self.client.subscribe_trade_ticks(USDJPY_SIM.id)
 
         # Assert
@@ -147,7 +147,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
-        self.client.connect()
+        self.client.start()
         self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
 
         # Assert
@@ -157,7 +157,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.unsubscribe_instruments()
-        self.client.connect()
+        self.client.start()
         self.client.unsubscribe_instruments()
 
         # Assert
@@ -167,7 +167,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.unsubscribe_instrument(USDJPY_SIM.id)
-        self.client.connect()
+        self.client.start()
         self.client.unsubscribe_instrument(USDJPY_SIM.id)
 
         # Assert
@@ -177,7 +177,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.unsubscribe_quote_ticks(USDJPY_SIM.id)
-        self.client.connect()
+        self.client.start()
         self.client.unsubscribe_quote_ticks(USDJPY_SIM.id)
 
         # Assert
@@ -187,7 +187,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.unsubscribe_trade_ticks(USDJPY_SIM.id)
-        self.client.connect()
+        self.client.start()
         self.client.unsubscribe_trade_ticks(USDJPY_SIM.id)
 
         # Assert
@@ -197,7 +197,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.unsubscribe_bars(TestStubs.bartype_usdjpy_1min_bid())
-        self.client.connect()
+        self.client.start()
         self.client.unsubscribe_bars(TestStubs.bartype_usdjpy_1min_bid())
 
         # Assert
@@ -207,7 +207,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.request_quote_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
-        self.client.connect()
+        self.client.start()
         self.client.request_quote_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
 
         # Assert
@@ -217,7 +217,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.request_trade_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
-        self.client.connect()
+        self.client.start()
         self.client.request_trade_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
 
         # Assert
@@ -227,7 +227,7 @@ class TestBacktestDataClient:
         # Arrange
         # Act
         self.client.request_bars(TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4())
-        self.client.connect()
+        self.client.start()
         self.client.request_bars(TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4())
 
         # Assert

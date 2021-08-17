@@ -304,7 +304,7 @@ class TestBacktestAcceptanceTestsETHUSDTWithT:
             venue=self.venue,
             venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
-            account_type=AccountType.CASH,
+            account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-currency account
             starting_balances=[Money(1_000_000, USDT)],
         )
@@ -329,7 +329,7 @@ class TestBacktestAcceptanceTestsETHUSDTWithT:
         assert strategy.fast_ema.count == 279
         assert self.engine.iteration == 69806
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == Money(
-            998462.61716820, USDT
+            998717.75496820, USDT
         )
 
 
@@ -351,7 +351,7 @@ class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQ:
             venue=self.venue,
             venue_type=VenueType.EXCHANGE,
             oms_type=OMSType.NETTING,
-            account_type=AccountType.CASH,
+            account_type=AccountType.MARGIN,
             base_currency=None,  # Multi-currency account
             starting_balances=[Money(1_000_000, USDT), Money(1, BTC)],
         )
@@ -376,5 +376,5 @@ class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQ:
         assert strategy.fast_ema.count == 39
         assert self.engine.iteration == 19998
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == Money(
-            999843.73560000, USDT
+            999921.16730000, USDT
         )

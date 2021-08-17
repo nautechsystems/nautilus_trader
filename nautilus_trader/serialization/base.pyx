@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any, Callable, Dict
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
@@ -22,6 +24,7 @@ from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport VenueStatusUpdate
@@ -79,6 +82,8 @@ _OBJECT_TO_DICT_MAP = {
     CryptoSwap.__name__: CryptoSwap.to_dict_c,
     CurrencySpot.__name__: CurrencySpot.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
+    Ticker.__name__: Ticker.to_dict_c,
+    QuoteTick.__name__: QuoteTick.to_dict_c,
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.to_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.to_dict_c,
     InstrumentClosePrice.__name__: InstrumentClosePrice.to_dict_c,
@@ -114,6 +119,7 @@ _OBJECT_FROM_DICT_MAP = {
     CryptoSwap.__name__: CryptoSwap.from_dict_c,
     CurrencySpot.__name__: CurrencySpot.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,
+    Ticker.__name__: Ticker.from_dict_c,
     QuoteTick.__name__: QuoteTick.from_dict_c,
     InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.from_dict_c,
     VenueStatusUpdate.__name__: VenueStatusUpdate.from_dict_c,
@@ -123,8 +129,8 @@ _OBJECT_FROM_DICT_MAP = {
 
 cpdef inline void register_serializable_object(
     object obj,
-    to_dict: callable,
-    from_dict: callable,
+    to_dict: Callable[[Any], Dict[str, Any]],
+    from_dict: Callable[[Dict[str, Any]], Any],
 ) except *:
     """
     Register the given object with the global serialization object maps.
@@ -133,15 +139,15 @@ cpdef inline void register_serializable_object(
     ----------
     obj : object
         The object to register.
-    to_dict : callable
+    to_dict : Callable[[Any], Dict[str, Any]]
         The delegate to instantiate a dict of primitive types from the object.
-    from_dict : callable
+    from_dict : Callable[[Dict[str, Any]], Any]
         The delegate to instantiate the object from a dict of primitive types.
 
     Raises
     ------
     TypeError
-        If `to_dict` or `from_dict` are not of type callable.
+        If `to_dict` or `from_dict` are not of type Callable.
     KeyError
         If obj already registered with the global object maps.
 
@@ -153,13 +159,6 @@ cpdef inline void register_serializable_object(
 
     _OBJECT_TO_DICT_MAP[obj.__name__] = to_dict
     _OBJECT_FROM_DICT_MAP[obj.__name__] = from_dict
-
-
-cpdef inline object get_to_dict(str obj_name):
-    return _OBJECT_TO_DICT_MAP.get(obj_name)
-
-cpdef inline object get_from_dict(str obj_name):
-    return _OBJECT_FROM_DICT_MAP.get(obj_name)
 
 
 cdef class InstrumentSerializer:

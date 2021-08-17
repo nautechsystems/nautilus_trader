@@ -218,7 +218,7 @@ cdef class Condition:
     @staticmethod
     cdef void callable(object argument, str param, ex_type=None) except *:
         """
-        Check the object is callable.
+        Check the object is of type Callable.
 
         Parameters
         ----------
@@ -232,7 +232,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If argument is not callable.
+            If argument is not of type Callable.
 
         """
         if PyCallable_Check(argument):
@@ -247,7 +247,7 @@ cdef class Condition:
     @staticmethod
     cdef void callable_or_none(object argument, str param, ex_type=None) except *:
         """
-        Check the object is callable or None.
+        Check the object is of type Callable or None.
 
         Parameters
         ----------
@@ -261,7 +261,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If argument is not None and not callable.
+            If argument is not None and not of type Callable.
 
         """
         if argument is None:
@@ -386,7 +386,7 @@ cdef class Condition:
             ex_default=TypeError,
             ex_type=ex_type,
             msg=(f"The \'{param}\' collection contained an element with "
-                 f"a type other than {expected_type}, was {type(argument)}"),
+                 f"a type other than {expected_type}"),
         )
 
     @staticmethod
@@ -798,28 +798,6 @@ cdef class Condition:
                  f", was \'{argument}\'"),
         )
 
-    @staticmethod
-    cdef void valid_port(int value, str param, ex_type=None) except *:
-        """
-        Check the port value is valid in range [49152, 65535].
-
-        Parameters
-        ----------
-        value : int
-            The port value to check.
-        param : str
-            The name of the ports parameter.
-        ex_type : Exception, optional
-            The custom exception type to be raised on a failed check.
-
-        Raises
-        -------
-        ValueError
-              If value is not in range [49152, 65535].
-
-        """
-        Condition.in_range_int(value, 49152, 65535, param, ex_type)
-
 
 class PyCondition:
 
@@ -962,7 +940,7 @@ class PyCondition:
     @staticmethod
     def callable(argument, str param, ex_type=None):
         """
-        Check the object is callable.
+        Check the object is of type Callable.
 
         Parameters
         ----------
@@ -976,7 +954,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If argument is not callable.
+            If argument is not of type Callable.
 
         """
         Condition.callable(argument, param, ex_type)
@@ -984,7 +962,7 @@ class PyCondition:
     @staticmethod
     def callable_or_none(argument, str param, ex_type=None):
         """
-        Check the object is callable or None.
+        Check the object is of type Callable or None.
 
         Parameters
         ----------
@@ -998,7 +976,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If argument is not None and not callable.
+            If argument is not None and not of type Callable.
 
         """
         Condition.callable_or_none(argument, param, ex_type)
@@ -1363,25 +1341,3 @@ class PyCondition:
 
         """
         Condition.valid_string(argument, param, ex_type)
-
-    @staticmethod
-    def valid_port(int value, str param, ex_type=None):
-        """
-        Check the port integer value is valid in range [49152, 65535].
-
-        Parameters
-        ----------
-        value : int
-            The port value to check.
-        param : str
-            The name of the ports parameter.
-        ex_type : Exception, optional
-            The custom exception type to be raised on a failed check.
-
-        Raises
-        -------
-        ValueError
-              If value is not in range [49152, 65535].
-
-        """
-        Condition.valid_port(value, param, ex_type)

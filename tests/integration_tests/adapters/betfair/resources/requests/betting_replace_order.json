@@ -1,0 +1,15 @@
+{
+  "method": "SportsAPING/v1.0/replaceOrders",
+  "params": {
+    "marketId": "1.179082386",
+    "instructions": [
+      {
+        "betId": "240718603398",
+        "newPrice": 1.35
+      }
+    ],
+    "customerRef": "038990c619d2b5c837a6fe91f9b7b9ed"
+  },
+  "id": 1,
+  "jsonrpc": "2.0"
+}

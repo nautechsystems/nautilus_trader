@@ -116,7 +116,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> VenueStatusUpdate:
         """
         Return a venue status update from the given dict values.
 
@@ -207,9 +207,9 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> InstrumentStatusUpdate:
         """
-        Return an instrument status event from the given dict values.
+        Return an instrument status update from the given dict values.
 
         Parameters
         ----------
@@ -305,7 +305,7 @@ cdef class InstrumentClosePrice(Data):
         }
 
     @staticmethod
-    def from_dict(dict values):
+    def from_dict(dict values) -> InstrumentClosePrice:
         """
         Return an instrument close price event from the given dict values.
 

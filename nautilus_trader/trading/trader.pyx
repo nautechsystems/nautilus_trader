@@ -25,6 +25,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.actor cimport Actor
@@ -37,9 +38,8 @@ from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
-from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -275,9 +275,10 @@ cdef class Trader(Component):
             logger=self._log.get_logger(),
         )
 
+        self._exec_engine.register_oms_type(strategy)
         self._strategies.append(strategy)
 
-        self._log.info(f"Registered {strategy}.")
+        self._log.info(f"Registered TradingStrategy {strategy}.")
 
     cpdef void add_strategies(self, list strategies: [TradingStrategy]) except *:
         """
@@ -292,13 +293,11 @@ cdef class Trader(Component):
         ------
         ValueError
             If strategies is None or empty.
-        TypeError
-            If strategies contains a type other than TradingStrategy.
 
         """
         Condition.not_empty(strategies, "strategies")
-        Condition.list_type(strategies, TradingStrategy, "strategies")
 
+        cdef TradingStrategy strategy
         for strategy in strategies:
             self.add_strategy(strategy)
 
@@ -338,7 +337,7 @@ cdef class Trader(Component):
 
         self._components.append(component)
 
-        self._log.info(f"Registered {component}.")
+        self._log.info(f"Registered Component {component}.")
 
     cpdef void add_components(self, list components: [Actor]) except *:
         """
@@ -353,13 +352,11 @@ cdef class Trader(Component):
         ------
         ValueError
             If components is None or empty.
-        TypeError
-            If components contains a type other than Actor.
 
         """
         Condition.not_empty(components, "components")
-        Condition.list_type(components, Actor, "components")
 
+        cdef Actor component
         for component in components:
             self.add_component(component)
 

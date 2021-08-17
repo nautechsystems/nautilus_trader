@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Callable
+
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
 
@@ -50,7 +52,7 @@ cdef class Throttler:
     cpdef void send(self, msg) except *
     cdef int64_t _delta_next(self) except *
     cdef void _limit_msg(self, msg) except *
-    cdef void _set_timer(self, handler: callable) except *
+    cdef void _set_timer(self, handler: Callable[[TimeEvent], None]) except *
     cpdef void _process(self, TimeEvent event) except *
     cpdef void _resume(self, TimeEvent event) except *
     cdef void _send_msg(self, msg) except *

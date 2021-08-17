@@ -39,7 +39,7 @@ from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import VenueType
@@ -55,9 +55,9 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.portfolio import Portfolio
 from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import UNIX_EPOCH
@@ -275,7 +275,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
         assert self.strategy.object_storer.count == 3
         assert isinstance(self.strategy.object_storer.get_store()[2], OrderAccepted)
 
@@ -292,7 +292,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
         assert self.strategy.object_storer.count == 3
         assert isinstance(self.strategy.object_storer.get_store()[2], OrderAccepted)
 
@@ -308,7 +308,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.REJECTED
+        assert order.status == OrderStatus.REJECTED
         assert self.strategy.object_storer.count == 3
         assert isinstance(self.strategy.object_storer.get_store()[2], OrderRejected)
 
@@ -324,7 +324,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.REJECTED
+        assert order.status == OrderStatus.REJECTED
         assert self.strategy.object_storer.count == 3
         assert isinstance(self.strategy.object_storer.get_store()[2], OrderRejected)
 
@@ -349,7 +349,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.REJECTED
+        assert order.status == OrderStatus.REJECTED
 
     def test_submit_order_when_quantity_below_min_then_gets_denied(self):
         # Arrange: Prepare market
@@ -363,7 +363,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.DENIED
+        assert order.status == OrderStatus.DENIED
 
     def test_submit_order_when_quantity_above_max_then_gets_denied(self):
         # Arrange: Prepare market
@@ -377,7 +377,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.DENIED
+        assert order.status == OrderStatus.DENIED
 
     def test_submit_market_order(self):
         # Arrange: Prepare market
@@ -400,7 +400,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert order.avg_px == Decimal("90.005")  # No slippage
 
     def test_submit_post_only_limit_order_when_marketable_then_rejects(self):
@@ -425,7 +425,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.REJECTED
+        assert order.status == OrderStatus.REJECTED
         assert len(self.exchange.get_working_orders()) == 0
 
     def test_submit_limit_order(self):
@@ -449,7 +449,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
         assert order.client_order_id in self.exchange.get_working_orders()
 
@@ -475,7 +475,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert order.liquidity_side == LiquiditySide.TAKER
         assert len(self.exchange.get_working_orders()) == 0
 
@@ -501,7 +501,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert order.avg_px == tick.ask
 
     def test_submit_limit_order_fills_at_most_book_volume(self):
@@ -526,7 +526,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.PARTIALLY_FILLED
+        assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == 1_000_000
 
     def test_submit_stop_market_order_inside_market_rejects(self):
@@ -550,7 +550,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.REJECTED
+        assert order.status == OrderStatus.REJECTED
         assert len(self.exchange.get_working_orders()) == 0
 
     def test_submit_stop_market_order(self):
@@ -574,7 +574,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
         assert order.client_order_id in self.exchange.get_working_orders()
 
@@ -600,7 +600,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.REJECTED
+        assert order.status == OrderStatus.REJECTED
         assert len(self.exchange.get_working_orders()) == 0
 
     def test_submit_stop_limit_order(self):
@@ -625,7 +625,7 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
         assert order.client_order_id in self.exchange.get_working_orders()
 
@@ -658,9 +658,9 @@ class TestSimulatedExchange:
         stop_loss_order = self.cache.order(ClientOrderId("O-19700101-000000-000-001-2"))
         take_profit_order = self.cache.order(ClientOrderId("O-19700101-000000-000-001-3"))
 
-        assert entry_order.state == OrderState.FILLED
-        assert stop_loss_order.state == OrderState.ACCEPTED
-        assert take_profit_order.state == OrderState.ACCEPTED
+        assert entry_order.status == OrderStatus.FILLED
+        assert stop_loss_order.status == OrderStatus.ACCEPTED
+        assert take_profit_order.status == OrderStatus.ACCEPTED
 
     def test_submit_stop_market_order_with_bracket(self):
         # Arrange: Prepare market
@@ -692,9 +692,9 @@ class TestSimulatedExchange:
         stop_loss_order = self.cache.order(ClientOrderId("O-19700101-000000-000-001-2"))
         take_profit_order = self.cache.order(ClientOrderId("O-19700101-000000-000-001-3"))
 
-        assert entry_order.state == OrderState.ACCEPTED
-        assert stop_loss_order.state == OrderState.SUBMITTED
-        assert take_profit_order.state == OrderState.SUBMITTED
+        assert entry_order.status == OrderStatus.ACCEPTED
+        assert stop_loss_order.status == OrderStatus.SUBMITTED
+        assert take_profit_order.status == OrderStatus.SUBMITTED
         assert len(self.exchange.get_working_orders()) == 1
         assert entry_order.client_order_id in self.exchange.get_working_orders()
 
@@ -721,7 +721,7 @@ class TestSimulatedExchange:
         self.strategy.cancel_order(order)
 
         # Assert
-        assert order.state == OrderState.CANCELED
+        assert order.status == OrderStatus.CANCELED
         assert len(self.exchange.get_working_orders()) == 0
 
     def test_cancel_stop_order_when_order_does_not_exist_generates_cancel_reject(self):
@@ -740,7 +740,7 @@ class TestSimulatedExchange:
         self.exchange.handle_cancel_order(command)
 
         # Assert
-        assert self.exec_engine.event_count == 2
+        assert self.exec_engine.event_count == 1
 
     def test_update_stop_order_when_order_does_not_exist(self):
         # Arrange
@@ -761,7 +761,7 @@ class TestSimulatedExchange:
         self.exchange.handle_update_order(command)
 
         # Assert
-        assert self.exec_engine.event_count == 2
+        assert self.exec_engine.event_count == 1
 
     def test_update_order_with_zero_quantity_rejects_amendment(self):
         # Arrange: Prepare market
@@ -787,7 +787,7 @@ class TestSimulatedExchange:
         self.strategy.update_order(order, Quantity.zero(), Price.from_str("90.001"))
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1  # Order still working
         assert order.price == Price.from_str("90.001")  # Did not update
 
@@ -815,7 +815,7 @@ class TestSimulatedExchange:
         self.strategy.update_order(order, order.quantity, Price.from_str("90.005"))
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1  # Order still working
         assert order.price == Price.from_str("90.001")  # Did not update
 
@@ -843,7 +843,7 @@ class TestSimulatedExchange:
         self.strategy.update_order(order, order.quantity, Price.from_str("90.005"))
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_working_orders()) == 0
         assert order.avg_px == Price.from_str("90.005")
 
@@ -872,7 +872,7 @@ class TestSimulatedExchange:
         self.strategy.update_order(order, order.quantity, Price.from_str("90.005"))
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
         assert order.price == Price.from_str("90.010")
 
@@ -899,7 +899,7 @@ class TestSimulatedExchange:
         self.strategy.update_order(order, order.quantity, Price.from_str("90.011"))
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
         assert order.price == Price.from_str("90.011")
 
@@ -929,7 +929,7 @@ class TestSimulatedExchange:
         self.strategy.update_order(order, order.quantity, Price.from_str("90.005"))
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
         assert order.trigger == Price.from_str("90.010")
 
@@ -957,7 +957,7 @@ class TestSimulatedExchange:
         self.strategy.update_order(order, order.quantity, Price.from_str("90.011"))
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 1
         assert order.trigger == Price.from_str("90.011")
 
@@ -997,7 +997,7 @@ class TestSimulatedExchange:
         self.strategy.update_order(order, order.quantity, Price.from_str("90.010"))
 
         # Assert
-        assert order.state == OrderState.TRIGGERED
+        assert order.status == OrderStatus.TRIGGERED
         assert order.is_triggered
         assert len(self.exchange.get_working_orders()) == 1
         assert order.price == Price.from_str("90.000")
@@ -1038,7 +1038,7 @@ class TestSimulatedExchange:
         self.strategy.update_order(order, order.quantity, Price.from_str("90.010"))
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert order.is_triggered
         assert len(self.exchange.get_working_orders()) == 0
         assert order.price == Price.from_str("90.010")
@@ -1076,7 +1076,7 @@ class TestSimulatedExchange:
         self.strategy.update_order(order, order.quantity, Price.from_str("90.005"))
 
         # Assert
-        assert order.state == OrderState.TRIGGERED
+        assert order.status == OrderStatus.TRIGGERED
         assert order.is_triggered
         assert len(self.exchange.get_working_orders()) == 1
         assert order.price == Price.from_str("90.005")
@@ -1113,7 +1113,7 @@ class TestSimulatedExchange:
         )
 
         # Assert
-        assert bracket_order.stop_loss.state == OrderState.ACCEPTED
+        assert bracket_order.stop_loss.status == OrderStatus.ACCEPTED
         assert bracket_order.stop_loss.price == Price.from_str("85.100")
 
     def test_order_fills_gets_commissioned(self):
@@ -1156,7 +1156,7 @@ class TestSimulatedExchange:
         fill_event3 = self.strategy.object_storer.get_store()[10]
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert fill_event1.commission == Money(180.01, JPY)
         assert fill_event2.commission == Money(180.01, JPY)
         assert fill_event3.commission == Money(90.00, JPY)
@@ -1197,7 +1197,7 @@ class TestSimulatedExchange:
         self.exchange.process_tick(tick2)
 
         # Assert
-        assert order.state == OrderState.EXPIRED
+        assert order.status == OrderStatus.EXPIRED
         assert len(self.exchange.get_working_orders()) == 0
 
     def test_process_quote_tick_fills_buy_stop_order(self):
@@ -1245,7 +1245,7 @@ class TestSimulatedExchange:
 
         # Assert
         assert len(self.exchange.get_working_orders()) == 0
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert order.avg_px == Price.from_str("96.711")
         assert self.exchange.get_account().balance_total(USD) == Money(999997.86, USD)
 
@@ -1283,7 +1283,7 @@ class TestSimulatedExchange:
         self.exchange.process_tick(tick2)
 
         # Assert
-        assert order.state == OrderState.TRIGGERED
+        assert order.status == OrderStatus.TRIGGERED
         assert len(self.exchange.get_working_orders()) == 1
 
     def test_process_quote_tick_rejects_triggered_post_only_buy_stop_limit_order(self):
@@ -1321,7 +1321,7 @@ class TestSimulatedExchange:
         self.exchange.process_tick(tick2)
 
         # Assert
-        assert order.state == OrderState.REJECTED
+        assert order.status == OrderStatus.REJECTED
         assert len(self.exchange.get_working_orders()) == 0
 
     def test_process_quote_tick_fills_triggered_buy_stop_limit_order(self):
@@ -1369,7 +1369,7 @@ class TestSimulatedExchange:
         self.exchange.process_tick(tick3)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_working_orders()) == 0
 
     def test_process_quote_tick_fills_buy_limit_order(self):
@@ -1416,7 +1416,7 @@ class TestSimulatedExchange:
         self.exchange.process_tick(tick3)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_working_orders()) == 0
         assert order.avg_px == Price.from_str("90.001")
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
@@ -1454,7 +1454,7 @@ class TestSimulatedExchange:
         self.exchange.process_tick(tick2)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_working_orders()) == 0
         assert order.avg_px == Price.from_str("90.000")
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
@@ -1492,7 +1492,7 @@ class TestSimulatedExchange:
         self.exchange.process_tick(tick2)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_working_orders()) == 0
         assert order.avg_px == Price.from_str("90.101")
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
@@ -1536,9 +1536,9 @@ class TestSimulatedExchange:
         self.exchange.process_tick(tick2)
 
         # Assert
-        assert entry.state == OrderState.FILLED
-        assert bracket.stop_loss.state == OrderState.ACCEPTED
-        assert bracket.take_profit.state == OrderState.ACCEPTED
+        assert entry.status == OrderStatus.FILLED
+        assert bracket.stop_loss.status == OrderStatus.ACCEPTED
+        assert bracket.take_profit.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 2
         assert bracket.stop_loss in self.exchange.get_working_orders().values()
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
@@ -1582,9 +1582,9 @@ class TestSimulatedExchange:
         self.exchange.process_tick(tick2)
 
         # Assert
-        assert entry.state == OrderState.FILLED
-        assert bracket.stop_loss.state == OrderState.ACCEPTED
-        assert bracket.take_profit.state == OrderState.ACCEPTED
+        assert entry.status == OrderStatus.FILLED
+        assert bracket.stop_loss.status == OrderStatus.ACCEPTED
+        assert bracket.take_profit.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 2  # SL and TP
         assert bracket.stop_loss in self.exchange.get_working_orders().values()
         assert bracket.take_profit in self.exchange.get_working_orders().values()
@@ -1645,9 +1645,9 @@ class TestSimulatedExchange:
         self.exchange.process_tick(tick3)
 
         # Assert
-        assert entry.state == OrderState.FILLED
-        assert bracket.stop_loss.state == OrderState.ACCEPTED
-        assert bracket.take_profit.state == OrderState.ACCEPTED
+        assert entry.status == OrderStatus.FILLED
+        assert bracket.stop_loss.status == OrderStatus.ACCEPTED
+        assert bracket.take_profit.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_working_orders()) == 2  # SL and TP only
         assert bracket.stop_loss in self.exchange.get_working_orders().values()
         assert bracket.take_profit in self.exchange.get_working_orders().values()
@@ -1703,9 +1703,9 @@ class TestSimulatedExchange:
 
         # Assert
         print(self.exchange.cache.position(PositionId("2-001")))
-        assert entry.state == OrderState.FILLED
-        assert bracket.stop_loss.state == OrderState.FILLED
-        assert bracket.take_profit.state == OrderState.CANCELED
+        assert entry.status == OrderStatus.FILLED
+        assert bracket.stop_loss.status == OrderStatus.FILLED
+        assert bracket.take_profit.status == OrderStatus.CANCELED
         assert len(self.exchange.get_working_orders()) == 0
         # TODO: WIP - fix handling of OCO orders
         # assert len(self.exchange.cache.positions_open()) == 0
@@ -2169,7 +2169,7 @@ class TestOrderBookExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Decimal("2000.0")  # No slippage
         assert order.avg_px == Decimal("15.33333333333333333333333333")
         assert self.exchange.get_account().balance_total(USD) == Money(999999.98, USD)
@@ -2207,7 +2207,7 @@ class TestOrderBookExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.PARTIALLY_FILLED
+        assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_str("6000.0")  # No slippage
         assert order.avg_px == Decimal("15.93333333333333333333333333")
         assert self.exchange.get_account().balance_total(USD) == Money(999999.94, USD)
@@ -2233,7 +2233,7 @@ class TestOrderBookExchange:
         self.strategy.submit_order(order)
 
         # Assert
-        assert order.state == OrderState.ACCEPTED
+        assert order.status == OrderStatus.ACCEPTED
 
     # TODO - Need to discuss how we are going to support passive quotes trading now
     @pytest.mark.skip
@@ -2268,7 +2268,7 @@ class TestOrderBookExchange:
         self.exchange.process_tick(tick)
 
         # Assert
-        assert order.state == OrderState.PARTIALLY_FILLED
+        assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_str("1000.0")
         assert order.avg_px == Decimal("15.0")
 
@@ -2305,6 +2305,6 @@ class TestOrderBookExchange:
         self.exchange.process_tick(tick1)
 
         # Assert
-        assert order.state == OrderState.PARTIALLY_FILLED
+        assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_str("1000.0")  # No slippage
         assert order.avg_px == Decimal("14.0")

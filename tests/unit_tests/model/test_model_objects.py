@@ -142,7 +142,7 @@ class TestBaseDecimal:
             [0, BaseDecimal(0, precision=0)],
             [1, BaseDecimal(1, precision=0)],
             [-1, BaseDecimal(-1, precision=0)],
-            [Decimal(), BaseDecimal(0, precision=0)],
+            [Decimal(0), BaseDecimal(0, precision=0)],
             [Decimal("1.1"), BaseDecimal(1.1, precision=1)],
             [Decimal("-1.1"), BaseDecimal(-1.1, precision=1)],
             [BaseDecimal(0, precision=0), BaseDecimal(0, precision=0)],
@@ -231,9 +231,9 @@ class TestBaseDecimal:
     @pytest.mark.parametrize(
         "value1, value2, expected",
         [
-            [BaseDecimal(0, precision=0), Decimal(), True],
+            [BaseDecimal(0, precision=0), Decimal(0), True],
             [BaseDecimal(0, precision=0), Decimal(-0), True],
-            [BaseDecimal(1, precision=0), Decimal(), False],
+            [BaseDecimal(1, precision=0), Decimal(0), False],
         ],
     )
     def test_equality_with_various_decimals_returns_expected_result(self, value1, value2, expected):
@@ -738,7 +738,7 @@ class TestMoney:
             ["-0.0", Money(0, USD)],
             ["1.0", Money(1, USD)],
             ["-1.0", Money(-1, USD)],
-            [Decimal(), Money(0, USD)],
+            [Decimal(0), Money(0, USD)],
             [Decimal("1.1"), Money(1.1, USD)],
             [Decimal("-1.1"), Money(-1.1, USD)],
             [BaseDecimal(0, 0), Money(0, USD)],

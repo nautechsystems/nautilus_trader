@@ -16,17 +16,17 @@
 """
 The `DataClient` class is responsible for interfacing with a particular API
 which may be presented directly by an exchange, or broker intermediary. It
-could also be possible to write clients for specialized data provides as long
-as all abstract methods are implemented.
+could also be possible to write clients for specialized data publishers.
 """
+
+import asyncio
 
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.uuid cimport UUID
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
@@ -36,10 +36,10 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
-cdef class DataClient:
+cdef class DataClient(Component):
     """
     The abstract base class for all data clients.
 
@@ -74,42 +74,37 @@ cdef class DataClient:
         """
         if config is None:
             config = {}
-
-        self._clock = clock
-        self._uuid_factory = UUIDFactory()
-        self._log = LoggerAdapter(
-            component=config.get("name", f"DataClient-{client_id.value}"),
+        super().__init__(
+            clock=clock,
             logger=logger,
+            component_id=client_id,
+            component_name=config.get("name", f"DataClient-{client_id.value}"),
         )
+
         self._msgbus = msgbus
         self._cache = cache
         self._config = config
 
-        self.id = client_id
-        self.is_connected = False
+        # Feeds
+        self._feeds_generic_data = {}  # type: dict[DataType, asyncio.Task]
 
-        self._log.info("Initialized.")
+        self.is_connected = False
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}-{self.id.value}"
 
-    cpdef void connect(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void disconnect(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void reset(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void dispose(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef list subscribed_generic_data(self):
+        """
+        Return the generic data types subscribed to.
+
+        Returns
+        -------
+        list[DataType]
+
+        """
+        return sorted(list(self._feeds_generic_data.keys()))
 
     cpdef void subscribe(self, DataType data_type) except *:
         """Abstract method (implement in subclass)."""
@@ -195,6 +190,18 @@ cdef class MarketDataClient(DataClient):
             config=config,
         )
 
+        # Feeds
+        self._feeds_order_book_delta = {}          # type: dict[InstrumentId, asyncio.Task]
+        self._feeds_order_book_snapshot = {}       # type: dict[InstrumentId, asyncio.Task]
+        self._feeds_quote_tick = {}                # type: dict[InstrumentId, asyncio.Task]
+        self._feeds_trade_tick = {}                # type: dict[InstrumentId, asyncio.Task]
+        self._feeds_bar = {}                       # type: dict[BarType, asyncio.Task]
+        self._feeds_instrument_status_update = {}  # type: dict[InstrumentId, asyncio.Task]
+        self._feeds_instrument_close_price = {}    # type: dict[InstrumentId, asyncio.Task]
+
+        self._feeds_instrument = set()             # type: set[InstrumentId]
+        self._update_instruments_task = None
+
     cpdef list unavailable_methods(self):
         """
         Return a list of unavailable methods for this data client.
@@ -207,23 +214,95 @@ cdef class MarketDataClient(DataClient):
         """
         return self._config.get("unavailable_methods", []).copy()
 
-    cpdef void connect(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void disconnect(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void reset(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void dispose(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef list subscribed_instruments(self):
+        """
+        Return the instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._feeds_instrument))
+
+    cpdef list subscribed_order_book_deltas(self):
+        """
+        Return the order book delta instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._feeds_order_book_delta.keys()))
+
+    cpdef list subscribed_order_book_snapshots(self):
+        """
+        Return the order book snapshot instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._feeds_order_book_snapshot.keys()))
+
+    cpdef list subscribed_quote_ticks(self):
+        """
+        Return the quote tick instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._feeds_quote_tick.keys()))
+
+    cpdef list subscribed_trade_ticks(self):
+        """
+        Return the trade tick instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._feeds_trade_tick.keys()))
+
+    cpdef list subscribed_bars(self):
+        """
+        Return the bar types subscribed to.
+
+        Returns
+        -------
+        list[BarType]
+
+        """
+        return sorted(list(self._feeds_bar.keys()))
+
+    cpdef list subscribed_instrument_status_updates(self):
+        """
+        Return the status update instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._feeds_instrument_status_update.keys()))
+
+    cpdef list subscribed_instrument_close_prices(self):
+        """
+        Return the close price instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._feeds_instrument_close_price.keys()))
 
     cpdef void subscribe(self, DataType data_type) except *:
         """Abstract method (implement in subclass)."""

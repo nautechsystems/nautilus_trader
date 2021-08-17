@@ -33,7 +33,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ExecutionId
@@ -44,8 +44,8 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockLiveExecutionClient
 from tests.test_kit.providers import TestInstrumentProvider
@@ -138,10 +138,8 @@ class TestLiveExecutionEngine:
             clock=self.clock,
             logger=self.logger,
         )
-
-        # Wired up components
+        self.portfolio.update_account(TestStubs.event_cash_account_state())
         self.exec_engine.register_client(self.client)
-        self.exec_engine.process(TestStubs.event_account_state())
 
         self.cache.add_instrument(AUDUSD_SIM)
 
@@ -284,7 +282,7 @@ class TestLiveExecutionEngine:
         self.exec_engine.kill()
 
         # Assert
-        assert self.exec_engine.qsize() == 1  # <-- AccountState event
+        assert self.exec_engine.qsize() == 0
 
     @pytest.mark.asyncio
     async def test_execute_command_places_command_on_queue(self):
@@ -387,7 +385,7 @@ class TestLiveExecutionEngine:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.ACCEPTED,
+            order_status=OrderStatus.ACCEPTED,
             filled_qty=Quantity.zero(),
             ts_init=0,
         )
@@ -441,7 +439,7 @@ class TestLiveExecutionEngine:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.CANCELED,
+            order_status=OrderStatus.CANCELED,
             filled_qty=Quantity.zero(),
             ts_init=0,
         )
@@ -495,7 +493,7 @@ class TestLiveExecutionEngine:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.EXPIRED,
+            order_status=OrderStatus.EXPIRED,
             filled_qty=Quantity.zero(),
             ts_init=0,
         )
@@ -511,6 +509,7 @@ class TestLiveExecutionEngine:
         # Assert
         assert result
 
+    @pytest.mark.skip(reason="reimplement reconciliation")
     @pytest.mark.asyncio
     async def test_reconcile_state_when_partially_filled_reconciles(self):
         # Arrange
@@ -549,7 +548,7 @@ class TestLiveExecutionEngine:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.PARTIALLY_FILLED,
+            order_status=OrderStatus.PARTIALLY_FILLED,
             filled_qty=Quantity.from_int(70000),
             ts_init=0,
         )
@@ -557,6 +556,7 @@ class TestLiveExecutionEngine:
         trade1 = ExecutionReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),
+            venue_position_id=None,
             execution_id=ExecutionId("1"),
             last_qty=Quantity.from_int(50000),
             last_px=Price.from_str("1.00000"),
@@ -569,6 +569,7 @@ class TestLiveExecutionEngine:
         trade2 = ExecutionReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),
+            venue_position_id=None,
             execution_id=ExecutionId("2"),
             last_qty=Quantity.from_int(20000),
             last_px=Price.from_str("1.00000"),
@@ -590,6 +591,7 @@ class TestLiveExecutionEngine:
         # Assert
         assert result
 
+    @pytest.mark.skip(reason="reimplement reconciliation")
     @pytest.mark.asyncio
     async def test_reconcile_state_when_filled_reconciles(self):
         # Arrange
@@ -628,7 +630,7 @@ class TestLiveExecutionEngine:
         report = OrderStatusReport(
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),  # <-- from stub event
-            order_state=OrderState.FILLED,
+            order_status=OrderStatus.FILLED,
             filled_qty=Quantity.from_int(100000),
             ts_init=0,
         )
@@ -637,6 +639,7 @@ class TestLiveExecutionEngine:
             execution_id=ExecutionId("1"),
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),
+            venue_position_id=None,
             last_qty=Quantity.from_int(50000),
             last_px=Price.from_str("1.00000"),
             commission=Money(5.00, USD),
@@ -649,6 +652,7 @@ class TestLiveExecutionEngine:
             execution_id=ExecutionId("2"),
             client_order_id=order.client_order_id,
             venue_order_id=VenueOrderId("1"),
+            venue_position_id=None,
             last_qty=Quantity.from_int(50000),
             last_px=Price.from_str("1.00000"),
             commission=Money(2.00, USD),

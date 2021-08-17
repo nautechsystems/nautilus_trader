@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import copy
 import dataclasses
 import pathlib
@@ -7,6 +22,7 @@ from decimal import Decimal
 from functools import partial
 from typing import Optional
 
+import dask
 import pandas as pd
 import pytest
 from dask.base import tokenize
@@ -16,9 +32,6 @@ from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.config import Partialable
 from nautilus_trader.backtest.config import build_graph
-from nautilus_trader.backtest.data_loader import CSVParser
-from nautilus_trader.backtest.data_loader import DataCatalog
-from nautilus_trader.backtest.data_loader import DataLoader
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_nanos
@@ -31,7 +44,11 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.backtest.loading import load
+from nautilus_trader.persistence.backtest.parsers import CSVReader
+from nautilus_trader.persistence.catalog import DataCatalog
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.stubs import TestStubs
@@ -42,11 +59,19 @@ TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(autouse=True, scope="function")
+def reset():
+    """Cleanup resources before each test run"""
+    data_catalog_setup()
+    dask.config.set(scheduler="single-threaded")
+    yield
+
+
+@pytest.fixture(scope="function")
 def data_loader():
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
 
-    def parse_csv_tick(df, instrument_id, state=None):
+    def parse_csv_tick(df, instrument_id):
         yield instrument
         for r in df.values:
             ts = secs_to_nanos(pd.Timestamp(r[0]).timestamp())
@@ -63,25 +88,21 @@ def data_loader():
 
     instrument_provider = InstrumentProvider()
     instrument_provider.add(instrument)
-    loader = DataLoader(
+    load(
         path=TEST_DATA_DIR,
-        parser=CSVParser(parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id())),
+        reader=CSVReader(
+            chunk_parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id()),
+            as_dataframe=True,
+        ),
         glob_pattern="truefx-audusd-ticks.csv",
         instrument_provider=instrument_provider,
     )
-    return loader
 
 
 @pytest.fixture(scope="function")
 def catalog(data_loader):
-    root = pathlib.Path(sys.executable).anchor
-    catalog = DataCatalog(path=root, fs_protocol="memory")
-    try:
-        catalog.fs.rm(root, recursive=True)
-    except FileNotFoundError:
-        pass
-    catalog.import_from_data_loader(loader=data_loader)
-    assert len(catalog.instruments()) == 1
+    catalog = DataCatalog.from_env()
+    # assert len(catalog.instruments()) == 1
     assert len(catalog.quote_ticks()) == 100000
     return catalog
 
@@ -111,7 +132,7 @@ def backtest_config(catalog):
         instruments=[instrument],
         data_config=[
             BacktestDataConfig(
-                catalog_path="/",
+                catalog_path="/root",
                 catalog_fs_protocol="memory",
                 data_type=QuoteTick,
                 instrument_id=instrument.id.value,
@@ -221,7 +242,7 @@ def test_tokenization(backtest_config):
 def test_backtest_data_config_load(catalog):
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
     c = BacktestDataConfig(
-        catalog_path="/",
+        catalog_path="/root/",
         catalog_fs_protocol="memory",
         data_type=QuoteTick,
         instrument_id=instrument.id.value,
@@ -309,7 +330,7 @@ def test_backtest_against_example(catalog):
         ],
         data_config=[
             BacktestDataConfig(
-                catalog_path="/",
+                catalog_path="/root",
                 catalog_fs_protocol="memory",
                 data_type=QuoteTick,
                 instrument_id=AUDUSD.id.value,
@@ -336,25 +357,24 @@ def test_backtest_against_example(catalog):
     tasks = build_graph(config)
     results = tasks.compute()
     result = results[list(results)[0]]
-    assert len(result["account"]) == 97
+    assert len(result["account"]) == 193
     assert len(result["positions"]) == 48
     assert len(result["fills"]) == 96
-    expected = b'[{"type":"AccountBalance","currency":"USD","total":"997756.33","locked":"0.00","free":"997756.33"}]'
+    expected = b'[{"type":"AccountBalance","currency":"USD","total":"997652.94","locked":"20096.29","free":"977556.65"}]'
     account_result = result["account"]["balances"].iloc[-2]
     assert account_result == expected
 
 
-def test_backtest_run_sync(backtest_configs):
+def test_backtest_run_sync(backtest_configs, catalog):
     tasks = build_graph(backtest_configs)
     result = tasks.compute()
     assert len(result) == 2
 
 
-@pytest.mark.local
-def test_backtest_run_distributed(backtest_configs):
+def test_backtest_run_distributed(backtest_configs, catalog):
     from distributed import Client
 
-    _ = Client(processes=False)
-    tasks = build_graph(backtest_configs)
-    result = tasks.compute()
-    assert result
+    with Client(processes=False):
+        tasks = build_graph(backtest_configs)
+        result = tasks.compute()
+        assert result

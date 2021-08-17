@@ -430,20 +430,3 @@ class TestCondition:
         # Act
         # Assert: ValueError not raised
         PyCondition.valid_string(value, "param")
-
-    @pytest.mark.parametrize(
-        "value",
-        [49151, 65536],
-    )
-    def test_valid_port_when_value_out_of_range_raises_value_error(self, value):
-        # Arrange
-        # Act
-        # Assert
-        with pytest.raises(ValueError):
-            PyCondition.valid_port(value, "port")
-
-    def test_valid_port_when_in_range_does_nothing(self):
-        # Arrange
-        # Act
-        # Assert
-        PyCondition.valid_port(55555, "port")

@@ -39,13 +39,12 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
-from nautilus_trader.trading.account import Account
-from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.providers import TestDataProvider
@@ -154,8 +153,7 @@ class TestRedisCacheDatabase:
 
     def test_add_account(self):
         # Arrange
-        event = TestStubs.event_account_state()
-        account = Account(event)
+        account = TestStubs.cash_account()
 
         # Act
         self.database.add_account(account)
@@ -213,8 +211,7 @@ class TestRedisCacheDatabase:
 
     def test_update_account(self):
         # Arrange
-        event = TestStubs.event_account_state()
-        account = Account(event)
+        account = TestStubs.cash_account()
         self.database.add_account(account)
 
         # Act
@@ -361,8 +358,7 @@ class TestRedisCacheDatabase:
 
     def test_load_account_when_no_account_in_database_returns_none(self):
         # Arrange
-        event = TestStubs.event_account_state()
-        account = Account(event)
+        account = TestStubs.cash_account()
 
         # Act
         result = self.database.load_account(account.id)
@@ -372,8 +368,7 @@ class TestRedisCacheDatabase:
 
     def test_load_account_when_account_in_database_returns_account(self):
         # Arrange
-        event = TestStubs.event_account_state()
-        account = Account(event)
+        account = TestStubs.cash_account()
         self.database.add_account(account)
 
         # Act
@@ -507,8 +502,7 @@ class TestRedisCacheDatabase:
         assert result == position
 
     def test_load_accounts_when_no_accounts_returns_empty_dict(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.database.load_accounts()
 
         # Assert
@@ -516,11 +510,11 @@ class TestRedisCacheDatabase:
 
     def test_load_accounts_cache_when_one_account_in_database(self):
         # Arrange
-        event = TestStubs.event_account_state()
-        account = Account(event)
-        self.database.add_account(account)
+        account = TestStubs.cash_account()
 
         # Act
+        self.database.add_account(account)
+
         # Assert
         assert self.database.load_accounts() == {account.id: account}
 
@@ -700,8 +694,9 @@ class TestExecutionCacheWithRedisDatabaseTests:
 
         # Reset engine
         self.engine.reset()
-        self.engine.run()
 
         # Act
+        self.engine.run()
+
         # Assert
         assert self.engine.cache.check_integrity()

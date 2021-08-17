@@ -21,7 +21,6 @@ the `DataClient` instances, and the rest of the platform. This includes sending
 requests to, and receiving responses from, data endpoints via its registered
 data clients.
 
-Beneath it sits a `DataCache` which presents a read-only facade for consumers.
 The engine employs a simple fan-in fan-out messaging pattern to execute
 `DataCommand` type messages, and process `DataResponse` messages or market data
 objects.
@@ -31,6 +30,7 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
 from cpython.datetime cimport timedelta
+from typing import Callable
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
@@ -72,7 +72,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class DataEngine(Component):
@@ -119,7 +119,7 @@ cdef class DataEngine(Component):
 
         self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}               # type: dict[ClientId, DataClient]
-        self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[callable]]
+        self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[Callable[[Bar], None]]]
         self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
 
         # Counters
@@ -136,10 +136,11 @@ cdef class DataEngine(Component):
         self._msgbus.register(endpoint="DataEngine.request", handler=self.request)
         self._msgbus.register(endpoint="DataEngine.response", handler=self.response)
 
-    @property
-    def registered_clients(self):
+# --REGISTRATION -----------------------------------------------------------------------------------
+
+    cpdef list registered_clients(self):
         """
-        The data clients registered with the data engine.
+        Return the data clients registered with the data engine.
 
         Returns
         -------
@@ -148,90 +149,180 @@ cdef class DataEngine(Component):
         """
         return sorted(list(self._clients.keys()))
 
-    @property
-    def subscribed_generic_data(self):
+    cpdef void register_client(self, DataClient client) except *:
         """
-        The generic data types subscribed to.
+        Register the given data client with the data engine.
+
+        Parameters
+        ----------
+        client : DataClient
+            The client to register.
+
+        Raises
+        ------
+        ValueError
+            If client is already registered.
+
+        """
+        Condition.not_none(client, "client")
+        Condition.not_in(client.id, self._clients, "client", "self._clients")
+
+        self._clients[client.id] = client
+
+        self._log.info(f"Registered DataClient {client}.")
+
+    cpdef void deregister_client(self, DataClient client) except *:
+        """
+        Deregister the given data client from the data engine.
+
+        Parameters
+        ----------
+        client : DataClient
+            The data client to deregister.
+
+        """
+        Condition.not_none(client, "client")
+        Condition.is_in(client.id, self._clients, "client.id", "self._clients")
+
+        del self._clients[client.id]
+        self._log.info(f"Deregistered {client}.")
+
+# -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+
+    cpdef list subscribed_generic_data(self):
+        """
+        Return the generic data types subscribed to.
 
         Returns
         -------
         list[DataType]
 
         """
-        return None  # TODO
+        cdef list subscriptions = []
+        cdef DataClient client
+        for client in self._clients.values():
+            subscriptions += client.subscribed_generic_data()
+        return subscriptions
 
-    @property
-    def subscribed_instruments(self):
+    cpdef list subscribed_instruments(self):
         """
-        The instruments subscribed to.
+        Return the instruments subscribed to.
 
         Returns
         -------
         list[InstrumentId]
 
         """
-        return []  # TODO
+        cdef list subscriptions = []
+        cdef MarketDataClient client
+        for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
+            subscriptions += client.subscribed_instruments()
+        return subscriptions
 
-    @property
-    def subscribed_order_book_deltas(self):
+    cpdef list subscribed_order_book_deltas(self):
         """
-        The order books data (diffs) subscribed to.
+        Return the order book delta instruments subscribed to.
 
         Returns
         -------
         list[InstrumentId]
 
         """
-        return []  # TODO
+        cdef list subscriptions = []
+        cdef MarketDataClient client
+        for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
+            subscriptions += client.subscribed_order_book_deltas()
+        return subscriptions
 
-    @property
-    def subscribed_order_book_snapshots(self):
+    cpdef list subscribed_order_book_snapshots(self):
         """
-        The order books subscribed to.
+        Return the order book snapshot instruments subscribed to.
 
         Returns
         -------
         list[InstrumentId]
 
         """
-        cdef list interval_instruments = [k[0] for k in self._order_book_intervals.keys()]
-        return []  # TODO
+        cdef list subscriptions = []
+        cdef MarketDataClient client
+        for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
+            subscriptions += client.subscribed_order_book_snapshots()
+        return subscriptions
 
-    @property
-    def subscribed_quote_ticks(self):
+    cpdef list subscribed_quote_ticks(self):
         """
-        The quote tick instruments subscribed to.
+        Return the quote tick instruments subscribed to.
 
         Returns
         -------
         list[InstrumentId]
 
         """
-        return []  # TODO
+        cdef list subscriptions = []
+        cdef MarketDataClient client
+        for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
+            subscriptions += client.subscribed_quote_ticks()
+        return subscriptions
 
-    @property
-    def subscribed_trade_ticks(self):
+    cpdef list subscribed_trade_ticks(self):
         """
-        The trade tick instruments subscribed to.
+        Return the trade tick instruments subscribed to.
 
         Returns
         -------
         list[InstrumentId]
 
         """
-        return []  # TODO
+        cdef list subscriptions = []
+        cdef MarketDataClient client
+        for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
+            subscriptions += client.subscribed_trade_ticks()
+        return subscriptions
 
-    @property
-    def subscribed_bars(self):
+    cpdef list subscribed_bars(self):
         """
-        The bar types subscribed to.
+        Return the bar types subscribed to.
 
         Returns
         -------
         list[BarType]
 
         """
-        return []  # TODO
+        cdef list subscriptions = []
+        cdef MarketDataClient client
+        for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
+            subscriptions += client.subscribed_bars()
+        return subscriptions
+
+    cpdef list subscribed_instrument_status_updates(self):
+        """
+        Return the status update instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        cdef list subscriptions = []
+        cdef MarketDataClient client
+        for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
+            subscriptions += client.subscribed_instrument_status_updates()
+        return subscriptions
+
+    cpdef list subscribed_instrument_close_prices(self):
+        """
+        Return the close price instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        cdef list subscriptions = []
+        cdef MarketDataClient client
+        for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
+            subscriptions += client.subscribed_instrument_close_prices()
+        return subscriptions
 
     cpdef bint check_connected(self) except *:
         """
@@ -265,46 +356,6 @@ cdef class DataEngine(Component):
                 return False
         return True
 
-# --REGISTRATION -----------------------------------------------------------------------------------
-
-    cpdef void register_client(self, DataClient client) except *:
-        """
-        Register the given data client with the data engine.
-
-        Parameters
-        ----------
-        client : DataClient
-            The client to register.
-
-        Raises
-        ------
-        ValueError
-            If client is already registered.
-
-        """
-        Condition.not_none(client, "client")
-        Condition.not_in(client.id, self._clients, "client", "self._clients")
-
-        self._clients[client.id] = client
-
-        self._log.info(f"Registered {client}.")
-
-    cpdef void deregister_client(self, DataClient client) except *:
-        """
-        Deregister the given data client from the data engine.
-
-        Parameters
-        ----------
-        client : DataClient
-            The data client to deregister.
-
-        """
-        Condition.not_none(client, "client")
-        Condition.is_in(client.id, self._clients, "client.id", "self._clients")
-
-        del self._clients[client.id]
-        self._log.info(f"Deregistered {client}.")
-
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void _on_start(self) except *:
@@ -318,14 +369,14 @@ cdef class DataEngine(Component):
     cpdef void _start(self) except *:
         cdef DataClient client
         for client in self._clients.values():
-            client.connect()
+            client.start()
 
         self._on_start()
 
     cpdef void _stop(self) except *:
         cdef DataClient client
         for client in self._clients.values():
-            client.disconnect()
+            client.stop()
 
         for aggregator in self._bar_aggregators.values():
             if isinstance(aggregator, TimeBarAggregator):
@@ -524,7 +575,9 @@ cdef class DataEngine(Component):
 
         if instrument_id is None:
             client.subscribe_instruments()
-        else:
+            return
+
+        if instrument_id not in client.subscribed_instruments():
             client.subscribe_instrument(instrument_id)
 
     cdef void _handle_subscribe_order_book_deltas(
@@ -576,7 +629,7 @@ cdef class DataEngine(Component):
             if instrument is None:
                 self._log.error(
                     f"Cannot subscribe to {instrument_id} <OrderBook> data: "
-                    f"no instrument found in cache.",
+                    f"no instrument found in the cache.",
                 )
                 return
             order_book = OrderBook.create(
@@ -589,18 +642,20 @@ cdef class DataEngine(Component):
 
         # Always re-subscribe to override previous settings
         try:
-            client.subscribe_order_book_deltas(
-                instrument_id=instrument_id,
-                level=metadata.get("level"),
-                kwargs=metadata.get("kwargs"),
-            )
+            if instrument_id not in client.subscribed_order_book_deltas():
+                client.subscribe_order_book_deltas(
+                    instrument_id=instrument_id,
+                    level=metadata.get("level"),
+                    kwargs=metadata.get("kwargs"),
+                )
         except NotImplementedError:
-            client.subscribe_order_book_snapshots(
-                instrument_id=instrument_id,
-                level=metadata.get("level"),
-                depth=metadata.get("depth"),
-                kwargs=metadata.get("kwargs"),
-            )
+            if instrument_id not in client.subscribed_order_book_snapshots():
+                client.subscribe_order_book_snapshots(
+                    instrument_id=instrument_id,
+                    level=metadata.get("level"),
+                    depth=metadata.get("depth"),
+                    kwargs=metadata.get("kwargs"),
+                )
 
         self._msgbus.subscribe(
             topic=f"data.book.deltas"
@@ -618,7 +673,8 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
-        client.subscribe_quote_ticks(instrument_id)
+        if instrument_id not in client.subscribed_quote_ticks():
+            client.subscribe_quote_ticks(instrument_id)
 
     cdef void _handle_subscribe_trade_ticks(
         self,
@@ -628,7 +684,8 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
-        client.subscribe_trade_ticks(instrument_id)
+        if instrument_id not in client.subscribed_trade_ticks():
+            client.subscribe_trade_ticks(instrument_id)
 
     cdef void _handle_subscribe_bars(
         self,
@@ -643,7 +700,8 @@ cdef class DataEngine(Component):
             self._start_bar_aggregator(client, bar_type)
         else:
             # External aggregation
-            client.subscribe_bars(bar_type)
+            if bar_type not in client.subscribed_bars():
+                client.subscribe_bars(bar_type)
 
     cdef void _handle_subscribe_data(
         self,
@@ -654,11 +712,12 @@ cdef class DataEngine(Component):
         Condition.not_none(data_type, "data_type")
 
         try:
-            client.subscribe(data_type)
+            if data_type not in client.subscribed_generic_data():
+                client.subscribe(data_type)
         except NotImplementedError:
             self._log.error(
                 f"Cannot subscribe: {client.id.value} "
-                f"has not implemented data type {data_type} subscriptions.",
+                f"has not implemented {data_type} subscriptions.",
             )
             return
 
@@ -670,7 +729,8 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
-        client.subscribe_instrument_status_updates(instrument_id)
+        if instrument_id not in client.subscribed_instrument_status_updates():
+            client.subscribe_instrument_status_updates(instrument_id)
 
     cdef void _handle_subscribe_instrument_close_prices(
         self,
@@ -680,7 +740,8 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
-        client.subscribe_instrument_status_updates(instrument_id)
+        if instrument_id not in client.subscribed_instrument_close_prices():
+            client.subscribe_instrument_close_prices(instrument_id)
 
     cdef void _handle_unsubscribe_instrument(
         self,
@@ -690,9 +751,16 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
 
         if instrument_id is None:
-            client.unsubscribe_instruments()
+            if not self._msgbus.has_subscribers(f"data.instrument.{client.id.value}.*"):
+                client.unsubscribe_instruments()
+            return
         else:
-            client.unsubscribe_instrument(instrument_id)
+            if not self._msgbus.has_subscribers(
+                f"data.instrument"
+                f".{instrument_id.venue}"
+                f".{instrument_id.symbol}",
+            ):
+                client.unsubscribe_instrument(instrument_id)
 
     cdef void _handle_unsubscribe_order_book_deltas(
         self,
@@ -704,7 +772,12 @@ cdef class DataEngine(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
 
-        client.unsubscribe_order_book_deltas(instrument_id)
+        if not self._msgbus.has_subscribers(
+                f"data.book.deltas"
+                f".{instrument_id.venue}"
+                f".{instrument_id.symbol}",
+        ):
+            client.unsubscribe_order_book_deltas(instrument_id)
 
     cdef void _handle_unsubscribe_order_book_snapshots(
         self,
@@ -716,7 +789,12 @@ cdef class DataEngine(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
 
-        client.unsubscribe_order_book_snapshots(instrument_id)
+        if not self._msgbus.has_subscribers(
+                f"data.book.snapshots"
+                f".{instrument_id.venue}"
+                f".{instrument_id.symbol}",
+        ):
+            client.unsubscribe_order_book_snapshots(instrument_id)
 
     cdef void _handle_unsubscribe_quote_ticks(
         self,
@@ -726,7 +804,12 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
-        client.unsubscribe_quote_ticks(instrument_id)
+        if not self._msgbus.has_subscribers(
+                f"data.quotes"
+                f".{instrument_id.venue}"
+                f".{instrument_id.symbol}",
+        ):
+            client.unsubscribe_quote_ticks(instrument_id)
 
     cdef void _handle_unsubscribe_trade_ticks(
         self,
@@ -736,7 +819,12 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
 
-        client.unsubscribe_trade_ticks(instrument_id)
+        if not self._msgbus.has_subscribers(
+                f"data.trades"
+                f".{instrument_id.venue}"
+                f".{instrument_id.symbol}",
+        ):
+            client.unsubscribe_trade_ticks(instrument_id)
 
     cdef void _handle_unsubscribe_bars(
         self,
@@ -750,8 +838,9 @@ cdef class DataEngine(Component):
             # Internal aggregation
             self._stop_bar_aggregator(client, bar_type)
         else:
-            # External aggregation
-            client.unsubscribe_bars(bar_type)
+            if not self._msgbus.has_subscribers(f"data.bars.{bar_type}"):
+                # External aggregation
+                client.unsubscribe_bars(bar_type)
 
     cdef void _handle_unsubscribe_data(
         self,
@@ -762,7 +851,8 @@ cdef class DataEngine(Component):
         Condition.not_none(data_type, "data_type")
 
         try:
-            client.unsubscribe(data_type)
+            if not self._msgbus.has_subscribers(f"data.{data_type}"):
+                client.unsubscribe(data_type)
         except NotImplementedError:
             self._log.error(
                 f"Cannot unsubscribe: {client.id.value} "

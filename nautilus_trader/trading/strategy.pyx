@@ -38,6 +38,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
@@ -63,7 +64,7 @@ from nautilus_trader.model.orders.base cimport PassiveOrder
 from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.msgbus.message_bus cimport MessageBus
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 # Events for WRN log level
@@ -79,9 +80,24 @@ cdef class TradingStrategy(Actor):
     The abstract base class for all trading strategies.
 
     This class should not be used directly, but through a concrete subclass.
+
+    Strategy OMS (Order Management System):
+    An individual trading strategy can configure its own order management system
+    type which determines how positions are handled by the `ExecutionEngine`.
+
+    - OMSType.HEDGING: A position ID will be assigned for each new position
+      which is opened per instrument.
+
+    - OMSType.NETTING: There will only ever be a single position for the strategy
+      per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
+
     """
 
-    def __init__(self, str order_id_tag not None):
+    def __init__(
+        self,
+        str order_id_tag not None,
+        OMSType oms_type=OMSType.HEDGING,
+    ):
         """
         Initialize a new instance of the ``TradingStrategy`` class.
 
@@ -90,6 +106,9 @@ cdef class TradingStrategy(Actor):
         order_id_tag : str
             The unique order ID tag for the strategy. Must be unique
             amongst all running strategies for a particular trader ID.
+        oms_type : OMSType
+            The order management system type for the strategy. This will determine
+            how the `ExecutionEngine` handles position IDs (see docs).
 
         Raises
         ------
@@ -99,8 +118,10 @@ cdef class TradingStrategy(Actor):
         """
         Condition.valid_string(order_id_tag, "order_id_tag")
 
-        cdef StrategyId strategy_id = StrategyId(f"{type(self).__name__}-{order_id_tag}")
+        self.oms_type = oms_type
 
+        # Assign strategy ID
+        strategy_id = StrategyId(f"{type(self).__name__}-{order_id_tag}")
         super().__init__(component_id=strategy_id)
 
         # Indicators
@@ -278,7 +299,7 @@ cdef class TradingStrategy(Actor):
 
         if indicator not in self._indicators_for_quotes[instrument_id]:
             self._indicators_for_quotes[instrument_id].append(indicator)
-            self.log.info(f"Registered indicator {indicator} for {instrument_id} quote ticks.")
+            self.log.info(f"Registered Indicator {indicator} for {instrument_id} quote ticks.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {instrument_id} quote ticks.")
 
@@ -306,7 +327,7 @@ cdef class TradingStrategy(Actor):
 
         if indicator not in self._indicators_for_trades[instrument_id]:
             self._indicators_for_trades[instrument_id].append(indicator)
-            self.log.info(f"Registered indicator {indicator} for {instrument_id} trade ticks.")
+            self.log.info(f"Registered Indicator {indicator} for {instrument_id} trade ticks.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {instrument_id} trade ticks.")
 
@@ -334,7 +355,7 @@ cdef class TradingStrategy(Actor):
 
         if indicator not in self._indicators_for_bars[bar_type]:
             self._indicators_for_bars[bar_type].append(indicator)
-            self.log.info(f"Registered indicator {indicator} for {bar_type} bars.")
+            self.log.info(f"Registered Indicator {indicator} for {bar_type} bars.")
         else:
             self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
@@ -577,22 +598,26 @@ cdef class TradingStrategy(Actor):
 
         if trigger is not None:
             if order.is_triggered_c():
-                self.log.warning(f"Cannot update order: "
-                                 f"{repr(order.client_order_id)} already triggered.")
+                self.log.warning(
+                    f"Cannot create command UpdateOrder: "
+                    f"Order with {repr(order.client_order_id)} already triggered.",
+                )
                 return
             if trigger != order.trigger:
                 updating = True
 
         if not updating:
             self.log.error(
-                "Cannot create command UpdateOrder "
-                "(quantity, price and trigger were either None or the same as existing values)."
+                "Cannot create command UpdateOrder: "
+                "quantity, price and trigger were either None or the same as existing values.",
             )
             return
 
         if order.account_id is None:
-            self.log.error(f"Cannot update order: "
-                           f"no account assigned to order yet, {order}.")
+            self.log.error(
+                f"Cannot create command UpdateOrder: "
+                f"no account assigned to order yet, {order}.",
+            )
             return  # Cannot send command
 
         if (
@@ -601,7 +626,7 @@ cdef class TradingStrategy(Actor):
             or order.is_pending_cancel_c()
         ):
             self.log.warning(
-                f"Cannot update order: state is {order.state_string_c()}, {order}.",
+                f"Cannot create command UpdateOrder: state is {order.status_string_c()}, {order}.",
             )
             return  # Cannot send command
 
@@ -646,7 +671,7 @@ cdef class TradingStrategy(Actor):
 
         if order.is_completed_c() or order.is_pending_cancel_c():
             self.log.warning(
-                f"Cannot cancel order: state is {order.state_string_c()}, {order}.",
+                f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
             )
             return  # Cannot send command
 

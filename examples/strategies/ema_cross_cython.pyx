@@ -19,6 +19,7 @@ from typing import Optional
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarSpecification
@@ -87,7 +88,7 @@ cdef class EMACross(TradingStrategy):
             amongst all running strategies for a particular trader ID.
 
         """
-        super().__init__(order_id_tag=order_id_tag)
+        super().__init__(order_id_tag=order_id_tag, oms_type=OMSType.HEDGING)
 
         # Custom strategy variables
         self.instrument_id = instrument_id

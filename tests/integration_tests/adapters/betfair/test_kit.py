@@ -15,19 +15,26 @@
 
 import asyncio
 import bz2
+import contextlib
 import pathlib
-from unittest import mock
+from asyncio import Future
+from functools import partial
+from typing import Optional
+from unittest.mock import MagicMock
+from unittest.mock import patch
 
-import betfairlightweight
 import orjson
 import pandas as pd
+from aiohttp import ClientResponse
 
+from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import on_market_update
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import make_instruments
+from nautilus_trader.adapters.betfair.util import historical_instrument_provider_loader
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
@@ -42,6 +49,7 @@ from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
@@ -49,37 +57,48 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.trading.portfolio import Portfolio
+from nautilus_trader.persistence.backtest.parsers import TextReader
+from nautilus_trader.persistence.backtest.scanner import scan
+from nautilus_trader.portfolio.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
+from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockLiveExecutionEngine
 from tests.test_kit.mocks import MockLiveRiskEngine
+from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
 
-TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/responses/")
+TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/betfair/resources/")
 DATA_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/test_kit/data/betfair")
 
 
-class BetfairTestStubs(TestStubs):
+# monkey patch MagicMock
+async def async_magic():
+    pass
+
+
+MagicMock.__await__ = lambda x: async_magic().__await__()
+
+
+def mock_betfair_request(obj, response, attr="request"):
+    mock_resp = MagicMock(spec=ClientResponse)
+    mock_resp.data = orjson.dumps(response)
+
+    setattr(obj, attr, MagicMock(return_value=Future()))
+    getattr(obj, attr).return_value.set_result(mock_resp)
+
+
+class BetfairTestStubs:
     @staticmethod
     def integration_endpoint():
         return "stream-api-integration.betfair.com"
 
     @staticmethod
     def instrument_provider(betfair_client) -> BetfairInstrumentProvider:
-        mock.patch(
-            "betfairlightweight.endpoints.navigation.Navigation.list_navigation",
-            return_value=BetfairDataProvider.navigation(),
-        )
-        mock.patch(
-            "betfairlightweight.endpoints.betting.Betting.resp_market_catalogue",
-            return_value=BetfairDataProvider.market_catalogue(),
-        )
         return BetfairInstrumentProvider(
             client=betfair_client,
             logger=BetfairTestStubs.live_logger(BetfairTestStubs.clock()),
             market_filter={"event_type_name": "Tennis"},
-            load_all=False,
         )
 
     @staticmethod
@@ -160,7 +179,7 @@ class BetfairTestStubs(TestStubs):
             market_name="AFC Conference Winner",
             market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00").to_pydatetime(),
             market_type="SPECIAL",
-            selection_handicap="",
+            selection_handicap="0.0",
             selection_id="50214",
             selection_name="Kansas City Chiefs",
             currency="GBP",
@@ -169,14 +188,61 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def betfair_client():
-        mock.patch("betfairlightweight.endpoints.login.Login.__call__")
-        return betfairlightweight.APIClient(  # noqa (S106 Possible hardcoded password: 'password')
-            username="username",
-            password="password",
-            app_key="app_key",
-            certs="cert_location",
+    def betting_instrument_handicap():
+        return BettingInstrument.from_dict(
+            {
+                "venue_name": "BETFAIR",
+                "event_type_id": "61420",
+                "event_type_name": "Australian Rules",
+                "competition_id": "11897406",
+                "competition_name": "AFL",
+                "event_id": "30777079",
+                "event_name": "GWS v Richmond",
+                "event_country_code": "AU",
+                "event_open_date": "2021-08-13T09:50:00+00:00",
+                "betting_type": "ASIAN_HANDICAP_DOUBLE_LINE",
+                "market_id": "1.186249896",
+                "market_name": "Handicap",
+                "market_start_time": "2021-08-13T09:50:00+00:00",
+                "market_type": "HANDICAP",
+                "selection_id": "5304641",
+                "selection_name": "GWS",
+                "selection_handicap": "-5.5",
+                "currency": "AUD",
+                "ts_event": 1628753086658060000,
+                "ts_init": 1628753086658060000,
+            }
         )
+
+    @staticmethod
+    def betfair_client(loop, logger) -> BetfairClient:
+        client = BetfairClient("", "", "", "", loop=loop, logger=logger, ssl=True)
+
+        async def request(method, url, **kwargs):
+            rpc_method = kwargs.get("json", {}).get("method") or url
+            responses = {
+                "https://api.betfair.com/exchange/betting/rest/v1/en/navigation/menu.json": BetfairResponses.navigation_list_navigation,
+                "AccountAPING/v1.0/getAccountDetails": BetfairResponses.account_details,
+                "AccountAPING/v1.0/getAccountFunds": BetfairResponses.account_funds_no_exposure,
+                "SportsAPING/v1.0/listMarketCatalogue": BetfairResponses.betting_list_market_catalogue,
+                "SportsAPING/v1.0/list": BetfairResponses.betting_list_market_catalogue,
+                "SportsAPING/v1.0/placeOrders": BetfairResponses.betting_cancel_orders_success,
+                "SportsAPING/v1.0/replaceOrders": BetfairResponses.betting_place_order_success,
+                "SportsAPING/v1.0/cancelOrders": BetfairResponses.betting_cancel_orders_success,
+                "SportsAPING/v1.0/listCurrentOrders": BetfairResponses.list_current_orders,
+                "SportsAPING/v1.0/listClearedOrders": BetfairResponses.list_cleared_orders,
+            }
+            if rpc_method in responses:
+                resp = MagicMock(spec=ClientResponse)
+                resp.data = orjson.dumps(responses[rpc_method]())
+                return resp
+            raise KeyError(rpc_method)
+
+        client.request = MagicMock()  # type: ignore
+        client.request.side_effect = request
+        client.session_token = "xxxsessionToken="
+
+        return client
 
     @staticmethod
     async def execution_client(
@@ -209,14 +275,19 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def order_factory():
         return OrderFactory(
-            trader_id=BetfairTestStubs.trader_id(),
-            strategy_id=BetfairTestStubs.strategy_id(),
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
             clock=BetfairTestStubs.clock(),
         )
 
     @staticmethod
     def make_order(
-        factory=None, instrument_id=None, side=None, price=None, quantity=None, client_order_id=None
+        factory=None,
+        instrument_id: Optional[InstrumentId] = None,
+        side: Optional[OrderSide] = None,
+        price: Optional[Price] = None,
+        quantity: Optional[Quantity] = None,
+        client_order_id: Optional[ClientOrderId] = None,
     ) -> LimitOrder:
         order_factory = factory or BetfairTestStubs.order_factory()
 
@@ -238,13 +309,15 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def make_submitted_order(ts_event=0, ts_init=0, factory=None, client_order_id=None):
+    def make_submitted_order(
+        ts_event=0, ts_init=0, factory=None, client_order_id: Optional[ClientOrderId] = None
+    ):
         order = BetfairTestStubs.make_order(factory=factory, client_order_id=client_order_id)
         submitted = OrderSubmitted(
-            trader_id=BetfairTestStubs.trader_id(),
-            strategy_id=BetfairTestStubs.strategy_id(),
-            instrument_id=BetfairTestStubs.instrument_id(),
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
             account_id=BetfairTestStubs.account_id(),
+            instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=order.client_order_id,
             event_id=BetfairTestStubs.uuid(),
             ts_event=ts_event,
@@ -255,18 +328,22 @@ class BetfairTestStubs(TestStubs):
 
     @staticmethod
     def make_accepted_order(
-        venue_order_id="1", ts_event=0, ts_init=0, factory=None, client_order_id=None
+        venue_order_id: Optional[VenueOrderId] = None,
+        ts_event=0,
+        ts_init=0,
+        factory=None,
+        client_order_id: Optional[ClientOrderId] = None,
     ) -> LimitOrder:
         order = BetfairTestStubs.make_submitted_order(
             factory=factory, client_order_id=client_order_id
         )
         accepted = OrderAccepted(
-            trader_id=BetfairTestStubs.trader_id(),
-            strategy_id=BetfairTestStubs.strategy_id(),
-            instrument_id=BetfairTestStubs.instrument_id(),
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
             account_id=BetfairTestStubs.account_id(),
+            instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=order.client_order_id,
-            venue_order_id=VenueOrderId(venue_order_id),
+            venue_order_id=venue_order_id or VenueOrderId("1"),
             event_id=BetfairTestStubs.uuid(),
             ts_event=ts_event,
             ts_init=ts_init,
@@ -277,11 +354,11 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def limit_order(time_in_force=TimeInForce.GTC):
         return LimitOrder(
-            trader_id=BetfairTestStubs.trader_id(),
-            strategy_id=BetfairTestStubs.strategy_id(),
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
             instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=ClientOrderId(
-                f"O-20210410-022422-001-001-{BetfairTestStubs.strategy_id().value}"
+                f"O-20210410-022422-001-001-{TestStubs.strategy_id().value}"
             ),
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
@@ -293,17 +370,17 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def market_on_close_order():
+    def market_order(side=None, time_in_force=None):
         return MarketOrder(
-            trader_id=BetfairTestStubs.trader_id(),
-            strategy_id=BetfairTestStubs.strategy_id(),
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
             instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=ClientOrderId(
-                f"O-20210410-022422-001-001-{BetfairTestStubs.strategy_id().value}"
+                f"O-20210410-022422-001-001-{TestStubs.strategy_id().value}"
             ),
-            order_side=OrderSide.BUY,
+            order_side=side or OrderSide.BUY,
             quantity=Quantity.from_int(10),
-            time_in_force=TimeInForce.OC,
+            time_in_force=time_in_force or TimeInForce.GTC,
             init_id=BetfairTestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
@@ -311,8 +388,8 @@ class BetfairTestStubs(TestStubs):
     @staticmethod
     def submit_order_command(time_in_force=TimeInForce.GTC, order=None):
         return SubmitOrder(
-            trader_id=BetfairTestStubs.trader_id(),
-            strategy_id=BetfairTestStubs.strategy_id(),
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
             position_id=BetfairTestStubs.position_id(),
             order=order or BetfairTestStubs.limit_order(time_in_force=time_in_force),
             command_id=BetfairTestStubs.uuid(),
@@ -320,15 +397,19 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def update_order_command(instrument_id=None, client_order_id=None):
+    def update_order_command(
+        instrument_id: Optional[InstrumentId] = None,
+        client_order_id: Optional[ClientOrderId] = None,
+        venue_order_id: Optional[VenueOrderId] = None,
+    ):
         if instrument_id is None:
             instrument_id = BetfairTestStubs.instrument_id()
         return UpdateOrder(
-            trader_id=BetfairTestStubs.trader_id(),
-            strategy_id=BetfairTestStubs.strategy_id(),
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
             instrument_id=instrument_id,
             client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
-            venue_order_id=VenueOrderId("001"),
+            venue_order_id=venue_order_id or VenueOrderId("001"),
             quantity=Quantity.from_int(50),
             price=Price(0.74347, precision=5),
             trigger=None,
@@ -337,13 +418,13 @@ class BetfairTestStubs(TestStubs):
         )
 
     @staticmethod
-    def cancel_order_command():
+    def cancel_order_command(instrument_id=None, client_order_id=None, venue_order_id=None):
         return CancelOrder(
-            trader_id=BetfairTestStubs.trader_id(),
-            strategy_id=BetfairTestStubs.strategy_id(),
-            instrument_id=BetfairTestStubs.instrument_id(),
-            client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
-            venue_order_id=VenueOrderId("229597791245"),
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
+            instrument_id=instrument_id or BetfairTestStubs.instrument_id(),
+            client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
+            venue_order_id=venue_order_id or VenueOrderId("228302937743"),
             command_id=BetfairTestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
@@ -382,16 +463,259 @@ class BetfairTestStubs(TestStubs):
             ],
         }
 
+    @staticmethod
+    def parse_betfair(line, instrument_provider):
+        yield from on_market_update(
+            instrument_provider=instrument_provider, update=orjson.loads(line)
+        )
+
+    @staticmethod
+    def betfair_reader():
+        def inner(instrument_provider):
+            reader = TextReader(
+                line_parser=partial(
+                    BetfairTestStubs.parse_betfair, instrument_provider=instrument_provider
+                ),
+                instrument_provider=instrument_provider,
+                instrument_provider_update=historical_instrument_provider_loader,
+            )
+            return reader
+
+        return inner
+
+
+class BetfairRequests:
+    @staticmethod
+    def load(filename):
+        return orjson.loads((TEST_PATH / "requests" / filename).read_bytes())
+
+    @staticmethod
+    def account_details():
+        return BetfairRequests.load("account_details.json")
+
+    @staticmethod
+    def account_funds():
+        return BetfairRequests.load("account_funds.json")
+
+    @staticmethod
+    def betting_cancel_order():
+        return BetfairRequests.load("betting_cancel_order.json")
+
+    @staticmethod
+    def betting_list_market_catalogue():
+        return BetfairRequests.load("betting_list_market_catalogue.json")
+
+    @staticmethod
+    def betting_place_order():
+        return BetfairRequests.load("betting_place_order.json")
+
+    @staticmethod
+    def betting_place_order_handicap():
+        return BetfairRequests.load("betting_place_order_handicap.json")
+
+    @staticmethod
+    def betting_place_order_bsp():
+        return BetfairRequests.load("betting_place_order_bsp.json")
+
+    @staticmethod
+    def betting_replace_order():
+        return BetfairRequests.load("betting_replace_order.json")
+
+    @staticmethod
+    def cert_login():
+        return BetfairRequests.load("cert_login.json")
+
+    @staticmethod
+    def navigation_list_navigation():
+        return BetfairRequests.load("navigation_list_navigation.json")
+
+
+class BetfairResponses:
+    @staticmethod
+    def load(filename):
+        return orjson.loads((TEST_PATH / "responses" / filename).read_bytes())
+
+    @staticmethod
+    def account_details():
+        return BetfairResponses.load("account_details.json")
+
+    @staticmethod
+    def account_funds_no_exposure():
+        return BetfairResponses.load("account_funds_no_exposure.json")
+
+    @staticmethod
+    def account_funds_with_exposure():
+        return BetfairResponses.load("account_funds_with_exposure.json")
+
+    @staticmethod
+    def account_funds_error():
+        return BetfairResponses.load("account_funds_error.json")
+
+    @staticmethod
+    def betting_cancel_orders_success():
+        return BetfairResponses.load("betting_cancel_orders_success.json")
+
+    @staticmethod
+    def betting_cancel_orders_error():
+        return BetfairResponses.load("betting_cancel_orders_error.json")
+
+    @staticmethod
+    def betting_place_order_error():
+        return BetfairResponses.load("betting_place_order_error.json")
+
+    @staticmethod
+    def betting_place_order_success():
+        return BetfairResponses.load("betting_place_order_success.json")
+
+    @staticmethod
+    def betting_place_orders_old():
+        return BetfairResponses.load("betting_place_orders_old.json")
+
+    @staticmethod
+    def betting_replace_orders_success():
+        return BetfairResponses.load("betting_replace_orders_success.json")
+
+    @staticmethod
+    def betting_replace_orders_success_multi():
+        return BetfairResponses.load("betting_replace_orders_success_multi.json")
+
+    @staticmethod
+    def cert_login():
+        return BetfairResponses.load("cert_login.json")
+
+    @staticmethod
+    def list_cleared_orders():
+        return BetfairResponses.load("list_cleared_orders.json")
+
+    @staticmethod
+    def list_current_orders():
+        return BetfairResponses.load("list_current_orders.json")
+
+    @staticmethod
+    def list_current_orders_empty():
+        return BetfairResponses.load("list_current_orders_empty.json")
+
+    @staticmethod
+    def betting_list_market_catalogue():
+        result = BetfairResponses.load("betting_list_market_catalogue.json")
+        return {"jsonrpc": "2.0", "result": result, "id": 1}
+
+    @staticmethod
+    def navigation_list_navigation():
+        return BetfairResponses.load("navigation_list_navigation.json")
+
+
+class BetfairStreaming:
+    @staticmethod
+    def load(filename):
+        return orjson.loads((TEST_PATH / "streaming" / filename).read_bytes())
+
+    @staticmethod
+    def market_definition():
+        return BetfairStreaming.load("streaming_market_definition.json")
+
+    @staticmethod
+    def market_definition_runner_removed():
+        return BetfairStreaming.load("streaming_market_definition_runner_removed.json")
+
+    @staticmethod
+    def ocm_FULL_IMAGE():
+        return BetfairStreaming.load("streaming_ocm_FULL_IMAGE.json")
+
+    @staticmethod
+    def ocm_FULL_IMAGE_STRATEGY():
+        return BetfairStreaming.load("streaming_ocm_FULL_IMAGE_STRATEGY.json")
+
+    @staticmethod
+    def ocm_EMPTY_IMAGE():
+        return BetfairStreaming.load("streaming_ocm_EMPTY_IMAGE.json")
+
+    @staticmethod
+    def ocm_NEW_FULL_IMAGE():
+        return BetfairStreaming.load("streaming_ocm_NEW_FULL_IMAGE.json")
+
+    @staticmethod
+    def ocm_SUB_IMAGE():
+        return BetfairStreaming.load("streaming_ocm_SUB_IMAGE.json")
+
+    @staticmethod
+    def ocm_UPDATE():
+        return BetfairStreaming.load("streaming_ocm_UPDATE.json")
+
+    @staticmethod
+    def ocm_CANCEL():
+        return BetfairStreaming.load("streaming_ocm_CANCEL.json")
+
+    @staticmethod
+    def ocm_order_update():
+        return BetfairStreaming.load("streaming_ocm_order_update.json")
+
+    @staticmethod
+    def ocm_FILLED():
+        return BetfairStreaming.load("streaming_ocm_FILLED.json")
+
+    @staticmethod
+    def ocm_MIXED():
+        return BetfairStreaming.load("streaming_ocm_MIXED.json")
+
+    @staticmethod
+    def ocm_DUPLICATE_EXECUTION():
+        return BetfairStreaming.load("streaming_ocm_DUPLICATE_EXECUTION.json")
+
+    @staticmethod
+    def mcm_BSP():
+        return BetfairStreaming.load("streaming_mcm_BSP.json")
+
+    @staticmethod
+    def mcm_HEARTBEAT():
+        return BetfairStreaming.load("streaming_mcm_HEARTBEAT.json")
+
+    @staticmethod
+    def mcm_latency():
+        return BetfairStreaming.load("streaming_mcm_latency.json")
+
+    @staticmethod
+    def mcm_con_true():
+        return BetfairStreaming.load("streaming_mcm_con_true.json")
+
+    @staticmethod
+    def mcm_live_IMAGE():
+        return BetfairStreaming.load("streaming_mcm_live_IMAGE.json")
+
+    @staticmethod
+    def mcm_live_UPDATE():
+        return BetfairStreaming.load("streaming_mcm_live_UPDATE.json")
+
+    @staticmethod
+    def mcm_SUB_IMAGE():
+        return BetfairStreaming.load("streaming_mcm_SUB_IMAGE.json")
+
+    @staticmethod
+    def mcm_SUB_IMAGE_no_market_def():
+        return BetfairStreaming.load("streaming_mcm_SUB_IMAGE_no_market_def.json")
+
+    @staticmethod
+    def mcm_RESUB_DELTA():
+        return BetfairStreaming.load("streaming_mcm_RESUB_DELTA.json")
+
+    @staticmethod
+    def mcm_UPDATE():
+        return BetfairStreaming.load("streaming_mcm_UPDATE.json")
+
+    @staticmethod
+    def mcm_UPDATE_md():
+        return BetfairStreaming.load("streaming_mcm_UPDATE_md.json")
+
+    @staticmethod
+    def mcm_UPDATE_tv():
+        return BetfairStreaming.load("streaming_mcm_UPDATE_tv.json")
+
+    @staticmethod
+    def market_updates():
+        return BetfairStreaming.load("streaming_market_updates.json")
+
 
 class BetfairDataProvider:
-    @staticmethod
-    def navigation():
-        return orjson.loads((TEST_PATH / "navigation.json").read_bytes())
-
-    @staticmethod
-    def market_catalogue():
-        return orjson.loads((TEST_PATH / "market_catalogue.json").read_bytes())
-
     @staticmethod
     def market_ids():
         """
@@ -447,7 +771,7 @@ class BetfairDataProvider:
 
     @staticmethod
     def market_catalogue_short():
-        catalogue = BetfairDataProvider.market_catalogue()
+        catalogue = BetfairResponses.betting_list_market_catalogue()["result"]
         market_ids = BetfairDataProvider.market_ids()
         return [
             m
@@ -455,143 +779,6 @@ class BetfairDataProvider:
             if m["eventType"]["name"] in ("Horse Racing", "American Football")
             or m["marketId"] in market_ids
         ]
-
-    @staticmethod
-    def account_detail():
-        return orjson.loads((TEST_PATH / "account_detail.json").read_bytes())
-
-    @staticmethod
-    def account_funds_no_exposure():
-        return orjson.loads((TEST_PATH / "account_funds_no_exposure.json").read_bytes())
-
-    @staticmethod
-    def account_funds_with_exposure():
-        return orjson.loads((TEST_PATH / "account_funds_with_exposure.json").read_bytes())
-
-    @staticmethod
-    def list_cleared_orders(order_id=None):
-        data = orjson.loads((TEST_PATH / "list_cleared_orders.json").read_bytes())
-        if order_id:
-            data["clearedOrders"] = [
-                order for order in data["clearedOrders"] if order["betId"] == order_id
-            ]
-        return data
-
-    @staticmethod
-    def list_current_orders():
-        return orjson.loads((TEST_PATH / "list_current_orders.json").read_bytes())
-
-    @staticmethod
-    def list_current_orders_empty():
-        return orjson.loads((TEST_PATH / "list_current_orders_empty.json").read_bytes())
-
-    @staticmethod
-    def streaming_market_definition():
-        return (TEST_PATH / "streaming_market_definition.json").read_bytes()
-
-    @staticmethod
-    def streaming_market_definition_runner_removed():
-        return (TEST_PATH / "streaming_market_definition_runner_removed.json").read_bytes()
-
-    @staticmethod
-    def streaming_ocm_FULL_IMAGE():
-        return (TEST_PATH / "streaming_ocm_FULL_IMAGE.json").read_bytes()
-
-    @staticmethod
-    def streaming_ocm_EMPTY_IMAGE():
-        return (TEST_PATH / "streaming_ocm_EMPTY_IMAGE.json").read_bytes()
-
-    @staticmethod
-    def streaming_ocm_NEW_FULL_IMAGE():
-        return (TEST_PATH / "streaming_ocm_NEW_FULL_IMAGE.json").read_bytes()
-
-    @staticmethod
-    def streaming_ocm_SUB_IMAGE():
-        return (TEST_PATH / "streaming_ocm_SUB_IMAGE.json").read_bytes()
-
-    @staticmethod
-    def streaming_ocm_UPDATE():
-        return (TEST_PATH / "streaming_ocm_UPDATE.json").read_bytes()
-
-    @staticmethod
-    def streaming_ocm_order_update():
-        return (TEST_PATH / "streaming_ocm_order_update.json").read_bytes()
-
-    @staticmethod
-    def streaming_ocm_FILLED():
-        return (TEST_PATH / "streaming_ocm_FILLED.json").read_bytes()
-
-    @staticmethod
-    def streaming_ocm_MIXED():
-        return (TEST_PATH / "streaming_ocm_MIXED.json").read_bytes()
-
-    @staticmethod
-    def streaming_ocm_DUPLICATE_EXECUTION():
-        return (TEST_PATH / "streaming_ocm_DUPLICATE_EXECUTION.json").read_bytes()
-
-    @staticmethod
-    def streaming_mcm_BSP():
-        return (TEST_PATH / "streaming_mcm_BSP.json").read_bytes()
-
-    @staticmethod
-    def streaming_mcm_HEARTBEAT():
-        return (TEST_PATH / "streaming_mcm_HEARTBEAT.json").read_bytes()
-
-    @staticmethod
-    def streaming_mcm_live_IMAGE():
-        return (TEST_PATH / "streaming_mcm_live_IMAGE.json").read_bytes()
-
-    @staticmethod
-    def streaming_mcm_live_UPDATE():
-        return (TEST_PATH / "streaming_mcm_live_UPDATE.json").read_bytes()
-
-    @staticmethod
-    def streaming_mcm_SUB_IMAGE():
-        return (TEST_PATH / "streaming_mcm_SUB_IMAGE.json").read_bytes()
-
-    @staticmethod
-    def streaming_mcm_SUB_IMAGE_no_market_def():
-        return (TEST_PATH / "streaming_mcm_SUB_IMAGE_no_market_def.json").read_bytes()
-
-    @staticmethod
-    def streaming_mcm_RESUB_DELTA():
-        return (TEST_PATH / "streaming_mcm_RESUB_DELTA.json").read_bytes()
-
-    @staticmethod
-    def streaming_mcm_UPDATE():
-        return (TEST_PATH / "streaming_mcm_UPDATE.json").read_bytes()
-
-    @staticmethod
-    def streaming_mcm_UPDATE_md():
-        return (TEST_PATH / "streaming_mcm_UPDATE_md.json").read_bytes()
-
-    @staticmethod
-    def streaming_mcm_UPDATE_tv():
-        return (TEST_PATH / "streaming_mcm_UPDATE_tv.json").read_bytes()
-
-    @staticmethod
-    def streaming_market_updates():
-        return (TEST_PATH / "streaming_market_updates.log").read_text().strip().split("\n")
-
-    @staticmethod
-    def place_orders_success():
-        return orjson.loads((TEST_PATH / "betting_place_order_success.json").read_bytes())
-
-    @staticmethod
-    def place_orders_error():
-        return orjson.loads((TEST_PATH / "betting_place_order_error.json").read_bytes())
-
-    @staticmethod
-    def replace_orders_success():
-        return orjson.loads((TEST_PATH / "betting_replace_orders_success.json").read_bytes())
-
-    @staticmethod
-    def replace_orders_resp_success():
-        return orjson.loads((TEST_PATH / "betting_post_replace_order_success.json").read_bytes())
-
-    @staticmethod
-    def cancel_orders_success():
-        return orjson.loads((TEST_PATH / "betting_cancel_orders_success.json").read_bytes())
 
     @staticmethod
     def raw_market_updates(market="1.166811431", runner1="60424", runner2="237478"):
@@ -631,15 +818,15 @@ class BetfairDataProvider:
     @staticmethod
     def submit_order_command():
         return SubmitOrder(
-            trader_id=BetfairTestStubs.trader_id(),
-            strategy_id=BetfairTestStubs.strategy_id(),
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
             position_id=BetfairTestStubs.position_id(),
             order=LimitOrder(
-                trader_id=BetfairTestStubs.trader_id(),
-                strategy_id=BetfairTestStubs.strategy_id(),
+                trader_id=TestStubs.trader_id(),
+                strategy_id=TestStubs.strategy_id(),
                 instrument_id=BetfairTestStubs.instrument_id(),
                 client_order_id=ClientOrderId(
-                    f"O-20210410-022422-001-001-{BetfairTestStubs.strategy_id().value}"
+                    f"O-20210410-022422-001-001-{TestStubs.strategy_id().value}"
                 ),
                 order_side=OrderSide.BUY,
                 quantity=Quantity.from_int(10),
@@ -658,8 +845,8 @@ class BetfairDataProvider:
         if instrument_id is None:
             instrument_id = BetfairTestStubs.instrument_id()
         return UpdateOrder(
-            trader_id=BetfairTestStubs.trader_id(),
-            strategy_id=BetfairTestStubs.strategy_id(),
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
             instrument_id=instrument_id,
             client_order_id=client_order_id or ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=VenueOrderId("001"),
@@ -673,11 +860,44 @@ class BetfairDataProvider:
     @staticmethod
     def cancel_order_command():
         return CancelOrder(
-            trader_id=BetfairTestStubs.trader_id(),
-            strategy_id=BetfairTestStubs.strategy_id(),
+            trader_id=TestStubs.trader_id(),
+            strategy_id=TestStubs.strategy_id(),
             instrument_id=BetfairTestStubs.instrument_id(),
             client_order_id=ClientOrderId("O-20210410-022422-001-001-1"),
             venue_order_id=VenueOrderId("229597791245"),
             command_id=BetfairTestStubs.uuid(),
             ts_init=BetfairTestStubs.clock().timestamp_ns(),
         )
+
+    @staticmethod
+    def betfair_feed_parsed(market_id="1.166564490", folder="data"):
+        instrument_provider = BetfairInstrumentProvider.from_instruments([])
+        reader = BetfairTestStubs.betfair_reader()
+        files = scan(
+            path=f"{PACKAGE_ROOT}/{folder}",
+            glob_pattern=f"{market_id}*",
+        )
+        reader = reader(instrument_provider=instrument_provider)
+
+        data = []
+        for rf in files:
+            rf.reader = reader
+            for chunk in rf.iter_parsed():
+                data.extend(chunk)
+
+        return data
+
+    @staticmethod
+    def betfair_trade_ticks():
+        return [msg["trade"] for msg in TestDataProvider.l2_feed() if msg.get("op") == "trade"]
+
+
+@contextlib.contextmanager
+def mock_client_request(response):
+    """
+    Patch BetfairClient.request with a correctly formatted `response`
+    """
+    mock_response = MagicMock(ClientResponse)
+    mock_response.data = orjson.dumps(response)
+    with patch.object(BetfairClient, "request", return_value=mock_response) as mock_request:
+        yield mock_request

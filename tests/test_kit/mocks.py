@@ -14,15 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
+import os
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from nautilus_trader.cache.cache import Cache
+from fsspec.implementations.memory import MemoryFileSystem
+
+from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.database import CacheDatabase
-from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.core.uuid import UUID
-from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
@@ -34,9 +34,7 @@ from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.identifiers import AccountId
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
@@ -46,8 +44,8 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
-from nautilus_trader.msgbus.message_bus import MessageBus
-from nautilus_trader.trading.account import Account
+from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.util import clear_singleton_instances
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -265,143 +263,6 @@ class KaboomStrategy(TradingStrategy):
         raise RuntimeError(f"{self} BOOM!")
 
 
-class MockMarketDataClient(MarketDataClient):
-    """
-    Provides a mock data client for testing.
-
-    The client will append all method calls to the calls list.
-    """
-
-    def __init__(
-        self,
-        client_id: ClientId,
-        msgbus: MessageBus,
-        cache: Cache,
-        clock: Clock,
-        logger: Logger,
-    ):
-        """
-        Initialize a new instance of the ``DataClient`` class.
-
-        Parameters
-        ----------
-        client_id : ClientId
-            The client ID.
-        msgbus : MessageBus
-            The message bus for the client.
-        clock : Clock
-            The clock for the client.
-        logger : Logger
-            The logger for the client.
-
-        """
-        super().__init__(
-            client_id=client_id,
-            msgbus=msgbus,
-            cache=cache,
-            clock=clock,
-            logger=logger,
-        )
-
-        self.calls: List[str] = []
-
-    # -- COMMANDS ----------------------------------------------------------------------------------
-
-    def connect(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def disconnect(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def reset(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def dispose(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    # -- SUBSCRIPTIONS -----------------------------------------------------------------------------
-
-    def subscribe(self, data_type: DataType) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def subscribe_instrument(self, instrument_id: InstrumentId) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def subscribe_order_book(self, instrument_id, level, depth=0, kwargs=None) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def subscribe_bars(self, bar_type: BarType) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def unsubscribe(self, data_type: DataType) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def unsubscribe_bars(self, bar_type: BarType) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    # -- REQUESTS ----------------------------------------------------------------------------------
-
-    def request(self, datatype: DataType, correlation_id: UUID) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def request_instruments(self, correlation_id: UUID) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def request_quote_ticks(
-        self,
-        instrument_id: InstrumentId,
-        from_datetime: datetime,
-        to_datetime: datetime,
-        limit: int,
-        correlation_id: UUID,
-    ) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def request_trade_ticks(
-        self,
-        instrument_id: InstrumentId,
-        from_datetime: datetime,
-        to_datetime: datetime,
-        limit: int,
-        correlation_id: UUID,
-    ) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def request_bars(
-        self,
-        bar_type: BarType,
-        from_datetime: datetime,
-        to_datetime: datetime,
-        limit: int,
-        correlation_id: UUID,
-    ) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-
 class MockExecutionClient(ExecutionClient):
     """
     Provides a mock execution client for testing.
@@ -461,18 +322,18 @@ class MockExecutionClient(ExecutionClient):
         self.calls = []
         self.commands = []
 
-    def connect(self) -> None:
+    def _start(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self._set_connected()
 
-    def disconnect(self) -> None:
+    def _stop(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self._set_connected(False)
 
-    def dispose(self) -> None:
+    def _reset(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
-    def reset(self) -> None:
+    def _dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
     # -- COMMANDS ----------------------------------------------------------------------------------
@@ -571,14 +432,6 @@ class MockLiveExecutionClient(LiveExecutionClient):
 
     def add_trades_list(self, venue_order_id: VenueOrderId, trades: List[ExecutionReport]) -> None:
         self._trades_lists[venue_order_id] = trades
-
-    def connect(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-        self._set_connected()
-
-    def disconnect(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-        self._set_connected(False)
 
     def dispose(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -811,3 +664,21 @@ class MockLiveRiskEngine(LiveRiskEngine):
 
     def process(self, event):
         self.events.append(event)
+
+
+def data_catalog_setup():
+    """
+    Reset the filesystem and DataCatalog to a clean state
+    """
+    clear_singleton_instances(DataCatalog)
+
+    os.environ["NAUTILUS_CATALOG"] = "memory:///root/"
+    catalog = DataCatalog.from_env()
+    assert isinstance(catalog.fs, MemoryFileSystem)
+    try:
+        catalog.fs.rm("/", recursive=True)
+    except FileNotFoundError:
+        pass
+    catalog.fs.mkdir("/root/data")
+    assert catalog.fs.exists("/root/")
+    assert not catalog.fs.ls("/root/data")

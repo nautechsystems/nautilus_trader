@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
@@ -23,7 +24,6 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.trading.account cimport Account
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 

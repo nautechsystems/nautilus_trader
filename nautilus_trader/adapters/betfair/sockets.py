@@ -12,13 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+import asyncio
 from typing import Callable
 
-from betfairlightweight import APIClient
-from betfairlightweight.filters import streaming_market_data_filter
-from betfairlightweight.filters import streaming_market_filter
-from betfairlightweight.filters import streaming_order_filter
+import orjson
 
+from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.network.socket import SocketClient
@@ -35,7 +35,7 @@ _UNIQUE_ID = 0
 class BetfairStreamClient(SocketClient):
     def __init__(
         self,
-        client: APIClient,
+        client: BetfairClient,
         logger_adapter: LoggerAdapter,
         message_handler,
         loop=None,
@@ -45,23 +45,21 @@ class BetfairStreamClient(SocketClient):
         encoding=None,
     ):
         super().__init__(
-            loop=loop,
             host=host or HOST,
             port=port or PORT,
-            logger_adapter=logger_adapter,
-            message_handler=message_handler,
+            loop=loop or asyncio.get_event_loop(),
+            handler=message_handler,
+            logger=logger_adapter.get_logger(),
             crlf=crlf or CRLF,
             encoding=encoding or ENCODING,
         )
         self.client = client
         self.unique_id = self.new_unique_id()
 
-    async def connect(self):
-        assert (
-            self.client.session_token
-        ), f"Must login to APIClient before calling connect on {self.__class__}"
-        await super().connect()
-        self.loop.create_task(self.start())
+    def connect(self):
+        err = f"Must login to BetfairClient before calling connect on {self.__class__}"
+        assert self.client.session_token, err
+        return super().connect()
 
     def new_unique_id(self) -> int:
         global _UNIQUE_ID
@@ -76,11 +74,15 @@ class BetfairStreamClient(SocketClient):
             "session": self.client.session_token,
         }
 
+    async def send_dict(self, data):
+        raw = orjson.dumps(data)
+        await self.send(raw)
+
 
 class BetfairOrderStreamClient(BetfairStreamClient):
     def __init__(
         self,
-        client: APIClient,
+        client: BetfairClient,
         logger: Logger,
         message_handler,
         partition_matched_by_strategy_ref=True,
@@ -94,11 +96,11 @@ class BetfairOrderStreamClient(BetfairStreamClient):
             message_handler=message_handler,
             **kwargs,
         )
-        self.order_filter = streaming_order_filter(
-            include_overall_position=include_overall_position,
-            customer_strategy_refs=customer_strategy_refs,
-            partition_matched_by_strategy_ref=partition_matched_by_strategy_ref,
-        )
+        self.order_filter = {
+            "includeOverallPosition": include_overall_position,
+            "customerStrategyRefs": customer_strategy_refs,
+            "partitionMatchedByStrategyRef": partition_matched_by_strategy_ref,
+        }
 
     async def post_connection(self):
         subscribe_msg = {
@@ -108,12 +110,12 @@ class BetfairOrderStreamClient(BetfairStreamClient):
             "initialClk": None,
             "clk": None,
         }
-        await self.send(raw=self.auth_message())
-        await self.send(raw=subscribe_msg)
+        await self.send_dict(data=self.auth_message())
+        await self.send_dict(data=subscribe_msg)
 
 
 class BetfairMarketStreamClient(BetfairStreamClient):
-    def __init__(self, client: APIClient, logger: Logger, message_handler: Callable, **kwargs):
+    def __init__(self, client: BetfairClient, logger: Logger, message_handler: Callable, **kwargs):
         self.subscription_message = None
         super().__init__(
             client=client,
@@ -163,17 +165,17 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             #  markets that fit criteria like when using event type / market type etc
             # logging.warning()
             pass
-        market_filter = streaming_market_filter(
-            market_ids=market_ids,
-            betting_types=betting_types,
-            event_type_ids=event_type_ids,
-            event_ids=event_ids,
-            turn_in_play_enabled=turn_in_play_enabled,
-            market_types=market_types,
-            venues=venues,
-            country_codes=country_codes,
-            race_types=race_types,
-        )
+        market_filter = {
+            "marketIds": market_ids,
+            "bettingTypes": betting_types,
+            "eventTypeIds": event_type_ids,
+            "eventIds": event_ids,
+            "turnInPlayEnabled": turn_in_play_enabled,
+            "marketTypes": market_types,
+            "venues": venues,
+            "countryCodes": country_codes,
+            "raceTypes": race_types,
+        }
         data_fields = []
         if subscribe_book_updates:
             data_fields.append("EX_ALL_OFFERS")
@@ -181,22 +183,19 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             data_fields.append("EX_TRADED")
         if subscribe_market_definitions:
             data_fields.append("EX_MARKET_DEF")
-        market_data_filter = streaming_market_data_filter(
-            fields=data_fields,
-        )
 
         message = {
             "op": "marketSubscription",
             "id": self.unique_id,
             "marketFilter": market_filter,
-            "marketDataFilter": market_data_filter,
+            "marketDataFilter": {"fields": data_fields},
             "initialClk": initial_clk,
             "clk": clk,
             "conflateMs": conflate_ms,
             "heartbeatMs": heartbeat_ms,
             "segmentationEnabled": segmentation_enabled,
         }
-        await self.send(raw=message)
+        await self.send_dict(data=message)
 
     async def post_connection(self):
-        await self.send(raw=self.auth_message())
+        await self.send_dict(data=self.auth_message())

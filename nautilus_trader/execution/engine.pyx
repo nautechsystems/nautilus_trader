@@ -18,11 +18,10 @@ The `ExecutionEngine` is the central component of the entire execution stack.
 
 The execution engines primary responsibility is to orchestrate interactions
 between the `ExecutionClient` instances, and the rest of the platform. This
-includes sending commands to, and receiving events from, the particular venue
+includes sending commands to, and receiving events from, the trading venue
 endpoints via its registered execution clients.
 
-Beneath it sits an `ExecutionCache` which presents a read-only facade for
-consumers. The engine employs a simple fan-in fan-out messaging pattern to execute
+The engine employs a simple fan-in fan-out messaging pattern to execute
 `TradingCommand` messages, and process `AccountState` or `OrderEvent` type
 messages.
 
@@ -46,9 +45,10 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.time cimport unix_timestamp_ms
 from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
@@ -56,7 +56,6 @@ from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport UpdateOrder
-from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.position cimport PositionChanged
@@ -73,7 +72,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.trading.account cimport Account
 
 
 cdef class ExecutionEngine(Component):
@@ -121,7 +119,9 @@ cdef class ExecutionEngine(Component):
 
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
         self._routing_map = {}       # type: dict[Venue, ExecutionClient]
+        self._oms_types = {}         # type: dict[StrategyId, OMSType]
         self._default_client = None  # type: Optional[ExecutionClient]
+
         self._pos_id_generator = PositionIdGenerator(
             trader_id=msgbus.trader_id,
             clock=clock,
@@ -261,12 +261,12 @@ cdef class ExecutionEngine(Component):
             if self._default_client is None:
                 self._default_client = client
                 self._log.info(
-                    f"Registered {client} BROKERAGE_MULTI_VENUE as default client."
+                    f"Registered ExecutionClient {client} BROKERAGE_MULTI_VENUE."
                 )
         else:
             self._routing_map[client.venue] = client
             self._log.info(
-                f"Registered {client} {VenueTypeParser.to_str(client.venue_type)}."
+                f"Registered ExecutionClient {client} {VenueTypeParser.to_str(client.venue_type)}."
             )
 
     cpdef void register_default_client(self, ExecutionClient client) except *:
@@ -287,8 +287,8 @@ cdef class ExecutionEngine(Component):
         self._default_client = client
 
         self._log.info(
-            f"Registered {client} "
-            f"{VenueTypeParser.to_str(client.venue_type)}  as default client.",
+            f"Registered default ExecutionClient {client} "
+            f"{VenueTypeParser.to_str(client.venue_type)}.",
         )
 
     cpdef void register_venue_routing(self, ExecutionClient client, Venue venue) except *:
@@ -315,8 +315,27 @@ cdef class ExecutionEngine(Component):
         self._routing_map[venue] = client
 
         self._log.info(
-            f"Registered {client} {VenueTypeParser.to_str(client.venue_type)} "
+            f"Registered ExecutionClient {client} {VenueTypeParser.to_str(client.venue_type)} "
             f"for routing to {venue}."
+        )
+
+    cpdef void register_oms_type(self, TradingStrategy strategy) except *:
+        """
+        Register the given trading strategies OMS (Order Management System) type.
+
+        Parameters
+        ----------
+        strategy : TradingStrategy
+            The strategy for the registration.
+
+        """
+        Condition.not_none(strategy, "strategy")
+
+        self._oms_types[strategy.id] = strategy.oms_type
+
+        self._log.info(
+            f"Registered OMS.{OMSTypeParser.to_str(strategy.oms_type)} "
+            f"for TradingStrategy {strategy}.",
         )
 
     cpdef void deregister_client(self, ExecutionClient client) except *:
@@ -345,7 +364,7 @@ cdef class ExecutionEngine(Component):
         else:
             del self._routing_map[client.venue]
 
-        self._log.info(f"Deregistered {client}.")
+        self._log.info(f"Deregistered ExecutionClient {client}.")
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -360,14 +379,14 @@ cdef class ExecutionEngine(Component):
     cpdef void _start(self) except *:
         cdef ExecutionClient client
         for client in self._clients.values():
-            client.connect()
+            client.start()
 
         self._on_start()
 
     cpdef void _stop(self) except *:
         cdef ExecutionClient client
         for client in self._clients.values():
-            client.disconnect()
+            client.stop()
 
         self._on_stop()
 
@@ -419,14 +438,14 @@ cdef class ExecutionEngine(Component):
 
         self._execute_command(command)
 
-    cpdef void process(self, Event event) except *:
+    cpdef void process(self, OrderEvent event) except *:
         """
-        Process the given event.
+        Process the given order event.
 
         Parameters
         ----------
-        event : Event
-            The event to process.
+        event : OrderEvent
+            The order event to process.
 
         """
         Condition.not_none(event, "event")
@@ -520,43 +539,17 @@ cdef class ExecutionEngine(Component):
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
 
-    cdef void _handle_event(self, Event event) except *:
+    cdef void _handle_event(self, OrderEvent event) except *:
         self._log.debug(f"{RECV}{EVT} {event}.")
         self.event_count += 1
 
-        if isinstance(event, OrderEvent):
-            self._handle_order_event(event)
-        elif isinstance(event, AccountState):
-            self._handle_account_event(event)
-        else:
-            self._log.error(f"Cannot handle event: unrecognized {event}.")
-
-    cdef void _handle_account_event(self, AccountState event) except *:
-        cdef Account account = self._cache.account(event.account_id)
-        if account is None:
-            # Generate account
-            account = Account(event)
-            self._cache.add_account(account)
-            for client in self._clients.values():
-                if client.account_id == account.id and client.get_account() is None:
-                    client.register_account(account)
-        else:
-            account.apply(event=event)
-            self._cache.update_account(account)
-
-        self._msgbus.publish_c(
-            topic=f"events.account.{event.account_id.value}",
-            msg=event,
-        )
-
-    cdef void _handle_order_event(self, OrderEvent event) except *:
         # Fetch Order from cache
         cdef ClientOrderId client_order_id = event.client_order_id
         cdef Order order = self._cache.order(event.client_order_id)
         if order is None:
             self._log.warning(
-                f"{repr(event.client_order_id)} was not found in cache "
-                f"for {repr(event.venue_order_id)} to apply {event}."
+                f"Order with {repr(event.client_order_id)} "
+                f"not found in the cache to apply {event}."
             )
 
             # Search cache for ClientOrderId matching the VenueOrderId
@@ -565,7 +558,7 @@ cdef class ExecutionEngine(Component):
                 self._log.error(
                     f"Cannot apply event to any order: "
                     f"{repr(event.client_order_id)} and {repr(event.venue_order_id)} "
-                    f"not found in cache."
+                    f"not found in the cache."
                 )
                 return  # Cannot process event further
 
@@ -574,90 +567,78 @@ cdef class ExecutionEngine(Component):
             if order is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
-                    f"order for {repr(client_order_id)} not found in cache."
+                    f"{repr(event.client_order_id)} and {repr(event.venue_order_id)} "
+                    f"not found in the cache."
                 )
                 return  # Cannot process event further
 
             # Set the correct ClientOrderId for the event
             event.client_order_id = client_order_id
             self._log.info(
-                f"{repr(client_order_id)} was found in cache and "
-                f"applying event to order with {repr(order.venue_order_id)}.",
+                f"Order with {repr(client_order_id)} was found in the cache.",
                 color=LogColor.GREEN,
             )
 
+        cdef OMSType oms_type = self._oms_types.get(event.strategy_id, OMSType.HEDGING)
+
         if isinstance(event, OrderFilled):
-            self._confirm_position_id(event)
+            self._confirm_position_id(event, oms_type)
 
         try:
-            # Protected against duplicate OrderFilled
             order.apply(event)
-        except (KeyError, InvalidStateTrigger) as ex:
-            self._log.exception(ex)
-            return  # Not re-raising to avoid crashing engine
+        except InvalidStateTrigger as ex:
+            self._log.warning(f"InvalidStateTrigger: {ex}, did not apply {event}")
+            return
+        except ValueError as ex:
+            # Protection against invalid IDs
+            self._log.error(str(ex))
+            return
+        except KeyError as ex:
+            # Protection against duplicate fills
+            self._log.error(str(ex))
+            return
 
         self._cache.update_order(order)
-
-        if isinstance(event, OrderFilled):
-            self._handle_order_fill(event)
-            return  # Published on msgbus
-
         self._msgbus.publish_c(
             topic=f"events.order.{event.strategy_id.value}",
             msg=event,
         )
 
-    cdef void _confirm_position_id(self, OrderFilled fill) except *:
-        if fill.position_id is None:
-            # Fetch ID from cache (assumed to be source of truth)
-            fill.position_id = self._cache.position_id(fill.client_order_id)
+        if isinstance(event, OrderFilled):
+            self._handle_order_fill(event, oms_type)
 
-        cdef Position position = None
-        if fill.position_id is not None:
-            position = self._cache.position(fill.position_id)
-            if position is not None:
-                if position.is_closed_c():
-                    self._log.warning(
-                        f"Position for {repr(fill.position_id)} already closed.",
-                    )
-                    # Generate and assign new position ID
-                    fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
-                    self._log.info(
-                        f"Generated new position ID {fill.position_id}.",
-                        color=LogColor.GREEN,
-                    )
+    cdef void _confirm_position_id(self, OrderFilled fill, OMSType oms_type) except *:
+        # Fetch ID from cache
+        cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
+        if position_id is not None:
+            if fill.position_id is not None and fill.position_id != position_id:
+                self._log.error(
+                    "Incorrect position ID assigned to fill: "
+                    f"cached={repr(position_id)}, assigned={repr(fill.position_id)}. "
+                    "re-assigning from cache.",
+                )
+            # Assign position ID to fill
+            fill.position_id = position_id
             return
 
-        # Check for open positions
-        cdef list positions_open = self._cache.positions_open(
-            venue=None,  # Faster query filtering
-            instrument_id=fill.instrument_id,
-        )
-        if not positions_open:
-            # Assign new ID to fill
+        if oms_type == OMSType.HEDGING:
+            if fill.position_id is not None:
+                # Already assigned
+                return
+            # Assign new position ID
             fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
-            return
+        elif oms_type == OMSType.NETTING:
+            # Assign netted position ID singleton
+            fill.position_id = PositionId(f"{fill.instrument_id.value}-{fill.strategy_id.value}")
 
-        # Determine position ID for net position
-        # Invariant (design-time)
-        assert len(positions_open) == 1, "more than one position for unassigned position_id"
-
-        # Assign existing positions ID to fill
-        fill.position_id = positions_open[0].id
-
-    cdef void _handle_order_fill(self, OrderFilled fill) except *:
-        self._msgbus.publish_c(
-            topic=f"events.order.{fill.strategy_id.value}",
-            msg=fill,
-        )
-
+    cdef void _handle_order_fill(self, OrderFilled fill, OMSType oms_type) except *:
         cdef Position position = self._cache.position(fill.position_id)
-        if position is None:  # No position open
-            self._open_position(fill)
+        if position is None:
+            self._open_position(fill, oms_type)
         else:
-            self._update_position(position, fill)
+            self._update_position(position, fill, oms_type)
 
-    cdef void _open_position(self, OrderFilled fill) except *:
+    cdef void _open_position(self, OrderFilled fill, OMSType oms_type) except *:
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
         if instrument is None:
             self._log.error(
@@ -667,7 +648,7 @@ cdef class ExecutionEngine(Component):
             return
 
         cdef Position position = Position(instrument, fill)
-        self._cache.add_position(position)
+        self._cache.add_position(position, oms_type)
 
         cdef PositionOpened event = PositionOpened.create_c(
             position=position,
@@ -681,10 +662,14 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cdef void _update_position(self, Position position, OrderFilled fill) except *:
+    cdef void _update_position(self, Position position, OrderFilled fill, OMSType oms_type) except *:
         # Check for flip (last_qty guaranteed to be positive)
-        if position.is_opposite_side(fill.side) and fill.last_qty > position.quantity:
-            self._flip_position(position, fill)
+        if (
+            oms_type == OMSType.HEDGING
+            and position.is_opposite_side(fill.side)
+            and fill.last_qty > position.quantity
+        ):
+            self._flip_position(position, fill, oms_type)
             return  # Handled in flip
 
         try:
@@ -717,7 +702,7 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cdef void _flip_position(self, Position position, OrderFilled fill) except *:
+    cdef void _flip_position(self, Position position, OrderFilled fill, OMSType oms_type) except *:
         cdef Quantity difference = None
         if position.side == PositionSide.LONG:
             difference = Quantity(fill.last_qty - position.quantity, position.size_precision)
@@ -734,8 +719,8 @@ cdef class ExecutionEngine(Component):
         fill_split1 = OrderFilled(
             trader_id=fill.trader_id,
             strategy_id=fill.strategy_id,
-            instrument_id=fill.instrument_id,
             account_id=fill.account_id,
+            instrument_id=fill.instrument_id,
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
@@ -753,18 +738,26 @@ cdef class ExecutionEngine(Component):
         )
 
         # Close original position
-        self._update_position(position, fill_split1)
+        self._update_position(position, fill_split1, oms_type)
+
+        cdef PositionId position_id_flip = fill.position_id
+        if oms_type == OMSType.HEDGING:
+            # Generate new position ID for flipped position
+            position_id_flip = self._pos_id_generator.generate(
+                strategy_id=fill.strategy_id,
+                flipped=True,
+            )
 
         # Generate order fill for flipped position
         cdef OrderFilled fill_split2 = OrderFilled(
             trader_id=fill.trader_id,
             strategy_id=fill.strategy_id,
-            instrument_id=fill.instrument_id,
             account_id=fill.account_id,
+            instrument_id=fill.instrument_id,
             client_order_id=fill.client_order_id,
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
-            position_id=PositionId(position.id.value + "F"),
+            position_id=position_id_flip,
             order_side=fill.side,
             order_type=fill.type,
             last_qty=difference,  # Fill difference from original as above
@@ -778,4 +771,4 @@ cdef class ExecutionEngine(Component):
         )
 
         # Open flipped position
-        self._handle_order_fill(fill_split2)
+        self._handle_order_fill(fill_split2, oms_type)

@@ -17,10 +17,11 @@ from datetime import timedelta
 from decimal import Decimal
 
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
-from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import SubmitBracketOrder
@@ -33,6 +34,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
@@ -40,9 +42,9 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.bracket import BracketOrder
-from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
 from tests.test_kit.providers import TestInstrumentProvider
@@ -58,7 +60,10 @@ class TestRiskEngine:
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+        )
 
         self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
@@ -73,13 +78,6 @@ class TestRiskEngine:
         self.cache = TestStubs.cache()
 
         self.portfolio = Portfolio(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.data_engine = DataEngine(
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -112,12 +110,58 @@ class TestRiskEngine:
             clock=self.clock,
             logger=self.logger,
         )
-
-        # Wire up components
+        self.portfolio.update_account(TestStubs.event_margin_account_state())
         self.exec_engine.register_client(self.exec_client)
 
         # Prepare data
         self.cache.add_instrument(AUDUSD_SIM)
+
+    def test_config_risk_engine(self):
+        # Arrange
+        self.msgbus.deregister("RiskEngine.execute", self.risk_engine.execute)
+
+        config = {
+            "bypass": True,  # <-- bypassing pre-trade risk checks for backtest
+            "max_order_rate": (5, timedelta(seconds=1)),
+            "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
+        }
+
+        # Act
+        risk_engine = RiskEngine(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            config=config,
+        )
+
+        # Assert
+        assert risk_engine.max_order_rate() == (5, timedelta(seconds=1))
+        assert risk_engine.max_notionals_per_order() == {GBPUSD_SIM.id: Decimal("2000000")}
+        assert risk_engine.max_notional_per_order(GBPUSD_SIM.id) == 2_000_000
+
+    def test_risk_engine_on_stop(self):
+        # Arrange, Act
+        self.risk_engine.start()
+        self.risk_engine.stop()
+
+        # Assert
+        assert self.risk_engine.state == ComponentState.STOPPED
+
+    def test_process_event_then_handles(self):
+        # Arrange
+        event = Event(
+            event_id=self.uuid_factory.generate(),
+            ts_event=self.clock.timestamp_ns(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.process(event)
+
+        # Assert
+        assert self.risk_engine.event_count == 1
 
     def test_trading_state_after_instantiation_returns_active(self):
         # Arrange, Act
@@ -182,9 +226,9 @@ class TestRiskEngine:
             ts_init=self.clock.timestamp_ns(),
         )
 
-        self.exec_engine.process(random)
+        self.risk_engine.process(random)
 
-    # -- SUBMIT ORDER TESTS ----------------------------------------------------------------------------
+    # -- SUBMIT ORDER TESTS ------------------------------------------------------------------------
 
     def test_submit_order_with_default_settings_then_sends_to_client(self):
         # Arrange
@@ -220,7 +264,7 @@ class TestRiskEngine:
 
         # Assert
         assert self.exec_engine.command_count == 1
-        assert self.exec_client.calls == ["connect", "submit_order"]
+        assert self.exec_client.calls == ["_start", "submit_order"]
 
     def test_submit_order_when_duplicate_id_then_denies(self):
         # Arrange
@@ -258,7 +302,119 @@ class TestRiskEngine:
 
         # Assert
         assert self.exec_engine.command_count == 1
-        assert self.exec_client.calls == ["connect", "submit_order"]
+        assert self.exec_client.calls == ["_start", "submit_order"]
+
+    def test_submit_order_when_risk_bypassed_sends_to_execution_engine(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert self.exec_engine.command_count == 1  # <-- initial account event
+        assert self.exec_client.calls == ["_start", "submit_order"]
+
+    def test_submit_order_when_position_already_closed_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        order2 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100000),
+        )
+
+        order3 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        submit_order1 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order1,
+            command_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_order1)
+        self.exec_engine.process(TestStubs.event_order_submitted(order1))
+        self.exec_engine.process(TestStubs.event_order_accepted(order1))
+        self.exec_engine.process(TestStubs.event_order_filled(order1, AUDUSD_SIM))
+
+        submit_order2 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=PositionId("P-19700101-000000-000-001-1"),
+            order=order2,
+            command_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit_order2)
+        self.exec_engine.process(TestStubs.event_order_submitted(order2))
+        self.exec_engine.process(TestStubs.event_order_accepted(order2))
+        self.exec_engine.process(TestStubs.event_order_filled(order2, AUDUSD_SIM))
+
+        submit_order3 = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=PositionId("P-19700101-000000-000-001-1"),
+            order=order3,
+            command_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order3)
+
+        # Assert
+        assert self.exec_engine.command_count == 2
+        assert self.exec_client.calls == ["_start", "submit_order", "submit_order"]
 
     def test_submit_order_when_position_id_not_in_cache_then_denies(self):
         # Arrange
@@ -283,7 +439,7 @@ class TestRiskEngine:
         submit_order = SubmitOrder(
             self.trader_id,
             strategy.id,
-            PositionId("009"),  # <-- not in cache
+            PositionId("009"),  # <-- not in the cache
             order,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
@@ -293,7 +449,7 @@ class TestRiskEngine:
         self.risk_engine.execute(submit_order)
 
         # Assert
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0
 
     def test_submit_order_when_instrument_not_in_cache_then_denies(self):
         # Arrange
@@ -310,7 +466,7 @@ class TestRiskEngine:
         )
 
         order = strategy.order_factory.market(
-            GBPUSD_SIM.id,  # <-- not in cache
+            GBPUSD_SIM.id,  # <-- not in the cache
             OrderSide.BUY,
             Quantity.from_int(100000),
         )
@@ -791,7 +947,7 @@ class TestRiskEngine:
         # Assert
         assert self.risk_engine.command_count == 1  # <-- command never reaches engine
 
-    # -- SUBMIT BRACKET ORDER TESTS --------------------------------------------------------------------
+    # -- SUBMIT BRACKET ORDER TESTS ----------------------------------------------------------------
 
     def test_submit_bracket_with_default_settings_sends_to_client(self):
         # Arrange
@@ -832,7 +988,7 @@ class TestRiskEngine:
 
         # Assert
         assert self.exec_engine.command_count == 1
-        assert self.exec_client.calls == ["connect", "submit_bracket_order"]
+        assert self.exec_client.calls == ["_start", "submit_bracket_order"]
 
     def test_submit_bracket_order_with_duplicate_entry_id_then_denies(self):
         # Arrange
@@ -1082,7 +1238,154 @@ class TestRiskEngine:
         # Assert
         assert self.exec_engine.command_count == 0  # <-- command never reaches engine
 
-    # -- UPDATE ORDER TESTS ----------------------------------------------------------------------------
+    # -- UPDATE ORDER TESTS ------------------------------------------------------------------------
+
+    def test_update_order_when_no_order_found_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        update = UpdateOrder(
+            self.trader_id,
+            strategy.id,
+            AUDUSD_SIM.id,
+            ClientOrderId("invalid"),
+            VenueOrderId("1"),
+            Quantity.from_int(100000),
+            Price.from_str("1.00010"),
+            None,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(update)
+
+        # Assert
+        assert self.exec_client.calls == ["_start"]
+        assert self.risk_engine.command_count == 1
+        assert self.exec_engine.command_count == 0
+
+    def test_update_order_when_already_completed_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00010"),
+        )
+
+        submit = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            None,
+            order,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit)
+
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_accepted(order))
+        self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
+
+        update = UpdateOrder(
+            self.trader_id,
+            strategy.id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("1"),
+            order.quantity,
+            Price.from_str("1.00010"),
+            None,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(update)
+
+        # Assert
+        assert self.exec_client.calls == ["_start", "submit_order"]
+        assert self.risk_engine.command_count == 2
+        assert self.exec_engine.command_count == 1
+
+    def test_update_order_when_in_flight_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00010"),
+        )
+
+        submit = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            None,
+            order,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit)
+
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+
+        update = UpdateOrder(
+            self.trader_id,
+            strategy.id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("1"),
+            order.quantity,
+            Price.from_str("1.00010"),
+            None,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(update)
+
+        # Assert
+        assert self.exec_client.calls == ["_start", "submit_order"]
+        assert self.risk_engine.command_count == 2
+        assert self.exec_engine.command_count == 1
 
     def test_update_order_with_default_settings_then_sends_to_client(self):
         # Arrange
@@ -1133,11 +1436,148 @@ class TestRiskEngine:
         self.risk_engine.execute(update)
 
         # Assert
-        assert self.exec_client.calls == ["connect", "submit_order", "update_order"]
+        assert self.exec_client.calls == ["_start", "submit_order", "update_order"]
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2
 
-    # -- CANCEL ORDER TESTS ----------------------------------------------------------------------------
+    # -- CANCEL ORDER TESTS ------------------------------------------------------------------------
+
+    def test_cancel_order_when_order_does_not_exist_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        cancel = CancelOrder(
+            self.trader_id,
+            strategy.id,
+            AUDUSD_SIM.id,
+            ClientOrderId("1"),
+            VenueOrderId("1"),
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(cancel)
+
+        # Assert
+        assert self.exec_client.calls == ["_start"]
+        assert self.risk_engine.command_count == 1
+        assert self.exec_engine.command_count == 0
+
+    def test_cancel_order_when_already_completed_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        submit = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            None,
+            order,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit)
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_rejected(order))
+
+        cancel = CancelOrder(
+            self.trader_id,
+            strategy.id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("1"),
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(cancel)
+
+        # Assert
+        assert self.exec_client.calls == ["_start", "submit_order"]
+        assert self.risk_engine.command_count == 2
+        assert self.exec_engine.command_count == 1
+
+    def test_cancel_order_when_already_pending_cancel_then_denies(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = TradingStrategy(order_id_tag="001")
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        submit = SubmitOrder(
+            self.trader_id,
+            strategy.id,
+            None,
+            order,
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        cancel = CancelOrder(
+            self.trader_id,
+            strategy.id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("1"),
+            self.uuid_factory.generate(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit)
+        self.exec_engine.process(TestStubs.event_order_submitted(order))
+        self.exec_engine.process(TestStubs.event_order_accepted(order))
+
+        self.risk_engine.execute(cancel)
+        self.exec_engine.process(TestStubs.event_order_pending_cancel(order))
+
+        # Act
+        self.risk_engine.execute(cancel)
+
+        # Assert
+        assert self.exec_client.calls == ["_start", "submit_order", "cancel_order"]
+        assert self.risk_engine.command_count == 3
+        assert self.exec_engine.command_count == 2
 
     def test_cancel_order_with_default_settings_then_sends_to_client(self):
         # Arrange
@@ -1184,6 +1624,6 @@ class TestRiskEngine:
         self.risk_engine.execute(cancel)
 
         # Assert
-        assert self.exec_client.calls == ["connect", "submit_order", "cancel_order"]
+        assert self.exec_client.calls == ["_start", "submit_order", "cancel_order"]
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2

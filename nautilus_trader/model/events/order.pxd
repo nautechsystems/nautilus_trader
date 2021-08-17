@@ -37,12 +37,14 @@ cdef class OrderEvent(Event):
     """The trader ID associated with the event.\n\n:returns: `TraderId`"""
     cdef readonly StrategyId strategy_id
     """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
+    cdef readonly AccountId account_id
+    """The account ID associated with the event.\n\n:returns: `AccountId` or None"""
     cdef readonly InstrumentId instrument_id
     """The instrument ID associated with the event.\n\n:returns: `InstrumentId`"""
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the event.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue order ID associated with the event.\n\n:returns: `VenueOrderId`"""
+    """The venue order ID associated with the event.\n\n:returns: `VenueOrderId` or None"""
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -76,8 +78,6 @@ cdef class OrderDenied(OrderEvent):
 
 
 cdef class OrderSubmitted(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
 
     @staticmethod
     cdef OrderSubmitted from_dict_c(dict values)
@@ -87,8 +87,6 @@ cdef class OrderSubmitted(OrderEvent):
 
 
 cdef class OrderAccepted(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
 
     @staticmethod
     cdef OrderAccepted from_dict_c(dict values)
@@ -98,8 +96,6 @@ cdef class OrderAccepted(OrderEvent):
 
 
 cdef class OrderRejected(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly str reason
     """The reason the order was rejected.\n\n:returns: `str`"""
 
@@ -111,8 +107,6 @@ cdef class OrderRejected(OrderEvent):
 
 
 cdef class OrderCanceled(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
 
     @staticmethod
     cdef OrderCanceled from_dict_c(dict values)
@@ -122,8 +116,6 @@ cdef class OrderCanceled(OrderEvent):
 
 
 cdef class OrderExpired(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
 
     @staticmethod
     cdef OrderExpired from_dict_c(dict values)
@@ -133,8 +125,6 @@ cdef class OrderExpired(OrderEvent):
 
 
 cdef class OrderTriggered(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
 
     @staticmethod
     cdef OrderTriggered from_dict_c(dict values)
@@ -144,8 +134,6 @@ cdef class OrderTriggered(OrderEvent):
 
 
 cdef class OrderPendingUpdate(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
 
     @staticmethod
     cdef OrderPendingUpdate from_dict_c(dict values)
@@ -155,8 +143,6 @@ cdef class OrderPendingUpdate(OrderEvent):
 
 
 cdef class OrderPendingCancel(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
 
     @staticmethod
     cdef OrderPendingCancel from_dict_c(dict values)
@@ -166,8 +152,6 @@ cdef class OrderPendingCancel(OrderEvent):
 
 
 cdef class OrderUpdateRejected(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly str response_to
     """The update rejection response to.\n\n:returns: `str`"""
     cdef readonly str reason
@@ -181,8 +165,6 @@ cdef class OrderUpdateRejected(OrderEvent):
 
 
 cdef class OrderCancelRejected(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly str response_to
     """The cancel rejection response to.\n\n:returns: `str`"""
     cdef readonly str reason
@@ -196,14 +178,12 @@ cdef class OrderCancelRejected(OrderEvent):
 
 
 cdef class OrderUpdated(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly Quantity quantity
     """The orders current quantity.\n\n:returns: `Quantity`"""
     cdef readonly Price price
     """The orders current price.\n\n:returns: `Price`"""
     cdef readonly Price trigger
-    """The orders current price.\n\n:returns: `Price` or None"""
+    """The orders current trigger price.\n\n:returns: `Price` or None"""
 
     @staticmethod
     cdef OrderUpdated from_dict_c(dict values)
@@ -213,12 +193,10 @@ cdef class OrderUpdated(OrderEvent):
 
 
 cdef class OrderFilled(OrderEvent):
-    cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId`"""
     cdef readonly ExecutionId execution_id
     """The execution ID associated with the event.\n\n:returns: `ExecutionId`"""
     cdef readonly PositionId position_id
-    """The position ID associated with the event.\n\n:returns: `PositionId`"""
+    """The position ID associated with the event.\n\n:returns: `PositionId` or None"""
     cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType type

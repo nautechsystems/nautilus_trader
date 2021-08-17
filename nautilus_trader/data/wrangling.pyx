@@ -446,10 +446,10 @@ cdef class BarDataWrangler:
         # values to be an ndarray with 5 elements [open, high, low, close, volume].
         return Bar(
             bar_type=self._bar_type,
-            open_price=Price(values[0], self._price_precision),
-            high_price=Price(values[1], self._price_precision),
-            low_price=Price(values[2], self._price_precision),
-            close_price=Price(values[3], self._price_precision),
+            open=Price(values[0], self._price_precision),
+            high=Price(values[1], self._price_precision),
+            low=Price(values[2], self._price_precision),
+            close=Price(values[3], self._price_precision),
             volume=Quantity(values[4], self._size_precision),
             ts_event=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
             ts_init=secs_to_nanos(timestamp),

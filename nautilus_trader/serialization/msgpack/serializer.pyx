@@ -29,7 +29,6 @@ from nautilus_trader.serialization.base cimport InstrumentSerializer
 cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
     """
     Provides an `Instrument` serializer for the `MessagePack` specification.
-
     """
 
     cpdef bytes serialize(self, Instrument instrument):

@@ -17,10 +17,11 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
-from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
@@ -67,7 +68,7 @@ class OrderbookImbalance(TradingStrategy):
 
         """
         assert 0 < trigger_imbalance_ratio < 1
-        super().__init__(order_id_tag=order_id_tag)
+        super().__init__(order_id_tag=order_id_tag, oms_type=OMSType.NETTING)
         # self.instrument_filter = instrument_filter
         self.instrument = instrument
         self.max_trade_size = max_trade_size
@@ -89,9 +90,9 @@ class OrderbookImbalance(TradingStrategy):
             level=BookLevel.L2,
         )
 
-    def on_order_book_delta(self, delta: OrderBookDelta):
+    def on_order_book_delta(self, data: OrderBookData):
         """Actions to be performed when a delta is received."""
-        self._book.apply(delta)
+        self._book.apply(data)
         if self._book.spread():
             self.check_trigger()
 

@@ -42,11 +42,11 @@ from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
-from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.trader import Trader
 
 
@@ -135,7 +135,7 @@ class TradingNode:
         )
 
         self._log = LoggerAdapter(
-            component=self.__class__.__name__,
+            component_name=type(self).__name__,
             logger=self._logger,
         )
 
@@ -558,10 +558,6 @@ class TradingNode:
                 )
                 return
             self._log.info("Portfolio initialized.", color=LogColor.GREEN)
-
-            # Update portfolio
-            for account in self._cache.accounts():
-                self.portfolio.register_account(account)
 
             # Start trader and strategies
             self.trader.start()

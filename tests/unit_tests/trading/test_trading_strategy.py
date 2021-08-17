@@ -40,22 +40,24 @@ from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderState
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.msgbus.message_bus import MessageBus
+from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.filters import NewsImpact
-from nautilus_trader.trading.portfolio import Portfolio
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import KaboomStrategy
 from tests.test_kit.mocks import MockStrategy
@@ -216,7 +218,7 @@ class TestTradingStrategy:
         # Arrange
         strategy = TradingStrategy("000")
 
-        event = TestStubs.event_account_state()
+        event = TestStubs.event_cash_account_state()
 
         # Act
         strategy.handle_event(event)
@@ -350,7 +352,7 @@ class TestTradingStrategy:
     def test_on_event_when_not_overridden_does_nothing(self):
         # Arrange
         strategy = TradingStrategy("000")
-        event = TestStubs.event_account_state(AccountId("SIM", "000"))
+        event = TestStubs.event_cash_account_state(account_id=AccountId("SIM", "000"))
 
         # Act
         strategy.on_event(event)
@@ -799,7 +801,7 @@ class TestTradingStrategy:
         strategy.set_explode_on_start(False)
         strategy.start()
 
-        event = TestStubs.event_account_state(AccountId("TEST", "000"))
+        event = TestStubs.event_cash_account_state(account_id=AccountId("TEST", "000"))
 
         # Act
         # Assert
@@ -1670,7 +1672,6 @@ class TestTradingStrategy:
         # Assert
         assert self.data_engine.command_count == 2
 
-    @pytest.mark.skip(reason="implement")
     def test_subscribe_instruments(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
@@ -1688,9 +1689,12 @@ class TestTradingStrategy:
         strategy.subscribe_instruments(Venue("SIM"))
 
         # Assert
-        # Assert  # TODO(cs): Implement DataEngine subscription queries
-        # expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
         assert self.data_engine.command_count == 1
+        assert self.data_engine.subscribed_instruments() == [
+            InstrumentId.from_str("AUD/USD.SIM"),
+            InstrumentId.from_str("GBP/USD.SIM"),
+            InstrumentId.from_str("USD/JPY.SIM"),
+        ]
 
     # @pytest.mark.skip(reason="implement")
     def test_unsubscribe_instruments(self):
@@ -1710,11 +1714,9 @@ class TestTradingStrategy:
         strategy.unsubscribe_instruments(Venue("SIM"))
 
         # Assert
-        # Assert  # TODO(cs): Implement DataEngine subscription queries
-        # expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
         assert self.data_engine.command_count == 1
+        assert self.data_engine.subscribed_instruments() == []
 
-    @pytest.mark.skip(reason="implement")
     def test_subscribe_instrument(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
@@ -1732,9 +1734,9 @@ class TestTradingStrategy:
         strategy.subscribe_instrument(AUDUSD_SIM.id)
 
         # Assert
-        # Assert  # TODO(cs): Implement DataEngine subscription queries
-        # expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
         assert self.data_engine.command_count == 1
+        assert self.data_engine.subscribed_instruments() == [expected_instrument]
 
     def test_unsubscribe_instrument(self):
         # Arrange
@@ -1755,10 +1757,9 @@ class TestTradingStrategy:
         strategy.unsubscribe_instrument(AUDUSD_SIM.id)
 
         # Assert
-        assert self.data_engine.subscribed_instruments == []
+        assert self.data_engine.subscribed_instruments() == []
         assert self.data_engine.command_count == 2
 
-    @pytest.mark.skip(reason="implement")
     def test_subscribe_quote_ticks(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
@@ -1776,8 +1777,8 @@ class TestTradingStrategy:
         strategy.subscribe_quote_ticks(AUDUSD_SIM.id)
 
         # Assert
-        # expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
-        # assert self.data_engine.subscribed_quote_ticks == [expected_instrument]
+        expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        assert self.data_engine.subscribed_quote_ticks() == [expected_instrument]
         assert self.data_engine.command_count == 1
 
     def test_unsubscribe_quote_ticks(self):
@@ -1799,11 +1800,9 @@ class TestTradingStrategy:
         strategy.unsubscribe_quote_ticks(AUDUSD_SIM.id)
 
         # Assert
-        # Assert  # TODO(cs): Implement DataEngine subscription queries
-        assert self.data_engine.subscribed_quote_ticks == []
+        assert self.data_engine.subscribed_quote_ticks() == []
         assert self.data_engine.command_count == 2
 
-    @pytest.mark.skip(reason="implement")
     def test_subscribe_trade_ticks(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
@@ -1820,9 +1819,9 @@ class TestTradingStrategy:
         # Act
         strategy.subscribe_trade_ticks(AUDUSD_SIM.id)
 
-        # Assert  # TODO(cs): Implement DataEngine subscription queries
-        # expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
-        # assert self.data_engine.subscribed_trade_ticks == [expected_instrument]
+        # Assert
+        expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        assert self.data_engine.subscribed_trade_ticks() == [expected_instrument]
         assert self.data_engine.command_count == 1
 
     def test_unsubscribe_trade_ticks(self):
@@ -1844,7 +1843,7 @@ class TestTradingStrategy:
         strategy.unsubscribe_trade_ticks(AUDUSD_SIM.id)
 
         # Assert
-        assert self.data_engine.subscribed_trade_ticks == []
+        assert self.data_engine.subscribed_trade_ticks() == []
         assert self.data_engine.command_count == 2
 
     def test_subscribe_strategy_data(self):
@@ -1982,8 +1981,7 @@ class TestTradingStrategy:
         strategy.subscribe_bars(bar_type)
 
         # Assert
-        # TODO(cs): Implement DataEngine subscription queries
-        # assert self.data_engine.subscribed_bars == [bar_type]
+        assert self.data_engine.subscribed_bars() == []
         assert self.data_engine.command_count == 1
 
     def test_unsubscribe_bars(self):
@@ -2005,7 +2003,7 @@ class TestTradingStrategy:
         strategy.unsubscribe_bars(bar_type)
 
         # Assert
-        assert self.data_engine.subscribed_bars == []
+        assert self.data_engine.subscribed_bars() == []
         assert self.data_engine.command_count == 2
 
     def test_request_data_sends_request_to_data_engine(self):
@@ -2134,7 +2132,7 @@ class TestTradingStrategy:
 
         # Assert
         assert order in strategy.cache.orders()
-        assert strategy.cache.orders()[0].state == OrderState.FILLED
+        assert strategy.cache.orders()[0].status == OrderStatus.FILLED
         assert order.client_order_id not in strategy.cache.orders_working()
         assert not strategy.cache.is_order_working(order.client_order_id)
         assert strategy.cache.is_order_completed(order.client_order_id)
@@ -2169,7 +2167,7 @@ class TestTradingStrategy:
 
         # Assert
         assert entry in strategy.cache.orders()
-        assert entry.state == OrderState.ACCEPTED
+        assert entry.status == OrderStatus.ACCEPTED
         assert entry in strategy.cache.orders_working()
         assert strategy.cache.is_order_working(entry.client_order_id)
         assert not strategy.cache.is_order_completed(entry.client_order_id)
@@ -2200,7 +2198,7 @@ class TestTradingStrategy:
 
         # Assert
         assert order in strategy.cache.orders()
-        assert strategy.cache.orders()[0].state == OrderState.CANCELED
+        assert strategy.cache.orders()[0].status == OrderStatus.CANCELED
         assert order.client_order_id == strategy.cache.orders_completed()[0].client_order_id
         assert order not in strategy.cache.orders_working()
         assert strategy.cache.order_exists(order.client_order_id)
@@ -2233,7 +2231,7 @@ class TestTradingStrategy:
         strategy.cancel_order(order)
 
         # Assert
-        assert strategy.cache.orders()[0].state == OrderState.PENDING_CANCEL
+        assert strategy.cache.orders()[0].status == OrderStatus.PENDING_CANCEL
         assert order in strategy.cache.orders_working()
         assert strategy.cache.order_exists(order.client_order_id)
         assert strategy.cache.is_order_working(order.client_order_id)
@@ -2265,7 +2263,7 @@ class TestTradingStrategy:
         strategy.cancel_order(order)
 
         # Assert
-        assert strategy.cache.orders()[0].state == OrderState.EXPIRED
+        assert strategy.cache.orders()[0].status == OrderStatus.EXPIRED
         assert order not in strategy.cache.orders_working()
         assert strategy.cache.order_exists(order.client_order_id)
         assert not strategy.cache.is_order_working(order.client_order_id)
@@ -2428,7 +2426,7 @@ class TestTradingStrategy:
 
         # Assert
         assert strategy.cache.orders()[0] == order
-        assert strategy.cache.orders()[0].state == OrderState.ACCEPTED
+        assert strategy.cache.orders()[0].status == OrderStatus.ACCEPTED
         assert strategy.cache.orders()[0].quantity == Quantity.from_int(110000)
         assert strategy.cache.orders()[0].price == Price.from_str("90.001")
         assert strategy.cache.order_exists(order.client_order_id)
@@ -2471,8 +2469,8 @@ class TestTradingStrategy:
         # Assert
         assert order1 in self.cache.orders()
         assert order2 in self.cache.orders()
-        assert self.cache.orders()[0].state == OrderState.CANCELED
-        assert self.cache.orders()[1].state == OrderState.CANCELED
+        assert self.cache.orders()[0].status == OrderStatus.CANCELED
+        assert self.cache.orders()[1].status == OrderStatus.CANCELED
         assert order1 in self.cache.orders_completed()
         assert order2 in strategy.cache.orders_completed()
 
@@ -2537,7 +2535,7 @@ class TestTradingStrategy:
         strategy.flatten_position(position)
 
         # Assert
-        assert order.state == OrderState.FILLED
+        assert order.status == OrderStatus.FILLED
         assert strategy.portfolio.is_completely_flat()
 
     def test_flatten_all_positions(self):
@@ -2574,6 +2572,6 @@ class TestTradingStrategy:
         strategy.flatten_all_positions(USDJPY_SIM.id)
 
         # Assert
-        assert order1.state == OrderState.FILLED
-        assert order2.state == OrderState.FILLED
+        assert order1.status == OrderStatus.FILLED
+        assert order2.status == OrderStatus.FILLED
         assert strategy.portfolio.is_completely_flat()

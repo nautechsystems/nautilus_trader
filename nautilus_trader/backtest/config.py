@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import dataclasses
 from functools import partial
 from typing import List, Optional, Tuple
@@ -7,7 +22,6 @@ from dask import delayed
 from dask.base import normalize_token
 from dask.base import tokenize
 
-from nautilus_trader.backtest.data_loader import DataCatalog
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import SimulationModule
@@ -22,6 +36,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookDelta
+from nautilus_trader.persistence.catalog import DataCatalog
 
 
 PARTIAL_SUFFIX = "Partial-"
@@ -67,6 +82,10 @@ class Partialable:
 
 @dataclasses.dataclass()
 class BacktestDataConfig(Partialable):
+    """
+    Represents the data configuration for one specific backtest run.
+    """
+
     catalog_path: str
     data_type: type
     catalog_fs_protocol: str = None
@@ -89,6 +108,10 @@ class BacktestDataConfig(Partialable):
 
 @dataclasses.dataclass()
 class BacktestVenueConfig:
+    """
+    Represents the venue configuration for one specific backtest run.
+    """
+
     name: str
     venue_type: str
     oms_type: str
@@ -114,7 +137,8 @@ class BacktestVenueConfig:
 @dataclasses.dataclass(repr=False)
 class BacktestConfig(Partialable):
     """
-    Configuration for one specific backtest run (a single set of data / strategies / parameters)
+    Represents the configuration for one specific backtest run (a single set of
+    data / strategies / parameters).
     """
 
     venues: Optional[List[BacktestVenueConfig]] = None

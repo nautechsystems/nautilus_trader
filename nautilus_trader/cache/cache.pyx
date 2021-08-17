@@ -18,6 +18,8 @@ from decimal import Decimal
 
 from libc.stdint cimport int64_t
 
+from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
@@ -25,6 +27,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.core.time cimport unix_timestamp_us
+from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
@@ -41,8 +44,6 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.trading.account cimport Account
-from nautilus_trader.trading.calculators cimport ExchangeRateCalculator
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -81,7 +82,7 @@ cdef class Cache(CacheFacade):
             config = {}
 
         self._database = database
-        self._log = LoggerAdapter(component=type(self).__name__, logger=logger)
+        self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
         self._xrate_calculator = ExchangeRateCalculator()
 
         # Cache deque capacities (per instrument_id)
@@ -1199,7 +1200,7 @@ cdef class Cache(CacheFacade):
             f"client_order_id={client_order_id}, "
             f"strategy_id={strategy_id}).")
 
-    cpdef void add_position(self, Position position) except *:
+    cpdef void add_position(self, Position position, OMSType oms_type) except *:
         """
         Add the given position to the cache.
 
@@ -1207,21 +1208,24 @@ cdef class Cache(CacheFacade):
         ----------
         position : Position
             The position to add.
+        oms_type : OMSType
+            The order management system type for the position.
 
         Raises
         ------
         ValueError
-            If position.id is already contained in the cache.
+            If oms_type is HEDGING and position.id is already contained in the cache.
         ValueError
-            If position.id is already contained in the index_positions.
+            If oms_type is HEDGING and position.id is already contained in the index_positions.
         ValueError
-            If position.id is already contained in the index_positions_open.
+            If oms_type is HEDGING and position.id is already contained in the index_positions_open.
 
         """
         Condition.not_none(position, "position")
-        Condition.not_in(position.id, self._positions, "position.id", "cached_positions")
-        Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
-        Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
+        if oms_type == OMSType.HEDGING:
+            Condition.not_in(position.id, self._positions, "position.id", "cached_positions")
+            Condition.not_in(position.id, self._index_positions, "position.id", "index_positions")
+            Condition.not_in(position.id, self._index_positions_open, "position.id", "index_positions_open")
 
         self._positions[position.id] = position
         self._index_positions.add(position.id)
@@ -2269,7 +2273,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Order object in cache " + str(ex))
+            self._log.error("Cannot find Order object in the cache " + str(ex))
 
     cpdef list orders_working(
         self,
@@ -2299,7 +2303,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Order object in cache " + str(ex))
+            self._log.error("Cannot find Order object in the cache " + str(ex))
 
     cpdef list orders_completed(
         self,
@@ -2329,7 +2333,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._orders[client_order_id] for client_order_id in client_order_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Order object in cache " + str(ex))
+            self._log.error("Cannot find Order object in the cache " + str(ex))
 
 # -- POSITION QUERIES ------------------------------------------------------------------------------
 
@@ -2398,7 +2402,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._positions[position_id] for position_id in position_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
+            self._log.error("Cannot find Position object in the cache " + str(ex))
 
     cpdef list positions_open(
         self,
@@ -2428,7 +2432,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._positions[position_id] for position_id in position_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
+            self._log.error("Cannot find Position object in the cache " + str(ex))
 
     cpdef list positions_closed(
         self,
@@ -2458,7 +2462,7 @@ cdef class Cache(CacheFacade):
         try:
             return [self._positions[position_id] for position_id in position_ids]
         except KeyError as ex:
-            self._log.error("Cannot find Position object in cache " + str(ex))
+            self._log.error("Cannot find Position object in the cache " + str(ex))
 
     cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
         """

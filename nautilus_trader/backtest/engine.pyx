@@ -67,11 +67,11 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.orderbook.data cimport OrderBookData
+from nautilus_trader.portfolio.portfolio cimport Portfolio
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackCommandSerializer
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentSerializer
-from nautilus_trader.trading.portfolio cimport Portfolio
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -157,7 +157,7 @@ cdef class BacktestEngine:
         )
 
         self._log = LoggerAdapter(
-            component=type(self).__name__,
+            component_name=type(self).__name__,
             logger=self._logger,
         )
 
@@ -386,7 +386,7 @@ cdef class BacktestEngine:
         ValueError
             If data is empty.
         ValueError
-            If instrument_id is not contained in the data cache.
+            If instrument_id is not found in the cache.
 
         """
         Condition.not_none(data, "data")
@@ -395,7 +395,7 @@ cdef class BacktestEngine:
         cdef InstrumentId instrument_id = data[0].instrument_id
         Condition.true(
             instrument_id in self._cache.instrument_ids(),
-            "Instrument for given data not found in the data cache. "
+            "Instrument for given data not found in the cache. "
             "Please call `add_instrument()` before adding related data.",
         )
 
@@ -431,7 +431,7 @@ cdef class BacktestEngine:
         ValueError
             If data is empty.
         ValueError
-            If instrument_id is not contained in the data cache.
+            If instrument_id is not found in the cache.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -440,7 +440,7 @@ cdef class BacktestEngine:
         Condition.false(data.empty, "data was empty")
         Condition.true(
             instrument_id in self._cache.instrument_ids(),
-            "Instrument for given data not found in the data cache. "
+            "Instrument for given data not found in the cache. "
             "Please call `add_instrument()` before adding related data.",
         )
 
@@ -506,7 +506,7 @@ cdef class BacktestEngine:
         ValueError
             If data is empty.
         ValueError
-            If instrument_id is not contained in the data cache.
+            If instrument_id is not found in the cache.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -515,7 +515,7 @@ cdef class BacktestEngine:
         Condition.false(data.empty, "data was empty")
         Condition.true(
             instrument_id in self._cache.instrument_ids(),
-            "Instrument for given data not found in the data cache. "
+            "Instrument for given data not found in the cache. "
             "Please call `add_instrument()` before adding related data.",
         )
 
@@ -594,7 +594,7 @@ cdef class BacktestEngine:
         Condition.false(data.empty, "data was empty")
         Condition.true(
             instrument_id in self._cache.instrument_ids(),
-            "Instrument for given data not found in the data cache. "
+            "Instrument for given data not found in the cache. "
             "Please call `add_instrument()` before adding related data.",
         )
 
@@ -651,7 +651,7 @@ cdef class BacktestEngine:
         bint is_frozen_account=False,
         list modules=None,
         FillModel fill_model=None,
-        BookLevel order_book_level=BookLevel.L1
+        BookLevel order_book_level=BookLevel.L1,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -1055,7 +1055,7 @@ cdef class BacktestEngine:
                 self._log.info(statistic)
 
     def _add_data_client_if_not_exists(self, ClientId client_id) -> None:
-        if client_id not in self._data_engine.registered_clients:
+        if client_id not in self._data_engine.registered_clients():
             client = BacktestDataClient(
                 client_id=client_id,
                 msgbus=self._msgbus,
@@ -1068,7 +1068,7 @@ cdef class BacktestEngine:
     def _add_market_data_client_if_not_exists(self, Venue venue) -> None:
         # TODO(cs): Assumption that client_id = venue
         cdef ClientId client_id = ClientId(venue.value)
-        if client_id not in self._data_engine.registered_clients:
+        if client_id not in self._data_engine.registered_clients():
             client = BacktestMarketDataClient(
                 client_id=client_id,
                 msgbus=self._msgbus,

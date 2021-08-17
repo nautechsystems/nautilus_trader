@@ -163,50 +163,50 @@ cdef class FuzzyCandlesticks(Indicator):
 
     cpdef void update_raw(
         self,
-        double open_price,
-        double high_price,
-        double low_price,
-        double close_price,
+        double open,
+        double high,
+        double low,
+        double close,
     ):
         """
         Update the indicator with the given raw values.
 
         Parameters
         ----------
-        open_price : double
+        open : double
             The open price.
-        high_price : double
+        high : double
             The high price.
-        low_price : double
+        low : double
             The low price.
-        close_price : double
+        close : double
             The close price.
 
         """
         # Check if this is the first input
         if not self.has_inputs:
-            self._last_open = open_price
-            self._last_high = high_price
-            self._last_low = low_price
-            self._last_close = close_price
+            self._last_open = open
+            self._last_high = high
+            self._last_low = low
+            self._last_close = close
 
         # Update last prices
-        self._last_open = open_price
-        self._last_high = high_price
-        self._last_low = low_price
-        self._last_close = close_price
+        self._last_open = open
+        self._last_high = high
+        self._last_low = low
+        self._last_close = close
 
         # Update measurements
-        self._lengths.append(fabs(high_price - low_price))
+        self._lengths.append(fabs(high - low))
 
         if self._lengths[0] == 0.0:
             self._body_percents.append(0.0)
             self._upper_wick_percents.append(0.0)
             self._lower_wick_percents.append(0.0)
         else:
-            self._body_percents.append(fabs(open_price - low_price / self._lengths[0]))
-            self._upper_wick_percents.append((high_price - max(open_price, close_price)) / self._lengths[0])
-            self._lower_wick_percents.append((min(open_price, close_price) - low_price) / self._lengths[0])
+            self._body_percents.append(fabs(open - low / self._lengths[0]))
+            self._upper_wick_percents.append((high - max(open, close)) / self._lengths[0])
+            self._lower_wick_percents.append((min(open, close) - low) / self._lengths[0])
 
         cdef np.ndarray lengths = np.asarray(self._lengths, dtype=np.float64)
         cdef np.ndarray body_percents = np.asarray(self._body_percents, dtype=np.float64)
@@ -226,7 +226,7 @@ cdef class FuzzyCandlesticks(Indicator):
 
         # Create fuzzy candle
         self.value = FuzzyCandle(
-            direction=self._fuzzify_direction(open_price, close_price),
+            direction=self._fuzzify_direction(open, close),
             size=self._fuzzify_size(
                 self._lengths[0],
                 mean_length,
@@ -260,11 +260,11 @@ cdef class FuzzyCandlesticks(Indicator):
             if len(self._lengths) >= self.period:
                 self._set_initialized(True)
 
-    cdef CandleDirection _fuzzify_direction(self, double open_price, double close_price):
+    cdef CandleDirection _fuzzify_direction(self, double open, double close):
         # Fuzzify the candle entry from the given inputs
-        if close_price > open_price:
+        if close > open:
             return CandleDirection.BULL
-        if close_price < open_price:
+        if close < open:
             return CandleDirection.BEAR
         else:
             return CandleDirection.NONE

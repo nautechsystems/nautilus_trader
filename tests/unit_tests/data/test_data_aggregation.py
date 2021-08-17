@@ -81,10 +81,10 @@ class TestBarBuilder:
 
         partial_bar = Bar(
             bar_type=bar_type,
-            open_price=Price.from_str("1.00001"),
-            high_price=Price.from_str("1.00010"),
-            low_price=Price.from_str("1.00000"),
-            close_price=Price.from_str("1.00002"),
+            open=Price.from_str("1.00001"),
+            high=Price.from_str("1.00010"),
+            low=Price.from_str("1.00000"),
+            close=Price.from_str("1.00002"),
             volume=Quantity.from_str("1"),
             ts_event=1_000_000_000,
             ts_init=1_000_000_000,
@@ -111,10 +111,10 @@ class TestBarBuilder:
 
         partial_bar1 = Bar(
             bar_type=bar_type,
-            open_price=Price.from_str("1.00001"),
-            high_price=Price.from_str("1.00010"),
-            low_price=Price.from_str("1.00000"),
-            close_price=Price.from_str("1.00002"),
+            open=Price.from_str("1.00001"),
+            high=Price.from_str("1.00010"),
+            low=Price.from_str("1.00000"),
+            close=Price.from_str("1.00002"),
             volume=Quantity.from_str("1"),
             ts_event=1_000_000_000,
             ts_init=1_000_000_000,
@@ -122,10 +122,10 @@ class TestBarBuilder:
 
         partial_bar2 = Bar(
             bar_type=bar_type,
-            open_price=Price.from_str("2.00001"),
-            high_price=Price.from_str("2.00010"),
-            low_price=Price.from_str("2.00000"),
-            close_price=Price.from_str("2.00002"),
+            open=Price.from_str("2.00001"),
+            high=Price.from_str("2.00010"),
+            low=Price.from_str("2.00000"),
+            close=Price.from_str("2.00002"),
             volume=Quantity.from_str("2"),
             ts_event=1_000_000_000,
             ts_init=3_000_000_000,
