@@ -21,10 +21,11 @@ as closely as possible with established terminology in the domain.
 ## Enhancements
 - Betfair adapter re-write.
 - Extracted `accounting` subpackage.
+- Extracted `portfolio` subpackage.
 - Subclassed `Account` with `CashAccount` and `MarginAccount`.
 - Added `AccountsManager`.
 - Added `AccountFactory`.
-- Moved registration of custom account cls to `AccountFactory`.
+- Moved registration of custom account classes to `AccountFactory`.
 - Moved registration of calculated account to `AccountFactory`.
 - Added registration of OMS type per trading strategy.
 - Added `ExecutionClient.create_account` for custom account classes.
