@@ -123,7 +123,7 @@ cdef class Order:
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderStatus.INITIALIZED,
-            trigger_parser=OrderStatusParser.to_str,  # order_state_to_str correct here
+            trigger_parser=OrderStatusParser.to_str,  # OrderStatusParser.to_str correct here
             state_parser=OrderStatusParser.to_str,
         )
         self._rollback_status = OrderStatus.INITIALIZED

@@ -762,7 +762,7 @@ class TestOrders:
         assert order.is_working
         assert not order.is_completed
 
-    def test_order_state_pending_cancel(self):
+    def test_order_status_pending_cancel(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_SIM.id,
@@ -809,7 +809,7 @@ class TestOrders:
         assert not order.is_pending_cancel
         assert order.event_count == 5
 
-    def test_order_state_pending_replace(self):
+    def test_order_status_pending_replace(self):
         # Arrange
         order = self.order_factory.market(
             AUDUSD_SIM.id,
