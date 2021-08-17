@@ -13,12 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import logging
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import pandas as pd
-from betfairlightweight import APIClient
-from betfairlightweight.filters import market_filter
+
+from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.client.enums import MarketProjection
+from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.common import EVENT_TYPE_TO_NAME
+from nautilus_trader.adapters.betfair.parsing import parse_handicap
+from nautilus_trader.adapters.betfair.util import chunk
+from nautilus_trader.adapters.betfair.util import flatten_tree
 
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
@@ -27,15 +32,6 @@ from nautilus_trader.common.providers cimport InstrumentProvider
 from nautilus_trader.core.time cimport unix_timestamp_ns
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.adapters.betfair.common import EVENT_TYPE_TO_NAME
-from nautilus_trader.adapters.betfair.parsing import parse_handicap
-from nautilus_trader.adapters.betfair.util import chunk
-from nautilus_trader.adapters.betfair.util import flatten_tree
-
-
-logger = logging.getLogger(__name__)
-
 
 cdef class BetfairInstrumentProvider(InstrumentProvider):
     """
@@ -43,10 +39,10 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
     """
 
     def __init__(
-        self, client not None: APIClient,
+        self,
+        client not None: BetfairClient,
         logger: Logger,
-        bint load_all=True,
-        dict market_filter=None,
+        market_filter: Optional[Dict] = None,
     ):
         """
         Initialize a new instance of the ``BetfairInstrumentProvider`` class.
@@ -55,9 +51,6 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         ----------
         client : APIClient
             The client for the provider.
-        load_all : bool, optional
-            If all instruments should be loaded at instantiation.
-
         """
         super().__init__()
 
@@ -65,66 +58,56 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         self._log = LoggerAdapter("BetfairInstrumentProvider", logger)
         self._instruments = {}
         self._cache = {}
-        self._searched_filters = set()
         self._account_currency = None
 
         self.market_filter = market_filter or {}
         self.venue = BETFAIR_VENUE
         self._missing_instruments = set()
 
-        if load_all:
-            self._load_instruments()
-
     @classmethod
     def from_instruments(cls, instruments, logger=None):
         logger = Logger(LiveClock())
-        instance = cls(client=1, logger=logger, load_all=False)
+        instance = cls(client=1, logger=logger)
         instance.set_instruments(instruments)
         return instance
 
-    cpdef void load_all(self) except *:
+    async def load_all_async(self, market_filter=None):
         """
         Load all instruments for the venue.
         """
-        self._load_instruments()
-
-    cdef void _load_instruments(self, dict market_filter=None) except *:
+        currency = await self.get_account_currency()
         market_filter = market_filter or self.market_filter
-        markets = load_markets(self._client, market_filter=market_filter)
-        self._log.info(f"Found {len(markets)} markets with filter: {market_filter}")
-        self._log.info(f"Loading metadata for {len(markets)} markets..")
-        market_metadata = load_markets_metadata(client=self._client, markets=markets)
-        self._log.info(f"Creating instruments..")
 
-        cdef list instruments = [
+        self._log.info(f"Loading markets with market_filter={market_filter}")
+        markets = await load_markets(self._client, market_filter=market_filter)
+
+        self._log.info(f"Found {len(markets)} markets, loading metadata")
+        market_metadata = await load_markets_metadata(client=self._client, markets=markets)
+
+        self._log.info(f"Creating instruments..")
+        instruments = [
             instrument
             for metadata in market_metadata.values()
-            for instrument in make_instruments(metadata, currency=self.get_account_currency())
+            for instrument in make_instruments(metadata, currency=currency)
         ]
-        self._log.info(f"{len(instruments)} Instruments created")
-
         for ins in instruments:
             self._instruments[ins.id] = ins
 
-    cpdef void _assert_loaded_instruments(self) except *:
-        assert self._instruments, "Instruments empty, has `load_all()` been called?"
+        self._log.info(f"{len(instruments)} Instruments created")
 
-    cpdef list search_markets(self, dict market_filter=None):
+    cpdef list load_markets(self, dict market_filter=None):
         """ Search for betfair markets. Useful for debugging / interactive use """
         return load_markets(client=self._client, market_filter=market_filter)
 
-    cpdef list search_instruments(self, dict instrument_filter=None, bint load=True):
+    cpdef list search_instruments(self, dict instrument_filter=None):
+
         """ Search for instruments within the cache. Useful for debugging / interactive use """
-        key = tuple((instrument_filter or {}).items())
-        if key not in self._searched_filters and load:
-            self._log.info(f"Searching for instruments with filter: {instrument_filter}")
-            self._load_instruments(market_filter=instrument_filter)
-            self._searched_filters.add(key)
-        instruments = [
-            ins for ins in self.list_instruments() if all([getattr(ins, k) == v for k, v in instrument_filter.items()])
-        ]
-        for ins in instruments:
-            self._log.debug(f"Found instrument: {ins}")
+        instruments = self.list_instruments()
+        if instrument_filter:
+            instruments = [
+                ins for ins in instruments
+                if all([getattr(ins, k) == v for k, v in instrument_filter.items()])
+            ]
         return instruments
 
     cpdef BettingInstrument get_betting_instrument(self, str market_id, str selection_id, str handicap):
@@ -134,7 +117,7 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
             instrument_filter = {
                 'market_id': market_id, 'selection_id': selection_id, 'selection_handicap': parse_handicap(handicap)
             }
-            instruments = self.search_instruments(instrument_filter=instrument_filter, load=False)
+            instruments = self.search_instruments(instrument_filter=instrument_filter)
             count = len(instruments)
             if count < 1:
                 key = (market_id, selection_id, parse_handicap(handicap))
@@ -147,12 +130,11 @@ cdef class BetfairInstrumentProvider(InstrumentProvider):
         return self._cache[key]
 
     cpdef list list_instruments(self):
-        self._assert_loaded_instruments()
         return list(self._instruments.values())
 
-    cpdef str get_account_currency(self):
+    async def get_account_currency(self) -> str:
         if self._account_currency is None:
-            detail = self._client.account.get_account_details()
+            detail = await self._client.get_account_details()
             self._account_currency = detail['currencyCode']
         return self._account_currency
 
@@ -278,32 +260,31 @@ VALID_MARKET_FILTER_KEYS = (
 )
 
 
-def load_markets(client: APIClient, market_filter=None):
+async def load_markets(client: BetfairClient, market_filter=None):
     if isinstance(market_filter, dict):
         # This code gets called from search instruments which may pass selection_id/handicap which don't exist here,
         # only the market_id is relevant, so we just drop these two fields
         market_filter = {k: v for k, v in market_filter.items() if k not in ("selection_id", "selection_handicap")}
     assert all((k in VALID_MARKET_FILTER_KEYS for k in (market_filter or [])))
-    navigation = client.navigation.list_navigation()
+    navigation = await client.list_navigation()
     return list(flatten_tree(navigation, **(market_filter or {})))
 
 
-def load_markets_metadata(client: APIClient, markets: List[Dict]) -> Dict:
+async def load_markets_metadata(client: BetfairClient, markets: List[Dict]) -> Dict:
     all_results = {}
-    for market__id_chunk in chunk([m["market_id"] for m in markets], 50):
-        results = client.betting.list_market_catalogue(
+    for market_id_chunk in chunk(list(set([m["market_id"] for m in markets])), 50):
+        results = await client.list_market_catalogue(
             market_projection=[
-                "EVENT_TYPE",
-                "EVENT",
-                "COMPETITION",
-                "MARKET_DESCRIPTION",
-                "RUNNER_METADATA",
-                "RUNNER_DESCRIPTION",
-                "MARKET_START_TIME",
+                MarketProjection.EVENT_TYPE,
+                MarketProjection.EVENT,
+                MarketProjection.COMPETITION,
+                MarketProjection.MARKET_DESCRIPTION,
+                MarketProjection.RUNNER_METADATA,
+                MarketProjection.RUNNER_DESCRIPTION,
+                MarketProjection.MARKET_START_TIME,
             ],
-            filter=market_filter(market_ids=market__id_chunk),
-            lightweight=True,
-            max_results=len(market__id_chunk),
+            filter_={"marketIds": market_id_chunk},
+            max_results=len(market_id_chunk),
         )
         all_results.update({r["marketId"]: r for r in results})
     return all_results
