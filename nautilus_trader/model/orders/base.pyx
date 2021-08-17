@@ -144,7 +144,7 @@ cdef class Order:
         self.time_in_force = init.time_in_force
         self.filled_qty = Quantity.zero_c(precision=0)
         self.avg_px = None  # Can be None
-        self.slippage = Decimal()
+        self.slippage = Decimal(0)
         self.init_id = init.id
         self.ts_last = 0  # No fills yet
         self.ts_init = init.ts_init
@@ -760,7 +760,7 @@ cdef class PassiveOrder(Order):
         self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
         self.expire_time_ns = dt_to_unix_nanos(dt=expire_time) if expire_time else 0
-        self.slippage = Decimal()
+        self.slippage = Decimal(0)
 
     cpdef str info(self):
         """

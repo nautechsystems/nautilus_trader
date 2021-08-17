@@ -38,9 +38,9 @@ class TestBettingAccount:
         # We are long 100 at 0.5 probability, aka 2.0 in odds terms
         assert notional == Decimal("200.0")
 
-    def test_calculate_margin_initial(self):
+    def test_calculate_margin_init(self):
         # Arrange
-        result = self.account.calculate_margin_initial(
+        result = self.account.calculate_margin_init(
             instrument=self.instrument,
             quantity=Quantity.from_int(100),
             price=Price.from_str("0.5"),

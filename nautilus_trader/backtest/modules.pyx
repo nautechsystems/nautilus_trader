@@ -184,7 +184,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
             else:
                 currency = instrument.quote_currency
 
-            rollover_total = self._rollover_totals.get(currency, Decimal())
+            rollover_total = self._rollover_totals.get(currency, Decimal(0))
             rollover_total = Money(rollover_total + rollover, currency)
             self._rollover_totals[currency] = rollover_total
 

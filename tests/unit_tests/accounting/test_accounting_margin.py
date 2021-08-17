@@ -100,17 +100,17 @@ class TestMarginAccount:
         assert account.leverage(AUDUSD_SIM.id) == Decimal(100)
         assert account.leverages() == {AUDUSD_SIM.id: Decimal(100)}
 
-    def test_update_margin_initial(self):
+    def test_update_margin_init(self):
         # Arrange
         account = TestStubs.margin_account()
         margin = Money(1_000.00, USD)
 
         # Act
-        account.update_margin_initial(AUDUSD_SIM.id, margin)
+        account.update_margin_init(AUDUSD_SIM.id, margin)
 
         # Assert
-        assert account.margin_initial(AUDUSD_SIM.id) == margin
-        assert account.margins_initial() == {AUDUSD_SIM.id: margin}
+        assert account.margin_init(AUDUSD_SIM.id) == margin
+        assert account.margins_init() == {AUDUSD_SIM.id: margin}
 
     def test_update_margin_maint(self):
         # Arrange
@@ -124,13 +124,13 @@ class TestMarginAccount:
         assert account.margin_maint(AUDUSD_SIM.id) == margin
         assert account.margins_maint() == {AUDUSD_SIM.id: margin}
 
-    def test_calculate_margin_initial_with_leverage(self):
+    def test_calculate_margin_init_with_leverage(self):
         # Arrange
         account = TestStubs.margin_account()
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         account.set_leverage(instrument.id, Decimal(50))
 
-        result = account.calculate_margin_initial(
+        result = account.calculate_margin_init(
             instrument=instrument,
             quantity=Quantity.from_int(100000),
             price=Price.from_str("0.80000"),
@@ -146,14 +146,12 @@ class TestMarginAccount:
             [True, Money(1150.00, USD)],
         ],
     )
-    def test_calculate_margin_initial_with_no_leverage_for_inverse(
-        self, inverse_as_quote, expected
-    ):
+    def test_calculate_margin_init_with_no_leverage_for_inverse(self, inverse_as_quote, expected):
         # Arrange
         account = TestStubs.margin_account()
         instrument = TestInstrumentProvider.xbtusd_bitmex()
 
-        result = account.calculate_margin_initial(
+        result = account.calculate_margin_init(
             instrument=instrument,
             quantity=Quantity.from_int(100000),
             price=Price.from_str("11493.60"),

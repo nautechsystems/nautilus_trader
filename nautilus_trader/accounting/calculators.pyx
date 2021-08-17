@@ -179,9 +179,9 @@ cdef class ExchangeRateCalculator:
         quotes = exchange_rates.get(from_currency.code)
         if quotes is None:
             # Not enough data
-            return Decimal()
+            return Decimal(0)
 
-        return quotes.get(to_currency.code, Decimal())
+        return quotes.get(to_currency.code, Decimal(0))
 
 
 cdef class RolloverInterestCalculator:

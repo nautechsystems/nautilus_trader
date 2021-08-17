@@ -16,11 +16,11 @@
 """
 The `Portfolio` facilitates the management of trading operations.
 
-The intended use case is for a single `Portfolio` instance per running system,
+The intended use case is for a single ``Portfolio`` instance per running system,
 a fleet of trading strategies will organize around a portfolio with the help
 of the `Trader`` class.
 
-The portfolio can satisfy queries for accounting information, margin balances,
+The portfolio can satisfy queries for account information, margin balances,
 total risk exposures and total net positions.
 """
 
@@ -72,7 +72,8 @@ cdef class Portfolio(PortfolioFacade):
     """
     Provides a trading portfolio.
 
-    Currently there is a limitation of one account per venue.
+    Currently there is a limitation of one account per ``ExecutionClient``
+    instance.
     """
 
     def __init__(
@@ -163,7 +164,7 @@ cdef class Portfolio(PortfolioFacade):
                 instrument_id=instrument.id,
             )
 
-            result = self._accounts.update_margin_initial(
+            result = self._accounts.update_margin_init(
                 account=account,
                 instrument=instrument,
                 passive_orders_working=[o for o in orders_working if o.is_passive_c()],
@@ -258,7 +259,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Condition.not_none(tick, "tick")
 
-        self._unrealized_pnls[tick.instrument_id] = None
+        self._unrealized_pnls.pop(tick.instrument_id, None)
 
         cdef:
             Order o
@@ -285,7 +286,7 @@ cdef class Portfolio(PortfolioFacade):
             )
 
             # Initialize initial (order) margin
-            result_init = self._accounts.update_margin_initial(
+            result_init = self._accounts.update_margin_init(
                 account=account,
                 instrument=instrument,
                 passive_orders_working=[o for o in orders_working if o.is_passive_c()],
@@ -385,7 +386,6 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef AccountState account_state = None
         if isinstance(event, OrderFilled):
-            account.update_commissions(event.commission)
             account_state = self._accounts.update_balances(
                 account=account,
                 instrument=instrument,
@@ -399,7 +399,7 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef:
             Order o
-        account_state = self._accounts.update_margin_initial(
+        account_state = self._accounts.update_margin_init(
             account=account,
             instrument=instrument,
             passive_orders_working=[o for o in orders_working if o.is_passive_c()],
@@ -521,7 +521,7 @@ cdef class Portfolio(PortfolioFacade):
 
         return account
 
-    cpdef dict margins_initial(self, Venue venue):
+    cpdef dict margins_init(self, Venue venue):
         """
         Return the initial (order) margins for the given venue (if found).
 
@@ -545,7 +545,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             return None
 
-        return account.margins_initial()
+        return account.margins_init()
 
     cpdef dict margins_maint(self, Venue venue):
         """
@@ -892,7 +892,7 @@ cdef class Portfolio(PortfolioFacade):
         return self._net_positions.get(instrument_id, Decimal(0))
 
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open) except *:
-        net_position = Decimal()
+        net_position = Decimal(0)
 
         cdef Position position
         for position in positions_open:

@@ -198,13 +198,13 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
 
         maker_fee = values.get("maker")
         if maker_fee is None:
-            maker_fee = Decimal()
+            maker_fee = Decimal(0)
         else:
             maker_fee = Decimal(f"{maker_fee:.4f}")
 
         taker_fee = values.get("taker")
         if taker_fee is None:
-            taker_fee = Decimal()
+            taker_fee = Decimal(0)
         else:
             taker_fee = Decimal(f"{taker_fee:.4f}")
 
@@ -226,8 +226,8 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                 min_notional=min_notional,
                 max_price=max_price,
                 min_price=min_price,
-                margin_initial=Decimal(),  # Margin trading not implemented
-                margin_maint=Decimal(),  # Margin trading not implemented
+                margin_init=Decimal(0),  # Margin trading not implemented
+                margin_maint=Decimal(0),  # Margin trading not implemented
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
                 ts_event=timestamp,
@@ -251,8 +251,8 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                 min_notional=min_notional,
                 max_price=max_price,
                 min_price=min_price,
-                margin_initial=Decimal(),  # Margin trading not implemented
-                margin_maint=Decimal(),  # Margin trading not implemented
+                margin_init=Decimal(0),  # Margin trading not implemented
+                margin_maint=Decimal(0),  # Margin trading not implemented
                 maker_fee=maker_fee,
                 taker_fee=taker_fee,
                 ts_event=timestamp,

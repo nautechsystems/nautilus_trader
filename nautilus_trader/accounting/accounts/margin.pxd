@@ -26,16 +26,16 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class MarginAccount(Account):
     cdef dict _leverages
-    cdef dict _margins_initial
+    cdef dict _margins_init
     cdef dict _margins_maint
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef dict leverages(self)
-    cpdef dict margins_initial(self)
+    cpdef dict margins_init(self)
     cpdef dict margins_maint(self)
     cpdef object leverage(self, InstrumentId instrument_id)
-    cpdef Money margin_initial(self, InstrumentId instrument_id)
+    cpdef Money margin_init(self, InstrumentId instrument_id)
     cpdef Money margin_maint(self, InstrumentId instrument_id)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
@@ -46,7 +46,7 @@ cdef class MarginAccount(Account):
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
 
-    cpdef Money calculate_margin_initial(
+    cpdef Money calculate_margin_init(
         self,
         Instrument instrument,
         Quantity quantity,

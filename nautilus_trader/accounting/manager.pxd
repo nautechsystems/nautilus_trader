@@ -34,7 +34,7 @@ cdef class AccountsManager:
     cdef LoggerAdapter _log
     cdef CacheFacade _cache
 
-    cdef AccountState update_margin_initial(self, Account account, Instrument instrument, list passive_orders_working)
+    cdef AccountState update_margin_init(self, Account account, Instrument instrument, list passive_orders_working)
     cdef AccountState update_margin_maint(self, MarginAccount account, Instrument instrument, list positions_open)
     cdef AccountState update_balances(self, Account account, Instrument instrument, OrderFilled fill)
     cdef void _update_balance_single_currency(self, Account account, OrderFilled fill, Money pnl) except *

@@ -83,7 +83,7 @@ class TestPortfolioFacade:
         # Act
         # Assert
         with pytest.raises(NotImplementedError):
-            portfolio.margins_initial(SIM)
+            portfolio.margins_init(SIM)
 
     def test_position_margin_raises_not_implemented_error(self):
         # Arrange
@@ -305,11 +305,11 @@ class TestPortfolio:
         # Assert
         assert self.portfolio.unrealized_pnls(SIM) == {}
 
-    def test_margins_initial_when_no_account_returns_none(self):
+    def test_margins_init_when_no_account_returns_none(self):
         # Arrange
         # Act
         # Assert
-        assert self.portfolio.margins_initial(SIM) is None
+        assert self.portfolio.margins_init(SIM) is None
 
     def test_margins_maint_when_no_account_returns_none(self):
         # Arrange
@@ -421,9 +421,9 @@ class TestPortfolio:
         self.portfolio.initialize_orders()
 
         # Assert
-        assert self.portfolio.margins_initial(BINANCE) == {}
+        assert self.portfolio.margins_init(BINANCE) == {}
 
-    def test_order_accept_updates_margin_initial(self):
+    def test_order_accept_updates_margin_init(self):
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")
 
@@ -470,7 +470,7 @@ class TestPortfolio:
         self.portfolio.initialize_orders()
 
         # Assert
-        assert self.portfolio.margins_initial(BETFAIR)[BETTING_INSTRUMENT.id] == Money(200, GBP)
+        assert self.portfolio.margins_init(BETFAIR)[BETTING_INSTRUMENT.id] == Money(200, GBP)
 
     def test_update_positions(self):
         # Arrange

@@ -421,14 +421,14 @@ cdef class Account:
             return  # Nothing to update
 
         cdef Currency currency = commission.currency
-        total_commissions: Decimal = self._commissions.get(currency, Decimal())
+        total_commissions: Decimal = self._commissions.get(currency, Decimal(0))
         self._commissions[currency] = Money(total_commissions + commission, currency)
 
-    cpdef void update_margin_initial(self, InstrumentId instrument_id, Money margin_initial) except *:
+    cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void clear_margin_initial(self, InstrumentId instrument_id) except *:
+    cpdef void clear_margin_init(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
