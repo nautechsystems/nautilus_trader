@@ -84,7 +84,7 @@ class TestBetfairClient:
         with mock_client_request(
             response=BetfairResponses.betting_list_market_catalogue()
         ) as mock_request:
-            catalogue = await self.client.list_market_catalogue(filter=market_filter)
+            catalogue = await self.client.list_market_catalogue(filter_=market_filter)
             assert catalogue
         result = mock_request.call_args.kwargs
         expected = BetfairRequests.betting_list_market_catalogue()
