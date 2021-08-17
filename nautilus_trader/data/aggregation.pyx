@@ -730,7 +730,7 @@ cdef class TimeBarAggregator(BarAggregator):
             self._build_and_send(self._stored_close_ns)
             # Reset flag and clear stored close
             self._build_on_next_tick = False
-            self._stored_close = 0
+            self._stored_close_ns = 0
 
     cpdef void _build_bar(self, int64_t ts_event) except *:
         cdef TestTimer timer = self._clock.timer(str(self.bar_type))
