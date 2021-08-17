@@ -171,6 +171,25 @@ class TestBetfairDataClient:
     def test_market_heartbeat(self):
         self.client._on_market_update(BetfairStreaming.mcm_HEARTBEAT())
 
+    def test_stream_latency(self):
+        logs = []
+        self.logger.register_sink(logs.append)
+        self.client._on_market_update(BetfairStreaming.mcm_latency())
+        warning, _ = logs
+        assert warning["level"] == "WRN"
+        assert warning["msg"] == "Stream unhealthy, waiting for recover"
+
+    def test_stream_con_true(self):
+        logs = []
+        self.logger.register_sink(logs.append)
+        self.client._on_market_update(BetfairStreaming.mcm_con_true())
+        warning, _ = logs
+        assert warning["level"] == "WRN"
+        assert (
+            warning["msg"]
+            == "Conflated stream - consuming data too slow (data received is delayed)"
+        )
+
     @pytest.mark.asyncio
     async def test_market_sub_image_market_def(self):
         update = BetfairStreaming.mcm_SUB_IMAGE()

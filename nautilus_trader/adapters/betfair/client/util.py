@@ -42,6 +42,9 @@ def snake_to_camel_case(s):
 
     >>> snake_to_camel_case("customer_strategy_refs")
     'customerStrategyRefs'
+
+    >>> snake_to_camel_case("filter_")
+    'filter'
     """
     components = s.split("_")
     return components[0] + "".join(x.title() for x in components[1:])

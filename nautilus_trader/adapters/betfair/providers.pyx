@@ -17,7 +17,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from nautilus_trader.adapters.betfair.client import BetfairClient
+from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import EVENT_TYPE_TO_NAME
 from nautilus_trader.adapters.betfair.parsing import parse_handicap

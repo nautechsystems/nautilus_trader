@@ -35,24 +35,11 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
 from nautilus_trader.msgbus.bus cimport MessageBus
 
-from nautilus_trader.adapters.betfair.client import BetfairClient
+from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import InstrumentSearch
 from nautilus_trader.adapters.betfair.parsing import on_market_update
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
-
-
-# Notes
-# TODO - if you receive con=true flag on a market - then you are consuming data
-#  slower than the rate of deliver. If the socket buffer is full we won't
-#  attempt to push; so the next push will be conflated. We should warn about this.
-
-# TODO - Betfair reports status:503 in messages if the stream is unhealthy.
-#  We should send out a warning / health message, potentially letting strategies
-#  know to temporarily "pause"?
-
-# TODO - segmentationEnabled=true segmentation breaks up large messages and
-#  improves: end to end performance, latency, time to first and last byte.
 
 
 cdef class BetfairDataClient(LiveMarketDataClient):
@@ -328,18 +315,15 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         self._on_market_update(update=update)
 
     cpdef void _on_market_update(self, dict update) except *:
+        if self._check_stream_unhealthy(update=update):
+            # TODO (bm) - emit warning ?
+            pass
         updates = on_market_update(
             instrument_provider=self._instrument_provider,
             update=update,
         )
         if not updates:
-            if update.get('op') == 'connection' or update.get('connectionsAvailable'):
-                return
-            self._log.warning(f"Received message but parsed no updates: {update}")
-            if update.get("statusCode") == 'FAILURE' and update.get('connectionClosed'):
-                # TODO - self._loop.create_task(self._stream.reconnect())
-                self._log.error(str(update))
-                raise RuntimeError()
+            self._handle_no_data(update=update)
         for data in updates:
             self._log.debug(f"{data}")
             if isinstance(data, Data):
@@ -351,3 +335,22 @@ cdef class BetfairDataClient(LiveMarketDataClient):
                 self._handle_data(data=data)
             elif isinstance(data, Event):
                 self._log.warning(f"Received event: {data}, DataEngine not yet setup to send events")
+
+    cpdef bint _check_stream_unhealthy(self, dict update) except *:
+        print(f"check unhealthy: {update}", update.get("status") == 503, update.get("con", False))
+        conflated = update.get("con", False)  # Consuming data slower than the rate of deliver
+        if conflated:
+            print('!conflated')
+            self._log.warning("Conflated stream - consuming data too slow (data received is delayed)")
+        if update.get("status") == 503:
+            print('!503')
+            self._log.warning("Stream unhealthy, waiting for recover")
+
+    cpdef void _handle_no_data(self, update) except *:
+        if update.get('op') == 'connection' or update.get('connectionsAvailable'):
+            return
+        self._log.warning(f"Received message but parsed no updates: {update}")
+        if update.get("statusCode") == 'FAILURE' and update.get('connectionClosed'):
+            # TODO (bm) - self._loop.create_task(self._stream.reconnect())
+            self._log.error(str(update))
+            raise RuntimeError()

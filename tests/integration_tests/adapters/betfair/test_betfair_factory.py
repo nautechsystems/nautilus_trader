@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import pytest
 
-from nautilus_trader.adapters.betfair.client import BetfairClient
+from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient

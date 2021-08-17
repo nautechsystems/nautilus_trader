@@ -39,3 +39,5 @@ cdef class BetfairDataClient(LiveMarketDataClient):
     cdef void _log_betfair_error(self, ex, str method_name) except *
     cpdef void on_market_update(self, bytes raw) except *
     cpdef void _on_market_update(self, dict update) except *
+    cpdef bint _check_stream_unhealthy(self, dict update) except *
+    cpdef void _handle_no_data(self, update) except *

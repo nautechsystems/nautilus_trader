@@ -56,7 +56,7 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 from nautilus_trader.accounting.factory import AccountFactory
-from nautilus_trader.adapters.betfair.client import BetfairClient
+from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import B2N_ORDER_STREAM_SIDE
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.common import price_to_probability

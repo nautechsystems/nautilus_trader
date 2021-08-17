@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-from nautilus_trader.adapters.betfair.client import BetfairClient
+from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.client.exceptions import BetfairAPIError
 from nautilus_trader.adapters.betfair.parsing import order_cancel_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair

@@ -27,7 +27,7 @@ import orjson
 import pandas as pd
 from aiohttp import ClientResponse
 
-from nautilus_trader.adapters.betfair.client import BetfairClient
+from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import on_market_update
@@ -659,6 +659,14 @@ class BetfairStreaming:
     @staticmethod
     def mcm_HEARTBEAT():
         return BetfairStreaming.load("streaming_mcm_HEARTBEAT.json")
+
+    @staticmethod
+    def mcm_latency():
+        return BetfairStreaming.load("streaming_mcm_latency.json")
+
+    @staticmethod
+    def mcm_con_true():
+        return BetfairStreaming.load("streaming_mcm_con_true.json")
 
     @staticmethod
     def mcm_live_IMAGE():
