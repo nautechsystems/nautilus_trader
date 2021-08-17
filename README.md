@@ -114,7 +114,7 @@ Examples of both backtest and live trading launch scripts are available in the `
 ## Development
 
 We aim to make the developer experience for this hybrid codebase of Cython and Python
-as pleasant as possible. Please refer to the [developer guides](https://docs.nautilustrader.io/developer-guides) for helpful information.
+as pleasant as possible. Please refer to the [developer guide](https://docs.nautilustrader.io/developer-guide) for helpful information.
 
 ## Contributing
 
