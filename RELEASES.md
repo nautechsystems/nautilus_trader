@@ -1,5 +1,15 @@
 # NautilusTrader 1.127.0 Beta - Release Notes
 
+This release has again focused on the core pieces of the platform, and sees a 
+significant overhaul of accounting and portfolio components. The wiring between 
+the `DataEngine` and `DataClients` has also received attention, and should now 
+exhibit correct subscription mechanics.
+
+The Betfair adapter has been completely re-written, providing various fixes and
+enhancements, increased performance, and full async support.
+
+There has also been some further renaming to continue to align the platform
+as closely as possible with established terminology in the space.
 
 ## Breaking Changes
 - Moved margin calculation methods from `Instrument` to `Account`.
@@ -9,6 +19,7 @@
 - Renamed `msgbus.message_bus` to `msgbus.bus`.
 
 ## Enhancements
+- Betfair adapter re-write.
 - Extracted `accounting` subpackage.
 - Subclassed `Account` with `CashAccount` and `MarginAccount`.
 - Added `AccountsManager`.
