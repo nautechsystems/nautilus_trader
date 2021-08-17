@@ -38,6 +38,7 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -331,13 +332,16 @@ class TestStubs:
         )
 
     @staticmethod
-    def limit_order(instrument_id=None, side=None, price=None, quantity=None) -> LimitOrder:
+    def limit_order(
+        instrument_id=None, side=None, price=None, quantity=None, time_in_force=None
+    ) -> LimitOrder:
         strategy = TestStubs.trading_strategy()
         order = strategy.order_factory.limit(
             instrument_id or TestStubs.audusd_id(),
             side or OrderSide.BUY,
             quantity or Quantity.from_int(10),
             price or Price.from_str("0.50"),
+            time_in_force=time_in_force or TimeInForce.GTC,
         )
         return order
 

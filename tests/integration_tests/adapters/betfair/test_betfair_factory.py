@@ -14,50 +14,78 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from unittest.mock import patch
 
 import pytest
 
+from nautilus_trader.adapters.betfair.client.core import BetfairClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.factory import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientFactory
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.logging import LogLevel
+from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.msgbus.bus import MessageBus
+from tests.test_kit.stubs import TestStubs
 
 
-@pytest.mark.asyncio()
-def test_create(mocker, msgbus, cache, clock, live_logger):
-    config = {
-        "data_client": True,
-        "exec_client": True,
-        "base_currency": "AUD",
-    }
+class TestBetfairFactory:
+    def setup(self):
+        self.loop = asyncio.get_event_loop()
+        self.loop.set_debug(True)
 
-    # TODO - Fix mock for login assertion
-    # Mock client
-    mocker.patch("betfairlightweight.endpoints.login.Login.__call__")
-    # mock_login = mocker.patch("betfairlightweight.endpoints.login.Login.request")
+        self.clock = LiveClock()
+        self.uuid_factory = UUIDFactory()
 
-    data_client = BetfairLiveDataClientFactory.create(
-        loop=asyncio.get_event_loop(),
-        name=BETFAIR_VENUE.value,
-        config=config,
-        msgbus=msgbus,
-        cache=cache,
-        clock=clock,
-        logger=live_logger,
-    )
-    exec_client = BetfairLiveExecutionClientFactory.create(
-        loop=asyncio.get_event_loop(),
-        name=BETFAIR_VENUE.value,
-        config=config,
-        msgbus=msgbus,
-        cache=cache,
-        clock=clock,
-        logger=live_logger,
-    )
+        self.trader_id = TestStubs.trader_id()
+        self.venue = BETFAIR_VENUE
+        self.account_id = AccountId(self.venue.value, "001")
 
-    # Assert
-    assert BetfairDataClient == type(data_client)
-    assert BetfairExecutionClient == type(exec_client)
-    # TODO - assert login called
-    # assert mock_login.assert_called_once_with()
+        # Setup logging
+        self.logger = LiveLogger(loop=self.loop, clock=self.clock, level_stdout=LogLevel.DEBUG)
+        self._log = LoggerAdapter("TestBetfairExecutionClient", self.logger)
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        self.cache = TestStubs.cache()
+
+    @pytest.mark.asyncio()
+    def test_create(self):
+        config = {
+            "data_client": True,
+            "exec_client": True,
+            "base_currency": "AUD",
+        }
+        with patch.object(BetfairClient, "ssl_context", return_value=True):
+            data_client = BetfairLiveDataClientFactory.create(
+                loop=asyncio.get_event_loop(),
+                name=BETFAIR_VENUE.value,
+                config=config,
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+                logger=self.logger,
+            )
+            exec_client = BetfairLiveExecutionClientFactory.create(
+                loop=asyncio.get_event_loop(),
+                name=BETFAIR_VENUE.value,
+                config=config,
+                msgbus=self.msgbus,
+                cache=self.cache,
+                clock=self.clock,
+                logger=self.logger,
+            )
+
+        # Assert
+        assert BetfairDataClient == type(data_client)
+        assert BetfairExecutionClient == type(exec_client)
+        # TODO - assert login called
+        # assert mock_login.assert_called_once_with()

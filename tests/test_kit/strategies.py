@@ -12,11 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any, Dict, Optional
 
+from nautilus_trader.adapters.betfair.common import MAX_BET_PROB
+from nautilus_trader.adapters.betfair.common import MIN_BET_PROB
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
@@ -31,6 +32,8 @@ from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
+from nautilus_trader.model.events.order import OrderAccepted
+from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
@@ -555,6 +558,91 @@ class MarketMaker(TradingStrategy):
         )
 
         self.submit_order(order)
+
+    def on_stop(self):
+        """
+        Actions to be performed when the strategy is stopped.
+
+        """
+        self.cancel_all_orders(self.instrument_id)
+        self.flatten_all_positions(self.instrument_id)
+
+
+class RepeatedOrders(TradingStrategy):
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        trade_size: Decimal,
+    ):
+        """
+        Initialize a new instance of the ``MarketMaker`` class.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the strategy.
+        trade_size : Decimal
+            The position size per trade.
+        extra_id_tag : str
+            An additional order ID tag.
+
+        """
+        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", ""))
+        self.instrument_id = instrument_id
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
+        self.trade_size = trade_size
+        self._last_sent = self.clock.utc_now()
+        self._order_count = 0
+
+    def on_start(self):
+        self.instrument = self.cache.instrument(self.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.stop()
+            return
+
+        self.subscribe_order_book_deltas(instrument_id=self.instrument_id)
+
+    def on_order_book_delta(self, data: OrderBookData):
+        if not self.cache.orders_inflight():
+            self.send_orders()
+
+    def send_orders(self):
+        self.log.debug("Checking order send")
+
+        if self.cache.orders_working():
+            self.log.debug("Order working, skipping")
+            return
+
+        if self.cache.orders_inflight():
+            self.log.debug("Order inflight, skipping")
+            return
+
+        self.log.info("Sending order! ")
+
+        buy = self.order_factory.limit(
+            instrument_id=self.instrument_id,
+            order_side=OrderSide.BUY,
+            price=Price(MIN_BET_PROB, precision=self.instrument.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+        )
+        sell = self.order_factory.limit(
+            instrument_id=self.instrument_id,
+            order_side=OrderSide.SELL,
+            price=Price(MAX_BET_PROB, precision=self.instrument.price_precision),
+            quantity=self.instrument.make_qty(self.trade_size),
+        )
+        self.submit_order(buy)
+        self.submit_order(sell)
+
+    def on_event(self, event: Event):
+        if isinstance(event, OrderAccepted):
+            order = self.cache.order(event.client_order_id)
+            self.log.info(f"Cancelling order: {order}")
+            self.cancel_order(order=order)
+        elif isinstance(event, OrderCanceled):
+            self.log.info("Got cancel, sending again")
+            self.send_orders()
 
     def on_stop(self):
         """

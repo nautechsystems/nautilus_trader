@@ -12,8 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from nautilus_trader.model.data.ticker cimport Ticker
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.data cimport OrderBookDelta
 
 
 cdef class BPSOrderBookDelta(OrderBookDelta):
     pass
+
+
+cdef class BetfairTicker(Ticker):
+    cdef readonly Price last_traded_price
+    cdef readonly Quantity traded_volume
