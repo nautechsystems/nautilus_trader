@@ -1011,13 +1011,13 @@ class TestExecutionCacheIntegrityCheck:
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.BID,
-            TestDataProvider.usdjpy_1min_bid(),
+            TestDataProvider.usdjpy_1min_bid()[:2000],
         )
         self.engine.add_bars(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
-            TestDataProvider.usdjpy_1min_ask(),
+            TestDataProvider.usdjpy_1min_ask()[:2000],
         )
 
         self.engine.add_venue(
