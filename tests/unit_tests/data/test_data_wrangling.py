@@ -65,8 +65,8 @@ class TestQuoteTickDataWrangler:
 
     def test_pre_process_with_bar_data(self):
         # Arrange
-        bid_data = TestDataProvider.usdjpy_1min_bid()
-        ask_data = TestDataProvider.usdjpy_1min_ask()
+        bid_data = TestDataProvider.usdjpy_1min_bid()[:100]
+        ask_data = TestDataProvider.usdjpy_1min_ask()[:100]
         self.tick_builder = QuoteTickDataWrangler(
             instrument=TestInstrumentProvider.default_fx_ccy("USD/JPY"),
             data_quotes=None,
@@ -80,7 +80,7 @@ class TestQuoteTickDataWrangler:
 
         # Assert
         assert self.tick_builder.resolution == BarAggregation.MINUTE
-        assert len(tick_data) == 115044
+        assert len(tick_data) == 400
         assert tick_data.iloc[0].name == Timestamp("2013-01-31 23:59:59.700000+0000", tz="UTC")
         assert tick_data.iloc[1].name == Timestamp("2013-01-31 23:59:59.800000+0000", tz="UTC")
         assert tick_data.iloc[2].name == Timestamp("2013-01-31 23:59:59.900000+0000", tz="UTC")
@@ -97,7 +97,7 @@ class TestQuoteTickDataWrangler:
 
     def test_build_ticks_with_tick_data(self):
         # Arrange
-        tick_data = TestDataProvider.audusd_ticks()
+        tick_data = TestDataProvider.audusd_ticks()[:100]
         self.tick_builder = QuoteTickDataWrangler(
             instrument=TestInstrumentProvider.default_fx_ccy("AUD/USD"),
             data_quotes=tick_data,
@@ -110,18 +110,18 @@ class TestQuoteTickDataWrangler:
         ticks = self.tick_builder.build_ticks()
 
         # Assert
-        assert len(ticks) == 100000
+        assert len(ticks) == 100
         assert ticks[0].bid == Price.from_str("0.67067")
         assert ticks[0].ask == Price.from_str("0.67070")
         assert ticks[0].bid_size == Quantity.from_str("1000000")
         assert ticks[0].ask_size == Quantity.from_str("1000000")
         assert ticks[0].ts_init == 1580398089820000000
-        assert ticks[99999].ts_init == 1580504394500999936
+        assert ticks[99].ts_init == 1580398145130000128
 
     def test_build_ticks_with_bar_data(self):
         # Arrange
-        bid_data = TestDataProvider.usdjpy_1min_bid()
-        ask_data = TestDataProvider.usdjpy_1min_ask()
+        bid_data = TestDataProvider.usdjpy_1min_bid()[:100]
+        ask_data = TestDataProvider.usdjpy_1min_ask()[:100]
         self.tick_builder = QuoteTickDataWrangler(
             instrument=TestInstrumentProvider.default_fx_ccy("USD/JPY"),
             data_quotes=None,
@@ -134,7 +134,7 @@ class TestQuoteTickDataWrangler:
         ticks = self.tick_builder.build_ticks()
 
         # Assert
-        assert len(ticks) == 115044
+        assert len(ticks) == 400
         assert ticks[0].bid == Price.from_str("91.715")
         assert ticks[0].ask == Price.from_str("91.717")
         assert ticks[0].bid_size == Quantity.from_str("1000000")
@@ -150,14 +150,14 @@ class TestTradeTickDataWrangler:
     def test_tick_data(self):
         # Arrange
         # Act
-        ticks = TestDataProvider.ethusdt_trades()
+        ticks = TestDataProvider.ethusdt_trades()[:100]
 
         # Assert
-        assert len(ticks) == 69806
+        assert len(ticks) == 100
 
     def test_process(self):
         # Arrange
-        tick_data = TestDataProvider.ethusdt_trades()
+        tick_data = TestDataProvider.ethusdt_trades()[:100]
         self.tick_builder = TradeTickDataWrangler(
             instrument=TestInstrumentProvider.default_fx_ccy("USD/JPY"),
             data=tick_data,
@@ -168,12 +168,12 @@ class TestTradeTickDataWrangler:
         ticks = self.tick_builder.processed_data
 
         # Assert
-        assert len(ticks) == 69806
+        assert len(ticks) == 100
         assert ticks.iloc[0].name == Timestamp("2020-08-14 10:00:00.223000+0000", tz="UTC")
 
     def test_build_ticks(self):
         # Arrange
-        tick_data = TestDataProvider.ethusdt_trades()
+        tick_data = TestDataProvider.ethusdt_trades()[:100]
         self.tick_builder = TradeTickDataWrangler(
             instrument=TestInstrumentProvider.ethusdt_binance(),
             data=tick_data,
@@ -184,7 +184,7 @@ class TestTradeTickDataWrangler:
         ticks = self.tick_builder.build_ticks()
 
         # Assert
-        assert len(ticks) == 69806
+        assert len(ticks) == 100
         assert ticks[0].price == Price.from_str("423.760")
         assert ticks[0].size == Quantity.from_str("2.67900")
         assert ticks[0].aggressor_side == AggressorSide.SELL
