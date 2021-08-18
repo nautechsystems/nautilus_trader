@@ -14,10 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
+import pickle
 import sys
 from concurrent.futures import Executor
 from concurrent.futures import Future
 from concurrent.futures import ThreadPoolExecutor
+from queue import Empty
 from queue import Queue
 from typing import Callable, List
 
@@ -26,10 +28,11 @@ try:
     import distributed
     from distributed.cfexecutor import ClientExecutor
 
+    distributed_executor_cls = ClientExecutor
     distributed_installed = True
 except ImportError:
+    distributed_executor_cls = None
     distributed_installed = False
-
 
 PY37 = sys.version_info < (3, 8)
 
@@ -45,8 +48,6 @@ class SyncExecutor(Executor):
             result = func(*args, **kwargs)
             future.set_result(result)
         except Exception as e:
-            print(e.__traceback__)
-            print(f"ERR: {e}")
             future.set_exception(e)
 
         return future
@@ -68,9 +69,9 @@ def queue_runner(in_q: Queue, out_q: Queue, proc_func: Callable):
     Run function for a thread between and input and output queue.
     Parameters
     ----------
-    in_q : AnyQueue
+    in_q : Queue
         The input queue
-    out_q: AnyQueue
+    out_q: Queue
         The output queue
     proc_func: Callable
         The generator function to call on each input value
@@ -78,16 +79,16 @@ def queue_runner(in_q: Queue, out_q: Queue, proc_func: Callable):
     while in_q.qsize():
         try:
             x = in_q.get(timeout=0.01)
-        except Exception:
+        except Empty:
             break
         try:
             for result in proc_func(**x):
                 if result is not None:
                     out_q.put(result)
-        except Exception as e:
+        except Exception as exc:
             # No error handling - break early
-            print(f"ERR: {e}")
-            break
+            tb = sys.exc_info()[2]
+            out_q.put(("Exception", pickle.dumps((exc, tb))))
     out_q.put(None)
 
 
@@ -111,14 +112,12 @@ def executor_queue_process(
         assert inspect.isgeneratorfunction(process_func)
     executor = executor or ThreadPoolExecutor()
     queue_cls = Queue
-    if distributed_installed and isinstance(executor, ClientExecutor):
+    if distributed_installed and isinstance(executor, distributed_executor_cls):
         queue_cls = distributed.Queue
 
     # Create 3 queues;
-    input_q: Queue = queue_cls()  # The queue work items are placed
-    output_q: Queue = (
-        queue_cls()
-    )  # The queue that workers put items in, as well as their individual sentinel value
+    input_q: Queue = queue_cls()
+    worker_output_q: Queue = queue_cls()
 
     # Load inputs into the input queue
     for f in inputs:
@@ -128,14 +127,17 @@ def executor_queue_process(
     num_workers = min(len(inputs), _determine_workers(executor))
     with executor as client:
         for _ in range(num_workers):
-            client.submit(queue_runner, in_q=input_q, out_q=output_q, proc_func=process_func)
+            client.submit(queue_runner, in_q=input_q, out_q=worker_output_q, proc_func=process_func)
 
     # Pull results from workers,
     sentinel_count = 0
     results = []
     while sentinel_count < num_workers:
-        x = output_q.get()
+        x = worker_output_q.get()
         if x is not None:
+            if isinstance(x, tuple) and x[0] == "Exception":
+                exc, tb = pickle.loads(x[1])
+                raise exc.with_traceback(tb)
             assert isinstance(
                 x, dict
             ), "return value from `process_func` should be dict of kwargs for `output_func`"

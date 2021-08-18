@@ -48,6 +48,7 @@ from nautilus_trader.persistence.catalog import DataCatalog
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
+from tests.unit_tests.persistence.conftest import betfair_reader
 
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
@@ -410,6 +411,26 @@ def test_data_catalog_dataset_types(loaded_catalog):
         "ts_init": "DataType",
     }
     assert schema == expected
+
+
+def test_load_dask_distributed_client(betfair_reader):
+    from distributed import Client
+    from distributed.cfexecutor import ClientExecutor
+
+    instrument_provider = BetfairInstrumentProvider.from_instruments([])
+
+    # Arrange
+    with Client(n_workers=1, threads_per_worker=1) as c:
+        executor = ClientExecutor(c)
+        load(
+            path=TEST_DATA_DIR,
+            reader=betfair_reader(instrument_provider),
+            glob_pattern="1.166564490*",
+            executor=executor,
+            instrument_provider=instrument_provider,
+        )
+
+    # Assert
 
 
 # def test_data_catalog_parquet_dtypes():

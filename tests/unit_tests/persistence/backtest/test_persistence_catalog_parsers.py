@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pathlib
+import pickle
 import sys
 from typing import Callable
 
@@ -24,6 +25,7 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.persistence.backtest.parsers import CSVReader
 from nautilus_trader.persistence.backtest.parsers import RawFile
 from nautilus_trader.persistence.backtest.parsers import TextReader
+from nautilus_trader.persistence.backtest.processing import queue_runner
 from nautilus_trader.persistence.backtest.scanner import scan
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
@@ -65,6 +67,69 @@ def test_raw_file_num_chunks():
     assert rf1.num_chunks == 1
     assert rf2.num_chunks == 4
     assert rf3.num_chunks == 2
+
+
+def test_raw_file_pickleable():
+    # Arrange
+    fs = fsspec.implementations.local.LocalFileSystem()
+    path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"  # total size = 151707
+    expected = RawFile(fs=fs, path=path, chunk_size=-1, compression="bz2")
+
+    # Act
+    data = pickle.dumps(expected)
+    result = pickle.loads(data)
+
+    # Assert
+    assert result.fs == expected.fs
+    assert result.path == expected.path
+    assert result.chunk_size == expected.chunk_size
+    assert result.compression == "bz2"
+
+
+def test_raw_file_distributed_serializable():
+    from distributed.protocol import deserialize
+    from distributed.protocol import serialize
+
+    # Arrange
+    fs = fsspec.implementations.local.LocalFileSystem()
+    path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"  # total size = 151707
+    r = RawFile(fs=fs, path=path, chunk_size=-1, compression="bz2")
+
+    # Act
+    result1 = deserialize(*serialize(r))
+
+    # Assert
+    assert result1.fs == r.fs
+    assert result1.path == r.path
+    assert result1.chunk_size == r.chunk_size
+    assert result1.compression == "bz2"
+
+
+def test_raw_file_distributed_queueable():
+    from distributed import Client
+    from distributed.protocol import to_serialize
+    from distributed.queues import Queue
+
+    # Arrange
+    fs = fsspec.implementations.local.LocalFileSystem()
+    path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"  # total size = 151707
+    r = RawFile(fs=fs, path=path, chunk_size=-1, compression="bz2")
+
+    def gen(f):
+        yield to_serialize(f)
+
+    # Act
+    c = Client(n_workers=1, threads_per_worker=1)
+    input_q, output_q = Queue(), Queue()
+    input_q.put({"f": to_serialize(r)})
+    f = c.submit(queue_runner, input_q, output_q, gen)
+    f.result()
+    result = output_q.get()
+
+    # Assert
+    assert result.path == r.path
+    assert result.chunk_size == r.chunk_size
+    assert result.compression == "bz2"
 
 
 @pytest.mark.parametrize(

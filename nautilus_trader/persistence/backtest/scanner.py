@@ -63,14 +63,13 @@ def _scan_threaded(
     # )
 
     futures = []
-    with executor as client:
-        for path in paths:
-            if file_filter(path):
-                futures.append(
-                    client.submit(
-                        _scan, fs=fs, path=path, chunk_size=chunk_size, compression=compression
-                    )
+    for path in paths:
+        if file_filter(path):
+            futures.append(
+                executor.submit(
+                    _scan, fs=fs, path=path, chunk_size=chunk_size, compression=compression
                 )
+            )
 
     ac = as_completed(futures)
     if progress:
