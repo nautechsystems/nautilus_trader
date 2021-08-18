@@ -1,3 +1,17 @@
+# NautilusTrader 1.128.0 Beta - Release Notes
+
+
+## Breaking Changes
+None
+
+## Enhancements
+None
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.127.0 Beta - Release Notes
 
 This release has again focused on core areas of the platform, including a 
