@@ -33,6 +33,7 @@ from nautilus_trader.persistence.backtest.metadata import write_mappings
 from nautilus_trader.persistence.backtest.parsers import ByteReader
 from nautilus_trader.persistence.backtest.parsers import RawFile
 from nautilus_trader.persistence.backtest.parsers import Reader
+from nautilus_trader.persistence.backtest.processing import distributed_executor_cls
 from nautilus_trader.persistence.backtest.processing import executor_queue_process
 from nautilus_trader.persistence.backtest.scanner import scan
 from nautilus_trader.persistence.catalog import DataCatalog
@@ -52,13 +53,17 @@ from nautilus_trader.serialization.arrow.util import maybe_list
 TIMESTAMP_COLUMN = "ts_init"
 
 
-def parse_raw_file(f: RawFile, reader: ByteReader, instrument_provider=None):
+def parse_raw_file(f: RawFile, reader: ByteReader, instrument_provider=None, wrapper=None):
     f.reader = reader
     if instrument_provider:
         f.instrument_provider = instrument_provider
     for chunk in f.iter_parsed():
         if chunk:
+            if wrapper:
+                f = wrapper(f)
             yield {"raw_file": f, "chunk": chunk}
+    if wrapper:
+        f = wrapper(f)
     yield {"raw_file": f, "chunk": None}
 
 
@@ -264,14 +269,26 @@ def process_files(
     """
     catalog = catalog or DataCatalog.from_env()
     executor = executor or ThreadPoolExecutor()
+    raw_file_wrapper = None
     output_func = output_func or partial(write_chunk, catalog=catalog)
+
     if progress:
         output_func = progress_wrapper(output_func, total=sum([f.num_chunks for f in files]))
+    if isinstance(executor, distributed_executor_cls):
+        # If using dask.distributed executor, we need to wrap files in `to_serialize` to tell the client
+        # to serialize before putting into the queue in `executor_queue_process`.
+        from distributed.protocol.serialize import to_serialize
+
+        files = [to_serialize(f) for f in files]
+        raw_file_wrapper = to_serialize
     return executor_queue_process(
         executor=executor,
         inputs=[{"f": f} for f in files],
         process_func=partial(
-            parse_raw_file, reader=reader, instrument_provider=instrument_provider
+            parse_raw_file,
+            reader=reader,
+            instrument_provider=instrument_provider,
+            wrapper=raw_file_wrapper,
         ),
         output_func=output_func,
     )
@@ -280,7 +297,6 @@ def process_files(
 def load(
     path: str,
     reader: Reader,
-    catalog=None,
     fs_protocol="file",
     glob_pattern="**",
     progress=True,
@@ -294,7 +310,6 @@ def load(
     """
     Scan and process files
     """
-    catalog = catalog or DataCatalog.from_env()
     files = scan(
         path=path,
         fs_protocol=fs_protocol,
