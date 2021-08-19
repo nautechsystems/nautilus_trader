@@ -5,7 +5,7 @@
 None
 
 ## Enhancements
-None
+- Wired up `Ticker` data type.
 
 ## Fixes
 None

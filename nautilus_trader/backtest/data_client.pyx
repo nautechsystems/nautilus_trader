@@ -324,6 +324,28 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._feeds_order_book_delta[instrument_id] = None
         # Do nothing else for backtest
 
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to `Ticker` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The ticker instrument to subscribe to.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(
+                f"Cannot subscribe to ticker for {instrument_id} "
+                f"(not connected).",
+            )
+            return
+
+        self._feeds_ticker[instrument_id] = None
+        # Do nothing else for backtest
+
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
         Subscribe to `QuoteTick` data for the given instrument ID.
@@ -511,6 +533,28 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             return
 
         self._feeds_order_book_snapshot.pop(instrument_id, None)
+        # Do nothing else for backtest
+
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `Ticker` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The ticker instrument to unsubscribe from.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(
+                f"Cannot unsubscribe from ticker for {instrument_id} "
+                f"(not connected).",
+            )
+            return
+
+        self._feeds_ticker.pop(instrument_id, None)
         # Do nothing else for backtest
 
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:

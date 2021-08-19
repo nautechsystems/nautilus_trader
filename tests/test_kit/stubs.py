@@ -33,6 +33,7 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import LiquiditySide
@@ -128,6 +129,65 @@ class TestStubs:
         return InstrumentId(Symbol("USD/JPY"), Venue("SIM"))
 
     @staticmethod
+    def ticker(instrument_id=None) -> Ticker:
+        return Ticker(
+            instrument_id=instrument_id or TestStubs.audusd_id(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def quote_tick_3decimal(
+        instrument_id=None,
+        bid=None,
+        ask=None,
+        bid_volume=None,
+        ask_volume=None,
+    ) -> QuoteTick:
+        return QuoteTick(
+            instrument_id=instrument_id or TestStubs.usdjpy_id(),
+            bid=bid or Price.from_str("90.002"),
+            ask=ask or Price.from_str("90.005"),
+            bid_size=bid_volume or Quantity.from_int(1_000_000),
+            ask_size=ask_volume or Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def quote_tick_5decimal(
+        instrument_id=None,
+        bid=None,
+        ask=None,
+    ) -> QuoteTick:
+        return QuoteTick(
+            instrument_id=instrument_id or TestStubs.audusd_id(),
+            bid=bid or Price.from_str("1.00001"),
+            ask=ask or Price.from_str("1.00003"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def trade_tick_5decimal(
+        instrument_id=None,
+        price=None,
+        aggressor_side=None,
+        quantity=None,
+    ) -> TradeTick:
+        return TradeTick(
+            instrument_id=instrument_id or TestStubs.audusd_id(),
+            price=price or Price.from_str("1.00001"),
+            size=quantity or Quantity.from_int(100000),
+            aggressor_side=aggressor_side or AggressorSide.BUY,
+            match_id="123456",
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:
         return BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 
@@ -201,46 +261,6 @@ class TestStubs:
             low=Price.from_str("90.001"),
             close=Price.from_str("90.003"),
             volume=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
-        )
-
-    @staticmethod
-    def quote_tick_3decimal(
-        instrument_id=None, bid=None, ask=None, bid_volume=None, ask_volume=None
-    ) -> QuoteTick:
-        return QuoteTick(
-            instrument_id=instrument_id or TestStubs.usdjpy_id(),
-            bid=bid or Price.from_str("90.002"),
-            ask=ask or Price.from_str("90.005"),
-            bid_size=bid_volume or Quantity.from_int(1_000_000),
-            ask_size=ask_volume or Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
-        )
-
-    @staticmethod
-    def quote_tick_5decimal(instrument_id=None, bid=None, ask=None) -> QuoteTick:
-        return QuoteTick(
-            instrument_id=instrument_id or TestStubs.audusd_id(),
-            bid=bid or Price.from_str("1.00001"),
-            ask=ask or Price.from_str("1.00003"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
-        )
-
-    @staticmethod
-    def trade_tick_5decimal(
-        instrument_id=None, price=None, aggressor_side=None, quantity=None
-    ) -> TradeTick:
-        return TradeTick(
-            instrument_id=instrument_id or TestStubs.audusd_id(),
-            price=price or Price.from_str("1.00001"),
-            size=quantity or Quantity.from_int(100000),
-            aggressor_side=aggressor_side or AggressorSide.BUY,
-            match_id="123456",
             ts_event=0,
             ts_init=0,
         )

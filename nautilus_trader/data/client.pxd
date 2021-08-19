@@ -57,6 +57,7 @@ cdef class DataClient(Component):
 cdef class MarketDataClient(DataClient):
     cdef dict _feeds_order_book_delta
     cdef dict _feeds_order_book_snapshot
+    cdef dict _feeds_ticker
     cdef dict _feeds_quote_tick
     cdef dict _feeds_trade_tick
     cdef dict _feeds_bar
@@ -73,6 +74,7 @@ cdef class MarketDataClient(DataClient):
     cpdef list subscribed_instruments(self)
     cpdef list subscribed_order_book_deltas(self)
     cpdef list subscribed_order_book_snapshots(self)
+    cpdef list subscribed_tickers(self)
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
@@ -83,6 +85,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=*) except *
     cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookLevel level, int depth=*, dict kwargs=*) except *
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
@@ -93,6 +96,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *

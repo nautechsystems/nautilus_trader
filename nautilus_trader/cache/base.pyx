@@ -19,6 +19,7 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -30,6 +31,10 @@ cdef class CacheFacade:
     """
 
 # -- DATA QUERIES ----------------------------------------------------------------------------------
+
+    cpdef list tickers(self, InstrumentId instrument_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef list quote_ticks(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
@@ -51,6 +56,10 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef Ticker ticker(self, InstrumentId instrument_id, int index=0):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -60,6 +69,10 @@ cdef class CacheFacade:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef Bar bar(self, BarType bar_type, int index=0):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef int ticker_count(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -76,6 +89,10 @@ cdef class CacheFacade:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef bint has_order_book(self, InstrumentId instrument_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef bint has_tickers(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

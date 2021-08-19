@@ -92,8 +92,9 @@ class TestParquetSerializer:
     @pytest.mark.parametrize(
         "tick",
         [
-            TestStubs.trade_tick_5decimal(),
+            TestStubs.ticker(),
             TestStubs.quote_tick_5decimal(),
+            TestStubs.trade_tick_5decimal(),
         ],
     )
     def test_serialize_and_deserialize_tick(self, tick):

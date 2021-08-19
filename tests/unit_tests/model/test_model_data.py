@@ -13,10 +13,66 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.trading.filters import NewsEvent
+from nautilus_trader.trading.filters import NewsImpact
 
 
 class TestDataType:
+    def test_data_type_instantiation(self):
+        # Arrange
+        # Act
+        data_type = DataType(str, {"type": "NEWS_WIRE"})
+
+        # Assert
+        assert data_type.type == str
+        assert data_type.metadata == {"type": "NEWS_WIRE"}
+        assert str(data_type) == "<str> {'type': 'NEWS_WIRE'}"
+        assert repr(data_type) == "DataType(type=str, metadata={'type': 'NEWS_WIRE'})"
+
+    def test_data_equality_and_hash(self):
+        # Arrange
+        # Act
+        data_type1 = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
+        data_type2 = DataType(str, {"type": "NEWS_WIRE", "topic": "Flood"})
+        data_type3 = DataType(int, {"type": "FED_DATA", "topic": "NonFarmPayroll"})
+
+        # Assert
+        assert data_type1 == data_type1
+        assert data_type1 != data_type2
+        assert data_type1 != data_type2
+        assert data_type1 != data_type3
+        assert isinstance(hash(data_type1), int)
+
+    def test_data_type_as_key_in_dict(self):
+        # Arrange
+        # Act
+        data_type = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
+
+        hash_map = {data_type: []}
+
+        # Assert
+        assert data_type in hash_map
+
+    def test_data_instantiation(self):
+        # Arrange
+        # Act
+        data_type = DataType(NewsEvent, {"publisher": "NEWS_WIRE"})
+        data = NewsEvent(
+            impact=NewsImpact.HIGH,
+            name="Unemployment Rate",
+            currency=USD,
+            ts_event=0,
+            ts_init=0,
+        )
+        generic_data = GenericData(data_type, data)
+
+        # Assert
+        assert generic_data.data_type == data_type
+        assert generic_data.data == data
+
     def test_equality_when_types_not_equal_returns_false(self):
         # Arrange
         data_type1 = DataType(type=str)
