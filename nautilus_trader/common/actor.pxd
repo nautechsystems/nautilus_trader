@@ -30,6 +30,7 @@ from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport VenueStatusUpdate
@@ -64,6 +65,7 @@ cdef class Actor(Component):
     cpdef void on_instrument(self, Instrument instrument) except *
     cpdef void on_order_book_delta(self, OrderBookData delta) except *
     cpdef void on_order_book(self, OrderBook order_book) except *
+    cpdef void on_ticker(self, Ticker ticker) except *
     cpdef void on_quote_tick(self, QuoteTick tick) except *
     cpdef void on_trade_tick(self, TradeTick tick) except *
     cpdef void on_bar(self, Bar bar) except *
@@ -104,6 +106,7 @@ cdef class Actor(Component):
         int interval_ms=*,
         dict kwargs=*,
     ) except *
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
@@ -116,6 +119,7 @@ cdef class Actor(Component):
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, int interval_ms=*) except *
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
@@ -148,6 +152,7 @@ cdef class Actor(Component):
     cpdef void handle_instrument(self, Instrument instrument) except *
     cpdef void handle_order_book(self, OrderBook order_book) except *
     cpdef void handle_order_book_delta(self, OrderBookData data) except *
+    cpdef void handle_ticker(self, Ticker ticker, bint is_historical=*) except *
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=*) except *
     cpdef void handle_quote_ticks(self, list ticks) except *
     cpdef void handle_trade_tick(self, TradeTick tick, bint is_historical=*) except *

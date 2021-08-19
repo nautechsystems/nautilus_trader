@@ -134,6 +134,10 @@ class MockStrategy(TradingStrategy):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(instrument)
 
+    def on_ticker(self, ticker):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(ticker)
+
     def on_quote_tick(self, tick):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(tick)

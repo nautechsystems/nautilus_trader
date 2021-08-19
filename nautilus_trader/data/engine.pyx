@@ -249,6 +249,21 @@ cdef class DataEngine(Component):
             subscriptions += client.subscribed_order_book_snapshots()
         return subscriptions
 
+    cpdef list subscribed_tickers(self):
+        """
+        Return the ticker instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        cdef list subscriptions = []
+        cdef MarketDataClient client
+        for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
+            subscriptions += client.subscribed_tickers()
+        return subscriptions
+
     cpdef list subscribed_quote_ticks(self):
         """
         Return the quote tick instruments subscribed to.
@@ -502,6 +517,11 @@ cdef class DataEngine(Component):
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
             )
+        elif command.data_type.type == Ticker:
+            self._handle_subscribe_ticker(
+                client,
+                command.data_type.metadata.get("instrument_id"),
+            )
         elif command.data_type.type == QuoteTick:
             self._handle_subscribe_quote_ticks(
                 client,
@@ -547,6 +567,11 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
+            )
+        elif command.data_type.type == Ticker:
+            self._handle_unsubscribe_ticker(
+                client,
+                command.data_type.metadata.get("instrument_id"),
             )
         elif command.data_type.type == QuoteTick:
             self._handle_unsubscribe_quote_ticks(
@@ -665,6 +690,17 @@ cdef class DataEngine(Component):
             priority=10,
         )
 
+    cdef void _handle_subscribe_ticker(
+        self,
+        MarketDataClient client,
+        InstrumentId instrument_id,
+    ) except *:
+        Condition.not_none(client, "client")
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if instrument_id not in client.subscribed_tickers():
+            client.subscribe_ticker(instrument_id)
+
     cdef void _handle_subscribe_quote_ticks(
         self,
         MarketDataClient client,
@@ -773,9 +809,9 @@ cdef class DataEngine(Component):
         Condition.not_none(metadata, "metadata")
 
         if not self._msgbus.has_subscribers(
-                f"data.book.deltas"
-                f".{instrument_id.venue}"
-                f".{instrument_id.symbol}",
+            f"data.book.deltas"
+            f".{instrument_id.venue}"
+            f".{instrument_id.symbol}",
         ):
             client.unsubscribe_order_book_deltas(instrument_id)
 
@@ -790,11 +826,26 @@ cdef class DataEngine(Component):
         Condition.not_none(metadata, "metadata")
 
         if not self._msgbus.has_subscribers(
-                f"data.book.snapshots"
-                f".{instrument_id.venue}"
-                f".{instrument_id.symbol}",
+            f"data.book.snapshots"
+            f".{instrument_id.venue}"
+            f".{instrument_id.symbol}",
         ):
             client.unsubscribe_order_book_snapshots(instrument_id)
+
+    cdef void _handle_unsubscribe_ticker(
+        self,
+        MarketDataClient client,
+        InstrumentId instrument_id,
+    ) except *:
+        Condition.not_none(client, "client")
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self._msgbus.has_subscribers(
+            f"data.tickers"
+            f".{instrument_id.venue}"
+            f".{instrument_id.symbol}",
+        ):
+            client.unsubscribe_ticker(instrument_id)
 
     cdef void _handle_unsubscribe_quote_ticks(
         self,
@@ -805,9 +856,9 @@ cdef class DataEngine(Component):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self._msgbus.has_subscribers(
-                f"data.quotes"
-                f".{instrument_id.venue}"
-                f".{instrument_id.symbol}",
+            f"data.quotes"
+            f".{instrument_id.venue}"
+            f".{instrument_id.symbol}",
         ):
             client.unsubscribe_quote_ticks(instrument_id)
 
@@ -820,9 +871,9 @@ cdef class DataEngine(Component):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self._msgbus.has_subscribers(
-                f"data.trades"
-                f".{instrument_id.venue}"
-                f".{instrument_id.symbol}",
+            f"data.trades"
+            f".{instrument_id.venue}"
+            f".{instrument_id.symbol}",
         ):
             client.unsubscribe_trade_ticks(instrument_id)
 
@@ -910,12 +961,14 @@ cdef class DataEngine(Component):
     cdef void _handle_data(self, Data data) except *:
         self.data_count += 1
 
-        if isinstance(data, QuoteTick):
+        if isinstance(data, OrderBookData):
+            self._handle_order_book_data(data)
+        elif isinstance(data, Ticker):
+            self._handle_ticker(data)
+        elif isinstance(data, QuoteTick):
             self._handle_quote_tick(data)
         elif isinstance(data, TradeTick):
             self._handle_trade_tick(data)
-        elif isinstance(data, OrderBookData):
-            self._handle_order_book_data(data)
         elif isinstance(data, Bar):
             self._handle_bar(data)
         elif isinstance(data, Instrument):
@@ -944,6 +997,15 @@ cdef class DataEngine(Component):
                   f".{data.instrument_id.venue}"
                   f".{data.instrument_id.symbol}",
             msg=data,
+        )
+
+    cdef void _handle_ticker(self, Ticker ticker) except *:
+        self._cache.add_ticker(ticker)
+        self._msgbus.publish_c(
+            topic=f"data.tickers"
+                  f".{ticker.instrument_id.venue}"
+                  f".{ticker.instrument_id.symbol}",
+            msg=ticker,
         )
 
     cdef void _handle_quote_tick(self, QuoteTick tick) except *:

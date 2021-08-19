@@ -16,12 +16,14 @@
 import pytest
 
 from nautilus_trader.cache.base import CacheFacade
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from tests.test_kit.providers import TestInstrumentProvider
+from tests.test_kit.stubs import TestStubs
 
 
 SIM = Venue("SIM")
@@ -29,10 +31,98 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class TestExecutionCacheFacade:
+class TestCacheFacade:
     def setup(self):
         # Fixture Setup
         self.facade = CacheFacade()
+
+    def test_instrument_ids_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.instrument_ids()
+
+    def test_instruments_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.instruments()
+
+    def test_tickers_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.tickers(AUDUSD_SIM.id)
+
+    def test_quote_ticks_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.quote_ticks(AUDUSD_SIM.id)
+
+    def test_trade_ticks_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.trade_ticks(AUDUSD_SIM.id)
+
+    def test_bars_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.bars(TestStubs.bartype_gbpusd_1sec_mid())
+
+    def test_instrument_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.instrument(AUDUSD_SIM.id)
+
+    def test_price_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.price(AUDUSD_SIM.id, PriceType.MID)
+
+    def test_order_book_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.order_book(AUDUSD_SIM.id)
+
+    def test_ticker_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.ticker(AUDUSD_SIM.id)
+
+    def test_quote_tick_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.quote_tick(AUDUSD_SIM.id)
+
+    def test_trade_tick_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.trade_tick(AUDUSD_SIM.id)
+
+    def test_bar_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.bar(TestStubs.bartype_gbpusd_1sec_mid())
+
+    def test_quote_tick_count_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.quote_tick_count(AUDUSD_SIM.id)
+
+    def test_trade_tick_count_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.trade_tick_count(AUDUSD_SIM.id)
+
+    def test_bar_count_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.bar_count(TestStubs.bartype_gbpusd_1sec_mid())
+
+    def test_has_order_book_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.has_order_book(AUDUSD_SIM.id)
+
+    def test_has_tickers_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.has_tickers(AUDUSD_SIM.id)
+
+    def test_has_quote_ticks_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.has_quote_ticks(AUDUSD_SIM.id)
+
+    def test_has_trade_ticks_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.has_trade_ticks(AUDUSD_SIM.id)
+
+    def test_has_bars_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.has_bars(TestStubs.bartype_gbpusd_1sec_mid())
+
+    def test_get_xrate_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.facade.get_xrate(SIM, AUDUSD_SIM.base_currency, AUDUSD_SIM.quote_currency)
 
     def test_instrument_ids_when_no_instruments_returns_empty_list(self):
         with pytest.raises(NotImplementedError):

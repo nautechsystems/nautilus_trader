@@ -52,6 +52,7 @@ from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport VenueStatusUpdate
@@ -221,6 +222,22 @@ cdef class Actor(Component):
         ----------
         delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
             The order book delta received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        pass  # Optionally override in subclass
+
+    cpdef void on_ticker(self, Ticker ticker) except *:
+        """
+        Actions to be performed when running and receives a ticker.
+
+        Parameters
+        ----------
+        ticker : Ticker
+            The ticker received.
 
         Warnings
         --------
@@ -656,6 +673,34 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to streaming `Ticker` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to subscribe to.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self.msgbus.subscribe(
+            topic=f"data.tickers"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self.handle_ticker,
+        )
+
+        cdef Subscribe command = Subscribe(
+            client_id=ClientId(instrument_id.venue.value),
+            data_type=DataType(Ticker, metadata={"instrument_id": instrument_id}),
+            command_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
         Subscribe to streaming `QuoteTick` data for the given instrument ID.
@@ -984,6 +1029,34 @@ cdef class Actor(Component):
                 "instrument_id": instrument_id,
                 "interval_ms": interval_ms,
             }),
+            command_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from streaming `Ticker` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to unsubscribe from.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self.msgbus.unsubscribe(
+            topic=f"data.tickers"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self.handle_ticker,
+        )
+
+        cdef Unsubscribe command = Unsubscribe(
+            client_id=ClientId(instrument_id.venue.value),
+            data_type=DataType(Ticker, metadata={"instrument_id": instrument_id}),
             command_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
         )
@@ -1327,6 +1400,36 @@ cdef class Actor(Component):
                 self._log.exception(ex)
                 raise
 
+    cpdef void handle_ticker(self, Ticker ticker, bint is_historical=False) except *:
+        """
+        Handle the given ticker.
+
+        Calls `on_ticker` if state is `RUNNING`.
+
+        Parameters
+        ----------
+        ticker : Ticker
+            The received ticker.
+        is_historical : bool
+            If ticker is historical then it won't be passed to `on_ticker`.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(ticker, "ticker")
+
+        if is_historical:
+            return  # Don't pass to on_ticker()
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_ticker(ticker)
+            except Exception as ex:
+                self._log.exception(ex)
+                raise
+
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
         """
         Handle the given tick.
@@ -1348,7 +1451,7 @@ cdef class Actor(Component):
         Condition.not_none(tick, "tick")
 
         if is_historical:
-            return  # Don't pass to on_tick()
+            return  # Don't pass to on_quote_tick()
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
@@ -1408,7 +1511,7 @@ cdef class Actor(Component):
         Condition.not_none(tick, "tick")
 
         if is_historical:
-            return  # Don't pass to on_tick()
+            return  # Don't pass to on_trade_tick()
 
         if self._fsm.state == ComponentState.RUNNING:
             try:

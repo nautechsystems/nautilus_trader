@@ -193,6 +193,7 @@ cdef class MarketDataClient(DataClient):
         # Feeds
         self._feeds_order_book_delta = {}          # type: dict[InstrumentId, asyncio.Task]
         self._feeds_order_book_snapshot = {}       # type: dict[InstrumentId, asyncio.Task]
+        self._feeds_ticker = {}                    # type: dict[InstrumentId, asyncio.Task]
         self._feeds_quote_tick = {}                # type: dict[InstrumentId, asyncio.Task]
         self._feeds_trade_tick = {}                # type: dict[InstrumentId, asyncio.Task]
         self._feeds_bar = {}                       # type: dict[BarType, asyncio.Task]
@@ -248,6 +249,17 @@ cdef class MarketDataClient(DataClient):
 
         """
         return sorted(list(self._feeds_order_book_snapshot.keys()))
+
+    cpdef list subscribed_tickers(self):
+        """
+        Return the ticker instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._feeds_ticker.keys()))
 
     cpdef list subscribed_quote_ticks(self):
         """
@@ -328,6 +340,10 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -365,6 +381,10 @@ cdef class MarketDataClient(DataClient):
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

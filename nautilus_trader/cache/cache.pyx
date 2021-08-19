@@ -93,6 +93,7 @@ cdef class Cache(CacheFacade):
 
         # Caches
         self._xrate_symbols = {}               # type: dict[InstrumentId, str]
+        self._tickers = {}                     # type: dict[InstrumentId, deque[Ticker]]
         self._quote_ticks = {}                 # type: dict[InstrumentId, deque[QuoteTick]]
         self._trade_ticks = {}                 # type: dict[InstrumentId, deque[TradeTick]]
         self._order_books = {}                 # type: dict[InstrumentId, OrderBook]
@@ -589,6 +590,7 @@ cdef class Cache(CacheFacade):
 
         self._xrate_symbols.clear()
         self._instruments.clear()
+        self._tickers.clear()
         self._quote_ticks.clear()
         self._trade_ticks.clear()
         self._bars.clear()
@@ -829,6 +831,28 @@ cdef class Cache(CacheFacade):
         Condition.not_none(order_book, "order_book")
 
         self._order_books[order_book.instrument_id] = order_book
+
+    cpdef void add_ticker(self, Ticker ticker) except *:
+        """
+        Add the given ticker to the cache.
+
+        Parameters
+        ----------
+        ticker : Ticker
+            The ticker to add.
+
+        """
+        Condition.not_none(ticker, "ticker")
+
+        cdef InstrumentId instrument_id = ticker.instrument_id
+        tickers = self._tickers.get(instrument_id)
+
+        if not tickers:
+            # The instrument_id was not registered
+            tickers = deque(maxlen=self.tick_capacity)
+            self._tickers[instrument_id] = tickers
+
+        tickers.appendleft(ticker)
 
     cpdef void add_quote_tick(self, QuoteTick tick) except *:
         """
@@ -1377,6 +1401,24 @@ cdef class Cache(CacheFacade):
 
 # -- DATA QUERIES ----------------------------------------------------------------------------------
 
+    cpdef list tickers(self, InstrumentId instrument_id):
+        """
+        Return the tickers for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the ticks to get.
+
+        Returns
+        -------
+        list[QuoteTick]
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return list(self._tickers.get(instrument_id, []))
+
     cpdef list quote_ticks(self, InstrumentId instrument_id):
         """
         Return the quote ticks for the given instrument ID.
@@ -1473,6 +1515,40 @@ cdef class Cache(CacheFacade):
 
         """
         return self._order_books.get(instrument_id)
+
+    cpdef Ticker ticker(self, InstrumentId instrument_id, int index=0):
+        """
+        Return the ticker for the given instrument ID at the given index.
+
+        Last ticker if no index specified.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the ticker to get.
+        index : int, optional
+            The index for the ticker to get.
+
+        Returns
+        -------
+        Ticker or None
+            If no tickers or no ticker at index then returns None.
+
+        Notes
+        -----
+        Reverse indexed (most recent ticker at index 0).
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        tickers = self._tickers.get(instrument_id)
+        if not tickers:
+            return None
+
+        try:
+            return tickers[index]
+        except IndexError:
+            return None
 
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=0):
         """
@@ -1576,6 +1652,24 @@ cdef class Cache(CacheFacade):
         except IndexError:
             return None
 
+    cpdef int ticker_count(self, InstrumentId instrument_id) except *:
+        """
+        The count of tickers for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the tickers.
+
+        Returns
+        -------
+        int
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return len(self._tickers.get(instrument_id, []))
+
     cpdef int quote_tick_count(self, InstrumentId instrument_id) except *:
         """
         The count of quote ticks for the given instrument ID.
@@ -1632,8 +1726,8 @@ cdef class Cache(CacheFacade):
 
     cpdef bint has_order_book(self, InstrumentId instrument_id) except *:
         """
-        Return a value indicating whether the data engine has an order book
-        snapshot for the given instrument ID.
+        Return a value indicating whether the cache has an order book snapshot
+        for the given instrument ID.
 
         Parameters
         ----------
@@ -1647,10 +1741,29 @@ cdef class Cache(CacheFacade):
         """
         return instrument_id in self._order_books
 
+    cpdef bint has_tickers(self, InstrumentId instrument_id) except *:
+        """
+        Return a value indicating whether the cache has tickers for the given
+        instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the ticks.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return self.ticker_count(instrument_id) > 0
+
     cpdef bint has_quote_ticks(self, InstrumentId instrument_id) except *:
         """
-        Return a value indicating whether the data engine has quote ticks for
-        the given instrument ID.
+        Return a value indicating whether the cache has quote ticks for the
+        given instrument ID.
 
         Parameters
         ----------
@@ -1668,8 +1781,8 @@ cdef class Cache(CacheFacade):
 
     cpdef bint has_trade_ticks(self, InstrumentId instrument_id) except *:
         """
-        Return a value indicating whether the data engine has trade ticks for
-        the given instrument ID.
+        Return a value indicating whether the cache has trade ticks for the
+        given instrument ID.
 
         Parameters
         ----------
@@ -1687,8 +1800,8 @@ cdef class Cache(CacheFacade):
 
     cpdef bint has_bars(self, BarType bar_type) except *:
         """
-        Return a value indicating whether the data engine has bars for the given
-        bar type.
+        Return a value indicating whether the cache has bars for the given bar
+        type.
 
         Parameters
         ----------
@@ -2466,8 +2579,7 @@ cdef class Cache(CacheFacade):
 
     cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
         """
-        Return a value indicating whether an order with the given ID
-        exists.
+        Return a value indicating whether an order with the given ID exists.
 
         Parameters
         ----------
@@ -2639,8 +2751,7 @@ cdef class Cache(CacheFacade):
 
     cpdef bint position_exists(self, PositionId position_id) except *:
         """
-        Return a value indicating whether a position with the given ID
-        exists.
+        Return a value indicating whether a position with the given ID exists.
 
         Parameters
         ----------
@@ -2658,8 +2769,8 @@ cdef class Cache(CacheFacade):
 
     cpdef bint is_position_open(self, PositionId position_id) except *:
         """
-        Return a value indicating whether a position with the given ID
-        exists and is open.
+        Return a value indicating whether a position with the given ID exists
+        and is open.
 
         Parameters
         ----------
@@ -2677,8 +2788,8 @@ cdef class Cache(CacheFacade):
 
     cpdef bint is_position_closed(self, PositionId position_id) except *:
         """
-        Return a value indicating whether a position with the given ID
-        exists and is closed.
+        Return a value indicating whether a position with the given ID exists
+        and is closed.
 
         Parameters
         ----------

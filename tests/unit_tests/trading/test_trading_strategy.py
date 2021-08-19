@@ -1132,7 +1132,7 @@ class TestTradingStrategy:
         assert strategy.calls == ["on_start", "on_instrument"]
         assert strategy.object_storer.get_store()[0] == AUDUSD_SIM
 
-    def test_handle_quote_tick_when_not_running_does_not_send_to_on_quote_tick(self):
+    def test_handle_ticker_when_not_running_does_not_send_to_on_quote_tick(self):
         # Arrange
         strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
         strategy.register(
@@ -1148,6 +1148,50 @@ class TestTradingStrategy:
 
         # Act
         strategy.handle_quote_tick(tick)
+
+        # Assert
+        assert strategy.calls == []
+        assert strategy.object_storer.get_store() == []
+
+    def test_handle_ticker_when_running_sends_to_on_quote_tick(self):
+        # Arrange
+        strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        strategy.start()
+
+        ticker = TestStubs.ticker()
+
+        # Act
+        strategy.handle_ticker(ticker)
+
+        # Assert
+        assert strategy.calls == ["on_start", "on_ticker"]
+        assert strategy.object_storer.get_store()[0] == ticker
+
+    def test_handle_quote_tick_when_not_running_does_not_send_to_on_quote_tick(self):
+        # Arrange
+        strategy = MockStrategy(TestStubs.bartype_audusd_1min_bid())
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        ticker = TestStubs.ticker()
+
+        # Act
+        strategy.handle_ticker(ticker)
 
         # Assert
         assert strategy.calls == []
@@ -1758,6 +1802,49 @@ class TestTradingStrategy:
 
         # Assert
         assert self.data_engine.subscribed_instruments() == []
+        assert self.data_engine.command_count == 2
+
+    def test_subscribe_ticker(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        strategy.subscribe_ticker(AUDUSD_SIM.id)
+
+        # Assert
+        expected_instrument = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
+        assert self.data_engine.subscribed_tickers() == [expected_instrument]
+        assert self.data_engine.command_count == 1
+
+    def test_unsubscribe_ticker(self):
+        # Arrange
+        bar_type = TestStubs.bartype_audusd_1min_bid()
+        strategy = MockStrategy(bar_type)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        strategy.subscribe_ticker(AUDUSD_SIM.id)
+
+        # Act
+        strategy.unsubscribe_ticker(AUDUSD_SIM.id)
+
+        # Assert
+        assert self.data_engine.subscribed_tickers() == []
         assert self.data_engine.command_count == 2
 
     def test_subscribe_quote_ticks(self):

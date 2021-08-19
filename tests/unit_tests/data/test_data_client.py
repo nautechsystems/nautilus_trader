@@ -22,17 +22,11 @@ from nautilus_trader.data.client import DataClient
 from nautilus_trader.data.client import MarketDataClient
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.msgbus.bus import MessageBus
@@ -208,6 +202,13 @@ class TestMarketDataClient:
         with pytest.raises(NotImplementedError):
             self.client.subscribe_order_book_snapshots(AUDUSD_SIM.id, 2, 0)
 
+    def test_subscribe_ticker_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(NotImplementedError):
+            self.client.subscribe_ticker(AUDUSD_SIM.id)
+
     def test_subscribe_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
         # Act
@@ -242,6 +243,13 @@ class TestMarketDataClient:
         # Assert
         with pytest.raises(NotImplementedError):
             self.client.unsubscribe_order_book_snapshots(AUDUSD_SIM.id)
+
+    def test_unsubscribe_ticker_when_not_implemented_raises_exception(self):
+        # Arrange
+        # Act
+        # Assert
+        with pytest.raises(NotImplementedError):
+            self.client.unsubscribe_ticker(AUDUSD_SIM.id)
 
     def test_unsubscribe_quote_ticks_when_not_implemented_raises_exception(self):
         # Arrange
@@ -334,17 +342,19 @@ class TestMarketDataClient:
         # Assert
         assert self.data_engine.data_count == 1
 
+    def test_handle_ticker_sends_to_data_engine(self):
+        # Arrange
+        tick = TestStubs.ticker()
+
+        # Act
+        self.client._handle_data_py(tick)
+
+        # Assert
+        assert self.data_engine.data_count == 1
+
     def test_handle_quote_tick_sends_to_data_engine(self):
         # Arrange
-        tick = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00050"),
-            Price.from_str("1.00048"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
-        )
+        tick = TestStubs.quote_tick_5decimal()
 
         # Act
         self.client._handle_data_py(tick)
@@ -354,15 +364,7 @@ class TestMarketDataClient:
 
     def test_handle_trade_tick_sends_to_data_engine(self):
         # Arrange
-        tick = TradeTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00050"),
-            Quantity.from_int(1),
-            AggressorSide.BUY,
-            "123456",
-            0,
-            0,
-        )
+        tick = TestStubs.trade_tick_5decimal()
 
         # Act
         self.client._handle_data_py(tick)
@@ -372,18 +374,7 @@ class TestMarketDataClient:
 
     def test_handle_bar_sends_to_data_engine(self):
         # Arrange
-        bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-
-        bar = Bar(
-            bar_type,
-            Price.from_str("1.00001"),
-            Price.from_str("1.00004"),
-            Price.from_str("1.00002"),
-            Price.from_str("1.00003"),
-            Quantity.from_int(100000),
-            0,
-            0,
-        )
+        bar = TestStubs.bar_5decimal()
 
         # Act
         self.client._handle_data_py(bar)
