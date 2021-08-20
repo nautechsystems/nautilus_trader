@@ -51,9 +51,6 @@ pygments_style = "friendly"
 # Don't auto-generate summary for class members
 numpydoc_show_class_members = False
 
-# Show the documentation of __init__ and the class docstring
-autoclass_content = "both"
-
 # do not prepend module name to functions
 add_module_names = False
 todo_include_todos = False
@@ -81,3 +78,13 @@ html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
 html_style = "css/nautilus.css"
 html_logo = "_static/img/nautilus-black.png"
+
+
+def skip(app, what, name, obj, would_skip, options):  # noqa
+    if name == "__init__":
+        return False
+    return would_skip
+
+
+def setup(app):  # noqa
+    app.connect("autodoc-skip-member", skip)
