@@ -1,10 +1,12 @@
 from io import BytesIO
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Union
 
+import dask
 import fsspec
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+from dask import compute
 from dask import delayed
 from dask.utils import parse_bytes
 from fsspec.compression import compr
@@ -16,6 +18,7 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.parsers import Reader
+from nautilus_trader.persistence.external.sync import has_working_lock
 from nautilus_trader.persistence.external.sync import named_lock
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
@@ -26,6 +29,12 @@ from nautilus_trader.serialization.arrow.util import class_to_filename
 from nautilus_trader.serialization.arrow.util import clean_key
 from nautilus_trader.serialization.arrow.util import clean_partition_cols
 from nautilus_trader.serialization.arrow.util import maybe_list
+
+
+try:
+    import distributed
+except ImportError:
+    distributed = None
 
 
 class RawFile:
@@ -84,10 +93,20 @@ def process_files(
     catalog: DataCatalog,
     block_size="128mb",
     compression="infer",
+    scheduler: Union[str, "distributed.Client"] = "threaded",
     **kw,
 ):
     raw_files = make_raw_files(**locals())
-    return [process_raw_file(rf) for rf in raw_files]
+    tasks = [process_raw_file(rf) for rf in raw_files]
+    with dask.config.set(scheduler=scheduler):
+        if not has_working_lock(scheduler=scheduler):
+            err = (
+                "Windows does not support named locks, need to use dask.distributed client to process files.\n"
+                "Pass scheduler=distributed.Client(..) "
+            )
+            raise RuntimeError(err)
+
+        return compute(tasks)
 
 
 @delayed

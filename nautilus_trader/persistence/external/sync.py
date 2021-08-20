@@ -1,9 +1,13 @@
 import contextlib
 import fcntl
 import os
+import sys
 
-import distributed
 
+try:
+    import distributed
+except ImportError:
+    distributed = None
 
 # https://stackoverflow.com/questions/56813059/named-multiprocessing-lock
 
@@ -19,7 +23,20 @@ class LocalLock:
     def __exit__(self, _type, value, tb):
         fcntl.flock(self.fp.fileno(), fcntl.LOCK_UN)
         self.fp.close()
-        os.unlink(self.path)
+        try:
+            os.unlink(self.path)
+        except FileNotFoundError:
+            pass
+
+
+def has_working_lock(scheduler):
+    is_windows = sys.platform == "win32"
+    if not is_windows:
+        return True
+    else:
+        if distributed is not None and isinstance(scheduler, distributed.Client):
+            return True
+        return False
 
 
 def running_on_dask() -> bool:
