@@ -4,7 +4,6 @@ import sys
 import pandas as pd
 import pytest
 
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.data.wrangling import BarDataWrangler
 from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.model.data.bar import BarSpecification
@@ -13,15 +12,11 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.backtest.loading import load
-from nautilus_trader.persistence.backtest.loading import process_files
-from nautilus_trader.persistence.backtest.scanner import scan
 from nautilus_trader.persistence.catalog import DataCatalog
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
-from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 
 
 @pytest.fixture(autouse=True, scope="function")
@@ -90,27 +85,27 @@ def betfair_reader():
     return BetfairTestStubs.betfair_reader()
 
 
-@pytest.fixture()
-def betfair_nautilus_objects(betfair_reader):
-    instrument_provider = BetfairInstrumentProvider.from_instruments([])
-    files = scan(
-        path=TEST_DATA_DIR + "/betfair",
-        glob_pattern="**.bz2",
-    )
-
-    data = []
-
-    def append(*args, **kwargs):
-        if kwargs["chunk"]:
-            data.extend(kwargs["chunk"])
-
-    process_files(
-        files=files,
-        reader=betfair_reader(instrument_provider=instrument_provider),
-        instrument_provider=instrument_provider,
-        output_func=append,
-    )
-    return data
+# @pytest.fixture()
+# def betfair_nautilus_objects(betfair_reader):
+#     instrument_provider = BetfairInstrumentProvider.from_instruments([])
+#     files = scan(
+#         path=TEST_DATA_DIR + "/betfair",
+#         glob_pattern="**.bz2",
+#     )
+#
+#     data = []
+#
+#     def append(*args, **kwargs):
+#         if kwargs["chunk"]:
+#             data.extend(kwargs["chunk"])
+#
+#     process_files(
+#         files=files,
+#         reader=betfair_reader(instrument_provider=instrument_provider),
+#         instrument_provider=instrument_provider,
+#         output_func=append,
+#     )
+#     return data
 
 
 # TODO (cs)
@@ -131,18 +126,18 @@ def parse_csv_bars(data):
     yield from wrangler.build_bars_all()
 
 
-@pytest.fixture(scope="function")
-def load_data(betfair_reader):
-    instrument_provider = BetfairInstrumentProvider.from_instruments([])
-
-    load(
-        path=TEST_DATA_DIR,
-        reader=betfair_reader(instrument_provider),
-        glob_pattern="1.166564490*",
-        instrument_provider=instrument_provider,
-    )
-    fs = DataCatalog.from_env().fs
-    assert fs.isdir("/root/data/betting_instrument.parquet")
+# @pytest.fixture(scope="function")
+# def load_data(betfair_reader):
+#     instrument_provider = BetfairInstrumentProvider.from_instruments([])
+#
+#     load(
+#         path=TEST_DATA_DIR,
+#         reader=betfair_reader(instrument_provider),
+#         glob_pattern="1.166564490*",
+#         instrument_provider=instrument_provider,
+#     )
+#     fs = DataCatalog.from_env().fs
+#     assert fs.isdir("/root/data/betting_instrument.parquet")
 
 
 @pytest.fixture(scope="function")
@@ -151,6 +146,6 @@ def catalog():
     return catalog
 
 
-@pytest.fixture(scope="function")
-def loaded_catalog(catalog, load_data):
-    return catalog
+# @pytest.fixture(scope="function")
+# def loaded_catalog(catalog, load_data):
+#     return catalog
