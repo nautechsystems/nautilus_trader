@@ -13,15 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import copy
 import inspect
-import math
-import pathlib
 import sys
 from io import BytesIO
 from typing import Callable, Generator, List, Optional, Union
 
-import fsspec
 import pandas as pd
 
 from nautilus_trader.common.providers import InstrumentProvider
@@ -38,7 +34,7 @@ class Reader:
         instrument_provider_update: Callable = None,
     ):
         """
-        Provides parsing of raw byte chunks to Nautilus objects.
+        Provides parsing of raw byte blocks to Nautilus objects.
         """
         self.instrument_provider = instrument_provider
         self.instrument_provider_update = instrument_provider_update
@@ -60,7 +56,7 @@ class Reader:
             if new_instruments:
                 return list(new_instruments)
 
-    def parse(self, chunk: bytes) -> Generator:
+    def parse(self, block: bytes) -> Generator:
         raise NotImplementedError
 
 
@@ -72,12 +68,12 @@ class ByteReader(Reader):
         instrument_provider_update: Callable = None,
     ):
         """
-        A Reader subclass for reading chunks of raw bytes; `byte_parser` will be passed a chunk of raw bytes.
+        A Reader subclass for reading blocks of raw bytes; `byte_parser` will be passed a blocks of raw bytes.
 
         Parameters
         ----------
         byte_parser : Callable
-            The handler which takes a chunk of bytes and yields Nautilus objects.
+            The handler which takes a blocks of bytes and yields Nautilus objects.
         instrument_provider_update : Callable , optional
             An optional hook/callable to update instrument provider before data is passed to `byte_parser`
             (in many cases instruments need to be known ahead of parsing).
@@ -90,18 +86,28 @@ class ByteReader(Reader):
             assert inspect.isgeneratorfunction(byte_parser)
         self.parser = byte_parser
 
-    def parse(self, chunk: bytes) -> Generator:
-        instruments = self.check_instrument_provider(data=chunk)
+    def parse(self, blocks: bytes) -> Generator:
+        instruments = self.check_instrument_provider(data=blocks)
         if instruments:
             yield from instruments
-        yield from self.parser(chunk)
+        yield from self.parser(blocks)
+
+
+class LinePreprocessor:
+    @staticmethod
+    def pre_process(line):
+        return line
+
+    @staticmethod
+    def post_process(obj):
+        return obj
 
 
 class TextReader(ByteReader):
     def __init__(
         self,
         line_parser: Callable,
-        line_preprocessor: Callable = None,
+        line_preprocessor: LinePreprocessor = None,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Callable = None,
     ):
@@ -129,17 +135,17 @@ class TextReader(ByteReader):
         )
         self.line_preprocessor = line_preprocessor or identity
 
-    def parse(self, chunk) -> Generator:  # noqa: C901
-        self.buffer += chunk
-        if b"\n" in chunk:
+    def parse(self, blocks) -> Generator:  # noqa: C901
+        self.buffer += blocks
+        if b"\n" in blocks:
             process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
         else:
-            process, self.buffer = chunk, b""
+            process, self.buffer = blocks, b""
         if process:
-            yield from self.process_chunk(chunk=process)
+            yield from self.process_block(block=process)
 
-    def process_chunk(self, chunk):
-        for line in map(self.line_preprocessor, chunk.split(b"\n")):
+    def process_block(self, block):
+        for line in map(self.line_preprocessor, block.split(b"\n")):
             instruments = self.check_instrument_provider(data=line)
             if instruments:
                 yield from instruments
@@ -153,7 +159,7 @@ class CSVReader(Reader):
 
     def __init__(
         self,
-        chunk_parser: Callable,
+        block_parser: Callable,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update=None,
         chunked=True,
@@ -164,39 +170,39 @@ class CSVReader(Reader):
 
         Parameters
         ----------
-        chunk_parser : callable
+        block_parser : callable
             The handler which takes byte strings and yields Nautilus objects.
         instrument_provider_update
             Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
         chunked: bool, default=True
-            If chunked=False, each CSV line will be passed to `chunk_parser` individually, if chunked=True, the data
-            passed will potentially contain many lines (a chunk).
+            If chunked=False, each CSV line will be passed to `block_parser` individually, if chunked=True, the data
+            passed will potentially contain many lines (a block).
         as_dataframe: bool, default=False
-            If as_dataframe=True, the passes chunk will be parsed into a DataFrame before passing to `chunk_parser`
+            If as_dataframe=True, the passes block will be parsed into a DataFrame before passing to `block_parser`
 
         """
         super().__init__(
             instrument_provider=instrument_provider,
             instrument_provider_update=instrument_provider_update,
         )
-        self.chunk_parser = chunk_parser
+        self.block_parser = block_parser
         self.header: Optional[List[str]] = None
         self.chunked = chunked
         self.as_dataframe = as_dataframe
 
-    def parse(self, chunk: bytes) -> Generator:
+    def parse(self, block: bytes) -> Generator:
         if self.header is None:
-            header, chunk = chunk.split(b"\n", maxsplit=1)
+            header, block = block.split(b"\n", maxsplit=1)
             self.header = header.decode().split(",")
 
-        self.buffer += chunk
+        self.buffer += block
         process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
 
         if self.as_dataframe:
             process = pd.read_csv(BytesIO(process), names=self.header)
         if self.instrument_provider_update is not None:
             self.instrument_provider_update(self.instrument_provider, process)
-        yield from self.chunk_parser(process)
+        yield from self.block_parser(process)
 
 
 class ParquetReader(ByteReader):
@@ -233,8 +239,8 @@ class ParquetReader(ByteReader):
         self.filename = None
         self.data_type = data_type
 
-    def parse(self, chunk: bytes) -> Generator:
-        df = pd.read_parquet(BytesIO(chunk))
+    def parse(self, block: bytes) -> Generator:
+        df = pd.read_parquet(BytesIO(block))
         if self.instrument_provider_update is not None:
             self.instrument_provider_update(
                 instrument_provider=self.instrument_provider,
@@ -242,79 +248,3 @@ class ParquetReader(ByteReader):
                 filename=self.filename,
             )
         yield from self.parser(data_type=self.data_type, df=df, filename=self.filename)
-
-
-class RawFile(fsspec.core.OpenFile):
-    def __init__(
-        self,
-        fs,
-        path,
-        mode="rb",
-        compression=None,
-        encoding=None,
-        errors=None,
-        newline=None,
-        chunk_size: int = -1,
-        reader=None,
-    ):
-        """
-        A subclass of fsspec.OpenFile than can be read in chunks
-        """
-        super().__init__(
-            fs=fs,
-            path=path,
-            mode=mode,
-            compression=compression,
-            encoding=encoding,
-            errors=errors,
-            newline=newline,
-        )
-        self.name = pathlib.Path(path).name
-        self.chunk_size = chunk_size
-        self._reader: Optional[Reader] = reader
-
-    @property
-    def reader(self):
-        return self._reader
-
-    @reader.setter
-    def reader(self, reader: Reader):
-        assert isinstance(reader, Reader)
-        self._reader = copy.copy(reader)
-
-    @property
-    def num_chunks(self):
-        if self.chunk_size == -1:
-            return 1
-        stat = self.fs.stat(self.path)
-        return math.ceil(stat["size"] / self.chunk_size)
-
-    def iter_raw(self):
-        with self.open() as f:
-            f.seek(0, 2)
-            end = f.tell()
-            f.seek(0)
-            while f.tell() < end:
-                chunk = f.read(self.chunk_size)
-                yield chunk
-
-    def iter_parsed(self):
-        for chunk in self.iter_raw():
-            parsed = list(filter(None, self.reader.parse(chunk)))
-            yield parsed
-
-    def __reduce__(self):
-        return (
-            RawFile,
-            (
-                self.fs,
-                self.path,
-                self.mode,
-                self.compression,
-                self.encoding,
-                self.errors,
-                self.newline,
-                self.chunk_size,
-                self.reader,
-            ),
-        )

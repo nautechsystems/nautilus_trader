@@ -44,9 +44,9 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.backtest.loading import load
-from nautilus_trader.persistence.backtest.parsers import CSVReader
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.external.core import process_files
+from nautilus_trader.persistence.external.parsers import CSVReader
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
@@ -86,16 +86,17 @@ def data_loader():
             )
             yield tick
 
+    catalog = DataCatalog.from_env()
     instrument_provider = InstrumentProvider()
     instrument_provider.add(instrument)
-    load(
-        path=TEST_DATA_DIR,
+    process_files(
+        glob_path=f"{TEST_DATA_DIR}/truefx-audusd-ticks.csv",
         reader=CSVReader(
             chunk_parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id()),
             as_dataframe=True,
         ),
-        glob_pattern="truefx-audusd-ticks.csv",
         instrument_provider=instrument_provider,
+        catalog=catalog,
     )
 
 

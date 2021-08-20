@@ -30,7 +30,7 @@ def load_mappings(fs, path) -> Dict:
         return orjson.loads(f.read())
 
 
-def write_mappings(fs, path, mappings) -> None:
+def write_partition_column_mappings(fs, path, mappings) -> None:
     with fs.open(f"{path}/{PARTITION_MAPPINGS_FN}", "wb") as f:
         f.write(orjson.dumps(mappings))
 
