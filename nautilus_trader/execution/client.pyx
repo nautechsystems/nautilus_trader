@@ -428,7 +428,6 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        str response_to,
         str reason,
         int64_t ts_event,
     ) except *:
@@ -445,8 +444,6 @@ cdef class ExecutionClient(Component):
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID.
-        response_to : str
-            The order update rejected response.
         reason : str
             The order update rejected reason.
         ts_event : datetime
@@ -461,7 +458,6 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            response_to=response_to,
             reason=reason,
             event_id=self._uuid_factory.generate(),
             ts_event=ts_event,
@@ -476,7 +472,6 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        str response_to,
         str reason,
         int64_t ts_event,
     ) except *:
@@ -493,8 +488,6 @@ cdef class ExecutionClient(Component):
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID.
-        response_to : str
-            The order cancel rejected response.
         reason : str
             The order cancel rejected reason.
         ts_event : datetime
@@ -509,7 +502,6 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            response_to=response_to,
             reason=reason,
             event_id=self._uuid_factory.generate(),
             ts_event=ts_event,

@@ -131,7 +131,6 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        str response_to,
         str reason,
         int64_t ts_event,
     ) except *
@@ -141,7 +140,6 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        str response_to,
         str reason,
         int64_t ts_event,
     ) except *
