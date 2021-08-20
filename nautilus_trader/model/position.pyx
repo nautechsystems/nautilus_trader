@@ -53,13 +53,10 @@ cdef class Position:
             If instrument.id is not equal to fill.instrument_id.
         ValueError
             If event.position_id is None.
-        ValueError
-            If event.strategy_id is None.
 
         """
         Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")
         Condition.not_none(fill.position_id, "fill.position_id")
-        Condition.not_none(fill.strategy_id, "fill.position_id")
 
         self._events = []         # type: list[OrderFilled]
         self._execution_ids = []  # type: list[ExecutionId]
