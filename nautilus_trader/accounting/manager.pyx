@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Optional
 
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
 from nautilus_trader.cache.base cimport CacheFacade
@@ -101,8 +102,9 @@ cdef class AccountsManager:
             )
 
         total_margin_init: Decimal = Decimal(0)
-        cdef Currency currency = instrument.get_cost_currency()
+        base_xrate: Optional[Decimal] = None
 
+        cdef Currency currency = instrument.get_cost_currency()
         cdef PassiveOrder order
         for order in passive_orders_working:
             assert order.instrument_id == instrument.id
@@ -116,6 +118,10 @@ cdef class AccountsManager:
             ).as_decimal()
 
             if account.base_currency is not None:
+                if base_xrate is not None:
+                    margin_init *= base_xrate
+                    return
+
                 currency = account.base_currency
                 xrate: Decimal = self._calculate_xrate_to_base(
                     instrument=instrument,
@@ -131,7 +137,8 @@ cdef class AccountsManager:
                     )
                     return None  # Cannot calculate
 
-                margin_init *= xrate
+                base_xrate = xrate  # Cache xrate
+                margin_init *= base_xrate  # Apply xrate
 
             # Increment total initial margin
             total_margin_init += margin_init
@@ -186,8 +193,9 @@ cdef class AccountsManager:
             )
 
         total_margin_maint: Decimal = Decimal(0)
-        cdef Currency currency = instrument.get_cost_currency()
+        base_xrate: Optional[Decimal] = None
 
+        cdef Currency currency = instrument.get_cost_currency()
         cdef Position position
         for position in positions_open:
             assert position.instrument_id == instrument.id
@@ -202,6 +210,10 @@ cdef class AccountsManager:
             ).as_decimal()
 
             if account.base_currency is not None:
+                if base_xrate is not None:
+                    margin_maint *= base_xrate
+                    return
+
                 currency = account.base_currency
                 xrate: Decimal = self._calculate_xrate_to_base(
                     instrument=instrument,
@@ -217,7 +229,8 @@ cdef class AccountsManager:
                     )
                     return None  # Cannot calculate
 
-                margin_maint *= xrate
+                base_xrate = xrate  # Cache xrate
+                margin_maint *= base_xrate  # Apply xrate
 
             # Increment total maintenance margin
             total_margin_maint += margin_maint
