@@ -49,6 +49,10 @@ cdef class AccountsManager:
         ----------
         cache : CacheFacade
             The read-only cache for the manager.
+        log : LoggerAdapter
+            The logger for the manager.
+        clock : Clock
+            The clock for the manager.
 
         """
         self._clock = clock
@@ -61,6 +65,7 @@ cdef class AccountsManager:
         Account account,
         Instrument instrument,
         list passive_orders_working,
+        int64_t ts_event,
     ):
         """
         Update the initial (order) margin for margin accounts or locked balance
@@ -76,6 +81,8 @@ cdef class AccountsManager:
             The instrument for the update.
         passive_orders_working : list[PassiveOrder]
             The passive working orders for the update.
+        ts_event : int64
+            The UNIX timestamp (nanoseconds) when the account event occurred.
 
         Returns
         -------
@@ -90,7 +97,7 @@ cdef class AccountsManager:
             account.clear_margin_init(instrument.id)
             return self._generate_account_state(
                 account=account,
-                ts_event=account.last_event_c().ts_event,
+                ts_event=ts_event,
             )
 
         total_margin_init: Decimal = Decimal(0)
@@ -136,7 +143,7 @@ cdef class AccountsManager:
 
         return self._generate_account_state(
             account=account,
-            ts_event=account.last_event_c().ts_event,
+            ts_event=ts_event,
         )
 
     cdef AccountState update_margin_maint(
@@ -144,6 +151,7 @@ cdef class AccountsManager:
         MarginAccount account,
         Instrument instrument,
         list positions_open,
+        int64_t ts_event,
     ):
         """
         Update the maintenance (position) margin.
@@ -157,6 +165,9 @@ cdef class AccountsManager:
         instrument : Instrument
             The instrument for the update.
         positions_open : list[Position]
+            The open positions for the update.
+        ts_event : int64
+            The UNIX timestamp (nanoseconds) when the account event occurred.
 
         Returns
         -------
@@ -171,7 +182,7 @@ cdef class AccountsManager:
             account.clear_margin_maint(instrument.id)
             return self._generate_account_state(
                 account=account,
-                ts_event=account.last_event_c().ts_event,
+                ts_event=ts_event,
             )
 
         total_margin_maint: Decimal = Decimal(0)
@@ -218,7 +229,7 @@ cdef class AccountsManager:
 
         return self._generate_account_state(
             account=account,
-            ts_event=account.last_event_c().ts_event,
+            ts_event=ts_event,
         )
 
     cdef AccountState update_balances(
@@ -285,7 +296,10 @@ cdef class AccountsManager:
 
         account.update_commissions(fill.commission)
 
-        return self._generate_account_state(account, fill.ts_event)
+        return self._generate_account_state(
+            account=account,
+            ts_event=fill.ts_event,
+        )
 
     cdef void _update_balance_single_currency(
         self,
