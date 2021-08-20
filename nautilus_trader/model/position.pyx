@@ -30,6 +30,9 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Position:
     """
     Represents a position in a financial market.
+
+    The position ID may be assigned at the trading venue, or can be system
+    generated depending on a strategies OMS (Order Management System) settings.
     """
 
     def __init__(
