@@ -39,8 +39,7 @@ class TestLogLevelParser:
         ],
     )
     def test_log_level_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = LogLevelParser.to_str_py(enum)
 
         # Assert
@@ -57,8 +56,7 @@ class TestLogLevelParser:
         ],
     )
     def test_log_level_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = LogLevelParser.from_str_py(string)
 
         # Assert
@@ -192,8 +190,7 @@ class TestLiveLogger:
         self.logger_adapter = LoggerAdapter(component_name="LIVER_LOGGER", logger=self.logger)
 
     def test_log_when_not_running_on_event_loop_successfully_logs(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.logger_adapter.info("test message")
 
         # Assert

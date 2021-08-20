@@ -29,22 +29,16 @@ class TestKeltnerPosition:
         self.kp = KeltnerPosition(10, 2.5)
 
     def test_name_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.kp.name == "KeltnerPosition"
 
     def test_str_repr_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.kp) == "KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)"
         assert repr(self.kp) == "KeltnerPosition(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)"
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.kp.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
@@ -52,20 +46,15 @@ class TestKeltnerPosition:
         for _i in range(10):
             self.kp.update_raw(1.00000, 1.00000, 1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.kp.initialized is True
 
     def test_period_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.kp.period == 10
 
     def test_k_multiple_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.kp.k_multiplier == 2.5
 
     def test_handle_bar_updates_indicator(self):
@@ -85,8 +74,7 @@ class TestKeltnerPosition:
         # Arrange
         self.kp.update_raw(1.00020, 1.00000, 1.00010)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.kp.value == 0
 
     def test_value_with_zero_width_input_returns_zero(self):
@@ -94,8 +82,7 @@ class TestKeltnerPosition:
         for _i in range(10):
             self.kp.update_raw(1.00000, 1.00000, 1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.kp.value == 0
 
     def test_value_with_three_inputs_returns_expected_value(self):
@@ -104,8 +91,7 @@ class TestKeltnerPosition:
         self.kp.update_raw(1.00030, 1.00010, 1.00020)
         self.kp.update_raw(1.00040, 1.00020, 1.00030)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.kp.value == 0.29752066115754594
 
     def test_value_with_close_on_high_returns_positive_value(self):
@@ -119,8 +105,7 @@ class TestKeltnerPosition:
             close = high
             self.kp.update_raw(high, low, close)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.kp.value == 1.637585941284833
 
     def test_value_with_close_on_low_returns_lower_value(self):
@@ -134,8 +119,7 @@ class TestKeltnerPosition:
             close = low
             self.kp.update_raw(high, low, close)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.kp.value == pytest.approx(-1.637585941284833)
 
     def test_value_with_ten_inputs_returns_expected_value(self):
@@ -151,8 +135,7 @@ class TestKeltnerPosition:
         self.kp.update_raw(1.00030, 1.00020, 1.00030)
         self.kp.update_raw(1.00020, 1.00010, 1.00010)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.kp.value == -0.14281747514671334
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):

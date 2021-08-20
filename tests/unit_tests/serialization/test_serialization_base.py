@@ -50,8 +50,7 @@ class TestObject:
 
 class TestSerializationBase:
     def test_register_serializable_object(self):
-        # Arrange
-        # Act, Assert
+        # Arrange, Act, Assert
         register_serializable_object(TestObject, TestObject.to_dict, TestObject.from_dict)
 
         # Does not raise exception
@@ -60,8 +59,7 @@ class TestSerializationBase:
         # Arrange
         serializer = InstrumentSerializer()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             serializer.serialize(AUDUSD_SIM)
 
@@ -79,8 +77,7 @@ class TestSerializationBase:
 
         serializer = CommandSerializer()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             serializer.serialize(command)
 
@@ -92,8 +89,7 @@ class TestSerializationBase:
         event = TestStubs.event_cash_account_state()
         serializer = EventSerializer()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             serializer.serialize(event)
 

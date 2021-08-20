@@ -29,33 +29,24 @@ class TestHilbertSignalNoiseRatio:
         self.snr = HilbertSignalNoiseRatio()
 
     def test_name_returns_expected_name(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.snr.name == "HilbertSignalNoiseRatio"
 
     def test_str_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.snr) == "HilbertSignalNoiseRatio(7)"
         assert repr(self.snr) == "HilbertSignalNoiseRatio(7)"
 
     def test_period_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.snr.period == 7
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.snr.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         for _i in range(10):
             self.snr.update_raw(1.00010, 1.00000)
 
@@ -75,9 +66,7 @@ class TestHilbertSignalNoiseRatio:
         assert indicator.value == 0
 
     def test_value_with_no_inputs_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.snr.value == 0.0
 
     def test_value_with_epsilon_inputs_returns_expected_value(self):
@@ -85,8 +74,7 @@ class TestHilbertSignalNoiseRatio:
         for _i in range(100):
             self.snr.update_raw(sys.float_info.epsilon, sys.float_info.epsilon)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.snr.value == 0
 
     def test_value_with_ones_inputs_returns_expected_value(self):
@@ -94,8 +82,7 @@ class TestHilbertSignalNoiseRatio:
         for _i in range(100):
             self.snr.update_raw(1.00000, 1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.snr.value == 0
 
     def test_value_with_seven_inputs_returns_expected_value(self):

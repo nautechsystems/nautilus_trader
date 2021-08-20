@@ -37,8 +37,7 @@ class TestQuoteTickDataWrangler:
         self.clock = TestClock()
 
     def test_tick_data(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         ticks = TestDataProvider.usdjpy_ticks()
 
         # Assert
@@ -148,8 +147,7 @@ class TestTradeTickDataWrangler:
         self.clock = TestClock()
 
     def test_tick_data(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         ticks = TestDataProvider.ethusdt_trades()[:100]
 
         # Assert
@@ -205,40 +203,35 @@ class TestBarDataWrangler:
         )
 
     def test_build_bars_all(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         bars = self.bar_builder.build_bars_all()
 
         # Assert
         assert len(bars) == 1000
 
     def test_build_bars_range_with_defaults(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         bars = self.bar_builder.build_bars_range()
 
         # Assert
         assert len(bars) == 999
 
     def test_build_bars_range_with_param(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         bars = self.bar_builder.build_bars_range(start=500)
 
         # Assert
         assert len(bars) == 499
 
     def test_build_bars_from_with_defaults(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         bars = self.bar_builder.build_bars_from()
 
         # Assert
         assert len(bars) == 1000
 
     def test_build_bars_from_with_param(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         bars = self.bar_builder.build_bars_from(index=500)
 
         # Assert
@@ -251,8 +244,7 @@ class TestTardisQuoteDataWrangler:
         self.clock = TestClock()
 
     def test_tick_data(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         ticks = TestDataProvider.tardis_quotes()
 
         # Assert
@@ -291,8 +283,7 @@ class TestTardisTradeDataWrangler:
         self.clock = TestClock()
 
     def test_tick_data(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         ticks = TestDataProvider.tardis_trades()
 
         # Assert

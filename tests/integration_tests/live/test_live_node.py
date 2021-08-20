@@ -202,6 +202,5 @@ class TestTradingNodeOperation:
         self.node.dispose()
         await asyncio.sleep(1)  # Allow node to dispose
 
-        # Act
         # Assert
         assert self.node.trader.state == ComponentState.DISPOSED

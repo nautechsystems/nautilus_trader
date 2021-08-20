@@ -171,14 +171,11 @@ class TestSimulatedExchange:
         self.strategy.start()
 
     def test_repr(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert repr(self.exchange) == "SimulatedExchange(SIM)"
 
     def test_check_residuals(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.exchange.check_residuals()
         # Assert
         assert True  # No exceptions raised
@@ -256,8 +253,7 @@ class TestSimulatedExchange:
         assert entry2 in self.exchange.get_working_orders().values()
 
     def test_get_working_orders_when_no_orders_returns_empty_dict(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         orders = self.exchange.get_working_orders()
 
         assert orders == {}

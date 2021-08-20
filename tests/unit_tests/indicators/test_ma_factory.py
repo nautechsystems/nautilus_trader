@@ -27,32 +27,28 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 class TestMovingAverageConvergenceDivergence:
     def test_simple_returns_expected_indicator(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         indicator = MovingAverageFactory.create(10, MovingAverageType.SIMPLE)
 
         # Assert
         assert isinstance(indicator, SimpleMovingAverage)
 
     def test_exponential_returns_expected_indicator(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         indicator = MovingAverageFactory.create(10, MovingAverageType.EXPONENTIAL)
 
         # Assert
         assert isinstance(indicator, ExponentialMovingAverage)
 
     def test_hull_returns_expected_indicator(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         indicator = MovingAverageFactory.create(10, MovingAverageType.HULL)
 
         # Assert
         assert isinstance(indicator, HullMovingAverage)
 
     def test_weighted_returns_expected_indicator(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         indicator = MovingAverageFactory.create(10, MovingAverageType.WEIGHTED)
 
         # Assert

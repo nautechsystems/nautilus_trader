@@ -307,7 +307,7 @@ cdef class DataEngine(Component):
         cdef MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
             subscriptions += client.subscribed_bars()
-        return subscriptions
+        return subscriptions + list(self._bar_aggregators.keys())
 
     cpdef list subscribed_instrument_status_updates(self):
         """

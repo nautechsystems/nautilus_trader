@@ -32,8 +32,7 @@ class TestOrderIdGenerator:
         )
 
     def test_generate_order_id(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result1 = self.order_id_generator.generate()
         result2 = self.order_id_generator.generate()
         result3 = self.order_id_generator.generate()
@@ -66,8 +65,7 @@ class TestPositionIdGenerator:
         )
 
     def test_generate_position_id(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result1 = self.position_id_generator.generate(StrategyId("S-002"))
         result2 = self.position_id_generator.generate(StrategyId("S-002"))
         result3 = self.position_id_generator.generate(StrategyId("S-002"))
@@ -78,8 +76,7 @@ class TestPositionIdGenerator:
         assert result3 == PositionId("P-19700101-000000-001-002-3")
 
     def test_generate_position_id_with_flip_appends_correctly(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result1 = self.position_id_generator.generate(StrategyId("S-001"))
         result2 = self.position_id_generator.generate(StrategyId("S-002"), flipped=True)
         result3 = self.position_id_generator.generate(StrategyId("S-001"), flipped=True)

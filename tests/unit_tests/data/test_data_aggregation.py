@@ -57,8 +57,7 @@ class TestBarBuilder:
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type, use_previous_close=False)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert not builder.use_previous_close
         assert not builder.initialized
         assert builder.ts_last == 0
@@ -69,8 +68,7 @@ class TestBarBuilder:
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type, use_previous_close=False)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert str(builder) == "BarBuilder(BTC/USDT.BINANCE-100-TICK-LAST,None,None,None,None,0)"
         assert repr(builder) == "BarBuilder(BTC/USDT.BINANCE-100-TICK-LAST,None,None,None,None,0)"
 
@@ -193,8 +191,7 @@ class TestBarBuilder:
         bar_type = TestStubs.bartype_audusd_1min_bid()
         builder = BarBuilder(AUDUSD_SIM, bar_type, use_previous_close=False)
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(TypeError):
             builder.build()
 
@@ -1136,8 +1133,7 @@ class TestTimeBarAggregator:
         bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(instrument.id, bar_spec)
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(ValueError):
             TimeBarAggregator(
                 instrument,

@@ -147,8 +147,7 @@ class TestExecutionEngine:
         self.exec_engine.register_client(self.exec_client)
 
     def test_registered_clients_returns_expected(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.exec_engine.registered_clients
 
         # Assert
@@ -232,8 +231,7 @@ class TestExecutionEngine:
         assert result
 
     def test_check_disconnected_when_client_disconnected_returns_true(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.exec_engine.check_disconnected()
 
         # Assert
@@ -250,8 +248,7 @@ class TestExecutionEngine:
         assert not result
 
     def test_check_integrity_calls_check_on_cache(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.exec_engine.check_integrity()
 
         # Assert

@@ -27,28 +27,20 @@ class TestOnBalanceVolume:
         self.obv = OnBalanceVolume(100)
 
     def test_name_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.obv.name == "OnBalanceVolume"
 
     def test_str_repr_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.obv) == "OnBalanceVolume(100)"
         assert repr(self.obv) == "OnBalanceVolume(100)"
 
     def test_period_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.obv.period == 100
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.obv.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
@@ -56,8 +48,7 @@ class TestOnBalanceVolume:
         for _i in range(100):
             self.obv.update_raw(1.00000, 1.00010, 10000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.obv.initialized is True
 
     def test_handle_bar_updates_indicator(self):
@@ -77,8 +68,7 @@ class TestOnBalanceVolume:
         # Arrange
         self.obv.update_raw(1.00000, 1.00010, 10000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.obv.value == 10000
 
     def test_values_with_higher_inputs_returns_expected_value(self):
@@ -94,8 +84,7 @@ class TestOnBalanceVolume:
         self.obv.update_raw(1.00000, 1.00010, 10000)
         self.obv.update_raw(1.00000, 1.00010, 10000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.obv.value == 90000.0
 
     def test_values_with_lower_inputs_returns_expected_value(self):
@@ -111,8 +100,7 @@ class TestOnBalanceVolume:
         self.obv.update_raw(1.00010, 1.00000, 10000)
         self.obv.update_raw(1.00010, 1.00000, 10000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.obv.value == -90000.0
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):

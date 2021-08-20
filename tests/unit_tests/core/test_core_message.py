@@ -52,8 +52,7 @@ class TestMessage:
             ts_init=0,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert message1 == message1
         assert message1 == message2
         assert message1 != message3
@@ -66,8 +65,7 @@ class TestMessage:
             ts_init=0,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert isinstance(hash(message), int)
 
     def test_message_str_and_repr(self):
@@ -78,8 +76,7 @@ class TestMessage:
             ts_init=0,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert str(message) == f"Document(id={uuid}, ts_init=0)"
         assert str(message) == f"Document(id={uuid}, ts_init=0)"
 
@@ -93,8 +90,7 @@ class TestMessage:
             ts_init=0,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert str(message) == f"Response(correlation_id={uuid_corr}, id={uuid_id}, ts_init=0)"
         assert str(message) == f"Response(correlation_id={uuid_corr}, id={uuid_id}, ts_init=0)"
 
@@ -109,8 +105,7 @@ class TestMessage:
         ],
     )
     def test_message_category_to_str(self, category, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = MessageCategoryParser.to_str_py(category)
 
         # Assert
@@ -127,8 +122,7 @@ class TestMessage:
         ],
     )
     def test_message_category_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = MessageCategoryParser.from_str_py(string)
 
         # Assert

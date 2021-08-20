@@ -74,8 +74,7 @@ class TestFunctions:
         ],
     )
     def test_bisect_left(self, a, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = bisect_double_left(a, value)
 
         # Assert
@@ -126,8 +125,7 @@ class TestFunctions:
         ],
     )
     def test_bisect_right(self, a, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = bisect_double_right(a, value)
 
         # Assert
@@ -193,8 +191,7 @@ class TestFunctions:
         assert result2 == 3.943665807342199
 
     def test_basis_points_as_percentage(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result1 = basis_points_as_percentage(0)
         result2 = basis_points_as_percentage(0.020)
 
@@ -203,8 +200,7 @@ class TestFunctions:
         assert result2 == 2.0000000000000003e-06
 
     def test_get_size_of(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result1 = get_size_of(0)
         result2 = get_size_of(1.1)
         result3 = get_size_of("abc")
@@ -224,16 +220,14 @@ class TestFunctions:
         ],
     )
     def test_pad_string(self, original, final_length, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = pad_string(original, final_length=final_length)
 
         # Assert
         assert result == expected
 
     def test_format_bytes(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result0 = format_bytes(1000)
         result1 = format_bytes(100000)
         result2 = format_bytes(10000000)

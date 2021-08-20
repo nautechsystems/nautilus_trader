@@ -23,29 +23,24 @@ class TestStochastics:
         self.stochastics = Stochastics(14, 3)
 
     def test_name_returns_expected_string(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert self.stochastics.name == "Stochastics"
 
     def test_str_repr_returns_expected_string(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert str(self.stochastics) == "Stochastics(14, 3)"
         assert repr(self.stochastics) == "Stochastics(14, 3)"
 
     def test_period_k_returns_expected_value(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert self.stochastics.period_k == 14
 
     def test_period_d_returns_expected_value(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert self.stochastics.period_d == 3
 
     def test_initialized_without_inputs_returns_false(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert self.stochastics.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
@@ -65,8 +60,7 @@ class TestStochastics:
         self.stochastics.update_raw(1.00020, 1.00000, 1.00010)
         self.stochastics.update_raw(1.00020, 1.00000, 1.00010)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.stochastics.initialized is True
 
     def test_handle_bar_updates_indicator(self):
@@ -87,8 +81,7 @@ class TestStochastics:
         # Arrange
         self.stochastics.update_raw(1.00020, 1.00000, 1.00010)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.stochastics.value_k == 50.0
         assert self.stochastics.value_d == 50.0
 
@@ -99,8 +92,7 @@ class TestStochastics:
         self.stochastics.update_raw(1.00040, 1.00020, 1.00030)
         self.stochastics.update_raw(1.00050, 1.00030, 1.00040)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.stochastics.value_k == 80.0
         assert self.stochastics.value_d == 75.0
 
@@ -111,8 +103,7 @@ class TestStochastics:
         self.stochastics.update_raw(1.00030, 1.00010, 1.00020)
         self.stochastics.update_raw(1.00020, 1.00000, 1.00010)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.stochastics.value_k == 20.0
         assert self.stochastics.value_d == 25.0
 

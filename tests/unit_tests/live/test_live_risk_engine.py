@@ -130,8 +130,7 @@ class TestLiveRiskEngine:
         self.exec_engine.register_client(self.exec_client)
 
     def test_start_when_loop_not_running_logs(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.risk_engine.start()
 
         # Assert
@@ -139,8 +138,7 @@ class TestLiveRiskEngine:
         self.risk_engine.stop()
 
     def test_get_event_loop_returns_expected_loop(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         loop = self.risk_engine.get_event_loop()
 
         # Assert
@@ -242,8 +240,7 @@ class TestLiveRiskEngine:
 
     @pytest.mark.asyncio
     async def test_start(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.risk_engine.start()
         await asyncio.sleep(0.1)
 
@@ -255,8 +252,7 @@ class TestLiveRiskEngine:
 
     @pytest.mark.asyncio
     async def test_kill_when_running_and_no_messages_on_queues(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.risk_engine.start()
         await asyncio.sleep(0)
         self.risk_engine.kill()
@@ -266,8 +262,7 @@ class TestLiveRiskEngine:
 
     @pytest.mark.asyncio
     async def test_kill_when_not_running_with_messages_on_queue(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.risk_engine.kill()
 
         # Assert
