@@ -114,48 +114,42 @@ class TestCache:
         )
 
     def test_cache_currencies_with_no_currencies(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.cache.cache_currencies()
 
         # Assert
         assert True  # No exception raised
 
     def test_cache_instruments_with_no_instruments(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.cache.cache_instruments()
 
         # Assert
         assert True  # No exception raised
 
     def test_cache_accounts_with_no_accounts(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.cache.cache_accounts()
 
         # Assert
         assert True  # No exception raised
 
     def test_cache_orders_with_no_orders(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.cache.cache_orders()
 
         # Assert
         assert True  # No exception raised
 
     def test_cache_positions_with_no_positions(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.cache.cache_positions()
 
         # Assert
         assert True  # No exception raised
 
     def test_build_index_with_no_objects(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.cache.build_index()
 
         # Assert
@@ -210,32 +204,28 @@ class TestCache:
         assert result == account
 
     def test_account_for_venue(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.cache.account_for_venue(Venue("SIM"))
 
         # Assert
         assert result is None
 
     def test_accounts_when_no_accounts_returns_empty_list(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.cache.accounts()
 
         # Assert
         assert result == []
 
     def test_get_strategy_ids_with_no_ids_returns_empty_set(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.cache.strategy_ids()
 
         # Assert
         assert result == set()
 
     def test_get_order_ids_with_no_ids_returns_empty_set(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.cache.client_order_ids()
 
         # Assert
@@ -252,15 +242,11 @@ class TestCache:
         assert result == {self.strategy.id}
 
     def test_position_exists_when_no_position_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert not self.cache.position_exists(PositionId("P-123456"))
 
     def test_order_exists_when_no_order_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert not self.cache.order_exists(ClientOrderId("O-123456"))
 
     def test_position_when_no_position_returns_none(self):
@@ -284,9 +270,7 @@ class TestCache:
         assert result is None
 
     def test_strategy_id_for_position_when_no_strategy_registered_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.strategy_id_for_position(PositionId("P-123456")) is None
 
     def test_add_order(self):
@@ -1046,8 +1030,7 @@ class TestExecutionCacheIntegrityCheck:
         # Remove data
         self.engine.cache.clear_cache()
 
-        # Act
-        # Assert
+        # Act, Assert
         assert not self.engine.cache.check_integrity()
 
     def test_exec_cache_check_integrity_when_index_cleared_fails(self):
@@ -1066,6 +1049,5 @@ class TestExecutionCacheIntegrityCheck:
         # Clear index
         self.engine.cache.clear_index()
 
-        # Act
-        # Assert
+        # Act, Assert
         assert not self.engine.cache.check_integrity()

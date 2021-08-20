@@ -60,8 +60,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_secs_to_nanos(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = secs_to_nanos(value)
 
         # Assert
@@ -83,8 +82,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_millis_to_nanos(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = millis_to_nanos(value)
 
         # Assert
@@ -106,8 +104,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_micros_to_nanos(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = micros_to_nanos(value)
 
         # Assert
@@ -125,8 +122,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_nanos_to_secs(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = nanos_to_secs(value)
 
         # Assert
@@ -144,8 +140,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_nanos_to_millis(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = nanos_to_millis(value)
 
         # Assert
@@ -163,8 +158,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_nanos_to_micros(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = nanos_to_micros(value)
 
         # Assert
@@ -182,8 +176,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_nanos_to_timedelta(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = nanos_to_timedelta(value)
 
         # Assert
@@ -200,8 +193,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_nanos_to_unix_dt(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = nanos_to_unix_dt(value)
 
         # Assert
@@ -221,8 +213,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_dt_to_unix_nanos(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = dt_to_unix_nanos(value)
 
         # Assert
@@ -243,8 +234,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_timedelta_to_nanos(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = timedelta_to_nanos(value)
 
         # Assert
@@ -263,8 +253,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_dt_to_unix_millis_with_various_values_returns_expected_long(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = dt_to_unix_millis(value)
 
         # Assert
@@ -274,22 +263,18 @@ class TestDatetimeFunctions:
         # Arrange
         dt = datetime(2013, 1, 1, 1, 0)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert is_datetime_utc(dt) is False
 
     def test_is_datetime_utc_given_utc_datetime_returns_true(self):
         # Arrange
         dt = datetime(2013, 1, 1, 1, 0, tzinfo=pytz.utc)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert is_datetime_utc(dt) is True
 
     def test_is_tz_awareness_given_unrecognized_type_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             is_tz_aware("hello")
 
@@ -304,8 +289,7 @@ class TestDatetimeFunctions:
         time_object3.set_index("timestamp")
         time_object3.index = pd.to_datetime(time_object3.index)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert is_tz_aware(time_object1) is True
         assert is_tz_aware(time_object2) is True
         assert is_tz_aware(time_object3) is True
@@ -318,8 +302,7 @@ class TestDatetimeFunctions:
         time_object1 = datetime(1970, 1, 1, 0, 0, 0, 0)
         time_object2 = pd.Timestamp(datetime(1970, 1, 1, 0, 0, 0, 0))
 
-        # Act
-        # Assert
+        # Act, Assert
         assert is_tz_aware(time_object1) is False
         assert is_tz_aware(time_object2) is False
         assert is_tz_naive(time_object1) is True
@@ -505,8 +488,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_iso8601_to_unix_millis_given_iso8601_datetime_string(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = iso8601_to_unix_millis(value)
 
         # Assert
@@ -525,8 +507,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_iso8601_to_unix_micros_given_iso8601_datetime_string(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = iso8601_to_unix_micros(value)
 
         # Assert
@@ -551,8 +532,7 @@ class TestDatetimeFunctions:
         ],
     )
     def test_iso8601_to_unix_nanos_given_iso8601_datetime_string(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = iso8601_to_unix_nanos(value)
 
         # Assert

@@ -147,8 +147,7 @@ class TestLiveExecutionEngine:
         self.exec_engine.dispose()
 
     def test_start_when_loop_not_running_logs(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.exec_engine.start()
 
         # Assert
@@ -277,8 +276,7 @@ class TestLiveExecutionEngine:
 
     @pytest.mark.asyncio
     async def test_kill_when_not_running_with_messages_on_queue(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.exec_engine.kill()
 
         # Assert

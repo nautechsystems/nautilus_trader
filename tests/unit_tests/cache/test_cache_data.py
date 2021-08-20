@@ -44,8 +44,7 @@ class TestCache:
         self.cache = TestStubs.cache()
 
     def test_reset_an_empty_cache(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.cache.reset()
 
         # Assert
@@ -55,123 +54,83 @@ class TestCache:
         assert self.cache.bars(TestStubs.bartype_gbpusd_1sec_mid()) == []
 
     def test_instrument_ids_when_no_instruments_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.instrument_ids() == []
 
     def test_instruments_when_no_instruments_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.instruments() == []
 
     def test_tickers_for_unknown_instrument_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.tickers(AUDUSD_SIM.id) == []
 
     def test_quote_ticks_for_unknown_instrument_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.quote_ticks(AUDUSD_SIM.id) == []
 
     def test_trade_ticks_for_unknown_instrument_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.trade_ticks(AUDUSD_SIM.id) == []
 
     def test_bars_for_unknown_bar_type_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.bars(TestStubs.bartype_gbpusd_1sec_mid()) == []
 
     def test_instrument_when_no_instruments_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.instrument(AUDUSD_SIM.id) is None
 
     def test_order_book_for_unknown_instrument_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.order_book(AUDUSD_SIM.id) is None
 
     def test_ticker_when_no_tickers_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.ticker(AUDUSD_SIM.id) is None
 
     def test_quote_tick_when_no_ticks_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.quote_tick(AUDUSD_SIM.id) is None
 
     def test_trade_tick_when_no_ticks_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.trade_tick(AUDUSD_SIM.id) is None
 
     def test_bar_when_no_bars_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.bar(TestStubs.bartype_gbpusd_1sec_mid()) is None
 
     def test_ticker_count_for_unknown_instrument_returns_zero(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.ticker_count(AUDUSD_SIM.id) == 0
 
     def test_quote_tick_count_for_unknown_instrument_returns_zero(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.quote_tick_count(AUDUSD_SIM.id) == 0
 
     def test_trade_tick_count_for_unknown_instrument_returns_zero(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.trade_tick_count(AUDUSD_SIM.id) == 0
 
     def test_has_order_book_for_unknown_instrument_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert not self.cache.has_order_book(AUDUSD_SIM.id)
 
     def test_has_tickers_for_unknown_instrument_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert not self.cache.has_tickers(AUDUSD_SIM.id)
 
     def test_has_quote_ticks_for_unknown_instrument_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert not self.cache.has_quote_ticks(AUDUSD_SIM.id)
 
     def test_has_trade_ticks_for_unknown_instrument_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert not self.cache.has_trade_ticks(AUDUSD_SIM.id)
 
     def test_has_bars_for_unknown_bar_type_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert not self.cache.has_bars(TestStubs.bartype_gbpusd_1sec_mid())
 
     def test_instrument_ids_when_one_instrument_returns_expected_list(self):
@@ -322,8 +281,7 @@ class TestCache:
         assert result == [bar]
 
     def test_instrument_when_no_instrument_returns_none(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.cache.instrument(AUDUSD_SIM.id)
 
         # Assert
@@ -537,8 +495,7 @@ class TestCache:
         assert result == Decimal("0.009025266685348968705339031887")
 
     def test_get_xrate_with_no_conversion_returns_one(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.cache.get_xrate(SIM, AUD, AUD)
 
         # Assert

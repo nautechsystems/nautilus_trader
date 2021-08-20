@@ -23,9 +23,7 @@ from nautilus_trader.common.c_enums.component_trigger import ComponentTriggerPar
 
 class TestComponentState:
     def test_component_state_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             ComponentStateParser.to_str_py(0)
 
@@ -48,8 +46,7 @@ class TestComponentState:
         ],
     )
     def test_component_state_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = ComponentStateParser.to_str_py(enum)
 
         # Assert
@@ -71,8 +68,7 @@ class TestComponentState:
         ],
     )
     def test_component_state_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = ComponentStateParser.from_str_py(string)
 
         # Assert
@@ -81,9 +77,7 @@ class TestComponentState:
 
 class TestComponentTrigger:
     def test_component_trigger_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             ComponentTriggerParser.to_str_py(0)
 
@@ -104,8 +98,7 @@ class TestComponentTrigger:
         ],
     )
     def test_component_trigger_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = ComponentTriggerParser.to_str_py(enum)
 
         # Assert
@@ -125,8 +118,7 @@ class TestComponentTrigger:
         ],
     )
     def test_component_trigger_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = ComponentTriggerParser.from_str_py(string)
 
         # Assert

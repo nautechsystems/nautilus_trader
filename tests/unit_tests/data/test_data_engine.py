@@ -128,38 +128,27 @@ class TestDataEngine:
         self.data_engine.process(XBTUSD_BITMEX)
 
     def test_registered_venues(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.data_engine.registered_clients() == []
 
     def test_subscribed_instruments_when_nothing_subscribed_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.data_engine.subscribed_instruments() == []
 
     def test_subscribed_quote_ticks_when_nothing_subscribed_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.data_engine.subscribed_quote_ticks() == []
 
     def test_subscribed_trade_ticks_when_nothing_subscribed_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.data_engine.subscribed_trade_ticks() == []
 
     def test_subscribed_bars_when_nothing_subscribed_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.data_engine.subscribed_bars() == []
 
     def test_register_client_successfully_adds_client(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.data_engine.register_client(self.binance_client)
 
         # Assert
@@ -176,8 +165,7 @@ class TestDataEngine:
         assert BINANCE.value not in self.data_engine.registered_clients()
 
     def test_reset(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.data_engine.reset()
 
         # Assert
@@ -274,8 +262,7 @@ class TestDataEngine:
         # Arrange
         self.data_engine.dispose()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(InvalidStateTrigger):
             self.data_engine.reset()
 
@@ -283,8 +270,7 @@ class TestDataEngine:
         # Arrange
         self.data_engine.dispose()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(InvalidStateTrigger):
             self.data_engine.dispose()
 
@@ -1134,6 +1120,7 @@ class TestDataEngine:
             ts_init=self.clock.timestamp_ns(),
         )
 
+        # Act
         self.data_engine.execute(subscribe)
 
         # Assert

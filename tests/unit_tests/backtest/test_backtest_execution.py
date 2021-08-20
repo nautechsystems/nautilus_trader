@@ -117,13 +117,11 @@ class TestBacktestExecClientTests:
     def test_is_connected_when_not_connected_returns_false(self):
         # Arrange
 
-        # Act
-        # Assert
+        # Act, Assert
         assert not self.exec_client.is_connected
 
     def test_connect(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.exec_client.start()
 
         # Assert
@@ -140,16 +138,14 @@ class TestBacktestExecClientTests:
         assert not self.exec_client.is_connected
 
     def test_reset(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.exec_client.reset()
 
         # Assert
         assert not self.exec_client.is_connected
 
     def test_dispose(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.exec_client.dispose()
 
         # Assert

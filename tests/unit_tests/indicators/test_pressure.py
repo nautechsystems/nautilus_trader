@@ -28,28 +28,20 @@ class TestPressure:
         self.pressure = Pressure(10, MovingAverageType.EXPONENTIAL)
 
     def test_name_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.pressure.name == "Pressure"
 
     def test_str_repr_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.pressure) == "Pressure(10, EXPONENTIAL, 0.0)"
         assert repr(self.pressure) == "Pressure(10, EXPONENTIAL, 0.0)"
 
     def test_period_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.pressure.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.pressure.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
@@ -57,8 +49,7 @@ class TestPressure:
         for _i in range(10):
             self.pressure.update_raw(1.00000, 1.00000, 1.00000, 1000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.pressure.initialized is True
 
     def test_handle_bar_updates_indicator(self):
@@ -78,8 +69,7 @@ class TestPressure:
         # Arrange
         self.pressure.update_raw(1.00000, 1.00000, 1.00000, 1000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.pressure.value == 0
 
     def test_values_with_higher_inputs_returns_expected_value(self):
@@ -95,8 +85,7 @@ class TestPressure:
         self.pressure.update_raw(1.00090, 1.00000, 1.00090, 1000)
         self.pressure.update_raw(1.00100, 1.00000, 1.00100, 1000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.pressure.value == 1.6027263066543116
         assert self.pressure.value_cumulative == 17.427420446202998
 
@@ -113,8 +102,7 @@ class TestPressure:
         self.pressure.update_raw(1.00000, 0.99910, 0.99910, 1000)
         self.pressure.update_raw(1.00000, 0.99900, 0.99900, 1000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.pressure.value == -1.602726306654309
         assert self.pressure.value_cumulative == -17.427420446203406
 

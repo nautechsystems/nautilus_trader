@@ -42,8 +42,7 @@ class TestBarSpecification:
         bar_spec2 = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_spec3 = BarSpecification(1, BarAggregation.MINUTE, PriceType.ASK)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert bar_spec1 == bar_spec1
         assert bar_spec1 == bar_spec2
         assert bar_spec1 != bar_spec3
@@ -52,8 +51,7 @@ class TestBarSpecification:
         # Arrange
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert isinstance(hash(bar_spec), int)
         assert str(bar_spec) == "1-MINUTE-BID"
         assert repr(bar_spec) == "BarSpecification(1-MINUTE-BID)"
@@ -63,9 +61,7 @@ class TestBarSpecification:
         ["", "1", "-1-TICK-MID", "1-TICK_MID"],
     )
     def test_from_str_given_various_invalid_strings_raises_value_error(self, value):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             BarSpecification.from_str(value)
 
@@ -90,8 +86,7 @@ class TestBarSpecification:
     def test_from_str_given_various_valid_string_returns_expected_specification(
         self, value, expected
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         spec = BarSpecification.from_str(value)
 
         # Assert
@@ -133,9 +128,7 @@ class TestBarSpecification:
         is_threshold_aggregated,
         is_information_aggregated,
     ):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert is_time_aggregated == bar_spec.is_time_aggregated()
         assert is_threshold_aggregated == bar_spec.is_threshold_aggregated()
         assert is_information_aggregated == bar_spec.is_information_aggregated()
@@ -151,8 +144,7 @@ class TestBarType:
         bar_type2 = BarType(instrument_id1, bar_spec)
         bar_type3 = BarType(instrument_id2, bar_spec)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert bar_type1 == bar_type1
         assert bar_type1 == bar_type2
         assert bar_type1 != bar_type3
@@ -163,8 +155,7 @@ class TestBarType:
         bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
         bar_type = BarType(instrument_id, bar_spec)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert isinstance(hash(bar_type), int)
         assert str(bar_type) == "AUD/USD.SIM-1-MINUTE-BID"
         assert repr(bar_type) == "BarType(AUD/USD.SIM-1-MINUTE-BID, internal_aggregation=True)"
@@ -174,9 +165,7 @@ class TestBarType:
         ["", "AUD/USD", "AUD/USD.IDEALPRO-1-MILLISECOND-BID"],
     )
     def test_from_str_given_various_invalid_strings_raises_value_error(self, value):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             BarType.from_str(value)
 
@@ -216,8 +205,7 @@ class TestBarType:
     def test_from_str_given_various_valid_string_returns_expected_specification(
         self, value, expected
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         bar_type = BarType.from_str(value, internal_aggregation=True)
 
         # Assert
@@ -226,9 +214,7 @@ class TestBarType:
 
 class TestBar:
     def test_check_when_high_below_low_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             Bar(
                 AUDUSD_1_MIN_BID,
@@ -243,9 +229,7 @@ class TestBar:
             )
 
     def test_check_when_high_below_close_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             Bar(
                 AUDUSD_1_MIN_BID,
@@ -260,9 +244,7 @@ class TestBar:
             )
 
     def test_check_when_low_above_close_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             Bar(
                 AUDUSD_1_MIN_BID,
@@ -300,8 +282,7 @@ class TestBar:
             0,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert bar1 == bar1
         assert bar1 != bar2
 
@@ -318,8 +299,7 @@ class TestBar:
             0,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert isinstance(hash(bar), int)
         assert str(bar) == "AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0"
         assert repr(bar) == "Bar(AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0)"

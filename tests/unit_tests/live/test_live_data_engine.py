@@ -84,8 +84,7 @@ class TestLiveDataEngine:
         self.engine.dispose()
 
     def test_start_when_loop_not_running_logs(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.engine.start()
 
         # Assert
@@ -224,8 +223,7 @@ class TestLiveDataEngine:
         assert self.engine.data_count == 0
 
     def test_get_event_loop_returns_expected_loop(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         loop = self.engine.get_event_loop()
 
         # Assert
@@ -233,8 +231,7 @@ class TestLiveDataEngine:
 
     @pytest.mark.asyncio
     async def test_start(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.engine.start()
         await asyncio.sleep(0.1)
 
@@ -246,8 +243,7 @@ class TestLiveDataEngine:
 
     @pytest.mark.asyncio
     async def test_kill_when_running_and_no_messages_on_queues(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.engine.start()
         await asyncio.sleep(0)
         self.engine.kill()
@@ -257,8 +253,7 @@ class TestLiveDataEngine:
 
     @pytest.mark.asyncio
     async def test_kill_when_not_running_with_messages_on_queue(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.engine.kill()
 
         # Assert

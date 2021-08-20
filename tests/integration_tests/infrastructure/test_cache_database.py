@@ -519,8 +519,7 @@ class TestRedisCacheDatabase:
         assert self.database.load_accounts() == {account.id: account}
 
     def test_load_orders_cache_when_no_orders(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.database.load_orders()
 
         # Assert
@@ -543,8 +542,7 @@ class TestRedisCacheDatabase:
         assert result == {order.client_order_id: order}
 
     def test_load_positions_cache_when_no_positions(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.database.load_positions()
 
         # Assert
@@ -585,8 +583,7 @@ class TestRedisCacheDatabase:
         assert result == {position.id: position}
 
     def test_delete_strategy(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.database.delete_strategy(self.strategy.id)
         result = self.database.load_strategy(self.strategy.id)
 

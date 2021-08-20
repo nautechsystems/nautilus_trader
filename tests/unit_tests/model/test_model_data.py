@@ -22,8 +22,7 @@ from nautilus_trader.trading.filters import NewsImpact
 
 class TestDataType:
     def test_data_type_instantiation(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         data_type = DataType(str, {"type": "NEWS_WIRE"})
 
         # Assert
@@ -33,8 +32,7 @@ class TestDataType:
         assert repr(data_type) == "DataType(type=str, metadata={'type': 'NEWS_WIRE'})"
 
     def test_data_equality_and_hash(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         data_type1 = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
         data_type2 = DataType(str, {"type": "NEWS_WIRE", "topic": "Flood"})
         data_type3 = DataType(int, {"type": "FED_DATA", "topic": "NonFarmPayroll"})
@@ -47,8 +45,7 @@ class TestDataType:
         assert isinstance(hash(data_type1), int)
 
     def test_data_type_as_key_in_dict(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         data_type = DataType(str, {"type": "NEWS_WIRE", "topic": "Earthquake"})
 
         hash_map = {data_type: []}
@@ -57,8 +54,7 @@ class TestDataType:
         assert data_type in hash_map
 
     def test_data_instantiation(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         data_type = DataType(NewsEvent, {"publisher": "NEWS_WIRE"})
         data = NewsEvent(
             impact=NewsImpact.HIGH,

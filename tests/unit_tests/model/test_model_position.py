@@ -62,8 +62,7 @@ class TestPosition:
         )
 
     def test_side_from_order_side_given_invalid_value_returns_none(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         with pytest.raises(ValueError):
             Position.side_from_order_side(0)
 
@@ -77,8 +76,7 @@ class TestPosition:
     def test_side_from_order_side_given_valid_sides_returns_expected_side(
         self, order_side, expected
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         position_side = Position.side_from_order_side(order_side)
 
         # Assert
@@ -271,8 +269,7 @@ class TestPosition:
 
         position = Position(instrument=AUDUSD_SIM, fill=fill)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert position.quantity == Quantity.from_int(50000)
         assert position.peak_qty == Quantity.from_int(50000)
         assert position.side == PositionSide.LONG

@@ -61,8 +61,7 @@ class TestBacktestLoaders:
 )
 class TestParquetTickDataLoaders:
     def test_btcusdt_trade_ticks_from_parquet_loader_return_expected_row(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         trade_ticks = TestDataProvider.parquet_btcusdt_trades()
 
         # Assert
@@ -74,8 +73,7 @@ class TestParquetTickDataLoaders:
         assert trade_ticks.iloc[0]["trade_id"] == 553287559
 
     def test_btcusdt_quote_ticks_from_parquet_loader_return_expected_row(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         quote_ticks = TestDataProvider.parquet_btcusdt_quotes()
 
         # Assert

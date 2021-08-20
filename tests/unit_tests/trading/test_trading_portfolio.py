@@ -71,8 +71,7 @@ class TestPortfolioFacade:
         # Arrange
         portfolio = PortfolioFacade()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             portfolio.account(SIM)
 
@@ -80,8 +79,7 @@ class TestPortfolioFacade:
         # Arrange
         portfolio = PortfolioFacade()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             portfolio.margins_init(SIM)
 
@@ -89,8 +87,7 @@ class TestPortfolioFacade:
         # Arrange
         portfolio = PortfolioFacade()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             portfolio.margins_maint(SIM)
 
@@ -98,8 +95,7 @@ class TestPortfolioFacade:
         # Arrange
         portfolio = PortfolioFacade()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             portfolio.unrealized_pnls(SIM)
 
@@ -107,8 +103,7 @@ class TestPortfolioFacade:
         # Arrange
         portfolio = PortfolioFacade()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             portfolio.unrealized_pnl(BTCUSDT_BINANCE.id)
 
@@ -116,8 +111,7 @@ class TestPortfolioFacade:
         # Arrange
         portfolio = PortfolioFacade()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             portfolio.net_exposure(AUDUSD_SIM.id)
 
@@ -125,8 +119,7 @@ class TestPortfolioFacade:
         # Arrange
         portfolio = PortfolioFacade()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             portfolio.net_exposures(BITMEX)
 
@@ -134,8 +127,7 @@ class TestPortfolioFacade:
         # Arrange
         portfolio = PortfolioFacade()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             portfolio.net_position(GBPUSD_SIM.id)
 
@@ -143,8 +135,7 @@ class TestPortfolioFacade:
         # Arrange
         portfolio = PortfolioFacade()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             portfolio.is_net_long(GBPUSD_SIM.id)
 
@@ -152,8 +143,7 @@ class TestPortfolioFacade:
         # Arrange
         portfolio = PortfolioFacade()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             portfolio.is_net_short(GBPUSD_SIM.id)
 
@@ -161,8 +151,7 @@ class TestPortfolioFacade:
         # Arrange
         portfolio = PortfolioFacade()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             portfolio.is_flat(GBPUSD_SIM.id)
 
@@ -170,8 +159,7 @@ class TestPortfolioFacade:
         # Arrange
         portfolio = PortfolioFacade()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             portfolio.is_completely_flat()
 
@@ -229,9 +217,7 @@ class TestPortfolio:
         self.cache.add_instrument(BETTING_INSTRUMENT)
 
     def test_account_when_no_account_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.portfolio.account(SIM) is None
 
     def test_account_when_account_returns_the_account_facade(self):
@@ -264,63 +250,43 @@ class TestPortfolio:
         assert result.id.issuer == "BINANCE"
 
     def test_net_position_when_no_positions_returns_zero(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(0)
 
     def test_is_net_long_when_no_positions_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.portfolio.is_net_long(AUDUSD_SIM.id) is False
 
     def test_is_net_short_when_no_positions_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.portfolio.is_net_short(AUDUSD_SIM.id) is False
 
     def test_is_flat_when_no_positions_returns_true(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.portfolio.is_flat(AUDUSD_SIM.id) is True
 
     def test_is_completely_flat_when_no_positions_returns_true(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.portfolio.is_flat(AUDUSD_SIM.id) is True
 
     def test_unrealized_pnl_for_instrument_when_no_instrument_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.portfolio.unrealized_pnl(USDJPY_SIM.id) is None
 
     def test_unrealized_pnl_for_venue_when_no_account_returns_empty_dict(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.portfolio.unrealized_pnls(SIM) == {}
 
     def test_margins_init_when_no_account_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.portfolio.margins_init(SIM) is None
 
     def test_margins_maint_when_no_account_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.portfolio.margins_maint(SIM) is None
 
     def test_open_value_when_no_account_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.portfolio.net_exposures(SIM) is None
 
     def test_update_tick(self):

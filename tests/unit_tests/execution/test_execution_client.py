@@ -167,8 +167,7 @@ class TestExecutionClient:
             self.client.submit_bracket_order(command)
 
     def test_update_order_raises_not_implemented_error(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         command = UpdateOrder(
             self.trader_id,
             StrategyId("SCALPER-001"),
@@ -187,8 +186,7 @@ class TestExecutionClient:
             self.client.update_order(command)
 
     def test_cancel_order_raises_not_implemented_error(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         command = CancelOrder(
             self.trader_id,
             StrategyId("SCALPER-001"),

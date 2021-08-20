@@ -28,34 +28,25 @@ class TestAdaptiveMovingAverage:
         self.ama = AdaptiveMovingAverage(10, 2, 30)
 
     def test_name_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.ama.name == "AdaptiveMovingAverage"
 
     def test_str_repr_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.ama) == "AdaptiveMovingAverage(10, 2, 30)"
         assert repr(self.ama) == "AdaptiveMovingAverage(10, 2, 30)"
 
     def test_period(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.ama.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.ama.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
         # Arrange
-        # Arrange
-        # Act
+        # Arrange, Act
         for _i in range(10):
             self.ama.update_raw(1.00000)
 
@@ -105,8 +96,7 @@ class TestAdaptiveMovingAverage:
         # Arrange
         self.ama.update_raw(1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.ama.value == 1.0
 
     def test_value_with_three_inputs(self):
@@ -115,8 +105,7 @@ class TestAdaptiveMovingAverage:
         self.ama.update_raw(2.00000)
         self.ama.update_raw(3.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.ama.value == 2.135802469135802
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):

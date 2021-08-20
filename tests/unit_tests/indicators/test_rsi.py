@@ -27,28 +27,20 @@ class TestRelativeStrengthIndex:
         self.rsi = RelativeStrengthIndex(10)
 
     def test_name_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.rsi.name == "RelativeStrengthIndex"
 
     def test_str_repr_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.rsi) == "RelativeStrengthIndex(10, EXPONENTIAL)"
         assert repr(self.rsi) == "RelativeStrengthIndex(10, EXPONENTIAL)"
 
     def test_period_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.rsi.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.rsi.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
@@ -64,8 +56,7 @@ class TestRelativeStrengthIndex:
         self.rsi.update_raw(9.00000)
         self.rsi.update_raw(10.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.rsi.initialized is True
 
     def test_handle_bar_updates_indicator(self):
@@ -85,8 +76,7 @@ class TestRelativeStrengthIndex:
         # Arrange
         self.rsi.update_raw(1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.rsi.value == 1
 
     def test_value_with_all_higher_inputs_returns_expected_value(self):
@@ -96,8 +86,7 @@ class TestRelativeStrengthIndex:
         self.rsi.update_raw(3.00000)
         self.rsi.update_raw(4.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.rsi.value == 1
 
     def test_value_with_all_lower_inputs_returns_expected_value(self):
@@ -107,8 +96,7 @@ class TestRelativeStrengthIndex:
         self.rsi.update_raw(1.00000)
         self.rsi.update_raw(0.50000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.rsi.value == 0
 
     def test_value_with_various_inputs_returns_expected_value(self):
@@ -120,8 +108,7 @@ class TestRelativeStrengthIndex:
         self.rsi.update_raw(7.00000)
         self.rsi.update_raw(6.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.rsi.value == 0.6837363325825265
 
     def test_value_at_returns_expected_value(self):
@@ -135,8 +122,7 @@ class TestRelativeStrengthIndex:
         self.rsi.update_raw(6.00000)
         self.rsi.update_raw(7.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.rsi.value == 0.7615344667662725
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):

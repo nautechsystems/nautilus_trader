@@ -27,29 +27,24 @@ class TestRateOfChange:
         self.roc = RateOfChange(3)
 
     def test_name_returns_expected_string(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert self.roc.name == "RateOfChange"
 
     def test_str_repr_returns_expected_string(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert str(self.roc) == "RateOfChange(3)"
         assert repr(self.roc) == "RateOfChange(3)"
 
     def test_period(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert self.roc.period == 3
 
     def test_initialized_without_inputs_returns_false(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert self.roc.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         for _i in range(3):
             self.roc.update_raw(1.00000)
 
@@ -73,8 +68,7 @@ class TestRateOfChange:
         # Arrange
         self.roc.update_raw(1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.roc.value == 0
 
     def test_value_with_efficient_higher_inputs(self):
@@ -97,8 +91,7 @@ class TestRateOfChange:
         self.roc.update_raw(0.99990)
         self.roc.update_raw(1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.roc.value == 0.0
 
     def test_value_with_half_oscillating_inputs_returns_zero(self):
@@ -109,8 +102,7 @@ class TestRateOfChange:
         self.roc.update_raw(1.00030)
         self.roc.update_raw(1.00020)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.roc.value == 9.9990000999889e-05
 
     def test_value_with_noisy_inputs(self):
@@ -123,8 +115,7 @@ class TestRateOfChange:
         self.roc.update_raw(1.00005)
         self.roc.update_raw(1.00015)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.roc.value == 2.9996400432144683e-05
 
     def test_log_returns_value_with_noisy_inputs(self):
@@ -139,8 +130,7 @@ class TestRateOfChange:
         roc.update_raw(1.00005)
         roc.update_raw(1.00015)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert roc.value == 2.999595054919663e-05
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):

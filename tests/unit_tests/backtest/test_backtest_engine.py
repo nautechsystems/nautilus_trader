@@ -391,8 +391,7 @@ class TestBacktestEngine:
         self.engine.dispose()
 
     def test_initialization(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.engine.run(strategies=[TradingStrategy("000")])
         # Assert
         assert len(self.engine.trader.strategy_states()) == 1
@@ -408,16 +407,14 @@ class TestBacktestEngine:
         assert self.engine.iteration == 0  # No exceptions raised
 
     def test_run_empty_strategy(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.engine.run()
 
         # Assert
         assert self.engine.iteration == 7999
 
     def test_change_fill_model(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.engine.change_fill_model(Venue("SIM"), FillModel())
 
         # Assert
