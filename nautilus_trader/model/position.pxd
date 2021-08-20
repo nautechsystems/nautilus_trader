@@ -48,8 +48,7 @@ cdef class Position:
     cdef readonly InstrumentId instrument_id
     """The position instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly PositionId id
-    """The positions ID. This may be assigned at the trading venue, or can be system
-        generated depending on `Order Management System (OMS)` settings.\n\n\n:returns: `PositionId`"""
+    """The position ID.\n\n:returns: `PositionId`"""
     cdef readonly AccountId account_id
     """The account ID associated with the position.\n\n:returns: `AccountId`"""
     cdef readonly ClientOrderId from_order
