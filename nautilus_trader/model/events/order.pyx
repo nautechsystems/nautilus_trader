@@ -1493,7 +1493,6 @@ cdef class OrderUpdateRejected(OrderEvent):
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        str response_to not None,
         str reason not None,
         UUID event_id not None,
         int64_t ts_event,
@@ -1516,8 +1515,6 @@ cdef class OrderUpdateRejected(OrderEvent):
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID.
-        response_to : str
-            The order update rejected response.
         reason : str
             The order update rejected reason.
         event_id : UUID
@@ -1530,12 +1527,9 @@ cdef class OrderUpdateRejected(OrderEvent):
         Raises
         ------
         ValueError
-            If response_to is not a valid string.
-        ValueError
             If reason is not a valid string.
 
         """
-        Condition.valid_string(response_to, "response_to")
         Condition.valid_string(reason, "reason")
         super().__init__(
             trader_id,
@@ -1549,7 +1543,6 @@ cdef class OrderUpdateRejected(OrderEvent):
             ts_init,
         )
 
-        self.response_to = response_to
         self.reason = reason
 
     def __str__(self) -> str:
@@ -1558,7 +1551,6 @@ cdef class OrderUpdateRejected(OrderEvent):
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"response_to={self.response_to}, "
                 f"reason={self.reason}, "
                 f"ts_event={self.ts_event})")
 
@@ -1570,7 +1562,6 @@ cdef class OrderUpdateRejected(OrderEvent):
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"response_to={self.response_to}, "
                 f"reason={self.reason}, "
                 f"event_id={self.id}, "
                 f"ts_event={self.ts_event}, "
@@ -1586,7 +1577,6 @@ cdef class OrderUpdateRejected(OrderEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
-            response_to=values["response_to"],
             reason=values["reason"],
             event_id=UUID.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
@@ -1604,7 +1594,6 @@ cdef class OrderUpdateRejected(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "response_to": obj.response_to,
             "reason": obj.reason,
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
@@ -1655,7 +1644,6 @@ cdef class OrderCancelRejected(OrderEvent):
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        str response_to not None,
         str reason not None,
         UUID event_id not None,
         int64_t ts_event,
@@ -1678,8 +1666,6 @@ cdef class OrderCancelRejected(OrderEvent):
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID.
-        response_to : str
-            The order cancel rejected response.
         reason : str
             The order cancel rejected reason.
         event_id : UUID
@@ -1692,12 +1678,9 @@ cdef class OrderCancelRejected(OrderEvent):
         Raises
         ------
         ValueError
-            If response_to is not a valid string.
-        ValueError
             If reason is not a valid string.
 
         """
-        Condition.valid_string(response_to, "response_to")
         Condition.valid_string(reason, "reason")
         super().__init__(
             trader_id,
@@ -1711,7 +1694,6 @@ cdef class OrderCancelRejected(OrderEvent):
             ts_init,
         )
 
-        self.response_to = response_to
         self.reason = reason
 
     def __str__(self) -> str:
@@ -1720,7 +1702,6 @@ cdef class OrderCancelRejected(OrderEvent):
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"response_to={self.response_to}, "
                 f"reason={self.reason}, "
                 f"ts_event={self.ts_event})")
 
@@ -1732,7 +1713,6 @@ cdef class OrderCancelRejected(OrderEvent):
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"response_to={self.response_to}, "
                 f"reason={self.reason}, "
                 f"event_id={self.id}, "
                 f"ts_event={self.ts_event}, "
@@ -1748,7 +1728,6 @@ cdef class OrderCancelRejected(OrderEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
-            response_to=values["response_to"],
             reason=values["reason"],
             event_id=UUID.from_str_c(values["event_id"]),
             ts_event=values["ts_event"],
@@ -1766,7 +1745,6 @@ cdef class OrderCancelRejected(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "response_to": obj.response_to,
             "reason": obj.reason,
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,

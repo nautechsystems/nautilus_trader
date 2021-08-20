@@ -152,8 +152,6 @@ cdef class OrderPendingCancel(OrderEvent):
 
 
 cdef class OrderUpdateRejected(OrderEvent):
-    cdef readonly str response_to
-    """The update rejection response to.\n\n:returns: `str`"""
     cdef readonly str reason
     """The reason for order update rejection.\n\n:returns: `str`"""
 
@@ -165,8 +163,6 @@ cdef class OrderUpdateRejected(OrderEvent):
 
 
 cdef class OrderCancelRejected(OrderEvent):
-    cdef readonly str response_to
-    """The cancel rejection response to.\n\n:returns: `str`"""
     cdef readonly str reason
     """The reason for order cancel rejection.\n\n:returns: `str`"""
 
