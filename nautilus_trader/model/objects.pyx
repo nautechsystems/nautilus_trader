@@ -13,22 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-"""
-Defines fundamental value objects for the trading domain.
-
-The `BaseDecimal` class is intended to be used as the base class for fundamental
-domain model value types. The specification of precision is more explicit and
-straight forward than providing a decimal.Context. The `BaseDecimal` type and its
-subclasses are also able to be used as operands for mathematical operations with
-`float` objects. Return values are floats if one of the operands is a float, else
-a decimal.Decimal.
-
-
-References
-----------
-https://docs.python.org/3.9/library/decimal.html
-
-"""
+"""Defines fundamental value objects for the trading domain."""
 
 import decimal
 
@@ -49,9 +34,19 @@ cdef class BaseDecimal:
     """
     The abstract base class for all domain value objects.
 
-    Represents a decimal number with a specified precision.
-
     This class should not be used directly, but through a concrete subclass.
+
+    Represents a decimal number with a specified precision and is intended to be
+    used as the base class for fundamental domain model value types. The
+    specification of precision is more explicit and straight forward than
+    providing a decimal.Context. The `BaseDecimal` type and its subclasses are
+    also able to be used as operands for mathematical operations with `float`
+    objects. Return values are floats if one of the operands is a float, else
+    a decimal.Decimal.
+
+    References
+    ----------
+    https://docs.python.org/3.9/library/decimal.html
     """
 
     def __init__(self, value, uint8_t precision):
@@ -523,7 +518,7 @@ cdef class Money(BaseDecimal):
         Raises
         ------
         ValueError
-            If the value is malformed.
+            If value is malformed.
 
         """
         Condition.not_none(value, "value")
