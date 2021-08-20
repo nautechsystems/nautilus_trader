@@ -17,6 +17,7 @@ import asyncio
 from datetime import datetime
 from typing import List
 
+import pandas as pd
 import pytz
 
 from nautilus_trader.accounting.factory import AccountFactory
@@ -24,6 +25,8 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.data.wrangling import BarDataWrangler
+from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.book_level import BookLevel
 from nautilus_trader.model.currencies import USD
@@ -670,3 +673,55 @@ class TestStubs:
             clock=TestStubs.clock(),
             logger=TestStubs.logger(),
         )
+
+    @staticmethod
+    def mock__reader_parser():
+        yield TradeTick(
+            instrument_id=TestStubs.audusd_id(),
+            price=Price.from_int(1),
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.BUY,
+            match_id="1",
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def json_bytes_parser(data):
+        yield data
+
+    @staticmethod
+    def bytes_betfair_parser(line, instrument_provider):
+        from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+
+        return BetfairTestStubs.betfair_reader()(instrument_provider)
+
+    @staticmethod
+    def csv_quoter_parser(data):
+        if data is None:
+            return
+        data.loc[:, "timestamp"] = pd.to_datetime(data["timestamp"])
+        wrangler = QuoteTickDataWrangler(
+            instrument=TestInstrumentProvider.default_fx_ccy(
+                "AUD/USD"
+            ),  # Normally we would properly parse this
+            data_quotes=data.set_index("timestamp"),
+        )
+        wrangler.pre_process(0)
+        yield from wrangler.build_ticks()
+
+    @staticmethod
+    def csv_bar_parser(data):
+        if data is None:
+            return
+        data.loc[:, "timestamp"] = pd.to_datetime(data["timestamp"])
+        wrangler = BarDataWrangler(
+            BarType(
+                instrument_id=TestInstrumentProvider.default_fx_ccy("AUD/USD").id,
+                spec=BarSpecification(),
+            ),
+            2,
+            2,
+            data=data.set_index("timestamp"),
+        )
+        yield from wrangler.build_bars_all()

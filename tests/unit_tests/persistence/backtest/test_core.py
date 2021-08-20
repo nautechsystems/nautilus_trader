@@ -81,9 +81,12 @@ class TestPersistenceCore:
 
     def test_raw_file_pickleable(self):
         # Arrange
-        fs = fsspec.implementations.local.LocalFileSystem()
         path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"  # total size = 151707
-        expected = RawFile(fs=fs, path=path, chunk_size=-1, compression="bz2")
+        expected = RawFile(
+            open_file=fsspec.open(path, compression="infer"),
+            reader=make_betfair_reader(),
+            catalog=self.catalog,
+        )
 
         # Act
         data = pickle.dumps(expected)
