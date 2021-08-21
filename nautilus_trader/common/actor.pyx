@@ -437,12 +437,10 @@ cdef class Actor(Component):
         Condition.not_none(clock, "clock")
         Condition.not_none(logger, "logger")
 
-        self.trader_id = trader_id
-
         clock.register_default_handler(self.handle_event)
         self._change_clock(clock)
         self._change_logger(logger)
-        self._change_msgbus(msgbus)
+        self._change_msgbus(msgbus)  # The trader ID is also assigned here
 
         self.msgbus = msgbus
         self.cache = cache

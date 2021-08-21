@@ -15,6 +15,7 @@
 
 import pyarrow as pa
 
+from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -133,6 +134,19 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_init": pa.int64(),
         },
         metadata={"type": "InstrumentStatusUpdate"},
+    ),
+    ComponentStateChanged: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "component_id": pa.dictionary(pa.int8(), pa.string()),
+            "component_type": pa.dictionary(pa.int8(), pa.string()),
+            "state": pa.dictionary(pa.int8(), pa.string()),
+            "config": pa.string(),
+            "event_id": pa.string(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+        metadata={"type": "ComponentStateChanged"},
     ),
     AccountState: pa.schema(
         {

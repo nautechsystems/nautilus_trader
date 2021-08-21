@@ -22,6 +22,8 @@ import pytz
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.c_enums.account_type import AccountType
@@ -54,6 +56,7 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
@@ -364,6 +367,19 @@ class TestStubs:
             time_in_force=time_in_force or TimeInForce.GTC,
         )
         return order
+
+    @staticmethod
+    def event_component_state_changed() -> ComponentStateChanged:
+        return ComponentStateChanged(
+            trader_id=TestStubs.trader_id(),
+            component_id=ComponentId("MyActor-001"),
+            component_type="MyActor",
+            state=ComponentState.RUNNING,
+            config={"do_something": True},
+            event_id=uuid4(),
+            ts_event=0,
+            ts_init=0,
+        )
 
     @staticmethod
     def event_cash_account_state(account_id=None) -> AccountState:

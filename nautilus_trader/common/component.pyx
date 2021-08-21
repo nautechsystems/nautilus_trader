@@ -15,17 +15,22 @@
 
 import warnings
 
+from libc.stdint cimport int64_t
+
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTriggerParser
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.events.system cimport ComponentStateChanged
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.model.identifiers cimport ComponentId
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
@@ -98,12 +103,20 @@ cdef class Component:
     The abstract base class for all system components.
 
     This class should not be used directly, but through a concrete subclass.
+
+    A component is not considered initialized until a message bus is wired up
+    (this either happens when one is passed to the constructor, or when
+    registered with a trader).
+
+    Thus if the component does not receive a message bus through the constructor,
+    then it will be in a `PRE_INITIALIZED` state, otherwise `INITIALIZED`.
     """
 
     def __init__(
         self,
         Clock clock not None,
         Logger logger not None,
+        TraderId trader_id=None,
         ComponentId component_id=None,
         str component_name=None,
         MessageBus msgbus=None,
@@ -118,6 +131,8 @@ cdef class Component:
             The clock for the component.
         logger : Logger
             The logger for the component.
+        component_id : ComponentId, optional
+            The trader ID associated with the component.
         component_id : ComponentId, optional
             The component ID. If None is passed then the identifier will be
             taken from `type(self).__name__`.
@@ -142,7 +157,9 @@ cdef class Component:
             component_name = component_id.value
         Condition.valid_string(component_name, "component_name")
 
+        self.trader_id = msgbus.trader_id if msgbus is not None else None
         self.id = component_id
+        self.type = type(self)
 
         self._msgbus = msgbus
         self._clock = clock
@@ -151,7 +168,7 @@ cdef class Component:
         self._fsm = ComponentFSMFactory.create()
         self._config = config
 
-        if msgbus is not None:
+        if self._msgbus is not None:
             self._initialize()
 
     def __eq__(self, Component other) -> bool:
@@ -286,16 +303,14 @@ cdef class Component:
 
     cdef void _change_msgbus(self, MessageBus msgbus) except *:
         Condition.not_none(msgbus, "msgbus")
+        Condition.none(self.trader_id, "self.trader_id")
         Condition.none(self._msgbus, "self._msgbus")
         # As an additional system wiring check: if a message bus is being added
-        # here then there should not be an existing message bus.
+        # here then there should not be an existing trader ID or message bus.
 
-        # The initializing flag is True if no previous message bus wired up
-        cdef bint initializing = self._msgbus is None
+        self.trader_id = msgbus.trader_id
         self._msgbus = msgbus
-
-        if initializing:
-            self._initialize()
+        self._initialize()
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -588,7 +603,26 @@ cdef class Component:
             raise  # Guards against component being put in an invalid state
 
         self._log.info(f"{self._fsm.state_string_c()}.{'..' if is_transitory else ''}")
-        # TODO(cs): Publish system event
 
         if action is not None:
             action()
+
+        if not self.is_initialized_c():
+            return  # Cannot publish event
+
+        cdef int64_t now = self._clock.timestamp_ns()
+        cdef ComponentStateChanged event = ComponentStateChanged(
+            trader_id=self.trader_id,
+            component_id=self.id,
+            component_type=self.type.__name__,
+            state=self._fsm.state,
+            config=self._config,
+            event_id=self._uuid_factory.generate(),
+            ts_event=now,
+            ts_init=now,
+        )
+
+        self._msgbus.publish(
+            topic=f"events.system.{self.id}",
+            msg=event,
+        )

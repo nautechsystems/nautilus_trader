@@ -1123,7 +1123,6 @@ class TestActor:
             InstrumentId.from_str("USD/JPY.SIM"),
         ]
 
-    # @pytest.mark.skip(reason="implement")
     def test_unsubscribe_instruments(self):
         # Arrange
         actor = MockActor()
