@@ -12,3 +12,27 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.common.c_enums.component_state cimport ComponentState
+from nautilus_trader.core.message cimport Event
+from nautilus_trader.model.identifiers cimport ComponentId
+from nautilus_trader.model.identifiers cimport TraderId
+
+
+cdef class ComponentStateChanged(Event):
+    cdef readonly TraderId trader_id
+    """The trader ID associated with the event.\n\n:returns: `TraderId`"""
+    cdef readonly ComponentId component_id
+    """The component ID associated with the event.\n\n:returns: `ComponentId`"""
+    cdef readonly str component_type
+    """The component type associated with the event.\n\n:returns: `str`"""
+    cdef readonly ComponentState state
+    """The component state.\n\n:returns: `ComponentState`"""
+    cdef readonly dict config
+    """The component configuration.\n\n:returns: `dict[str, Any]`"""
+
+    @staticmethod
+    cdef ComponentStateChanged from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(ComponentStateChanged obj)

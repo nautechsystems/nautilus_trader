@@ -6,6 +6,7 @@ None
 
 ## Enhancements
 - Wired up `Ticker` data type.
+- Added `ComponentStateChanged` event.
 - Added `degrade()` and `fault()` commands.
 - Added `on_degrade()` and `on_fault()` methods.
 - Added `ComponentState.PRE_INITIALIZED`.

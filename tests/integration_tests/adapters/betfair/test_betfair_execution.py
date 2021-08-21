@@ -396,7 +396,6 @@ class TestBetfairExecutionClient:
         assert len(self.messages) == 4
 
     @pytest.mark.asyncio
-    @pytest.mark.skip("Not implemented")
     async def test_order_stream_sub_image(self):
         # Arrange
         update = BetfairStreaming.ocm_SUB_IMAGE()

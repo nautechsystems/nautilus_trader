@@ -63,7 +63,7 @@ from tests.test_kit.stubs import TestStubs
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
-class TestEvents:
+class TestModelEvents:
     def test_account_state_event_to_from_dict_and_str_repr(self):
         # Arrange
         uuid = uuid4()

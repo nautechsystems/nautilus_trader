@@ -23,6 +23,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.model.identifiers cimport ComponentId
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
@@ -40,8 +41,12 @@ cdef class Component:
     cdef MessageBus _msgbus
     cdef dict _config
 
+    cdef readonly TraderId trader_id
+    """The trader ID associated with the component.\n\n:returns: `TraderId`"""
     cdef readonly ComponentId id
     """The components ID.\n\n:returns: `ComponentId`"""
+    cdef readonly type type
+    """The components type.\n\n:returns: `type`"""
 
     cdef ComponentState state_c(self) except *
     cdef str state_string_c(self)

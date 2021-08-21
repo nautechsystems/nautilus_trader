@@ -272,6 +272,8 @@ cdef class LoggerAdapter:
         Condition.valid_string(component_name, "component_name")
 
         self._logger = logger
+        self.trader_id = logger.trader_id
+        self.system_id = logger.system_id
         self.component = component_name
         self.is_bypassed = logger.is_bypassed
 

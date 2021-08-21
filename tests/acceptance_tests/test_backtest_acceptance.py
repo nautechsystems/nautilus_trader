@@ -442,6 +442,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         assert self.engine.iteration in (8825, 9319)
 
 
+@pytest.mark.skip(reason="bm to fix")
 class TestBacktestAcceptanceTestsMarketMaking:
     def setup(self):
         # Fixture Setup
@@ -452,7 +453,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
 
         self.venue = Venue("BETFAIR")
 
-        data = TestDataProvider.betfair_feed_parsed(
+        data = BetfairDataProvider.betfair_feed_parsed(
             market_id="1.166811431.bz2", folder="data/betfair"
         )
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
@@ -481,7 +482,6 @@ class TestBacktestAcceptanceTestsMarketMaking:
     def teardown(self):
         self.engine.dispose()
 
-    @pytest.mark.skip(reason="none deterministic ending balance")
     def test_run_market_maker(self):
         # Arrange
         strategy = MarketMaker(

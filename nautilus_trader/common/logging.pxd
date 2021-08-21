@@ -82,6 +82,10 @@ cdef class Logger:
 cdef class LoggerAdapter:
     cdef Logger _logger
 
+    cdef readonly TraderId trader_id
+    """The loggers trader ID.\n\n:returns: `TraderId`"""
+    cdef readonly UUID system_id
+    """The loggers system ID.\n\n:returns: `UUID`"""
     cdef readonly str component
     """The loggers component name.\n\n:returns: `str`"""
     cdef readonly bint is_bypassed
