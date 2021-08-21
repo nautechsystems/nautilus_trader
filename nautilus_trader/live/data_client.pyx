@@ -73,6 +73,8 @@ cdef class LiveDataClient(DataClient):
     """
     The abstract base class for all live data clients.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -123,6 +125,8 @@ cdef class LiveMarketDataClient(MarketDataClient):
     """
     The abstract base class for all live data clients.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

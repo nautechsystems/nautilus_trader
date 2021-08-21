@@ -55,7 +55,7 @@ cdef class CashAccount(Account):
         Raises
         ------
         ValueError
-            If event.account_type is not equal to AccountType.CASH.
+            If event.account_type is not equal to ``CASH``.
 
         """
         Condition.not_none(event, "event")

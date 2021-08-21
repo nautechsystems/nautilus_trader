@@ -64,6 +64,8 @@ cdef class Message:
     """
     The abstract base class for all messages.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -104,6 +106,8 @@ cdef class Command(Message):
     """
     The abstract base class for all commands.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -130,6 +134,8 @@ cdef class Document(Message):
     """
     The abstract base class for all documents.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -156,6 +162,8 @@ cdef class Event(Message):
     """
     The abstract base class for all events.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -187,6 +195,8 @@ cdef class Request(Message):
     """
     The abstract base class for all requests.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -218,6 +228,8 @@ cdef class Response(Message):
     """
     The abstract base class for all responses.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

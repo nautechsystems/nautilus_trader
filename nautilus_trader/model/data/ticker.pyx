@@ -25,6 +25,8 @@ cdef class Ticker(Data):
     """
     The base class for all tickers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

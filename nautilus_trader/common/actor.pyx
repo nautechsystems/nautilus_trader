@@ -71,6 +71,8 @@ cdef class Actor(Component):
     """
     The abstract base class for all actor components.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -605,8 +607,8 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument ID to subscribe to.
-        level : BookLevel
-            The order book level (L1, L2, L3).
+        level : BookLevel {``L1``, ``L2``, ``L3``}
+            The order book level.
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
 
@@ -652,8 +654,8 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument ID to subscribe to.
-        level : BookLevel
-            The order book level (L1, L2, L3).
+        level : BookLevel {``L1``, ``L2``, ``L3``}
+            The order book level.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         interval_ms : int
@@ -1352,7 +1354,7 @@ cdef class Actor(Component):
         """
         Handle the given instrument.
 
-        Calls `on_instrument` if state is `RUNNING`.
+        Calls `on_instrument` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1377,7 +1379,7 @@ cdef class Actor(Component):
         """
         Handle the given order book data.
 
-        Calls `on_order_book_delta` if state is `RUNNING`.
+        Calls `on_order_book_delta` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1402,7 +1404,7 @@ cdef class Actor(Component):
         """
         Handle the given order book snapshot.
 
-        Calls `on_order_book` if state is `RUNNING`.
+        Calls `on_order_book` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1427,7 +1429,7 @@ cdef class Actor(Component):
         """
         Handle the given ticker.
 
-        Calls `on_ticker` if state is `RUNNING`.
+        Calls `on_ticker` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1457,7 +1459,7 @@ cdef class Actor(Component):
         """
         Handle the given tick.
 
-        Calls `on_quote_tick` if state is `RUNNING`.
+        Calls `on_quote_tick` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1517,7 +1519,7 @@ cdef class Actor(Component):
         """
         Handle the given tick.
 
-        Calls `on_trade_tick` if state is `RUNNING`.
+        Calls `on_trade_tick` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1577,7 +1579,7 @@ cdef class Actor(Component):
         """
         Handle the given bar data.
 
-        Calls `on_bar` if state is `RUNNING`.
+        Calls `on_bar` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1641,7 +1643,7 @@ cdef class Actor(Component):
         """
         Handle the given venue status update.
 
-        Calls `on_venue_status_update` if state is `RUNNING`.
+        Calls `on_venue_status_update` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1666,7 +1668,7 @@ cdef class Actor(Component):
         """
         Handle the given instrument status update.
 
-        Calls `on_instrument_status_update` if state is `RUNNING`.
+        Calls `on_instrument_status_update` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1691,7 +1693,7 @@ cdef class Actor(Component):
         """
         Handle the given instrument close price update.
 
-        Calls `on_instrument_close_price` if .state is `RUNNING`.
+        Calls `on_instrument_close_price` if .state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1716,7 +1718,7 @@ cdef class Actor(Component):
         """
         Handle the given data.
 
-        Calls `on_data` if state is `RUNNING`.
+        Calls `on_data` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1741,7 +1743,7 @@ cdef class Actor(Component):
         """
         Handle the given event.
 
-        Calls `on_event` if state is `RUNNING`.
+        Calls `on_event` if state is ``RUNNING``.
 
         Parameters
         ----------

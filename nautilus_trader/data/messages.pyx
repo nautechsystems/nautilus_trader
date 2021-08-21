@@ -25,6 +25,8 @@ cdef class DataCommand(Command):
     """
     The abstract base class for all data commands.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

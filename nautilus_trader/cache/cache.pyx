@@ -1238,11 +1238,11 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If oms_type is HEDGING and position.id is already contained in the cache.
+            If oms_type is ``HEDGING`` and position.id is already contained in the cache.
         ValueError
-            If oms_type is HEDGING and position.id is already contained in the index_positions.
+            If oms_type is ``HEDGING`` and position.id is already contained in the index_positions.
         ValueError
-            If oms_type is HEDGING and position.id is already contained in the index_positions_open.
+            If oms_type is ``HEDGING`` and position.id is already contained in the index_positions_open.
 
         """
         Condition.not_none(position, "position")
@@ -1845,7 +1845,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         ValueError
-            If price_type is LAST.
+            If price_type is ``LAST``.
 
         """
         Condition.not_none(from_currency, "from_currency")

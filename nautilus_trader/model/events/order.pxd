@@ -206,7 +206,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly Money commission
     """The commission generated from the fill.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
-    """The liquidity side of the event (MAKER or TAKER).\n\n:returns: `LiquiditySide`"""
+    """The liquidity side of the event (``MAKER`` or ``TAKER``).\n\n:returns: `LiquiditySide`"""
     cdef readonly dict info
     """The additional fill information.\n\n:returns: `dict[str, object]`"""
 

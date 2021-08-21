@@ -51,7 +51,7 @@ cdef class PositionEvent(Event):
     cdef readonly PositionSide side
     """The position side.\n\n:returns: `PositionSide`"""
     cdef readonly object net_qty
-    """The net quantity (positive for LONG, negative for SHORT).\n\n:returns: `Decimal`"""
+    """The net quantity (positive for ``LONG``, negative for ``SHORT``).\n\n:returns: `Decimal`"""
     cdef readonly Quantity quantity
     """The position open quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity peak_qty

@@ -54,6 +54,7 @@ cdef class MarketOrder(Order):
     last-traded price is not necessarily the price at which a market order will
     be executed.
     """
+
     def __init__(
         self,
         TraderId trader_id not None,
@@ -80,7 +81,7 @@ cdef class MarketOrder(Order):
         client_order_id : ClientOrderId
             The client order ID.
         order_side : OrderSide
-            The order side (BUY or SELL).
+            The order side (``BUY`` or ``SELL``).
         quantity : Quantity
             The order quantity (> 0).
         init_id : UUID
@@ -93,7 +94,7 @@ cdef class MarketOrder(Order):
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is other than GTC, IOC or FOK.
+            If time_in_force is other than ``GTC``, ``IOC`` or ``FOK``.
 
         """
         Condition.positive(quantity, "quantity")
@@ -162,7 +163,7 @@ cdef class MarketOrder(Order):
         Raises
         ------
         ValueError
-            If init.type is not equal to MARKET.
+            If init.type is not equal to ``MARKET``.
 
         """
         Condition.not_none(init, "init")

@@ -119,10 +119,10 @@ cdef class BarSpecification:
         """
         Return a value indicating whether the aggregation method is time-driven.
 
-        - BarAggregation.SECOND
-        - BarAggregation.MINUTE
-        - BarAggregation.HOUR
-        - BarAggregation.DAY
+        - ``SECOND``
+        - ``MINUTE``
+        - ``HOUR``
+        - ``DAY``
 
         Returns
         -------
@@ -138,15 +138,15 @@ cdef class BarSpecification:
 
     cpdef bint is_threshold_aggregated(self) except *:
         """
-        Return a value indicating whether the aggregation method is
+        Return a value indicating whether the bar aggregation method is
         threshold-driven.
 
-        - BarAggregation.TICK
-        - BarAggregation.TICK_IMBALANCE
-        - BarAggregation.VOLUME
-        - BarAggregation.VOLUME_IMBALANCE
-        - BarAggregation.VALUE
-        - BarAggregation.VALUE_IMBALANCE
+        - ``TICK``
+        - ``TICK_IMBALANCE``
+        - ``VOLUME``
+        - ``VOLUME_IMBALANCE``
+        - ``VALUE``
+        - ``VALUE_IMBALANCE``
 
         Returns
         -------
@@ -167,9 +167,9 @@ cdef class BarSpecification:
         Return a value indicating whether the aggregation method is
         information-driven.
 
-        - BarAggregation.TICK_RUNS
-        - BarAggregation.VOLUME_RUNS
-        - BarAggregation.VALUE_RUNS
+        - ``TICK_RUNS``
+        - ``VOLUME_RUNS``
+        - ``VALUE_RUNS``
 
         Returns
         -------

@@ -258,7 +258,6 @@ class TradingNode:
         Returns
         -------
         bool
-            True if running, else False.
 
         """
         return self._is_running
@@ -271,7 +270,6 @@ class TradingNode:
         Returns
         -------
         bool
-            True if built, else False.
 
         """
         return self._is_built

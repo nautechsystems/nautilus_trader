@@ -56,8 +56,8 @@ cdef class OrderBook:
         ----------
         instrument_id : InstrumentId
             The instrument ID for the book.
-        level : BookLevel
-            The order book level (L1, L2, L3).
+        level : BookLevel {``L1``, ``L2``, ``L3``}
+            The order book level.
         price_precision : int
             The price precision for the book.
         size_precision : int
@@ -106,8 +106,8 @@ cdef class OrderBook:
         ----------
         instrument : Instrument
             The instrument for the book.
-        level : BookLevel
-            The order book level (L1, L2, L3).
+        level : BookLevel {``L1``, ``L2``, ``L3``}
+            The order book level.
 
         Returns
         -------

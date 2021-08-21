@@ -34,8 +34,6 @@ cdef class BaseDecimal:
     """
     The abstract base class for all domain value objects.
 
-    This class should not be used directly, but through a concrete subclass.
-
     Represents a decimal number with a specified precision and is intended to be
     used as the base class for fundamental domain model value types. The
     specification of precision is more explicit and straight forward than
@@ -43,6 +41,10 @@ cdef class BaseDecimal:
     also able to be used as operands for mathematical operations with `float`
     objects. Return values are floats if one of the operands is a float, else
     a decimal.Decimal.
+
+    Warnings
+    --------
+    This class should not be used directly, but through a concrete subclass.
 
     References
     ----------

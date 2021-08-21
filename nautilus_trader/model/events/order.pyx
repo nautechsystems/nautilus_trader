@@ -43,6 +43,8 @@ cdef class OrderEvent(Event):
     """
     The abstract base class for all order events.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -2171,12 +2173,11 @@ cdef class OrderFilled(OrderEvent):
     @property
     def is_buy(self):
         """
-        If the fill order side is BUY.
+        If the fill order side is ``BUY``.
 
         Returns
         -------
         bool
-            True if BUY, else False.
 
         """
         return self.is_buy_c()
@@ -2184,12 +2185,11 @@ cdef class OrderFilled(OrderEvent):
     @property
     def is_sell(self):
         """
-        If the fill order side is SELL.
+        If the fill order side is ``SELL``.
 
         Returns
         -------
         bool
-            True if SELL, else False.
 
         """
         return self.is_sell_c()

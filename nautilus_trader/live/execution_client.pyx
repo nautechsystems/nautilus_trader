@@ -92,6 +92,8 @@ cdef class LiveExecutionClient(ExecutionClient):
     """
     The abstract base class for all live execution clients.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

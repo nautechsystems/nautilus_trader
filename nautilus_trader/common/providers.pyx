@@ -22,6 +22,8 @@ cdef class InstrumentProvider:
     """
     The abstract base class for all instrument providers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

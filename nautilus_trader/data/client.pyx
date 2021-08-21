@@ -43,6 +43,8 @@ cdef class DataClient(Component):
     """
     The abstract base class for all data clients.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -150,6 +152,8 @@ cdef class MarketDataClient(DataClient):
     """
     The abstract base class for all market data clients.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

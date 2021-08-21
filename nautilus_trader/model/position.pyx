@@ -312,12 +312,11 @@ cdef class Position:
     @property
     def is_open(self):
         """
-        If the position side is not `FLAT`.
+        If the position side is **not** ``FLAT``.
 
         Returns
         -------
         bool
-            True if FLAT, else False.
 
         """
         return self.is_open_c()
@@ -325,12 +324,11 @@ cdef class Position:
     @property
     def is_closed(self):
         """
-        If the position side is `FLAT`.
+        If the position side is ``FLAT``.
 
         Returns
         -------
         bool
-            True if not FLAT, else False.
 
         """
         return self.is_closed_c()
@@ -338,12 +336,11 @@ cdef class Position:
     @property
     def is_long(self):
         """
-        If the position side is `LONG`.
+        If the position side is ``LONG``.
 
         Returns
         -------
         bool
-            True if LONG, else False.
 
         """
         return self.is_long_c()
@@ -351,12 +348,11 @@ cdef class Position:
     @property
     def is_short(self):
         """
-        If the position side is `SHORT`.
+        If the position side is ``SHORT``.
 
         Returns
         -------
         bool
-            True if SHORT, else False.
 
         """
         return self.is_short_c()
@@ -373,7 +369,7 @@ cdef class Position:
     @staticmethod
     def side_from_order_side(OrderSide side):
         """
-        Return the position side resulting from the given order side (from FLAT).
+        Return the position side resulting from the given order side (from ``FLAT``).
 
         Parameters
         ----------

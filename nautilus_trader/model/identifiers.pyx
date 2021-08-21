@@ -20,6 +20,8 @@ cdef class Identifier:
     """
     The abstract base class for all identifiers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

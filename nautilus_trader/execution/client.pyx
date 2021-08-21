@@ -59,6 +59,8 @@ cdef class ExecutionClient(Component):
     """
     The abstract base class for all execution clients.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

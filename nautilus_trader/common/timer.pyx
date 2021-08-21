@@ -122,6 +122,8 @@ cdef class Timer:
     """
     The abstract base class for all timers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -333,6 +335,8 @@ cdef class LiveTimer(Timer):
     """
     The abstract base class for all live timers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

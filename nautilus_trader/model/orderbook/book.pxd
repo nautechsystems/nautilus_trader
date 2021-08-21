@@ -33,7 +33,7 @@ cdef class OrderBook:
     cdef readonly InstrumentId instrument_id
     """The order book instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly BookLevel level
-    """The order book level (L1, L2, L3).\n\n:returns: `BookLevel`"""
+    """The order book level (``L1``, ``L2``, ``L3``).\n\n:returns: `BookLevel`"""
     cdef readonly int price_precision
     """The order book price precision.\n\n:returns: `int`"""
     cdef readonly int size_precision

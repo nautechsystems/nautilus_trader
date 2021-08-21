@@ -40,6 +40,8 @@ cdef class PositionEvent(Event):
     """
     The abstract base class for all position events.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -94,7 +96,7 @@ cdef class PositionEvent(Event):
         side : PositionSide
             The current position side.
         net_qty : Decimal
-            The current net quantity (positive for LONG, negative for SHORT).
+            The current net quantity (positive for ``LONG``, negative for ``SHORT``).
         quantity : Quantity
             The current open quantity.
         peak_qty : Quantity
@@ -260,7 +262,7 @@ cdef class PositionOpened(PositionEvent):
         side : PositionSide
             The current position side.
         net_qty : Decimal
-            The current net quantity (positive for LONG, negative for SHORT).
+            The current net quantity (positive for ``LONG``, negative for ``SHORT``).
         quantity : Quantity
             The current open quantity.
         peak_qty : Quantity
@@ -512,7 +514,7 @@ cdef class PositionChanged(PositionEvent):
         side : PositionSide
             The current position side.
         net_qty : Decimal
-            The current net quantity (positive for LONG, negative for SHORT).
+            The current net quantity (positive for ``LONG``, negative for ``SHORT``).
         quantity : Quantity
             The current open quantity.
         peak_qty : Quantity
@@ -790,7 +792,7 @@ cdef class PositionClosed(PositionEvent):
         side : PositionSide
             The current position side.
         net_qty : Decimal
-            The current net quantity (positive for LONG, negative for SHORT).
+            The current net quantity (positive for ``LONG``, negative for ``SHORT``).
         quantity : Quantity
             The current open quantity.
         peak_qty : Quantity

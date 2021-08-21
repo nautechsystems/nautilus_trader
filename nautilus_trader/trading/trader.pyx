@@ -259,7 +259,7 @@ cdef class Trader(Component):
         KeyError
             If strategy.id already exists in the trader.
         ValueError
-            If strategy.state is `RUNNING` or `DISPOSED`.
+            If strategy.state is ``RUNNING`` or ``DISPOSED``.
 
         """
         Condition.not_none(strategy, "strategy")
@@ -321,7 +321,7 @@ cdef class Trader(Component):
         KeyError
             If component.id already exists in the trader.
         ValueError
-            If component.state is `RUNNING` or `DISPOSED`.
+            If component.state is ``RUNNING`` or ``DISPOSED``.
 
         """
         Condition.not_in(component, self._components, "component", "components")
@@ -373,7 +373,7 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
-            If state is RUNNING.
+            If state is ``RUNNING``.
 
         """
         if self._fsm.state == ComponentState.RUNNING:
@@ -392,7 +392,7 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
-            If state is RUNNING.
+            If state is ``RUNNING``.
 
         """
         if self._fsm.state == ComponentState.RUNNING:
