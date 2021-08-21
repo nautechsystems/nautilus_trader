@@ -270,7 +270,7 @@ cdef class BacktestEngine:
         self.iteration = 0
 
         self.time_to_initialize = self._clock.delta(self.created_time)
-        self._log.info(f"Initialized in {self.time_to_initialize.total_seconds():.3f}s.")
+        self._log.info(f"Initialized in {int(self.time_to_initialize.total_seconds() * 1000)}ms.")
 
     def get_exec_engine(self) -> ExecutionEngine:
         """
