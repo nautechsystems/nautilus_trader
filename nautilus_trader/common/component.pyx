@@ -166,6 +166,9 @@ cdef class Component:
     cdef str state_string_c(self):
         return self._fsm.state_string_c()
 
+    cdef bint is_initialized_c(self):
+        return self._fsm.state >= ComponentState.INITIALIZED
+
     cdef bint is_running_c(self):
         return self._fsm.state == ComponentState.RUNNING
 
@@ -180,6 +183,18 @@ cdef class Component:
 
         """
         return self.state_c()
+
+    @property
+    def is_initialized(self):
+        """
+        If the component has been initialized.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_initialized_c()
 
     @property
     def is_running(self):

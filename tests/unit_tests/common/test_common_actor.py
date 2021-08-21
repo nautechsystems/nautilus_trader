@@ -126,12 +126,28 @@ class TestActor:
         # Assert
         assert actor.id == self.component_id
 
-    def test_initialization(self):
+    def test_pre_initialization(self):
         # Arrange
         actor = Actor(self.component_id)
 
         # Act, Assert
         assert actor.state == ComponentState.PRE_INITIALIZED
+        assert not actor.is_initialized
+
+    def test_initialization(self):
+        # Arrange
+        actor = Actor(self.component_id)
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act, Assert
+        assert actor.state == ComponentState.INITIALIZED
+        assert actor.is_initialized
 
     def test_handle_event(self):
         # Arrange
