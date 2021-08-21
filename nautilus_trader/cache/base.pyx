@@ -156,6 +156,10 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef set client_order_ids_active(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef set client_order_ids_inflight(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -202,6 +206,10 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef list orders_active(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef list orders_inflight(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -218,6 +226,10 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef bint is_order_active(self, ClientOrderId client_order_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef bint is_order_inflight(self, ClientOrderId client_order_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -230,7 +242,11 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int orders_total_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
+    cpdef int orders_active_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef int orders_inflight_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -239,6 +255,10 @@ cdef class CacheFacade:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef int orders_completed_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    cpdef int orders_total_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -277,10 +297,6 @@ cdef class CacheFacade:
         raise NotImplementedError("method must be implemented in the subclass")
 
     cpdef int positions_total_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef int orders_inflight_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
