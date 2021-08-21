@@ -426,7 +426,7 @@ class TradingNode:
                     )
                     break
 
-            self._log.info("state=DISPOSING...")
+            self._log.info("DISPOSING...")
 
             self._log.debug(f"{self._data_engine.get_run_queue_task()}")
             self._log.debug(f"{self._exec_engine.get_run_queue_task()}")
@@ -468,7 +468,7 @@ class TradingNode:
             else:
                 self._log.info(f"loop.is_closed={self._loop.is_closed()}")
 
-            self._log.info("state=DISPOSED.")
+            self._log.info("DISPOSED.")
 
     def _log_header(self) -> None:
         nautilus_header(self._log)
@@ -498,7 +498,7 @@ class TradingNode:
 
     async def _run(self) -> None:
         try:
-            self._log.info("state=STARTING...")
+            self._log.info("STARTING...")
             self._is_running = True
 
             # Start system
@@ -563,7 +563,7 @@ class TradingNode:
             self.trader.start()
 
             if self._loop.is_running():
-                self._log.info("state=RUNNING.")
+                self._log.info("RUNNING.")
             else:
                 self._log.warning("Event loop is not running.")
 
@@ -613,7 +613,7 @@ class TradingNode:
 
     async def _stop(self) -> None:
         self._is_stopping = True
-        self._log.info("state=STOPPING...")
+        self._log.info("STOPPING...")
 
         if self.trader.state == ComponentState.RUNNING:
             self.trader.stop()
@@ -654,7 +654,7 @@ class TradingNode:
         for name in timer_names:
             self._log.info(f"Cancelled Timer(name={name}).")
 
-        self._log.info("state=STOPPED.")
+        self._log.info("STOPPED.")
         self._logger.stop()
         self._is_running = False
 
