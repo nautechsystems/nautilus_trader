@@ -105,6 +105,8 @@ cdef class Order:
     """
     The abstract base class for all orders.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -216,6 +218,17 @@ cdef class Order:
 
     cdef bint is_aggressive_c(self) except *:
         return self.type == OrderType.MARKET
+
+    cdef bint is_active_c(self) except *:
+        return (
+            self._fsm.state == OrderStatus.INITIALIZED
+            or self._fsm.state == OrderStatus.SUBMITTED
+            or self._fsm.state == OrderStatus.ACCEPTED
+            or self._fsm.state == OrderStatus.TRIGGERED
+            or self._fsm.state == OrderStatus.PENDING_CANCEL
+            or self._fsm.state == OrderStatus.PENDING_UPDATE
+            or self._fsm.state == OrderStatus.PARTIALLY_FILLED
+        )
 
     cdef bint is_inflight_c(self) except *:
         return (
@@ -347,12 +360,11 @@ cdef class Order:
     @property
     def is_buy(self):
         """
-        If the order side is `BUY`.
+        If the order side is ``BUY``.
 
         Returns
         -------
         bool
-            True if BUY, else False.
 
         """
         return self.is_buy_c()
@@ -360,12 +372,11 @@ cdef class Order:
     @property
     def is_sell(self):
         """
-        If the order side is `SELL`.
+        If the order side is ``SELL``.
 
         Returns
         -------
         bool
-            True if SELL, else False.
 
         """
         return self.is_sell_c()
@@ -373,12 +384,11 @@ cdef class Order:
     @property
     def is_passive(self):
         """
-        If the order is passive.
+        If the order is passive (order type **not** ``MARKET``).
 
         Returns
         -------
         bool
-            True if order type not MARKET, else False.
 
         """
         return self.is_passive_c()
@@ -386,30 +396,52 @@ cdef class Order:
     @property
     def is_aggressive(self):
         """
-        If the order is aggressive.
+        If the order is aggressive (order type is ``MARKET``).
 
         Returns
         -------
         bool
-            True if order type MARKET, else False.
 
         """
         return self.is_aggressive_c()
+
+    @property
+    def is_active(self):
+        """
+        If the order is active (**not** completed).
+
+        An order is considered active when its state can change.
+        The possible states of active orders include;
+
+        - ``INITIALIZED``
+        - ``SUBMITTED``
+        - ``ACCEPTED``
+        - ``TRIGGERED``
+        - ``PENDING_CANCEL``
+        - ``PENDING_UPDATE``
+        - ``PARTIALLY_FILLED``
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_active_c()
 
     @property
     def is_inflight(self):
         """
         If the order is in-flight (order request sent to the trading venue).
 
-        An order is considered in-flight when its state is either:
-        - `SUBMITTED`.
-        - `PENDING_CANCEL`.
-        - `PENDING_UPDATE`.
+        An order is considered in-flight when its status is any of;
+
+        - ``SUBMITTED``
+        - ``PENDING_CANCEL``
+        - ``PENDING_UPDATE``
 
         Returns
         -------
         bool
-            True if in-flight, else False.
 
         """
         return self.is_inflight_c()
@@ -417,19 +449,19 @@ cdef class Order:
     @property
     def is_working(self):
         """
-        If the order is open/working at the trading venue.
+        If the order is working (open) at the trading venue.
 
-        An order is considered working when its state is either:
-        - `ACCEPTED`
-        - `TRIGGERED`
-        - `PENDING_CANCEL`
-        - `PENDING_UPDATE`
-        - `PARTIALLY_FILLED`
+        An order is considered working when its status is any of;
+
+        - ``ACCEPTED``
+        - ``TRIGGERED``
+        - ``PENDING_CANCEL``
+        - ``PENDING_UPDATE``
+        - ``PARTIALLY_FILLED``
 
         Returns
         -------
         bool
-            True if working, else False.
 
         """
         return self.is_working_c()
@@ -437,12 +469,11 @@ cdef class Order:
     @property
     def is_pending_update(self):
         """
-        If the order is pending update.
+        If current order.status is ``PENDING_UPDATE``.
 
         Returns
         -------
         bool
-            True if order.status == OrderStatus.PENDING_UPDATE, else False.
 
         """
         return self.is_pending_update_c()
@@ -450,12 +481,11 @@ cdef class Order:
     @property
     def is_pending_cancel(self):
         """
-        If the order is pending cancel.
+        If current order.status is ``PENDING_CANCEL``.
 
         Returns
         -------
         bool
-            True if order.status == OrderStatus.PENDING_CANCEL, else False.
 
         """
         return self.is_pending_cancel_c()
@@ -463,21 +493,21 @@ cdef class Order:
     @property
     def is_completed(self):
         """
-        If the order is closed/completed.
+        If the order is completed (closed).
 
         An order is considered completed when its state can no longer change.
-        The possible states of completed orders include:
-        - `INVALID`
-        - `DENIED`
-        - `REJECTED`
-        - `CANCELED`
-        - `EXPIRED`
-        - `FILLED`
+        The possible states of completed orders include;
+
+        - ``INVALID``
+        - ``DENIED``
+        - ``REJECTED``
+        - ``CANCELED``
+        - ``EXPIRED``
+        - ``FILLED``
 
         Returns
         -------
         bool
-            True if completed, else False.
 
         """
         return self.is_completed_c()
@@ -668,6 +698,8 @@ cdef class PassiveOrder(Order):
     """
     The abstract base class for all passive orders.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
     def __init__(
@@ -700,7 +732,7 @@ cdef class PassiveOrder(Order):
         client_order_id : ClientOrderId
             The client order ID.
         order_side : OrderSide
-            The order side (BUY or SELL).
+            The order side (``BUY`` or ``SELL``).
         order_type : OrderType
             The order type.
         quantity : Quantity
@@ -710,7 +742,7 @@ cdef class PassiveOrder(Order):
         time_in_force : TimeInForce
             The order time-in-force.
         expire_time : datetime, optional
-            The order expiry time - applicable to GTD orders only.
+            The order expiry time - applicable to ``GTD`` orders only.
         init_id : UUID
             The order initialization event ID.
         ts_init : int64
@@ -723,7 +755,7 @@ cdef class PassiveOrder(Order):
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is GTD and the expire_time is None.
+            If time_in_force is ``GTD`` and the expire_time is None.
 
         """
         Condition.positive(quantity, "quantity")

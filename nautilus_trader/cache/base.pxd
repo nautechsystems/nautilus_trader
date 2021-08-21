@@ -83,6 +83,7 @@ cdef class CacheFacade:
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
     cpdef set client_order_ids(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef set client_order_ids_active(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set client_order_ids_inflight(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set client_order_ids_working(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef set client_order_ids_completed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
@@ -97,17 +98,20 @@ cdef class CacheFacade:
     cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id)
     cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id)
     cpdef list orders(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
+    cpdef list orders_active(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list orders_inflight(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list orders_working(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef list orders_completed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef bint order_exists(self, ClientOrderId client_order_id) except *
+    cpdef bint is_order_active(self, ClientOrderId client_order_id) except *
     cpdef bint is_order_inflight(self, ClientOrderId client_order_id) except *
     cpdef bint is_order_working(self, ClientOrderId client_order_id) except *
     cpdef bint is_order_completed(self, ClientOrderId client_order_id) except *
-    cpdef int orders_total_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
+    cpdef int orders_active_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
     cpdef int orders_inflight_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
     cpdef int orders_working_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
     cpdef int orders_completed_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
+    cpdef int orders_total_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*) except *
 
 # -- POSITION QUERIES ------------------------------------------------------------------------------
 
