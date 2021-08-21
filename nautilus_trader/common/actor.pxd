@@ -53,8 +53,6 @@ cdef class Actor(Component):
     cdef readonly CacheFacade cache
     """The read-only cache for the actor.\n\n:returns: `CacheFacade`"""
 
-    cdef void _check_registered(self) except *
-
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void on_start(self) except *
