@@ -74,7 +74,7 @@ cdef class Actor(Component):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, ComponentId component_id=None):
+    def __init__(self, ComponentId component_id=None, dict config=None):
         """
         Initialize a new instance of the ``Actor`` class.
 
@@ -90,11 +90,10 @@ cdef class Actor(Component):
             clock=clock,
             logger=Logger(clock=clock),
             component_id=component_id,
-            log_initialized=False,
+            config=config,
         )
 
         self.trader_id = None  # Initialized when registered
-        self.msgbus = None     # Initialized when registered
         self.cache = None      # Initialized when registered
 
     cdef void _check_registered(self) except *:
@@ -181,6 +180,36 @@ cdef class Actor(Component):
         """
         # Should override in subclass
         warnings.warn("on_dispose was called when not overridden")
+
+    cpdef void on_degrade(self) except *:
+        """
+        Actions to be performed on degrade.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        Should be overridden in the strategy implementation.
+
+        """
+        # Should override in subclass
+        warnings.warn("on_degrade was called when not overridden")
+
+    cpdef void on_fault(self) except *:
+        """
+        Actions to be performed on fault.
+
+        Cleanup any resources used by the strategy here.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        Should be overridden in the strategy implementation.
+
+        """
+        # Should override in subclass
+        warnings.warn("on_fault was called when not overridden")
 
     cpdef void on_instrument(self, Instrument instrument) except *:
         """
@@ -418,8 +447,8 @@ cdef class Actor(Component):
         clock.register_default_handler(self.handle_event)
         self._change_clock(clock)
         self._change_logger(logger)
+        self._change_msgbus(msgbus)
 
-        self.msgbus = msgbus
         self.cache = cache
 
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
@@ -453,6 +482,14 @@ cdef class Actor(Component):
         self._check_registered()
         self.on_dispose()
 
+    cpdef void _degrade(self) except *:
+        self._check_registered()
+        self.on_degrade()
+
+    cpdef void _fault(self) except *:
+        self._check_registered()
+        self.on_fault()
+
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef void subscribe_data(self, ClientId client_id, DataType data_type) except *:
@@ -470,7 +507,7 @@ cdef class Actor(Component):
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.{data_type}",
             handler=self.handle_data,
         )
@@ -502,7 +539,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(data_type, "data_type")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.strategy"
                   f".{data_type.__name__ if data_type else '*'}"
                   f".{strategy_id or '*'}",
@@ -526,7 +563,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.instrument"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -554,7 +591,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(venue, "venue")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.instrument.{venue}.*",
             handler=self.handle_instrument,
         )
@@ -590,7 +627,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.book.deltas"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -650,7 +687,7 @@ cdef class Actor(Component):
         Condition.not_negative(depth, "depth")
         Condition.not_negative(interval_ms, "interval_ms")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.book.snapshots"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}"
@@ -685,7 +722,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.tickers"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -713,7 +750,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.quotes"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -741,7 +778,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.trades"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -769,7 +806,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.bars.{bar_type}",
             handler=self.handle_bar,
         )
@@ -795,7 +832,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(venue, "venue")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.venue.status",
             handler=self.handle_venue_status_update,
         )
@@ -821,7 +858,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.venue.status",
             handler=self.handle_instrument_status_update,
         )
@@ -847,7 +884,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.venue.close_price.{instrument_id.value}",
             handler=self.handle_instrument_close_price,
         )
@@ -876,7 +913,7 @@ cdef class Actor(Component):
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
 
-        self.msgbus.unsubscribe(topic=f"data.{data_type}", handler=self.handle_data)
+        self._msgbus.unsubscribe(topic=f"data.{data_type}", handler=self.handle_data)
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
@@ -905,7 +942,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(data_type, "data_type")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.strategy.{data_type.__name__}.{strategy_id or '*'}",
             handler=self.handle_data,
         )
@@ -925,7 +962,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(venue, "venue")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.instrument.{venue}.*",
             handler=self.handle_instrument,
         )
@@ -951,7 +988,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.instrument"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -979,7 +1016,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.book.deltas"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -1015,7 +1052,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.book.snapshots"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}"
@@ -1047,7 +1084,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.tickers"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -1075,7 +1112,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.quotes"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -1103,7 +1140,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.trades"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -1131,7 +1168,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.bars.{bar_type}",
             handler=self.handle_bar,
         )
@@ -1158,7 +1195,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(data, "data")
 
-        self.msgbus.publish_c(
+        self._msgbus.publish_c(
             topic=f"data.{type(data).__name__}.{type(self).__name__}",
             msg=data,
         )
@@ -1757,10 +1794,10 @@ cdef class Actor(Component):
         self._check_registered()
         if not self._log.is_bypassed:
             self._log.info(f"{CMD}{SENT} {command}.")
-        self.msgbus.send(endpoint="DataEngine.execute", msg=command)
+        self._msgbus.send(endpoint="DataEngine.execute", msg=command)
 
     cdef void _send_data_req(self, DataRequest request) except *:
         self._check_registered()
         if not self._log.is_bypassed:
             self._log.info(f"{REQ}{SENT} {request}.")
-        self.msgbus.request(endpoint="DataEngine.request", request=request)
+        self._msgbus.request(endpoint="DataEngine.request", request=request)

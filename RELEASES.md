@@ -6,9 +6,21 @@ None
 
 ## Enhancements
 - Wired up `Ticker` data type.
+- Added `degrade()` and `fault()` commands.
+- Added `on_degrade()` and `on_fault()` methods.
+- Added `ComponentState.PRE_INITIALIZED`.
+- Added `ComponentState.DEGRADING`.
+- Added `ComponentState.DEGRADED`.
+- Added `ComponentState.FAULTING`.
+- Added `ComponentState.FAULTED`.
+- Added `ComponentTrigger.INITIALIZE`.
+- Added `ComponentTrigger.DEGRADE`.
+- Added `ComponentTrigger.DEGRADED`.
+- Added `ComponentTrigger.FAULT`.
+- Added `ComponentTrigger.FAULTED`.
 
 ## Fixes
-None
+- `DataEngine.subscribed_bars()` now reports internally aggregated bars also.
 
 ---
 

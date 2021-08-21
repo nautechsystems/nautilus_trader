@@ -148,7 +148,7 @@ cdef class StopMarketOrder(PassiveOrder):
             "filled_qty": str(self.filled_qty),
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "slippage": str(self.slippage),
-            "state": self._fsm.state_string_c(),
+            "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
             "ts_init": self.ts_init,
             "ts_last": self.ts_last,

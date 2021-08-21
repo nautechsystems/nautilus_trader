@@ -120,6 +120,24 @@ class MockActor(Actor):
     def on_start(self) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
 
+    def on_stop(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_resume(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_reset(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_dispose(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_degrade(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_fault(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
     def on_instrument(self, instrument) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(instrument)
@@ -151,18 +169,6 @@ class MockActor(Actor):
     def on_event(self, event) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(event)
-
-    def on_stop(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def on_resume(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def on_reset(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
-
-    def on_dispose(self) -> None:
-        self.calls.append(inspect.currentframe().f_code.co_name)
 
 
 class MockStrategy(TradingStrategy):
@@ -307,6 +313,12 @@ class KaboomActor(Actor):
         raise RuntimeError(f"{self} BOOM!")
 
     def on_dispose(self) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_degrade(self) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_fault(self) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
     def on_instrument(self, instrument) -> None:

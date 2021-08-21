@@ -116,11 +116,11 @@ cdef class ExecutionClient(Component):
             logger=logger,
             component_id=client_id,
             component_name=config.get("name", f"ExecClient-{client_id.value}"),
+            msgbus=msgbus,
+            config=config,
         )
 
-        self._msgbus = msgbus
         self._cache = cache
-        self._config = config
         self._account = None  # Initialized on connection
 
         self.trader_id = msgbus.trader_id

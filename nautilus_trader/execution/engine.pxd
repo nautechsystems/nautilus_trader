@@ -16,7 +16,6 @@
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.commands.trading cimport CancelOrder
@@ -29,12 +28,10 @@ from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
 cdef class ExecutionEngine(Component):
-    cdef MessageBus _msgbus
     cdef Cache _cache
     cdef ExecutionClient _default_client
     cdef PositionIdGenerator _pos_id_generator

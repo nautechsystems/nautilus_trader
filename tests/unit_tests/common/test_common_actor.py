@@ -131,7 +131,7 @@ class TestActor:
         actor = Actor(self.component_id)
 
         # Act, Assert
-        assert ComponentState.INITIALIZED == actor.state
+        assert actor.state == ComponentState.PRE_INITIALIZED
 
     def test_handle_event(self):
         # Arrange
@@ -258,147 +258,48 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_start_when_not_registered_with_trader_raises_runtime_error(self):
+    def test_start_when_not_initialized_raises_invalid_state_trigger(self):
         # Arrange
         actor = Actor(self.component_id)
-
-        # Act, Assert
-        with pytest.raises(RuntimeError):
-            actor.start()
-
-    def test_stop_when_not_registered_with_trader_raises_runtime_error(self):
-        # Arrange
-        actor = Actor(self.component_id)
-
-        try:
-            actor.start()
-        except RuntimeError:
-            # Normally a bad practice but allows strategy to be put into
-            # the needed state to run the test.
-            pass
-
-        # Act, Assert
-        with pytest.raises(RuntimeError):
-            actor.stop()
-
-    def test_resume_when_not_registered_with_trader_raises_runtime_error(self):
-        # Arrange
-        actor = Actor(self.component_id)
-
-        try:
-            actor.start()
-        except RuntimeError:
-            # Normally a bad practice but allows strategy to be put into
-            # the needed state to run the test.
-            pass
-
-        try:
-            actor.stop()
-        except RuntimeError:
-            # Normally a bad practice but allows strategy to be put into
-            # the needed state to run the test.
-            pass
-
-        # Act, Assert
-        with pytest.raises(RuntimeError):
-            actor.resume()
-
-    def test_reset_when_not_registered_with_trader_raises_runtime_error(self):
-        # Arrange
-        actor = Actor(self.component_id)
-
-        # Act, Assert
-        with pytest.raises(RuntimeError):
-            actor.reset()
-
-    def test_dispose_when_not_registered_with_trader_raises_runtime_error(self):
-        # Arrange
-        actor = Actor(self.component_id)
-
-        # Act, Assert
-        with pytest.raises(RuntimeError):
-            actor.dispose()
-
-    def test_start_when_not_in_valid_state_raises_invalid_state_trigger(self):
-        # Arrange
-        actor = Actor(self.component_id)
-        actor.register_base(
-            trader_id=self.trader_id,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        actor.dispose()  # Always a final state
 
         # Act, Assert
         with pytest.raises(InvalidStateTrigger):
             actor.start()
 
-    def test_stop_when_not_in_valid_state_raises_invalid_state_trigger(self):
+    def test_stop_when_not_initialized_raises_invalid_state_trigger(self):
         # Arrange
         actor = Actor(self.component_id)
-        actor.register_base(
-            trader_id=self.trader_id,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
 
-        actor.dispose()  # Always a final state
+        try:
+            actor.start()
+        except InvalidStateTrigger:
+            # Normally a bad practice but allows strategy to be put into
+            # the needed state to run the test.
+            pass
 
         # Act, Assert
         with pytest.raises(InvalidStateTrigger):
             actor.stop()
 
-    def test_resume_when_not_in_valid_state_raises_invalid_state_trigger(self):
+    def test_resume_when_not_initialized_raises_invalid_state_trigger(self):
         # Arrange
         actor = Actor(self.component_id)
-        actor.register_base(
-            trader_id=self.trader_id,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        actor.dispose()  # Always a final state
 
         # Act, Assert
         with pytest.raises(InvalidStateTrigger):
             actor.resume()
 
-    def test_reset_when_not_in_valid_state_raises_invalid_state_trigger(self):
+    def test_reset_when_not_initialized_raises_invalid_state_trigger(self):
         # Arrange
         actor = Actor(self.component_id)
-        actor.register_base(
-            trader_id=self.trader_id,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        actor.dispose()  # Always a final state
 
         # Act, Assert
         with pytest.raises(InvalidStateTrigger):
             actor.reset()
 
-    def test_dispose_when_not_in_valid_state_raises_invalid_state_trigger(self):
+    def test_dispose_when_not_initialized_raises_invalid_state_trigger(self):
         # Arrange
         actor = Actor(self.component_id)
-        actor.register_base(
-            trader_id=self.trader_id,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        actor.dispose()  # Always a final state
 
         # Act, Assert
         with pytest.raises(InvalidStateTrigger):
@@ -491,6 +392,44 @@ class TestActor:
         with pytest.raises(RuntimeError):
             actor.dispose()
         assert actor.state == ComponentState.DISPOSED
+
+    def test_degrade_when_user_code_raises_error_logs_and_reraises(self):
+        # Arrange
+        actor = KaboomActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        actor.set_explode_on_start(False)
+        actor.start()
+
+        # Act, Assert
+        with pytest.raises(RuntimeError):
+            actor.degrade()
+        assert actor.state == ComponentState.DEGRADED
+
+    def test_fault_when_user_code_raises_error_logs_and_reraises(self):
+        # Arrange
+        actor = KaboomActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        actor.set_explode_on_start(False)
+        actor.start()
+
+        # Act, Assert
+        with pytest.raises(RuntimeError):
+            actor.fault()
+        assert actor.state == ComponentState.FAULTED
 
     def test_handle_quote_tick_when_user_code_raises_exception_logs_and_reraises(self):
         # Arrange
@@ -693,6 +632,46 @@ class TestActor:
         # Assert
         assert "on_dispose" in actor.calls
         assert actor.state == ComponentState.DISPOSED
+
+    def test_degrade(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        actor.start()
+
+        # Act
+        actor.degrade()
+
+        # Assert
+        assert "on_degrade" in actor.calls
+        assert actor.state == ComponentState.DEGRADED
+
+    def test_fault(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        actor.start()
+
+        # Act
+        actor.fault()
+
+        # Assert
+        assert "on_fault" in actor.calls
+        assert actor.state == ComponentState.FAULTED
 
     def test_handle_instrument_with_blow_up_logs_exception(self):
         # Arrange
@@ -1503,7 +1482,7 @@ class TestActor:
         assert self.data_engine.request_count == 1
 
     @pytest.mark.parametrize(
-        "start,stop",
+        "start, stop",
         [
             (UNIX_EPOCH, UNIX_EPOCH),
             (UNIX_EPOCH + timedelta(milliseconds=1), UNIX_EPOCH),

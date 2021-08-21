@@ -112,9 +112,10 @@ cdef class DataEngine(Component):
             clock=clock,
             logger=logger,
             component_id=ComponentId("DataEngine"),
+            msgbus=msgbus,
+            config=config,
         )
 
-        self._msgbus = msgbus
         self._cache = cache
 
         self._use_previous_close = config.get("use_previous_close", True)
@@ -127,8 +128,6 @@ cdef class DataEngine(Component):
         self.data_count = 0
         self.request_count = 0
         self.response_count = 0
-
-        self._log.info(f"use_previous_close={self._use_previous_close}")
 
         # Register endpoints
         self._msgbus.register(endpoint="DataEngine.execute", handler=self.execute)

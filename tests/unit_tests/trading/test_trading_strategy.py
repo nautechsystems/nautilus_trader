@@ -197,7 +197,7 @@ class TestTradingStrategy:
         strategy = TradingStrategy(order_id_tag="001")
 
         # Act, Assert
-        assert ComponentState.INITIALIZED == strategy.state
+        assert strategy.state == ComponentState.PRE_INITIALIZED
         assert not strategy.indicators_initialized()
 
     def test_on_save_when_not_overridden_does_nothing(self):

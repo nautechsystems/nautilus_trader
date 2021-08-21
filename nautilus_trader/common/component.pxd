@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Callable
+
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_trigger cimport ComponentTrigger
 from nautilus_trader.common.clock cimport Clock
@@ -21,6 +23,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.model.identifiers cimport ComponentId
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class ComponentFSMFactory:
@@ -34,16 +37,20 @@ cdef class Component:
     cdef UUIDFactory _uuid_factory
     cdef LoggerAdapter _log
     cdef FiniteStateMachine _fsm
+    cdef MessageBus _msgbus
+    cdef dict _config
 
     cdef readonly ComponentId id
     """The components ID.\n\n:returns: `ComponentId`"""
 
     cdef ComponentState state_c(self) except *
     cdef str state_string_c(self)
+    cdef bint is_initialized_c(self)
     cdef bint is_running_c(self)
 
     cdef void _change_clock(self, Clock clock) except *
     cdef void _change_logger(self, Logger logger) except *
+    cdef void _change_msgbus(self, MessageBus msgbus) except *
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -52,20 +59,25 @@ cdef class Component:
     cpdef void _resume(self) except *
     cpdef void _reset(self) except *
     cpdef void _dispose(self) except *
+    cpdef void _degrade(self) except *
+    cpdef void _fault(self) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
+    cdef void _initialize(self) except *
     cpdef void start(self) except *
     cpdef void stop(self) except *
     cpdef void resume(self) except *
     cpdef void reset(self) except *
     cpdef void dispose(self) except *
+    cpdef void degrade(self) except *
+    cpdef void fault(self) except *
 
 # --------------------------------------------------------------------------------------------------
 
     cdef void _trigger_fsm(
         self,
-        ComponentTrigger trigger1,
-        ComponentTrigger trigger2,
-        action,
+        ComponentTrigger trigger,
+        bint is_transitory,
+        action: Callable[[None], None]=*,
     ) except *
