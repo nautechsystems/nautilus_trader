@@ -166,25 +166,17 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             self._log.error("Cannot reset a connected data client.")
             return
 
-        self._log.info("Resetting...")
-
         self._instrument_provider = CCXTInstrumentProvider(
             client=self._client,
             load_all=False,
         )
-
-        self._log.info("Reset.")
 
     cpdef void _dispose(self) except *:
         if self.is_connected:
             self._log.error("Cannot dispose a connected data client.")
             return
 
-        self._log.info("Disposing...")
-
         # Nothing to dispose yet
-
-        self._log.info("Disposed.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
