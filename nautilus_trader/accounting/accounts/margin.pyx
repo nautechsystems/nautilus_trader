@@ -52,7 +52,7 @@ cdef class MarginAccount(Account):
         Raises
         ------
         ValueError
-            If event.account_type is not equal to AccountType.MARGIN.
+            If event.account_type is not equal to ``MARGIN``.
 
         """
         Condition.not_none(event, "event")

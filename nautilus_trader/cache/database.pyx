@@ -30,6 +30,8 @@ cdef class CacheDatabase:
     """
     The abstract base class for all cache databases.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

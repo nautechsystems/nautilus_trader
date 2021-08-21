@@ -75,7 +75,7 @@ cdef class LimitOrder(PassiveOrder):
         client_order_id : ClientOrderId
             The client order ID.
         order_side : OrderSide
-            The order side (BUY or SELL).
+            The order side (``BUY`` or ``SELL``).
         quantity : Quantity
             The order quantity (> 0).
         price : Price
@@ -100,7 +100,7 @@ cdef class LimitOrder(PassiveOrder):
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is GTD and expire_time is None.
+            If time_in_force is ``GTD`` and expire_time is None.
         ValueError
             If post_only and hidden.
 
@@ -184,7 +184,7 @@ cdef class LimitOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If init.type is not equal to LIMIT.
+            If init.type is not equal to ``LIMIT``.
 
         """
         Condition.not_none(init, "init")

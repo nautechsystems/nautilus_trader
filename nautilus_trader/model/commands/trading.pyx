@@ -34,6 +34,8 @@ cdef class TradingCommand(Command):
     """
     The abstract base class for all trading related commands.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

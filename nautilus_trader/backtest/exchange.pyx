@@ -97,7 +97,7 @@ cdef class SimulatedExchange:
         venue_type : VenueType
             The venues type.
         oms_type : OMSType
-            The order management system type used by the exchange (HEDGING or NETTING).
+            The order management system type used by the exchange (``HEDGING`` or ``NETTING``).
         account_type : AccountType
             The account type for the client.
         base_currency : Currency, optional

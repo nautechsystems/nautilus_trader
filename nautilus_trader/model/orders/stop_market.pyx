@@ -78,7 +78,7 @@ cdef class StopMarketOrder(PassiveOrder):
         client_order_id : ClientOrderId
             The client order ID.
         order_side : OrderSide
-            The order side (BUY or SELL).
+            The order side (``BUY`` or ``SELL``).
         quantity : Quantity
             The order quantity (> 0).
         price : Price
@@ -99,7 +99,7 @@ cdef class StopMarketOrder(PassiveOrder):
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is GTD and the expire_time is None.
+            If time_in_force is ``GTD`` and the expire_time is None.
 
         """
         super().__init__(
@@ -171,7 +171,7 @@ cdef class StopMarketOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If init.type is not equal to STOP_MARKET.
+            If init.type is not equal to ``STOP_MARKET``.
 
         """
         Condition.not_none(init, "init")

@@ -79,18 +79,19 @@ cdef class TradingStrategy(Actor):
     """
     The abstract base class for all trading strategies.
 
-    This class should not be used directly, but through a concrete subclass.
-
     Strategy OMS (Order Management System):
     An individual trading strategy can configure its own order management system
     type which determines how positions are handled by the `ExecutionEngine`.
 
-    - OMSType.HEDGING: A position ID will be assigned for each new position
-      which is opened per instrument.
+    - ``HEDGING``: A position ID will be assigned for each new position which
+      is opened per instrument.
 
-    - OMSType.NETTING: There will only ever be a single position for the strategy
+    - ``NETTING``: There will only ever be a single position for the strategy
       per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
 
+    Warnings
+    --------
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -575,7 +576,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         ValueError
-            If trigger is not None and order.type != STOP_LIMIT
+            If trigger is not None and order.type != ``STOP_LIMIT``.
 
         References
         ----------
@@ -807,7 +808,7 @@ cdef class TradingStrategy(Actor):
         """
         Handle the given tick.
 
-        Calls `on_quote_tick` if state is `RUNNING`.
+        Calls `on_quote_tick` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -844,7 +845,7 @@ cdef class TradingStrategy(Actor):
         """
         Handle the given tick.
 
-        Calls `on_trade_tick` if state is `RUNNING`.
+        Calls `on_trade_tick` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -881,7 +882,7 @@ cdef class TradingStrategy(Actor):
         """
         Handle the given bar data.
 
-        Calls `on_bar` if state is `RUNNING`.
+        Calls `on_bar` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -918,7 +919,7 @@ cdef class TradingStrategy(Actor):
         """
         Handle the given event.
 
-        Calls `on_event` if state is `RUNNING`.
+        Calls `on_event` if state is ``RUNNING``.
 
         Parameters
         ----------

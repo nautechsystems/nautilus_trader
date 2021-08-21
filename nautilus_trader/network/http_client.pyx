@@ -55,10 +55,12 @@ cdef class HTTPClient:
             The event loop for the client.
         logger : Logger
             The logger for the client.
-        ssl: SSL Context (Optional)
-            Optional ssl context to use for HTTPS (default=False)
         ttl_dns_cache : int
             The time to live for the DNS cache.
+        ssl: SSL Context, default=False
+            The ssl context to use for HTTPS.
+        connector_kwargs : dict, optional
+            The connector key word arguments.
 
         Raises
         ------

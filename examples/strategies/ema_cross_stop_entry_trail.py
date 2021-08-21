@@ -246,7 +246,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
     def trailing_stop_buy(self, last_bar: Bar):
         """
-        Users simple trailing stop BUY for (SHORT positions).
+        Users simple trailing stop BUY for (``SHORT`` positions).
 
         Parameters
         ----------

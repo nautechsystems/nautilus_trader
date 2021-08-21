@@ -26,6 +26,8 @@ cdef class PositionSizer:
     """
     The abstract base class for all position sizers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

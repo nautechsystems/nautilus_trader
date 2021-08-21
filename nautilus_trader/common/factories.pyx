@@ -147,7 +147,7 @@ cdef class OrderFactory:
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is other than GTC, IOC, FOK or OC.
+            If time_in_force is other than ``GTC``, ``IOC``, ``FOK`` or ``OC``.
 
         """
         return MarketOrder(
@@ -388,9 +388,9 @@ cdef class OrderFactory:
         take_profit : Price
             The take-profit child order limit price.
         sl_tif : TimeInForce, optional
-            The stop-loss orders time-in-force (DAY or GTC).
+            The stop-loss orders time-in-force (``DAY`` or ``GTC``).
         tp_tif : TimeInForce, optional
-            The take-profit orders time-in-force (DAY or GTC).
+            The take-profit orders time-in-force (``DAY`` or ``GTC``).
 
         Returns
         -------
@@ -399,17 +399,17 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If sl_tif is not either DAY or GTC.
+            If sl_tif is not either ``DAY`` or ``GTC``.
         ValueError
-            If tp_tif is not either DAY or GTC.
+            If tp_tif is not either ``DAY`` or ``GTC``.
         ValueError
-            If entry_order.side is BUY and entry_order.price <= stop_loss.price.
+            If entry_order.side is ``BUY`` and entry_order.price <= stop_loss.price.
         ValueError
-            If entry_order.side is BUY and entry_order.price >= take_profit.price.
+            If entry_order.side is ``BUY`` and entry_order.price >= take_profit.price.
         ValueError
-            If entry_order.side is SELL and entry_order.price >= stop_loss.price.
+            If entry_order.side is ``SELL`` and entry_order.price >= stop_loss.price.
         ValueError
-            If entry_order.side is SELL and entry_order.price <= take_profit.price.
+            If entry_order.side is ``SELL`` and entry_order.price <= take_profit.price.
 
         """
         Condition.true(sl_tif == TimeInForce.DAY or sl_tif == TimeInForce.GTC, "sl_tif is unsupported")

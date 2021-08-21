@@ -77,6 +77,7 @@ cdef class ComponentFSMFactory:
         -------
         dict[int, int]
             C Enums.
+
         """
         return _COMPONENT_STATE_TABLE.copy()
 
@@ -102,14 +103,16 @@ cdef class Component:
     """
     The abstract base class for all system components.
 
-    This class should not be used directly, but through a concrete subclass.
-
     A component is not considered initialized until a message bus is wired up
     (this either happens when one is passed to the constructor, or when
     registered with a trader).
 
     Thus if the component does not receive a message bus through the constructor,
-    then it will be in a `PRE_INITIALIZED` state, otherwise `INITIALIZED`.
+    then it will be in a ``PRE_INITIALIZED`` state, otherwise ``INITIALIZED``.
+
+    Warnings
+    --------
+    This class should not be used directly, but through a concrete subclass.
     """
 
     def __init__(
@@ -131,7 +134,7 @@ cdef class Component:
             The clock for the component.
         logger : Logger
             The logger for the component.
-        component_id : ComponentId, optional
+        trader_id : TraderId, optional
             The trader ID associated with the component.
         component_id : ComponentId, optional
             The component ID. If None is passed then the identifier will be
@@ -222,7 +225,7 @@ cdef class Component:
     @property
     def is_initialized(self):
         """
-        If the component has been initialized.
+        If the component has been initialized (component.state >= ``INITIALIZED``).
 
         Returns
         -------
@@ -234,7 +237,7 @@ cdef class Component:
     @property
     def is_running(self):
         """
-        If the components current state is RUNNING.
+        If the current component state is ``RUNNING``.
 
         Returns
         -------
@@ -246,7 +249,7 @@ cdef class Component:
     @property
     def is_stopped(self):
         """
-        If the component current state is STOPPED.
+        If the current component state is ``STOPPED``.
 
         Returns
         -------
@@ -258,7 +261,7 @@ cdef class Component:
     @property
     def is_disposed(self):
         """
-        If the component current state is DISPOSED.
+        If the current component state is ``DISPOSED``.
 
         Returns
         -------
@@ -270,7 +273,7 @@ cdef class Component:
     @property
     def is_degraded(self):
         """
-        If the component current state is DEGRADED.
+        If the current component state is ``DEGRADED``.
 
         Returns
         -------
@@ -282,7 +285,7 @@ cdef class Component:
     @property
     def is_faulted(self):
         """
-        If the component current state is FAULTED.
+        If the current component state is ``FAULTED``.
 
         Returns
         -------

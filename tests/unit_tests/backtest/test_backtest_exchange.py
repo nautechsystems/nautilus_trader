@@ -774,7 +774,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             Price.from_str("90.001"),
-            post_only=True,  # Default value
+            post_only=True,  # default value
         )
 
         self.strategy.submit_order(order)
@@ -802,7 +802,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             Price.from_str("90.001"),
-            post_only=True,  # Default value
+            post_only=True,  # default value
         )
 
         self.strategy.submit_order(order)

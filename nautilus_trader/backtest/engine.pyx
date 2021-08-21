@@ -583,7 +583,7 @@ cdef class BacktestEngine:
         Raises
         ------
         ValueError
-            If price_type is LAST.
+            If price_type is ``LAST``.
         ValueError
             If data is empty.
 
@@ -662,8 +662,8 @@ cdef class BacktestEngine:
             The exchange venue ID.
         venue_type : VenueType
             The type of venue (will determine venue -> client_id mapping).
-        oms_type : OMSType
-            The order management system type for the exchange. If HEDGING and
+        oms_type : OMSType {``HEDGING``, ``NETTING``}
+            The order management system type for the exchange. If ``HEDGING`` and
             no position_id for an order then will generate a new position_id.
         account_type : AccountType
             The account type for the client.

@@ -168,6 +168,8 @@ cdef class InstrumentSerializer:
     """
     The abstract base class for all instrument serializers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -191,6 +193,8 @@ cdef class CommandSerializer:
     """
     The abstract base class for all command serializers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -213,6 +217,8 @@ cdef class EventSerializer:
     """
     The abstract base class for all event serializers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

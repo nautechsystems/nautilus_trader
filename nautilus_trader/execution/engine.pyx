@@ -238,7 +238,7 @@ cdef class ExecutionEngine(Component):
         """
         Register the given execution client with the execution engine.
 
-        If the client.venue_type == BROKERAGE_MULTI_VENUE and a default client
+        If the client.venue_type == ``BROKERAGE_MULTI_VENUE`` and a default client
         has not been previously registered then will be registered as such.
 
         Parameters

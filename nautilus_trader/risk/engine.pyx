@@ -65,13 +65,13 @@ cdef class RiskEngine(Component):
 
     Configuration options:
     - bypass: If True then all risk checks are bypassed (will still check for duplicate IDs).
-    - max_order_rate: tuple(int, timedelta). Default=(10, timedelta(seconds=1)).
-    - max_notional_per_order: { str: Decimal }. Default = {}.
+    - max_order_rate: tuple(int, timedelta), default=(10, timedelta(seconds=1)).
+    - max_notional_per_order: { str: Decimal }, default = {}.
 
-    Trading states:
-    - ACTIVE (trading is enabled).
-    - REDUCING (only new orders or updates which reduce an open position are allowed).
-    - HALTED (all trading commands except cancels are denied).
+    Possible trading states;
+    - ``ACTIVE`` (trading is enabled).
+    - ``REDUCING`` (only new orders or updates which reduce an open position are allowed).
+    - ``HALTED`` (all trading commands except cancels are denied).
 
     """
 
