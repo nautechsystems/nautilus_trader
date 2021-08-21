@@ -94,6 +94,7 @@ cdef class Actor(Component):
         )
 
         self.trader_id = None  # Initialized when registered
+        self.msgbus = None     # Initialized when registered
         self.cache = None      # Initialized when registered
 
     cdef void _check_registered(self) except *:
@@ -449,6 +450,7 @@ cdef class Actor(Component):
         self._change_logger(logger)
         self._change_msgbus(msgbus)
 
+        self.msgbus = msgbus
         self.cache = cache
 
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
