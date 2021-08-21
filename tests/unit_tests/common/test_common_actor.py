@@ -117,7 +117,7 @@ class TestActor:
 
         # Act, Assert
         assert str(strategy) == "TradingStrategy-GBP/USD-MM"
-        assert repr(strategy) == "TradingStrategy-GBP/USD-MM"
+        assert repr(strategy) == "TradingStrategy(TradingStrategy-GBP/USD-MM)"
 
     def test_id(self):
         # Arrange, Act
@@ -321,6 +321,22 @@ class TestActor:
         with pytest.raises(InvalidStateTrigger):
             actor.dispose()
 
+    def test_degrade_when_not_initialized_raises_invalid_state_trigger(self):
+        # Arrange
+        actor = Actor(self.component_id)
+
+        # Act, Assert
+        with pytest.raises(InvalidStateTrigger):
+            actor.degrade()
+
+    def test_fault_when_not_initialized_raises_invalid_state_trigger(self):
+        # Arrange
+        actor = Actor(self.component_id)
+
+        # Act, Assert
+        with pytest.raises(InvalidStateTrigger):
+            actor.fault()
+
     def test_start_when_user_code_raises_error_logs_and_reraises(self):
         # Arrange
         actor = KaboomActor()
@@ -336,6 +352,7 @@ class TestActor:
         with pytest.raises(RuntimeError):
             actor.start()
         assert actor.state == ComponentState.RUNNING
+        assert actor.is_running
 
     def test_stop_when_user_code_raises_error_logs_and_reraises(self):
         # Arrange
@@ -355,6 +372,7 @@ class TestActor:
         with pytest.raises(RuntimeError):
             actor.stop()
         assert actor.state == ComponentState.STOPPED
+        assert actor.is_stopped
 
     def test_resume_when_user_code_raises_error_logs_and_reraises(self):
         # Arrange
@@ -376,6 +394,7 @@ class TestActor:
         with pytest.raises(RuntimeError):
             actor.resume()
         assert actor.state == ComponentState.RUNNING
+        assert actor.is_running
 
     def test_reset_when_user_code_raises_error_logs_and_reraises(self):
         # Arrange
@@ -392,6 +411,7 @@ class TestActor:
         with pytest.raises(RuntimeError):
             actor.reset()
         assert actor.state == ComponentState.INITIALIZED
+        assert actor.is_initialized
 
     def test_dispose_when_user_code_raises_error_logs_and_reraises(self):
         # Arrange
@@ -408,6 +428,7 @@ class TestActor:
         with pytest.raises(RuntimeError):
             actor.dispose()
         assert actor.state == ComponentState.DISPOSED
+        assert actor.is_disposed
 
     def test_degrade_when_user_code_raises_error_logs_and_reraises(self):
         # Arrange
@@ -427,6 +448,7 @@ class TestActor:
         with pytest.raises(RuntimeError):
             actor.degrade()
         assert actor.state == ComponentState.DEGRADED
+        assert actor.is_degraded
 
     def test_fault_when_user_code_raises_error_logs_and_reraises(self):
         # Arrange
@@ -446,6 +468,7 @@ class TestActor:
         with pytest.raises(RuntimeError):
             actor.fault()
         assert actor.state == ComponentState.FAULTED
+        assert actor.is_faulted
 
     def test_handle_quote_tick_when_user_code_raises_exception_logs_and_reraises(self):
         # Arrange

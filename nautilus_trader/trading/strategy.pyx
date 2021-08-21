@@ -362,8 +362,6 @@ cdef class TradingStrategy(Actor):
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
     cpdef void _reset(self) except *:
-        self._check_registered()
-
         if self.order_factory:
             self.order_factory.reset()
 
@@ -392,8 +390,11 @@ cdef class TradingStrategy(Actor):
         Exceptions raised will be caught, logged, and reraised.
 
         """
-        self._check_registered()
-
+        if not self.is_initialized_c():
+            self.log.error(
+                "Cannot save: strategy has not been registered with a trader.",
+            )
+            return
         try:
             self.log.debug("Saving state...")
             user_state = self.on_save()
@@ -428,8 +429,6 @@ cdef class TradingStrategy(Actor):
 
         """
         Condition.not_none(state, "state")
-
-        self._check_registered()
 
         if not state:
             self.log.info("No user state to load.", color=LogColor.BLUE)
@@ -948,7 +947,6 @@ cdef class TradingStrategy(Actor):
 # -- EGRESS ----------------------------------------------------------------------------------------
 
     cdef void _send_exec_cmd(self, TradingCommand command) except *:
-        self._check_registered()
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)

@@ -183,7 +183,7 @@ class TestTradingStrategy:
 
         # Act, Assert
         assert str(strategy) == "TradingStrategy-GBP/USD-MM"
-        assert repr(strategy) == "TradingStrategy-GBP/USD-MM"
+        assert repr(strategy) == "TradingStrategy(TradingStrategy-GBP/USD-MM)"
 
     def test_id(self):
         # Arrange
@@ -220,21 +220,13 @@ class TestTradingStrategy:
         # Assert
         assert True  # Exception not raised
 
-    def test_save_when_not_registered_with_trader_raises_runtime_error(self):
+    def test_save_when_not_registered_logs_error(self):
         # Arrange
         strategy = TradingStrategy(order_id_tag="001")
+        strategy.save()
 
-        # Act, Assert
-        with pytest.raises(RuntimeError):
-            strategy.save()
-
-    def test_load_when_not_registered_with_trader_raises_runtime_error(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
-
-        # Act, Assert
-        with pytest.raises(RuntimeError):
-            strategy.load({})
+        # Assert
+        assert True  # Exception not raised
 
     def test_save_when_user_code_raises_error_logs_and_reraises(self):
         # Arrange

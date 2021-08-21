@@ -97,12 +97,6 @@ cdef class Actor(Component):
         self.msgbus = None     # Initialized when registered
         self.cache = None      # Initialized when registered
 
-    cdef void _check_registered(self) except *:
-        if self.trader_id is None:
-            # This guards the case where some components are called which
-            # have not yet been assigned, resulting in a SIGSEGV at runtime.
-            raise RuntimeError("Actor has not been registered with a trader")
-
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void on_start(self) except *:
@@ -456,12 +450,9 @@ cdef class Actor(Component):
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
     cpdef void _start(self) except *:
-        self._check_registered()
         self.on_start()
 
     cpdef void _stop(self) except *:
-        self._check_registered()
-
         # Clean up clock
         cdef list timer_names = self._clock.timer_names()
         self._clock.cancel_timers()
@@ -473,23 +464,18 @@ cdef class Actor(Component):
         self.on_stop()
 
     cpdef void _resume(self) except *:
-        self._check_registered()
         self.on_resume()
 
     cpdef void _reset(self) except *:
-        self._check_registered()
         self.on_reset()
 
     cpdef void _dispose(self) except *:
-        self._check_registered()
         self.on_dispose()
 
     cpdef void _degrade(self) except *:
-        self._check_registered()
         self.on_degrade()
 
     cpdef void _fault(self) except *:
-        self._check_registered()
         self.on_fault()
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
@@ -1793,13 +1779,11 @@ cdef class Actor(Component):
 # -- EGRESS ----------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command) except *:
-        self._check_registered()
         if not self._log.is_bypassed:
             self._log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="DataEngine.execute", msg=command)
 
     cdef void _send_data_req(self, DataRequest request) except *:
-        self._check_registered()
         if not self._log.is_bypassed:
             self._log.info(f"{REQ}{SENT} {request}.")
         self._msgbus.request(endpoint="DataEngine.request", request=request)

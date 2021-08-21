@@ -154,11 +154,17 @@ cdef class Component:
         if msgbus is not None:
             self._initialize()
 
+    def __eq__(self, Component other) -> bool:
+        return self.id.value == other.id.value
+
+    def __hash__(self) -> int:
+        return hash(self.id.value)
+
     def __str__(self) -> str:
         return self.id.value
 
     def __repr__(self) -> str:
-        return self.id.value
+        return f"{type(self).__name__}({self.id})"
 
     cdef ComponentState state_c(self) except *:
         return <ComponentState>self._fsm.state
@@ -171,6 +177,18 @@ cdef class Component:
 
     cdef bint is_running_c(self):
         return self._fsm.state == ComponentState.RUNNING
+
+    cdef bint is_stopped_c(self):
+        return self._fsm.state == ComponentState.STOPPED
+
+    cdef bint is_disposed_c(self):
+        return self._fsm.state == ComponentState.DISPOSED
+
+    cdef bint is_degraded_c(self):
+        return self._fsm.state == ComponentState.DEGRADED
+
+    cdef bint is_faulted_c(self):
+        return self._fsm.state == ComponentState.FAULTED
 
     @property
     def state(self):
@@ -207,6 +225,54 @@ cdef class Component:
 
         """
         return self.is_running_c()
+
+    @property
+    def is_stopped(self):
+        """
+        If the component current state is STOPPED.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_stopped_c()
+
+    @property
+    def is_disposed(self):
+        """
+        If the component current state is DISPOSED.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_disposed_c()
+
+    @property
+    def is_degraded(self):
+        """
+        If the component current state is DEGRADED.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_degraded_c()
+
+    @property
+    def is_faulted(self):
+        """
+        If the component current state is FAULTED.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_faulted_c()
 
     cdef void _change_clock(self, Clock clock) except *:
         Condition.not_none(clock, "clock")
@@ -264,23 +330,7 @@ cdef class Component:
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cdef void _initialize(self) except *:
-        """
-        Initialize the component.
-
-        Raises
-        ------
-        InvalidStateTrigger
-            If invalid trigger from current component state.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        Do not override.
-
-        Exceptions raised will be caught, logged, and reraised.
-
-        """
+        # This is a protected method dependent on registration of a message bus
         try:
             self._trigger_fsm(
                 trigger=ComponentTrigger.INITIALIZE,  # -> INITIALIZED
