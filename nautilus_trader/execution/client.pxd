@@ -42,14 +42,11 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class ExecutionClient(Component):
-    cdef MessageBus _msgbus
     cdef Cache _cache
     cdef Account _account
-    cdef dict _config
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the client.\n\n:returns: `TraderId`"""

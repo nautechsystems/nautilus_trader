@@ -24,13 +24,10 @@ from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class DataClient(Component):
-    cdef MessageBus _msgbus
     cdef Cache _cache
-    cdef dict _config
 
     cdef dict _feeds_generic_data
 

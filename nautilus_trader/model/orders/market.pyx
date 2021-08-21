@@ -140,7 +140,7 @@ cdef class MarketOrder(Order):
             "filled_qty": str(self.filled_qty),
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "slippage": str(self.slippage),
-            "state": self._fsm.state_string_c(),
+            "status": self._fsm.state_string_c(),
             "ts_last": self.ts_last,
             "ts_init": self.ts_init,
         }

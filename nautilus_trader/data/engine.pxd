@@ -37,11 +37,9 @@ from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.data cimport OrderBookData
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class DataEngine(Component):
-    cdef MessageBus _msgbus
     cdef Cache _cache
 
     cdef bint _use_previous_close

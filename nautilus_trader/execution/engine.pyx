@@ -72,6 +72,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class ExecutionEngine(Component):
@@ -106,15 +107,14 @@ cdef class ExecutionEngine(Component):
             The configuration options.
 
         """
-        if config is None:
-            config = {}
         super().__init__(
             clock=clock,
             logger=logger,
             component_id=ComponentId("ExecEngine"),
+            msgbus=msgbus,
+            config=config,
         )
 
-        self._msgbus = msgbus
         self._cache = cache
 
         self._clients = {}           # type: dict[ClientId, ExecutionClient]

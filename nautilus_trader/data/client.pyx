@@ -79,11 +79,11 @@ cdef class DataClient(Component):
             logger=logger,
             component_id=client_id,
             component_name=config.get("name", f"DataClient-{client_id.value}"),
+            msgbus=msgbus,
+            config=config,
         )
 
-        self._msgbus = msgbus
         self._cache = cache
-        self._config = config
 
         # Feeds
         self._feeds_generic_data = {}  # type: dict[DataType, asyncio.Task]

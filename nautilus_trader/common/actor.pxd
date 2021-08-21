@@ -48,8 +48,6 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 cdef class Actor(Component):
     cdef readonly TraderId trader_id
     """The trader ID associated with the actor.\n\n:returns: `TraderId`"""
-    cdef readonly MessageBus msgbus
-    """The message bus for the actor.\n\n:returns: `MessageBus`"""
     cdef readonly CacheFacade cache
     """The read-only cache for the actor.\n\n:returns: `CacheFacade`"""
 
@@ -62,6 +60,8 @@ cdef class Actor(Component):
     cpdef void on_resume(self) except *
     cpdef void on_reset(self) except *
     cpdef void on_dispose(self) except *
+    cpdef void on_degrade(self) except *
+    cpdef void on_fault(self) except *
     cpdef void on_instrument(self, Instrument instrument) except *
     cpdef void on_order_book_delta(self, OrderBookData delta) except *
     cpdef void on_order_book(self, OrderBook order_book) except *

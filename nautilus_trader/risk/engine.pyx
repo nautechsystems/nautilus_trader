@@ -109,10 +109,11 @@ cdef class RiskEngine(Component):
             clock=clock,
             logger=logger,
             component_id=ComponentId("RiskEngine"),
+            msgbus=msgbus,
+            config=config,
         )
 
         self._portfolio = portfolio
-        self._msgbus = msgbus
         self._cache = cache
 
         self.trading_state = TradingState.ACTIVE  # Start active by default

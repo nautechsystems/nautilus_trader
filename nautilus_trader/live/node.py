@@ -244,7 +244,7 @@ class TradingNode:
             log=self._log,
         )
 
-        self._log.info("state=INITIALIZED.")
+        self._log.info("INITIALIZED.")
         self.time_to_initialize = self._clock.delta(self.created_time)
         self._log.info(f"Initialized in {self.time_to_initialize.total_seconds():.3f}s.")
 

@@ -34,7 +34,7 @@ class TestForexSessionFilter:
         self.session_filter = ForexSessionFilter()
 
     @pytest.mark.parametrize(
-        "session,expected",
+        "session, expected",
         [
             [ForexSession.SYDNEY, "1970-01-01 10:00:00+10:00"],
             [ForexSession.TOKYO, "1970-01-01 09:00:00+09:00"],
@@ -52,7 +52,7 @@ class TestForexSessionFilter:
         assert str(result) == expected
 
     @pytest.mark.parametrize(
-        "session,expected",
+        "session, expected",
         [
             [ForexSession.SYDNEY, datetime(1970, 1, 1, 21, 0, tzinfo=pytz.utc)],
             [ForexSession.TOKYO, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
@@ -84,7 +84,7 @@ class TestForexSessionFilter:
         assert result == datetime(2020, 7, 14, 0, 0, tzinfo=pytz.utc)
 
     @pytest.mark.parametrize(
-        "session,expected",
+        "session, expected",
         [
             [ForexSession.SYDNEY, datetime(1969, 12, 31, 21, 0, tzinfo=pytz.utc)],
             [ForexSession.TOKYO, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
@@ -100,7 +100,7 @@ class TestForexSessionFilter:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "session,expected",
+        "session, expected",
         [
             [ForexSession.SYDNEY, datetime(1970, 1, 1, 6, 0, tzinfo=pytz.utc)],
             [ForexSession.TOKYO, datetime(1970, 1, 1, 9, 0, tzinfo=pytz.utc)],
@@ -116,7 +116,7 @@ class TestForexSessionFilter:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "session,expected",
+        "session, expected",
         [
             [ForexSession.SYDNEY, datetime(1969, 12, 31, 6, 0, tzinfo=pytz.utc)],
             [ForexSession.TOKYO, datetime(1969, 12, 31, 9, 0, tzinfo=pytz.utc)],

@@ -26,23 +26,36 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef dict _COMPONENT_STATE_TABLE = {
-    (ComponentState.INITIALIZED, ComponentTrigger.RESET): ComponentState.RESETTING,
-    (ComponentState.INITIALIZED, ComponentTrigger.START): ComponentState.STARTING,
-    (ComponentState.INITIALIZED, ComponentTrigger.DISPOSE): ComponentState.DISPOSING,
+    (ComponentState.PRE_INITIALIZED, ComponentTrigger.INITIALIZE): ComponentState.INITIALIZED,
+    (ComponentState.INITIALIZED, ComponentTrigger.RESET): ComponentState.RESETTING,  # Transitional state
+    (ComponentState.INITIALIZED, ComponentTrigger.START): ComponentState.STARTING,  # Transitional state
+    (ComponentState.INITIALIZED, ComponentTrigger.DISPOSE): ComponentState.DISPOSING,  # Transitional state
     (ComponentState.RESETTING, ComponentTrigger.RESET): ComponentState.INITIALIZED,
     (ComponentState.STARTING, ComponentTrigger.RUNNING): ComponentState.RUNNING,
-    (ComponentState.STARTING, ComponentTrigger.STOP): ComponentState.STOPPING,
-    (ComponentState.RUNNING, ComponentTrigger.STOP): ComponentState.STOPPING,
-    (ComponentState.RESUMING, ComponentTrigger.STOP): ComponentState.STOPPING,
+    (ComponentState.STARTING, ComponentTrigger.STOP): ComponentState.STOPPING,  # Transitional state
+    (ComponentState.STARTING, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
+    (ComponentState.RUNNING, ComponentTrigger.STOP): ComponentState.STOPPING,  # Transitional state
+    (ComponentState.RUNNING, ComponentTrigger.DEGRADE): ComponentState.DEGRADING,  # Transitional state
+    (ComponentState.RUNNING, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
+    (ComponentState.RESUMING, ComponentTrigger.STOP): ComponentState.STOPPING,  # Transitional state
     (ComponentState.RESUMING, ComponentTrigger.RUNNING): ComponentState.RUNNING,
+    (ComponentState.RESUMING, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
     (ComponentState.STOPPING, ComponentTrigger.STOPPED): ComponentState.STOPPED,
-    (ComponentState.STOPPED, ComponentTrigger.RESET): ComponentState.RESETTING,
-    (ComponentState.STOPPED, ComponentTrigger.RESUME): ComponentState.RESUMING,
-    (ComponentState.STOPPED, ComponentTrigger.DISPOSE): ComponentState.DISPOSING,
-    (ComponentState.DISPOSING, ComponentTrigger.DISPOSED): ComponentState.DISPOSED,
+    (ComponentState.STOPPING, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
+    (ComponentState.STOPPED, ComponentTrigger.RESET): ComponentState.RESETTING,  # Transitional state
+    (ComponentState.STOPPED, ComponentTrigger.RESUME): ComponentState.RESUMING,  # Transitional state
+    (ComponentState.STOPPED, ComponentTrigger.DISPOSE): ComponentState.DISPOSING,  # Transitional state
+    (ComponentState.STOPPED, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transitional state
+    (ComponentState.DEGRADING, ComponentTrigger.DEGRADED): ComponentState.DEGRADED,
+    (ComponentState.DEGRADED, ComponentTrigger.RESUME): ComponentState.RESUMING,  # Transitional state
+    (ComponentState.DEGRADED, ComponentTrigger.STOP): ComponentState.STOPPING,  # Transitional state
+    (ComponentState.DEGRADED, ComponentTrigger.FAULT): ComponentState.FAULTING,  # Transition state
+    (ComponentState.DISPOSING, ComponentTrigger.DISPOSED): ComponentState.DISPOSED,  # Terminal state
+    (ComponentState.FAULTING, ComponentTrigger.FAULTED): ComponentState.FAULTED,  # Terminal state
 }
 
 cdef class ComponentFSMFactory:
@@ -74,7 +87,7 @@ cdef class ComponentFSMFactory:
         """
         return FiniteStateMachine(
             state_transition_table=ComponentFSMFactory.get_state_transition_table(),
-            initial_state=ComponentState.INITIALIZED,
+            initial_state=ComponentState.PRE_INITIALIZED,
             trigger_parser=ComponentTriggerParser.to_str,
             state_parser=ComponentStateParser.to_str,
         )
@@ -93,7 +106,8 @@ cdef class Component:
         Logger logger not None,
         ComponentId component_id=None,
         str component_name=None,
-        bint log_initialized=True,
+        MessageBus msgbus=None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the ``Component`` class.
@@ -107,8 +121,12 @@ cdef class Component:
         component_id : ComponentId, optional
             The component ID. If None is passed then the identifier will be
             taken from `type(self).__name__`.
-        log_initialized : bool
-            If the initial state should be logged.
+        component_name : str, optional
+            The custom component name.
+        msgbus : MessageBus, optional
+            The message bus for the component (required before initialized).
+        config : dict[str, Any], optional
+            The configuration for the component.
 
         Raises
         ------
@@ -116,6 +134,8 @@ cdef class Component:
             If component_name is not a valid string.
 
         """
+        if config is None:
+            config = {}
         if component_id is None:
             component_id = ComponentId(type(self).__name__)
         if component_name is None:
@@ -124,13 +144,15 @@ cdef class Component:
 
         self.id = component_id
 
+        self._msgbus = msgbus
         self._clock = clock
         self._uuid_factory = UUIDFactory()
         self._log = LoggerAdapter(component_name=component_name, logger=logger)
         self._fsm = ComponentFSMFactory.create()
+        self._config = config
 
-        if log_initialized:
-            self._log.info(f"{self._fsm.state_string_c()}.")
+        if msgbus is not None:
+            self._initialize()
 
     def __str__(self) -> str:
         return self.id.value
@@ -181,6 +203,19 @@ cdef class Component:
 
         self._log = LoggerAdapter(component_name=self.id.value, logger=logger)
 
+    cdef void _change_msgbus(self, MessageBus msgbus) except *:
+        Condition.not_none(msgbus, "msgbus")
+        Condition.none(self._msgbus, "self._msgbus")
+        # As an additional system wiring check: if a message bus is being added
+        # here then there should not be an existing message bus.
+
+        # The initializing flag is True if no previous message bus wired up
+        cdef bint initializing = self._msgbus is None
+        self._msgbus = msgbus
+
+        if initializing:
+            self._initialize()
+
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void _start(self) except *:
@@ -203,7 +238,43 @@ cdef class Component:
         # Should override in subclass
         warnings.warn("_dispose was called when not overridden")
 
+    cpdef void _degrade(self) except *:
+        # Should override in subclass
+        warnings.warn("_degrade was called when not overridden")
+
+    cpdef void _fault(self) except *:
+        # Should override in subclass
+        warnings.warn("_fault was called when not overridden")
+
 # -- COMMANDS --------------------------------------------------------------------------------------
+
+    cdef void _initialize(self) except *:
+        """
+        Initialize the component.
+
+        Raises
+        ------
+        InvalidStateTrigger
+            If invalid trigger from current component state.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        Do not override.
+
+        Exceptions raised will be caught, logged, and reraised.
+
+        """
+        try:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.INITIALIZE,  # -> INITIALIZED
+                is_transitory=False,
+                action=None,
+            )
+        except Exception as ex:
+            self._log.exception(ex)
+            raise
 
     cpdef void start(self) except *:
         """
@@ -212,7 +283,7 @@ cdef class Component:
         Raises
         ------
         InvalidStateTrigger
-            If invalid trigger from current strategy state.
+            If invalid trigger from current component state.
 
         Warnings
         --------
@@ -221,11 +292,21 @@ cdef class Component:
         Exceptions raised will be caught, logged, and reraised.
 
         """
-        self._trigger_fsm(
-            trigger1=ComponentTrigger.START,  # -> STARTING
-            trigger2=ComponentTrigger.RUNNING,
-            action=self._start,
-        )
+        try:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.START,  # -> STARTING
+                is_transitory=True,
+                action=self._start,
+            )
+        except Exception as ex:
+            self._log.exception(ex)
+            raise
+        finally:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.RUNNING,
+                is_transitory=False,
+                action=None,
+            )
 
     cpdef void stop(self) except *:
         """
@@ -243,11 +324,21 @@ cdef class Component:
         Exceptions raised will be caught, logged, and reraised.
 
         """
-        self._trigger_fsm(
-            trigger1=ComponentTrigger.STOP,  # -> STOPPING
-            trigger2=ComponentTrigger.STOPPED,
-            action=self._stop,
-        )
+        try:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.STOP,  # -> STOPPING
+                is_transitory=True,
+                action=self._stop,
+            )
+        except Exception as ex:
+            self._log.exception(ex)
+            raise
+        finally:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.STOPPED,
+                is_transitory=False,
+                action=None,
+            )
 
     cpdef void resume(self) except *:
         """
@@ -265,11 +356,21 @@ cdef class Component:
         Exceptions raised will be caught, logged, and reraised.
 
         """
-        self._trigger_fsm(
-            trigger1=ComponentTrigger.RESUME,  # -> RESUMING
-            trigger2=ComponentTrigger.RUNNING,
-            action=self._resume,
-        )
+        try:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.RESUME,  # -> RESUMING
+                is_transitory=True,
+                action=self._resume,
+            )
+        except Exception as ex:
+            self._log.exception(ex)
+            raise
+        finally:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.RUNNING,
+                is_transitory=False,
+                action=None,
+            )
 
     cpdef void reset(self) except *:
         """
@@ -289,11 +390,21 @@ cdef class Component:
         Exceptions raised will be caught, logged, and reraised.
 
         """
-        self._trigger_fsm(
-            trigger1=ComponentTrigger.RESET,  # -> RESETTING
-            trigger2=ComponentTrigger.RESET,
-            action=self._reset,
-        )
+        try:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.RESET,  # -> RESETTING
+                is_transitory=True,
+                action=self._reset,
+            )
+        except Exception as ex:
+            self._log.exception(ex)
+            raise
+        finally:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.RESET,
+                is_transitory=False,
+                action=None,
+            )
 
     cpdef void dispose(self) except *:
         """
@@ -314,33 +425,105 @@ cdef class Component:
         Exceptions raised will be caught, logged, and reraised.
 
         """
-        self._trigger_fsm(
-            trigger1=ComponentTrigger.DISPOSE,  # -> DISPOSING
-            trigger2=ComponentTrigger.DISPOSED,
-            action=self._dispose,
-        )
+        try:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.DISPOSE,  # -> DISPOSING
+                is_transitory=True,
+                action=self._dispose,
+            )
+        except Exception as ex:
+            self._log.exception(ex)
+            raise
+        finally:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.DISPOSED,
+                is_transitory=False,
+                action=None,
+            )
+
+    cpdef void degrade(self) except *:
+        """
+        Degrade the component.
+
+        Raises
+        ------
+        InvalidStateTrigger
+            If invalid trigger from current component state.
+
+        Warnings
+        --------
+        Do not override.
+
+        Exceptions raised will be caught, logged, and reraised.
+
+        """
+        try:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.DEGRADE,  # -> DEGRADING
+                is_transitory=True,
+                action=self._degrade,
+            )
+        except Exception as ex:
+            self._log.exception(ex)
+            raise
+        finally:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.DEGRADED,
+                is_transitory=False,
+                action=None,
+            )
+
+    cpdef void fault(self) except *:
+        """
+        Fault the component.
+
+        This method is idempotent and irreversible. No other methods should be
+        called after faulting.
+
+        Raises
+        ------
+        InvalidStateTrigger
+            If invalid trigger from current component state.
+
+        Warnings
+        --------
+        Do not override.
+
+        Exceptions raised will be caught, logged, and reraised.
+
+        """
+        try:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.FAULT,  # -> FAULTING
+                is_transitory=True,
+                action=self._fault,
+            )
+        except Exception as ex:
+            self._log.exception(ex)
+            raise
+        finally:
+            self._trigger_fsm(
+                trigger=ComponentTrigger.FAULTED,
+                is_transitory=False,
+                action=None,
+            )
 
 # --------------------------------------------------------------------------------------------------
 
     cdef void _trigger_fsm(
         self,
-        ComponentTrigger trigger1,
-        ComponentTrigger trigger2,
-        action,
+        ComponentTrigger trigger,
+        bint is_transitory,
+        action: Callable[[None], None]=None,
     ) except *:
         try:
-            self._fsm.trigger(trigger1)
+            self._fsm.trigger(trigger)
         except InvalidStateTrigger as ex:
             self._log.exception(ex)
             raise  # Guards against component being put in an invalid state
 
-        self._log.info(f"{self._fsm.state_string_c()}...")
+        self._log.info(f"{self._fsm.state_string_c()}.{'..' if is_transitory else ''}")
+        # TODO(cs): Publish system event
 
-        try:
+        if action is not None:
             action()
-        except Exception as ex:
-            self._log.exception(ex)
-            raise
-        finally:
-            self._fsm.trigger(trigger2)
-            self._log.info(f"{self._fsm.state_string_c()}.")

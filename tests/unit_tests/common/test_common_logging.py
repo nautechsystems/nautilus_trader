@@ -29,7 +29,7 @@ from nautilus_trader.common.logging import LogLevelParser
 
 class TestLogLevelParser:
     @pytest.mark.parametrize(
-        "enum,expected",
+        "enum, expected",
         [
             [LogLevel.DEBUG, "DBG"],
             [LogLevel.INFO, "INF"],
@@ -46,7 +46,7 @@ class TestLogLevelParser:
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string,expected",
+        "string, expected",
         [
             ["DBG", LogLevel.DEBUG],
             ["INF", LogLevel.INFO],

@@ -59,6 +59,7 @@ cdef class Trader(Component):
         ExecutionEngine exec_engine not None,
         Clock clock not None,
         Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the ``Trader`` class.
@@ -83,6 +84,8 @@ cdef class Trader(Component):
             The clock for the trader.
         logger : Logger
             The logger for the trader.
+        config : dict[str, Any]
+            The configuration for the trader.
 
         Raises
         ------
@@ -96,13 +99,16 @@ cdef class Trader(Component):
             If strategies list contains a type other than TradingStrategy.
 
         """
+        if config is None:
+            config = {}
         super().__init__(
             clock=clock,
             logger=logger,
             component_id=trader_id,
+            msgbus=msgbus,
+            config=config,
         )
 
-        self._msgbus = msgbus
         self._cache = cache
         self._portfolio = portfolio
         self._data_engine = data_engine
