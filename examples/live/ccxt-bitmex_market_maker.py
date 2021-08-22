@@ -16,7 +16,6 @@
 
 import os
 import sys
-from datetime import timedelta
 from decimal import Decimal
 
 
@@ -61,7 +60,7 @@ config = {
     },
     "data_engine": {},
     "risk_engine": {
-        "max_order_rate": (5, timedelta(seconds=1)),
+        "max_order_rate": "5/00:00:01",
         "max_notional_per_order": {"BTC/USD.BITMEX": 10000},
     },
     "exec_engine": {},

@@ -19,6 +19,7 @@ from decimal import Decimal
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.enums import LogLevel
+from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
@@ -122,7 +123,7 @@ class TestRiskEngine:
 
         config = {
             "bypass": True,  # <-- bypassing pre-trade risk checks for backtest
-            "max_order_rate": (5, timedelta(seconds=1)),
+            "max_order_rate": "5/00:00:01",
             "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
         }
 
@@ -170,11 +171,23 @@ class TestRiskEngine:
         # Assert
         assert result == TradingState.ACTIVE
 
-    def test_set_trading_state_changes_value(self):
+    def test_set_trading_state_when_no_change_logs_warning(self):
         # Arrange, Act
+        self.risk_engine.set_trading_state(TradingState.ACTIVE)
+
+        # Assert
+        assert self.risk_engine.trading_state == TradingState.ACTIVE
+
+    def test_set_trading_state_changes_value_and_publishes_event(self):
+        # Arrange
+        handler = []
+        self.msgbus.subscribe(topic="events.risk*", handler=handler.append)
+
+        # Act
         self.risk_engine.set_trading_state(TradingState.HALTED)
 
         # Assert
+        assert type(handler[0]) == TradingStateChanged
         assert self.risk_engine.trading_state == TradingState.HALTED
 
     def test_max_order_rate_when_no_risk_config_returns_100_per_second(self):

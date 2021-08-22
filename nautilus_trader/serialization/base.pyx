@@ -15,6 +15,7 @@
 
 from typing import Any, Callable, Dict
 
+from nautilus_trader.common.events.risk cimport TradingStateChanged
 from nautilus_trader.common.events.system cimport ComponentStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
@@ -54,13 +55,13 @@ from nautilus_trader.model.instruments.currency cimport CurrencySpot
 
 
 # Default mappings for Nautilus objects
-
 _OBJECT_TO_DICT_MAP = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
     SubmitBracketOrder.__name__: SubmitBracketOrder.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
     UpdateOrder.__name__: UpdateOrder.to_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.to_dict_c,
+    TradingStateChanged.__name__: TradingStateChanged.to_dict_c,
     AccountState.__name__: AccountState.to_dict_c,
     OrderAccepted.__name__: OrderAccepted.to_dict_c,
     OrderCancelRejected.__name__: OrderCancelRejected.to_dict_c,
@@ -99,6 +100,7 @@ _OBJECT_FROM_DICT_MAP = {
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
     UpdateOrder.__name__: UpdateOrder.from_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.from_dict_c,
+    TradingStateChanged.__name__: TradingStateChanged.from_dict_c,
     AccountState.__name__: AccountState.from_dict_c,
     OrderAccepted.__name__: OrderAccepted.from_dict_c,
     OrderCancelRejected.__name__: OrderCancelRejected.from_dict_c,

@@ -23,6 +23,7 @@ from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import uuid4
@@ -42,6 +43,7 @@ from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -376,6 +378,17 @@ class TestStubs:
             component_type="MyActor",
             state=ComponentState.RUNNING,
             config={"do_something": True},
+            event_id=uuid4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def event_trading_state_changed() -> TradingStateChanged:
+        return TradingStateChanged(
+            trader_id=TestStubs.trader_id(),
+            state=TradingState.HALTED,
+            config={"max_order_rate": "100/00:00:01"},
             event_id=uuid4(),
             ts_event=0,
             ts_init=0,

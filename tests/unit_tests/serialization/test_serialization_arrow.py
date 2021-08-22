@@ -21,6 +21,7 @@ import pytest
 from fsspec.implementations.memory import MemoryFileSystem
 
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.c_enums.book_level import BookLevel
@@ -247,6 +248,18 @@ class TestParquetSerializer:
 
         serialized = ParquetSerializer.serialize(event)
         [deserialized] = ParquetSerializer.deserialize(cls=ComponentStateChanged, chunk=serialized)
+
+        # Assert
+        assert deserialized == event
+
+        write_chunk(raw_file=self.raw_file, chunk=[event])
+
+    @pytest.mark.skip(reason="bm to fix")
+    def test_serialize_and_deserialize_trading_state_changed(self):
+        event = TestStubs.event_trading_state_changed()
+
+        serialized = ParquetSerializer.serialize(event)
+        [deserialized] = ParquetSerializer.deserialize(cls=TradingStateChanged, chunk=serialized)
 
         # Assert
         assert deserialized == event

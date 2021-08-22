@@ -122,7 +122,7 @@ cdef class ComponentStateChanged(Event):
     @staticmethod
     def from_dict(dict values) -> ComponentStateChanged:
         """
-        Return an component state changed event from the given dict values.
+        Return a component state changed event from the given dict values.
 
         Parameters
         ----------
