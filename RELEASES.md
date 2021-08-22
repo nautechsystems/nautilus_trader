@@ -1,13 +1,18 @@
 # NautilusTrader 1.128.0 Beta - Release Notes
 
+Improve adding bar data to `BacktestEngine`.
+
 This release also introduces the concept of an `active` order, which is an order
 whose state can change (not completed).
 
 ## Breaking Changes
 - Throttling config now takes string e.g. "100/00:00:01" which is 100 / second.
+- Renamed `DataProducerFacade` to `DataProducer`.
 
 ## Enhancements
 - Wired up `Ticker` data type.
+- Added `BacktestEngine.add_bar_objects()`.
+- Added `BacktestEngine.add_bars_as_ticks()`.
 - Added order `active` concept, with `order.is_active` and cache methods.
 - Added `ComponentStateChanged` event.
 - Added `Component.degrade()` and `Component.fault()` command methods.

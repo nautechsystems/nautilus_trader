@@ -115,6 +115,7 @@ class EMACross(TradingStrategy):
         fast_ema: int = 10,
         slow_ema: int = 20,
         extra_id_tag: str = "",
+        is_internal_aggregation: bool = True,
     ):
         """
         Initialize a new instance of the ``EMACross`` class.
@@ -133,6 +134,8 @@ class EMACross(TradingStrategy):
             The slow EMA period.
         extra_id_tag : str
             An additional order ID tag.
+        is_internal_aggregation : bool, default=True
+            If the bar type subscribed to is internally aggregated.
 
         """
         if extra_id_tag is None:
@@ -142,7 +145,7 @@ class EMACross(TradingStrategy):
         # Custom strategy variables
         self.instrument_id = instrument_id
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
-        self.bar_type = BarType(instrument_id, bar_spec)
+        self.bar_type = BarType(instrument_id, bar_spec, is_internal_aggregation)
         self.trade_size = trade_size
 
         # Create the indicators for the strategy
@@ -583,8 +586,6 @@ class RepeatedOrders(TradingStrategy):
             The instrument ID for the strategy.
         trade_size : Decimal
             The position size per trade.
-        extra_id_tag : str
-            An additional order ID tag.
 
         """
         super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", ""))

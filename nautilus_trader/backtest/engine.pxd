@@ -18,7 +18,7 @@ from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.backtest.data_producer cimport DataProducerFacade
+from nautilus_trader.backtest.data_producer cimport DataProducer
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
@@ -45,7 +45,7 @@ cdef class BacktestEngine:
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
     cdef RiskEngine _risk_engine
-    cdef DataProducerFacade _data_producer
+    cdef DataProducer _data_producer
     cdef LoggerAdapter _log
     cdef Logger _logger
     cdef Logger _test_logger
