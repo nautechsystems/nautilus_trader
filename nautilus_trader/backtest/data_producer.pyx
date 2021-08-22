@@ -47,7 +47,7 @@ from nautilus_trader.model.objects cimport Quantity
 INT64_MAX = 9223372036854775807
 
 
-cdef class DataProducerFacade:
+cdef class DataProducer:
     """
     Provides a read-only facade for data producers.
     """
@@ -65,7 +65,7 @@ cdef class DataProducerFacade:
         raise NotImplementedError("method must be implemented in the subclass")
 
 
-cdef class BacktestDataProducer(DataProducerFacade):
+cdef class BacktestDataProducer(DataProducer):
     """
     Provides a basic data producer for backtesting.
     """
@@ -557,7 +557,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
         )
 
 
-cdef class CachedProducer(DataProducerFacade):
+cdef class CachedProducer(DataProducer):
     """
     Cached wrap for the `BacktestDataProducer`` class.
     """

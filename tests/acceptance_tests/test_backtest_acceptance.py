@@ -48,7 +48,7 @@ from tests.test_kit.strategies import MarketMaker
 from tests.test_kit.strategies import OrderBookImbalanceStrategy
 
 
-class TestBacktestAcceptanceTestsUSDJPYWit:
+class TestBacktestAcceptanceTestsUSDJPY:
     def setup(self):
         # Fixture Setup
         self.engine = BacktestEngine(
@@ -60,13 +60,13 @@ class TestBacktestAcceptanceTestsUSDJPYWit:
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_bars(
+        self.engine.add_bars_as_ticks(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.usdjpy_1min_bid(),
         )
-        self.engine.add_bars(
+        self.engine.add_bars_as_ticks(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
@@ -164,7 +164,7 @@ class TestBacktestAcceptanceTestsUSDJPYWit:
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992818.88, USD)
 
 
-class TestBacktestAcceptanceTestsGBPUSDWit:
+class TestBacktestAcceptanceTestsGBPUSD:
     def setup(self):
         # Fixture Setup
         self.engine = BacktestEngine(
@@ -176,13 +176,13 @@ class TestBacktestAcceptanceTestsGBPUSDWit:
         self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
         self.engine.add_instrument(self.gbpusd)
-        self.engine.add_bars(
+        self.engine.add_bars_as_ticks(
             self.gbpusd.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.gbpusd_1min_bid(),
         )
-        self.engine.add_bars(
+        self.engine.add_bars_as_ticks(
             self.gbpusd.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
@@ -226,7 +226,7 @@ class TestBacktestAcceptanceTestsGBPUSDWit:
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(947226.84, GBP)
 
 
-class TestBacktestAcceptanceTestsAUDUSDWith:
+class TestBacktestAcceptanceTestsAUDUSD:
     def setup(self):
         # Fixture Setup
         self.engine = BacktestEngine(
@@ -295,7 +295,7 @@ class TestBacktestAcceptanceTestsAUDUSDWith:
         assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(995431.92, AUD)
 
 
-class TestBacktestAcceptanceTestsETHUSDTWithT:
+class TestBacktestAcceptanceTestsETHUSDT:
     def setup(self):
         # Fixture Setup
         self.engine = BacktestEngine(
@@ -341,7 +341,7 @@ class TestBacktestAcceptanceTestsETHUSDTWithT:
         )
 
 
-class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQ:
+class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes:
     def setup(self):
         # Fixture Setup
         self.engine = BacktestEngine(
@@ -446,6 +446,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
 class TestBacktestAcceptanceTestsMarketMaking:
     def setup(self):
         # Fixture Setup
+        data_catalog_setup()
         self.engine = BacktestEngine(
             bypass_logging=True,
             run_analysis=False,

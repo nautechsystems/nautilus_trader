@@ -51,13 +51,13 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             engine = BacktestEngine(bypass_logging=True)
 
             engine.add_instrument(USDJPY_SIM)
-            engine.add_bars(
+            engine.add_bars_as_ticks(
                 USDJPY_SIM.id,
                 BarAggregation.MINUTE,
                 PriceType.BID,
                 TestDataProvider.usdjpy_1min_bid(),
             )
-            engine.add_bars(
+            engine.add_bars_as_ticks(
                 USDJPY_SIM.id,
                 BarAggregation.MINUTE,
                 PriceType.ASK,
@@ -89,13 +89,13 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             engine = BacktestEngine(bypass_logging=True)
 
             engine.add_instrument(USDJPY_SIM)
-            engine.add_bars(
+            engine.add_bars_as_ticks(
                 USDJPY_SIM.id,
                 BarAggregation.MINUTE,
                 PriceType.BID,
                 TestDataProvider.usdjpy_1min_bid(),
             )
-            engine.add_bars(
+            engine.add_bars_as_ticks(
                 USDJPY_SIM.id,
                 BarAggregation.MINUTE,
                 PriceType.ASK,
@@ -135,13 +135,13 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             engine = BacktestEngine(bypass_logging=True)
 
             engine.add_instrument(USDJPY_SIM)
-            engine.add_bars(
+            engine.add_bars_as_ticks(
                 USDJPY_SIM.id,
                 BarAggregation.MINUTE,
                 PriceType.BID,
                 TestDataProvider.usdjpy_1min_bid(),
             )
-            engine.add_bars(
+            engine.add_bars_as_ticks(
                 USDJPY_SIM.id,
                 BarAggregation.MINUTE,
                 PriceType.ASK,

@@ -647,13 +647,13 @@ class TestExecutionCacheWithRedisDatabaseTests:
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_bars(
+        self.engine.add_bars_as_ticks(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.usdjpy_1min_bid(),
         )
-        self.engine.add_bars(
+        self.engine.add_bars_as_ticks(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.ASK,

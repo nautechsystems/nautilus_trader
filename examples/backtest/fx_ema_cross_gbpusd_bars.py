@@ -63,13 +63,13 @@ if __name__ == "__main__":
 
     # Setup data
     engine.add_instrument(GBPUSD)
-    engine.add_bars(
+    engine.add_bars_as_ticks(
         instrument_id=GBPUSD.id,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.BID,
         data=TestDataProvider.gbpusd_1min_bid(),  # Stub data from the test kit
     )
-    engine.add_bars(
+    engine.add_bars_as_ticks(
         instrument_id=GBPUSD.id,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.ASK,
