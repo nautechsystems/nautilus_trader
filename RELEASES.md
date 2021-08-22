@@ -4,11 +4,11 @@ This release also introduces the concept of an `active` order, which is an order
 whose state can change (not completed).
 
 ## Breaking Changes
-None
+- Throttling config now takes string e.g. "100/00:00:01" which is 100 / second.
 
 ## Enhancements
 - Wired up `Ticker` data type.
-- Added order `active` concept with `order.is_active` and cache methods.
+- Added order `active` concept, with `order.is_active` and cache methods.
 - Added `ComponentStateChanged` event.
 - Added `Component.degrade()` and `Component.fault()` command methods.
 - Added `Component.on_degrade()` and `Component.on_fault()` handler methods.
