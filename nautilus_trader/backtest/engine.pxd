@@ -25,7 +25,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -67,8 +67,8 @@ cdef class BacktestEngine:
     """The trader for the backtest.\n\n:returns: `Trader`"""
     cdef readonly str host_id
     """The backtest engine host ID.\n\n:returns: `str`"""
-    cdef readonly UUID instance_id
-    """The backtest engine instance ID.\n\n:returns: `UUID`"""
+    cdef readonly UUID4 instance_id
+    """The backtest engine instance ID.\n\n:returns: `UUID4`"""
     cdef readonly datetime created_time
     """The backtest engine created time.\n\n:returns: `datetime`"""
     cdef readonly timedelta time_to_initialize

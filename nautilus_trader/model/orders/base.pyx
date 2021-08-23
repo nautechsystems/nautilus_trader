@@ -26,7 +26,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -714,7 +714,7 @@ cdef class PassiveOrder(Order):
         Price price not None,
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
-        UUID init_id not None,
+        UUID4 init_id not None,
         int64_t ts_init,
         dict options not None,
     ):
@@ -743,7 +743,7 @@ cdef class PassiveOrder(Order):
             The order time-in-force.
         expire_time : datetime, optional
             The order expiry time - applicable to ``GTD`` orders only.
-        init_id : UUID
+        init_id : UUID4
             The order initialization event ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the order was initialized.

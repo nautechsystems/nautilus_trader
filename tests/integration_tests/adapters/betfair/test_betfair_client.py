@@ -10,7 +10,6 @@ from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.core.uuid import UUID
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -161,7 +160,7 @@ class TestBetfairClient:
             strategy_id=TestStubs.strategy_id(),
             position_id=PositionId("1"),
             order=market_on_close_order,
-            command_id=UUID.from_str("be7dffa046f2fce5d820c7634d022ca1"),
+            command_id="be7dffa046f2fce5d820c7634d022ca1",
             ts_init=0,
         )
         place_orders = order_submit_to_betfair(command=submit_order_command, instrument=instrument)

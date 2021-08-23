@@ -21,7 +21,7 @@ from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.c_enums.component_state cimport ComponentStateParser
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport TraderId
 
@@ -38,7 +38,7 @@ cdef class ComponentStateChanged(Event):
         str component_type not None,
         ComponentState state,
         dict config not None,
-        UUID event_id not None,
+        UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
     ):
@@ -55,7 +55,7 @@ cdef class ComponentStateChanged(Event):
             The component type.
         state : ComponentState
             The component state.
-        event_id : UUID
+        event_id : UUID4
             The event ID.
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the component state event occurred.
@@ -99,7 +99,7 @@ cdef class ComponentStateChanged(Event):
             component_type=values["component_type"],
             state=ComponentStateParser.from_str(values["state"]),
             config=orjson.loads(values["config"]),
-            event_id=UUID.from_str_c(values["event_id"]),
+            event_id=values["event_id"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -114,7 +114,7 @@ cdef class ComponentStateChanged(Event):
             "component_type": obj.component_type,
             "state": ComponentStateParser.to_str(obj.state),
             "config": orjson.dumps(obj.config),
-            "event_id": obj.id.value,
+            "event_id": obj.id,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

@@ -48,7 +48,7 @@ class TestMessage:
 
         message4 = Message(
             category=MessageCategory.DOCUMENT,
-            message_id=uuid4(),  # Different UUID
+            message_id=uuid4(),  # Different UUID4
             ts_init=0,
         )
 

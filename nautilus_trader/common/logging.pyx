@@ -110,7 +110,7 @@ cdef class Logger:
         Clock clock not None,
         TraderId trader_id=None,
         str host_id=None,
-        UUID instance_id=None,
+        UUID4 instance_id=None,
         LogLevel level_stdout=LogLevel.INFO,
         bint bypass=False,
     ):
@@ -125,7 +125,7 @@ cdef class Logger:
             The trader ID for the logger.
         host_id : str, optional
             The host ID.
-        instance_id : UUID, optional
+        instance_id : UUID4, optional
             The instance ID.
         level_stdout : LogLevel
             The minimum log level for logging messages to stdout.
@@ -209,7 +209,7 @@ cdef class Logger:
             "color": color,
             "trader_id": self.trader_id.value,
             "host_id": self.host_id,
-            "instance_id": self.instance_id.value,
+            "instance_id": self.instance_id,
             "component": component,
             "msg": msg,
         }
@@ -537,7 +537,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info("=================================================================")
     logger.info(f"trader_id: {logger.trader_id.value}")
     logger.info(f"host_id: {logger.host_id}")
-    logger.info(f"instance_id: {logger.instance_id.value}")
+    logger.info(f"instance_id: {logger.instance_id}")
     logger.info("=================================================================")
     logger.info(" VERSIONING")
     logger.info("=================================================================")
@@ -576,7 +576,7 @@ cdef class LiveLogger(Logger):
         LiveClock clock not None,
         TraderId trader_id=None,
         str host_id=None,
-        UUID instance_id=None,
+        UUID4 instance_id=None,
         LogLevel level_stdout=LogLevel.INFO,
         bint bypass=False,
         int maxsize=10000,
@@ -594,7 +594,7 @@ cdef class LiveLogger(Logger):
             The trader ID for the logger.
         host_id : str, optional
             The systems unique instantiation ID.
-        instance_id : UUID, optional
+        instance_id : UUID4, optional
             The systems unique instantiation ID.
         level_stdout : LogLevel
             The minimum log level for logging messages to stdout.

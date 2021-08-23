@@ -21,7 +21,7 @@ from cpython.datetime cimport timedelta
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 
 
@@ -67,8 +67,8 @@ cdef class Logger:
     """The loggers trader ID.\n\n:returns: `TraderId`"""
     cdef readonly str host_id
     """The loggers host ID.\n\n:returns: `str`"""
-    cdef readonly UUID instance_id
-    """The loggers instance ID.\n\n:returns: `UUID`"""
+    cdef readonly UUID4 instance_id
+    """The loggers instance ID.\n\n:returns: `UUID4`"""
     cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
@@ -88,8 +88,8 @@ cdef class LoggerAdapter:
     """The loggers trader ID.\n\n:returns: `TraderId`"""
     cdef readonly str host_id
     """The loggers host ID.\n\n:returns: `str`"""
-    cdef readonly UUID instance_id
-    """The loggers instance ID.\n\n:returns: `UUID`"""
+    cdef readonly UUID4 instance_id
+    """The loggers instance ID.\n\n:returns: `UUID4`"""
     cdef readonly str component
     """The loggers component name.\n\n:returns: `str`"""
     cdef readonly bint is_bypassed

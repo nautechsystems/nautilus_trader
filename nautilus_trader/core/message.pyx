@@ -16,7 +16,7 @@
 from typing import Any, Callable
 
 from nautilus_trader.core.message cimport MessageCategory
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 
 
 cdef class MessageCategoryParser:
@@ -72,7 +72,7 @@ cdef class Message:
     def __init__(
         self,
         MessageCategory category,
-        UUID message_id not None,
+        UUID4 message_id not None,
         int64_t ts_init,
     ):
         """
@@ -82,7 +82,7 @@ cdef class Message:
         ----------
         category : MessageCategory
             The message category.
-        message_id : UUID
+        message_id : UUID4
             The message ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the message object was initialized.
@@ -113,7 +113,7 @@ cdef class Command(Message):
 
     def __init__(
         self,
-        UUID command_id not None,
+        UUID4 command_id not None,
         int64_t ts_init,
     ):
         """
@@ -121,7 +121,7 @@ cdef class Command(Message):
 
         Parameters
         ----------
-        command_id : UUID
+        command_id : UUID4
             The command ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the command object was initialized.
@@ -141,7 +141,7 @@ cdef class Document(Message):
 
     def __init__(
         self,
-        UUID document_id not None,
+        UUID4 document_id not None,
         int64_t ts_init,
     ):
         """
@@ -149,7 +149,7 @@ cdef class Document(Message):
 
         Parameters
         ----------
-        document_id : UUID
+        document_id : UUID4
             The document ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the document object was initialized.
@@ -169,7 +169,7 @@ cdef class Event(Message):
 
     def __init__(
         self,
-        UUID event_id not None,
+        UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
     ):
@@ -178,7 +178,7 @@ cdef class Event(Message):
 
         Parameters
         ----------
-        event_id : UUID
+        event_id : UUID4
             The event ID.
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the event occurred.
@@ -203,7 +203,7 @@ cdef class Request(Message):
     def __init__(
         self,
         callback not None: Callable[[Any], None],
-        UUID request_id not None,
+        UUID4 request_id not None,
         int64_t ts_init,
     ):
         """
@@ -213,7 +213,7 @@ cdef class Request(Message):
         ----------
         callback : Callable[[Any], None]
             The delegate to call with the response.
-        request_id : UUID
+        request_id : UUID4
             The request ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the request object was initialized.
@@ -235,8 +235,8 @@ cdef class Response(Message):
 
     def __init__(
         self,
-        UUID correlation_id not None,
-        UUID response_id not None,
+        UUID4 correlation_id not None,
+        UUID4 response_id not None,
         int64_t ts_init,
     ):
         """
@@ -244,9 +244,9 @@ cdef class Response(Message):
 
         Parameters
         ----------
-        correlation_id : UUID
+        correlation_id : UUID4
             The correlation ID.
-        response_id : UUID
+        response_id : UUID4
             The response ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the response object was initialized.

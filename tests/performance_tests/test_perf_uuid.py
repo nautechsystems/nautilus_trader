@@ -18,6 +18,7 @@ import uuid
 import pytest
 
 from nautilus_trader.core.uuid import uuid4
+from tests.test_kit.performance import PerformanceBench
 from tests.test_kit.performance import PerformanceHarness
 
 
@@ -30,6 +31,13 @@ class TestUUIDPerformance(PerformanceHarness):
             iterations=100000,
             rounds=1,
         )
+
+    def test_make_builtin_uuid_on_bench(self):
+        PerformanceBench.profile_function(
+            function=uuid.uuid4,
+            runs=100000,
+            iterations=1,
+        )
         # ~0.0ms / ~2.1μs / 2067ns minimum of 100,000 runs @ 1 iteration each run.
 
     @pytest.mark.benchmark(group="core", disable_gc=True, warmup=True)
@@ -40,4 +48,13 @@ class TestUUIDPerformance(PerformanceHarness):
             iterations=100000,
             rounds=1,
         )
-        # ~0.0ms / ~0.6μs / 556ns minimum of 100,000 runs @ 1 iteration each run.
+
+    def test_make_nautilus_uuid_on_bench(self):
+        PerformanceBench.profile_function(
+            function=uuid4,
+            runs=100000,
+            iterations=1,
+        )
+        print(uuid4())
+        # ~0.0ms / ~1.5μs / 1478ns minimum of 100,000 runs @ 1 iteration each run.
+        # ~0.0ms / ~0.6μs / 556ns minimum of 100,000 runs @ 1 iteration each run (old).
