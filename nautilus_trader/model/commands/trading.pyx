@@ -134,7 +134,7 @@ cdef class SubmitOrder(TradingCommand):
                 f"client_order_id={self.order.client_order_id.value}, "
                 f"position_id={self.position_id}, "
                 f"order={self.order.info()}, "
-                f"command_id={self.id}, "
+                f"command_id={self.id.value}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
@@ -147,7 +147,7 @@ cdef class SubmitOrder(TradingCommand):
             strategy_id=StrategyId(values["strategy_id"]),
             position_id=position_id,
             order=OrderUnpacker.unpack_c(orjson.loads(values["order"])),
-            command_id=values["command_id"],
+            command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -160,7 +160,7 @@ cdef class SubmitOrder(TradingCommand):
             "strategy_id": obj.strategy_id.value,
             "position_id": obj.position_id.value if obj.position_id is not None else None,
             "order": orjson.dumps(OrderInitialized.to_dict_c(obj.order.init_event_c())),
-            "command_id": obj.id,
+            "command_id": obj.id.value,
             "ts_init": obj.ts_init,
         }
 
@@ -255,7 +255,7 @@ cdef class SubmitBracketOrder(TradingCommand):
                 f"entry={self.bracket_order.entry.info()}, "
                 f"stop_loss={self.bracket_order.stop_loss.info()}, "
                 f"take_profit={self.bracket_order.take_profit.info()}, "
-                f"command_id={self.id}, "
+                f"command_id={self.id.value}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
@@ -270,7 +270,7 @@ cdef class SubmitBracketOrder(TradingCommand):
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             bracket_order=bracket_order,
-            command_id=values["command_id"],
+            command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -284,7 +284,7 @@ cdef class SubmitBracketOrder(TradingCommand):
             "entry": orjson.dumps(OrderInitialized.to_dict_c(obj.bracket_order.entry.init_event_c())),
             "stop_loss": orjson.dumps(OrderInitialized.to_dict_c(obj.bracket_order.stop_loss.init_event_c())),
             "take_profit": orjson.dumps(OrderInitialized.to_dict_c(obj.bracket_order.take_profit.init_event_c())),
-            "command_id": obj.id,
+            "command_id": obj.id.value,
             "ts_init": obj.ts_init,
         }
 
@@ -400,7 +400,7 @@ cdef class UpdateOrder(TradingCommand):
                 f"quantity={self.quantity.to_str()}, "
                 f"price={self.price}, "
                 f"trigger={self.trigger}, "
-                f"command_id={self.id}, "
+                f"command_id={self.id.value}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
@@ -418,7 +418,7 @@ cdef class UpdateOrder(TradingCommand):
             quantity=Quantity.from_str_c(q) if q is not None else None,
             price=Price.from_str_c(p) if p is not None else None,
             trigger=Price.from_str_c(t) if t is not None else None,
-            command_id=values["command_id"],
+            command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -435,7 +435,7 @@ cdef class UpdateOrder(TradingCommand):
             "quantity": str(obj.quantity) if obj.quantity is not None else None,
             "price": str(obj.price) if obj.price is not None else None,
             "trigger": str(obj.trigger) if obj.trigger is not None else None,
-            "command_id": obj.id,
+            "command_id": obj.id.value,
             "ts_init": obj.ts_init,
         }
 
@@ -533,7 +533,7 @@ cdef class CancelOrder(TradingCommand):
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"command_id={self.id}, "
+                f"command_id={self.id.value}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
@@ -545,7 +545,7 @@ cdef class CancelOrder(TradingCommand):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
-            command_id=values["command_id"],
+            command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -559,7 +559,7 @@ cdef class CancelOrder(TradingCommand):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "command_id": obj.id,
+            "command_id": obj.id.value,
             "ts_init": obj.ts_init,
         }
 

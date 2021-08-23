@@ -171,7 +171,7 @@ class TestLoggerTests:
             "host_id": socket.gethostname(),
             "level": "INF",
             "msg": "A log event",
-            "instance_id": f"{logger.instance_id}",
+            "instance_id": f"{logger.instance_id.value}",
             "tag": "risk",
             "timestamp": 0,
             "trader_id": "TRADER-000",

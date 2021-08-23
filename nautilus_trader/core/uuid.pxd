@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-ctypedef str UUID4
+cdef class UUID4:
+    cdef readonly str value
+    """The UUID string value.\n\n:returns: `str`"""
+
 
 cpdef UUID4 uuid4()

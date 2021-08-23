@@ -57,4 +57,3 @@ class TestUUIDPerformance(PerformanceHarness):
         )
         print(uuid4())
         # ~0.0ms / ~1.5μs / 1478ns minimum of 100,000 runs @ 1 iteration each run.
-        # ~0.0ms / ~0.6μs / 556ns minimum of 100,000 runs @ 1 iteration each run (old).

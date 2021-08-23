@@ -201,7 +201,7 @@ cdef class OrderInitialized(OrderEvent):
             order_type=OrderTypeParser.from_str(values["order_type"]),
             quantity=Quantity.from_str_c(values["quantity"]),
             time_in_force=TimeInForceParser.from_str(values["time_in_force"]),
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
             options=orjson.loads(values["options"]),
         )
@@ -219,7 +219,7 @@ cdef class OrderInitialized(OrderEvent):
             "order_type": OrderTypeParser.to_str(obj.type),
             "quantity": str(obj.quantity),
             "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_init": obj.ts_init,
             "options": orjson.dumps(obj.options).decode(),
         }
@@ -338,7 +338,7 @@ cdef class OrderDenied(OrderEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             reason=values["reason"],
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -352,7 +352,7 @@ cdef class OrderDenied(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "reason": obj.reason,
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_init": obj.ts_init,
         }
 
@@ -467,7 +467,7 @@ cdef class OrderSubmitted(OrderEvent):
             account_id=AccountId.from_str_c(values["account_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -482,7 +482,7 @@ cdef class OrderSubmitted(OrderEvent):
             "account_id": obj.account_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -608,7 +608,7 @@ cdef class OrderAccepted(OrderEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -624,7 +624,7 @@ cdef class OrderAccepted(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -751,7 +751,7 @@ cdef class OrderRejected(OrderEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             reason=values["reason"],
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -767,7 +767,7 @@ cdef class OrderRejected(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "reason": obj.reason,
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -886,7 +886,7 @@ cdef class OrderCanceled(OrderEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -902,7 +902,7 @@ cdef class OrderCanceled(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -1021,7 +1021,7 @@ cdef class OrderExpired(OrderEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -1037,7 +1037,7 @@ cdef class OrderExpired(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -1158,7 +1158,7 @@ cdef class OrderTriggered(OrderEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -1174,7 +1174,7 @@ cdef class OrderTriggered(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -1294,7 +1294,7 @@ cdef class OrderPendingUpdate(OrderEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -1310,7 +1310,7 @@ cdef class OrderPendingUpdate(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -1430,7 +1430,7 @@ cdef class OrderPendingCancel(OrderEvent):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -1446,7 +1446,7 @@ cdef class OrderPendingCancel(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -1580,7 +1580,7 @@ cdef class OrderUpdateRejected(OrderEvent):
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             reason=values["reason"],
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -1597,7 +1597,7 @@ cdef class OrderUpdateRejected(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "reason": obj.reason,
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -1731,7 +1731,7 @@ cdef class OrderCancelRejected(OrderEvent):
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             reason=values["reason"],
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -1748,7 +1748,7 @@ cdef class OrderCancelRejected(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "reason": obj.reason,
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -1890,7 +1890,7 @@ cdef class OrderUpdated(OrderEvent):
             quantity=Quantity.from_str_c(values["quantity"]),
             price=Price.from_str_c(values["price"]),
             trigger=Price.from_str_c(t) if t is not None else None,
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -1909,7 +1909,7 @@ cdef class OrderUpdated(OrderEvent):
             "quantity": str(obj.quantity),
             "price": str(obj.price),
             "trigger": str(obj.trigger) if obj.trigger is not None else None,
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -2103,7 +2103,7 @@ cdef class OrderFilled(OrderEvent):
             currency=Currency.from_str_c(values["currency"]),
             commission=Money.from_str_c(values["commission"]),
             liquidity_side=LiquiditySideParser.from_str(values["liquidity_side"]),
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             info=orjson.loads(values["info"])
@@ -2129,7 +2129,7 @@ cdef class OrderFilled(OrderEvent):
             "currency": obj.currency.code,
             "commission": obj.commission.to_str(),
             "liquidity_side": LiquiditySideParser.to_str(obj.liquidity_side),
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
             "info": orjson.dumps(obj.info).decode(),

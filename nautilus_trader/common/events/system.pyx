@@ -99,7 +99,7 @@ cdef class ComponentStateChanged(Event):
             component_type=values["component_type"],
             state=ComponentStateParser.from_str(values["state"]),
             config=orjson.loads(values["config"]),
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -114,7 +114,7 @@ cdef class ComponentStateChanged(Event):
             "component_type": obj.component_type,
             "state": ComponentStateParser.to_str(obj.state),
             "config": orjson.dumps(obj.config),
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
