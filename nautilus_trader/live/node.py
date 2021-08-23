@@ -17,6 +17,7 @@ import asyncio
 import concurrent.futures
 import platform
 import signal
+import socket
 import sys
 import time
 import warnings
@@ -114,14 +115,15 @@ class TradingNode:
         # Components
         self._clock = LiveClock(loop=self._loop)
         self._uuid_factory = UUIDFactory()
-        self.system_id = self._uuid_factory.generate()
         self.created_time = self._clock.utc_now()
         self._is_running = False
 
-        # Setup identifiers
+        # Identifiers
         self.trader_id = TraderId(
             f"{config_trader['name']}-{config_trader['id_tag']}",
         )
+        self.host_id = socket.gethostname()
+        self.instance_id = self._uuid_factory.generate()
 
         # Setup logging
         level_stdout = LogLevelParser.from_str_py(config_log.get("level_stdout"))
@@ -130,7 +132,8 @@ class TradingNode:
             loop=self._loop,
             clock=self._clock,
             trader_id=self.trader_id,
-            system_id=self.system_id,
+            host_id=self.host_id,
+            instance_id=self.instance_id,
             level_stdout=level_stdout,
         )
 

@@ -65,8 +65,10 @@ cdef class BacktestEngine:
 
     cdef readonly Trader trader
     """The trader for the backtest.\n\n:returns: `Trader`"""
-    cdef readonly UUID system_id
-    """The backtest engine system ID.\n\n:returns: `UUID`"""
+    cdef readonly str host_id
+    """The backtest engine host ID.\n\n:returns: `str`"""
+    cdef readonly UUID instance_id
+    """The backtest engine instance ID.\n\n:returns: `UUID`"""
     cdef readonly datetime created_time
     """The backtest engine created time.\n\n:returns: `datetime`"""
     cdef readonly timedelta time_to_initialize
