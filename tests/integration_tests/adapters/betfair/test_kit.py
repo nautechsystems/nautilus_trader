@@ -470,18 +470,17 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def betfair_reader():
-        def inner(instrument_provider):
-            reader = TextReader(
-                line_parser=partial(
-                    BetfairTestStubs.parse_betfair, instrument_provider=instrument_provider
-                ),
-                instrument_provider=instrument_provider,
-                instrument_provider_update=historical_instrument_provider_loader,
-            )
-            return reader
-
-        return inner
+    def betfair_reader(instrument_provider=None, **kwargs):
+        instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])
+        reader = TextReader(
+            line_parser=partial(
+                BetfairTestStubs.parse_betfair, instrument_provider=instrument_provider
+            ),
+            instrument_provider=instrument_provider,
+            instrument_provider_update=historical_instrument_provider_loader,
+            **kwargs,
+        )
+        return reader
 
 
 class BetfairRequests:
@@ -887,6 +886,10 @@ class BetfairDataProvider:
     @staticmethod
     def betfair_trade_ticks():
         return [msg["trade"] for msg in TestDataProvider.l2_feed() if msg.get("op") == "trade"]
+
+    @staticmethod
+    def recorded_data():
+        return open(DATA_PATH / "line_processing.txt", "r").read().encode()
 
 
 @contextlib.contextmanager
