@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.core.uuid cimport uuid4
 
 

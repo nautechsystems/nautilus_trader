@@ -115,7 +115,7 @@ cdef class TradingStateChanged(RiskEvent):
             trader_id=TraderId(values["trader_id"]),
             state=TradingStateParser.from_str(values["state"]),
             config=orjson.loads(values["config"]),
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -128,7 +128,7 @@ cdef class TradingStateChanged(RiskEvent):
             "trader_id": obj.trader_id.value,
             "state": TradingStateParser.to_str(obj.state),
             "config": orjson.dumps(obj.config),
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

@@ -99,7 +99,7 @@ cdef class AccountState(Event):
             reported=values["reported"],
             balances=[AccountBalance.from_dict(b) for b in orjson.loads(values["balances"])],
             info=orjson.loads(values["info"]),
-            event_id=values["event_id"],
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -115,7 +115,7 @@ cdef class AccountState(Event):
             "balances": orjson.dumps([b.to_dict() for b in obj.balances]),
             "reported": obj.is_reported,
             "info": orjson.dumps(obj.info),
-            "event_id": obj.id,
+            "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
