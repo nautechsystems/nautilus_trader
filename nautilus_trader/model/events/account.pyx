@@ -19,7 +19,7 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 from nautilus_trader.model.currency cimport Currency
@@ -40,7 +40,7 @@ cdef class AccountState(Event):
         bint reported,
         list balances not None,
         dict info not None,
-        UUID event_id not None,
+        UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
     ):
@@ -61,7 +61,7 @@ cdef class AccountState(Event):
             The account balances
         info : dict [str, object]
             The additional implementation specific account information.
-        event_id : UUID
+        event_id : UUID4
             The event ID.
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the account state event occurred.
@@ -99,7 +99,7 @@ cdef class AccountState(Event):
             reported=values["reported"],
             balances=[AccountBalance.from_dict(b) for b in orjson.loads(values["balances"])],
             info=orjson.loads(values["info"]),
-            event_id=UUID.from_str_c(values["event_id"]),
+            event_id=values["event_id"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -115,7 +115,7 @@ cdef class AccountState(Event):
             "balances": orjson.dumps([b.to_dict() for b in obj.balances]),
             "reported": obj.is_reported,
             "info": orjson.dumps(obj.info),
-            "event_id": obj.id.value,
+            "event_id": obj.id,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

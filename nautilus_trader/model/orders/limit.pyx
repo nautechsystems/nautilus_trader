@@ -18,7 +18,7 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport maybe_nanos_to_unix_dt
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -55,7 +55,7 @@ cdef class LimitOrder(PassiveOrder):
         Price price not None,
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
-        UUID init_id not None,
+        UUID4 init_id not None,
         int64_t ts_init,
         bint post_only=False,
         bint reduce_only=False,
@@ -84,7 +84,7 @@ cdef class LimitOrder(PassiveOrder):
             The order time-in-force.
         expire_time : datetime, optional
             The order expiry time.
-        init_id : UUID
+        init_id : UUID4
             The order initialization event ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the order was initialized.

@@ -18,7 +18,7 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 
 
 cdef class TimeEvent(Event):
@@ -52,7 +52,7 @@ cdef class Timer:
     cdef readonly bint is_expired
     """If the timer is expired.\n\n:returns: `bool`"""
 
-    cpdef TimeEvent pop_event(self, UUID event_id, int64_t ts_init)
+    cpdef TimeEvent pop_event(self, UUID4 event_id, int64_t ts_init)
     cpdef void iterate_next_time(self, int64_t to_time_ns) except *
     cpdef void cancel(self) except *
 

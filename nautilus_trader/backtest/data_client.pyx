@@ -23,7 +23,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
@@ -140,7 +140,7 @@ cdef class BacktestDataClient(DataClient):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID correlation_id) except *:
+    cpdef void request(self, DataType data_type, UUID4 correlation_id) except *:
         """
         Request the given data type.
 
@@ -148,7 +148,7 @@ cdef class BacktestDataClient(DataClient):
         ----------
         data_type : DataType
             The data type to request.
-        correlation_id : UUID
+        correlation_id : UUID4
             The correlation ID for the response.
 
         """
@@ -679,7 +679,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         datetime from_datetime,  # Can be None
         datetime to_datetime,    # Can be None
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *:
         """
         Request historical quote ticks for the given parameters.
@@ -695,7 +695,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             to the current datetime.
         limit : int
             The limit for the number of returned ticks.
-        correlation_id : UUID
+        correlation_id : UUID4
             The correlation ID for the request.
 
         """
@@ -717,7 +717,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         datetime from_datetime,  # Can be None
         datetime to_datetime,    # Can be None
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *:
         """
         Request historical trade ticks for the given parameters.
@@ -733,7 +733,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             to the current datetime.
         limit : int
             The limit for the number of returned ticks.
-        correlation_id : UUID
+        correlation_id : UUID4
             The correlation ID for the request.
 
         """
@@ -756,7 +756,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         datetime from_datetime,  # Can be None
         datetime to_datetime,    # Can be None
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *:
         """
         Request historical bars for the given parameters from the data engine.
@@ -772,7 +772,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             to the current datetime.
         limit : int
             The limit for the number of returned bars.
-        correlation_id : UUID
+        correlation_id : UUID4
             The correlation ID for the request.
 
         """

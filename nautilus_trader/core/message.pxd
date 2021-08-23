@@ -15,7 +15,7 @@
 
 from libc.stdint cimport int64_t
 
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 
 
 cpdef enum MessageCategory:
@@ -38,8 +38,8 @@ cdef class MessageCategoryParser:
 cdef class Message:
     cdef readonly MessageCategory category
     """The message category.\n\n:returns: `MessageCategory`"""
-    cdef readonly UUID id
-    """The message ID.\n\n:returns: `UUID`"""
+    cdef readonly UUID4 id
+    """The message ID.\n\n:returns: `UUID4`"""
     cdef readonly int64_t ts_init
     """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
 
@@ -63,5 +63,5 @@ cdef class Request(Message):
 
 
 cdef class Response(Message):
-    cdef readonly UUID correlation_id
-    """The response correlation ID.\n\n:returns: `UUID`"""
+    cdef readonly UUID4 correlation_id
+    """The response correlation ID.\n\n:returns: `UUID4`"""

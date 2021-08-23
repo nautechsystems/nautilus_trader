@@ -34,7 +34,6 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import LogLevel
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.core.uuid import UUID
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import TradeTick
@@ -101,7 +100,7 @@ class TestBetfairDataClient:
         self.uuid_factory = UUIDFactory()
 
         self.trader_id = TestStubs.trader_id()
-        self.uuid = UUID(uuid4().bytes)
+        self.uuid = uuid4()
         self.venue = BETFAIR_VENUE
         self.account_id = AccountId(self.venue.value, "001")
 
@@ -316,7 +315,7 @@ class TestBetfairDataClient:
             type=InstrumentSearch,
             metadata={"event_type_id": "7"},
         )
-        self.client.request(req, self.uuid)
+        self.client.request(req, str(self.uuid))
         await asyncio.sleep(0)
         resp = self.messages[0]
         assert len(resp.data.instruments) == 9416

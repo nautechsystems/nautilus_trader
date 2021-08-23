@@ -419,7 +419,7 @@ cdef class Order:
         self.price = price
         self.size = size
         self.side = side
-        self.id = id or str(uuid4())
+        self.id = id or uuid4()
 
     def __eq__(self, Order other) -> bool:
         return self.id == other.id

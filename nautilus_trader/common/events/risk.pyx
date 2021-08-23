@@ -19,7 +19,7 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.c_enums.trading_state cimport TradingStateParser
 from nautilus_trader.model.identifiers cimport TraderId
@@ -33,7 +33,7 @@ cdef class RiskEvent(Event):
     def __init__(
         self,
         TraderId trader_id not None,
-        UUID event_id not None,
+        UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
     ):
@@ -44,7 +44,7 @@ cdef class RiskEvent(Event):
         ----------
         trader_id : TraderId
             The trader ID associated with the event.
-        event_id : UUID
+        event_id : UUID4
             The event ID.
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the component state event occurred.
@@ -67,7 +67,7 @@ cdef class TradingStateChanged(RiskEvent):
         TraderId trader_id not None,
         TradingState state,
         dict config not None,
-        UUID event_id not None,
+        UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
     ):
@@ -80,7 +80,7 @@ cdef class TradingStateChanged(RiskEvent):
             The trader ID associated with the event.
         trader_id : TraderId
             The trading state for the event.
-        event_id : UUID
+        event_id : UUID4
             The event ID.
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the component state event occurred.
@@ -115,7 +115,7 @@ cdef class TradingStateChanged(RiskEvent):
             trader_id=TraderId(values["trader_id"]),
             state=TradingStateParser.from_str(values["state"]),
             config=orjson.loads(values["config"]),
-            event_id=UUID.from_str_c(values["event_id"]),
+            event_id=values["event_id"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -128,7 +128,7 @@ cdef class TradingStateChanged(RiskEvent):
             "trader_id": obj.trader_id.value,
             "state": TradingStateParser.to_str(obj.state),
             "config": orjson.dumps(obj.config),
-            "event_id": obj.id.value,
+            "event_id": obj.id,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

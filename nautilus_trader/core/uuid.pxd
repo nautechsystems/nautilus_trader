@@ -13,15 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+ctypedef str UUID4
 
-cdef class UUID:
-    cdef readonly object int_val
-    """The UUID integer value.\n\n:returns: `int64`"""
-    cdef readonly str value
-    """The UUID string value.\n\n:returns: `str`"""
-
-    @staticmethod
-    cdef UUID from_str_c(str value)
-
-
-cpdef UUID uuid4()
+cpdef UUID4 uuid4()

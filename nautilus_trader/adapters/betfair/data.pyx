@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Dict
 
 import orjson
 
@@ -25,7 +24,7 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data.base cimport Data
@@ -172,14 +171,14 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID correlation_id) except *:
+    cpdef void request(self, DataType data_type, UUID4 correlation_id) except *:
         if data_type.type == InstrumentSearch:
             # Strategy has requested a list of instruments
             self._loop.create_task(self._handle_instrument_search(data_type=data_type, correlation_id=correlation_id))
         else:
             super().request(data_type=data_type, correlation_id=correlation_id)
 
-    async def _handle_instrument_search(self, data_type: DataType, correlation_id: UUID):
+    async def _handle_instrument_search(self, data_type: DataType, correlation_id: UUID4):
         await self._instrument_provider.load_all_async(market_filter=data_type.metadata)
         instruments = self._instrument_provider.search_instruments(instrument_filter=data_type.metadata)
         now = self._clock.timestamp_ns()

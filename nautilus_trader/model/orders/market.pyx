@@ -16,7 +16,7 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -64,7 +64,7 @@ cdef class MarketOrder(Order):
         OrderSide order_side,
         Quantity quantity not None,
         TimeInForce time_in_force,
-        UUID init_id not None,
+        UUID4 init_id not None,
         int64_t ts_init,
     ):
         """
@@ -84,7 +84,7 @@ cdef class MarketOrder(Order):
             The order side (``BUY`` or ``SELL``).
         quantity : Quantity
             The order quantity (> 0).
-        init_id : UUID
+        init_id : UUID4
             The order initialization event ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the order was initialized.

@@ -57,7 +57,7 @@ class TestBetfairParsing:
         command = BetfairTestStubs.submit_order_command()
         result = order_submit_to_betfair(command=command, instrument=self.instrument)
         expected = {
-            "customer_ref": command.id.value.replace("-", ""),
+            "customer_ref": command.id.replace("-", ""),
             "customer_strategy_ref": "S-001",
             "instructions": [
                 {
