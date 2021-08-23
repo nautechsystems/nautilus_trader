@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import socket
 
 import pytest
 
@@ -167,12 +168,13 @@ class TestLoggerTests:
         # Assert
         assert sink[0] == {
             "component": "TEST_LOGGER",
+            "host_id": socket.gethostname(),
             "level": "INF",
             "msg": "A log event",
-            "system_id": f"{logger.system_id}",
+            "instance_id": f"{logger.instance_id}",
             "tag": "risk",
             "timestamp": 0,
-            "trader_id": "",
+            "trader_id": "TRADER-000",
         }
 
 

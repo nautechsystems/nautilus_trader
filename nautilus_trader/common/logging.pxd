@@ -65,8 +65,10 @@ cdef class Logger:
 
     cdef readonly TraderId trader_id
     """The loggers trader ID.\n\n:returns: `TraderId`"""
-    cdef readonly UUID system_id
-    """The loggers system ID.\n\n:returns: `UUID`"""
+    cdef readonly str host_id
+    """The loggers host ID.\n\n:returns: `str`"""
+    cdef readonly UUID instance_id
+    """The loggers instance ID.\n\n:returns: `UUID`"""
     cdef readonly bint is_bypassed
     """If the logger is in bypass mode.\n\n:returns: `bool`"""
 
@@ -84,8 +86,10 @@ cdef class LoggerAdapter:
 
     cdef readonly TraderId trader_id
     """The loggers trader ID.\n\n:returns: `TraderId`"""
-    cdef readonly UUID system_id
-    """The loggers system ID.\n\n:returns: `UUID`"""
+    cdef readonly str host_id
+    """The loggers host ID.\n\n:returns: `str`"""
+    cdef readonly UUID instance_id
+    """The loggers instance ID.\n\n:returns: `UUID`"""
     cdef readonly str component
     """The loggers component name.\n\n:returns: `str`"""
     cdef readonly bint is_bypassed

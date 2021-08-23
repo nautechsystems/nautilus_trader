@@ -104,9 +104,9 @@ class TestTradingNodeConfiguration:
 class TestTradingNodeOperation:
     def setup(self):
         # Fixture Setup
-        config = {
+        self.config = {
             "trader": {
-                "name": "tester",
+                "name": "TESTER",
                 "id_tag": "000",
             },
             "logging": {
@@ -123,28 +123,55 @@ class TestTradingNodeOperation:
             "exec_clients": {},
         }
 
-        self.node = TradingNode(config=config)
+        self.node = TradingNode(config=self.config)
 
     def test_get_event_loop_returns_a_loop(self):
-        # Arrange, Act
-        loop = self.node.get_event_loop()
+        # Arrange
+        node = TradingNode(config=self.config)
+
+        # Act
+        loop = node.get_event_loop()
 
         # Assert
         assert isinstance(loop, asyncio.AbstractEventLoop)
 
-    def test_add_data_client_factory(self):
-        # Arrange, # Act
-        self.node.add_data_client_factory("CCXT", CCXTDataClientFactory)
-        self.node.build()
+    def test_add_data_client_factory(self, capsys):
+        # Arrange
+        self.config["data_clients"]["CCXT-BITMEX"] = {
+            "account_id": "BITMEX_ACCOUNT_ID",
+            "api_key": "BITMEX_API_KEY",
+            "api_secret": "BITMEX_API_SECRET",
+            "sandbox_mode": False,
+        }
 
-        # TODO(cs): Assert existence of client
+        node = TradingNode(config=self.config)
 
-    def test_add_exec_client_factory(self):
-        # Arrange, # Act
-        self.node.add_exec_client_factory("CCXT", CCXTExecutionClientFactory)
-        self.node.build()
+        # Act
+        node.add_data_client_factory("CCXT", CCXTDataClientFactory)
+        node.build()
 
-        # TODO(cs): Assert existence of client
+        # Assert
+        log = "".join(capsys.readouterr())
+        assert "TESTER-000.CCXTDataClient-BITMEX: INITIALIZED." in log
+
+    def test_add_exec_client_factory(self, capsys):
+        # Arrange
+        self.config["exec_clients"]["CCXT-BITMEX"] = {
+            "account_id": "BITMEX_ACCOUNT_ID",
+            "api_key": "BITMEX_API_KEY",
+            "api_secret": "BITMEX_API_SECRET",
+            "sandbox_mode": False,
+        }
+
+        node = TradingNode(config=self.config)
+
+        # Act
+        node.add_exec_client_factory("CCXT", CCXTExecutionClientFactory)
+        node.build()
+
+        # Assert
+        log = "".join(capsys.readouterr())
+        assert "TESTER-000.CCXTExecClient-BITMEX: INITIALIZED." in log
 
     @pytest.mark.asyncio
     async def test_register_log_sink(self):
@@ -159,7 +186,9 @@ class TestTradingNodeOperation:
         await asyncio.sleep(1)
 
         # Assert: Log record received
-        assert sink[-1]["system_id"] == self.node.system_id.value
+        assert sink[-1]["trader_id"] == self.node.trader_id.value
+        assert sink[-1]["host_id"] == self.node.host_id
+        assert sink[-1]["instance_id"] == self.node.instance_id.value
 
     @pytest.mark.asyncio
     async def test_start(self):

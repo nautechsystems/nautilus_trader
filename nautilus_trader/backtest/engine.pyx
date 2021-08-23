@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import socket
+
 import pandas as pd
 import pytz
 
@@ -159,12 +161,16 @@ cdef class BacktestEngine:
 
         self._test_clock = TestClock()
         self._uuid_factory = UUIDFactory()
-        self.system_id = self._uuid_factory.generate()
+
+        # Identifiers
+        self.host_id = socket.gethostname()
+        self.instance_id = self._uuid_factory.generate()
 
         self._logger = Logger(
             clock=LiveClock(),
             trader_id=trader_id,
-            system_id=self.system_id,
+            host_id=self.host_id,
+            instance_id=self.instance_id,
         )
 
         self._log = LoggerAdapter(
@@ -175,7 +181,8 @@ cdef class BacktestEngine:
         self._test_logger = Logger(
             clock=self._clock,
             trader_id=trader_id,
-            system_id=self.system_id,
+            host_id=self.host_id,
+            instance_id=self.instance_id,
             level_stdout=level_stdout,
             bypass=bypass_logging,
         )
