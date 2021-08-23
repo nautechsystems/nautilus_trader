@@ -135,33 +135,19 @@ class TestTradingNodeOperation:
         # Assert
         assert isinstance(loop, asyncio.AbstractEventLoop)
 
-    def test_add_data_client_factory(self, capsys):
-        # Arrange
-        self.config["data_clients"]["CCXT-BITMEX"] = {}
+    def test_add_data_client_factory(self):
+        # Arrange, # Act
+        self.node.add_data_client_factory("CCXT", CCXTDataClientFactory)
+        self.node.build()
 
-        node = TradingNode(config=self.config)
+        # TODO(cs): Assert existence of client
 
-        # Act
-        node.add_data_client_factory("CCXT", CCXTDataClientFactory)
-        node.build()
+    def test_add_exec_client_factory(self):
+        # Arrange, # Act
+        self.node.add_exec_client_factory("CCXT", CCXTExecutionClientFactory)
+        self.node.build()
 
-        # Assert
-        log = "".join(capsys.readouterr())
-        assert "TESTER-000.CCXTDataClient-BITMEX: INITIALIZED." in log
-
-    def test_add_exec_client_factory(self, capsys):
-        # Arrange
-        self.config["exec_clients"]["CCXT-BITMEX"] = {}
-
-        node = TradingNode(config=self.config)
-
-        # Act
-        node.add_exec_client_factory("CCXT", CCXTExecutionClientFactory)
-        node.build()
-
-        # Assert
-        log = "".join(capsys.readouterr())
-        assert "TESTER-000.CCXTExecClient-BITMEX: INITIALIZED." in log
+        # TODO(cs): Assert existence of client
 
     @pytest.mark.asyncio
     async def test_register_log_sink(self):
