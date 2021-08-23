@@ -137,12 +137,7 @@ class TestTradingNodeOperation:
 
     def test_add_data_client_factory(self, capsys):
         # Arrange
-        self.config["data_clients"]["CCXT-BITMEX"] = {
-            "account_id": "BITMEX_ACCOUNT_ID",
-            "api_key": "BITMEX_API_KEY",
-            "api_secret": "BITMEX_API_SECRET",
-            "sandbox_mode": False,
-        }
+        self.config["data_clients"]["CCXT-BITMEX"] = {}
 
         node = TradingNode(config=self.config)
 
@@ -156,12 +151,7 @@ class TestTradingNodeOperation:
 
     def test_add_exec_client_factory(self, capsys):
         # Arrange
-        self.config["exec_clients"]["CCXT-BITMEX"] = {
-            "account_id": "BITMEX_ACCOUNT_ID",
-            "api_key": "BITMEX_API_KEY",
-            "api_secret": "BITMEX_API_SECRET",
-            "sandbox_mode": False,
-        }
+        self.config["exec_clients"]["CCXT-BITMEX"] = {}
 
         node = TradingNode(config=self.config)
 
