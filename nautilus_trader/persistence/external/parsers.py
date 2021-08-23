@@ -16,15 +16,30 @@
 import inspect
 import sys
 from io import BytesIO
-from typing import Callable, Generator, List, Optional, Union
+from typing import Any, Callable, Generator, List, Optional, Union
 
 import pandas as pd
 
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.serialization.arrow.util import identity
 
 
 PY37 = sys.version_info < (3, 8)
+
+
+class LinePreprocessor:
+    def __call__(self, line: bytes):
+        line, data = self.pre_process(line)
+        obj = yield line
+        yield
+        yield self.post_process(obj=obj, data=data)
+
+    @staticmethod
+    def pre_process(line):
+        return line, {}
+
+    @staticmethod
+    def post_process(obj: Any, data: dict):
+        return obj
 
 
 class Reader:
@@ -86,21 +101,11 @@ class ByteReader(Reader):
             assert inspect.isgeneratorfunction(byte_parser)
         self.parser = byte_parser
 
-    def parse(self, blocks: bytes) -> Generator:
-        instruments = self.check_instrument_provider(data=blocks)
+    def parse(self, block: bytes) -> Generator:
+        instruments = self.check_instrument_provider(data=block)
         if instruments:
             yield from instruments
-        yield from self.parser(blocks)
-
-
-class LinePreprocessor:
-    @staticmethod
-    def pre_process(line):
-        return line
-
-    @staticmethod
-    def post_process(obj):
-        return obj
+        yield from self.parser(block)
 
 
 class TextReader(ByteReader):
@@ -133,7 +138,9 @@ class TextReader(ByteReader):
             byte_parser=line_parser,
             instrument_provider=instrument_provider,
         )
-        self.line_preprocessor = line_preprocessor or identity
+        self.line_preprocessor = line_preprocessor or LinePreprocessor()
+        if not PY37:
+            assert inspect.isgeneratorfunction(self.line_preprocessor.__call__)
 
     def parse(self, blocks) -> Generator:  # noqa: C901
         self.buffer += blocks
@@ -144,12 +151,19 @@ class TextReader(ByteReader):
         if process:
             yield from self.process_block(block=process)
 
-    def process_block(self, block):
-        for line in map(self.line_preprocessor, block.split(b"\n")):
+    def process_block(self, block: bytes):
+        assert isinstance(block, bytes), "Block not bytes"
+        for line in block.split(b"\n"):
+            gen = self.line_preprocessor(line)
+            line = next(gen)
             instruments = self.check_instrument_provider(data=line)
             if instruments:
                 yield from instruments
-            yield from self.parser(line)
+            objects = tuple(self.parser(line))
+            for obj in objects:
+                gen.send(obj)
+                obj = next(gen)
+                yield obj
 
 
 class CSVReader(Reader):
