@@ -888,8 +888,8 @@ class BetfairDataProvider:
         return [msg["trade"] for msg in TestDataProvider.l2_feed() if msg.get("op") == "trade"]
 
     @staticmethod
-    def recorded_data():
-        return open(DATA_PATH / "line_processing.txt", "r").read().encode()
+    def badly_formatted_log():
+        return open(DATA_PATH / "badly_formatted.txt", "rb").read()
 
 
 @contextlib.contextmanager

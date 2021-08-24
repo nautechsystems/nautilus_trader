@@ -15,13 +15,15 @@
 
 import pathlib
 import sys
+from functools import partial
 from typing import Callable
 
+import orjson
 import pandas as pd
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
-from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import scan_files
 from nautilus_trader.persistence.external.parsers import ByteReader
@@ -53,24 +55,47 @@ class TestPersistenceParsers:
         line = b'2021-06-29T06:04:11.943000 - {"op":"mcm","id":1,"clk":"AOkiAKEMAL4P","pt":1624946651810}\n'
         line, data = self.line_preprocessor.pre_process(line=line)
         assert line == b'{"op":"mcm","id":1,"clk":"AOkiAKEMAL4P","pt":1624946651810}'
-        assert data == {"ts_init": pd.Timestamp("2021-06-29T06:04:11.943000")}
+        assert data == {"ts_init": 1624946651943000000}
 
     def test_line_preprocessor_post_process(self):
         obj = TestStubs.trade_tick_5decimal()
-        data = {"ts_init": pd.Timestamp("2021-06-29T06:04:11.943000")}
+        data = {
+            "ts_init": dt_to_unix_nanos(
+                pd.Timestamp("2021-06-29T06:04:11.943000", tz="UTC").to_pydatetime()
+            )
+        }
         obj = self.line_preprocessor.post_process(obj=obj, data=data)
-        assert obj.ts_init == 1624946651943000064
+        assert obj.ts_init == 1624946651943000000
 
-    def test_reader_line_preprocessor(self):
+    def test_byte_reader_parser(self):
+        def block_parser(block: bytes, instrument_provider):
+            for raw in block.split(b"\\n"):
+                ts, line = raw.split(b" - ")
+                state = {
+                    "ts_init": dt_to_unix_nanos(pd.Timestamp(ts.decode(), tz="UTC").to_pydatetime())
+                }
+                line = line.strip().replace(b"b'", b"")
+                orjson.loads(line)
+                for obj in BetfairTestStubs.parse_betfair(
+                    line, instrument_provider=instrument_provider
+                ):
+                    values = obj.to_dict(obj)
+                    values["ts_init"] = state["ts_init"]
+                    yield obj.from_dict(values)
+
         provider = BetfairInstrumentProvider.from_instruments(
             [BetfairTestStubs.betting_instrument()]
         )
-        block = BetfairDataProvider.recorded_data()
-        reader = BetfairTestStubs.betfair_reader(
-            line_preprocessor=self.line_preprocessor, instrument_provider=provider
+        block = BetfairDataProvider.badly_formatted_log()
+        reader = ByteReader(
+            block_parser=partial(block_parser, instrument_provider=provider),
+            instrument_provider=provider,
         )
-        data = list(reader.process_block(block=block))
-        assert data
+
+        data = list(reader.parse(block=block))
+        result = [pd.Timestamp(d.ts_init).isoformat() for d in data]
+        expected = ["2021-06-29T06:03:14.528000"]
+        assert result == expected
 
     @pytest.mark.parametrize(
         "glob, parser, expected",
@@ -170,12 +195,12 @@ class TestLineProcessor(LinePreprocessor):
     @staticmethod
     def pre_process(line):
         ts, raw = line.split(b" - ")
-        data = {"ts_init": pd.Timestamp(ts.decode())}
+        data = {"ts_init": dt_to_unix_nanos(pd.Timestamp(ts.decode(), tz="UTC").to_pydatetime())}
         line = raw.strip()
         return line, data
 
     @staticmethod
-    def post_process(obj, data):
+    def post_process(obj, state):
         values = obj.to_dict(obj)
-        values["ts_init"] = secs_to_nanos(data["ts_init"].timestamp())
+        values["ts_init"] = state["ts_init"]
         return obj.from_dict(values)

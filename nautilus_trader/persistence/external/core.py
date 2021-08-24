@@ -93,10 +93,17 @@ def process_files(
     catalog: DataCatalog,
     block_size="128mb",
     compression="infer",
-    scheduler: Union[str, "distributed.Client"] = "threaded",
+    scheduler: Union[str, "distributed.Client"] = "threads",
     **kw,
 ):
-    raw_files = make_raw_files(**locals())
+    raw_files = make_raw_files(
+        glob_path=glob_path,
+        reader=reader,
+        catalog=catalog,
+        block_size=block_size,
+        compression=compression,
+        **kw,
+    )
     tasks = [process_raw_file(rf) for rf in raw_files]
     with dask.config.set(scheduler=scheduler):
         if not has_working_lock(scheduler=scheduler):
