@@ -27,6 +27,7 @@ from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
@@ -44,8 +45,10 @@ from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
+from tests.test_kit.strategies import EMACrossConfig
 from tests.test_kit.strategies import MarketMaker
 from tests.test_kit.strategies import OrderBookImbalanceStrategy
+from tests.test_kit.strategies import OrderBookImbalanceStrategyConfig
 
 
 class TestBacktestAcceptanceTestsUSDJPY:
@@ -93,13 +96,18 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
     def test_run_ema_cross_strategy(self):
         # Arrange
-        strategy = EMACross(
+        bar_type = BarType(
             instrument_id=self.usdjpy.id,
             bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+        )
+        config = EMACrossConfig(
+            instrument_id=str(self.usdjpy.id),
+            bar_type=str(bar_type),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
         )
+        strategy = EMACross(config=config)
 
         # Act
         self.engine.run(strategies=[strategy])
@@ -111,13 +119,18 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
-        strategy = EMACross(
+        bar_type = BarType(
             instrument_id=self.usdjpy.id,
             bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+        )
+        config = EMACrossConfig(
+            instrument_id=str(self.usdjpy.id),
+            bar_type=str(bar_type),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
         )
+        strategy = EMACross(config=config)
 
         self.engine.run(strategies=[strategy])
         result1 = self.engine.analyzer.get_performance_stats_pnls()
@@ -132,23 +145,29 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
     def test_run_multiple_strategies(self):
         # Arrange
-        strategy1 = EMACross(
+        bar_type = BarType(
             instrument_id=self.usdjpy.id,
             bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+        )
+        config1 = EMACrossConfig(
+            instrument_id=str(self.usdjpy.id),
+            bar_type=str(bar_type),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
-            extra_id_tag="001",
+            order_id_tag="001",
         )
+        strategy1 = EMACross(config=config1)
 
-        strategy2 = EMACross(
-            instrument_id=self.usdjpy.id,
-            bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+        config2 = EMACrossConfig(
+            instrument_id=str(self.usdjpy.id),
+            bar_type=str(bar_type),
             trade_size=Decimal(1_000_000),
             fast_ema=20,
             slow_ema=40,
-            extra_id_tag="002",
+            order_id_tag="002",
         )
+        strategy2 = EMACross(config=config2)
 
         # Note since these strategies are operating on the same instrument_id as per
         # the EMACross BUY/SELL logic they will be flattening each others positions.
@@ -209,13 +228,18 @@ class TestBacktestAcceptanceTestsGBPUSD:
 
     def test_run_ema_cross_with_minute_bar_spec(self):
         # Arrange
-        strategy = EMACross(
+        bar_type = BarType(
             instrument_id=self.gbpusd.id,
             bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.MID),
+        )
+        config = EMACrossConfig(
+            instrument_id=str(self.gbpusd.id),
+            bar_type=str(bar_type),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
         )
+        strategy = EMACross(config=config)
 
         # Act
         self.engine.run(strategies=[strategy])
@@ -260,13 +284,18 @@ class TestBacktestAcceptanceTestsAUDUSD:
 
     def test_run_ema_cross_with_minute_bar_spec(self):
         # Arrange
-        strategy = EMACross(
+        bar_type = BarType(
             instrument_id=self.audusd.id,
             bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
+        )
+        config = EMACrossConfig(
+            instrument_id=str(self.audusd.id),
+            bar_type=str(bar_type),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
         )
+        strategy = EMACross(config=config)
 
         # Act
         self.engine.run(strategies=[strategy])
@@ -278,13 +307,18 @@ class TestBacktestAcceptanceTestsAUDUSD:
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
-        strategy = EMACross(
+        bar_type = BarType(
             instrument_id=self.audusd.id,
             bar_spec=BarSpecification(100, BarAggregation.TICK, PriceType.MID),
+        )
+        config = EMACrossConfig(
+            instrument_id=str(self.audusd.id),
+            bar_type=str(bar_type),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
         )
+        strategy = EMACross(config=config)
 
         # Act
         self.engine.run(strategies=[strategy])
@@ -322,13 +356,18 @@ class TestBacktestAcceptanceTestsETHUSDT:
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
-        strategy = EMACross(
+        bar_type = BarType(
             instrument_id=self.ethusdt.id,
             bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
+        )
+        config = EMACrossConfig(
+            instrument_id=str(self.ethusdt.id),
+            bar_type=str(bar_type),
             trade_size=Decimal(100),
             fast_ema=10,
             slow_ema=20,
         )
+        strategy = EMACross(config=config)
 
         # Act
         self.engine.run(strategies=[strategy])
@@ -350,11 +389,11 @@ class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes:
         )
 
         self.venue = Venue("BINANCE")
-        self.instrument = TestInstrumentProvider.btcusdt_binance()
+        self.btcusdt = TestInstrumentProvider.btcusdt_binance()
 
-        self.engine.add_instrument(self.instrument)
-        self.engine.add_trade_ticks(self.instrument.id, TestDataProvider.tardis_trades())
-        self.engine.add_quote_ticks(self.instrument.id, TestDataProvider.tardis_quotes())
+        self.engine.add_instrument(self.btcusdt)
+        self.engine.add_trade_ticks(self.btcusdt.id, TestDataProvider.tardis_trades())
+        self.engine.add_quote_ticks(self.btcusdt.id, TestDataProvider.tardis_quotes())
         self.engine.add_venue(
             venue=self.venue,
             venue_type=VenueType.EXCHANGE,
@@ -369,13 +408,18 @@ class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes:
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
-        strategy = EMACross(
-            instrument_id=self.instrument.id,
+        bar_type = BarType(
+            instrument_id=self.btcusdt.id,
             bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
+        )
+        config = EMACrossConfig(
+            instrument_id=str(self.btcusdt.id),
+            bar_type=str(bar_type),
             trade_size=Decimal(1),
             fast_ema=10,
             slow_ema=20,
         )
+        strategy = EMACross(config=config)
 
         # Act
         self.engine.run(strategies=[strategy])
@@ -430,10 +474,10 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
 
     def test_run_order_book_imbalance(self):
         # Arrange
-        strategy = OrderBookImbalanceStrategy(
-            instrument_id=self.instrument.id,
-            trade_size=Decimal(10),
+        config = OrderBookImbalanceStrategyConfig(
+            instrument_id=str(self.instrument.id), trade_size=Decimal(10)
         )
+        strategy = OrderBookImbalanceStrategy(config=config)
 
         # Act
         self.engine.run(strategies=[strategy])

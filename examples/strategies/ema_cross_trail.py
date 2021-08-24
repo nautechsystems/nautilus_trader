@@ -21,7 +21,6 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
@@ -34,10 +33,51 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
+
+
+class EMACrossWithTrailingStopConfig(TradingStrategyConfig):
+    """
+    Provides configuration for ``EMACross`` instances.
+
+    instrument_id : InstrumentId
+        The instrument ID for the strategy.
+    bar_type : BarType
+        The bar type for the strategy.
+    is_internal_aggregation : bool, default=True
+        If the bar type subscribed to is internally aggregated.
+    fast_ema : int
+        The fast EMA period.
+    slow_ema : int
+        The slow EMA period.
+    atr_period : int
+        The period for the ATR indicator.
+    trail_atr_multiple : float
+        The ATR multiple for the trailing stop.
+    trade_size : Decimal
+        The position size per trade.
+    order_id_tag : str
+        The unique order ID tag for the strategy. Must be unique
+        amongst all running strategies for a particular trader ID.
+    oms_type : OMSType
+        The order management system type for the strategy. This will determine
+        how the `ExecutionEngine` handles position IDs (see docs).
+    """
+
+    instrument_id: str
+    bar_type: str
+    is_internal_aggregation: bool = True
+    fast_ema: int = 10
+    slow_ema: int = 20
+    atr_period: int
+    trail_atr_multiple: float
+    trade_size: Decimal
+    order_id_tag: str = "001"
+    oms_type: OMSType = OMSType.HEDGING
 
 
 class EMACrossWithTrailingStop(TradingStrategy):
@@ -55,55 +95,31 @@ class EMACrossWithTrailingStop(TradingStrategy):
     Cancels all orders and flattens all positions on stop.
     """
 
-    def __init__(
-        self,
-        instrument_id: InstrumentId,
-        bar_spec: BarSpecification,
-        trade_size: Decimal,
-        fast_ema_period: int,
-        slow_ema_period: int,
-        atr_period: int,
-        trail_atr_multiple: float,
-        order_id_tag: str,  # Must be unique at 'trader level'
-    ):
+    def __init__(self, config: EMACrossWithTrailingStopConfig):
         """
-        Initialize a new instance of the ``EMACrossWithTrailingStop`` class.
+        Initialize a new instance of the ``EMACrossStopEntryTrail`` class.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument ID for the strategy.
-        bar_spec : BarSpecification
-            The bar specification for the strategy.
-        trade_size : Decimal
-            The position size per trade.
-        fast_ema_period : int
-            The period for the fast EMA indicator.
-        slow_ema_period : int
-            The period for the slow EMA indicator.
-        atr_period : int
-            The period for the ATR indicator.
-        trail_atr_multiple : float
-            The ATR multiple for the trailing stop.
-        order_id_tag : str
-            The unique order ID tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader ID.
+        config : EMACrossWithTrailingStopConfig
+            The configuration for the instance.
 
         """
-        super().__init__(order_id_tag=order_id_tag, oms_type=OMSType.HEDGING)
+        super().__init__(config)
 
-        # Custom strategy variables
-        self.instrument_id = instrument_id
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
-        self.bar_type = BarType(instrument_id, bar_spec)
-        self.trade_size = trade_size
-        self.trail_atr_multiple = trail_atr_multiple
-        self.tick_size = None  # Initialize in on_start
+        # Configuration
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        self.bar_type = BarType.from_str(config.bar_type, config.is_internal_aggregation)
+        self.trade_size = config.trade_size
+        self.trail_atr_multiple = config.trail_atr_multiple
 
         # Create the indicators for the strategy
-        self.fast_ema = ExponentialMovingAverage(fast_ema_period)
-        self.slow_ema = ExponentialMovingAverage(slow_ema_period)
-        self.atr = AverageTrueRange(atr_period)
+        self.fast_ema = ExponentialMovingAverage(config.fast_ema)
+        self.slow_ema = ExponentialMovingAverage(config.slow_ema)
+        self.atr = AverageTrueRange(config.atr_period)
+
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
+        self.tick_size = None  # Initialized in on_start
 
         # Users order management variables
         self.entry = None

@@ -204,7 +204,7 @@ class TestLiveExecutionClient:
         self.exec_engine.start()
         self.risk_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -257,7 +257,7 @@ class TestLiveExecutionClient:
         self.exec_engine.start()
         self.risk_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -310,7 +310,7 @@ class TestLiveExecutionClient:
         self.exec_engine.start()
         self.risk_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -363,7 +363,7 @@ class TestLiveExecutionClient:
         self.exec_engine.start()
         self.risk_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -418,7 +418,7 @@ class TestLiveExecutionClient:
         self.exec_engine.start()
         self.risk_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -475,7 +475,7 @@ class TestLiveExecutionClient:
         self.exec_engine.start()
         self.risk_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,

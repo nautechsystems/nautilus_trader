@@ -153,7 +153,7 @@ class TestBacktestExecClientTests:
 
     def test_submit_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         order = self.order_factory.market(
             ETHUSDT_BINANCE.id,
             OrderSide.BUY,
@@ -177,7 +177,7 @@ class TestBacktestExecClientTests:
 
     def test_submit_bracket_order_when_not_connected_logs_and_does_not_send(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         entry = self.order_factory.market(
             ETHUSDT_BINANCE.id,
             OrderSide.BUY,

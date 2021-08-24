@@ -24,10 +24,12 @@ sys.path.insert(
 )  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrail
+from examples.strategies.ema_cross_stop_entry_trail import EMACrossStopEntryTrailConfig
 from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -37,7 +39,7 @@ from nautilus_trader.model.identifiers import Venue
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.
-config = {
+node_config = {
     "trader": {
         "name": "TESTER",  # Not sent beyond system boundary
         "id_tag": "001",  # Used to ensure orders are unique for this trader
@@ -93,19 +95,27 @@ instrument_id = InstrumentId(
     venue=Venue("BITMEX"),
 )
 
-strategy = EMACrossStopEntryTrail(
+bar_type = BarType(
     instrument_id=instrument_id,
     bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
-    trade_size=Decimal("100"),
+)
+
+# Configure your strategy
+strat_config = EMACrossStopEntryTrailConfig(
+    instrument_id=str(instrument_id),
+    bar_type=str(bar_type),
     fast_ema_period=10,
     slow_ema_period=20,
     atr_period=20,
     trail_atr_multiple=2.0,
+    trade_size=Decimal("100"),
     order_id_tag="001",
 )
+# Instantiate your strategy
+strategy = EMACrossStopEntryTrail(config=strat_config)
 
 # Instantiate the node with a configuration
-node = TradingNode(config=config)  # type: ignore
+node = TradingNode(config=node_config)  # type: ignore
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

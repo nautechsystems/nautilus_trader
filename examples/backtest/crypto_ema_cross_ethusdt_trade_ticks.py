@@ -27,12 +27,14 @@ sys.path.insert(
 )  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
+from examples.strategies.ema_cross_simple import EMACrossConfig
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
@@ -87,15 +89,22 @@ if __name__ == "__main__":
         fill_model=fill_model,
     )
 
-    # Instantiate your strategy
-    strategy = EMACross(
+    bar_type = BarType(
         instrument_id=ETHUSDT_BINANCE.id,
         bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
-        fast_ema_period=10,
-        slow_ema_period=20,
+    )
+
+    # Configure your strategy
+    config = EMACrossConfig(
+        instrument_id=str(ETHUSDT_BINANCE.id),
+        bar_type=str(bar_type),
         trade_size=Decimal("0.05"),
+        fast_ema=10,
+        slow_ema=20,
         order_id_tag="001",
     )
+    # Instantiate your strategy
+    strategy = EMACross(config=config)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 

@@ -678,7 +678,7 @@ class TestStubs:
 
     @staticmethod
     def trading_strategy():
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=TraderId("TESTER-000"),
             portfolio=TestStubs.portfolio(),

@@ -1,6 +1,7 @@
 # NautilusTrader 1.128.0 Beta - Release Notes
 
 Improve adding bar data to `BacktestEngine`.
+Added serializable configuration classes leveraging `pydantic`.
 
 This release also introduces the concept of an `active` order, which is an order
 whose state can change (not completed).
@@ -10,7 +11,7 @@ whose state can change (not completed).
 - Renamed `DataProducerFacade` to `DataProducer`.
 
 ## Enhancements
-- Wired up `Ticker` data type.
+- Added serializable configuration classes leveraging `pydantic`.
 - Added `BacktestEngine.add_bar_objects()`.
 - Added `BacktestEngine.add_bars_as_ticks()`.
 - Added order `active` concept, with `order.is_active` and cache methods.
@@ -27,6 +28,7 @@ whose state can change (not completed).
 - Added `ComponentTrigger.DEGRADED`.
 - Added `ComponentTrigger.FAULT`.
 - Added `ComponentTrigger.FAULTED`.
+- Wired up `Ticker` data type.
 
 ## Fixes
 - `DataEngine.subscribed_bars()` now reports internally aggregated bars also.

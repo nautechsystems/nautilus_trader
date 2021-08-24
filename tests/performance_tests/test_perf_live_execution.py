@@ -111,7 +111,7 @@ class TestLiveExecutionPerformance(PerformanceHarness):
         self.portfolio.update_account(TestStubs.event_margin_account_state())
         self.exec_engine.register_client(self.exec_client)
 
-        self.strategy = TradingStrategy(order_id_tag="001")
+        self.strategy = TradingStrategy()
         self.strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,

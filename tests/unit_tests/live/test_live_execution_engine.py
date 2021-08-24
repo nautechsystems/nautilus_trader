@@ -169,7 +169,7 @@ class TestLiveExecutionEngine:
             config={"qsize": 1},
         )
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -217,7 +217,7 @@ class TestLiveExecutionEngine:
             config={"qsize": 1},
         )
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -287,7 +287,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -328,7 +328,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -350,7 +350,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -404,7 +404,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -458,7 +458,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -513,7 +513,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -595,7 +595,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,

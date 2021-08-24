@@ -24,6 +24,7 @@ from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import CurrencyType
@@ -46,6 +47,7 @@ from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
+from tests.test_kit.strategies import EMACrossConfig
 from tests.test_kit.stubs import TestStubs
 
 
@@ -103,7 +105,7 @@ class TestCache:
             logger=self.logger,
         )
 
-        self.strategy = TradingStrategy(order_id_tag="001")
+        self.strategy = TradingStrategy()
         self.strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1038,13 +1040,14 @@ class TestExecutionCacheIntegrityCheck:
 
     def test_exec_cache_check_integrity_when_cache_cleared_fails(self):
         # Arrange
-        strategy = EMACross(
-            instrument_id=self.usdjpy.id,
-            bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+        config = EMACrossConfig(
+            instrument_id=str(self.usdjpy.id),
+            bar_type=str(TestStubs.bartype_usdjpy_1min_bid()),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
         )
+        strategy = EMACross(config=config)
 
         # Generate a lot of data
         self.engine.run(strategies=[strategy])
@@ -1057,13 +1060,18 @@ class TestExecutionCacheIntegrityCheck:
 
     def test_exec_cache_check_integrity_when_index_cleared_fails(self):
         # Arrange
-        strategy = EMACross(
+        bar_type = BarType(
             instrument_id=self.usdjpy.id,
             bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+        )
+        config = EMACrossConfig(
+            instrument_id=str(self.usdjpy.id),
+            bar_type=str(bar_type),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
         )
+        strategy = EMACross(config=config)
 
         # Generate a lot of data
         self.engine.run(strategies=[strategy])

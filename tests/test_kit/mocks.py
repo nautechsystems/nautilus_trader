@@ -186,7 +186,7 @@ class MockStrategy(TradingStrategy):
             The bar type for the strategy.
 
         """
-        super().__init__(order_id_tag="001")
+        super().__init__()
 
         self.object_storer = ObjectStorer()
         self.bar_type = bar_type
@@ -349,7 +349,7 @@ class KaboomStrategy(TradingStrategy):
         """
         Initialize a new instance of the ``KaboomStrategy`` class.
         """
-        super().__init__(order_id_tag="000")
+        super().__init__()
 
         self._explode_on_start = True
         self._explode_on_stop = True

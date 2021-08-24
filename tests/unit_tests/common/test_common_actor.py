@@ -41,7 +41,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.trading.filters import NewsEvent
 from nautilus_trader.trading.filters import NewsImpact
-from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import KaboomActor
 from tests.test_kit.mocks import MockActor
 from tests.test_kit.providers import TestInstrumentProvider
@@ -110,14 +109,6 @@ class TestActor:
 
         self.data_engine.start()
         self.exec_engine.start()
-
-    def test_str_and_repr(self):
-        # Arrange
-        strategy = TradingStrategy(order_id_tag="GBP/USD-MM")
-
-        # Act, Assert
-        assert str(strategy) == "TradingStrategy-GBP/USD-MM"
-        assert repr(strategy) == "TradingStrategy(TradingStrategy-GBP/USD-MM)"
 
     def test_id(self):
         # Arrange, Act

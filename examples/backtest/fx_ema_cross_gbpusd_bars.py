@@ -26,12 +26,14 @@ sys.path.insert(
 )  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
+from examples.strategies.ema_cross_simple import EMACrossConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
@@ -59,18 +61,18 @@ if __name__ == "__main__":
 
     # Setup trading instruments
     SIM = Venue("SIM")
-    GBPUSD = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
+    GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
 
     # Setup data
-    engine.add_instrument(GBPUSD)
+    engine.add_instrument(GBPUSD_SIM)
     engine.add_bars_as_ticks(
-        instrument_id=GBPUSD.id,
+        instrument_id=GBPUSD_SIM.id,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.BID,
         data=TestDataProvider.gbpusd_1min_bid(),  # Stub data from the test kit
     )
     engine.add_bars_as_ticks(
-        instrument_id=GBPUSD.id,
+        instrument_id=GBPUSD_SIM.id,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.ASK,
         data=TestDataProvider.gbpusd_1min_ask(),  # Stub data from the test kit
@@ -102,15 +104,22 @@ if __name__ == "__main__":
         modules=[fx_rollover_interest],
     )
 
-    # Instantiate your strategy
-    strategy = EMACross(
-        instrument_id=GBPUSD.id,
+    bar_type = BarType(
+        instrument_id=GBPUSD_SIM.id,
         bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
+    )
+
+    # Configure your strategy
+    config = EMACrossConfig(
+        instrument_id=str(GBPUSD_SIM.id),
+        bar_type=str(bar_type),
         fast_ema_period=10,
         slow_ema_period=20,
         trade_size=Decimal(1_000_000),
         order_id_tag="001",
     )
+    # Instantiate your strategy
+    strategy = EMACross(config=config)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 

@@ -157,7 +157,7 @@ class TestLiveRiskEngine:
             config={"qsize": 1},
         )
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -203,7 +203,7 @@ class TestLiveRiskEngine:
             config={"qsize": 1},
         )
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -273,7 +273,7 @@ class TestLiveRiskEngine:
         # Arrange
         self.risk_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -315,7 +315,7 @@ class TestLiveRiskEngine:
         # Arrange
         self.risk_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
