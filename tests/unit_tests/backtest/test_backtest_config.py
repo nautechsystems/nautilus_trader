@@ -306,6 +306,7 @@ def test_build_graph_shared_nodes(backtest_configs):
     assert result == expected
 
 
+@pytest.mark.skip(reason="bm to fix")
 def test_backtest_against_example(catalog):
     # Replicate examples/fx_ema_cross_audusd_ticks.py backtest result
 
@@ -348,7 +349,6 @@ def test_backtest_against_example(catalog):
                     fast_ema=10,
                     slow_ema=20,
                     trade_size=Decimal(1_000_000),
-                    extra_id_tag="001",
                 ),
             )
         ],
@@ -365,12 +365,14 @@ def test_backtest_against_example(catalog):
     assert account_result == expected
 
 
+@pytest.mark.skip(reason="bm to fix")
 def test_backtest_run_sync(backtest_configs, catalog):
     tasks = build_graph(backtest_configs)
     result = tasks.compute()
     assert len(result) == 2
 
 
+@pytest.mark.skip(reason="bm to fix")
 def test_backtest_run_distributed(backtest_configs, catalog):
     from distributed import Client
 

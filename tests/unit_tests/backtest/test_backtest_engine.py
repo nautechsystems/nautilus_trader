@@ -47,6 +47,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvide
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
+from tests.test_kit.strategies import EMACrossConfig
 from tests.test_kit.stubs import MyData
 from tests.test_kit.stubs import TestStubs
 
@@ -447,7 +448,7 @@ class TestBacktestEngine:
 
     def test_initialization(self):
         # Arrange, Act
-        self.engine.run(strategies=[TradingStrategy("000")])
+        self.engine.run(strategies=[TradingStrategy()])
         # Assert
         assert len(self.engine.trader.strategy_states()) == 1
 
@@ -537,14 +538,19 @@ class TestBacktestWithAddedBars:
 
     def test_run_ema_cross_with_added_bars(self):
         # Arrange
-        strategy = EMACross(
+        bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
             bar_spec=TestStubs.bar_spec_1min_bid(),
+        )
+        config = EMACrossConfig(
+            instrument_id=str(GBPUSD_SIM.id),
+            bar_type=str(bar_type),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
             is_internal_aggregation=False,  # <-- important
         )
+        strategy = EMACross(config=config)
 
         # Act
         self.engine.run(strategies=[strategy])

@@ -20,7 +20,6 @@ from nautilus_trader.common.logging import LogColor
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
@@ -34,10 +33,45 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
+
+
+class VolatilityMarketMakerConfig(TradingStrategyConfig):
+    """
+    Provides configuration for ``VolatilityMarketMaker`` instances.
+
+    instrument_id : InstrumentId
+        The instrument ID for the strategy.
+    bar_type : BarType
+        The bar type for the strategy.
+    is_internal_aggregation : bool, default=True
+        If the bar type subscribed to is internally aggregated.
+    atr_period : int
+        The period for the ATR indicator.
+    atr_multiple : float
+        The ATR multiple for bracketing limit orders.
+    trade_size : Decimal
+        The position size per trade.
+    order_id_tag : str
+        The unique order ID tag for the strategy. Must be unique
+        amongst all running strategies for a particular trader ID.
+    oms_type : OMSType
+        The order management system type for the strategy. This will determine
+        how the `ExecutionEngine` handles position IDs (see docs).
+    """
+
+    instrument_id: str
+    bar_type: str
+    is_internal_aggregation: bool = True
+    atr_period: int
+    atr_multiple: float
+    order_id_tag: str = "001"
+    trade_size: Decimal
+    oms_type: OMSType = OMSType.HEDGING
 
 
 class VolatilityMarketMaker(TradingStrategy):
@@ -48,46 +82,28 @@ class VolatilityMarketMaker(TradingStrategy):
     Cancels all orders and flattens all positions on stop.
     """
 
-    def __init__(
-        self,
-        instrument_id: InstrumentId,
-        bar_spec: BarSpecification,
-        trade_size: Decimal,
-        atr_period: int,
-        atr_multiple: float,
-        order_id_tag: str,  # Must be unique at 'trader level'
-    ):
+    def __init__(self, config: VolatilityMarketMakerConfig):
         """
         Initialize a new instance of the ``VolatilityMarketMaker`` class.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument ID for the strategy.
-        bar_spec : BarSpecification
-            The bar specification for the strategy.
-        trade_size : Decimal
-            The position size per trade.
-        atr_period : int
-            The period for the ATR indicator.
-        atr_multiple : float
-            The ATR multiple for bracketing limit orders.
-        order_id_tag : str
-            The unique order ID tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader ID.
+        config : VolatilityMarketMakerConfig
+            The configuration for the instance.
 
         """
-        super().__init__(order_id_tag=order_id_tag, oms_type=OMSType.HEDGING)
+        super().__init__(config)
 
         # Custom strategy variables
-        self.instrument_id = instrument_id
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
-        self.bar_type = BarType(instrument_id, bar_spec)
-        self.trade_size = trade_size
-        self.atr_multiple = atr_multiple
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        self.bar_type = BarType.from_str(config.bar_type, config.is_internal_aggregation)
+        self.trade_size = config.trade_size
+        self.atr_multiple = config.atr_multiple
 
         # Create the indicators for the strategy
-        self.atr = AverageTrueRange(atr_period)
+        self.atr = AverageTrueRange(config.atr_period)
+
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
 
         # Users order management variables
         self.buy_order: Union[LimitOrder, None] = None

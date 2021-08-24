@@ -651,8 +651,8 @@ class TestSimulatedExchange:
         self.strategy.submit_bracket_order(bracket_order)
 
         # Assert
-        stop_loss_order = self.cache.order(ClientOrderId("O-19700101-000000-000-001-2"))
-        take_profit_order = self.cache.order(ClientOrderId("O-19700101-000000-000-001-3"))
+        stop_loss_order = self.cache.order(ClientOrderId("O-19700101-000000-000-000-2"))
+        take_profit_order = self.cache.order(ClientOrderId("O-19700101-000000-000-000-3"))
 
         assert entry_order.status == OrderStatus.FILLED
         assert stop_loss_order.status == OrderStatus.ACCEPTED
@@ -685,8 +685,8 @@ class TestSimulatedExchange:
         self.strategy.submit_bracket_order(bracket_order)
 
         # Assert
-        stop_loss_order = self.cache.order(ClientOrderId("O-19700101-000000-000-001-2"))
-        take_profit_order = self.cache.order(ClientOrderId("O-19700101-000000-000-001-3"))
+        stop_loss_order = self.cache.order(ClientOrderId("O-19700101-000000-000-000-2"))
+        take_profit_order = self.cache.order(ClientOrderId("O-19700101-000000-000-000-3"))
 
         assert entry_order.status == OrderStatus.ACCEPTED
         assert stop_loss_order.status == OrderStatus.SUBMITTED

@@ -24,6 +24,8 @@ attempts to operate without a managing `Trader` instance.
 
 """
 
+from pydantic import BaseModel
+
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
@@ -75,6 +77,23 @@ cdef tuple _WARNING_EVENTS = (
     OrderUpdateRejected,
 )
 
+
+class TradingStrategyConfig(BaseModel):
+    """
+    The base model for all trading strategy configs.
+
+    order_id_tag : str
+        The unique order ID tag for the strategy. Must be unique
+        amongst all running strategies for a particular trader ID.
+    oms_type : OMSType
+        The order management system type for the strategy. This will determine
+        how the `ExecutionEngine` handles position IDs (see docs).
+    """
+
+    order_id_tag: str = "000"
+    oms_type: OMSType = OMSType.HEDGING
+
+
 cdef class TradingStrategy(Actor):
     """
     The abstract base class for all trading strategies.
@@ -94,36 +113,23 @@ cdef class TradingStrategy(Actor):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(
-        self,
-        str order_id_tag not None,
-        OMSType oms_type=OMSType.HEDGING,
-    ):
+    def __init__(self, config: TradingStrategyConfig=TradingStrategyConfig()):
         """
         Initialize a new instance of the ``TradingStrategy`` class.
 
         Parameters
         ----------
-        order_id_tag : str
-            The unique order ID tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader ID.
-        oms_type : OMSType
-            The order management system type for the strategy. This will determine
-            how the `ExecutionEngine` handles position IDs (see docs).
-
-        Raises
-        ------
-        ValueError
-            If order_id_tag is not a valid string.
+        config : TradingStrategyConfig
+            The trading strategy configuration.
 
         """
-        Condition.valid_string(order_id_tag, "order_id_tag")
+        Condition.type(config, TradingStrategyConfig, "config")
 
-        self.oms_type = oms_type
+        self.oms_type = config.oms_type
 
         # Assign strategy ID
-        strategy_id = StrategyId(f"{type(self).__name__}-{order_id_tag}")
-        super().__init__(component_id=strategy_id)
+        strategy_id = StrategyId(f"{type(self).__name__}-{config.order_id_tag}")
+        super().__init__(component_id=strategy_id, config=config.dict())
 
         # Indicators
         self._indicators = []             # type: list[Indicator]

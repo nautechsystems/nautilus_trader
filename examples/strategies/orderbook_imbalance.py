@@ -19,14 +19,47 @@ from typing import Optional
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
+
+
+class OrderbookImbalanceConfig(TradingStrategyConfig):
+    """
+    Provides configuration for ``EMACross`` instances.
+
+    instrument_id : InstrumentId
+        The instrument ID for the strategy.
+    max_trade_size : Decimal
+        The max position size per trade (volume on the level can be less).
+    trigger_min_size : float
+        The minimum size on the larger side to trigger an order.
+    trigger_imbalance_ratio : float
+        The ratio of bid:ask volume required to trigger an order (smaller
+        value / larger value) ie given a trigger_imbalance_ratio=0.2, and a
+        bid volume of 100, we will send a buy order if the ask volume is <
+        20).
+    order_id_tag : str
+        The unique order ID tag for the strategy. Must be unique
+        amongst all running strategies for a particular trader ID.
+    oms_type : OMSType
+        The order management system type for the strategy. This will determine
+        how the `ExecutionEngine` handles position IDs (see docs).
+    """
+
+    instrument_id: str
+    max_trade_size: Decimal
+    trigger_min_size = 100.0
+    trigger_imbalance_ratio = 0.20
+    order_id_tag: str = "001"
+    oms_type: OMSType = OMSType.HEDGING
 
 
 class OrderbookImbalance(TradingStrategy):
@@ -37,50 +70,36 @@ class OrderbookImbalance(TradingStrategy):
     Cancels all orders and flattens all positions on stop.
     """
 
-    def __init__(
-        self,
-        # instrument_filter: dict,
-        instrument: Instrument,
-        max_trade_size: Decimal,
-        order_id_tag: str,  # Must be unique at 'trader level'
-        trigger_min_size=100.0,
-        trigger_imbalance_ratio=0.20,
-    ):
+    def __init__(self, config: OrderbookImbalanceConfig):
         """
         Initialize a new instance of the ``OrderbookImbalance`` class.
 
         Parameters
         ----------
-        instrument : Instrument
-            The instrument to trade
-        max_trade_size : Decimal
-            The max position size per trade (volume on the level can be less).
-        order_id_tag : str
-            The unique order ID tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader ID.
-        trigger_min_size : float
-            The minimum size on the larger side to trigger an order.
-        trigger_imbalance_ratio : float
-            The ratio of bid:ask volume required to trigger an order (smaller
-            value / larger value) ie given a trigger_imbalance_ratio=0.2, and a
-            bid volume of 100, we will send a buy order if the ask volume is <
-            20).
+        config : OrderbookImbalanceConfig
+            The configuration for the instance.
 
         """
-        assert 0 < trigger_imbalance_ratio < 1
-        super().__init__(order_id_tag=order_id_tag, oms_type=OMSType.NETTING)
-        # self.instrument_filter = instrument_filter
-        self.instrument = instrument
-        self.max_trade_size = max_trade_size
-        self.trigger_min_size = trigger_min_size
-        self.trigger_imbalance_ratio = trigger_imbalance_ratio
+        assert 0 < config.trigger_imbalance_ratio < 1
+        super().__init__(config)
+
+        # Configuration
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        self.max_trade_size = config.max_trade_size
+        self.trigger_min_size = config.trigger_min_size
+        self.trigger_imbalance_ratio = config.trigger_imbalance_ratio
+
+        self.instrument: Optional[Instrument] = None
         self._book = None  # type: Optional[OrderBook]
 
     def on_start(self):
         """Actions to be performed on strategy start."""
-        # self.request_data(
-        #     "BETFAIR", DataType(InstrumentSearch, metadata=self.instrument_filter)
-        # )
+        self.instrument = self.cache.instrument(self.instrument_id)
+        if self.instrument is None:
+            self.log.error(f"Could not find instrument for {self.instrument_id}")
+            self.stop()
+            return
+
         self.subscribe_order_book_deltas(
             instrument_id=self.instrument.id,
             level=BookLevel.L2,

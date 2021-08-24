@@ -50,6 +50,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import TradingStrategyConfig
 from tests.test_kit.mocks import KaboomStrategy
 from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.providers import TestInstrumentProvider
@@ -168,9 +169,9 @@ class TestTradingStrategy:
 
     def test_strategy_equality(self):
         # Arrange
-        strategy1 = TradingStrategy(order_id_tag="AUD/USD-001")
-        strategy2 = TradingStrategy(order_id_tag="AUD/USD-001")
-        strategy3 = TradingStrategy(order_id_tag="AUD/USD-002")
+        strategy1 = TradingStrategy(config=TradingStrategyConfig(order_id_tag="AUD/USD-001"))
+        strategy2 = TradingStrategy(config=TradingStrategyConfig(order_id_tag="AUD/USD-001"))
+        strategy3 = TradingStrategy(config=TradingStrategyConfig(order_id_tag="AUD/USD-002"))
 
         # Act, Assert
         assert strategy1 == strategy1
@@ -179,7 +180,7 @@ class TestTradingStrategy:
 
     def test_str_and_repr(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="GBP/USD-MM")
+        strategy = TradingStrategy(config=TradingStrategyConfig(order_id_tag="GBP/USD-MM"))
 
         # Act, Assert
         assert str(strategy) == "TradingStrategy-GBP/USD-MM"
@@ -187,14 +188,14 @@ class TestTradingStrategy:
 
     def test_id(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
 
         # Act, Assert
-        assert strategy.id == StrategyId("TradingStrategy-001")
+        assert strategy.id == StrategyId("TradingStrategy-000")
 
     def test_initialization(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy(config=TradingStrategyConfig(order_id_tag="001"))
 
         # Act, Assert
         assert strategy.state == ComponentState.PRE_INITIALIZED
@@ -202,7 +203,7 @@ class TestTradingStrategy:
 
     def test_on_save_when_not_overridden_does_nothing(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
 
         # Act
         strategy.on_save()
@@ -212,7 +213,7 @@ class TestTradingStrategy:
 
     def test_on_load_when_not_overridden_does_nothing(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
 
         # Act
         strategy.on_load({})
@@ -222,7 +223,9 @@ class TestTradingStrategy:
 
     def test_save_when_not_registered_logs_error(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        config = TradingStrategyConfig()
+
+        strategy = TradingStrategy(config)
         strategy.save()
 
         # Assert
@@ -262,7 +265,7 @@ class TestTradingStrategy:
 
     def test_load(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -362,7 +365,7 @@ class TestTradingStrategy:
 
     def test_register_indicator_for_quote_ticks_when_already_registered(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -386,7 +389,7 @@ class TestTradingStrategy:
 
     def test_register_indicator_for_trade_ticks_when_already_registered(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -410,7 +413,7 @@ class TestTradingStrategy:
 
     def test_register_indicator_for_bars_when_already_registered(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -435,7 +438,7 @@ class TestTradingStrategy:
 
     def test_register_indicator_for_multiple_data_sources(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -459,7 +462,7 @@ class TestTradingStrategy:
 
     def test_handle_quote_tick_updates_indicator_registered_for_quote_ticks(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -504,7 +507,7 @@ class TestTradingStrategy:
 
     def test_handle_quote_ticks_updates_indicator_registered_for_quote_ticks(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -527,7 +530,7 @@ class TestTradingStrategy:
 
     def test_handle_trade_tick_updates_indicator_registered_for_trade_ticks(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -551,7 +554,7 @@ class TestTradingStrategy:
 
     def test_handle_trade_ticks_updates_indicator_registered_for_trade_ticks(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -574,7 +577,7 @@ class TestTradingStrategy:
 
     def test_handle_trade_ticks_with_no_ticks_logs_and_continues(self):
         # Arrange
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -596,7 +599,7 @@ class TestTradingStrategy:
     def test_handle_bar_updates_indicator_registered_for_bars(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -620,7 +623,7 @@ class TestTradingStrategy:
     def test_handle_bars_updates_indicator_registered_for_bars(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -643,7 +646,7 @@ class TestTradingStrategy:
     def test_handle_bars_with_no_bars_logs_and_continues(self):
         # Arrange
         bar_type = TestStubs.bartype_gbpusd_1sec_mid()
-        strategy = TradingStrategy("000")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -712,7 +715,7 @@ class TestTradingStrategy:
 
     def test_submit_order_with_valid_order_successfully_submits(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -740,7 +743,7 @@ class TestTradingStrategy:
 
     def test_submit_bracket_order_with_valid_order_successfully_submits(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -775,7 +778,7 @@ class TestTradingStrategy:
 
     def test_cancel_order(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -808,7 +811,7 @@ class TestTradingStrategy:
 
     def test_cancel_order_when_pending_cancel_does_not_submit_command(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -840,7 +843,7 @@ class TestTradingStrategy:
 
     def test_cancel_order_when_completed_does_not_submit_command(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -872,7 +875,7 @@ class TestTradingStrategy:
 
     def test_update_order_when_pending_update_does_not_submit_command(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -904,7 +907,7 @@ class TestTradingStrategy:
 
     def test_update_order_when_pending_cancel_does_not_submit_command(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -936,7 +939,7 @@ class TestTradingStrategy:
 
     def test_update_order_when_completed_does_not_submit_command(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -968,7 +971,7 @@ class TestTradingStrategy:
 
     def test_update_order_when_no_changes_does_not_submit_command(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -999,7 +1002,7 @@ class TestTradingStrategy:
 
     def test_update_order(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1037,7 +1040,7 @@ class TestTradingStrategy:
 
     def test_cancel_all_orders(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1077,7 +1080,7 @@ class TestTradingStrategy:
 
     def test_flatten_position_when_position_already_flat_does_nothing(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1112,7 +1115,7 @@ class TestTradingStrategy:
 
     def test_flatten_position(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1141,7 +1144,7 @@ class TestTradingStrategy:
 
     def test_flatten_all_positions(self):
         # Arrange
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
