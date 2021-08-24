@@ -16,6 +16,7 @@
 import pytest
 
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.core.uuid import uuid4
 
 
 class TestUUID:
@@ -62,3 +63,12 @@ class TestUUID:
         # Act, Assert
         assert str(uuid) == "c2988650-5beb-8af8-e714-377a3a1c26ed"
         assert repr(uuid) == "UUID4('c2988650-5beb-8af8-e714-377a3a1c26ed')"
+
+    def test_uuid4_produces_valid_uuid4(self):
+        # Arrange, Act
+        result = uuid4()
+
+        # Assert
+        assert isinstance(result, UUID4)
+        assert len(result.value) == 36
+        assert len(result.value.replace("-", "")) == 32

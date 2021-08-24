@@ -13,19 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# Refactored from the original CPython implementation found at
-# https://github.com/python/cpython/blob/master/Lib/uuid.py
-# Full credit to the original author 'Ka-Ping Yee <ping@zesty.ca>' and contributors.
-
-# This type follows the standard CPython UUID4 class very closely however not exactly
-# https://docs.python.org/3/library/uuid.html
-
-"""
-UUID4 objects (universally unique identifiers) according to RFC 4122.
-This module provides immutable UUID4 objects and the function
-for generating version 4 random UUIDs as specified in RFC 4122.
-"""
-
 import os
 
 
@@ -82,14 +69,15 @@ cdef class UUID4:
 
 cpdef UUID4 uuid4():
     """
-    Generate a random UUID version 4.
+    Generate a random UUID (universally unique identifier) version 4 as
+    specified in RFC 4122.
 
     Returns
     -------
     UUID4
 
     """
-    # Construct hex string from random integer value
+    # Construct hex string from a random integer value
     cdef str hex_str = "%032x" % int.from_bytes(os.urandom(16), byteorder="big")
 
     # Parse final UUID value
