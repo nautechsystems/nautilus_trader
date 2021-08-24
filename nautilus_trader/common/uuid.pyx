@@ -24,7 +24,7 @@ cdef class UUIDFactory:
 
     cpdef UUID4 generate(self):
         """
-        Return a generated UUID4 version 4.
+        Return a generated UUID4.
 
         Returns
         -------
