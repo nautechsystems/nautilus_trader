@@ -28,17 +28,17 @@ PY37 = sys.version_info < (3, 8)
 
 class LinePreprocessor:
     def __call__(self, line: bytes):
-        line, data = self.pre_process(line)
-        obj = yield line
-        yield
-        yield self.post_process(obj=obj, data=data)
+        for line_, state in self.pre_process(line):
+            obj = yield line_
+            yield
+            yield self.post_process(obj=obj, state=state)
 
     @staticmethod
     def pre_process(line):
         return line, {}
 
     @staticmethod
-    def post_process(obj: Any, data: dict):
+    def post_process(obj: Any, state: dict):
         return obj
 
 
@@ -78,7 +78,7 @@ class Reader:
 class ByteReader(Reader):
     def __init__(
         self,
-        byte_parser: Callable,
+        block_parser: Callable,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Callable = None,
     ):
@@ -87,7 +87,7 @@ class ByteReader(Reader):
 
         Parameters
         ----------
-        byte_parser : Callable
+        block_parser : Callable
             The handler which takes a blocks of bytes and yields Nautilus objects.
         instrument_provider_update : Callable , optional
             An optional hook/callable to update instrument provider before data is passed to `byte_parser`
@@ -98,8 +98,8 @@ class ByteReader(Reader):
             instrument_provider=instrument_provider,
         )
         if not PY37:
-            assert inspect.isgeneratorfunction(byte_parser)
-        self.parser = byte_parser
+            assert inspect.isgeneratorfunction(block_parser)
+        self.parser = block_parser
 
     def parse(self, block: bytes) -> Generator:
         instruments = self.check_instrument_provider(data=block)
@@ -135,27 +135,29 @@ class TextReader(ByteReader):
         """
         super().__init__(
             instrument_provider_update=instrument_provider_update,
-            byte_parser=line_parser,
+            block_parser=self.process_block,
             instrument_provider=instrument_provider,
         )
         self.line_preprocessor = line_preprocessor or LinePreprocessor()
         if not PY37:
             assert inspect.isgeneratorfunction(self.line_preprocessor.__call__)
 
-    def parse(self, blocks) -> Generator:  # noqa: C901
-        self.buffer += blocks
-        if b"\n" in blocks:
+    def parse(self, block) -> Generator:  # noqa: C901
+        self.buffer += block
+        if b"\n" in block:
             process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
         else:
-            process, self.buffer = blocks, b""
+            process, self.buffer = block, b""
         if process:
             yield from self.process_block(block=process)
 
     def process_block(self, block: bytes):
         assert isinstance(block, bytes), "Block not bytes"
-        for line in block.split(b"\n"):
-            gen = self.line_preprocessor(line)
+        for raw_line in block.split(b"\n"):
+            gen = self.line_preprocessor(raw_line)
             line = next(gen)
+            if not line:
+                continue
             instruments = self.check_instrument_provider(data=line)
             if instruments:
                 yield from instruments
@@ -245,7 +247,7 @@ class ParquetReader(ByteReader):
         data_types = ("quote_ticks", "trade_ticks")
         assert data_type in data_types, f"data_type must be one of {data_types}"
         super().__init__(
-            byte_parser=parser,
+            block_parser=parser,
             instrument_provider_update=instrument_provider_update,
             instrument_provider=instrument_provider,
         )
