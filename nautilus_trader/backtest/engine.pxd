@@ -97,4 +97,3 @@ cdef class BacktestEngine:
         datetime start,
         datetime stop,
     ) except *
-    cpdef list_venues(self)

@@ -290,6 +290,17 @@ cdef class BacktestEngine:
         self.time_to_initialize = self._clock.delta(self.created_time)
         self._log.info(f"Initialized in {int(self.time_to_initialize.total_seconds() * 1000)}ms.")
 
+    def list_venues(self):
+        """
+        Return the venues contained within the engine.
+
+        Returns
+        -------
+        List[Venue]
+
+        """
+        return list(self._exchanges)
+
     def get_exec_engine(self) -> ExecutionEngine:
         """
         Return the execution engine for the backtest engine (used for testing).
@@ -300,9 +311,6 @@ cdef class BacktestEngine:
 
         """
         return self._exec_engine
-
-    cpdef list_venues(self):
-        return list(self._exchanges)
 
     def add_generic_data(self, ClientId client_id, list data) -> None:
         """
