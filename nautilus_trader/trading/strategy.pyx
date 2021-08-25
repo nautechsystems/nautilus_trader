@@ -80,7 +80,7 @@ cdef tuple _WARNING_EVENTS = (
 
 class TradingStrategyConfig(BaseModel):
     """
-    The base model for all trading strategy configs.
+    The base model for all trading strategy configurations.
 
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
@@ -113,7 +113,7 @@ cdef class TradingStrategy(Actor):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, config: TradingStrategyConfig=TradingStrategyConfig()):
+    def __init__(self, config not None: TradingStrategyConfig=TradingStrategyConfig()):
         """
         Initialize a new instance of the ``TradingStrategy`` class.
 
@@ -121,6 +121,11 @@ cdef class TradingStrategy(Actor):
         ----------
         config : TradingStrategyConfig
             The trading strategy configuration.
+
+        Raises
+        ------
+        TypeError
+            If config is not of type TradingStrategyConfig.
 
         """
         Condition.type(config, TradingStrategyConfig, "config")
