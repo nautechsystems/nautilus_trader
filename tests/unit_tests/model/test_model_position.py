@@ -176,7 +176,7 @@ class TestPosition:
         # Assert
         assert position.symbol == AUDUSD_SIM.id.symbol
         assert position.venue == AUDUSD_SIM.id.venue
-        assert not position.is_opposite_side(fill.side)
+        assert not position.is_opposite_side(fill.order_side)
         assert not position != position  # Equality operator test
         assert position.from_order == ClientOrderId("O-19700101-000000-000-001-1")
         assert position.quantity == Quantity.from_int(100000)
@@ -389,7 +389,7 @@ class TestPosition:
         position.apply(fill2)
 
         # Assert
-        assert position.is_opposite_side(fill2.side)
+        assert position.is_opposite_side(fill2.order_side)
         assert position.quantity == Quantity.zero()
         assert position.side == PositionSide.FLAT
         assert position.ts_opened == 1_000_000_000
@@ -781,7 +781,7 @@ class TestPosition:
 
         # Assert
         last = Price.from_str("1.00030")
-        assert position.is_opposite_side(fill2.side)
+        assert position.is_opposite_side(fill2.order_side)
         assert position.quantity == Quantity.from_int(150000)
         assert position.side == PositionSide.LONG
         assert position.ts_opened == 1_000_000_000

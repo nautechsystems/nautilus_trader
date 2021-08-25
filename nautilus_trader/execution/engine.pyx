@@ -666,7 +666,7 @@ cdef class ExecutionEngine(Component):
         # Check for flip (last_qty guaranteed to be positive)
         if (
             oms_type == OMSType.HEDGING
-            and position.is_opposite_side(fill.side)
+            and position.is_opposite_side(fill.order_side)
             and fill.last_qty > position.quantity
         ):
             self._flip_position(position, fill, oms_type)
@@ -725,8 +725,8 @@ cdef class ExecutionEngine(Component):
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
             position_id=fill.position_id,
-            order_side=fill.side,
-            order_type=fill.type,
+            order_side=fill.order_side,
+            order_type=fill.order_type,
             last_qty=position.quantity,  # Fill original position quantity remaining
             last_px=fill.last_px,
             currency=fill.currency,
@@ -758,8 +758,8 @@ cdef class ExecutionEngine(Component):
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
             position_id=position_id_flip,
-            order_side=fill.side,
-            order_type=fill.type,
+            order_side=fill.order_side,
+            order_type=fill.order_type,
             last_qty=difference,  # Fill difference from original as above
             last_px=fill.last_px,
             currency=fill.currency,

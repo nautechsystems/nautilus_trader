@@ -76,8 +76,8 @@ cdef class Position:
         self.from_order = fill.client_order_id
 
         # Properties
-        self.entry = fill.side
-        self.side = Position.side_from_order_side(fill.side)
+        self.entry = fill.order_side
+        self.side = Position.side_from_order_side(fill.order_side)
         self.net_qty = Decimal(0)
         self.quantity = Quantity.zero_c(precision=instrument.size_precision)
         self.peak_qty = Quantity.zero_c(precision=instrument.size_precision)
@@ -427,7 +427,7 @@ cdef class Position:
         self._commissions[currency] = cum_commission
 
         # Calculate avg prices, points, return, PnL
-        if fill.side == OrderSide.BUY:
+        if fill.order_side == OrderSide.BUY:
             self._handle_buy_order_fill(fill)
         else:  # event.side == OrderSide.SELL:
             self._handle_sell_order_fill(fill)

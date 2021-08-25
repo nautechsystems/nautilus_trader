@@ -513,7 +513,7 @@ cdef class MarginAccount(Account):
         Condition.not_none(instrument, "instrument")
         Condition.not_none(fill, "fill")
 
-        if position and position.entry != fill.side:
+        if position and position.entry != fill.order_side:
             # Calculate positional PnL
             return [position.calculate_pnl(
                 avg_px_open=position.avg_px_open,
