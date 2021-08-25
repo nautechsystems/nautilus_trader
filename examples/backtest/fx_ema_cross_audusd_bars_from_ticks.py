@@ -31,12 +31,8 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -90,15 +86,10 @@ if __name__ == "__main__":
         modules=[fx_rollover_interest],
     )
 
-    bar_type = BarType(
-        instrument_id=AUDUSD_SIM.id,
-        bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
-    )
-
     # Configure your strategy
     config = EMACrossConfig(
         instrument_id=str(AUDUSD_SIM.id),
-        bar_type=str(bar_type),
+        bar_type="AUD/USD.SIM-1-MINUTE-MID-INTERNAL",
         fast_ema_period=10,
         slow_ema_period=20,
         trade_size=Decimal(1_000_000),

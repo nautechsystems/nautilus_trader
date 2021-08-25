@@ -26,6 +26,7 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import DeltaType
@@ -299,7 +300,7 @@ class TestBacktestEngineData:
         bar_type = BarType(
             instrument_id=USDJPY_SIM.id,
             bar_spec=bar_spec,
-            internal_aggregation=False,  # <-- important
+            aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
 
         # Act
@@ -313,7 +314,7 @@ class TestBacktestEngineData:
         log = "".join(capsys.readouterr())
         assert "Added USD/JPY.SIM Instrument." in log
         assert "Added 2000 USD/JPY.SIM MINUTE-BID tick rows." in log
-        assert "Added 2000 USD/JPY.SIM-1-MINUTE-BID bar elements." in log
+        assert "Added 2000 USD/JPY.SIM-1-MINUTE-BID-EXTERNAL bar elements." in log
 
     def test_add_bar_objects_adds_to_engine(self, capsys):
         # Arrange
@@ -329,7 +330,7 @@ class TestBacktestEngineData:
         bar_type = BarType(
             instrument_id=USDJPY_SIM.id,
             bar_spec=bar_spec,
-            internal_aggregation=False,  # <-- important
+            aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
 
         bars = BarDataWrangler(
@@ -348,7 +349,7 @@ class TestBacktestEngineData:
         # Assert
         log = "".join(capsys.readouterr())
         assert "Added USD/JPY.SIM Instrument." in log
-        assert "Added 2000 USD/JPY.SIM-1-MINUTE-BID bar elements." in log
+        assert "Added 2000 USD/JPY.SIM-1-MINUTE-BID-EXTERNAL bar elements." in log
 
     def test_add_bars_as_ticks_adds_to_engine(self, capsys):
         # Arrange
@@ -503,7 +504,7 @@ class TestBacktestWithAddedBars:
         bid_bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
             bar_spec=TestStubs.bar_spec_1min_bid(),
-            internal_aggregation=False,  # <-- important
+            aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
 
         self.engine.add_bars(
@@ -515,7 +516,7 @@ class TestBacktestWithAddedBars:
         ask_bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
             bar_spec=TestStubs.bar_spec_1min_ask(),
-            internal_aggregation=False,  # <-- important
+            aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
 
         self.engine.add_bars(
@@ -541,6 +542,7 @@ class TestBacktestWithAddedBars:
         bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
             bar_spec=TestStubs.bar_spec_1min_bid(),
+            aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
         config = EMACrossConfig(
             instrument_id=str(GBPUSD_SIM.id),
@@ -548,7 +550,6 @@ class TestBacktestWithAddedBars:
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
-            is_internal_aggregation=False,  # <-- important
         )
         strategy = EMACross(config=config)
 

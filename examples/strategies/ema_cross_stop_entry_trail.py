@@ -48,8 +48,6 @@ class EMACrossStopEntryTrailConfig(TradingStrategyConfig):
         The instrument ID for the strategy.
     bar_type : BarType
         The bar type for the strategy.
-    is_internal_aggregation : bool, default=True
-        If the bar type subscribed to is internally aggregated.
     fast_ema_period : int
         The fast EMA period.
     slow_ema_period : int
@@ -70,7 +68,6 @@ class EMACrossStopEntryTrailConfig(TradingStrategyConfig):
 
     instrument_id: str
     bar_type: str
-    is_internal_aggregation: bool = True
     fast_ema_period: int = 10
     slow_ema_period: int = 20
     atr_period: int
@@ -109,7 +106,7 @@ class EMACrossStopEntryTrail(TradingStrategy):
 
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.bar_type = BarType.from_str(config.bar_type, config.is_internal_aggregation)
+        self.bar_type = BarType.from_str(config.bar_type)
         self.trade_size = config.trade_size
         self.trail_atr_multiple = config.trail_atr_multiple
 
@@ -359,9 +356,9 @@ class EMACrossStopEntryTrail(TradingStrategy):
             if self.entry:
                 if event.client_order_id == self.entry.client_order_id:
                     last_bar = self.cache.bar(self.bar_type)
-                    if event.side == OrderSide.BUY:
+                    if event.order_side == OrderSide.BUY:
                         self.trailing_stop_sell(last_bar)
-                    elif event.side == OrderSide.SELL:
+                    elif event.order_side == OrderSide.SELL:
                         self.trailing_stop_buy(last_bar)
             if self.trailing_stop:
                 if event.client_order_id == self.trailing_stop.client_order_id:

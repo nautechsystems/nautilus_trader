@@ -730,7 +730,7 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
 
-        if bar_type.is_internal_aggregation and bar_type not in self._bar_aggregators:
+        if bar_type.is_internal_aggregation() and bar_type not in self._bar_aggregators:
             # Internal aggregation
             self._start_bar_aggregator(client, bar_type)
         else:
@@ -884,7 +884,7 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
 
-        if bar_type.is_internal_aggregation and bar_type in self._bar_aggregators:
+        if bar_type.is_internal_aggregation() and bar_type in self._bar_aggregators:
             # Internal aggregation
             self._stop_bar_aggregator(client, bar_type)
         else:

@@ -16,6 +16,7 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSourceParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
@@ -73,47 +74,6 @@ cdef class BarSpecification:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
-
-    @staticmethod
-    cdef BarSpecification from_str_c(str value):
-        Condition.valid_string(value, 'value')
-
-        cdef list pieces = value.split('-', maxsplit=2)
-
-        if len(pieces) != 3:
-            raise ValueError(f"The BarSpecification string value was malformed, was {value}")
-
-        return BarSpecification(
-            int(pieces[0]),
-            BarAggregationParser.from_str(pieces[1]),
-            PriceTypeParser.from_str(pieces[2]),
-        )
-
-    @staticmethod
-    def from_str(str value) -> BarSpecification:
-        """
-        Return a bar specification parsed from the given string.
-
-        Parameters
-        ----------
-        value : str
-            The bar specification string to parse.
-
-        Examples
-        --------
-        String format example is '200-TICK-MID'.
-
-        Returns
-        -------
-        BarSpecification
-
-        Raises
-        ------
-        ValueError
-            If value is not a valid string.
-
-        """
-        return BarSpecification.from_str_c(value)
 
     cpdef bint is_time_aggregated(self) except *:
         """
@@ -182,17 +142,63 @@ cdef class BarSpecification:
             or self.aggregation == BarAggregation.VALUE_RUNS
         )
 
+    @staticmethod
+    cdef BarSpecification from_str_c(str value):
+        Condition.valid_string(value, 'value')
+
+        cdef list pieces = value.split('-', maxsplit=2)
+
+        if len(pieces) != 3:
+            raise ValueError(f"The BarSpecification string value was malformed, was {value}")
+
+        return BarSpecification(
+            int(pieces[0]),
+            BarAggregationParser.from_str(pieces[1]),
+            PriceTypeParser.from_str(pieces[2]),
+        )
+
+    @staticmethod
+    def from_str(str value) -> BarSpecification:
+        """
+        Return a bar specification parsed from the given string.
+
+        Parameters
+        ----------
+        value : str
+            The bar specification string to parse.
+
+        Examples
+        --------
+        String format example is '200-TICK-MID'.
+
+        Returns
+        -------
+        BarSpecification
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
+        """
+        return BarSpecification.from_str_c(value)
+
 
 cdef class BarType:
     """
     Represents a bar type being the instrument ID and bar specification of bar data.
+
+    Notes
+    -----
+    It is expected that all bar aggregation methods other than time will be
+    internally aggregated.
     """
 
     def __init__(
         self,
         InstrumentId instrument_id not None,
         BarSpecification bar_spec not None,
-        internal_aggregation=True,
+        AggregationSource aggregation_source=AggregationSource.EXTERNAL,
     ):
         """
         Initialize a new instance of the ``BarType`` class.
@@ -203,45 +209,62 @@ cdef class BarType:
             The bar types instrument ID.
         bar_spec : BarSpecification
             The bar types specification.
-        internal_aggregation : bool
-            If bars are aggregated internally by the platform. If True the
-            `DataEngine` will subscribe to the necessary ticks and aggregate
-            bars accordingly. Else if False then bars will be subscribed to
-            directly from the data publisher.
-
-        Notes
-        -----
-        It is expected that all bar aggregation methods other than time will be
-        internally aggregated.
+        aggregation_source : AggregationSource, default=``EXTERNAL``
+            If bars are aggregated internally by the platform. If ``INTERNAL``
+            the `DataEngine` will subscribe to the necessary ticks and aggregate
+            bars accordingly. Else if ``EXTERNAL`` then bars will be subscribed
+            to directly from the data publisher.
 
         """
         self.instrument_id = instrument_id
         self.spec = bar_spec
-        self.is_internal_aggregation = internal_aggregation
+        self.aggregation_source = aggregation_source
 
     def __eq__(self, BarType other) -> bool:
         return (
             self.instrument_id == other.instrument_id
             and self.spec == other.spec
-            and self.is_internal_aggregation == other.is_internal_aggregation
+            and self.aggregation_source == other.aggregation_source
         )
 
     def __hash__(self) -> int:
         return hash((self.instrument_id, self.spec))
 
     def __str__(self) -> str:
-        return f"{self.instrument_id}-{self.spec}"
+        return f"{self.instrument_id}-{self.spec}-{AggregationSourceParser.to_str(self.aggregation_source)}"
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self}, internal_aggregation={self.is_internal_aggregation})"
+        return f"{type(self).__name__}({self})"
+
+    cpdef bint is_external_aggregation(self) except *:
+        """
+        Return a value indicating whether the bar aggregation method is ``EXTERNAL``.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.aggregation_source == AggregationSource.EXTERNAL
+
+    cpdef bint is_internal_aggregation(self) except *:
+        """
+        Return a value indicating whether the bar aggregation method is ``INTERNAL``.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.aggregation_source == AggregationSource.INTERNAL
 
     @staticmethod
-    cdef BarType from_str_c(str value, bint internal_aggregation=True):
+    cdef BarType from_str_c(str value):
         Condition.valid_string(value, 'value')
 
-        cdef list pieces = value.split('-', maxsplit=3)
+        cdef list pieces = value.split('-', maxsplit=4)
 
-        if len(pieces) != 4:
+        if len(pieces) != 5:
             raise ValueError(f"The BarType string value was malformed, was {value}")
 
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
@@ -250,11 +273,16 @@ cdef class BarType:
             BarAggregationParser.from_str(pieces[2]),
             PriceTypeParser.from_str(pieces[3]),
         )
+        cdef AggregationSource aggregation_source = AggregationSourceParser.from_str(pieces[4])
 
-        return BarType(instrument_id, bar_spec, internal_aggregation)
+        return BarType(
+            instrument_id=instrument_id,
+            bar_spec=bar_spec,
+            aggregation_source=aggregation_source,
+        )
 
     @staticmethod
-    def from_str(str value, bint internal_aggregation=False) -> BarType:
+    def from_str(str value) -> BarType:
         """
         Return a bar type parsed from the given string.
 
@@ -262,8 +290,6 @@ cdef class BarType:
         ----------
         value : str
             The bar type string to parse.
-        internal_aggregation : bool
-            If bars were aggregated internally by the platform.
 
         Returns
         -------
@@ -275,7 +301,7 @@ cdef class BarType:
             If value is not a valid string.
 
         """
-        return BarType.from_str_c(value, internal_aggregation)
+        return BarType.from_str_c(value)
 
 
 cdef class Bar(Data):

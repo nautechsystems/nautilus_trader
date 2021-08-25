@@ -48,8 +48,6 @@ class VolatilityMarketMakerConfig(TradingStrategyConfig):
         The instrument ID for the strategy.
     bar_type : BarType
         The bar type for the strategy.
-    is_internal_aggregation : bool, default=True
-        If the bar type subscribed to is internally aggregated.
     atr_period : int
         The period for the ATR indicator.
     atr_multiple : float
@@ -66,7 +64,6 @@ class VolatilityMarketMakerConfig(TradingStrategyConfig):
 
     instrument_id: str
     bar_type: str
-    is_internal_aggregation: bool = True
     atr_period: int
     atr_multiple: float
     order_id_tag: str = "001"
@@ -96,7 +93,7 @@ class VolatilityMarketMaker(TradingStrategy):
 
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.bar_type = BarType.from_str(config.bar_type, config.is_internal_aggregation)
+        self.bar_type = BarType.from_str(config.bar_type)
         self.trade_size = config.trade_size
         self.atr_multiple = config.atr_multiple
 
@@ -286,10 +283,10 @@ class VolatilityMarketMaker(TradingStrategy):
 
         # If order filled then replace order at atr multiple distance from the market
         if isinstance(event, OrderFilled):
-            if event.side == OrderSide.BUY:
+            if event.order_side == OrderSide.BUY:
                 if self.buy_order.is_completed:
                     self.create_buy_order(last)
-            elif event.side == OrderSide.SELL:
+            elif event.order_side == OrderSide.SELL:
                 if self.sell_order.is_completed:
                     self.create_sell_order(last)
 

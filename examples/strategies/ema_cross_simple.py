@@ -46,8 +46,6 @@ class EMACrossConfig(TradingStrategyConfig):
         The instrument ID for the strategy.
     bar_type : BarType
         The bar type for the strategy.
-    is_internal_aggregation : bool, default=True
-        If the bar type subscribed to is internally aggregated.
     fast_ema_period : int
         The fast EMA period.
     slow_ema_period : int
@@ -64,7 +62,6 @@ class EMACrossConfig(TradingStrategyConfig):
 
     instrument_id: str
     bar_type: str
-    is_internal_aggregation: bool = True
     fast_ema_period: int = 10
     slow_ema_period: int = 20
     trade_size: Decimal
@@ -96,7 +93,7 @@ class EMACross(TradingStrategy):
 
         # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.bar_type = BarType.from_str(config.bar_type, config.is_internal_aggregation)
+        self.bar_type = BarType.from_str(config.bar_type)
         self.trade_size = config.trade_size
 
         # Create the indicators for the strategy
