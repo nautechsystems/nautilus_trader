@@ -94,7 +94,7 @@ class VolatilityMarketMaker(TradingStrategy):
         """
         super().__init__(config)
 
-        # Custom strategy variables
+        # Configuration
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
         self.bar_type = BarType.from_str(config.bar_type, config.is_internal_aggregation)
         self.trade_size = config.trade_size
