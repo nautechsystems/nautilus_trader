@@ -28,13 +28,6 @@ from examples.strategies.volatility_market_maker import VolatilityMarketMakerCon
 from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import Venue
 
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
@@ -85,25 +78,10 @@ node_config = {
     },
 }
 
-
-# Instantiate your strategies to pass into the trading node. You could add
-# custom options into the configuration file or even use another configuration
-# file.
-
-instrument_id = InstrumentId(
-    symbol=Symbol("ETH/USDT"),
-    venue=Venue("BINANCE"),
-)
-
-bar_type = BarType(
-    instrument_id=instrument_id,
-    bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
-)
-
 # Configure your strategy
 config = VolatilityMarketMakerConfig(
-    instrument_id=str(instrument_id),
-    bar_type=str(bar_type),
+    instrument_id="ETH/USDT.BINANCE",
+    bar_type="ETH/USDT.BINANCE-1-MINUTE-LAST-INTERNAL",
     atr_period=20,
     atr_multiple=1.0,
     trade_size=Decimal("0.01"),

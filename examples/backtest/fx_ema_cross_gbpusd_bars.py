@@ -32,8 +32,6 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
@@ -104,15 +102,10 @@ if __name__ == "__main__":
         modules=[fx_rollover_interest],
     )
 
-    bar_type = BarType(
-        instrument_id=GBPUSD_SIM.id,
-        bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
-    )
-
     # Configure your strategy
     config = EMACrossConfig(
         instrument_id=str(GBPUSD_SIM.id),
-        bar_type=str(bar_type),
+        bar_type="GBP/USD.SIM-5-MINUTE-BID-INTERNAL",
         fast_ema_period=10,
         slow_ema_period=20,
         trade_size=Decimal(1_000_000),

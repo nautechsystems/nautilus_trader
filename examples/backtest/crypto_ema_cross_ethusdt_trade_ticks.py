@@ -33,12 +33,8 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -89,15 +85,10 @@ if __name__ == "__main__":
         fill_model=fill_model,
     )
 
-    bar_type = BarType(
-        instrument_id=ETHUSDT_BINANCE.id,
-        bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
-    )
-
     # Configure your strategy
     config = EMACrossConfig(
         instrument_id=str(ETHUSDT_BINANCE.id),
-        bar_type=str(bar_type),
+        bar_type="ETH/USDT.BINANCE-250-TICK-LAST-INTERNAL",
         trade_size=Decimal("0.05"),
         fast_ema=10,
         slow_ema=20,

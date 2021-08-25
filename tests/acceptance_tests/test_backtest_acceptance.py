@@ -26,8 +26,6 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
@@ -96,13 +94,9 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
     def test_run_ema_cross_strategy(self):
         # Arrange
-        bar_type = BarType(
-            instrument_id=self.usdjpy.id,
-            bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
-        )
         config = EMACrossConfig(
             instrument_id=str(self.usdjpy.id),
-            bar_type=str(bar_type),
+            bar_type="USD/JPY.SIM-15-MINUTE-BID-INTERNAL",
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
@@ -119,13 +113,9 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
         # Arrange
-        bar_type = BarType(
-            instrument_id=self.usdjpy.id,
-            bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
-        )
         config = EMACrossConfig(
             instrument_id=str(self.usdjpy.id),
-            bar_type=str(bar_type),
+            bar_type="USD/JPY.SIM-15-MINUTE-BID-INTERNAL",
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
@@ -145,13 +135,9 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
     def test_run_multiple_strategies(self):
         # Arrange
-        bar_type = BarType(
-            instrument_id=self.usdjpy.id,
-            bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
-        )
         config1 = EMACrossConfig(
             instrument_id=str(self.usdjpy.id),
-            bar_type=str(bar_type),
+            bar_type="USD/JPY.SIM-15-MINUTE-BID-INTERNAL",
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
@@ -161,7 +147,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         config2 = EMACrossConfig(
             instrument_id=str(self.usdjpy.id),
-            bar_type=str(bar_type),
+            bar_type="USD/JPY.SIM-15-MINUTE-BID-INTERNAL",
             trade_size=Decimal(1_000_000),
             fast_ema=20,
             slow_ema=40,
@@ -180,7 +166,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert strategy1.fast_ema.count == 2689
         assert strategy2.fast_ema.count == 2689
         assert self.engine.iteration == 115043
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992818.88, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(997731.23, USD)
 
 
 class TestBacktestAcceptanceTestsGBPUSD:
@@ -228,13 +214,9 @@ class TestBacktestAcceptanceTestsGBPUSD:
 
     def test_run_ema_cross_with_minute_bar_spec(self):
         # Arrange
-        bar_type = BarType(
-            instrument_id=self.gbpusd.id,
-            bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.MID),
-        )
         config = EMACrossConfig(
             instrument_id=str(self.gbpusd.id),
-            bar_type=str(bar_type),
+            bar_type="GBP/USD.SIM-5-MINUTE-MID-INTERNAL",
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
@@ -284,13 +266,9 @@ class TestBacktestAcceptanceTestsAUDUSD:
 
     def test_run_ema_cross_with_minute_bar_spec(self):
         # Arrange
-        bar_type = BarType(
-            instrument_id=self.audusd.id,
-            bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.MID),
-        )
         config = EMACrossConfig(
-            instrument_id=str(self.audusd.id),
-            bar_type=str(bar_type),
+            instrument_id="AUD/USD.SIM",
+            bar_type="AUD/USD.SIM-1-MINUTE-MID-INTERNAL",
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
@@ -307,13 +285,9 @@ class TestBacktestAcceptanceTestsAUDUSD:
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
-        bar_type = BarType(
-            instrument_id=self.audusd.id,
-            bar_spec=BarSpecification(100, BarAggregation.TICK, PriceType.MID),
-        )
         config = EMACrossConfig(
             instrument_id=str(self.audusd.id),
-            bar_type=str(bar_type),
+            bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
@@ -356,13 +330,9 @@ class TestBacktestAcceptanceTestsETHUSDT:
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
-        bar_type = BarType(
-            instrument_id=self.ethusdt.id,
-            bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
-        )
         config = EMACrossConfig(
             instrument_id=str(self.ethusdt.id),
-            bar_type=str(bar_type),
+            bar_type="ETH/USDT.BINANCE-250-TICK-LAST-INTERNAL",
             trade_size=Decimal(100),
             fast_ema=10,
             slow_ema=20,
@@ -408,13 +378,9 @@ class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes:
 
     def test_run_ema_cross_with_tick_bar_spec(self):
         # Arrange
-        bar_type = BarType(
-            instrument_id=self.btcusdt.id,
-            bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
-        )
         config = EMACrossConfig(
             instrument_id=str(self.btcusdt.id),
-            bar_type=str(bar_type),
+            bar_type="BTC/USDT.BINANCE-250-TICK-LAST-INTERNAL",
             trade_size=Decimal(1),
             fast_ema=10,
             slow_ema=20,

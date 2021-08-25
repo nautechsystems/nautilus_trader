@@ -18,6 +18,7 @@ import pytest
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -157,8 +158,8 @@ class TestBarType:
 
         # Act, Assert
         assert isinstance(hash(bar_type), int)
-        assert str(bar_type) == "AUD/USD.SIM-1-MINUTE-BID"
-        assert repr(bar_type) == "BarType(AUD/USD.SIM-1-MINUTE-BID, internal_aggregation=True)"
+        assert str(bar_type) == "AUD/USD.SIM-1-MINUTE-BID-EXTERNAL"
+        assert repr(bar_type) == "BarType(AUD/USD.SIM-1-MINUTE-BID-EXTERNAL)"
 
     @pytest.mark.parametrize(
         "value",
@@ -173,31 +174,34 @@ class TestBarType:
         "value, expected",
         [
             [
-                "AUD/USD.IDEALPRO-1-MINUTE-BID",
+                "AUD/USD.IDEALPRO-1-MINUTE-BID-EXTERNAL",
                 BarType(
                     InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO")),
                     BarSpecification(1, BarAggregation.MINUTE, PriceType.BID),
                 ),
             ],  # noqa
             [
-                "GBP/USD.SIM-1000-TICK-MID",
+                "GBP/USD.SIM-1000-TICK-MID-INTERNAL",
                 BarType(
                     InstrumentId(Symbol("GBP/USD"), Venue("SIM")),
                     BarSpecification(1000, BarAggregation.TICK, PriceType.MID),
+                    AggregationSource.INTERNAL,
                 ),
             ],  # noqa
             [
-                "AAPL.NYSE-1-HOUR-MID",
+                "AAPL.NYSE-1-HOUR-MID-INTERNAL",
                 BarType(
                     InstrumentId(Symbol("AAPL"), Venue("NYSE")),
                     BarSpecification(1, BarAggregation.HOUR, PriceType.MID),
+                    AggregationSource.INTERNAL,
                 ),
             ],  # noqa
             [
-                "BTC/USDT.BINANCE-100-TICK-LAST",
+                "BTC/USDT.BINANCE-100-TICK-LAST-INTERNAL",
                 BarType(
                     InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
                     BarSpecification(100, BarAggregation.TICK, PriceType.LAST),
+                    AggregationSource.INTERNAL,
                 ),
             ],
         ],  # noqa
@@ -206,7 +210,7 @@ class TestBarType:
         self, value, expected
     ):
         # Arrange, Act
-        bar_type = BarType.from_str(value, internal_aggregation=True)
+        bar_type = BarType.from_str(value)
 
         # Assert
         assert expected == bar_type
@@ -301,8 +305,13 @@ class TestBar:
 
         # Act, Assert
         assert isinstance(hash(bar), int)
-        assert str(bar) == "AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0"
-        assert repr(bar) == "Bar(AUD/USD.SIM-1-MINUTE-BID,1.00001,1.00004,1.00002,1.00003,100000,0)"
+        assert (
+            str(bar) == "AUD/USD.SIM-1-MINUTE-BID-EXTERNAL,1.00001,1.00004,1.00002,1.00003,100000,0"
+        )
+        assert (
+            repr(bar)
+            == "Bar(AUD/USD.SIM-1-MINUTE-BID-EXTERNAL,1.00001,1.00004,1.00002,1.00003,100000,0)"
+        )
 
     def test_to_dict(self):
         # Arrange
@@ -323,7 +332,7 @@ class TestBar:
         # Assert
         assert values == {
             "type": "Bar",
-            "bar_type": "AUD/USD.SIM-1-MINUTE-BID",
+            "bar_type": "AUD/USD.SIM-1-MINUTE-BID-EXTERNAL",
             "open": "1.00001",
             "high": "1.00004",
             "low": "1.00002",

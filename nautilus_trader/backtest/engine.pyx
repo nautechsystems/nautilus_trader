@@ -50,6 +50,7 @@ from nautilus_trader.data.wrangling cimport BarDataWrangler
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
 from nautilus_trader.model.c_enums.account_type cimport AccountType
+from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
@@ -608,7 +609,7 @@ cdef class BacktestEngine:
         Raises
         ------
         ValueError
-            If bar_type.is_internal_aggregation is True.
+            If bar_type.aggregation_source is not equal to ``EXTERNAL``.
         ValueError
             If bar_type.instrument_id is not equal to instrument.id.
         ValueError
@@ -617,7 +618,7 @@ cdef class BacktestEngine:
         """
         Condition.not_none(instrument, "instrument")
         Condition.not_none(bar_type, "bar_type")
-        Condition.false(bar_type.is_internal_aggregation, "bar_type is for internal aggregation")
+        Condition.equal(bar_type.aggregation_source, AggregationSource.EXTERNAL, "bar_type.aggregation_source", "required source")
         Condition.equal(bar_type.instrument_id, instrument.id, "bar_type.instrument_id", "instrument.id")
         Condition.false(data.empty, "data was empty")
 
@@ -660,8 +661,8 @@ cdef class BacktestEngine:
     ) -> None:
         """
         Add the built bar data objects to the backtest engines. Suitable for
-        running externally aggregated bar subscriptions (bar type must **not**
-        be `is_internal_aggregation`).
+        running externally aggregated bar subscriptions (bar type aggregation
+        source must be ``EXTERNAL``).
 
         Parameters
         ----------
@@ -673,7 +674,7 @@ cdef class BacktestEngine:
         Raises
         ------
         ValueError
-            If bar_type.is_internal_aggregation is True.
+            If bar_type.aggregation_source is not equal to ``EXTERNAL``.
         ValueError
             If bars is empty.
         ValueError
@@ -681,7 +682,7 @@ cdef class BacktestEngine:
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.false(bar_type.is_internal_aggregation, "bar_type is for internal aggregation")
+        Condition.equal(bar_type.aggregation_source, AggregationSource.EXTERNAL, "bar_type.aggregation_source", "required source")
         Condition.not_none(bars, "bars")
         Condition.not_empty(bars, "bars")
         Condition.list_type(bars, Bar, "bars")

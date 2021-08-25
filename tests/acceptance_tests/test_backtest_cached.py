@@ -21,8 +21,6 @@ import pandas as pd
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
@@ -82,13 +80,9 @@ class TestBacktestAcceptanceTestsWithCache:
 
     def test_run_ema_cross_strategy(self):
         # Arrange
-        bar_type = BarType(
-            instrument_id=self.usdjpy.id,
-            bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
-        )
         config = EMACrossConfig(
             instrument_id=str(self.usdjpy.id),
-            bar_type=str(bar_type),
+            bar_type="USD/JPY.SIM-15-MINUTE-BID-INTERNAL",
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,

@@ -1368,7 +1368,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec, internal_aggregation=False)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
 
         handler = ObjectStorer()
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.store_2)
@@ -1393,7 +1393,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec, internal_aggregation=False)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
 
         handler = ObjectStorer()
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.store_2)
@@ -1428,7 +1428,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec, internal_aggregation=True)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
 
         handler = []
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
@@ -1465,7 +1465,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec, internal_aggregation=True)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
 
         handler1 = []
         handler2 = []

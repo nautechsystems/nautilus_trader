@@ -32,8 +32,6 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
@@ -99,15 +97,10 @@ if __name__ == "__main__":
         modules=[fx_rollover_interest],
     )
 
-    bar_type = BarType(
-        instrument_id=GBPUSD_SIM.id,
-        bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
-    )
-
     # Configure your strategy
     config = VolatilityMarketMakerConfig(
         instrument_id=str(GBPUSD_SIM.id),
-        bar_type=str(bar_type),
+        bar_type="GBP/USD.SIM-5-MINUTE-BID-INTERNAL",
         atr_period=20,
         atr_multiple=3.0,
         trade_size=Decimal(500_000),
