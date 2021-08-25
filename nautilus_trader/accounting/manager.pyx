@@ -327,7 +327,7 @@ cdef class AccountsManager:
                 venue=fill.instrument_id.venue,
                 from_currency=fill.commission.currency,
                 to_currency=account.base_currency,
-                price_type=PriceType.BID if fill.side is OrderSide.SELL else PriceType.ASK,
+                price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
             )
             if xrate == 0:
                 self._log.error(
@@ -345,7 +345,7 @@ cdef class AccountsManager:
                 venue=fill.instrument_id.venue,
                 from_currency=pnl.currency,
                 to_currency=account.base_currency,
-                price_type=PriceType.BID if fill.side is OrderSide.SELL else PriceType.ASK,
+                price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
             )
             if xrate == 0:
                 self._log.error(

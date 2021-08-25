@@ -193,9 +193,9 @@ cdef class OrderFilled(OrderEvent):
     """The execution ID associated with the event.\n\n:returns: `ExecutionId`"""
     cdef readonly PositionId position_id
     """The position ID associated with the event.\n\n:returns: `PositionId` or None"""
-    cdef readonly OrderSide side
+    cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide`"""
-    cdef readonly OrderType type
+    cdef readonly OrderType order_type
     """The order type.\n\n:returns: `OrderType`"""
     cdef readonly Quantity last_qty
     """The fill quantity.\n\n:returns: `Quantity`"""

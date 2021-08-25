@@ -2038,8 +2038,8 @@ cdef class OrderFilled(OrderEvent):
 
         self.execution_id = execution_id
         self.position_id = position_id
-        self.side = order_side
-        self.type = order_type
+        self.order_side = order_side
+        self.order_type = order_type
         self.last_qty = last_qty
         self.last_px = last_px
         self.currency = currency
@@ -2055,12 +2055,12 @@ cdef class OrderFilled(OrderEvent):
                 f"venue_order_id={self.venue_order_id.value}, "
                 f"execution_id={self.execution_id.value}, "
                 f"position_id={self.position_id}, "
-                f"side={OrderSideParser.to_str(self.side)}"
-                f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
-                f"type={OrderTypeParser.to_str(self.type)}, "
+                f"order_side={OrderSideParser.to_str(self.order_side)}, "
+                f"order_type={OrderTypeParser.to_str(self.order_type)}, "
                 f"last_qty={self.last_qty.to_str()}, "
                 f"last_px={self.last_px} {self.currency.code}, "
                 f"commission={self.commission.to_str()}, "
+                f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
                 f"ts_event={self.ts_event})")
 
     def __repr__(self) -> str:
@@ -2073,12 +2073,12 @@ cdef class OrderFilled(OrderEvent):
                 f"venue_order_id={self.venue_order_id.value}, "
                 f"execution_id={self.execution_id.value}, "
                 f"position_id={self.position_id}, "
-                f"side={OrderSideParser.to_str(self.side)}"
-                f"-{LiquiditySideParser.to_str(self.liquidity_side)}, "
-                f"type={OrderTypeParser.to_str(self.type)}, "
+                f"order_side={OrderSideParser.to_str(self.order_side)}, "
+                f"order_type={OrderTypeParser.to_str(self.order_type)}, "
                 f"last_qty={self.last_qty.to_str()}, "
                 f"last_px={self.last_px} {self.currency.code}, "
                 f"commission={self.commission.to_str()}, "
+                f"liquidity_side={LiquiditySideParser.to_str(self.liquidity_side)}, "
                 f"event_id={self.id}, "
                 f"ts_event={self.ts_event}, "
                 f"ts_init={self.ts_init})")
@@ -2122,8 +2122,8 @@ cdef class OrderFilled(OrderEvent):
             "venue_order_id": obj.venue_order_id.value,
             "execution_id": obj.execution_id.value,
             "position_id": obj.position_id.value if obj.position_id else None,
-            "order_side": OrderSideParser.to_str(obj.side),
-            "order_type": OrderTypeParser.to_str(obj.type),
+            "order_side": OrderSideParser.to_str(obj.order_side),
+            "order_type": OrderTypeParser.to_str(obj.order_type),
             "last_qty": str(obj.last_qty),
             "last_px": str(obj.last_px),
             "currency": obj.currency.code,
@@ -2165,10 +2165,10 @@ cdef class OrderFilled(OrderEvent):
         return OrderFilled.to_dict_c(obj)
 
     cdef bint is_buy_c(self) except *:
-        return self.side == OrderSide.BUY
+        return self.order_side == OrderSide.BUY
 
     cdef bint is_sell_c(self) except *:
-        return self.side == OrderSide.SELL
+        return self.order_side == OrderSide.SELL
 
     @property
     def is_buy(self):
