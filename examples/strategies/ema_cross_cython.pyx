@@ -93,7 +93,7 @@ cdef class EMACross(TradingStrategy):
     cdef ExponentialMovingAverage fast_ema_period
     cdef ExponentialMovingAverage slow_ema_period
 
-    def __init__(self, config: EMACrossConfig):
+    def __init__(self, config not None: EMACrossConfig):
         """
         Initialize a new instance of the ``EMACross`` class.
 
@@ -105,7 +105,7 @@ cdef class EMACross(TradingStrategy):
         """
         super().__init__(config)
 
-        # Custom strategy variables
+        # Configuration
         self.instrument_id = InstrumentId.from_str_c(config.instrument_id)
         self.bar_type = BarType.from_str_c(config.bar_type, config.is_internal_aggregation)
         self.trade_size = config.trade_size

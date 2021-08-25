@@ -65,8 +65,10 @@ class TickTock(TradingStrategy):
         """
         super().__init__()
 
+        # Configuration
         self.instrument = instrument
         self.bar_type = bar_type
+
         self.store = []  # type: list[Any]
         self.timer_running = False
         self.time_alert_counter = 0
@@ -376,7 +378,7 @@ class OrderBookImbalanceStrategy(TradingStrategy):
 
     def __init__(self, config: OrderBookImbalanceStrategyConfig):
         """
-        Initialize a new instance of the ``EMACross`` class.
+        Initialize a new instance of the ``OrderBookImbalanceStrategy`` class.
 
         Parameters
         ----------
@@ -384,12 +386,10 @@ class OrderBookImbalanceStrategy(TradingStrategy):
             The configuration for the instance.
 
         """
-        instrument_id = InstrumentId.from_str(config.instrument_id)
-        config.order_id_tag = instrument_id.symbol.value.replace("/", "")
         super().__init__(config)
 
         # Configuration
-        self.instrument_id = instrument_id
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
         self.trade_size = config.trade_size
 
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
@@ -505,13 +505,18 @@ class MarketMaker(TradingStrategy):
             The instrument ID for the strategy.
         trade_size : Decimal
             The position size per trade.
+        max_size : Decimal
+            The maximum inventory size allowed.
 
         """
-        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", ""))
+        super().__init__()
+
+        # Configuration
         self.instrument_id = instrument_id
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.trade_size = trade_size
         self.max_size = max_size
+
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self._book: Optional[OrderBook] = None
         self._mid: Optional[Decimal] = None
         self._adj = Decimal(0)
@@ -612,12 +617,10 @@ class RepeatedOrders(TradingStrategy):
             The configuration for the instance.
 
         """
-        instrument_id = InstrumentId.from_str(config.instrument_id)
-        config.order_id_tag = instrument_id.symbol.value.replace("/", "")
         super().__init__(config)
 
         # Configuration
-        self.instrument_id = instrument_id
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
         self.trade_size = config.trade_size
 
         self.instrument: Optional[Instrument] = None  # Initialized in on_start

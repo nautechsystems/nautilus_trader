@@ -24,6 +24,26 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import TradingStrategyConfig
+
+
+class MyStrategyConfig(TradingStrategyConfig):
+    """
+    Provides configuration for ``MyStrategy`` instances.
+
+    instrument_id : InstrumentId
+        The instrument ID for the strategy.
+    order_id_tag : str
+        The unique order ID tag for the strategy. Must be unique
+        amongst all running strategies for a particular trader ID.
+    oms_type : OMSType
+        The order management system type for the strategy. This will determine
+        how the `ExecutionEngine` handles position IDs (see docs).
+    """
+
+    instrument_id: str
+    order_id_tag: str = "001"
+    oms_type: OMSType = OMSType.HEDGING
 
 
 class MyStrategy(TradingStrategy):
@@ -31,24 +51,20 @@ class MyStrategy(TradingStrategy):
     A blank template strategy.
     """
 
-    def __init__(self, instrument_id: InstrumentId):
+    def __init__(self, config: MyStrategyConfig):
         """
         Initialize a new instance of the ``MyStrategy`` class.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument ID for the strategy.
+        config : MyStrategyConfig
+            The configuration for the instance.
 
         """
-        # The order_id_tag should be unique at the 'trader level', here we are
-        # just using the traded instruments symbol as the strategy order id tag.
-        super().__init__(
-            order_id_tag=instrument_id.symbol.value.replace("/", ""), oms_type=OMSType.HEDGING
-        )
+        super().__init__(config)
 
-        # Custom strategy variables
-        self.instrument_id = instrument_id
+        # Configuration
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
 
     def on_start(self):
         """Actions to be performed on strategy start."""
