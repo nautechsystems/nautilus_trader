@@ -19,6 +19,8 @@
 
 from nautilus_trader.model.c_enums.account_type import AccountType                         # noqa F401 (being used)
 from nautilus_trader.model.c_enums.account_type import AccountTypeParser                   # noqa F401 (being used)
+from nautilus_trader.model.c_enums.aggregation_source import AggregationSource             # noqa F401 (being used)
+from nautilus_trader.model.c_enums.aggregation_source import AggregationSourceParser       # noqa F401 (being used)
 from nautilus_trader.model.c_enums.aggressor_side import AggressorSide                     # noqa F401 (being used)
 from nautilus_trader.model.c_enums.aggressor_side import AggressorSideParser               # noqa F401 (being used)
 from nautilus_trader.model.c_enums.asset_class import AssetClass                           # noqa F401 (being used)

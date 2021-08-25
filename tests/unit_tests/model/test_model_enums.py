@@ -17,6 +17,8 @@ import pytest
 
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AccountTypeParser
+from nautilus_trader.model.enums import AggregationSource
+from nautilus_trader.model.enums import AggregationSourceParser
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AggressorSideParser
 from nautilus_trader.model.enums import AssetClass
@@ -94,6 +96,44 @@ class TestAccountType:
     def test_account_type_from_str(self, string, expected):
         # Arrange, Act
         result = AccountTypeParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestAggregationSource:
+    def test_aggregation_source_parser_given_invalid_value_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            AggregationSourceParser.to_str_py(-1)
+
+        with pytest.raises(ValueError):
+            AggregationSourceParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [AggregationSource.EXTERNAL, "EXTERNAL"],
+            [AggregationSource.INTERNAL, "INTERNAL"],
+        ],
+    )
+    def test_aggregation_source_to_str(self, enum, expected):
+        # Arrange, Act
+        result = AggregationSourceParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["EXTERNAL", AggregationSource.EXTERNAL],
+            ["INTERNAL", AggregationSource.INTERNAL],
+        ],
+    )
+    def test_aggregation_source_from_str(self, string, expected):
+        # Arrange, Act
+        result = AggregationSourceParser.from_str_py(string)
 
         # Assert
         assert expected == result
