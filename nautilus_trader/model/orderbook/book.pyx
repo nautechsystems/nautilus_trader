@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint8_t
+
 from operator import itemgetter
 
 import pandas as pd
@@ -46,8 +48,8 @@ cdef class OrderBook:
         self,
         InstrumentId instrument_id not None,
         BookLevel level,
-        int price_precision,
-        int size_precision,
+        uint8_t price_precision,
+        uint8_t size_precision,
     ):
         """
         Initialize a new instance of the ``OrderBook`` class.
@@ -65,18 +67,16 @@ cdef class OrderBook:
 
         Raises
         ------
+        OverflowError
+            If price_precision is negative (< 0).
+        OverflowError
+            If size_precision is negative (< 0).
         ValueError
             If initializing type is not a subclass of `OrderBook`.
-        ValueError
-            If price_precision is negative (< 0).
-        ValueError
-            If size_precision is negative (< 0).
 
         """
         if self.__class__.__name__ == OrderBook.__name__:
             raise RuntimeError("cannot instantiate OrderBook directly: use OrderBook.create()")
-        Condition.not_negative_int(price_precision, "price_precision")
-        Condition.not_negative_int(size_precision, "size_precision")
 
         self.instrument_id = instrument_id
         self.level = level
@@ -680,8 +680,8 @@ cdef class L3OrderBook(OrderBook):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        int price_precision,
-        int size_precision,
+        uint8_t price_precision,
+        uint8_t size_precision,
     ):
         """
         Initialize a new instance of the ``L3OrderBook`` class.
@@ -690,16 +690,16 @@ cdef class L3OrderBook(OrderBook):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the book.
-        price_precision : int
+        price_precision : uint8
             The price precision for the book.
-        size_precision : int
+        size_precision : uint8
             The size precision for the book.
 
         Raises
         ------
-        ValueError
+        OverflowError
             If price_precision is negative (< 0).
-        ValueError
+        OverflowError
             If size_precision is negative (< 0).
 
         """
@@ -721,8 +721,8 @@ cdef class L2OrderBook(OrderBook):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        int price_precision,
-        int size_precision,
+        uint8_t price_precision,
+        uint8_t size_precision,
     ):
         """
         Initialize a new instance of the ``L2OrderBook`` class.
@@ -731,10 +731,17 @@ cdef class L2OrderBook(OrderBook):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the book.
-        price_precision : int
+        price_precision : uint8
             The price precision for the book.
-        size_precision : int
+        size_precision : uint8
             The size precision for the book.
+
+        Raises
+        ------
+        OverflowError
+            If price_precision is negative (< 0).
+        OverflowError
+            If size_precision is negative (< 0).
 
         """
         super().__init__(
@@ -833,8 +840,8 @@ cdef class L1OrderBook(OrderBook):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        int price_precision,
-        int size_precision,
+        uint8_t price_precision,
+        uint8_t size_precision,
     ):
         """
         Initialize a new instance of the ``L1OrderBook`` class.
@@ -843,10 +850,17 @@ cdef class L1OrderBook(OrderBook):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the book.
-        price_precision : int
+        price_precision : uint8
             The price precision for the book.
-        size_precision : int
+        size_precision : uint8
             The size precision for the book.
+
+        Raises
+        ------
+        OverflowError
+            If price_precision is negative (< 0).
+        OverflowError
+            If size_precision is negative (< 0).
 
         """
         super().__init__(

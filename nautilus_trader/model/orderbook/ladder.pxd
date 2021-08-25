@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint8_t
+
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.orderbook.data cimport Order
 from nautilus_trader.model.orderbook.level cimport Level
@@ -25,10 +27,10 @@ cdef class Ladder:
     """The ladders levels.\n\n:returns: `list[Level]`"""
     cdef readonly bint reverse
     """If the ladder is in reverse order.\n\n:returns: `bool`"""
-    cdef readonly int price_precision
-    """The ladders price precision.\n\n:returns: `int`"""
-    cdef readonly int size_precision
-    """The ladders size precision.\n\n:returns: `int`"""
+    cdef readonly uint8_t price_precision
+    """The ladders price precision.\n\n:returns: `uint8`"""
+    cdef readonly uint8_t size_precision
+    """The ladders size precision.\n\n:returns: `uint8`"""
 
     cpdef bint reverse(self) except *
     cpdef void add(self, Order order) except *
