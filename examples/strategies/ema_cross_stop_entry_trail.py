@@ -50,9 +50,9 @@ class EMACrossStopEntryTrailConfig(TradingStrategyConfig):
         The bar type for the strategy.
     is_internal_aggregation : bool, default=True
         If the bar type subscribed to is internally aggregated.
-    fast_ema : int
+    fast_ema_period : int
         The fast EMA period.
-    slow_ema : int
+    slow_ema_period : int
         The slow EMA period.
     atr_period : int
         The period for the ATR indicator.
@@ -71,8 +71,8 @@ class EMACrossStopEntryTrailConfig(TradingStrategyConfig):
     instrument_id: str
     bar_type: str
     is_internal_aggregation: bool = True
-    fast_ema: int = 10
-    slow_ema: int = 20
+    fast_ema_period: int = 10
+    slow_ema_period: int = 20
     atr_period: int
     trail_atr_multiple: float
     trade_size: Decimal
@@ -114,8 +114,8 @@ class EMACrossStopEntryTrail(TradingStrategy):
         self.trail_atr_multiple = config.trail_atr_multiple
 
         # Create the indicators for the strategy
-        self.fast_ema = ExponentialMovingAverage(config.fast_ema)
-        self.slow_ema = ExponentialMovingAverage(config.slow_ema)
+        self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
+        self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
         self.atr = AverageTrueRange(config.atr_period)
 
         self.instrument: Optional[Instrument] = None  # Initialized in on_start

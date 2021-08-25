@@ -112,9 +112,9 @@ class EMACrossConfig(TradingStrategyConfig):
         The bar type for the strategy.
     trade_size : Decimal
         The position size per trade.
-    fast_ema : int
+    fast_ema_period : int
         The fast EMA period.
-    slow_ema : int
+    slow_ema_period : int
         The slow EMA period.
     is_internal_aggregation : bool, default=True
         If the bar type subscribed to is internally aggregated.
@@ -123,8 +123,8 @@ class EMACrossConfig(TradingStrategyConfig):
     instrument_id: str
     bar_type: str
     trade_size: Decimal
-    fast_ema: int = 10
-    slow_ema: int = 20
+    fast_ema_period: int = 10
+    slow_ema_period: int = 20
     is_internal_aggregation: bool = True
     order_id_tag: str = "001"
     oms_type: OMSType = OMSType.HEDGING
@@ -156,8 +156,8 @@ class EMACross(TradingStrategy):
         self.trade_size = config.trade_size
 
         # Create the indicators for the strategy
-        self.fast_ema = ExponentialMovingAverage(config.fast_ema)
-        self.slow_ema = ExponentialMovingAverage(config.slow_ema)
+        self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
+        self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
 
