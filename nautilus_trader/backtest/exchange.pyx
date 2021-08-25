@@ -188,7 +188,6 @@ cdef class SimulatedExchange:
         self._position_index = {}       # type: dict[ClientOrderId, PositionId]
         self._child_orders = {}         # type: dict[ClientOrderId, list[Order]]
         self._oco_orders = {}           # type: dict[ClientOrderId, ClientOrderId]
-        self._oco_position_ids = {}     # type: dict[ClientOrderId, PositionId]
         self._position_oco_orders = {}  # type: dict[PositionId, list[ClientOrderId]]
         self._symbol_pos_count = {}     # type: dict[InstrumentId, int]
         self._symbol_ord_count = {}     # type: dict[InstrumentId, int]
@@ -476,7 +475,6 @@ cdef class SimulatedExchange:
         self._position_index.clear()
         self._child_orders.clear()
         self._oco_orders.clear()
-        self._oco_position_ids.clear()
         self._position_oco_orders.clear()
         self._symbol_pos_count.clear()
         self._symbol_ord_count.clear()
