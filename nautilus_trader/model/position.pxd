@@ -58,7 +58,7 @@ cdef class Position:
     cdef readonly PositionSide side
     """The current position side.\n\n:returns: `PositionSide`"""
     cdef readonly object net_qty
-    """The current net quantity (positive for ``LONG``, negative for ``SHORT``).\n\n:returns: `Decimal`"""
+    """The current net quantity (positive for position side``LONG``, negative for position side ``SHORT``).\n\n:returns: `Decimal`"""
     cdef readonly Quantity quantity
     """The current open quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity peak_qty
@@ -90,7 +90,7 @@ cdef class Position:
     cdef readonly object avg_px_open
     """The average open price.\n\n:returns: `Decimal`"""
     cdef readonly object avg_px_close
-    """The average closing price.\n\n:returns: `Decimal` or `None`"""
+    """The average close price.\n\n:returns: `Decimal` or `None`"""
     cdef readonly object realized_points
     """The current realized points for the position.\n\n:returns: `Decimal`"""
     cdef readonly object realized_return
