@@ -16,7 +16,7 @@
 import inspect
 import sys
 from io import BytesIO
-from typing import Any, Callable, Generator, List, Optional, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Union
 
 import pandas as pd
 
@@ -27,19 +27,57 @@ PY37 = sys.version_info < (3, 8)
 
 
 class LinePreprocessor:
-    def __call__(self, line: bytes):
-        for line_, state in self.pre_process(line):
-            obj = yield line_
-            yield
-            yield self.post_process(obj=obj, state=state)
+    def __init__(self):
+        """
+        A class for preprocessing lines before they are passed to a `Reader` class (currently only `TextReader`). Used
+        if the input data requires any preprocessing that may also be required as attributes on the resulting nautilus
+        objects that are created.
+
+        For example, if you were logging data in python with a prepended timestamp, as below:
+
+        2021-06-29T06:03:14.528000 - {"op":"mcm","pt":1624946594395,"mc":[{"id":"1.179082386","rc":[{"atb":[[1.93,0]],"batb":[[2,0,0],[1,1.84,7.85]],"id":50214,"hc":0}]}]}
+
+        The raw JSON data is contained after the logging timestamp, but we would also want to use this timestamp as the
+        `ts_init` value in nautilus. In this instance, you could use something along the lines of:
+
+        class LoggingLinePreprocessor(LinePreprocessor):
+            @staticmethod
+            def pre_process(line):
+                timestamp, json_data = line.split(' - ')
+                yield json_data, {'ts_init': pd.Timestamp(timestamp)}
+
+            @staticmethod
+            def post_process(obj: Any, state: dict):
+                obj.ts_init = state['ts_init']
+                return obj
+
+
+        """
+        self.state = {}
+        self.line = None
 
     @staticmethod
-    def pre_process(line):
-        return line, {}
+    def pre_process(line) -> Dict:
+        return {"line": line, "state": {}}
 
     @staticmethod
-    def post_process(obj: Any, state: dict):
+    def post_process(obj: Any, state: dict) -> Any:
         return obj
+
+    def _process_new_line(self, raw_line):
+        result = self.pre_process(raw_line)
+        err = "Return value of `pre_process` should be dict with keys `line` and `state`"
+        assert isinstance(result, dict) and "line" in result and "state" in result, err
+        self.line = result["line"]
+        self.state = result["state"]
+        return self.line
+
+    def _process_object(self, obj: Any):
+        return self.post_process(obj=obj, state=self.state)
+
+    def _clear(self):
+        self.line = None
+        self.state = {}
 
 
 class Reader:
@@ -133,14 +171,13 @@ class TextReader(ByteReader):
             data is passed to `line_parser` (in many cases instruments need to
             be known ahead of parsing).
         """
+        assert line_preprocessor is None or isinstance(line_preprocessor, LinePreprocessor)
         super().__init__(
             instrument_provider_update=instrument_provider_update,
-            block_parser=self.process_block,
+            block_parser=line_parser,
             instrument_provider=instrument_provider,
         )
         self.line_preprocessor = line_preprocessor or LinePreprocessor()
-        if not PY37:
-            assert inspect.isgeneratorfunction(self.line_preprocessor.__call__)
 
     def parse(self, block) -> Generator:  # noqa: C901
         self.buffer += block
@@ -154,18 +191,15 @@ class TextReader(ByteReader):
     def process_block(self, block: bytes):
         assert isinstance(block, bytes), "Block not bytes"
         for raw_line in block.split(b"\n"):
-            gen = self.line_preprocessor(raw_line)
-            line = next(gen)
+            line = self.line_preprocessor._process_new_line(raw_line=raw_line)
             if not line:
                 continue
             instruments = self.check_instrument_provider(data=line)
             if instruments:
                 yield from instruments
-            objects = tuple(self.parser(line))
-            for obj in objects:
-                gen.send(obj)
-                obj = next(gen)
-                yield obj
+            for obj in self.parser(line):
+                yield self.line_preprocessor._process_object(obj=obj)
+            self.line_preprocessor._clear()
 
 
 class CSVReader(Reader):
@@ -214,11 +248,23 @@ class CSVReader(Reader):
         self.buffer += block
         process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
 
+        # Prepare - a little gross but allows a lot of flexibility
         if self.as_dataframe:
-            process = pd.read_csv(BytesIO(process), names=self.header)
-        if self.instrument_provider_update is not None:
-            self.instrument_provider_update(self.instrument_provider, process)
-        yield from self.block_parser(process)
+            df = pd.read_csv(BytesIO(process), names=self.header)
+            if self.chunked:
+                chunks = (df,)
+            else:
+                chunks = [row for _, row in df.iterrows()]
+        else:
+            if self.chunked:
+                chunks = [dict(zip(self.header, line)) for line in process.split(b"\n")]
+            else:
+                chunks = (process,)
+
+        for chunk in chunks:
+            if self.instrument_provider_update is not None:
+                self.instrument_provider_update(self.instrument_provider, chunk)
+            yield from self.block_parser(chunk)
 
 
 class ParquetReader(ByteReader):
@@ -228,7 +274,6 @@ class ParquetReader(ByteReader):
 
     def __init__(
         self,
-        data_type: str,
         parser: Callable = None,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update=None,
@@ -244,8 +289,6 @@ class ParquetReader(ByteReader):
             Optional hook to call before `parser` for the purpose of loading instruments into the InstrumentProvider
 
         """
-        data_types = ("quote_ticks", "trade_ticks")
-        assert data_type in data_types, f"data_type must be one of {data_types}"
         super().__init__(
             block_parser=parser,
             instrument_provider_update=instrument_provider_update,
@@ -253,14 +296,19 @@ class ParquetReader(ByteReader):
         )
         self.parser = parser
         self.filename = None
-        self.data_type = data_type
 
     def parse(self, block: bytes) -> Generator:
-        df = pd.read_parquet(BytesIO(block))
+        self.buffer += block
+        try:
+            df = pd.read_parquet(BytesIO(block))
+            self.buffer = b""
+        except Exception as e:
+            print(e)
+            return
+
         if self.instrument_provider_update is not None:
             self.instrument_provider_update(
                 instrument_provider=self.instrument_provider,
                 df=df,
-                filename=self.filename,
             )
-        yield from self.parser(data_type=self.data_type, df=df, filename=self.filename)
+        yield from self.parser(df)

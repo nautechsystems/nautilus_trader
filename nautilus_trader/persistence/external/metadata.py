@@ -17,6 +17,7 @@ from typing import Dict, List
 
 import fsspec
 import orjson
+from fsspec.utils import infer_storage_options
 
 
 PROCESSED_FILES_FN = ".processed_raw_files.json"
@@ -49,3 +50,8 @@ def load_processed_raw_files(fs):
             return orjson.loads(f.read())
     else:
         return []
+
+
+def _glob_path_to_fs(glob_path):
+    inferred = infer_storage_options(glob_path)
+    return fsspec.filesystem(**inferred)

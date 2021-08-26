@@ -15,6 +15,7 @@
 
 import os
 import pathlib
+from typing import Dict, List, Optional
 
 import fsspec
 import pandas as pd
@@ -27,9 +28,11 @@ from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.util import Singleton
@@ -70,148 +73,7 @@ class DataCatalog(metaclass=Singleton):
         protocol, path = uri.split("://")
         return cls(path=path, fs_protocol=protocol)
 
-    # ---- BACKTEST ---------------------------------------------------------------------------------------- #
-
-    def setup_engine(
-        self,
-        engine: BacktestEngine,
-        instruments,
-        chunk_size=None,
-        **kwargs,
-    ) -> BacktestEngine:
-        """
-        Load data into a backtest engine.
-
-        Parameters
-        ----------
-        engine : BacktestEngine
-            The backtest engine to load data into.
-        instruments : list[Instrument]
-            The instruments to load data for.
-        chunk_size : int
-            The chunk size to return (used for streaming backtest).
-            Use None for a loading all the data.
-        kwargs : dict
-            The kwargs passed to `self.load_backtest_data`.
-
-        """
-        # TODO(bm): Handle chunk size
-        if chunk_size is not None:
-            pass
-
-        # Add instruments & data to engine
-        for instrument in instruments:
-            data = self.load_backtest_data(
-                instrument_ids=[instrument.id.value],
-                chunk_size=chunk_size,
-                **kwargs,
-            )
-            engine.add_instrument(instrument)
-            for name in data:
-                if name == "trade_ticks" and data[name]:
-                    engine.add_trade_tick_objects(instrument_id=instrument.id, data=data[name])
-                elif name == "quote_ticks":
-                    engine.add_quote_ticks(instrument_id=instrument.id, data=data[name])
-                elif name == "order_book_deltas":
-                    engine.add_order_book_data(data=data[name])
-                elif name == "instrument_status_update" and data["instrument_status_update"]:
-                    venue = data["instrument_status_update"][0].instrument_id.venue
-                    engine.add_data(data=data[name], client_id=ClientId(venue.value))
-
-        return engine
-
     # ---- QUERIES ---------------------------------------------------------------------------------------- #
-
-    # def _load_chunked_backtest_data(self, name, query, instrument_ids, filters, chunk_size):
-    #     """
-    #     Stream chunked data from parquet dataset
-    #
-    #     :param name:
-    #     :param query:
-    #     :param instrument_ids:
-    #     :param filters:
-    #     :return:
-    #     """
-    #     # TODO - look at dask.dataframe.aggregate_row_groups for chunking solution
-    #     dataset = query(instrument_ids=instrument_ids, filters=filters, return_dataset=True)
-    #     ts_column_idx = ds.schema.names.index('ts_init')
-    #     for piece in ds.pieces:
-    #         meta = piece.get_metadata()
-    #         for i in range(meta.num_row_groups):
-    #             rg = meta.row_group(i)
-    #             rg_size = rg.total_byte_size
-    #             ts_stats = rg.column(ts_column_idx).statistics
-    #     return
-
-    def load_backtest_data(
-        self,
-        instrument_ids=None,
-        start_timestamp=None,
-        end_timestamp=None,
-        order_book_deltas=True,
-        trade_ticks=True,
-        quote_ticks=False,
-        instrument_status_events=True,
-        chunk_size=None,
-    ):
-        """
-        Load backtest data objects from the catalogue.
-
-        Parameters
-        ----------
-        instrument_ids : list[InstrumentId]
-            The instruments to load data for.
-        start_timestamp : datetime
-            The starting timestamp of the data to load.
-        end_timestamp : datetime
-            The ending timestamp of the data to load.
-        order_book_deltas : bool
-            If order book deltas should be loaded.
-        trade_ticks : bool
-            If trade ticks should be loaded.
-        quote_ticks : bool
-            If quote ticks should be loaded.
-        instrument_status_events : bool
-            If instrument status events should be loaded.
-        chunk_size : int
-            The chunk size to return (used for streaming backtest).
-            Use None for a loading all the data.
-
-        """
-        assert instrument_ids is None or isinstance(
-            instrument_ids, list
-        ), "instrument_ids must be list"
-        queries = [
-            ("order_book_deltas", order_book_deltas, self.order_book_deltas, {}),
-            ("trade_ticks", trade_ticks, self.trade_ticks, {}),
-            (
-                "instrument_status_update",
-                instrument_status_events,
-                self.instrument_status_updates,
-                {},
-            ),
-            ("quote_ticks", quote_ticks, self.quote_ticks, {}),
-        ]
-        data = {}
-
-        if chunk_size:
-            raise KeyError
-            # data[name] = self._load_chunked_backtest_data(
-            #     chunk_size=chunk_size, name=name, query=query, instrument_ids=instrument_ids, filters=filters,
-            # )
-
-        for name, to_load, query, kw in queries:
-            if to_load:
-                data[name] = query(
-                    instrument_ids=instrument_ids,
-                    as_nautilus=True,
-                    start=start_timestamp,
-                    end=end_timestamp,
-                    raise_on_empty=False,
-                    **kw,
-                )
-
-        return data
 
     def _query(
         self,
@@ -264,6 +126,41 @@ class DataCatalog(metaclass=Singleton):
             return []
         return ParquetSerializer.deserialize(cls=cls, chunk=df.to_dict("records"))
 
+    def _query_and_process(
+        self,
+        cls: type,
+        filter_expr=None,
+        instrument_ids=None,
+        as_nautilus=False,
+        sort_columns: Optional[List[str]] = None,
+        as_type: Optional[Dict] = None,
+        **kwargs,
+    ):
+        path = f"{class_to_filename(cls)}.parquet"
+        if path.startswith(GENERIC_DATA_PREFIX):
+            # Special handling for generic data
+            return self.generic_data(
+                cls=cls,
+                filter_expr=filter_expr,
+                instrument_ids=instrument_ids,
+                as_nautilus=as_nautilus,
+                **kwargs,
+            )
+        df = self._query(
+            path=f"data/{path}",
+            filter_expr=filter_expr,
+            instrument_ids=instrument_ids,
+            **kwargs,
+        )
+        if as_nautilus:
+            return self._make_objects(df=df, cls=cls)
+        else:
+            if sort_columns:
+                df = df.sort_values(sort_columns)
+            if as_type:
+                df = df.astype(as_type)
+            return df
+
     def instruments(
         self,
         instrument_type=None,
@@ -310,84 +207,59 @@ class DataCatalog(metaclass=Singleton):
     def instrument_status_updates(
         self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
     ):
-        df = self._query(
-            "data/instrument_status_update.parquet",
+        return self._query_and_process(
+            cls=InstrumentStatusUpdate,
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
+            as_nautilus=as_nautilus,
+            sort_columns=["instrument_id", "ts_init"],
             **kwargs,
         )
-        df = df.sort_values(["instrument_id", "ts_event"]).drop_duplicates(
-            subset=[c for c in df.columns if c not in ("event_id",)], keep="last"
-        )
-        if not as_nautilus:
-            return df
-        return self._make_objects(df=df, cls=InstrumentStatusUpdate)
 
     def trade_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
-        df = self._query(
-            "data/trade_tick.parquet",
-            instrument_ids=instrument_ids,
+        return self._query_and_process(
+            cls=TradeTick,
             filter_expr=filter_expr,
+            instrument_ids=instrument_ids,
+            as_nautilus=as_nautilus,
+            as_type={"price": float, "size": float},
             **kwargs,
         )
-        if not as_nautilus:
-            return df.astype({"price": float, "size": float})
-        return self._make_objects(df=df, cls=TradeTick)
 
     def quote_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
-        df = self._query(
-            "data/quote_tick.parquet",
-            instrument_ids=instrument_ids,
+        return self._query_and_process(
+            cls=QuoteTick,
             filter_expr=filter_expr,
+            instrument_ids=instrument_ids,
+            as_nautilus=as_nautilus,
             **kwargs,
         )
-        if not as_nautilus:
-            return df
-        return self._make_objects(df=df, cls=QuoteTick)
+
+    def ticker(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
+        return self._query_and_process(
+            cls=Ticker,
+            filter_expr=filter_expr,
+            instrument_ids=instrument_ids,
+            as_nautilus=as_nautilus,
+            **kwargs,
+        )
 
     def order_book_deltas(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
-        df = self._query(
-            "data/order_book_data.parquet",
-            instrument_ids=instrument_ids,
+        return self._query_and_process(
+            cls=OrderBookData,
             filter_expr=filter_expr,
+            instrument_ids=instrument_ids,
+            as_nautilus=as_nautilus,
             **kwargs,
         )
-        if not as_nautilus:
-            return df
-        return self._make_objects(df=df, cls=OrderBookDeltas)
 
     def generic_data(self, cls, filter_expr=None, as_nautilus=False, **kwargs):
-        df = self._query(
-            path=f"data/{class_to_filename(cls)}",
-            filter_expr=filter_expr,
-            **kwargs,
+        data = self._query_and_process(
+            cls=cls, filter_expr=filter_expr, as_nautilus=as_nautilus, **kwargs
         )
-        if not as_nautilus:
-            return df
-        return [
-            GenericData(data_type=DataType(cls), data=d) for d in self._make_objects(df=df, cls=cls)
-        ]
-
-    def query(self, cls, filter_expr=None, instrument_ids=None, as_nautilus=False, **kwargs):
-        path = f"{class_to_filename(cls)}.parquet"
-        if path.startswith(GENERIC_DATA_PREFIX):
-            # Special handling for generic data
-            return self.generic_data(
-                cls=cls,
-                filter_expr=filter_expr,
-                instrument_ids=instrument_ids,
-                as_nautilus=as_nautilus,
-                **kwargs,
-            )
-        df = self._query(
-            path=f"data/{path}",
-            filter_expr=filter_expr,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
-        if not as_nautilus:
-            return df
-        return self._make_objects(df=df, cls=cls)
+        if as_nautilus:
+            return [GenericData(data_type=DataType(cls), data=d) for d in data]
+        return data
 
     def list_data_types(self):
         return [p.stem for p in self.path.glob("*.parquet")]
