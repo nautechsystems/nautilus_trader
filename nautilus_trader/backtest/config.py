@@ -154,7 +154,7 @@ def _load(config: BacktestDataConfig):
     query = config.query
     return {
         "type": query["cls"],
-        "data": catalog.query(**query),
+        "data": catalog._query(**query),
         "client_id": config.client_id,
     }
 

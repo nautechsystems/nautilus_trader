@@ -35,7 +35,7 @@ class LinePreprocessor:
 
         For example, if you were logging data in python with a prepended timestamp, as below:
 
-        2021-06-29T06:03:14.528000 - {"op":"mcm","pt":1624946594395,"mc":[{"id":"1.179082386","rc":[{"atb":[[1.93,0]],"batb":[[2,0,0],[1,1.84,7.85]],"id":50214,"hc":0}]}]}
+        2021-06-29T06:03:14.528000 - {"op":"mcm","pt":1624946594395,"mc":[{"id":"1.179082386","rc":[{"atb":[[1.93,0]]}]}
 
         The raw JSON data is contained after the logging timestamp, but we would also want to use this timestamp as the
         `ts_init` value in nautilus. In this instance, you could use something along the lines of:
@@ -254,10 +254,10 @@ class CSVReader(Reader):
             if self.chunked:
                 chunks = (df,)
             else:
-                chunks = [row for _, row in df.iterrows()]
+                chunks = tuple([row for _, row in df.iterrows()])  # type: ignore
         else:
             if self.chunked:
-                chunks = [dict(zip(self.header, line)) for line in process.split(b"\n")]
+                chunks = tuple([dict(zip(self.header, line)) for line in process.split(b"\n")])  # type: ignore
             else:
                 chunks = (process,)
 
@@ -283,8 +283,6 @@ class ParquetReader(ByteReader):
 
         Parameters
         ----------
-        data_type : One of `quote_ticks`, `trade_ticks`
-            The wrangler which takes pandas dataframes (from parquet) and yields Nautilus objects.
         instrument_provider_update
             Optional hook to call before `parser` for the purpose of loading instruments into the InstrumentProvider
 

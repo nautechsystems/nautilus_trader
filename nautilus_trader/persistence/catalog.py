@@ -23,17 +23,14 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from pyarrow import ArrowInvalid
 
-from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.persistence.external.metadata import load_mappings
 from nautilus_trader.persistence.util import Singleton
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
@@ -161,25 +158,21 @@ class DataCatalog(metaclass=Singleton):
                 df = df.astype(as_type)
             return df
 
-    def instruments(
+    def _query_subclasses(
         self,
-        instrument_type=None,
-        instrument_ids=None,
+        base_cls: type,
         filter_expr=None,
+        instrument_ids=None,
         as_nautilus=False,
         **kwargs,
     ):
-        if instrument_type is not None:
-            assert isinstance(instrument_type, type)
-            instrument_types = (instrument_type,)
-        else:
-            instrument_types = Instrument.__subclasses__()
+        subclasses = base_cls.__subclasses__()
 
         dfs = []
-        for ins_type in instrument_types:
+        for cls in subclasses:
             try:
                 df = self._query(
-                    path=f"data/{camel_to_snake_case(ins_type.__name__)}.parquet",
+                    path=f"data/{class_to_filename(cls)}.parquet",
                     filter_expr=filter_expr,
                     instrument_ids=instrument_ids,
                     raise_on_empty=False,
@@ -198,11 +191,33 @@ class DataCatalog(metaclass=Singleton):
             return pd.concat([df for df in dfs if df is not None])
         else:
             objects = []
-            for ins_type, df in zip(instrument_types, dfs):
+            for cls, df in zip(subclasses, dfs):
                 if df is None or (isinstance(df, pd.DataFrame) and df.empty):
                     continue
-                objects.extend(self._make_objects(df=df, cls=ins_type))
+                objects.extend(self._make_objects(df=df, cls=cls))
             return objects
+
+    def instruments(
+        self,
+        instrument_type=None,
+        instrument_ids=None,
+        filter_expr=None,
+        as_nautilus=False,
+        **kwargs,
+    ):
+        if instrument_type is not None:
+            assert isinstance(instrument_type, type)
+            base_cls = (instrument_type,)
+        else:
+            base_cls = Instrument
+
+        return self._query_subclasses(
+            base_cls=base_cls,
+            instrument_ids=instrument_ids,
+            filter_expr=filter_expr,
+            as_nautilus=as_nautilus,
+            **kwargs,
+        )
 
     def instrument_status_updates(
         self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
@@ -236,8 +251,8 @@ class DataCatalog(metaclass=Singleton):
         )
 
     def ticker(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
-        return self._query_and_process(
-            cls=Ticker,
+        return self._query_subclasses(
+            base_cls=Ticker,
             filter_expr=filter_expr,
             instrument_ids=instrument_ids,
             as_nautilus=as_nautilus,

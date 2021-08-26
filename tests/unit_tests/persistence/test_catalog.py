@@ -1,25 +1,21 @@
 import datetime
 import sys
-from decimal import Decimal
 
+import fsspec
 import pyarrow.dataset as ds
 import pytest
 
-from examples.strategies.orderbook_imbalance import OrderbookImbalance
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.model.currencies import GBP
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookLevel
-from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.external.core import RawFile
+from nautilus_trader.persistence.external.core import dicts_to_dataframes
+from nautilus_trader.persistence.external.core import process_files
+from nautilus_trader.persistence.external.core import split_and_serialize
+from nautilus_trader.persistence.external.core import write_tables
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
@@ -33,6 +29,17 @@ class TestPersistenceCatalog:
     def setup(self):
         data_catalog_setup()
         self.catalog = DataCatalog.from_env()
+        self.fs: fsspec.AbstractFileSystem = self.catalog.fs
+        self._loaded_data_into_catalog()
+
+    def _loaded_data_into_catalog(self):
+        self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
+        process_files(
+            glob_path=PACKAGE_ROOT + "/data/1.166564490.bz2",
+            reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
+            instrument_provider=self.instrument_provider,
+            catalog=self.catalog,
+        )
 
     def test_data_catalog_instruments_df(self):
         instruments = self.catalog.instruments()
@@ -51,6 +58,7 @@ class TestPersistenceCatalog:
         assert all(isinstance(ins, BettingInstrument) for ins in instruments)
 
     def test_partition_key_correctly_remapped(self):
+        # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         tick = QuoteTick(
             instrument_id=instrument.id,
@@ -61,12 +69,15 @@ class TestPersistenceCatalog:
             ts_init=0,
             ts_event=0,
         )
-        assert tick
-        rf = RawFile(self.catalog.fs, path="/")
-        rf.process()
+        tables = dicts_to_dataframes(split_and_serialize([tick]))
+        write_tables(catalog=self.catalog, tables=tables)
 
+        # Act
         df = self.catalog.quote_ticks()
+
+        # Assert
         assert len(df) == 1
+        assert self.fs.isdir("/root/data/quote_tick.parquet/instrument_id=AUD-USD.SIM/")
         # Ensure we "unmap" the keys that we write the partition filenames as;
         # this instrument_id should be AUD/USD not AUD-USD
         assert df.iloc[0]["instrument_id"] == instrument.id.value
@@ -102,28 +113,3 @@ class TestPersistenceCatalog:
             filter_expr=ds.field("delta_type") == "DELETE"
         )
         assert len(filtered_deltas) == 351
-
-    def test_data_catalog_backtest_data_no_filter(self):
-        data = self.catalog.load_backtest_data()
-        assert len(sum(data.values(), [])) == 2323
-
-    def test_data_catalog_backtest_data_filtered(self):
-        instruments = self.catalog.instruments(as_nautilus=True)
-        engine = BacktestEngine(bypass_logging=True)
-        engine = self.catalog.setup_engine(
-            engine=engine,
-            instruments=[instruments[1]],
-            start_timestamp=1576869877788000000,
-        )
-        engine.add_venue(
-            venue=BETFAIR_VENUE,
-            venue_type=VenueType.EXCHANGE,
-            account_type=AccountType.CASH,
-            base_currency=GBP,
-            oms_type=OMSType.NETTING,
-            starting_balances=[Money(10000, GBP)],
-            order_book_level=BookLevel.L2,
-        )
-        engine.run()
-        # Total events 1045
-        assert engine.iteration in (600, 740)
