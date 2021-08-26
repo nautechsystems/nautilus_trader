@@ -1132,12 +1132,6 @@ cdef class Cache(CacheFacade):
         ------
         ValueError
             If order.client_order_id is already contained in the cache.
-        ValueError
-            If order.client_order_id is already contained in the index_orders.
-        ValueError
-            If order.client_order_id is already contained in the index_order_position.
-        ValueError
-            If order.client_order_id is already contained in the index_order_strategy.
 
         """
         Condition.not_none(order, "order")
@@ -1254,10 +1248,6 @@ cdef class Cache(CacheFacade):
         ------
         ValueError
             If oms_type is ``HEDGING`` and position.id is already contained in the cache.
-        ValueError
-            If oms_type is ``HEDGING`` and position.id is already contained in the index_positions.
-        ValueError
-            If oms_type is ``HEDGING`` and position.id is already contained in the index_positions_open.
 
         """
         Condition.not_none(position, "position")
@@ -2343,8 +2333,7 @@ cdef class Cache(CacheFacade):
 
     cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id):
         """
-        Return the client order ID matching the given order ID
-        (if found).
+        Return the client order ID matching the given order ID (if found).
 
         Parameters
         ----------
@@ -2362,8 +2351,7 @@ cdef class Cache(CacheFacade):
 
     cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id):
         """
-        Return the order ID matching the given client order ID
-        (if found).
+        Return the order ID matching the given client order ID (if found).
 
         Returns
         -------
@@ -2549,8 +2537,7 @@ cdef class Cache(CacheFacade):
 
     cpdef PositionId position_id(self, ClientOrderId client_order_id):
         """
-        Return the position ID associated with the given client order
-        ID (if found).
+        Return the position ID associated with the given client order ID (if found).
 
         Parameters
         ----------
@@ -3006,8 +2993,7 @@ cdef class Cache(CacheFacade):
 
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId client_order_id):
         """
-        Return the strategy ID associated with the given ID
-        (if found).
+        Return the strategy ID associated with the given ID (if found).
 
         Parameters
         ----------
@@ -3025,8 +3011,7 @@ cdef class Cache(CacheFacade):
 
     cpdef StrategyId strategy_id_for_position(self, PositionId position_id):
         """
-        Return the strategy ID associated with the given ID
-        (if found).
+        Return the strategy ID associated with the given ID (if found).
 
         Parameters
         ----------

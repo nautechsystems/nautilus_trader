@@ -61,9 +61,9 @@ cdef class OrderBook:
         level : BookLevel {``L1``, ``L2``, ``L3``}
             The order book level.
         price_precision : int
-            The price precision for the book.
+            The price precision of the books orders.
         size_precision : int
-            The size precision for the book.
+            The size precision of the books orders.
 
         Raises
         ------
@@ -691,9 +691,9 @@ cdef class L3OrderBook(OrderBook):
         instrument_id : InstrumentId
             The instrument ID for the book.
         price_precision : uint8
-            The price precision for the book.
+            The price precision of the books orders.
         size_precision : uint8
-            The size precision for the book.
+            The size precision of the books orders.
 
         Raises
         ------
@@ -732,9 +732,9 @@ cdef class L2OrderBook(OrderBook):
         instrument_id : InstrumentId
             The instrument ID for the book.
         price_precision : uint8
-            The price precision for the book.
+            The price precision of the books orders.
         size_precision : uint8
-            The size precision for the book.
+            The size precision of the books orders.
 
         Raises
         ------
@@ -851,9 +851,9 @@ cdef class L1OrderBook(OrderBook):
         instrument_id : InstrumentId
             The instrument ID for the book.
         price_precision : uint8
-            The price precision for the book.
+            The price precision of the books orders.
         size_precision : uint8
-            The size precision for the book.
+            The size precision of the books orders.
 
         Raises
         ------

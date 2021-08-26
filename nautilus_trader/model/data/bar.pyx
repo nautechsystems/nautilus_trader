@@ -29,7 +29,8 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class BarSpecification:
     """
-    Represents an aggregation specification for generating bars.
+    Represents a bar aggregation specification including a step, aggregation
+    method/rule and price type.
     """
     def __init__(
         self,
@@ -62,9 +63,11 @@ cdef class BarSpecification:
         self.price_type = price_type
 
     def __eq__(self, BarSpecification other) -> bool:
-        return self.step == other.step\
-            and self.aggregation == other.aggregation\
+        return (
+            self.step == other.step
+            and self.aggregation == other.aggregation
             and self.price_type == other.price_type
+        )
 
     def __hash__(self) -> int:
         return hash((self.step, self.aggregation, self.price_type))
@@ -186,7 +189,8 @@ cdef class BarSpecification:
 
 cdef class BarType:
     """
-    Represents a bar type being the instrument ID and bar specification of bar data.
+    Represents a bar type including the instrument ID, bar specification and
+    aggregation source.
 
     Notes
     -----
@@ -209,11 +213,11 @@ cdef class BarType:
             The bar types instrument ID.
         bar_spec : BarSpecification
             The bar types specification.
-        aggregation_source : AggregationSource, default=``EXTERNAL``
-            If bars are aggregated internally by the platform. If ``INTERNAL``
-            the `DataEngine` will subscribe to the necessary ticks and aggregate
-            bars accordingly. Else if ``EXTERNAL`` then bars will be subscribed
-            to directly from the data publisher.
+        aggregation_source : AggregationSource, default=EXTERNAL
+            The bar type aggregation source. If ``INTERNAL`` the `DataEngine`
+            will subscribe to the necessary ticks and aggregate bars accordingly.
+            Else if ``EXTERNAL`` then bars will be subscribed to directly from
+            the data publisher.
 
         """
         self.instrument_id = instrument_id
@@ -238,7 +242,7 @@ cdef class BarType:
 
     cpdef bint is_external_aggregation(self) except *:
         """
-        Return a value indicating whether the bar aggregation method is ``EXTERNAL``.
+        Return a value indicating whether the bar aggregation source is ``EXTERNAL``.
 
         Returns
         -------
@@ -249,7 +253,7 @@ cdef class BarType:
 
     cpdef bint is_internal_aggregation(self) except *:
         """
-        Return a value indicating whether the bar aggregation method is ``INTERNAL``.
+        Return a value indicating whether the bar aggregation source is ``INTERNAL``.
 
         Returns
         -------

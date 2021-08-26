@@ -569,7 +569,7 @@ cdef class Order:
         Raises
         ------
         ValueError
-            If side is FLAT or invalid.
+            If side is ``FLAT`` or invalid.
 
         """
         return Order.flatten_side_c(side)

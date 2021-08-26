@@ -44,9 +44,9 @@ cdef class Ladder:
         reverse : bool
             If the ladder should be represented in reverse order of price (bids).
         price_precision : uint8
-            The price precision for the book.
+            The price precision of the books orders.
         size_precision : uint8
-            The size precision for the book.
+            The size precision of the books orders.
 
         Raises
         ------
