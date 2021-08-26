@@ -90,9 +90,9 @@ def betfair_ticker_from_dict(values: dict):
         instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
         ts_event=values["ts_event"],
         ts_init=values["ts_init"],
-        last_traded_price=Price.from_str_c(values["last_traded_price"]),
-        traded_volume=Quantity.from_str_c(values["traded_volume"]),
-        info=orjson.loads(values['info']) if values['info'] is not None else None,
+        last_traded_price=Price.from_str_c(values["last_traded_price"]) if values['last_traded_price'] else None,
+        traded_volume=Quantity.from_str_c(values["traded_volume"]) if values['traded_volume'] else None,
+        info=orjson.loads(values['info']) if values.get('info') is not None else None,
     )
 
 
@@ -102,8 +102,8 @@ def betfair_ticker_to_dict(ticker: BetfairTicker):
         "instrument_id": ticker.instrument_id.value,
         "ts_event": ticker.ts_event,
         "ts_init": ticker.ts_init,
-        "last_traded_price": str(ticker.last_traded_price),
-        "traded_volume": str(ticker.traded_volume),
+        "last_traded_price": str(ticker.last_traded_price) if ticker.last_traded_price else None,
+        "traded_volume": str(ticker.traded_volume) if ticker.traded_volume else None,
         "info": orjson.dumps(ticker.info) if ticker.info is not None else None,
     }
 

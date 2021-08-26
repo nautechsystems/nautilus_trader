@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import pathlib
 import sys
 from functools import partial
@@ -30,7 +29,6 @@ from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.core import process_raw_file
-from nautilus_trader.persistence.external.core import scan_files
 from nautilus_trader.persistence.external.parsers import ByteReader
 from nautilus_trader.persistence.external.parsers import CSVReader
 from nautilus_trader.persistence.external.parsers import LinePreprocessor
@@ -125,7 +123,7 @@ class TestPersistenceParsers:
             from nautilus_trader.model.objects import Price
             from nautilus_trader.model.objects import Quantity
 
-            assert (
+            assert (  # type: ignore  # noqa: F631
                 Decimal,
                 AssetType,
                 AssetClass,
@@ -152,7 +150,7 @@ class TestPersistenceParsers:
             for k, v in replacements.items():
                 line = line.replace(k, v)
 
-            yield eval(line)
+            yield eval(line)  # noqa: S307
 
         reader = TextReader(line_parser=parser)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/binance*.txt")[0]
@@ -180,9 +178,9 @@ class TestPersistenceParsers:
     def test_text_reader(self):
         provider = BetfairInstrumentProvider.from_instruments([])
         reader = BetfairTestStubs.betfair_reader(provider)  # type: TextReader
-        raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/betfair/166811431.bz2")[0]
+        raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/betfair/1.166811431.bz2")[0]
         result = process_raw_file(catalog=self.mock_catalog, raw_file=raw_file, reader=reader)
-        assert result == 17848
+        assert result == 22692
 
     def test_byte_json_parser(self):
         def parser(block):
@@ -200,9 +198,10 @@ class TestPersistenceParsers:
             if data is None:
                 return
             data.loc[:, "timestamp"] = pd.to_datetime(data["timestamp"])
+            data = data.set_index("timestamp")[["bid", "ask", "bid_size", "ask_size"]]
             wrangler = QuoteTickDataWrangler(
                 instrument=TestInstrumentProvider.default_fx_ccy("AUD/USD"),
-                data_quotes=data.set_index("timestamp"),
+                data_quotes=data,
             )
             wrangler.pre_process(0)
             yield from wrangler.build_ticks()
@@ -210,7 +209,7 @@ class TestPersistenceParsers:
         reader = ParquetReader(parser=parser)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/binance-btcusdt-quotes.parquet")[0]
         result = process_raw_file(catalog=self.mock_catalog, raw_file=raw_file, reader=reader)
-        assert result == 6
+        assert result == 451
 
 
 class TestLineProcessor(LinePreprocessor):

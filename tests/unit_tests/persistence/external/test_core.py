@@ -8,30 +8,26 @@ import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import pytest
-from distlib.util import CSVReader
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import make_betfair_reader
-from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.data.wrangling import QuoteTickDataWrangler
-from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import RawFile
+from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import process_raw_file
 from nautilus_trader.persistence.external.core import read_and_clear_existing_data
 from nautilus_trader.persistence.external.core import scan_files
 from nautilus_trader.persistence.external.core import split_and_serialize
 from nautilus_trader.persistence.external.core import write_parquet
-from nautilus_trader.persistence.external.parsers import ParquetReader
+from nautilus_trader.persistence.external.core import write_tables
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockReader
 from tests.test_kit.mocks import data_catalog_setup
-from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 
@@ -43,16 +39,18 @@ class TestPersistenceCore:
     def setup(self):
         data_catalog_setup()
         self.catalog = DataCatalog.from_env()
+        self.fs = self.catalog.fs
         self.reader = MockReader()
 
-    def _load_betfair_data(self):
+    def _loaded_data_into_catalog(self):
         self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
-        process_files(
-            glob_path=PACKAGE_ROOT + "/data/betfair/1.166811431.bz2",
+        result = process_files(
+            glob_path=PACKAGE_ROOT + "/data/1.166564490*.bz2",
             reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
             instrument_provider=self.instrument_provider,
             catalog=self.catalog,
         )
+        assert result
         data = (
             self.catalog.instruments(as_nautilus=True)
             + self.catalog.instrument_status_updates(as_nautilus=True)
@@ -64,13 +62,12 @@ class TestPersistenceCore:
 
     def test_raw_file_block_size_read(self):
         # Arrange
-        raw_file = RawFile(fsspec.open(f"{TEST_DATA}/1.166564490.bz2"), reader=self.reader)
+        raw_file = RawFile(fsspec.open(f"{TEST_DATA}/1.166564490.bz2"))
         data = b"".join(raw_file.iter())
 
         # Act
         raw_file = RawFile(
             fsspec.open(f"{TEST_DATA}/1.166564490.bz2"),
-            reader=self.reader,
             block_size=1000,
         )
         blocks = list(raw_file.iter())
@@ -84,12 +81,11 @@ class TestPersistenceCore:
         # Arrange
         rf = RawFile(
             open_file=fsspec.open(f"{TEST_DATA}/1.166564490.bz2", compression="infer"),
-            reader=make_betfair_reader(),
             block_size=None,
         )
 
         # Act
-        process_raw_file(catalog=self.catalog, raw_file=rf)
+        process_raw_file(catalog=self.catalog, reader=make_betfair_reader(), raw_file=rf)
 
         # Assert
         assert len(self.catalog.instruments()) == 2
@@ -97,10 +93,7 @@ class TestPersistenceCore:
     def test_raw_file_pickleable(self):
         # Arrange
         path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"  # total size = 151707
-        expected = RawFile(
-            open_file=fsspec.open(path, compression="infer"),
-            reader=make_betfair_reader(),
-        )
+        expected = RawFile(open_file=fsspec.open(path, compression="infer"))
 
         # Act
         data = pickle.dumps(expected)
@@ -119,7 +112,7 @@ class TestPersistenceCore:
         # Arrange
         fs = fsspec.filesystem("file")
         path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"
-        r = RawFile(open_file=fs.open(path=path, compression="bz2"), reader=self.reader)
+        r = RawFile(open_file=fs.open(path=path, compression="bz2"))
 
         # Act
         result1: RawFile = deserialize(*serialize(r))
@@ -135,7 +128,6 @@ class TestPersistenceCore:
         # Arrange
         raw_file = RawFile(
             open_file=fsspec.open(f"{TEST_DATA}/1.166564490.bz2"),
-            reader=self.reader,
             progress=True,
             block_size=5000,
         )
@@ -188,13 +180,19 @@ class TestPersistenceCore:
         assert len(files) == 8
 
     def test_nautilus_chunk_to_dataframes(self):
-        data = self._load_betfair_data()
+        data = self._loaded_data_into_catalog()
         dfs = split_and_serialize(data)
         result = {}
         for cls in dfs:
             for ins in dfs[cls]:
                 result[cls.__name__] = len(dfs[cls][ins])
-        expected = {}
+        expected = {
+            "BetfairTicker": 82,
+            "BettingInstrument": 1,
+            "InstrumentStatusUpdate": 1,
+            "OrderBookData": 1077,
+            "TradeTick": 114,
+        }
         assert result == expected
 
     def test_write_parquet_no_partitions(
@@ -209,13 +207,10 @@ class TestPersistenceCore:
 
         write_parquet(
             fs=fs,
-            root=root,
-            path="sample.parquet",
+            path=f"{root}/sample.parquet",
             df=df,
-            instrument_id=None,
             schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
             partition_cols=None,
-            append=False,
         )
         result = (
             ds.dataset(str(root.joinpath("sample.parquet")), filesystem=fs).to_table().to_pandas()
@@ -235,13 +230,10 @@ class TestPersistenceCore:
         )
         write_parquet(
             fs=fs,
-            root=root,
-            path=path,
+            path=f"{root}/{path}",
             df=df,
-            instrument_id=None,
             schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
             partition_cols=["instrument_id"],
-            append=False,
         )
         dataset = ds.dataset(str(root.joinpath("sample.parquet")), filesystem=fs)
         result = dataset.to_table().to_pandas()
@@ -253,11 +245,6 @@ class TestPersistenceCore:
         self,
     ):
         # Arrange
-        catalog = DataCatalog.from_env()
-        fs = catalog.fs
-        rf = RawFile(fs=fs, path="/")
-
-        # Act
         quote = QuoteTick(
             instrument_id=TestStubs.audusd_id(),
             bid=Price.from_str("0.80"),
@@ -268,11 +255,13 @@ class TestPersistenceCore:
             ts_init=0,
         )
         chunk = [quote]
-        assert chunk, rf
-        # write_chunk(raw_file=rf, chunk=chunk)
+        tables = dicts_to_dataframes(split_and_serialize(chunk))
+
+        # Act
+        write_tables(catalog=self.catalog, tables=tables)
 
         # Assert
-        files = fs.ls("/root/data/quote_tick.parquet")
+        files = self.fs.ls("/root/data/quote_tick.parquet")
         expected = "/root/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
         assert expected in files
 
@@ -281,29 +270,23 @@ class TestPersistenceCore:
     ):
         # Arrange
         catalog = DataCatalog.from_env()
-        fs = catalog.fs
-        root = catalog.path
-
-        path = "sample.parquet"
+        path = f"{catalog.path}/sample.parquet"
         df = pd.DataFrame(
             {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
         )
         write_parquet(
-            fs=fs,
-            root=root,
+            fs=self.fs,
             path=path,
             df=df,
-            instrument_id=None,
             schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
             partition_cols=["instrument_id"],
-            append=False,
         )
 
         # Act
         result = read_and_clear_existing_data(
-            fs=fs, root=root, path=path, instrument_id="a", partition_cols=["instrument_id"]
+            catalog=self.catalog, path=path, instrument_id="a", partition_cols=["instrument_id"]
         )
-        dataset = ds.dataset(str(root.joinpath("sample.parquet")), filesystem=fs)
+        dataset = ds.dataset(path, filesystem=self.fs)
 
         # Assert
         expected = df[df["instrument_id"] == "a"]
@@ -317,88 +300,30 @@ class TestPersistenceCore:
         # Arrange
         catalog = DataCatalog.from_env()
         fs = catalog.fs
-        root = catalog.path
-
-        path = "sample.parquet"
+        path = f"{catalog.path}/sample.parquet"
         df = pd.DataFrame(
             {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
         )
         write_parquet(
             fs=fs,
-            root=root,
             path=path,
             df=df,
-            instrument_id=None,
             schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
             partition_cols=["instrument_id"],
-            append=False,
         )
 
         # Assert
         with pytest.raises(AssertionError):
             read_and_clear_existing_data(
-                fs=fs, root=root, path=path, instrument_id="a", partition_cols=["value"]
+                catalog=self.catalog, path=path, instrument_id="a", partition_cols=["value"]
             )
 
-    def test_process_files_csv(self, executor, get_parser):
-        files = scan_files(
-            glob_path=f"{TEST_DATA_DIR}/truefx*.csv",
-            reader=None,
-            catalog=None,
-            block_size=1_000_000,
-        )
-        assert len(files) == 2
-        reader = CSVReader(chunk_parser=get_parser("parse_csv_quotes"), as_dataframe=True)
-        result = process_files(files, reader=reader, executor=executor)
-        expected = [
-            (TEST_DATA_DIR + "/truefx-audusd-ticks.csv", 20410),
-            (TEST_DATA_DIR + "/truefx-audusd-ticks.csv", 20411),
-            (TEST_DATA_DIR + "/truefx-audusd-ticks.csv", 20412),
-            (TEST_DATA_DIR + "/truefx-audusd-ticks.csv", 20411),
-            (TEST_DATA_DIR + "/truefx-audusd-ticks.csv", 18356),
-            (TEST_DATA_DIR + "/truefx-usdjpy-ticks.csv", 1000),
-        ]
-        assert result == expected
-
-    def test_data_loader_parquet(
-        self,
-    ):
-        def filename_to_instrument(fn):
-            if "btcusd" in fn:
-                return TestInstrumentProvider.btcusdt_binance()
-            else:
-                raise KeyError()
-
-        def parser(data_type, df, filename):
-            instrument = filename_to_instrument(fn=filename)
-            if data_type == "quote_ticks":
-                df = df.set_index("timestamp")[["bid", "ask", "bid_size", "ask_size"]]
-                wrangler = QuoteTickDataWrangler(data_quotes=df, instrument=instrument)
-            elif data_type == "trade_ticks":
-                wrangler = TradeTickDataWrangler(df=df, instrument=instrument)
-            else:
-                raise TypeError()
-            wrangler.pre_process(0)
-            yield from wrangler.build_ticks()
-
-        results = process_files(
-            glob_path=f"{TEST_DATA_DIR}/*quote*.parquet",
-            reader=ParquetReader(
-                data_type="quote_ticks",
-                parser=parser,
-            ),
-            catalog=self.catalog,
-            instrument_provider=InstrumentProvider(),
-        )
-        expected = {}
-        assert results == expected
-
-    def test_load_text_betfair(self, betfair_reader):
+    def test_load_text_betfair(self):
         instrument_provider = BetfairInstrumentProvider.from_instruments([])
 
         files = process_files(
             glob_path=f"{TEST_DATA_DIR}/**.bz2",
-            reader=betfair_reader(instrument_provider=instrument_provider),
+            reader=BetfairTestStubs.betfair_reader(instrument_provider=instrument_provider),
             catalog=self.catalog,
             instrument_provider=instrument_provider,
         )
@@ -410,28 +335,31 @@ class TestPersistenceCore:
         assert files == expected
 
     def test_data_catalog_instruments_no_partition(self):
-        path = str(self.loaded_catalog.path / "data" / "betting_instrument.parquet/")
+        self._loaded_data_into_catalog()
+        path = f"{self.catalog.path}/data/betting_instrument.parquet"
         dataset = pq.ParquetDataset(
             path_or_paths=path,
-            filesystem=self.loaded_catalog.fs,
+            filesystem=self.fs,
         )
         partitions = dataset.partitions
         assert not partitions.levels
 
     def test_data_catalog_metadata(self):
+        self._loaded_data_into_catalog()
         assert ds.parquet_dataset(
-            f"{self.loaded_catalog.path}/data/trade_tick.parquet/_metadata",
-            filesystem=self.loaded_catalog.fs,
+            f"{self.catalog.path}/data/trade_tick.parquet/_metadata",
+            filesystem=self.fs,
         )
         assert ds.parquet_dataset(
-            f"{self.loaded_catalog.path}/data/trade_tick.parquet/_common_metadata",
-            filesystem=self.loaded_catalog.fs,
+            f"{self.catalog.path}/data/trade_tick.parquet/_common_metadata",
+            filesystem=self.fs,
         )
 
     def test_data_catalog_dataset_types(self):
+        self._loaded_data_into_catalog()
         dataset = ds.dataset(
-            str(self.loaded_catalog.path / "data" / "trade_tick.parquet"),
-            filesystem=self.loaded_catalog.fs,
+            str(self.catalog.path / "data" / "trade_tick.parquet"),
+            filesystem=self.catalog.fs,
         )
         schema = {
             n: t.__class__.__name__ for n, t in zip(dataset.schema.names, dataset.schema.types)
@@ -454,7 +382,7 @@ class TestPersistenceCore:
         # Arrange
         with Client(processes=False, threads_per_worker=1) as c:
             tasks = process_files(
-                path=f"{TEST_DATA_DIR}/1.166564490*",
+                glob_path=f"{TEST_DATA_DIR}/1.166564490*",
                 reader=make_betfair_reader(instrument_provider),
                 catalog=self.catalog,
                 instrument_provider=instrument_provider,
@@ -464,5 +392,5 @@ class TestPersistenceCore:
             results = c.gather(c.compute(tasks))
 
         # Assert
-        expected = {}
+        expected = {TEST_DATA + "/1.166564490.bz2": 2908}
         assert results == expected

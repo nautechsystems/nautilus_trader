@@ -8,6 +8,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from dask import compute
 from dask import delayed
+from dask.diagnostics import ProgressBar
 from dask.utils import parse_bytes
 from fsspec.compression import compr
 from fsspec.core import OpenFile
@@ -21,8 +22,8 @@ from nautilus_trader.persistence.external.metadata import _glob_path_to_fs
 from nautilus_trader.persistence.external.metadata import load_processed_raw_files
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.parsers import Reader
-from nautilus_trader.persistence.external.sync import has_working_lock
-from nautilus_trader.persistence.external.sync import named_lock
+from nautilus_trader.persistence.external.synchronization import has_working_lock
+from nautilus_trader.persistence.external.synchronization import named_lock
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import get_partition_keys
@@ -69,7 +70,7 @@ class RawFile:
         self.block_size = block_size
         self.partition_name_callable = partition_name_callable
         if progress:
-            self.iter = read_progress(
+            self.iter = read_progress(  # type: ignore
                 self.iter, total=self.open_file.fs.stat(self.open_file.path)["size"]
             )
 
@@ -108,16 +109,20 @@ def process_files(
         compression=compression,
         **kw,
     )
-    tasks = [delayed(process_raw_file)(catalog=catalog, raw_file=rf) for rf in raw_files]
-    with dask.config.set(scheduler=scheduler):
-        if not has_working_lock(scheduler=scheduler):
-            err = (
-                "Windows does not support named locks, need to use dask.distributed client to process files.\n"
-                "Pass scheduler=distributed.Client(..) "
-            )
-            raise RuntimeError(err)
+    tasks = [
+        delayed(process_raw_file)(catalog=catalog, reader=reader, raw_file=rf) for rf in raw_files
+    ]
+    with ProgressBar():
+        with dask.config.set(scheduler=scheduler):
+            if not has_working_lock(scheduler=scheduler):
+                err = (
+                    "Windows does not support named locks, need to use dask.distributed client to process files.\n"
+                    "Pass scheduler=distributed.Client(..) "
+                )
+                raise RuntimeError(err)
 
-        return compute(tasks)
+            results = compute(tasks)
+    return dict((rf.open_file.path, value) for rf, value in zip(raw_files, results[0]))
 
 
 def make_raw_files(glob_path, block_size="128mb", compression="infer", **kw) -> List[RawFile]:
@@ -192,6 +197,18 @@ def determine_partition_cols(cls: type, instrument_id: str = None):
     elif instrument_id is not None:
         return ["instrument_id"]
     return
+
+
+def walk_rm(fs: fsspec.AbstractFileSystem, path: str):
+    """
+    Walk and remove files in `path` from bottom up
+    """
+    files = fs.find(path)
+    for filename in sorted(files, key=lambda x: len(x), reverse=True):
+        try:
+            fs.rm(filename, recursive=True)
+        except FileNotFoundError:
+            continue
 
 
 def read_and_clear_existing_data(

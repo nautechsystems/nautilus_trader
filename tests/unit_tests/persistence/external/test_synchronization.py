@@ -5,7 +5,7 @@ from multiprocessing import Process
 from multiprocessing import Queue
 from queue import Empty
 
-from nautilus_trader.persistence.external.sync import named_lock
+from nautilus_trader.persistence.external.synchronization import named_lock
 from tests.test_kit import PACKAGE_ROOT
 
 
