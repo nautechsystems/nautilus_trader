@@ -12,10 +12,13 @@ from dask.utils import parse_bytes
 from fsspec.compression import compr
 from fsspec.core import OpenFile
 from fsspec.utils import infer_compression
+from tqdm import tqdm
 
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.external.metadata import _glob_path_to_fs
+from nautilus_trader.persistence.external.metadata import load_processed_raw_files
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.parsers import Reader
 from nautilus_trader.persistence.external.sync import has_working_lock
@@ -41,10 +44,9 @@ class RawFile:
     def __init__(
         self,
         open_file: OpenFile,
-        reader: Reader,
-        catalog: DataCatalog,
         block_size: Optional[int] = None,
         partition_name_callable: Optional[Callable] = None,
+        progress=False,
     ):
         """
         A wrapper of fsspec.OpenFile that processes a raw file and writes to parquet.
@@ -55,19 +57,21 @@ class RawFile:
             The fsspec.OpenFile source of this data
         reader: Reader
             The Reader to parse the raw bytes read from this file
-        catalog: DataCatalog
-            The DataCatalog to write the output data from this file into
         block_size: int
             The max block (chunk) size to read from the file
         partition_name_callable: Callable
             A callable taking a two arguments: (`partition_keys`, `df`) that can be used to modify the name of the
             parquet partition filename. Can be used to partition data in a more intelligent way (for example by date)
+        progress: bool
+            Show a progress bar while processing this individual file
         """
         self.open_file = open_file
         self.block_size = block_size
-        self.reader = reader
-        self.catalog = catalog
         self.partition_name_callable = partition_name_callable
+        if progress:
+            self.iter = read_progress(
+                self.iter, total=self.open_file.fs.stat(self.open_file.path)["size"]
+            )
 
     def iter(self):
         with self.open_file as f:
@@ -77,14 +81,15 @@ class RawFile:
                     return
                 yield raw
 
-    def process(self):
-        n_rows = 0
-        for block in self.iter():
-            objs = list(filter(None, self.reader.parse(block)))
-            dicts = split_and_serialize(objs)
-            dataframes = dicts_to_dataframes(dicts)
-            n_rows += write(catalog=self.catalog, tables=dataframes)
-        return n_rows
+
+def process_raw_file(catalog: DataCatalog, raw_file: RawFile, reader: Reader):
+    n_rows = 0
+    for block in raw_file.iter():
+        objs = [x for x in reader.parse(block) if x is not None]
+        dicts = split_and_serialize(objs)
+        dataframes = dicts_to_dataframes(dicts)
+        n_rows += write_tables(catalog=catalog, tables=dataframes)
+    return n_rows
 
 
 def process_files(
@@ -99,12 +104,11 @@ def process_files(
     raw_files = make_raw_files(
         glob_path=glob_path,
         reader=reader,
-        catalog=catalog,
         block_size=block_size,
         compression=compression,
         **kw,
     )
-    tasks = [process_raw_file(rf) for rf in raw_files]
+    tasks = [delayed(process_raw_file)(catalog=catalog, raw_file=rf) for rf in raw_files]
     with dask.config.set(scheduler=scheduler):
         if not has_working_lock(scheduler=scheduler):
             err = (
@@ -116,24 +120,16 @@ def process_files(
         return compute(tasks)
 
 
-@delayed
-def process_raw_file(raw_file: RawFile):
-    """Purely a wrapper because delayed does not work on class methods"""
-    return raw_file.process()
-
-
-def make_raw_files(
-    glob_path, reader: Reader, catalog: DataCatalog, block_size="128mb", compression="infer", **kw
-):
+def make_raw_files(glob_path, block_size="128mb", compression="infer", **kw) -> List[RawFile]:
     files = scan_files(glob_path, compression=compression, **kw)
-    return [
-        RawFile(open_file=f, reader=reader, catalog=catalog, block_size=parse_bytes(block_size))
-        for f in files
-    ]
+    return [RawFile(open_file=f, block_size=parse_bytes(block_size)) for f in files]
 
 
-def scan_files(glob_path, compression="infer", **kw):
-    return fsspec.open_files(glob_path, compression=compression, **kw)
+def scan_files(glob_path, compression="infer", **kw) -> List[OpenFile]:
+    fs = _glob_path_to_fs(glob_path)
+    processed = load_processed_raw_files(fs=fs)
+    open_files = fsspec.open_files(glob_path, compression=compression, **kw)
+    return [of for of in open_files if of.path not in processed]
 
 
 @delayed
@@ -252,7 +248,7 @@ def merge_with_existing_data(
     return df
 
 
-def write(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]]):
+def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]]):
     """
     Write tables to catalog.
 
@@ -338,3 +334,17 @@ def write_parquet(
     # Write out any partition columns we had to modify due to filesystem requirements
     if mappings:
         write_partition_column_mappings(fs=fs, path=path, mappings=mappings)
+
+
+def read_progress(func, total):
+    """
+    Wrap a file handle and update progress bar as bytes are read
+    """
+    progress = tqdm(total=total)
+
+    def inner(*args, **kwargs):
+        for data in func(*args, **kwargs):
+            progress.update(n=len(data))
+            yield data
+
+    return inner

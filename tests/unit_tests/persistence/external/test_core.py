@@ -21,11 +21,13 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import process_files
+from nautilus_trader.persistence.external.core import process_raw_file
 from nautilus_trader.persistence.external.core import read_and_clear_existing_data
 from nautilus_trader.persistence.external.core import scan_files
 from nautilus_trader.persistence.external.core import split_and_serialize
 from nautilus_trader.persistence.external.core import write_parquet
 from nautilus_trader.persistence.external.parsers import ParquetReader
+from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockReader
 from tests.test_kit.mocks import data_catalog_setup
@@ -41,20 +43,33 @@ class TestPersistenceCore:
     def setup(self):
         data_catalog_setup()
         self.catalog = DataCatalog.from_env()
-        self.loaded_catalog = self.catalog
         self.reader = MockReader()
+
+    def _load_betfair_data(self):
+        self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
+        process_files(
+            glob_path=PACKAGE_ROOT + "/data/betfair/1.166811431.bz2",
+            reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
+            instrument_provider=self.instrument_provider,
+            catalog=self.catalog,
+        )
+        data = (
+            self.catalog.instruments(as_nautilus=True)
+            + self.catalog.instrument_status_updates(as_nautilus=True)
+            + self.catalog.trade_ticks(as_nautilus=True)
+            + self.catalog.order_book_deltas(as_nautilus=True)
+            + self.catalog.ticker(as_nautilus=True)
+        )
+        return data
 
     def test_raw_file_block_size_read(self):
         # Arrange
-        raw_file = RawFile(
-            fsspec.open(f"{TEST_DATA}/1.166564490.bz2"), catalog=self.catalog, reader=self.reader
-        )
+        raw_file = RawFile(fsspec.open(f"{TEST_DATA}/1.166564490.bz2"), reader=self.reader)
         data = b"".join(raw_file.iter())
 
         # Act
         raw_file = RawFile(
             fsspec.open(f"{TEST_DATA}/1.166564490.bz2"),
-            catalog=self.catalog,
             reader=self.reader,
             block_size=1000,
         )
@@ -63,18 +78,18 @@ class TestPersistenceCore:
         # Assert
         assert len(blocks) == 18
         assert b"".join(blocks) == data
+        assert len(data) == 17338
 
     def test_raw_file_process(self):
         # Arrange
         rf = RawFile(
             open_file=fsspec.open(f"{TEST_DATA}/1.166564490.bz2", compression="infer"),
             reader=make_betfair_reader(),
-            catalog=self.catalog,
             block_size=None,
         )
 
         # Act
-        rf.process()
+        process_raw_file(catalog=self.catalog, raw_file=rf)
 
         # Assert
         assert len(self.catalog.instruments()) == 2
@@ -85,42 +100,66 @@ class TestPersistenceCore:
         expected = RawFile(
             open_file=fsspec.open(path, compression="infer"),
             reader=make_betfair_reader(),
-            catalog=self.catalog,
         )
 
         # Act
         data = pickle.dumps(expected)
-        result = pickle.loads(data)  # noqa: S301
+        result: RawFile = pickle.loads(data)  # noqa: S301
 
         # Assert
-        assert result.fs == expected.fs
-        assert result.path == expected.path
-        assert result.chunk_size == expected.chunk_size
-        assert result.compression == "bz2"
+        assert result.open_file.fs == expected.open_file.fs
+        assert result.open_file.path == expected.open_file.path
+        assert result.block_size == expected.block_size
+        assert result.open_file.compression == "bz2"
 
     def test_raw_file_distributed_serializable(self):
         from distributed.protocol import deserialize
         from distributed.protocol import serialize
 
         # Arrange
-        fs = fsspec.implementations.local.LocalFileSystem()
-        path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"  # total size = 151707
-        r = RawFile(fs=fs, path=path, chunk_size=-1, compression="bz2")
+        fs = fsspec.filesystem("file")
+        path = TEST_DATA_DIR + "/betfair/1.166811431.bz2"
+        r = RawFile(open_file=fs.open(path=path, compression="bz2"), reader=self.reader)
 
         # Act
-        result1 = deserialize(*serialize(r))
+        result1: RawFile = deserialize(*serialize(r))
 
         # Assert
-        assert result1.fs == r.fs
-        assert result1.path == r.path
-        assert result1.chunk_size == r.chunk_size
-        assert result1.compression == "bz2"
+        assert result1.open_file.fs == r.open_file.fs
+        assert result1.open_file.path == r.open_file.path
+        assert result1.block_size == r.block_size
+        assert result1.open_file.compression == "bz2"
+
+    @patch("nautilus_trader.persistence.external.core.tqdm", spec=True)
+    def test_raw_file_progress(self, mock_progress):
+        # Arrange
+        raw_file = RawFile(
+            open_file=fsspec.open(f"{TEST_DATA}/1.166564490.bz2"),
+            reader=self.reader,
+            progress=True,
+            block_size=5000,
+        )
+
+        # Act
+        data = b"".join(raw_file.iter())
+
+        # Assert
+        assert len(data) == 17338
+        result = [call.kwargs for call in mock_progress.mock_calls[:5]]
+        expected = [
+            {"total": 17338},
+            {"n": 5000},
+            {"n": 5000},
+            {"n": 5000},
+            {"n": 2338},
+        ]
+        assert result == expected
 
     @pytest.mark.parametrize(
         "glob, num_files",
         [
             ("**.json", 3),
-            ("**.txt", 1),
+            ("**.txt", 2),
             ("**.parquet", 2),
             ("**.csv", 11),
         ],
@@ -138,7 +177,7 @@ class TestPersistenceCore:
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/*jpy*.csv")
         assert len(files) == 3
 
-    @patch("nautilus_trader.persistence.backtest.scanner.load_processed_raw_files")
+    @patch("nautilus_trader.persistence.external.core.load_processed_raw_files")
     def test_scan_processed(self, mock_load_processed_raw_files):
         mock_load_processed_raw_files.return_value = [
             TEST_DATA_DIR + "/truefx-audusd-ticks.csv",
@@ -148,110 +187,14 @@ class TestPersistenceCore:
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/*.csv")
         assert len(files) == 8
 
-    def test_nautilus_chunk_to_dataframes(self, betfair_nautilus_objects):
-        dfs = split_and_serialize(betfair_nautilus_objects)
+    def test_nautilus_chunk_to_dataframes(self):
+        data = self._load_betfair_data()
+        dfs = split_and_serialize(data)
         result = {}
         for cls in dfs:
             for ins in dfs[cls]:
-                result[(cls.__name__, ins)] = len(dfs[cls][ins])
-        expected = {
-            (
-                "BettingInstrument",
-                "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,237478,0.0.BETFAIR",
-            ): 1,
-            (
-                "BettingInstrument",
-                "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,60424,0.0.BETFAIR",
-            ): 1,
-            (
-                "BettingInstrument",
-                "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,2696769,0.0.BETFAIR",
-            ): 1,
-            (
-                "BettingInstrument",
-                "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,4297085,0.0.BETFAIR",
-            ): 1,
-            (
-                "InstrumentStatusUpdate",
-                "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,2696769,0.0.BETFAIR",
-            ): 6,
-            (
-                "InstrumentStatusUpdate",
-                "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,4297085,0.0.BETFAIR",
-            ): 6,
-            (
-                "InstrumentStatusUpdate",
-                "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,60424,0.0.BETFAIR",
-            ): 7,
-            (
-                "InstrumentStatusUpdate",
-                "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,237478,0.0.BETFAIR",
-            ): 7,
-            (
-                "OrderBookData",
-                "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,4297085,0.0.BETFAIR",
-            ): 1714,
-            (
-                "OrderBookData",
-                "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,2696769,0.0.BETFAIR",
-            ): 7695,
-            (
-                "OrderBookData",
-                "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,60424,0.0.BETFAIR",
-            ): 9374,
-            (
-                "OrderBookData",
-                "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,237478,0.0.BETFAIR",
-            ): 9348,
-            (
-                "BetfairTicker",
-                "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,237478,0.0.BETFAIR",
-            ): 852,
-            (
-                "BetfairTicker",
-                "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,60424,0.0.BETFAIR",
-            ): 967,
-            (
-                "BetfairTicker",
-                "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,2696769,0.0.BETFAIR",
-            ): 2305,
-            (
-                "BetfairTicker",
-                "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,4297085,0.0.BETFAIR",
-            ): 981,
-            (
-                "TradeTick",
-                "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,2696769,0.0.BETFAIR",
-            ): 2987,
-            (
-                "TradeTick",
-                "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,4297085,0.0.BETFAIR",
-            ): 1387,
-            (
-                "TradeTick",
-                "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,60424,0.0.BETFAIR",
-            ): 1120,
-            (
-                "TradeTick",
-                "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,237478,0.0.BETFAIR",
-            ): 1013,
-            (
-                "InstrumentClosePrice",
-                "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,2696769,0.0.BETFAIR",
-            ): 1,
-            (
-                "InstrumentClosePrice",
-                "Cricket,,30339025,20210309-033000,ODDS,MATCH_ODDS,1.180305278,4297085,0.0.BETFAIR",
-            ): 1,
-            (
-                "InstrumentClosePrice",
-                "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,60424,0.0.BETFAIR",
-            ): 1,
-            (
-                "InstrumentClosePrice",
-                "Basketball,,29635049,20191229-011000,ODDS,MATCH_ODDS,1.166811431,237478,0.0.BETFAIR",
-            ): 1,
-        }
+                result[cls.__name__] = len(dfs[cls][ins])
+        expected = {}
         assert result == expected
 
     def test_write_parquet_no_partitions(
