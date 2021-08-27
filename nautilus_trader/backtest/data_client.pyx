@@ -23,7 +23,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
@@ -140,7 +140,7 @@ cdef class BacktestDataClient(DataClient):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID correlation_id) except *:
+    cpdef void request(self, DataType data_type, UUID4 correlation_id) except *:
         """
         Request the given data type.
 
@@ -148,7 +148,7 @@ cdef class BacktestDataClient(DataClient):
         ----------
         data_type : DataType
             The data type to request.
-        correlation_id : UUID
+        correlation_id : UUID4
             The correlation ID for the response.
 
         """
@@ -273,8 +273,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : BookLevel
-            The order book level (L1, L2, L3).
+        level : BookLevel {``L1``, ``L2``, ``L3``}
+            The order book level.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         kwargs : dict, optional
@@ -306,8 +306,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : BookLevel
-            The order book level (L1, L2, L3).
+        level : BookLevel {``L1``, ``L2``, ``L3``}
+            The order book level.
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
 
@@ -322,6 +322,28 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             return
 
         self._feeds_order_book_delta[instrument_id] = None
+        # Do nothing else for backtest
+
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to `Ticker` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The ticker instrument to subscribe to.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(
+                f"Cannot subscribe to ticker for {instrument_id} "
+                f"(not connected).",
+            )
+            return
+
+        self._feeds_ticker[instrument_id] = None
         # Do nothing else for backtest
 
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
@@ -513,6 +535,28 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._feeds_order_book_snapshot.pop(instrument_id, None)
         # Do nothing else for backtest
 
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from `Ticker` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The ticker instrument to unsubscribe from.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self.is_connected:  # Simulate connection behaviour
+            self._log.error(
+                f"Cannot unsubscribe from ticker for {instrument_id} "
+                f"(not connected).",
+            )
+            return
+
+        self._feeds_ticker.pop(instrument_id, None)
+        # Do nothing else for backtest
+
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
         Unsubscribe from `QuoteTick` data for the given instrument ID.
@@ -635,7 +679,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         datetime from_datetime,  # Can be None
         datetime to_datetime,    # Can be None
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *:
         """
         Request historical quote ticks for the given parameters.
@@ -651,7 +695,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             to the current datetime.
         limit : int
             The limit for the number of returned ticks.
-        correlation_id : UUID
+        correlation_id : UUID4
             The correlation ID for the request.
 
         """
@@ -673,7 +717,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         datetime from_datetime,  # Can be None
         datetime to_datetime,    # Can be None
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *:
         """
         Request historical trade ticks for the given parameters.
@@ -689,7 +733,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             to the current datetime.
         limit : int
             The limit for the number of returned ticks.
-        correlation_id : UUID
+        correlation_id : UUID4
             The correlation ID for the request.
 
         """
@@ -712,7 +756,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         datetime from_datetime,  # Can be None
         datetime to_datetime,    # Can be None
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *:
         """
         Request historical bars for the given parameters from the data engine.
@@ -728,7 +772,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             to the current datetime.
         limit : int
             The limit for the number of returned bars.
-        correlation_id : UUID
+        correlation_id : UUID4
             The correlation ID for the request.
 
         """

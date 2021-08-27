@@ -19,27 +19,39 @@ cdef class ComponentTriggerParser:
     @staticmethod
     cdef str to_str(int value):
         if value == 1:
-            return "START"
+            return "INITIALIZE"
         elif value == 2:
-            return "RUNNING"
+            return "START"
         elif value == 3:
-            return "STOP"
+            return "RUNNING"
         elif value == 4:
-            return "STOPPED"
+            return "STOP"
         elif value == 5:
-            return "RESUME"
+            return "STOPPED"
         elif value == 6:
-            return "RESET"
+            return "RESUME"
         elif value == 7:
-            return "DISPOSE"
+            return "RESET"
         elif value == 8:
+            return "DISPOSE"
+        elif value == 9:
             return "DISPOSED"
+        elif value == 10:
+            return "DEGRADE"
+        elif value == 11:
+            return "DEGRADED"
+        elif value == 12:
+            return "FAULT"
+        elif value == 13:
+            return "FAULTED"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     cdef ComponentTrigger from_str(str value) except *:
-        if value == "START":
+        if value == "INITIALIZE":
+            return ComponentTrigger.INITIALIZE
+        elif value == "START":
             return ComponentTrigger.START
         elif value == "RUNNING":
             return ComponentTrigger.RUNNING
@@ -55,6 +67,14 @@ cdef class ComponentTriggerParser:
             return ComponentTrigger.DISPOSE
         elif value == "DISPOSED":
             return ComponentTrigger.DISPOSED
+        elif value == "DEGRADE":
+            return ComponentTrigger.DEGRADE
+        elif value == "DEGRADED":
+            return ComponentTrigger.DEGRADED
+        elif value == "FAULT":
+            return ComponentTrigger.FAULT
+        elif value == "FAULTED":
+            return ComponentTrigger.FAULTED
         else:
             raise ValueError(f"value was invalid, was {value}")
 

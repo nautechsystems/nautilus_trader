@@ -30,6 +30,8 @@ cdef class Tick(Data):
     """
     The abstract base class for all ticks.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

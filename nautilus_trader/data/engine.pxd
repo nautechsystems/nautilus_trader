@@ -31,16 +31,15 @@ from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.data cimport OrderBookData
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class DataEngine(Component):
-    cdef MessageBus _msgbus
     cdef Cache _cache
 
     cdef bint _use_previous_close
@@ -77,6 +76,7 @@ cdef class DataEngine(Component):
     cpdef list subscribed_instruments(self)
     cpdef list subscribed_order_book_deltas(self)
     cpdef list subscribed_order_book_snapshots(self)
+    cpdef list subscribed_tickers(self)
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
@@ -98,6 +98,7 @@ cdef class DataEngine(Component):
     cdef void _handle_subscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa
     cdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa
+    cdef void _handle_subscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type) except *
@@ -107,6 +108,7 @@ cdef class DataEngine(Component):
     cdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa
     cdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata) except *  # noqa
+    cdef void _handle_unsubscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id) except *
     cdef void _handle_unsubscribe_bars(self, MarketDataClient client, BarType bar_type) except *
@@ -118,6 +120,7 @@ cdef class DataEngine(Component):
     cdef void _handle_data(self, Data data) except *
     cdef void _handle_instrument(self, Instrument instrument) except *
     cdef void _handle_order_book_data(self, OrderBookData data) except *
+    cdef void _handle_ticker(self, Ticker ticker) except *
     cdef void _handle_quote_tick(self, QuoteTick tick) except *
     cdef void _handle_trade_tick(self, TradeTick tick) except *
     cdef void _handle_bar(self, Bar bar) except *

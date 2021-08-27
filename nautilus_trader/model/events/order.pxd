@@ -152,8 +152,6 @@ cdef class OrderPendingCancel(OrderEvent):
 
 
 cdef class OrderUpdateRejected(OrderEvent):
-    cdef readonly str response_to
-    """The update rejection response to.\n\n:returns: `str`"""
     cdef readonly str reason
     """The reason for order update rejection.\n\n:returns: `str`"""
 
@@ -165,8 +163,6 @@ cdef class OrderUpdateRejected(OrderEvent):
 
 
 cdef class OrderCancelRejected(OrderEvent):
-    cdef readonly str response_to
-    """The cancel rejection response to.\n\n:returns: `str`"""
     cdef readonly str reason
     """The reason for order cancel rejection.\n\n:returns: `str`"""
 
@@ -197,9 +193,9 @@ cdef class OrderFilled(OrderEvent):
     """The execution ID associated with the event.\n\n:returns: `ExecutionId`"""
     cdef readonly PositionId position_id
     """The position ID associated with the event.\n\n:returns: `PositionId` or None"""
-    cdef readonly OrderSide side
+    cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide`"""
-    cdef readonly OrderType type
+    cdef readonly OrderType order_type
     """The order type.\n\n:returns: `OrderType`"""
     cdef readonly Quantity last_qty
     """The fill quantity.\n\n:returns: `Quantity`"""
@@ -210,7 +206,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly Money commission
     """The commission generated from the fill.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
-    """The liquidity side of the event (MAKER or TAKER).\n\n:returns: `LiquiditySide`"""
+    """The liquidity side of the event (``MAKER`` or ``TAKER``).\n\n:returns: `LiquiditySide`"""
     cdef readonly dict info
     """The additional fill information.\n\n:returns: `dict[str, object]`"""
 

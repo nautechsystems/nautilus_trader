@@ -28,16 +28,12 @@ from nautilus_trader.model.objects import Quantity
 
 class TestBaseDecimal:
     def test_instantiate_with_none_value_raises_type_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(TypeError):
             BaseDecimal(None)
 
     def test_instantiate_with_negative_precision_raises_overflow_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(OverflowError):
             BaseDecimal(1.11, precision=-1)
 
@@ -78,8 +74,7 @@ class TestBaseDecimal:
         ],
     )
     def test_round_with_various_digits_returns_expected_decimal(self, value, precision, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = round(value, precision)
 
         # Assert
@@ -96,8 +91,7 @@ class TestBaseDecimal:
         ],
     )
     def test_abs_with_various_values_returns_expected_decimal(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = abs(value)
 
         # Assert
@@ -114,8 +108,7 @@ class TestBaseDecimal:
         ],
     )
     def test_pos_with_various_values_returns_expected_decimal(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = +value
 
         # Assert
@@ -129,8 +122,7 @@ class TestBaseDecimal:
         ],
     )
     def test_neg_with_various_values_returns_expected_decimal(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = -value
 
         # Assert
@@ -151,8 +143,7 @@ class TestBaseDecimal:
         ],
     )
     def test_instantiate_with_various_valid_inputs_returns_expected_decimal(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         decimal_object = BaseDecimal(value, 2)
 
         # Assert
@@ -172,8 +163,7 @@ class TestBaseDecimal:
     def test_instantiate_with_various_precisions_returns_expected_decimal(
         self, value, precision, expected
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         decimal_object = BaseDecimal(value, precision)
 
         # Assert
@@ -198,8 +188,7 @@ class TestBaseDecimal:
         ],
     )
     def test_equality_with_various_values_returns_expected_result(self, value1, value2, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = BaseDecimal(value1, 2) == BaseDecimal(value2, 2)
 
         # Assert
@@ -219,8 +208,7 @@ class TestBaseDecimal:
         ],
     )
     def test_equality_with_various_int_returns_expected_result(self, value1, value2, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result1 = BaseDecimal(value1, 0) == value2
         result2 = value2 == BaseDecimal(value1, 0)
 
@@ -300,8 +288,7 @@ class TestBaseDecimal:
         expected_type,
         expected_value,
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = value1 + value2
 
         # Assert
@@ -342,8 +329,7 @@ class TestBaseDecimal:
         expected_type,
         expected_value,
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = value1 - value2
 
         # Assert
@@ -370,8 +356,7 @@ class TestBaseDecimal:
         expected_type,
         expected_value,
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = value1 * value2
 
         # Assert
@@ -409,8 +394,7 @@ class TestBaseDecimal:
         expected_type,
         expected_value,
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = value1 / value2
 
         # Assert
@@ -439,8 +423,7 @@ class TestBaseDecimal:
         expected_type,
         expected_value,
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = value1 // value2
 
         # Assert
@@ -469,8 +452,7 @@ class TestBaseDecimal:
         expected_type,
         expected_value,
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = value1 % value2  # noqa (not modulo formatting)
 
         # Assert
@@ -491,8 +473,7 @@ class TestBaseDecimal:
         value2,
         expected,
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = max(value1, value2)
 
         # Assert
@@ -512,8 +493,7 @@ class TestBaseDecimal:
         value2,
         expected,
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = min(value1, value2)
 
         # Assert
@@ -527,8 +507,7 @@ class TestBaseDecimal:
         # Arrange
         decimal1 = BaseDecimal(value, 1)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert int(decimal1) == expected
 
     def test_hash(self):
@@ -536,8 +515,7 @@ class TestBaseDecimal:
         decimal1 = BaseDecimal(1.1, 1)
         decimal2 = BaseDecimal(1.1, 1)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert isinstance(hash(decimal2), int)
         assert hash(decimal1) == hash(decimal2)
 
@@ -558,16 +536,14 @@ class TestBaseDecimal:
         precision,
         expected,
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         decimal_object = BaseDecimal(value, precision=precision)
 
         # Assert
         assert str(decimal_object) == expected
 
     def test_repr(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = repr(BaseDecimal(1.1, 1))
 
         # Assert
@@ -601,8 +577,7 @@ class TestBaseDecimal:
         [[0, 0], [-0, 0], [-1, -1], [1, 1], [1.1, 1.1], [-1.1, -1.1]],
     )
     def test_as_double_with_various_values_returns_expected_value(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = BaseDecimal(value, 1).as_double()
 
         # Assert
@@ -673,9 +648,7 @@ class TestQuantity:
         assert qty.precision == 3
 
     def test_instantiate_with_negative_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             Quantity(-1, 0)
 
@@ -696,32 +669,26 @@ class TestQuantity:
         ],
     )
     def test_str_and_to_str(self, value, expected):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert Quantity.from_str(value).to_str() == expected
 
     def test_str_repr(self):
         # Arrange
         quantity = Quantity(2100.1666666, 6)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert "2100.166667" == str(quantity)
         assert "Quantity('2100.166667')" == repr(quantity)
 
 
 class TestMoney:
     def test_instantiate_with_none_currency_raises_type_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(TypeError):
             Money(1.0, None)
 
     def test_instantiate_with_none_value_returns_money_with_zero_amount(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         money_zero = Money(None, currency=USD)
 
         # Assert
@@ -747,8 +714,7 @@ class TestMoney:
         ],
     )
     def test_instantiate_with_various_valid_inputs_returns_expected_money(self, value, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         money = Money(value, USD)
 
         # Assert
@@ -765,8 +731,7 @@ class TestMoney:
         expected1,
         expected2,
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         result1 = Money(value1, USD) == Money(value2, BTC)
         result2 = Money(value1, USD) != Money(value2, BTC)
 
@@ -791,8 +756,7 @@ class TestMoney:
         expected3,
         expected4,
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         result1 = Money(value1, USD) > Money(value2, BTC)
         result2 = Money(value1, USD) >= Money(value2, BTC)
         result3 = Money(value1, USD) <= Money(value2, BTC)
@@ -805,8 +769,7 @@ class TestMoney:
         assert expected4 == result4
 
     def test_as_double_returns_expected_result(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         money = Money(1, USD)
 
         # Assert
@@ -814,8 +777,7 @@ class TestMoney:
         assert "1.00" == str(money)
 
     def test_initialized_with_many_decimals_rounds_to_currency_precision(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result1 = Money(1000.333, USD)
         result2 = Money(5005.556666, USD)
 
@@ -827,8 +789,7 @@ class TestMoney:
         # Arrange
         money0 = Money(0, USD)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert isinstance(hash(money0), int)
         assert hash(money0) == hash(money0)
 
@@ -838,8 +799,7 @@ class TestMoney:
         money1 = Money(1, USD)
         money2 = Money(1_000_000, USD)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert "0.00" == str(money0)
         assert "1.00" == str(money1)
         assert "1000000.00" == str(money2)

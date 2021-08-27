@@ -13,23 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
-
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.core.uuid cimport uuid4
 
 
 cdef class UUIDFactory:
     """
-    Provides a factory which generates version 4 UUID's.
+    Provides a factory which generates version 4 UUID4's.
     """
 
-    cpdef UUID generate(self):
+    cpdef UUID4 generate(self):
         """
-        Return a generated UUID version 4.
+        Return a generated UUID4.
 
         Returns
         -------
-        UUID
+        UUID4
 
         """
-        return UUID(value=os.urandom(16))
+        return uuid4()

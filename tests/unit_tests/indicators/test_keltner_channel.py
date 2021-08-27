@@ -28,34 +28,24 @@ class TestKeltnerChannel:
         self.kc = KeltnerChannel(10, 2.5, MovingAverageType.EXPONENTIAL, MovingAverageType.SIMPLE)
 
     def test_name_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.kc.name == "KeltnerChannel"
 
     def test_str_repr_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.kc) == "KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)"
         assert repr(self.kc) == "KeltnerChannel(10, 2.5, EXPONENTIAL, SIMPLE, True, 0.0)"
 
     def test_period_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.kc.period == 10
 
     def test_k_multiple_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.kc.k_multiplier == 2.5
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.kc.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
@@ -71,8 +61,7 @@ class TestKeltnerChannel:
         self.kc.update_raw(1.00020, 1.00000, 1.00010)
         self.kc.update_raw(1.00020, 1.00000, 1.00010)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.kc.initialized is True
 
     def test_handle_bar_updates_indicator(self):
@@ -92,8 +81,7 @@ class TestKeltnerChannel:
         # Arrange
         self.kc.update_raw(1.00020, 1.00000, 1.00010)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.kc.upper == 1.0006
         assert self.kc.middle == 1.0001
         assert self.kc.lower == 0.9996
@@ -104,8 +92,7 @@ class TestKeltnerChannel:
         self.kc.update_raw(1.00030, 1.00010, 1.00020)
         self.kc.update_raw(1.00040, 1.00020, 1.00030)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.kc.upper == 1.0006512396694212
         assert self.kc.middle == 1.0001512396694212
         assert self.kc.lower == 0.9996512396694213

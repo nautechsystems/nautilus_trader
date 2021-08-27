@@ -134,8 +134,7 @@ class TestBinanceExecutionClient:
 
     @pytest.mark.asyncio
     async def test_connect(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.exec_engine.start()  # Also connects clients
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 

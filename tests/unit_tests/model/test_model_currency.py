@@ -55,8 +55,7 @@ class TestCurrency:
             currency_type=CurrencyType.FIAT,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert currency1 == currency1
         assert currency1 == currency2
         assert currency1 != currency3
@@ -71,8 +70,7 @@ class TestCurrency:
             currency_type=CurrencyType.FIAT,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert isinstance(hash(currency), int)
         assert hash(currency) == hash(currency)
 
@@ -86,8 +84,7 @@ class TestCurrency:
             currency_type=CurrencyType.FIAT,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert str(currency) == "AUD"
         assert (
             repr(currency)
@@ -125,8 +122,7 @@ class TestCurrency:
         assert result != another_aud
 
     def test_from_str_given_unknown_code_returns_none(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = Currency.from_str("SOME_CURRENCY")
 
         # Assert
@@ -148,8 +144,7 @@ class TestCurrency:
         [["AUD", True], ["ZZZ", False]],
     )
     def test_is_fiat(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = Currency.is_fiat(string)
 
         # Assert
@@ -160,8 +155,7 @@ class TestCurrency:
         [["BTC", True], ["ZZZ", False]],
     )
     def test_is_crypto(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = Currency.is_crypto(string)
 
         # Assert

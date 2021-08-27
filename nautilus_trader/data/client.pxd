@@ -17,20 +17,17 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class DataClient(Component):
-    cdef MessageBus _msgbus
     cdef Cache _cache
-    cdef dict _config
 
     cdef dict _feeds_generic_data
 
@@ -46,17 +43,18 @@ cdef class DataClient(Component):
 
 # -- REQUEST HANDLERS ------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID correlation_id) except *
+    cpdef void request(self, DataType data_type, UUID4 correlation_id) except *
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
     cdef void _handle_data(self, Data data) except *
-    cdef void _handle_data_response(self, DataType data_type, Data data, UUID correlation_id) except *
+    cdef void _handle_data_response(self, DataType data_type, Data data, UUID4 correlation_id) except *
 
 
 cdef class MarketDataClient(DataClient):
     cdef dict _feeds_order_book_delta
     cdef dict _feeds_order_book_snapshot
+    cdef dict _feeds_ticker
     cdef dict _feeds_quote_tick
     cdef dict _feeds_trade_tick
     cdef dict _feeds_bar
@@ -73,6 +71,7 @@ cdef class MarketDataClient(DataClient):
     cpdef list subscribed_instruments(self)
     cpdef list subscribed_order_book_deltas(self)
     cpdef list subscribed_order_book_snapshots(self)
+    cpdef list subscribed_tickers(self)
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
@@ -83,6 +82,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=*) except *
     cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookLevel level, int depth=*, dict kwargs=*) except *
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
@@ -93,6 +93,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
@@ -108,7 +109,7 @@ cdef class MarketDataClient(DataClient):
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *
     cpdef void request_trade_ticks(
         self,
@@ -116,7 +117,7 @@ cdef class MarketDataClient(DataClient):
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *
     cpdef void request_bars(
         self,
@@ -124,11 +125,11 @@ cdef class MarketDataClient(DataClient):
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *
-    cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *
-    cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *
+    cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
+    cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *
+    cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id) except *

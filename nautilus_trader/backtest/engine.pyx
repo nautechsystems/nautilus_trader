@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import socket
+
 import pandas as pd
 import pytz
 
@@ -44,9 +46,11 @@ from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.functions cimport pad_string
+from nautilus_trader.data.wrangling cimport BarDataWrangler
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
 from nautilus_trader.model.c_enums.account_type cimport AccountType
+from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
@@ -54,6 +58,8 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -73,6 +79,14 @@ from nautilus_trader.serialization.msgpack.serializer cimport MsgPackCommandSeri
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackEventSerializer
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
+
+
+cdef tuple TIME_AGGREGATIONS = (
+    BarAggregation.SECOND,
+    BarAggregation.MINUTE,
+    BarAggregation.HOUR,
+    BarAggregation.DAY,
+)
 
 
 cdef class BacktestEngine:
@@ -148,12 +162,16 @@ cdef class BacktestEngine:
 
         self._test_clock = TestClock()
         self._uuid_factory = UUIDFactory()
-        self.system_id = self._uuid_factory.generate()
+
+        # Identifiers
+        self.host_id = socket.gethostname()
+        self.instance_id = self._uuid_factory.generate()
 
         self._logger = Logger(
             clock=LiveClock(),
             trader_id=trader_id,
-            system_id=self.system_id,
+            host_id=self.host_id,
+            instance_id=self.instance_id,
         )
 
         self._log = LoggerAdapter(
@@ -164,7 +182,8 @@ cdef class BacktestEngine:
         self._test_logger = Logger(
             clock=self._clock,
             trader_id=trader_id,
-            system_id=self.system_id,
+            host_id=self.host_id,
+            instance_id=self.instance_id,
             level_stdout=level_stdout,
             bypass=bypass_logging,
         )
@@ -270,7 +289,18 @@ cdef class BacktestEngine:
         self.iteration = 0
 
         self.time_to_initialize = self._clock.delta(self.created_time)
-        self._log.info(f"Initialized in {self.time_to_initialize.total_seconds():.3f}s.")
+        self._log.info(f"Initialized in {int(self.time_to_initialize.total_seconds() * 1000)}ms.")
+
+    def list_venues(self):
+        """
+        Return the venues contained within the engine.
+
+        Returns
+        -------
+        List[Venue]
+
+        """
+        return list(self._exchanges)
 
     def get_exec_engine(self) -> ExecutionEngine:
         """
@@ -282,9 +312,6 @@ cdef class BacktestEngine:
 
         """
         return self._exec_engine
-
-    cpdef list_venues(self):
-        return list(self._exchanges)
 
     def add_generic_data(self, ClientId client_id, list data) -> None:
         """
@@ -412,7 +439,8 @@ cdef class BacktestEngine:
 
     def add_quote_ticks(self, InstrumentId instrument_id, data: pd.DataFrame) -> None:
         """
-        Add the quote tick data to the backtest engine.
+        Add the quote tick data to the backtest engine to be converted to
+        `QuoteTick` objects.
 
         The format of the dataframe is expected to be a DateTimeIndex (times are
         assumed to be UTC, and are converted to tz-aware in pre-processing).
@@ -486,7 +514,8 @@ cdef class BacktestEngine:
 
     def add_trade_ticks(self, InstrumentId instrument_id, data: pd.DataFrame) -> None:
         """
-        Add the trade tick data to the backtest engine.
+        Add the trade tick data to the backtest engine to be converted to
+        `TradeTick` objects.
 
         The format of the dataframe is expected to be a DateTimeIndex (times are
         assumed to be UTC, and are converted to tz-aware in pre-processing).
@@ -561,41 +590,178 @@ cdef class BacktestEngine:
 
     def add_bars(
         self,
-        InstrumentId instrument_id,
-        BarAggregation aggregation,
-        PriceType price_type,
+        Instrument instrument,
+        BarType bar_type,
         data: pd.DataFrame
     ) -> None:
         """
-        Add the bar data to the backtest engine.
+        Add the bar data to the backtest engine to be converted to `Bar` objects.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument ID for the bar data.
-        aggregation : BarAggregation
-            The bar aggregation of the data.
-        price_type : PriceType
-            The price type of the data.
+        instrument : Instrument
+            The instrument for the data.
+        bar_type : BarType
+            The bar type of the data.
         data : pd.DataFrame
             The bar data to add.
 
         Raises
         ------
         ValueError
-            If price_type is LAST.
+            If bar_type.aggregation_source is not equal to ``EXTERNAL``.
+        ValueError
+            If bar_type.instrument_id is not equal to instrument.id.
         ValueError
             If data is empty.
 
         """
+        Condition.not_none(instrument, "instrument")
+        Condition.not_none(bar_type, "bar_type")
+        Condition.equal(bar_type.aggregation_source, AggregationSource.EXTERNAL, "bar_type.aggregation_source", "required source")
+        Condition.equal(bar_type.instrument_id, instrument.id, "bar_type.instrument_id", "instrument.id")
+        Condition.false(data.empty, "data was empty")
+
+        # Check client has been registered
+        self._add_market_data_client_if_not_exists(bar_type.instrument_id.venue)
+
+        # Add instrument
+        self._data_engine.process(instrument)
+
+        # Add quote ticks from data if time aggregated
+        if bar_type.spec.aggregation in TIME_AGGREGATIONS:
+            self.add_bars_as_ticks(
+                instrument_id=instrument.id,
+                aggregation=bar_type.spec.aggregation,
+                price_type=bar_type.spec.price_type,
+                data=data,
+                check_integrity=False,  # Only adding one side of book
+            )
+
+        # Build bars
+        cdef list bars = BarDataWrangler(
+            bar_type=bar_type,
+            price_precision=instrument.price_precision,
+            size_precision=instrument.size_precision,
+            data=data,
+        ).build_bars_all()
+
+        # Add data
+        self._data = sorted(
+            self._data + bars,
+            key=lambda x: x.ts_init,
+        )
+
+        self._log.info(f"Added {len(bars)} {bar_type} bar elements.")
+
+    def add_bar_objects(
+        self,
+        BarType bar_type,
+        list bars,
+    ) -> None:
+        """
+        Add the built bar data objects to the backtest engines. Suitable for
+        running externally aggregated bar subscriptions (bar type aggregation
+        source must be ``EXTERNAL``).
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type of the data.
+        bars : list[Bar]
+            The bars to add.
+
+        Raises
+        ------
+        ValueError
+            If bar_type.aggregation_source is not equal to ``EXTERNAL``.
+        ValueError
+            If bars is empty.
+        ValueError
+            If instrument_id is not found in the cache.
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+        Condition.equal(bar_type.aggregation_source, AggregationSource.EXTERNAL, "bar_type.aggregation_source", "required source")
+        Condition.not_none(bars, "bars")
+        Condition.not_empty(bars, "bars")
+        Condition.list_type(bars, Bar, "bars")
+        Condition.true(
+            bar_type.instrument_id in self._cache.instrument_ids(),
+            "Instrument for given data not found in the cache. "
+            "Please call `add_instrument()` before adding related data.",
+        )
+
+        # Check client has been registered
+        self._add_market_data_client_if_not_exists(bar_type.instrument_id.venue)
+
+        # Add data
+        self._data = sorted(
+            self._data + bars,
+            key=lambda x: x.ts_init,
+        )
+
+        self._log.info(f"Added {len(bars)} {bar_type} bar elements.")
+
+    def add_bars_as_ticks(
+        self,
+        InstrumentId instrument_id,
+        BarAggregation aggregation,
+        PriceType price_type,
+        data: pd.DataFrame,
+        check_integrity=True,
+    ) -> None:
+        """
+        Add the bar data to the backtest engine to be converted to quote or trade
+        ticks as per the price type. Suitable for running internally aggregated
+        bar subscriptions.
+
+        The time period between rows should be a round second, minute, hour or
+        day for correctness.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the bar data.
+        aggregation : BarAggregation {``SECOND``, ``MINUTE``, ``HOUR``, ``DAY``}
+            The bar aggregation of the data.
+        price_type : PriceType
+            The price type of the data.
+        data : pd.DataFrame
+            The bar data to add.
+        check_integrity : bool
+            If data shape integrity should be checked.
+
+        Raises
+        ------
+        ValueError
+            If aggregation is not one of ``SECOND``, ``MINUTE``, ``HOUR``, ``DAY``.
+        ValueError
+            If price_type is ``LAST``.
+        ValueError
+            If data is empty.
+        ValueError
+            If instrument_id is not found in the cache.
+
+        """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(data, "data")
+        Condition.is_in(aggregation, TIME_AGGREGATIONS, "aggregation", "time aggregations")
         Condition.true(price_type != PriceType.LAST, "price_type was PriceType.LAST")
         Condition.false(data.empty, "data was empty")
         Condition.true(
             instrument_id in self._cache.instrument_ids(),
             "Instrument for given data not found in the cache. "
             "Please call `add_instrument()` before adding related data.",
+        )
+
+        assert len(data) >= 2
+        period: timedelta = data.index[-1] - data.index[-2]
+        assert period in (
+            timedelta(seconds=1),
+            timedelta(minutes=1),
+            timedelta(hours=1),
+            timedelta(days=1),
         )
 
         # Check client has been registered
@@ -617,28 +783,37 @@ cdef class BacktestEngine:
 
         cdef dict shapes = {}  # type: dict[BarAggregation, tuple]
         cdef dict indices = {}  # type: dict[BarAggregation, DatetimeIndex]
-        for instrument_id, data in self._bars_bid.items():
-            for aggregation, dataframe in data.items():
-                if aggregation not in shapes:
-                    shapes[aggregation] = dataframe.shape
-                if aggregation not in indices:
-                    indices[aggregation] = dataframe.index
-                if dataframe.shape != shapes[aggregation]:
-                    raise RuntimeError(f"{dataframe} bid ask shape is not equal")
-                if not all(dataframe.index == indices[aggregation]):
-                    raise RuntimeError(f"{dataframe} bid ask index is not equal")
-        for instrument_id, data in self._bars_ask.items():
-            for aggregation, dataframe in data.items():
-                if dataframe.shape != shapes[aggregation]:
-                    raise RuntimeError(f"{dataframe} bid ask shape is not equal")
-                if not all(dataframe.index == indices[aggregation]):
-                    raise RuntimeError(f"{dataframe} bid ask index is not equal")
 
-        self._log.info(
-            f"Added {len(data)} {instrument_id} "
-            f"{BarAggregationParser.to_str(aggregation)}-{PriceTypeParser.to_str(price_type)} "
-            f"Bar data elements."
-        )
+        if check_integrity:
+            for instrument_id, data in self._bars_bid.items():
+                for aggregation, dataframe in data.items():
+                    if aggregation not in shapes:
+                        shapes[aggregation] = dataframe.shape
+                    if aggregation not in indices:
+                        indices[aggregation] = dataframe.index
+                    if dataframe.shape != shapes[aggregation]:
+                        raise RuntimeError(f"{dataframe} bid ask shape is not equal")
+                    if not all(dataframe.index == indices[aggregation]):
+                        raise RuntimeError(f"{dataframe} bid ask index is not equal")
+            for instrument_id, data in self._bars_ask.items():
+                for aggregation, dataframe in data.items():
+                    if dataframe.shape != shapes[aggregation]:
+                        raise RuntimeError(f"{dataframe} bid ask shape is not equal")
+                    if not all(dataframe.index == indices[aggregation]):
+                        raise RuntimeError(f"{dataframe} bid ask index is not equal")
+
+        if price_type == PriceType.BID:
+            self._log.info(
+                f"Added {len(self._bars_bid[instrument_id][aggregation])} {instrument_id} "
+                f"{BarAggregationParser.to_str(aggregation)}-{PriceTypeParser.to_str(price_type)} "
+                f"tick rows.",
+            )
+        else:  # price_type == PriceType.ASK:
+            self._log.info(
+                f"Added {len(self._bars_ask[instrument_id][aggregation])} {instrument_id} "
+                f"{BarAggregationParser.to_str(aggregation)}-{PriceTypeParser.to_str(price_type)} "
+                f"tick rows.",
+            )
 
     def add_venue(
         self,
@@ -662,8 +837,8 @@ cdef class BacktestEngine:
             The exchange venue ID.
         venue_type : VenueType
             The type of venue (will determine venue -> client_id mapping).
-        oms_type : OMSType
-            The order management system type for the exchange. If HEDGING and
+        oms_type : OMSType {``HEDGING``, ``NETTING``}
+            The order management system type for the exchange. If ``HEDGING`` and
             no position_id for an order then will generate a new position_id.
         account_type : AccountType
             The account type for the client.

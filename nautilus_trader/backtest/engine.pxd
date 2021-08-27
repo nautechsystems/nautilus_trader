@@ -18,14 +18,14 @@ from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.backtest.data_producer cimport DataProducerFacade
+from nautilus_trader.backtest.data_producer cimport DataProducer
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -45,7 +45,7 @@ cdef class BacktestEngine:
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
     cdef RiskEngine _risk_engine
-    cdef DataProducerFacade _data_producer
+    cdef DataProducer _data_producer
     cdef LoggerAdapter _log
     cdef Logger _logger
     cdef Logger _test_logger
@@ -65,8 +65,10 @@ cdef class BacktestEngine:
 
     cdef readonly Trader trader
     """The trader for the backtest.\n\n:returns: `Trader`"""
-    cdef readonly UUID system_id
-    """The backtest engine system ID.\n\n:returns: `UUID`"""
+    cdef readonly str host_id
+    """The backtest engine host ID.\n\n:returns: `str`"""
+    cdef readonly UUID4 instance_id
+    """The backtest engine instance ID.\n\n:returns: `UUID4`"""
     cdef readonly datetime created_time
     """The backtest engine created time.\n\n:returns: `datetime`"""
     cdef readonly timedelta time_to_initialize
@@ -95,4 +97,3 @@ cdef class BacktestEngine:
         datetime start,
         datetime stop,
     ) except *
-    cpdef list_venues(self)

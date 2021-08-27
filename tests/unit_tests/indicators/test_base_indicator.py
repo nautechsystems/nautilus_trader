@@ -30,8 +30,7 @@ class TestIndicator:
 
         tick = TestStubs.quote_tick_5decimal(AUDUSD_SIM.id)
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             indicator.handle_quote_tick(tick)
 
@@ -41,8 +40,7 @@ class TestIndicator:
 
         tick = TestStubs.trade_tick_5decimal(AUDUSD_SIM.id)
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             indicator.handle_trade_tick(tick)
 
@@ -52,8 +50,7 @@ class TestIndicator:
 
         bar = TestStubs.bar_5decimal()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             indicator.handle_bar(bar)
 
@@ -61,7 +58,6 @@ class TestIndicator:
         # Arrange
         indicator = Indicator([])
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             indicator.reset()

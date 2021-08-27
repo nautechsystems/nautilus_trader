@@ -27,29 +27,24 @@ class TestEfficiencyRatio:
         self.er = EfficiencyRatio(10)
 
     def test_name_returns_expected_string(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert self.er.name == "EfficiencyRatio"
 
     def test_str_repr_returns_expected_string(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert str(self.er) == "EfficiencyRatio(10)"
         assert repr(self.er) == "EfficiencyRatio(10)"
 
     def test_period(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert self.er.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert self.er.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         for _i in range(10):
             self.er.update_raw(1.00000)
 
@@ -73,8 +68,7 @@ class TestEfficiencyRatio:
         # Arrange
         self.er.update_raw(1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.er.value == 0.0
 
     def test_value_with_efficient_higher_inputs(self):
@@ -109,8 +103,7 @@ class TestEfficiencyRatio:
         self.er.update_raw(0.99990)
         self.er.update_raw(1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.er.value == 0.0
 
     def test_value_with_half_oscillating_inputs_returns_zero(self):
@@ -121,8 +114,7 @@ class TestEfficiencyRatio:
         self.er.update_raw(1.00030)
         self.er.update_raw(1.00020)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.er.value == 0.3333333333333333
 
     def test_value_with_noisy_inputs(self):
@@ -135,8 +127,7 @@ class TestEfficiencyRatio:
         self.er.update_raw(1.00005)
         self.er.update_raw(1.00015)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.er.value == 0.42857142857215363
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):

@@ -16,7 +16,6 @@
 
 import os
 import sys
-from datetime import timedelta
 from decimal import Decimal
 
 
@@ -25,20 +24,15 @@ sys.path.insert(
 )  # Allows relative imports from examples
 
 from examples.strategies.volatility_market_maker import VolatilityMarketMaker
+from examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import Venue
 
 
 # The configuration dictionary can come from anywhere such as a JSON or YAML
 # file. Here it is hardcoded into the example for clarity.
-config = {
+node_config = {
     "trader": {
         "name": "TESTER",  # Not sent beyond system boundary
         "id_tag": "001",  # Used to ensure orders are unique for this trader
@@ -61,7 +55,7 @@ config = {
     },
     "data_engine": {},
     "risk_engine": {
-        "max_order_rate": (5, timedelta(seconds=1)),
+        "max_order_rate": "5/00:00:01",
         "max_notional_per_order": {"BTC/USD.BITMEX": 10000},
     },
     "exec_engine": {},
@@ -87,27 +81,20 @@ config = {
     },
 }
 
-
-# Instantiate your strategies to pass into the trading node. You could add
-# custom options into the configuration file or even use another configuration
-# file.
-
-instrument_id = InstrumentId(
-    symbol=Symbol("BTC/USD"),
-    venue=Venue("BITMEX"),
-)
-
-strategy = VolatilityMarketMaker(
-    instrument_id=instrument_id,
-    bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
-    trade_size=Decimal("100"),
+# Configure your strategy
+config = VolatilityMarketMakerConfig(
+    instrument_id="BTC/USD.BITMEX",
+    bar_type="BTC/USD.BITMEX-1-MINUTE-LAST-INTERNAL",
     atr_period=20,
     atr_multiple=1.0,
+    trade_size=Decimal("100"),
     order_id_tag="001",
 )
+# Instantiate your strategy
+strategy = VolatilityMarketMaker(config=config)
 
 # Instantiate the node with a configuration
-node = TradingNode(config=config)  # type: ignore
+node = TradingNode(config=node_config)  # type: ignore
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

@@ -104,9 +104,9 @@ class TestTradingNodeConfiguration:
 class TestTradingNodeOperation:
     def setup(self):
         # Fixture Setup
-        config = {
+        self.config = {
             "trader": {
-                "name": "tester",
+                "name": "TESTER",
                 "id_tag": "000",
             },
             "logging": {
@@ -123,11 +123,14 @@ class TestTradingNodeOperation:
             "exec_clients": {},
         }
 
-        self.node = TradingNode(config=config)
+        self.node = TradingNode(config=self.config)
 
     def test_get_event_loop_returns_a_loop(self):
-        # Arrange, Act
-        loop = self.node.get_event_loop()
+        # Arrange
+        node = TradingNode(config=self.config)
+
+        # Act
+        loop = node.get_event_loop()
 
         # Assert
         assert isinstance(loop, asyncio.AbstractEventLoop)
@@ -159,7 +162,9 @@ class TestTradingNodeOperation:
         await asyncio.sleep(1)
 
         # Assert: Log record received
-        assert sink[-1]["system_id"] == self.node.system_id.value
+        assert sink[-1]["trader_id"] == self.node.trader_id.value
+        assert sink[-1]["host_id"] == self.node.host_id
+        assert sink[-1]["instance_id"] == self.node.instance_id.value
 
     @pytest.mark.asyncio
     async def test_start(self):
@@ -202,6 +207,5 @@ class TestTradingNodeOperation:
         self.node.dispose()
         await asyncio.sleep(1)  # Allow node to dispose
 
-        # Act
         # Assert
         assert self.node.trader.state == ComponentState.DISPOSED

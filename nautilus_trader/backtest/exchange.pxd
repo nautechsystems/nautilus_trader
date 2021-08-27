@@ -95,7 +95,6 @@ cdef class SimulatedExchange:
     cdef dict _child_orders
     cdef dict _oco_orders
     cdef dict _position_oco_orders
-    cdef dict _oco_position_ids
     cdef dict _instrument_indexer
     cdef dict _symbol_pos_count
     cdef dict _symbol_ord_count
@@ -151,7 +150,6 @@ cdef class SimulatedExchange:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        str response,
         str reason,
     ) except *
     cdef void _generate_order_cancel_rejected(
@@ -160,7 +158,6 @@ cdef class SimulatedExchange:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        str response,
         str reason,
     ) except *
     cdef void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *

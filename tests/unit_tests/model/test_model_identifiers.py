@@ -38,9 +38,7 @@ class TestIdentifiers:
         ],
     )
     def test_instantiate_given_various_invalid_values_raises_exception(self, value, ex):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ex):
             Identifier(value)
 
@@ -50,8 +48,7 @@ class TestIdentifiers:
         id2 = Identifier("abc123")
         id3 = Identifier("def456")
 
-        # Act
-        # Assert
+        # Act, Assert
         assert "abc123" == id1.value
         assert id1 == id1
         assert id1 == id2
@@ -64,8 +61,7 @@ class TestIdentifiers:
         id3 = InstrumentId(Symbol("BINANCE"), Venue("BINANCE"))  # Invalid
         id4 = Identifier("BINANCE")
 
-        # Act
-        # Assert
+        # Act, Assert
         assert id1 == id1
         assert id2 == id2
         assert id1 == id2
@@ -82,8 +78,7 @@ class TestIdentifiers:
         string3 = Identifier("abc")
         string4 = Identifier("def")
 
-        # Act
-        # Assert
+        # Act, Assert
         assert string1 <= string1
         assert string1 <= string2
         assert string1 < string2
@@ -97,8 +92,7 @@ class TestIdentifiers:
         identifier1 = Identifier("abc")
         identifier2 = Identifier("abc")
 
-        # Act
-        # Assert
+        # Act, Assert
         assert isinstance(hash(identifier1), int)
         assert hash(identifier1) == hash(identifier2)
 
@@ -107,8 +101,7 @@ class TestIdentifiers:
         id1 = Identifier("some-id-1")
         id2 = Identifier("some-id-2")
 
-        # Act
-        # Assert
+        # Act, Assert
         assert id1 == id1
         assert id1 != id2
 
@@ -137,35 +130,27 @@ class TestIdentifiers:
         id1 = ClientOrderId("O-123456")
         id2 = PositionId("P-123456")
 
-        # Act
-        # Assert
+        # Act, Assert
         assert id1 == id1
         assert id1 != id2
 
     def test_account_id_given_malformed_string_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             AccountId.from_str("BAD_STRING")
 
     def test_strategy_id_given_malformed_string_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             StrategyId("BAD_STRING")
 
     def test_trader_id_given_malformed_string_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             TraderId("BAD_STRING")
 
     def test_trader_identifier(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         trader_id1 = TraderId("TESTER-000")
         trader_id2 = TraderId("TESTER-001")
 
@@ -176,8 +161,7 @@ class TestIdentifiers:
         assert trader_id1.get_tag() == "000"
 
     def test_account_identifier(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         account_id1 = AccountId("SIM", "02851908")
         account_id2 = AccountId("SIM", "09999999")
 
@@ -195,8 +179,7 @@ class TestVenue:
         venue2 = InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
         venue3 = InstrumentId(Symbol("GBP/USD"), Venue("SIM"))
 
-        # Act
-        # Assert
+        # Act, Assert
         assert venue1 == venue1
         assert venue1 != venue2
         assert venue1 != venue3
@@ -205,16 +188,14 @@ class TestVenue:
         # Arrange
         venue = Venue("NYMEX")
 
-        # Act
-        # Assert
+        # Act, Assert
         assert str(venue) == "NYMEX"
 
     def test_venue_repr(self):
         # Arrange
         venue = Venue("NYMEX")
 
-        # Act
-        # Assert
+        # Act, Assert
         assert repr(venue) == "Venue('NYMEX')"
 
 
@@ -225,8 +206,7 @@ class TestInstrumentId:
         instrument_id2 = InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
         instrument_id3 = InstrumentId(Symbol("GBP/USD"), Venue("SIM"))
 
-        # Act
-        # Assert
+        # Act, Assert
         assert instrument_id1 == instrument_id1
         assert instrument_id1 != instrument_id2
         assert instrument_id1 != instrument_id3
@@ -235,16 +215,14 @@ class TestInstrumentId:
         # Arrange
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
-        # Act
-        # Assert
+        # Act, Assert
         assert "AUD/USD.SIM" == str(instrument_id)
 
     def test_instrument_id_repr(self):
         # Arrange
         instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
-        # Act
-        # Assert
+        # Act, Assert
         assert "InstrumentId('AUD/USD.SIM')" == repr(instrument_id)
 
     def test_parse_instrument_id_from_str(self):

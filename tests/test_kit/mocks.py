@@ -22,6 +22,7 @@ from fsspec.implementations.memory import MemoryFileSystem
 
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.database import CacheDatabase
+from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.messages import ExecutionReport
@@ -36,6 +37,7 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -99,6 +101,77 @@ class ObjectStorer:
         self.store((obj1, obj2))
 
 
+class MockActor(Actor):
+    """
+    Provides a mock actor for testing.
+    """
+
+    def __init__(self):
+        """
+        Initialize a new instance of the ``MockActor`` class.
+
+
+        """
+        super().__init__(component_id=ComponentId("Actor-000"))
+
+        self.object_storer = ObjectStorer()
+
+        self.calls: List[str] = []
+
+    def on_start(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_stop(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_resume(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_reset(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_dispose(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_degrade(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_fault(self) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+
+    def on_instrument(self, instrument) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(instrument)
+
+    def on_ticker(self, ticker):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(ticker)
+
+    def on_quote_tick(self, tick):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(tick)
+
+    def on_trade_tick(self, tick) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(tick)
+
+    def on_bar(self, bar) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(bar)
+
+    def on_data(self, data) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(data)
+
+    def on_strategy_data(self, data) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(data)
+
+    def on_event(self, event) -> None:
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(event)
+
+
 class MockStrategy(TradingStrategy):
     """
     Provides a mock trading strategy for testing.
@@ -114,7 +187,7 @@ class MockStrategy(TradingStrategy):
             The bar type for the strategy.
 
         """
-        super().__init__(order_id_tag="001")
+        super().__init__()
 
         self.object_storer = ObjectStorer()
         self.bar_type = bar_type
@@ -134,6 +207,10 @@ class MockStrategy(TradingStrategy):
     def on_instrument(self, instrument) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.object_storer.store(instrument)
+
+    def on_ticker(self, ticker):
+        self.calls.append(inspect.currentframe().f_code.co_name)
+        self.object_storer.store(ticker)
 
     def on_quote_tick(self, tick):
         self.calls.append(inspect.currentframe().f_code.co_name)
@@ -202,6 +279,68 @@ class MockStrategy(TradingStrategy):
         self.calls.append(inspect.currentframe().f_code.co_name)
 
 
+class KaboomActor(Actor):
+    """
+    Provides a mock actor where every called method blows up.
+    """
+
+    def __init__(self):
+        """
+        Initialize a new instance of the ``KaboomActor`` class.
+        """
+        super().__init__(component_id=ComponentId("Actor-000"))
+
+        self._explode_on_start = True
+        self._explode_on_stop = True
+
+    def set_explode_on_start(self, setting) -> None:
+        self._explode_on_start = setting
+
+    def set_explode_on_stop(self, setting) -> None:
+        self._explode_on_stop = setting
+
+    def on_start(self) -> None:
+        if self._explode_on_start:
+            raise RuntimeError(f"{self} BOOM!")
+
+    def on_stop(self) -> None:
+        if self._explode_on_stop:
+            raise RuntimeError(f"{self} BOOM!")
+
+    def on_resume(self) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_reset(self) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_dispose(self) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_degrade(self) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_fault(self) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_instrument(self, instrument) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_quote_tick(self, tick) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_trade_tick(self, tick) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_bar(self, bar) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_data(self, data) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_event(self, event) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+
 class KaboomStrategy(TradingStrategy):
     """
     Provides a mock trading strategy where every called method blows up.
@@ -211,7 +350,7 @@ class KaboomStrategy(TradingStrategy):
         """
         Initialize a new instance of the ``KaboomStrategy`` class.
         """
-        super().__init__(order_id_tag="000")
+        super().__init__()
 
         self._explode_on_start = True
         self._explode_on_stop = True

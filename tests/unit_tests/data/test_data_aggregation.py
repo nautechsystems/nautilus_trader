@@ -57,8 +57,7 @@ class TestBarBuilder:
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type, use_previous_close=False)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert not builder.use_previous_close
         assert not builder.initialized
         assert builder.ts_last == 0
@@ -69,10 +68,15 @@ class TestBarBuilder:
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
         builder = BarBuilder(BTCUSDT_BINANCE, bar_type, use_previous_close=False)
 
-        # Act
-        # Assert
-        assert str(builder) == "BarBuilder(BTC/USDT.BINANCE-100-TICK-LAST,None,None,None,None,0)"
-        assert repr(builder) == "BarBuilder(BTC/USDT.BINANCE-100-TICK-LAST,None,None,None,None,0)"
+        # Act, Assert
+        assert (
+            str(builder)
+            == "BarBuilder(BTC/USDT.BINANCE-100-TICK-LAST-EXTERNAL,None,None,None,None,0)"
+        )
+        assert (
+            repr(builder)
+            == "BarBuilder(BTC/USDT.BINANCE-100-TICK-LAST-EXTERNAL,None,None,None,None,0)"
+        )
 
     def test_set_partial_updates_bar_to_expected_properties(self):
         # Arrange
@@ -193,8 +197,7 @@ class TestBarBuilder:
         bar_type = TestStubs.bartype_audusd_1min_bid()
         builder = BarBuilder(AUDUSD_SIM, bar_type, use_previous_close=False)
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(TypeError):
             builder.build()
 
@@ -437,7 +440,7 @@ class TestTickBarAggregator:
 
         wrangler = QuoteTickDataWrangler(
             instrument=instrument,
-            data_quotes=TestDataProvider.audusd_ticks(),
+            data_quotes=TestDataProvider.audusd_ticks()[:1000],
         )
 
         wrangler.pre_process(instrument_indexer=0)
@@ -449,11 +452,11 @@ class TestTickBarAggregator:
 
         # Assert
         last_bar = bar_store.get_store()[-1]
-        assert len(bar_store.get_store()) == 999
-        assert last_bar.open == Price.from_str("0.66939")
-        assert last_bar.high == Price.from_str("0.66947")
-        assert last_bar.low == Price.from_str("0.669355")
-        assert last_bar.close == Price.from_str("0.66945")
+        assert len(bar_store.get_store()) == 10
+        assert last_bar.open == Price.from_str("0.670340")
+        assert last_bar.high == Price.from_str("0.670345")
+        assert last_bar.low == Price.from_str("0.670225")
+        assert last_bar.close == Price.from_str("0.670230")
         assert last_bar.volume == Quantity.from_int(100000000)
 
     def test_run_trade_ticks_through_aggregator_results_in_expected_bars(self):
@@ -472,7 +475,7 @@ class TestTickBarAggregator:
 
         wrangler = TradeTickDataWrangler(
             instrument=instrument,
-            data=TestDataProvider.ethusdt_trades(),
+            data=TestDataProvider.ethusdt_trades()[:10000],
         )
 
         wrangler.pre_process(0)
@@ -484,12 +487,12 @@ class TestTickBarAggregator:
 
         # Assert
         last_bar = bar_store.get_store()[-1]
-        assert len(bar_store.get_store()) == 69
-        assert last_bar.open == Price.from_str("426.72")
-        assert last_bar.high == Price.from_str("427.01")
-        assert last_bar.low == Price.from_str("426.46")
-        assert last_bar.close == Price.from_str("426.67")
-        assert last_bar.volume == Quantity.from_int(2281)
+        assert len(bar_store.get_store()) == 10
+        assert last_bar.open == Price.from_str("424.69")
+        assert last_bar.high == Price.from_str("425.25")
+        assert last_bar.low == Price.from_str("424.51")
+        assert last_bar.close == Price.from_str("425.15")
+        assert last_bar.volume == Quantity.from_int(3075)
 
 
 class TestVolumeBarAggregator:
@@ -817,7 +820,7 @@ class TestVolumeBarAggregator:
 
         wrangler = QuoteTickDataWrangler(
             instrument=instrument,
-            data_quotes=TestDataProvider.audusd_ticks(),
+            data_quotes=TestDataProvider.audusd_ticks()[:10000],
         )
 
         wrangler.pre_process(instrument_indexer=0, default_volume=1)
@@ -829,11 +832,11 @@ class TestVolumeBarAggregator:
 
         # Assert
         last_bar = bar_store.get_store()[-1]
-        assert len(bar_store.get_store()) == 99
-        assert last_bar.open == Price.from_str("0.669325")
-        assert last_bar.high == Price.from_str("0.669485")
-        assert last_bar.low == Price.from_str("0.66917")
-        assert last_bar.close == Price.from_str("0.66935")
+        assert len(bar_store.get_store()) == 10
+        assert last_bar.open == Price.from_str("0.670650")
+        assert last_bar.high == Price.from_str("0.670705")
+        assert last_bar.low == Price.from_str("0.670370")
+        assert last_bar.close == Price.from_str("0.670655")
         assert last_bar.volume == Quantity.from_int(1000)
 
     def test_run_trade_ticks_through_aggregator_results_in_expected_bars(self):
@@ -852,7 +855,7 @@ class TestVolumeBarAggregator:
 
         wrangler = TradeTickDataWrangler(
             instrument=instrument,
-            data=TestDataProvider.ethusdt_trades(),
+            data=TestDataProvider.ethusdt_trades()[:10000],
         )
 
         wrangler.pre_process(instrument_indexer=0)
@@ -864,15 +867,15 @@ class TestVolumeBarAggregator:
 
         # Assert
         last_bar = bar_store.get_store()[-1]
-        assert len(bar_store.get_store()) == 187
-        assert last_bar.open == Price.from_str("426.44")
-        assert last_bar.high == Price.from_str("426.84")
-        assert last_bar.low == Price.from_str("426.00")
-        assert last_bar.close == Price.from_str("426.82")
+        assert len(bar_store.get_store()) == 26
+        assert last_bar.open == Price.from_str("425.17")
+        assert last_bar.high == Price.from_str("425.24")
+        assert last_bar.low == Price.from_str("424.69")
+        assert last_bar.close == Price.from_str("425.14")
         assert last_bar.volume == Quantity.from_int(1000)
 
 
-class TestTestValueBarAggre:
+class TestTestValueBarAggregator:
     def test_handle_quote_tick_when_value_below_threshold_updates(self):
         # Arrange
         bar_store = ObjectStorer()
@@ -1054,9 +1057,7 @@ class TestTestValueBarAggre:
         assert bar_store.get_store()[1].low == Price.from_str("20.00000")
         assert bar_store.get_store()[1].close == Price.from_str("20.00000")
         assert bar_store.get_store()[1].volume == Quantity.from_str("5000.00")
-        assert aggregator.get_cumulative_value() == Decimal(
-            "40000.11000"
-        )  # TODO: WIP - Should be 40000
+        assert aggregator.get_cumulative_value() == Decimal("40000.11000")
 
     def test_run_quote_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
@@ -1074,7 +1075,7 @@ class TestTestValueBarAggre:
 
         wrangler = QuoteTickDataWrangler(
             instrument=AUDUSD_SIM,
-            data_quotes=TestDataProvider.audusd_ticks(),
+            data_quotes=TestDataProvider.audusd_ticks()[:10000],
         )
 
         wrangler.pre_process(instrument_indexer=0, default_volume=1)
@@ -1086,12 +1087,12 @@ class TestTestValueBarAggre:
 
         # Assert
         last_bar = bar_store.get_store()[-1]
-        assert len(bar_store.get_store()) == 67
-        assert last_bar.open == Price.from_str("0.669205")
-        assert last_bar.high == Price.from_str("0.669485")
-        assert last_bar.low == Price.from_str("0.669205")
-        assert last_bar.close == Price.from_str("0.669475")
-        assert last_bar.volume == Quantity.from_int(1494)
+        assert len(bar_store.get_store()) == 6
+        assert last_bar.open == Price.from_str("0.671230")
+        assert last_bar.high == Price.from_str("0.671330")
+        assert last_bar.low == Price.from_str("0.670370")
+        assert last_bar.close == Price.from_str("0.670630")
+        assert last_bar.volume == Quantity.from_int(1490)
 
     def test_run_trade_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
@@ -1108,7 +1109,7 @@ class TestTestValueBarAggre:
 
         wrangler = TradeTickDataWrangler(
             instrument=ETHUSDT_BINANCE,
-            data=TestDataProvider.ethusdt_trades(),
+            data=TestDataProvider.ethusdt_trades()[:1000],
         )
 
         wrangler.pre_process(0)
@@ -1120,11 +1121,11 @@ class TestTestValueBarAggre:
 
         # Assert
         last_bar = bar_store.get_store()[-1]
-        assert len(bar_store.get_store()) == 7969
-        assert last_bar.open == Price.from_str("426.93")
-        assert last_bar.high == Price.from_str("427.00")
-        assert last_bar.low == Price.from_str("426.83")
-        assert last_bar.close == Price.from_str("426.88")
+        assert len(bar_store.get_store()) == 109
+        assert last_bar.open == Price.from_str("423.19")
+        assert last_bar.high == Price.from_str("423.25")
+        assert last_bar.low == Price.from_str("423.19")
+        assert last_bar.close == Price.from_str("423.25")
         assert last_bar.volume == Quantity.from_int(24)
 
 
@@ -1138,8 +1139,7 @@ class TestTimeBarAggregator:
         bar_spec = BarSpecification(100, BarAggregation.TICK, PriceType.MID)
         bar_type = BarType(instrument.id, bar_spec)
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(ValueError):
             TimeBarAggregator(
                 instrument,

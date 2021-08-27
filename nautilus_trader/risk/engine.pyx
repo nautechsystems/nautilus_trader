@@ -15,11 +15,14 @@
 
 from decimal import Decimal
 
+import pandas as pd
 from cpython.datetime cimport timedelta
+from libc.stdint cimport int64_t
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.common.events.risk cimport TradingStateChanged
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
@@ -65,13 +68,13 @@ cdef class RiskEngine(Component):
 
     Configuration options:
     - bypass: If True then all risk checks are bypassed (will still check for duplicate IDs).
-    - max_order_rate: tuple(int, timedelta). Default=(10, timedelta(seconds=1)).
-    - max_notional_per_order: { str: Decimal }. Default = {}.
+    - max_order_rate: tuple(int, timedelta), default=10/00:00:01.
+    - max_notional_per_order: { str: Decimal }, default = {}.
 
-    Trading states:
-    - ACTIVE (trading is enabled).
-    - REDUCING (only new orders or updates which reduce an open position are allowed).
-    - HALTED (all trading commands except cancels are denied).
+    Possible trading states;
+    - ``ACTIVE`` (trading is enabled).
+    - ``REDUCING`` (only new orders or updates which reduce an open position are allowed).
+    - ``HALTED`` (all trading commands except cancels are denied).
 
     """
 
@@ -109,10 +112,11 @@ cdef class RiskEngine(Component):
             clock=clock,
             logger=logger,
             component_id=ComponentId("RiskEngine"),
+            msgbus=msgbus,
+            config=config,
         )
 
         self._portfolio = portfolio
-        self._msgbus = msgbus
         self._cache = cache
 
         self.trading_state = TradingState.ACTIVE  # Start active by default
@@ -129,8 +133,9 @@ cdef class RiskEngine(Component):
             order_rate_limit = 100
             order_rate_interval = timedelta(seconds=1)
         else:
-            order_rate_limit = config_max_order_rate[0]
-            order_rate_interval = config_max_order_rate[1]
+            pieces = config_max_order_rate.split("/")
+            order_rate_limit = int(pieces[0])
+            order_rate_interval = pd.to_timedelta(pieces[1])
 
         self._order_throttler = Throttler(
             name="ORDER_RATE",
@@ -143,7 +148,8 @@ cdef class RiskEngine(Component):
         )
 
         self._log.info(
-            f"Set MAX_ORDER_RATE: {order_rate_limit} / {order_rate_interval}.",
+            f"Set MAX_ORDER_RATE: "
+            f"{order_rate_limit}/{str(order_rate_interval).replace('0 days ', '')}.",
             color=LogColor.BLUE,
         )
 
@@ -205,7 +211,26 @@ cdef class RiskEngine(Component):
             The state to set.
 
         """
+        if state == self.trading_state:
+            self._log.warning(
+                f"No change to trading state: "
+                f"already set to {TradingStateParser.to_str(self.trading_state)}.",
+            )
+            return
+
         self.trading_state = state
+
+        cdef int64_t now = self._clock.timestamp_ns()
+        cdef TradingStateChanged event = TradingStateChanged(
+            trader_id=self.trader_id,
+            state=self.trading_state,
+            config=self._config,
+            event_id=self._uuid_factory.generate(),
+            ts_event=now,
+            ts_init=now,
+        )
+
+        self._msgbus.publish_c(topic="events.risk", msg=event)
         self._log_state()
 
     cdef void _log_state(self) except *:

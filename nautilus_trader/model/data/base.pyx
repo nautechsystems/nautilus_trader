@@ -20,6 +20,8 @@ cdef class Data:
     """
     The abstract base class for all data.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

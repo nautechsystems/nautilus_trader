@@ -19,6 +19,7 @@ from cpython.datetime cimport timedelta
 
 import asyncio
 import platform
+import socket
 import sys
 import traceback
 from asyncio import Task
@@ -108,7 +109,8 @@ cdef class Logger:
         self,
         Clock clock not None,
         TraderId trader_id=None,
-        UUID system_id=None,
+        str host_id=None,
+        UUID4 instance_id=None,
         LogLevel level_stdout=LogLevel.INFO,
         bint bypass=False,
     ):
@@ -121,22 +123,30 @@ cdef class Logger:
             The clock for the logger.
         trader_id : TraderId, optional
             The trader ID for the logger.
-        system_id : UUID, optional
-            The systems unique instantiation ID.
+        host_id : str, optional
+            The host ID.
+        instance_id : UUID4, optional
+            The instance ID.
         level_stdout : LogLevel
             The minimum log level for logging messages to stdout.
         bypass : bool
             If the logger should be bypassed.
 
         """
-        if system_id is None:
-            system_id = UUIDFactory().generate()
+        if trader_id is None:
+            trader_id = TraderId("TRADER-000")
+        if instance_id is None:
+            instance_id = UUIDFactory().generate()
+        if host_id is None:
+            host_id = socket.gethostname()
+
         self._clock = clock
         self._log_level_stdout = level_stdout
         self._sinks = []
 
         self.trader_id = trader_id
-        self.system_id = system_id
+        self.host_id = host_id
+        self.instance_id = instance_id
         self.is_bypassed = bypass
 
     cpdef void register_sink(self, handler: Callable[[Dict], None]) except *:
@@ -197,8 +207,9 @@ cdef class Logger:
             "timestamp": self._clock.timestamp_ns(),
             "level": LogLevelParser.to_str(level),
             "color": color,
-            "trader_id": self.trader_id.value if self.trader_id is not None else "",
-            "system_id": self.system_id.value,
+            "trader_id": self.trader_id.value,
+            "host_id": self.host_id,
+            "instance_id": self.instance_id.value,
             "component": component,
             "msg": msg,
         }
@@ -272,6 +283,9 @@ cdef class LoggerAdapter:
         Condition.valid_string(component_name, "component_name")
 
         self._logger = logger
+        self.trader_id = logger.trader_id
+        self.host_id = logger.host_id
+        self.instance_id = logger.instance_id
         self.component = component_name
         self.is_bypassed = logger.is_bypassed
 
@@ -521,8 +535,9 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info("=================================================================")
     logger.info(" IDENTIFIERS")
     logger.info("=================================================================")
-    logger.info(f"trader_id: {logger.get_logger().trader_id.value}")
-    logger.info(f"system_id: {logger.get_logger().system_id.value}")
+    logger.info(f"trader_id: {logger.trader_id.value}")
+    logger.info(f"host_id: {logger.host_id}")
+    logger.info(f"instance_id: {logger.instance_id.value}")
     logger.info("=================================================================")
     logger.info(" VERSIONING")
     logger.info("=================================================================")
@@ -560,7 +575,8 @@ cdef class LiveLogger(Logger):
         loop not None,
         LiveClock clock not None,
         TraderId trader_id=None,
-        UUID system_id=None,
+        str host_id=None,
+        UUID4 instance_id=None,
         LogLevel level_stdout=LogLevel.INFO,
         bint bypass=False,
         int maxsize=10000,
@@ -576,7 +592,9 @@ cdef class LiveLogger(Logger):
             The clock for the logger.
         trader_id : TraderId, optional
             The trader ID for the logger.
-        system_id : UUID, optional
+        host_id : str, optional
+            The systems unique instantiation ID.
+        instance_id : UUID4, optional
             The systems unique instantiation ID.
         level_stdout : LogLevel
             The minimum log level for logging messages to stdout.
@@ -589,7 +607,8 @@ cdef class LiveLogger(Logger):
         super().__init__(
             clock=clock,
             trader_id=trader_id,
-            system_id=system_id,
+            host_id=host_id,
+            instance_id=instance_id,
             level_stdout=level_stdout,
             bypass=bypass,
         )

@@ -17,6 +17,8 @@ import pytest
 
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AccountTypeParser
+from nautilus_trader.model.enums import AggregationSource
+from nautilus_trader.model.enums import AggregationSourceParser
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AggressorSideParser
 from nautilus_trader.model.enums import AssetClass
@@ -63,9 +65,7 @@ from nautilus_trader.model.enums import VenueTypeParser
 
 class TestAccountType:
     def test_account_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             AccountTypeParser.to_str_py(-1)
 
@@ -80,8 +80,7 @@ class TestAccountType:
         ],
     )
     def test_account_type_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = AccountTypeParser.to_str_py(enum)
 
         # Assert
@@ -95,9 +94,46 @@ class TestAccountType:
         ],
     )
     def test_account_type_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = AccountTypeParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestAggregationSource:
+    def test_aggregation_source_parser_given_invalid_value_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            AggregationSourceParser.to_str_py(-1)
+
+        with pytest.raises(ValueError):
+            AggregationSourceParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [AggregationSource.EXTERNAL, "EXTERNAL"],
+            [AggregationSource.INTERNAL, "INTERNAL"],
+        ],
+    )
+    def test_aggregation_source_to_str(self, enum, expected):
+        # Arrange, Act
+        result = AggregationSourceParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["EXTERNAL", AggregationSource.EXTERNAL],
+            ["INTERNAL", AggregationSource.INTERNAL],
+        ],
+    )
+    def test_aggregation_source_from_str(self, string, expected):
+        # Arrange, Act
+        result = AggregationSourceParser.from_str_py(string)
 
         # Assert
         assert expected == result
@@ -105,9 +141,7 @@ class TestAccountType:
 
 class TestAggressorSide:
     def test_account_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             AggressorSideParser.to_str_py(-1)
 
@@ -123,8 +157,7 @@ class TestAggressorSide:
         ],
     )
     def test_aggressor_side_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = AggressorSideParser.to_str_py(enum)
 
         # Assert
@@ -139,8 +172,7 @@ class TestAggressorSide:
         ],
     )
     def test_aggressor_side_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = AggressorSideParser.from_str_py(string)
 
         # Assert
@@ -149,9 +181,7 @@ class TestAggressorSide:
 
 class TestAssetClass:
     def test_asset_class_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             AssetClassParser.to_str_py(0)
 
@@ -173,8 +203,7 @@ class TestAssetClass:
         ],
     )
     def test_asset_class_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = AssetClassParser.to_str_py(enum)
 
         # Assert
@@ -195,8 +224,7 @@ class TestAssetClass:
         ],
     )
     def test_asset_class_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = AssetClassParser.from_str_py(string)
 
         # Assert
@@ -205,9 +233,7 @@ class TestAssetClass:
 
 class TestAssetType:
     def test_asset_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             AssetTypeParser.to_str_py(0)
 
@@ -227,8 +253,7 @@ class TestAssetType:
         ],
     )
     def test_asset_type_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = AssetTypeParser.to_str_py(enum)
 
         # Assert
@@ -247,8 +272,7 @@ class TestAssetType:
         ],
     )
     def test_asset_type_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = AssetTypeParser.from_str_py(string)
 
         # Assert
@@ -257,9 +281,7 @@ class TestAssetType:
 
 class TestBarAggregation:
     def test_bar_aggregation_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             BarAggregationParser.to_str_py(0)
 
@@ -285,8 +307,7 @@ class TestBarAggregation:
         ],
     )
     def test_bar_aggregation_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = BarAggregationParser.to_str_py(enum)
 
         # Assert
@@ -311,8 +332,7 @@ class TestBarAggregation:
         ],
     )
     def test_bar_aggregation_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = BarAggregationParser.from_str_py(string)
 
         # Assert
@@ -321,9 +341,7 @@ class TestBarAggregation:
 
 class TestCurrencyType:
     def test_currency_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             CurrencyTypeParser.to_str_py(0)
 
@@ -338,8 +356,7 @@ class TestCurrencyType:
         ],
     )
     def test_currency_type_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = CurrencyTypeParser.to_str_py(enum)
 
         # Assert
@@ -353,8 +370,7 @@ class TestCurrencyType:
         ],
     )
     def test_currency_type_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = CurrencyTypeParser.from_str_py(string)
 
         # Assert
@@ -363,9 +379,7 @@ class TestCurrencyType:
 
 class TestDepthType:
     def test_depth_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             DepthTypeParser.to_str_py(0)
 
@@ -380,8 +394,7 @@ class TestDepthType:
         ],
     )
     def test_depth_type_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = DepthTypeParser.to_str_py(enum)
 
         # Assert
@@ -395,8 +408,7 @@ class TestDepthType:
         ],
     )
     def test_depth_type_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = DepthTypeParser.from_str_py(string)
 
         # Assert
@@ -405,9 +417,7 @@ class TestDepthType:
 
 class TestInstrumentCloseType:
     def test_instrument_close_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             InstrumentCloseTypeParser.to_str_py(0)
 
@@ -422,8 +432,7 @@ class TestInstrumentCloseType:
         ],
     )
     def test_instrument_close_type_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = InstrumentCloseTypeParser.to_str_py(enum)
 
         # Assert
@@ -437,8 +446,7 @@ class TestInstrumentCloseType:
         ],
     )
     def test_instrument_close_type_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = InstrumentCloseTypeParser.from_str_py(string)
 
         # Assert
@@ -447,9 +455,7 @@ class TestInstrumentCloseType:
 
 class TestInstrumentStatus:
     def test_instrument_status_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             InstrumentStatusParser.to_str_py(0)
 
@@ -467,8 +473,7 @@ class TestInstrumentStatus:
         ],
     )
     def test_instrument_status_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = InstrumentStatusParser.to_str_py(enum)
 
         # Assert
@@ -485,8 +490,7 @@ class TestInstrumentStatus:
         ],
     )
     def test_instrument_status_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = InstrumentStatusParser.from_str_py(string)
 
         # Assert
@@ -495,9 +499,7 @@ class TestInstrumentStatus:
 
 class TestLiquiditySide:
     def test_liquidity_side_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             LiquiditySideParser.to_str_py(9)
 
@@ -513,8 +515,7 @@ class TestLiquiditySide:
         ],
     )
     def test_liquidity_side_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = LiquiditySideParser.to_str_py(enum)
 
         # Assert
@@ -529,8 +530,7 @@ class TestLiquiditySide:
         ],
     )
     def test_liquidity_side_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = LiquiditySideParser.from_str_py(string)
 
         # Assert
@@ -539,9 +539,7 @@ class TestLiquiditySide:
 
 class TestOMSType:
     def test_oms_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             OMSTypeParser.to_str_py(0)
 
@@ -556,8 +554,7 @@ class TestOMSType:
         ],
     )
     def test_oms_type_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = OMSTypeParser.to_str_py(enum)
 
         # Assert
@@ -571,8 +568,7 @@ class TestOMSType:
         ],
     )
     def test_oms_type_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = OMSTypeParser.from_str_py(string)
 
         # Assert
@@ -581,9 +577,7 @@ class TestOMSType:
 
 class TestOrderSide:
     def test_order_side_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             OrderSideParser.to_str_py(0)
 
@@ -598,8 +592,7 @@ class TestOrderSide:
         ],
     )
     def test_order_side_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = OrderSideParser.to_str_py(enum)
 
         # Assert
@@ -613,8 +606,7 @@ class TestOrderSide:
         ],
     )
     def test_order_side_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = OrderSideParser.from_str_py(string)
 
         # Assert
@@ -623,9 +615,7 @@ class TestOrderSide:
 
 class TestOrderStatus:
     def test_order_status_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             OrderStatusParser.to_str_py(0)
 
@@ -650,8 +640,7 @@ class TestOrderStatus:
         ],
     )
     def test_order_status_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = OrderStatusParser.to_str_py(enum)
 
         # Assert
@@ -675,8 +664,7 @@ class TestOrderStatus:
         ],
     )
     def test_order_status_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = OrderStatusParser.from_str_py(string)
 
         # Assert
@@ -685,9 +673,7 @@ class TestOrderStatus:
 
 class TestOrderType:
     def test_order_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             OrderTypeParser.to_str_py(0)
 
@@ -704,8 +690,7 @@ class TestOrderType:
         ],
     )
     def test_order_type_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = OrderTypeParser.to_str_py(enum)
 
         # Assert
@@ -721,8 +706,7 @@ class TestOrderType:
         ],
     )
     def test_order_type_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = OrderTypeParser.from_str_py(string)
 
         # Assert
@@ -731,9 +715,7 @@ class TestOrderType:
 
 class TestBookLevel:
     def test_orderbook_level_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             BookLevelParser.to_str_py(0)
 
@@ -749,8 +731,7 @@ class TestBookLevel:
         ],
     )
     def test_orderbook_level_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = BookLevelParser.to_str_py(enum)
 
         # Assert
@@ -766,8 +747,7 @@ class TestBookLevel:
         ],
     )
     def test_orderbook_level_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         if expected is None:
             return
 
@@ -779,9 +759,7 @@ class TestBookLevel:
 
 class TestDeltaType:
     def test_delta_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             DeltaTypeParser.to_str_py(0)
 
@@ -798,8 +776,7 @@ class TestDeltaType:
         ],
     )
     def test_delta_type_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = DeltaTypeParser.to_str_py(enum)
 
         # Assert
@@ -816,8 +793,7 @@ class TestDeltaType:
         ],
     )
     def test_delta_type_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         if expected is None:
             return
 
@@ -829,9 +805,7 @@ class TestDeltaType:
 
 class TestPositionSide:
     def test_position_side_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             PositionSideParser.to_str_py(0)
 
@@ -847,8 +821,7 @@ class TestPositionSide:
         ],
     )
     def test_position_side_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = PositionSideParser.to_str_py(enum)
 
         # Assert
@@ -863,8 +836,7 @@ class TestPositionSide:
         ],
     )
     def test_position_side_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = PositionSideParser.from_str_py(string)
 
         # Assert
@@ -873,9 +845,7 @@ class TestPositionSide:
 
 class TestPriceType:
     def test_price_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             PriceTypeParser.to_str_py(0)
 
@@ -892,8 +862,7 @@ class TestPriceType:
         ],
     )
     def test_price_type_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = PriceTypeParser.to_str_py(enum)
 
         # Assert
@@ -908,8 +877,7 @@ class TestPriceType:
         ],
     )
     def test_price_type_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = PriceTypeParser.from_str_py(string)
 
         # Assert
@@ -918,9 +886,7 @@ class TestPriceType:
 
 class TestTimeInForce:
     def test_time_in_force_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             TimeInForceParser.to_str_py(0)
 
@@ -940,8 +906,7 @@ class TestTimeInForce:
         ],
     )
     def test_time_in_force_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = TimeInForceParser.to_str_py(enum)
 
         # Assert
@@ -960,8 +925,7 @@ class TestTimeInForce:
         ],
     )
     def test_time_in_force_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = TimeInForceParser.from_str_py(string)
 
         # Assert
@@ -970,9 +934,7 @@ class TestTimeInForce:
 
 class TestTradingState:
     def test_trading_state_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             TradingStateParser.to_str_py(0)
 
@@ -988,8 +950,7 @@ class TestTradingState:
         ],
     )
     def test_trading_state_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = TradingStateParser.to_str_py(enum)
 
         # Assert
@@ -1004,8 +965,7 @@ class TestTradingState:
         ],
     )
     def test_trading_state_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = TradingStateParser.from_str_py(string)
 
         # Assert
@@ -1014,9 +974,7 @@ class TestTradingState:
 
 class TestVenueStatus:
     def test_venue_status_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             VenueStatusParser.to_str_py(0)
 
@@ -1034,8 +992,7 @@ class TestVenueStatus:
         ],
     )
     def test_venue_status_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = VenueStatusParser.to_str_py(enum)
 
         # Assert
@@ -1052,8 +1009,7 @@ class TestVenueStatus:
         ],
     )
     def test_venue_status_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = VenueStatusParser.from_str_py(string)
 
         # Assert
@@ -1062,9 +1018,7 @@ class TestVenueStatus:
 
 class TestVenueType:
     def test_venue_type_parser_given_invalid_value_raises_value_error(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(ValueError):
             VenueTypeParser.to_str_py(0)
 
@@ -1081,8 +1035,7 @@ class TestVenueType:
         ],
     )
     def test_venue_type_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = VenueTypeParser.to_str_py(enum)
 
         # Assert
@@ -1098,8 +1051,7 @@ class TestVenueType:
         ],
     )
     def test_venue_type_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = VenueTypeParser.from_str_py(string)
 
         # Assert

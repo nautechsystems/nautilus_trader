@@ -37,6 +37,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import TradingStrategyConfig
 from nautilus_trader.trading.trader import Trader
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -153,14 +154,17 @@ class TestTrader:
 
     def test_add_strategy(self):
         # Arrange, Act
-        self.trader.add_strategy(TradingStrategy("001"))
+        self.trader.add_strategy(TradingStrategy())
 
         # Assert
-        assert self.trader.strategy_states() == {StrategyId("TradingStrategy-001"): "INITIALIZED"}
+        assert self.trader.strategy_states() == {StrategyId("TradingStrategy-000"): "INITIALIZED"}
 
     def test_add_strategies(self):
         # Arrange
-        strategies = [TradingStrategy("001"), TradingStrategy("002")]
+        strategies = [
+            TradingStrategy(TradingStrategyConfig(order_id_tag="001")),
+            TradingStrategy(TradingStrategyConfig(order_id_tag="002")),
+        ]
 
         # Act
         self.trader.add_strategies(strategies)
@@ -173,7 +177,10 @@ class TestTrader:
 
     def test_clear_strategies(self):
         # Arrange
-        strategies = [TradingStrategy("001"), TradingStrategy("002")]
+        strategies = [
+            TradingStrategy(TradingStrategyConfig(order_id_tag="001")),
+            TradingStrategy(TradingStrategyConfig(order_id_tag="002")),
+        ]
         self.trader.add_strategies(strategies)
 
         # Act
@@ -221,7 +228,10 @@ class TestTrader:
 
     def test_get_strategy_states(self):
         # Arrange
-        strategies = [TradingStrategy("001"), TradingStrategy("002")]
+        strategies = [
+            TradingStrategy(TradingStrategyConfig(order_id_tag="001")),
+            TradingStrategy(TradingStrategyConfig(order_id_tag="002")),
+        ]
         self.trader.add_strategies(strategies)
 
         # Act
@@ -237,8 +247,8 @@ class TestTrader:
     def test_change_strategies(self):
         # Arrange
         strategies = [
-            TradingStrategy("003"),
-            TradingStrategy("004"),
+            TradingStrategy(TradingStrategyConfig(order_id_tag="003")),
+            TradingStrategy(TradingStrategyConfig(order_id_tag="004")),
         ]
 
         # Act
@@ -251,7 +261,10 @@ class TestTrader:
 
     def test_start_a_trader(self):
         # Arrange
-        strategies = [TradingStrategy("001"), TradingStrategy("002")]
+        strategies = [
+            TradingStrategy(TradingStrategyConfig(order_id_tag="001")),
+            TradingStrategy(TradingStrategyConfig(order_id_tag="002")),
+        ]
         self.trader.add_strategies(strategies)
 
         # Act
@@ -266,7 +279,10 @@ class TestTrader:
 
     def test_stop_a_running_trader(self):
         # Arrange
-        strategies = [TradingStrategy("001"), TradingStrategy("002")]
+        strategies = [
+            TradingStrategy(TradingStrategyConfig(order_id_tag="001")),
+            TradingStrategy(TradingStrategyConfig(order_id_tag="002")),
+        ]
         self.trader.add_strategies(strategies)
         self.trader.start()
 
