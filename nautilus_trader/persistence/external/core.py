@@ -1,4 +1,3 @@
-from io import BytesIO
 from typing import Callable, Dict, List, Optional, Union
 
 import dask
@@ -10,9 +9,7 @@ from dask import compute
 from dask import delayed
 from dask.diagnostics import ProgressBar
 from dask.utils import parse_bytes
-from fsspec.compression import compr
 from fsspec.core import OpenFile
-from fsspec.utils import infer_compression
 from tqdm import tqdm
 
 from nautilus_trader.model.data.base import GenericData
@@ -130,12 +127,6 @@ def scan_files(glob_path, compression="infer", **kw) -> List[OpenFile]:
     return [of for of in open_files if of.path not in processed]
 
 
-@delayed
-def decompress_block(path, block):
-    compress = compr[infer_compression(path)]
-    return compress(BytesIO(block)).read()
-
-
 def split_and_serialize(objs: List) -> Dict[type, Dict[str, List]]:
     """
     Given a list of nautilus `objs`; serialize and split into dictionaries per type / instrument_id.
@@ -190,18 +181,6 @@ def determine_partition_cols(cls: type, instrument_id: str = None):
     elif instrument_id is not None:
         return ["instrument_id"]
     return
-
-
-def walk_rm(fs: fsspec.AbstractFileSystem, path: str):
-    """
-    Walk and remove files in `path` from bottom up
-    """
-    files = fs.find(path)
-    for filename in sorted(files, key=lambda x: len(x), reverse=True):
-        try:
-            fs.rm(filename, recursive=True)
-        except FileNotFoundError:
-            continue
 
 
 def read_and_clear_existing_data(
@@ -344,6 +323,12 @@ def write_parquet(
     # Write out any partition columns we had to modify due to filesystem requirements
     if mappings:
         write_partition_column_mappings(fs=fs, path=path, mappings=mappings)
+
+
+def write_chunk(catalog: DataCatalog, chunk: List):
+    serialized = split_and_serialize(objs=chunk)
+    tables = dicts_to_dataframes(serialized)
+    write_tables(catalog=catalog, tables=tables)
 
 
 def read_progress(func, total):

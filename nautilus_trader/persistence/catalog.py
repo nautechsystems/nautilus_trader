@@ -123,7 +123,7 @@ class DataCatalog(metaclass=Singleton):
             return []
         return ParquetSerializer.deserialize(cls=cls, chunk=df.to_dict("records"))
 
-    def _query_and_process(
+    def query(
         self,
         cls: type,
         filter_expr=None,
@@ -222,7 +222,7 @@ class DataCatalog(metaclass=Singleton):
     def instrument_status_updates(
         self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs
     ):
-        return self._query_and_process(
+        return self.query(
             cls=InstrumentStatusUpdate,
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
@@ -232,7 +232,7 @@ class DataCatalog(metaclass=Singleton):
         )
 
     def trade_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
-        return self._query_and_process(
+        return self.query(
             cls=TradeTick,
             filter_expr=filter_expr,
             instrument_ids=instrument_ids,
@@ -242,7 +242,7 @@ class DataCatalog(metaclass=Singleton):
         )
 
     def quote_ticks(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
-        return self._query_and_process(
+        return self.query(
             cls=QuoteTick,
             filter_expr=filter_expr,
             instrument_ids=instrument_ids,
@@ -260,7 +260,7 @@ class DataCatalog(metaclass=Singleton):
         )
 
     def order_book_deltas(self, instrument_ids=None, filter_expr=None, as_nautilus=False, **kwargs):
-        return self._query_and_process(
+        return self.query(
             cls=OrderBookData,
             filter_expr=filter_expr,
             instrument_ids=instrument_ids,
@@ -269,9 +269,7 @@ class DataCatalog(metaclass=Singleton):
         )
 
     def generic_data(self, cls, filter_expr=None, as_nautilus=False, **kwargs):
-        data = self._query_and_process(
-            cls=cls, filter_expr=filter_expr, as_nautilus=as_nautilus, **kwargs
-        )
+        data = self.query(cls=cls, filter_expr=filter_expr, as_nautilus=as_nautilus, **kwargs)
         if as_nautilus:
             return [GenericData(data_type=DataType(cls), data=d) for d in data]
         return data

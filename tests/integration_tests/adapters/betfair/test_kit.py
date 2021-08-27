@@ -57,7 +57,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.persistence.external.core import scan_files
+from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.parsers import TextReader
 from nautilus_trader.portfolio.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
@@ -871,15 +871,13 @@ class BetfairDataProvider:
     @staticmethod
     def betfair_feed_parsed(market_id="1.166564490", folder="data"):
         instrument_provider = BetfairInstrumentProvider.from_instruments([])
-        reader = BetfairTestStubs.betfair_reader()
-        files = scan_files(glob_path=f"{PACKAGE_ROOT}/{folder}/{market_id}*")
-        reader = reader(instrument_provider=instrument_provider)
+        reader = BetfairTestStubs.betfair_reader(instrument_provider=instrument_provider)
+        files = make_raw_files(glob_path=f"{PACKAGE_ROOT}/{folder}/{market_id}*")
 
         data = []
         for rf in files:
-            rf.reader = reader
-            for chunk in rf.iter_parsed():
-                data.extend(chunk)
+            for block in rf.iter():
+                data.extend(reader.parse(block=block))
 
         return data
 
