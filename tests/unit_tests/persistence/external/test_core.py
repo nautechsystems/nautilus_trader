@@ -151,7 +151,7 @@ class TestPersistenceCore:
         "glob, num_files",
         [
             ("**.json", 3),
-            ("**.txt", 2),
+            ("**.txt", 3),
             ("**.parquet", 2),
             ("**.csv", 11),
         ],
@@ -330,6 +330,7 @@ class TestPersistenceCore:
         expected = {
             TEST_DATA_DIR + "/1.166564490.bz2": 2908,
             TEST_DATA_DIR + "/betfair/1.180305278.bz2": 17085,
+            TEST_DATA_DIR + "/betfair/1.170258150.bz2": 45911,
             TEST_DATA_DIR + "/betfair/1.166811431.bz2": 22692,
         }
         assert files == expected

@@ -92,7 +92,7 @@ def data_loader():
     process_files(
         glob_path=f"{TEST_DATA_DIR}/truefx-audusd-ticks.csv",
         reader=CSVReader(
-            chunk_parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id()),
+            block_parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id()),
             as_dataframe=True,
         ),
         instrument_provider=instrument_provider,

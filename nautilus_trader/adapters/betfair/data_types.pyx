@@ -18,6 +18,7 @@ from libc.stdint cimport int64_t
 import orjson
 import pyarrow as pa
 
+from nautilus_trader.serialization.arrow.serializer import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 from nautilus_trader.model.data.base cimport Data
@@ -27,6 +28,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.data cimport OrderBookDelta
 
+from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.serialization.base import register_serializable_object
 
 
@@ -108,6 +110,24 @@ def betfair_ticker_to_dict(ticker: BetfairTicker):
     }
 
 
-register_serializable_object(BSPOrderBookDelta, BSPOrderBookDelta.to_dict, BSPOrderBookDelta.from_dict)
+BSP_SCHEMA =pa.schema(
+    {
+        "instrument_id": pa.string(),
+        "ts_event": pa.int64(),
+        "ts_init": pa.int64(),
+        "delta_type": pa.string(),
+        "order_side": pa.string(),
+        "order_price": pa.float64(),
+        "order_size": pa.float64(),
+        "order_id": pa.string(),
+        "level": pa.string(),
+    },
+    metadata={"type": "BSPOrderBookDelta"},
+)
+
+
 register_serializable_object(BetfairTicker, betfair_ticker_to_dict, betfair_ticker_from_dict)
 register_parquet(cls=BetfairTicker, schema=BetfairTicker.schema())
+
+register_serializable_object(BSPOrderBookDelta, BSPOrderBookDelta.to_dict, BSPOrderBookDelta.from_dict)
+register_parquet(cls=BSPOrderBookDelta, schema=BSP_SCHEMA)

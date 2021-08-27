@@ -153,7 +153,7 @@ class TestPersistenceParsers:
             yield eval(line)  # noqa: S307
 
         reader = TextReader(line_parser=parser)
-        raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/binance*.txt")[0]
+        raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/binance-btcusdt-instrument.txt")[0]
         result = process_raw_file(catalog=self.mock_catalog, raw_file=raw_file, reader=reader)
         expected = 1
         assert result == expected
