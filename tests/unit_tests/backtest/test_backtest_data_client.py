@@ -70,8 +70,7 @@ class TestBacktestDataClient:
         )
 
     def test_connect(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.start()
 
         # Assert
@@ -88,24 +87,21 @@ class TestBacktestDataClient:
         assert not self.client.is_connected
 
     def test_reset(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.reset()
 
         # Assert
         assert True  # No exceptions raised
 
     def test_dispose(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.dispose()
 
         # Assert
         assert True  # No exceptions raised
 
     def test_subscribe_instruments(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.subscribe_instruments()
         self.client.start()
         self.client.subscribe_instruments()
@@ -114,8 +110,7 @@ class TestBacktestDataClient:
         assert True  # No exceptions raised
 
     def test_subscribe_instrument(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.subscribe_instrument(USDJPY_SIM.id)
         self.client.start()
         self.client.subscribe_instrument(USDJPY_SIM.id)
@@ -124,8 +119,7 @@ class TestBacktestDataClient:
         assert True  # No exceptions raised
 
     def test_subscribe_quote_ticks(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.subscribe_quote_ticks(USDJPY_SIM.id)
         self.client.start()
         self.client.subscribe_quote_ticks(USDJPY_SIM.id)
@@ -134,8 +128,7 @@ class TestBacktestDataClient:
         assert True  # No exceptions raised
 
     def test_subscribe_trade_ticks(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.subscribe_trade_ticks(USDJPY_SIM.id)
         self.client.start()
         self.client.subscribe_trade_ticks(USDJPY_SIM.id)
@@ -144,8 +137,7 @@ class TestBacktestDataClient:
         assert True  # No exceptions raised
 
     def test_subscribe_bars(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
         self.client.start()
         self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
@@ -154,8 +146,7 @@ class TestBacktestDataClient:
         assert True  # No exceptions raised
 
     def test_unsubscribe_instruments(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.unsubscribe_instruments()
         self.client.start()
         self.client.unsubscribe_instruments()
@@ -164,8 +155,7 @@ class TestBacktestDataClient:
         assert True  # No exceptions raised
 
     def test_unsubscribe_instrument(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.unsubscribe_instrument(USDJPY_SIM.id)
         self.client.start()
         self.client.unsubscribe_instrument(USDJPY_SIM.id)
@@ -174,8 +164,7 @@ class TestBacktestDataClient:
         assert True  # No exceptions raised
 
     def test_unsubscribe_quote_ticks(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.unsubscribe_quote_ticks(USDJPY_SIM.id)
         self.client.start()
         self.client.unsubscribe_quote_ticks(USDJPY_SIM.id)
@@ -184,8 +173,7 @@ class TestBacktestDataClient:
         assert True  # No exceptions raised
 
     def test_unsubscribe_trade_ticks(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.unsubscribe_trade_ticks(USDJPY_SIM.id)
         self.client.start()
         self.client.unsubscribe_trade_ticks(USDJPY_SIM.id)
@@ -194,8 +182,7 @@ class TestBacktestDataClient:
         assert True  # No exceptions raised
 
     def test_unsubscribe_bars(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.unsubscribe_bars(TestStubs.bartype_usdjpy_1min_bid())
         self.client.start()
         self.client.unsubscribe_bars(TestStubs.bartype_usdjpy_1min_bid())
@@ -204,8 +191,7 @@ class TestBacktestDataClient:
         assert True  # No exceptions raised
 
     def test_request_quote_ticks(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.request_quote_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
         self.client.start()
         self.client.request_quote_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
@@ -214,8 +200,7 @@ class TestBacktestDataClient:
         assert True  # No exceptions raised
 
     def test_request_trade_ticks(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.request_trade_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
         self.client.start()
         self.client.request_trade_ticks(USDJPY_SIM.id, None, None, 0, uuid4())
@@ -224,8 +209,7 @@ class TestBacktestDataClient:
         assert True  # No exceptions raised
 
     def test_request_bars(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.client.request_bars(TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4())
         self.client.start()
         self.client.request_bars(TestStubs.bartype_usdjpy_1min_bid(), None, None, 0, uuid4())

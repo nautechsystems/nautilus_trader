@@ -42,6 +42,8 @@ cdef class Clock:
     """
     The abstract base class for all clocks.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

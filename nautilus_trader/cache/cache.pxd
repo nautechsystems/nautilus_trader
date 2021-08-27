@@ -23,6 +23,7 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -42,6 +43,7 @@ cdef class Cache(CacheFacade):
     cdef ExchangeRateCalculator _xrate_calculator
 
     cdef dict _xrate_symbols
+    cdef dict _tickers
     cdef dict _quote_ticks
     cdef dict _trade_ticks
     cdef dict _order_books
@@ -65,6 +67,7 @@ cdef class Cache(CacheFacade):
     cdef dict _index_strategy_orders
     cdef dict _index_strategy_positions
     cdef set _index_orders
+    cdef set _index_orders_active
     cdef set _index_orders_inflight
     cdef set _index_orders_working
     cdef set _index_orders_completed
@@ -106,6 +109,7 @@ cdef class Cache(CacheFacade):
     cpdef void load_strategy(self, TradingStrategy strategy) except *
 
     cpdef void add_order_book(self, OrderBook order_book) except *
+    cpdef void add_ticker(self, Ticker ticker) except *
     cpdef void add_quote_tick(self, QuoteTick tick) except *
     cpdef void add_trade_tick(self, TradeTick tick) except *
     cpdef void add_bar(self, Bar bar) except *

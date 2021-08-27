@@ -53,7 +53,7 @@ cdef class OrderBookDeltas(OrderBookData):
 
 cdef class OrderBookDelta(OrderBookData):
     cdef readonly DeltaType type
-    """The type of change (ADD, UPDATED, DELETE, CLEAR).\n\n:returns: `DeltaType`"""
+    """The type of change (``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``).\n\n:returns: `DeltaType`"""
     cdef readonly Order order
     """The order to apply.\n\n:returns: `Order`"""
 

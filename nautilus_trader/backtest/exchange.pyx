@@ -97,7 +97,7 @@ cdef class SimulatedExchange:
         venue_type : VenueType
             The venues type.
         oms_type : OMSType
-            The order management system type used by the exchange (HEDGING or NETTING).
+            The order management system type used by the exchange (``HEDGING`` or ``NETTING``).
         account_type : AccountType
             The account type for the client.
         base_currency : Currency, optional
@@ -188,7 +188,6 @@ cdef class SimulatedExchange:
         self._position_index = {}       # type: dict[ClientOrderId, PositionId]
         self._child_orders = {}         # type: dict[ClientOrderId, list[Order]]
         self._oco_orders = {}           # type: dict[ClientOrderId, ClientOrderId]
-        self._oco_position_ids = {}     # type: dict[ClientOrderId, PositionId]
         self._position_oco_orders = {}  # type: dict[PositionId, list[ClientOrderId]]
         self._symbol_pos_count = {}     # type: dict[InstrumentId, int]
         self._symbol_ord_count = {}     # type: dict[InstrumentId, int]
@@ -476,7 +475,6 @@ cdef class SimulatedExchange:
         self._position_index.clear()
         self._child_orders.clear()
         self._oco_orders.clear()
-        self._oco_position_ids.clear()
         self._position_oco_orders.clear()
         self._symbol_pos_count.clear()
         self._symbol_ord_count.clear()
@@ -529,7 +527,6 @@ cdef class SimulatedExchange:
                 command.instrument_id,
                 command.client_order_id,
                 command.venue_order_id,
-                "cancel order",
                 f"{repr(command.client_order_id)} not found",
             )
         else:
@@ -545,7 +542,6 @@ cdef class SimulatedExchange:
                 command.instrument_id,
                 command.client_order_id,
                 command.venue_order_id,
-                "update order",
                 f"{repr(command.client_order_id)} not found",
             )
         else:
@@ -703,7 +699,6 @@ cdef class SimulatedExchange:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        str response,
         str reason,
     ) except *:
         # Generate event
@@ -712,7 +707,6 @@ cdef class SimulatedExchange:
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            response_to=response,
             reason=reason,
             ts_event=self._clock.timestamp_ns(),
         )
@@ -723,7 +717,6 @@ cdef class SimulatedExchange:
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        str response,
         str reason,
     ) except *:
         # Generate event
@@ -732,7 +725,6 @@ cdef class SimulatedExchange:
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            response_to=response,
             reason=reason,
             ts_event=self._clock.timestamp_ns(),
         )
@@ -876,7 +868,6 @@ cdef class SimulatedExchange:
                     order.instrument_id,
                     order.client_order_id,
                     order.venue_order_id,
-                    "update order",
                     f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order "
                     f"new limit px of {price} would have been a TAKER: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
@@ -902,7 +893,6 @@ cdef class SimulatedExchange:
                 order.instrument_id,
                 order.client_order_id,
                 order.venue_order_id,
-                "update order",
                 f"STOP {OrderSideParser.to_str(order.side)} order "
                 f"new stop px of {price} was in the market: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
@@ -927,7 +917,6 @@ cdef class SimulatedExchange:
                     order.instrument_id,
                     order.client_order_id,
                     order.venue_order_id,
-                    "update order",
                     f"STOP_LIMIT {OrderSideParser.to_str(order.side)} order "
                     f"new trigger stop px of {price} was in the market: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
@@ -943,7 +932,6 @@ cdef class SimulatedExchange:
                         order.instrument_id,
                         order.client_order_id,
                         order.venue_order_id,
-                        "update order",
                         f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order  "
                         f"new limit px of {price} would have been a TAKER: "
                         f"bid={self.best_bid_price(order.instrument_id)}, "

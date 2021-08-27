@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint8_t
+
 import heapq
 
 from nautilus_trader.core.correctness cimport Condition
@@ -31,8 +33,8 @@ cdef class Ladder:
     def __init__(
         self,
         bint reverse,
-        int price_precision,
-        int size_precision,
+        uint8_t price_precision,
+        uint8_t size_precision,
     ):
         """
         Initialize a new instance of the ``Ladder`` class.
@@ -41,16 +43,16 @@ cdef class Ladder:
         ----------
         reverse : bool
             If the ladder should be represented in reverse order of price (bids).
-        price_precision : int
-            The price precision for the book.
-        size_precision : int
-            The size precision for the book.
+        price_precision : uint8
+            The price precision of the books orders.
+        size_precision : uint8
+            The size precision of the books orders.
 
         Raises
         ------
-        ValueError
+        OverflowError
             If price_precision is negative (< 0).
-        ValueError
+        OverflowError
             If size_precision is negative (< 0).
 
         """

@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 
 
 cdef class UUIDFactory:
-    cpdef UUID generate(self)
+    cpdef UUID4 generate(self)

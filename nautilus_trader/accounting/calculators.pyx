@@ -66,7 +66,7 @@ cdef class ExchangeRateCalculator:
         ValueError
             If bid_quotes length is not equal to ask_quotes length.
         ValueError
-            If price_type is LAST.
+            If price_type is ``LAST``.
 
         Notes
         -----

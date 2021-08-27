@@ -15,6 +15,8 @@
 
 import pyarrow as pa
 
+from nautilus_trader.common.events.risk import TradingStateChanged
+from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -44,38 +46,6 @@ from nautilus_trader.model.orderbook.data import OrderBookData
 
 
 NAUTILUS_PARQUET_SCHEMA = {
-    TradeTick: pa.schema(
-        {
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
-            "price": pa.string(),
-            "size": pa.string(),
-            "aggressor_side": pa.dictionary(pa.int8(), pa.string()),
-            "match_id": pa.string(),
-            "ts_event": pa.int64(),
-            "ts_init": pa.int64(),
-        },
-        metadata={"type": "TradeTick"},
-    ),
-    QuoteTick: pa.schema(
-        {
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
-            "bid": pa.string(),
-            "bid_size": pa.string(),
-            "ask": pa.string(),
-            "ask_size": pa.string(),
-            "ts_event": pa.int64(),
-            "ts_init": pa.int64(),
-        },
-        metadata={"type": "QuoteTick"},
-    ),
-    Ticker: pa.schema(
-        {
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
-            "ts_event": pa.int64(),
-            "ts_init": pa.int64(),
-        },
-        metadata={"type": "Ticker"},
-    ),
     OrderBookData: pa.schema(
         {
             "instrument_id": pa.string(),
@@ -93,6 +63,78 @@ NAUTILUS_PARQUET_SCHEMA = {
         },
         metadata={"type": "OrderBookDelta"},
     ),
+    Ticker: pa.schema(
+        {
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+        metadata={"type": "Ticker"},
+    ),
+    QuoteTick: pa.schema(
+        {
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "bid": pa.string(),
+            "bid_size": pa.string(),
+            "ask": pa.string(),
+            "ask_size": pa.string(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+        metadata={"type": "QuoteTick"},
+    ),
+    TradeTick: pa.schema(
+        {
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "price": pa.string(),
+            "size": pa.string(),
+            "aggressor_side": pa.dictionary(pa.int8(), pa.string()),
+            "match_id": pa.string(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+        metadata={"type": "TradeTick"},
+    ),
+    InstrumentClosePrice: pa.schema(
+        {
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "close_type": pa.dictionary(pa.int8(), pa.string()),
+            "close_price": pa.float64(),
+        }
+    ),
+    InstrumentStatusUpdate: pa.schema(
+        {
+            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
+            "status": pa.dictionary(pa.int8(), pa.string()),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+        metadata={"type": "InstrumentStatusUpdate"},
+    ),
+    ComponentStateChanged: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "component_id": pa.dictionary(pa.int8(), pa.string()),
+            "component_type": pa.dictionary(pa.int8(), pa.string()),
+            "state": pa.string(),
+            "config": pa.string(),
+            "event_id": pa.string(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+        metadata={"type": "ComponentStateChanged"},
+    ),
+    TradingStateChanged: pa.schema(
+        {
+            "trader_id": pa.dictionary(pa.int8(), pa.string()),
+            "state": pa.string(),
+            "config": pa.string(),
+            "event_id": pa.string(),
+            "ts_event": pa.int64(),
+            "ts_init": pa.int64(),
+        },
+        metadata={"type": "TradingStateChanged"},
+    ),
     AccountState: pa.schema(
         {
             "account_id": pa.dictionary(pa.int8(), pa.string()),
@@ -109,15 +151,6 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_init": pa.int64(),
         },
         metadata={"type": "AccountState"},
-    ),
-    InstrumentStatusUpdate: pa.schema(
-        {
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
-            "status": pa.dictionary(pa.int8(), pa.string()),
-            "ts_event": pa.int64(),
-            "ts_init": pa.int64(),
-        },
-        metadata={"type": "InstrumentStatusUpdate"},
     ),
     OrderInitialized: pa.schema(
         {
@@ -223,7 +256,6 @@ NAUTILUS_PARQUET_SCHEMA = {
             "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
-            "response_to": pa.string(),
             "reason": pa.string(),
             "event_id": pa.string(),
             "ts_event": pa.int64(),
@@ -277,7 +309,6 @@ NAUTILUS_PARQUET_SCHEMA = {
             "instrument_id": pa.dictionary(pa.int8(), pa.string()),
             "client_order_id": pa.string(),
             "venue_order_id": pa.string(),
-            "response_to": pa.dictionary(pa.int8(), pa.string()),
             "reason": pa.dictionary(pa.int8(), pa.string()),
             "event_id": pa.string(),
             "ts_event": pa.int64(),
@@ -371,13 +402,6 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_opened": pa.int64(),
             "ts_closed": pa.int64(),
             "ts_init": pa.int64(),
-        }
-    ),
-    InstrumentClosePrice: pa.schema(
-        {
-            "instrument_id": pa.dictionary(pa.int8(), pa.string()),
-            "close_type": pa.dictionary(pa.int8(), pa.string()),
-            "close_price": pa.float64(),
         }
     ),
     BettingInstrument: pa.schema(

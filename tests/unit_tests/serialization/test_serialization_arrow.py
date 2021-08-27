@@ -21,6 +21,8 @@ import pytest
 from fsspec.implementations.memory import MemoryFileSystem
 
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.events.risk import TradingStateChanged
+from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.c_enums.book_level import BookLevel
 from nautilus_trader.model.c_enums.delta_type import DeltaType
@@ -92,8 +94,9 @@ class TestParquetSerializer:
     @pytest.mark.parametrize(
         "tick",
         [
-            TestStubs.trade_tick_5decimal(),
+            TestStubs.ticker(),
             TestStubs.quote_tick_5decimal(),
+            TestStubs.trade_tick_5decimal(),
         ],
     )
     def test_serialize_and_deserialize_tick(self, tick):
@@ -239,16 +242,40 @@ class TestParquetSerializer:
         assert deserialized == [book]
         write_chunk(raw_file=self.raw_file, chunk=[book])
 
-    def test_serialize_and_deserialize_account_state(self):
-        account = TestStubs.event_cash_account_state()
+    @pytest.mark.skip(reason="bm to fix")
+    def test_serialize_and_deserialize_component_state_changed(self):
+        event = TestStubs.event_component_state_changed()
 
-        serialized = ParquetSerializer.serialize(account)
+        serialized = ParquetSerializer.serialize(event)
+        [deserialized] = ParquetSerializer.deserialize(cls=ComponentStateChanged, chunk=serialized)
+
+        # Assert
+        assert deserialized == event
+
+        write_chunk(raw_file=self.raw_file, chunk=[event])
+
+    @pytest.mark.skip(reason="bm to fix")
+    def test_serialize_and_deserialize_trading_state_changed(self):
+        event = TestStubs.event_trading_state_changed()
+
+        serialized = ParquetSerializer.serialize(event)
+        [deserialized] = ParquetSerializer.deserialize(cls=TradingStateChanged, chunk=serialized)
+
+        # Assert
+        assert deserialized == event
+
+        write_chunk(raw_file=self.raw_file, chunk=[event])
+
+    def test_serialize_and_deserialize_account_state(self):
+        event = TestStubs.event_cash_account_state()
+
+        serialized = ParquetSerializer.serialize(event)
         [deserialized] = ParquetSerializer.deserialize(cls=AccountState, chunk=serialized)
 
         # Assert
-        assert deserialized == account
+        assert deserialized == event
 
-        write_chunk(raw_file=self.raw_file, chunk=[account])
+        write_chunk(raw_file=self.raw_file, chunk=[event])
 
     @pytest.mark.parametrize(
         "event_func",

@@ -28,28 +28,20 @@ class TestSimpleMovingAverage:
         self.sma = SimpleMovingAverage(10)
 
     def test_name_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.sma.name == "SimpleMovingAverage"
 
     def test_str_repr_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.sma) == "SimpleMovingAverage(10)"
         assert repr(self.sma) == "SimpleMovingAverage(10)"
 
     def test_period_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.sma.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.sma.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
@@ -65,8 +57,7 @@ class TestSimpleMovingAverage:
         self.sma.update_raw(9.00000)
         self.sma.update_raw(10.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.sma.initialized is True
         assert self.sma.count == 10
         assert self.sma.value == 5.5
@@ -114,8 +105,7 @@ class TestSimpleMovingAverage:
         # Arrange
         self.sma.update_raw(1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.sma.value == 1.0
 
     def test_value_with_three_inputs_returns_expected_value(self):
@@ -124,8 +114,7 @@ class TestSimpleMovingAverage:
         self.sma.update_raw(2.00000)
         self.sma.update_raw(3.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.sma.value == 2.0
 
     def test_value_at_returns_expected_value(self):
@@ -134,8 +123,7 @@ class TestSimpleMovingAverage:
         self.sma.update_raw(2.00000)
         self.sma.update_raw(3.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.sma.value == 2.0
 
     def test_handle_quote_tick_updates_with_expected_value(self):

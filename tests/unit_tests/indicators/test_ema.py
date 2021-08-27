@@ -28,34 +28,24 @@ class TestExponentialMovingAverage:
         self.ema = ExponentialMovingAverage(10)
 
     def test_name_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.ema.name == "ExponentialMovingAverage"
 
     def test_str_repr_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.ema) == "ExponentialMovingAverage(10)"
         assert repr(self.ema) == "ExponentialMovingAverage(10)"
 
     def test_period_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.ema.period == 10
 
     def test_multiplier_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.ema.alpha == 0.18181818181818182
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.ema.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
@@ -119,8 +109,7 @@ class TestExponentialMovingAverage:
         # Arrange
         self.ema.update_raw(1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.ema.value == 1.0
 
     def test_value_with_three_inputs_returns_expected_value(self):
@@ -129,8 +118,7 @@ class TestExponentialMovingAverage:
         self.ema.update_raw(2.00000)
         self.ema.update_raw(3.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.ema.value == 1.5123966942148757
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):

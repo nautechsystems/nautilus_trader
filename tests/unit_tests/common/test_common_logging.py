@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import socket
 
 import pytest
 
@@ -29,7 +30,7 @@ from nautilus_trader.common.logging import LogLevelParser
 
 class TestLogLevelParser:
     @pytest.mark.parametrize(
-        "enum,expected",
+        "enum, expected",
         [
             [LogLevel.DEBUG, "DBG"],
             [LogLevel.INFO, "INF"],
@@ -39,15 +40,14 @@ class TestLogLevelParser:
         ],
     )
     def test_log_level_to_str(self, enum, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = LogLevelParser.to_str_py(enum)
 
         # Assert
         assert result == expected
 
     @pytest.mark.parametrize(
-        "string,expected",
+        "string, expected",
         [
             ["DBG", LogLevel.DEBUG],
             ["INF", LogLevel.INFO],
@@ -57,8 +57,7 @@ class TestLogLevelParser:
         ],
     )
     def test_log_level_from_str(self, string, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = LogLevelParser.from_str_py(string)
 
         # Assert
@@ -169,12 +168,13 @@ class TestLoggerTests:
         # Assert
         assert sink[0] == {
             "component": "TEST_LOGGER",
+            "host_id": socket.gethostname(),
             "level": "INF",
             "msg": "A log event",
-            "system_id": f"{logger.system_id}",
+            "instance_id": f"{logger.instance_id.value}",
             "tag": "risk",
             "timestamp": 0,
-            "trader_id": "",
+            "trader_id": "TRADER-000",
         }
 
 
@@ -192,8 +192,7 @@ class TestLiveLogger:
         self.logger_adapter = LoggerAdapter(component_name="LIVER_LOGGER", logger=self.logger)
 
     def test_log_when_not_running_on_event_loop_successfully_logs(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.logger_adapter.info("test message")
 
         # Assert

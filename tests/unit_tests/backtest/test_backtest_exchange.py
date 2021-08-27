@@ -171,14 +171,11 @@ class TestSimulatedExchange:
         self.strategy.start()
 
     def test_repr(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert repr(self.exchange) == "SimulatedExchange(SIM)"
 
     def test_check_residuals(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.exchange.check_residuals()
         # Assert
         assert True  # No exceptions raised
@@ -256,8 +253,7 @@ class TestSimulatedExchange:
         assert entry2 in self.exchange.get_working_orders().values()
 
     def test_get_working_orders_when_no_orders_returns_empty_dict(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         orders = self.exchange.get_working_orders()
 
         assert orders == {}
@@ -655,8 +651,8 @@ class TestSimulatedExchange:
         self.strategy.submit_bracket_order(bracket_order)
 
         # Assert
-        stop_loss_order = self.cache.order(ClientOrderId("O-19700101-000000-000-001-2"))
-        take_profit_order = self.cache.order(ClientOrderId("O-19700101-000000-000-001-3"))
+        stop_loss_order = self.cache.order(ClientOrderId("O-19700101-000000-000-000-2"))
+        take_profit_order = self.cache.order(ClientOrderId("O-19700101-000000-000-000-3"))
 
         assert entry_order.status == OrderStatus.FILLED
         assert stop_loss_order.status == OrderStatus.ACCEPTED
@@ -689,8 +685,8 @@ class TestSimulatedExchange:
         self.strategy.submit_bracket_order(bracket_order)
 
         # Assert
-        stop_loss_order = self.cache.order(ClientOrderId("O-19700101-000000-000-001-2"))
-        take_profit_order = self.cache.order(ClientOrderId("O-19700101-000000-000-001-3"))
+        stop_loss_order = self.cache.order(ClientOrderId("O-19700101-000000-000-000-2"))
+        take_profit_order = self.cache.order(ClientOrderId("O-19700101-000000-000-000-3"))
 
         assert entry_order.status == OrderStatus.ACCEPTED
         assert stop_loss_order.status == OrderStatus.SUBMITTED
@@ -778,7 +774,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             Price.from_str("90.001"),
-            post_only=True,  # Default value
+            post_only=True,  # default value
         )
 
         self.strategy.submit_order(order)
@@ -806,7 +802,7 @@ class TestSimulatedExchange:
             OrderSide.BUY,
             Quantity.from_int(100000),
             Price.from_str("90.001"),
-            post_only=True,  # Default value
+            post_only=True,  # default value
         )
 
         self.strategy.submit_order(order)

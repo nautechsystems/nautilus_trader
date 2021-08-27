@@ -32,8 +32,7 @@ class TestBidAskMinMax:
         # Arrange
         indicator = BidAskMinMax(self.instrument_id, timedelta(minutes=5))
 
-        # Act
-        # Assert
+        # Act, Assert
         assert indicator.bids.min_price is None
         assert indicator.bids.max_price is None
         assert indicator.asks.min_price is None
@@ -104,8 +103,7 @@ class TestWindowedMinMaxPrices:
         # Arrange
         instance = WindowedMinMaxPrices(timedelta(minutes=5))
 
-        # Act
-        # Assert
+        # Act, Assert
         assert instance.min_price is None
         assert instance.max_price is None
 

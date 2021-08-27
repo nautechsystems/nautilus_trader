@@ -36,30 +36,24 @@ class TestInstrumentProvider:
             await self.provider.load_all_async()
 
     def test_load_all_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(NotImplementedError):
             self.provider.load_all()
 
     def test_load_when_not_implemented_raises_exception(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         with pytest.raises(NotImplementedError):
             self.provider.load(AUDUSD, {})
 
     def test_get_all_when_no_instruments_returns_empty_dict(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.provider.get_all()
 
         # Assert
         assert result == {}
 
     def test_find_when_no_instruments_returns_none(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.provider.find(AUDUSD)
 
         # Assert

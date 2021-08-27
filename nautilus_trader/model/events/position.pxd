@@ -16,7 +16,7 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.currency cimport Currency
@@ -51,7 +51,7 @@ cdef class PositionEvent(Event):
     cdef readonly PositionSide side
     """The position side.\n\n:returns: `PositionSide`"""
     cdef readonly object net_qty
-    """The net quantity (positive for LONG, negative for SHORT).\n\n:returns: `Decimal`"""
+    """The net quantity (positive for ``LONG``, negative for ``SHORT``).\n\n:returns: `Decimal`"""
     cdef readonly Quantity quantity
     """The position open quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity peak_qty
@@ -88,7 +88,7 @@ cdef class PositionOpened(PositionEvent):
     cdef PositionOpened create_c(
         Position position,
         OrderFilled fill,
-        UUID event_id,
+        UUID4 event_id,
         int64_t ts_init,
     )
 
@@ -105,7 +105,7 @@ cdef class PositionChanged(PositionEvent):
     cdef PositionChanged create_c(
         Position position,
         OrderFilled fill,
-        UUID event_id,
+        UUID4 event_id,
         int64_t ts_init,
     )
 
@@ -122,7 +122,7 @@ cdef class PositionClosed(PositionEvent):
     cdef PositionClosed create_c(
         Position position,
         OrderFilled fill,
-        UUID event_id,
+        UUID4 event_id,
         int64_t ts_init,
     )
 

@@ -12,3 +12,25 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+from nautilus_trader.core.message cimport Event
+from nautilus_trader.model.c_enums.trading_state cimport TradingState
+from nautilus_trader.model.identifiers cimport TraderId
+
+
+cdef class RiskEvent(Event):
+    cdef readonly TraderId trader_id
+    """The trader ID associated with the event.\n\n:returns: `TraderId`"""
+
+
+cdef class TradingStateChanged(RiskEvent):
+    cdef readonly TradingState state
+    """The trading state for the event.\n\n:returns: `TradingState`"""
+    cdef readonly dict config
+    """The risk engine configuration.\n\n:returns: `dict[str, Any]`"""
+
+    @staticmethod
+    cdef TradingStateChanged from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(TradingStateChanged obj)

@@ -59,8 +59,7 @@ class TestFuzzyCandlesticks:
             CandleWickSize.SMALL,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert fuzzy_candle1 == fuzzy_candle1
         assert fuzzy_candle1 == fuzzy_candle2
         assert fuzzy_candle1 != fuzzy_candle3
@@ -75,28 +74,21 @@ class TestFuzzyCandlesticks:
             CandleWickSize.SMALL,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert str(fuzzy_candle) == "(1, 3, 2, 1, 1)"
         assert repr(fuzzy_candle) == "FuzzyCandle(1, 3, 2, 1, 1)"
 
     def test_name_returns_expected_name(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.fc.name == "FuzzyCandlesticks"
 
     def test_str_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.fc) == "FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)"
         assert repr(self.fc) == "FuzzyCandlesticks(10, 0.5, 1.0, 2.0, 3.0)"
 
     def test_period_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.fc.period == 10
 
     def test_handle_bar_updates_indicator(self):

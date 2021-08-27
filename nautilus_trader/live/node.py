@@ -17,6 +17,7 @@ import asyncio
 import concurrent.futures
 import platform
 import signal
+import socket
 import sys
 import time
 import warnings
@@ -114,14 +115,15 @@ class TradingNode:
         # Components
         self._clock = LiveClock(loop=self._loop)
         self._uuid_factory = UUIDFactory()
-        self.system_id = self._uuid_factory.generate()
         self.created_time = self._clock.utc_now()
         self._is_running = False
 
-        # Setup identifiers
+        # Identifiers
         self.trader_id = TraderId(
             f"{config_trader['name']}-{config_trader['id_tag']}",
         )
+        self.host_id = socket.gethostname()
+        self.instance_id = self._uuid_factory.generate()
 
         # Setup logging
         level_stdout = LogLevelParser.from_str_py(config_log.get("level_stdout"))
@@ -130,7 +132,8 @@ class TradingNode:
             loop=self._loop,
             clock=self._clock,
             trader_id=self.trader_id,
-            system_id=self.system_id,
+            host_id=self.host_id,
+            instance_id=self.instance_id,
             level_stdout=level_stdout,
         )
 
@@ -244,9 +247,9 @@ class TradingNode:
             log=self._log,
         )
 
-        self._log.info("state=INITIALIZED.")
+        self._log.info("INITIALIZED.")
         self.time_to_initialize = self._clock.delta(self.created_time)
-        self._log.info(f"Initialized in {self.time_to_initialize.total_seconds():.3f}s.")
+        self._log.info(f"Initialized in {int(self.time_to_initialize.total_seconds() * 1000)}ms.")
 
         self._is_built = False
 
@@ -258,7 +261,6 @@ class TradingNode:
         Returns
         -------
         bool
-            True if running, else False.
 
         """
         return self._is_running
@@ -271,7 +273,6 @@ class TradingNode:
         Returns
         -------
         bool
-            True if built, else False.
 
         """
         return self._is_built
@@ -426,7 +427,7 @@ class TradingNode:
                     )
                     break
 
-            self._log.info("state=DISPOSING...")
+            self._log.info("DISPOSING...")
 
             self._log.debug(f"{self._data_engine.get_run_queue_task()}")
             self._log.debug(f"{self._exec_engine.get_run_queue_task()}")
@@ -468,7 +469,7 @@ class TradingNode:
             else:
                 self._log.info(f"loop.is_closed={self._loop.is_closed()}")
 
-            self._log.info("state=DISPOSED.")
+            self._log.info("DISPOSED.")
 
     def _log_header(self) -> None:
         nautilus_header(self._log)
@@ -498,7 +499,7 @@ class TradingNode:
 
     async def _run(self) -> None:
         try:
-            self._log.info("state=STARTING...")
+            self._log.info("STARTING...")
             self._is_running = True
 
             # Start system
@@ -563,7 +564,7 @@ class TradingNode:
             self.trader.start()
 
             if self._loop.is_running():
-                self._log.info("state=RUNNING.")
+                self._log.info("RUNNING.")
             else:
                 self._log.warning("Event loop is not running.")
 
@@ -613,7 +614,7 @@ class TradingNode:
 
     async def _stop(self) -> None:
         self._is_stopping = True
-        self._log.info("state=STOPPING...")
+        self._log.info("STOPPING...")
 
         if self.trader.state == ComponentState.RUNNING:
             self.trader.stop()
@@ -654,7 +655,7 @@ class TradingNode:
         for name in timer_names:
             self._log.info(f"Cancelled Timer(name={name}).")
 
-        self._log.info("state=STOPPED.")
+        self._log.info("STOPPED.")
         self._logger.stop()
         self._is_running = False
 

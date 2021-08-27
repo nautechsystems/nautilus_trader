@@ -46,24 +46,21 @@ class TestAnalyzer:
         )
 
     def test_get_daily_returns_when_no_data_returns_empty_series(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.analyzer.daily_returns()
 
         # Assert
         assert result.empty
 
     def test_get_realized_pnls_when_no_data_returns_none(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.analyzer.realized_pnls()
 
         # Assert
         assert result is None
 
     def test_get_realized_pnls_with_currency_when_no_data_returns_none(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.analyzer.realized_pnls(AUD)
 
         # Assert

@@ -49,8 +49,7 @@ class TestInstrument:
         ],
     )
     def test_equality(self, instrument1, instrument2, expected1, expected2):
-        # Arrange
-        # Act
+        # Arrange, Act
         result1 = instrument1 == instrument2
         result2 = instrument1 != instrument2
 
@@ -59,16 +58,12 @@ class TestInstrument:
         assert result2 == expected2
 
     def test_str_repr_returns_expected(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
         assert repr(BTCUSDT_BINANCE) == BTCUSDT_BINANCE_INSTRUMENT
 
     def test_hash(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert isinstance(hash(BTCUSDT_BINANCE), int)
         assert hash(BTCUSDT_BINANCE), hash(BTCUSDT_BINANCE)
 

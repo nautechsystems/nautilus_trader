@@ -44,8 +44,7 @@ class TestPositionSizer:
         # Arrange
         sizer = PositionSizer(USDJPY)
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             sizer.calculate(
                 Price.from_str("110.001"),

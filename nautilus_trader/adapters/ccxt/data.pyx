@@ -27,7 +27,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_millis
 from nautilus_trader.core.datetime cimport millis_to_nanos
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
@@ -166,25 +166,17 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             self._log.error("Cannot reset a connected data client.")
             return
 
-        self._log.info("Resetting...")
-
         self._instrument_provider = CCXTInstrumentProvider(
             client=self._client,
             load_all=False,
         )
-
-        self._log.info("Reset.")
 
     cpdef void _dispose(self) except *:
         if self.is_connected:
             self._log.error("Cannot dispose a connected data client.")
             return
 
-        self._log.info("Disposing...")
-
         # Nothing to dispose yet
-
-        self._log.info("Disposed.")
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -227,8 +219,8 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : BookLevel
-            The order book level (L1, L2, L3).
+        level : BookLevel {``L1``, ``L2``, ``L3``}
+            The order book level.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         kwargs : dict, optional
@@ -441,7 +433,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *:
         """
         Request historical quote ticks for the given parameters.
@@ -457,7 +449,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             to the current datetime.
         limit : int
             The limit for the number of returned ticks.
-        correlation_id : UUID
+        correlation_id : UUID4
             The correlation ID for the request.
 
         """
@@ -475,7 +467,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *:
         """
         Request historical trade ticks for the given parameters.
@@ -491,7 +483,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             to the current datetime.
         limit : int
             The limit for the number of returned ticks.
-        correlation_id : UUID
+        correlation_id : UUID4
             The correlation ID for the request.
 
         """
@@ -518,7 +510,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *:
         """
         Request historical bars for the given parameters.
@@ -534,7 +526,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             to the current datetime.
         limit : int
             The limit for the number of returned bars.
-        correlation_id : UUID
+        correlation_id : UUID4
             The correlation ID for the request.
 
         """
@@ -893,7 +885,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         await self._instrument_provider.load_all_async()
         self._log.info(f"Updated {self._instrument_provider.count} instruments.")
 
-    async def _request_instrument(self, InstrumentId instrument_id, UUID correlation_id):
+    async def _request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id):
         await self._load_instruments()
         cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is not None:
@@ -928,7 +920,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ):
         cdef Instrument instrument = self._instrument_provider.find(instrument_id)
         if instrument is None:
@@ -979,7 +971,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ):
         cdef Instrument instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
@@ -1003,7 +995,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ):
         # Build timeframe
         cdef str timeframe = self._make_timeframe(bar_type.spec)

@@ -31,8 +31,7 @@ class TestTimeEvent:
         event2 = TimeEvent("EVENT_1", uuid4(), UNIX_EPOCH, 0, 0)
         event3 = TimeEvent("EVENT_2", uuid4(), UNIX_EPOCH, 0, 0)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert event1 == event1
         assert event1 == event2
         assert event1 != event3
@@ -42,8 +41,7 @@ class TestTimeEvent:
         uuid = uuid4()
         event = TimeEvent("EVENT", uuid, UNIX_EPOCH, 0, 0)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert str(event) == (
             f"TimeEvent(name=EVENT, id={uuid}, " f"timestamp=1970-01-01T00:00:00.000Z)"
         )
@@ -68,8 +66,7 @@ class TestTimeEventHandler:
             receiver.append,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert event1 == event1
         assert event1 != event2
         assert event1 < event2
@@ -84,8 +81,7 @@ class TestTimeEventHandler:
         handler = TimeEventHandler(TimeEvent("123", uuid, UNIX_EPOCH, 0, 0), receiver.append)
 
         print(str(handler))
-        # Act
-        # Assert
+        # Act, Assert
         assert str(handler) == (
             f"TimeEventHandler(event=TimeEvent(name=123, id={uuid}, "
             f"timestamp=1970-01-01T00:00:00.000Z))"
@@ -130,8 +126,7 @@ class TestTimer:
             0,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert timer1 == timer1
         assert timer1 != timer2
 
@@ -145,8 +140,7 @@ class TestTimer:
             1_000_000_000,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert str(timer) == (
             "Timer(name=TIMER_1, "
             "interval_ns=1000000000, "
@@ -174,8 +168,7 @@ class TestTimer:
             0,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert isinstance(hash(timer), int)
         assert hash(timer) == hash(timer)
 
@@ -189,7 +182,6 @@ class TestTimer:
             0,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             timer.cancel()

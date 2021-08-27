@@ -22,7 +22,6 @@ from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.bar cimport BarSpecification
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -32,6 +31,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.trading.strategy cimport TradingStrategy
+from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -41,6 +41,37 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 # --------------------------------------
 # The `except *` statement in void method signatures is to allow C and Python
 # raised exceptions to bubble up (otherwise they are ignored)
+
+
+class EMACrossConfig(TradingStrategyConfig):
+    """
+    Provides configuration for ``EMACross`` instances.
+
+    instrument_id : InstrumentId
+        The instrument ID for the strategy.
+    bar_type : BarType
+        The bar type for the strategy.
+    fast_ema_period : int
+        The fast EMA period.
+    slow_ema_period : int
+        The slow EMA period.
+    trade_size : Decimal
+        The position size per trade.
+    order_id_tag : str
+        The unique order ID tag for the strategy. Must be unique
+        amongst all running strategies for a particular trader ID.
+    oms_type : OMSType
+        The order management system type for the strategy. This will determine
+        how the `ExecutionEngine` handles position IDs (see docs).
+    """
+
+    instrument_id: str
+    bar_type: str
+    fast_ema_period: int = 10
+    slow_ema_period: int = 20
+    trade_size: Decimal
+    order_id_tag: str = "001"
+    oms_type: OMSType = OMSType.HEDGING
 
 
 cdef class EMACross(TradingStrategy):
@@ -56,49 +87,31 @@ cdef class EMACross(TradingStrategy):
     cdef InstrumentId instrument_id
     cdef BarType bar_type
     cdef object trade_size
-    cdef ExponentialMovingAverage fast_ema_period
-    cdef ExponentialMovingAverage slow_ema_period
+    cdef ExponentialMovingAverage fast_ema
+    cdef ExponentialMovingAverage slow_ema
 
-    def __init__(
-        self,
-        InstrumentId instrument_id,
-        BarSpecification bar_spec,
-        trade_size: Decimal,
-        int fast_ema_period,
-        int slow_ema_period,
-        str order_id_tag,  # Must be unique at 'trader level'
-    ):
+    def __init__(self, config not None: EMACrossConfig):
         """
         Initialize a new instance of the ``EMACross`` class.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument ID for the strategy.
-        bar_spec : BarSpecification
-            The bar specification for the strategy.
-        trade_size : Decimal
-            The position size per trade.
-        fast_ema_period : int
-            The period for the fast EMA.
-        slow_ema_period : int
-            The period for the slow EMA.
-        order_id_tag : str
-            The unique order ID tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader ID.
+        config : EMACrossConfig
+            The configuration for the instance.
 
         """
-        super().__init__(order_id_tag=order_id_tag, oms_type=OMSType.HEDGING)
+        super().__init__(config)
 
-        # Custom strategy variables
-        self.instrument_id = instrument_id
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
-        self.bar_type = BarType(instrument_id, bar_spec)
-        self.trade_size = trade_size
+        # Configuration
+        self.instrument_id = InstrumentId.from_str_c(config.instrument_id)
+        self.bar_type = BarType.from_str_c(config.bar_type)
+        self.trade_size = config.trade_size
 
         # Create the indicators for the strategy
-        self.fast_ema = ExponentialMovingAverage(fast_ema_period)
-        self.slow_ema = ExponentialMovingAverage(slow_ema_period)
+        self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
+        self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
+
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
 
     cpdef void on_start(self) except *:
         """Actions to be performed on strategy start."""

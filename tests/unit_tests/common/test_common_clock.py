@@ -35,8 +35,7 @@ class TestClockBase:
         # Arrange
         clock = Clock()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             clock.utc_now()
 
@@ -44,8 +43,7 @@ class TestClockBase:
         # Arrange
         clock = Clock()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             clock.timestamp()
 
@@ -53,8 +51,7 @@ class TestClockBase:
         # Arrange
         clock = Clock()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             clock.timestamp_ns()
 
@@ -65,8 +62,7 @@ class TestClockBase:
         interval = timedelta(minutes=1)
         handler = []
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(NotImplementedError):
             clock.set_timer(
                 name=name,
@@ -88,23 +84,18 @@ class TestTestClock:
         self.clock.cancel_timers()
 
     def test_instantiated_clock(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.clock.is_default_handler_registered
         assert self.clock.timer_names() == []
 
     def test_utc_now(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert isinstance(self.clock.utc_now(), datetime)
         assert self.clock.utc_now().tzinfo == pytz.utc
         assert isinstance(self.clock.timestamp_ns(), int)
 
     def test_local_now(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.clock.local_now(pytz.timezone("Australia/Sydney"))
 
         # Assert
@@ -328,8 +319,7 @@ class TestTestClock:
         initial_ns = 42_000_000
         clock = TestClock(initial_ns=initial_ns)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert clock.timestamp_ns() == initial_ns
         assert clock.is_test_clock
 
@@ -389,8 +379,7 @@ class TestTestClock:
         clock = TestClock()
         clock.advance_time(1_000_000_000)
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(ValueError):
             clock.advance_time(0)
 
@@ -606,16 +595,13 @@ class TestLiveClockWithThreadTimer:
         self.clock.cancel_timers()
 
     def test_instantiated_clock(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.clock.is_default_handler_registered
         assert not self.clock.is_test_clock
         assert self.clock.timer_names() == []
 
     def test_utc_now(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.clock.utc_now()
 
         # Assert
@@ -623,8 +609,7 @@ class TestLiveClockWithThreadTimer:
         assert result.tzinfo == pytz.utc
 
     def test_local_now(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.clock.local_now(pytz.timezone("Australia/Sydney"))
 
         # Assert
@@ -849,8 +834,7 @@ class TestLiveClockWithLoopTimer:
         self.clock.cancel_timers()
 
     def test_unix_timestamp(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.clock.timestamp()
 
         # Assert
@@ -858,8 +842,7 @@ class TestLiveClockWithLoopTimer:
         assert result > 0
 
     def test_unix_timestamp_ns(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.clock.timestamp_ns()
 
         # Assert

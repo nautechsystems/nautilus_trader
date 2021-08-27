@@ -18,7 +18,7 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport maybe_nanos_to_unix_dt
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -60,7 +60,7 @@ cdef class StopMarketOrder(PassiveOrder):
         Price price not None,
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
-        UUID init_id not None,
+        UUID4 init_id not None,
         int64_t ts_init,
         bint reduce_only=False,
     ):
@@ -78,7 +78,7 @@ cdef class StopMarketOrder(PassiveOrder):
         client_order_id : ClientOrderId
             The client order ID.
         order_side : OrderSide
-            The order side (BUY or SELL).
+            The order side (``BUY`` or ``SELL``).
         quantity : Quantity
             The order quantity (> 0).
         price : Price
@@ -87,7 +87,7 @@ cdef class StopMarketOrder(PassiveOrder):
             The order time-in-force.
         expire_time : datetime, optional
             The order expiry time.
-        init_id : UUID
+        init_id : UUID4
             The order initialization event ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the order was initialized.
@@ -99,7 +99,7 @@ cdef class StopMarketOrder(PassiveOrder):
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is GTD and the expire_time is None.
+            If time_in_force is ``GTD`` and the expire_time is None.
 
         """
         super().__init__(
@@ -148,7 +148,7 @@ cdef class StopMarketOrder(PassiveOrder):
             "filled_qty": str(self.filled_qty),
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "slippage": str(self.slippage),
-            "state": self._fsm.state_string_c(),
+            "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
             "ts_init": self.ts_init,
             "ts_last": self.ts_last,
@@ -171,7 +171,7 @@ cdef class StopMarketOrder(PassiveOrder):
         Raises
         ------
         ValueError
-            If init.type is not equal to STOP_MARKET.
+            If init.type is not equal to ``STOP_MARKET``.
 
         """
         Condition.not_none(init, "init")

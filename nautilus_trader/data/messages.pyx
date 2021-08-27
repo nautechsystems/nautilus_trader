@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 from libc.stdint cimport int64_t
 
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.data.base cimport DataType
 
 
@@ -25,6 +25,8 @@ cdef class DataCommand(Command):
     """
     The abstract base class for all data commands.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -32,7 +34,7 @@ cdef class DataCommand(Command):
         self,
         ClientId client_id not None,
         DataType data_type not None,
-        UUID command_id not None,
+        UUID4 command_id not None,
         int64_t ts_init,
     ):
         """
@@ -44,7 +46,7 @@ cdef class DataCommand(Command):
             The data client ID for the command.
         data_type : type
             The data type for the command.
-        command_id : UUID
+        command_id : UUID4
             The command ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the command object was initialized.
@@ -74,7 +76,7 @@ cdef class Subscribe(DataCommand):
         self,
         ClientId client_id not None,
         DataType data_type not None,
-        UUID command_id not None,
+        UUID4 command_id not None,
         int64_t ts_init,
     ):
         """
@@ -86,7 +88,7 @@ cdef class Subscribe(DataCommand):
             The data client ID for the command.
         data_type : type
             The data type for the subscription.
-        command_id : UUID
+        command_id : UUID4
             The command ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the command object was initialized.
@@ -109,7 +111,7 @@ cdef class Unsubscribe(DataCommand):
         self,
         ClientId client_id not None,
         DataType data_type not None,
-        UUID command_id not None,
+        UUID4 command_id not None,
         int64_t ts_init,
     ):
         """
@@ -121,7 +123,7 @@ cdef class Unsubscribe(DataCommand):
             The data client ID for the command.
         data_type : type
             The data type to unsubscribe from.
-        command_id : UUID
+        command_id : UUID4
             The command ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the command object was initialized.
@@ -145,7 +147,7 @@ cdef class DataRequest(Request):
         ClientId client_id not None,
         DataType data_type not None,
         callback not None: Callable[[Any], None],
-        UUID request_id not None,
+        UUID4 request_id not None,
         int64_t ts_init,
     ):
         """
@@ -159,7 +161,7 @@ cdef class DataRequest(Request):
             The data type for the request.
         callback : Callable[[Any], None]
             The delegate to call with the data.
-        request_id : UUID
+        request_id : UUID4
             The request ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the request object was initialized.
@@ -195,8 +197,8 @@ cdef class DataResponse(Response):
         ClientId client_id not None,
         DataType data_type not None,
         data not None,
-        UUID correlation_id not None,
-        UUID response_id not None,
+        UUID4 correlation_id not None,
+        UUID4 response_id not None,
         int64_t ts_init,
     ):
         """
@@ -210,9 +212,9 @@ cdef class DataResponse(Response):
             The data type of the response.
         data : object
             The data of the response.
-        correlation_id : UUID
+        correlation_id : UUID4
             The correlation ID.
-        response_id : UUID
+        response_id : UUID4
             The response ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the response object was initialized.

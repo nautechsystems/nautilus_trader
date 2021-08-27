@@ -16,6 +16,8 @@
 from base64 import b64encode
 
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands.trading import CancelOrder
@@ -49,6 +51,7 @@ from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -424,6 +427,26 @@ class TestMsgPackEventSerializer:
         )
         self.serializer = MsgPackEventSerializer()
 
+    def test_serialize_and_deserialize_component_state_changed_events(self):
+        # Arrange
+        event = ComponentStateChanged(
+            trader_id=TestStubs.trader_id(),
+            component_id=ComponentId("MyActor-001"),
+            component_type="MyActor",
+            state=ComponentState.RUNNING,
+            config={"do_something": True},
+            event_id=uuid4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+
     def test_serialize_and_deserialize_account_state_with_base_currency_events(self):
         # Arrange
         event = AccountState(
@@ -744,7 +767,6 @@ class TestMsgPackEventSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            "RESPONSE",
             "ORDER_DOES_NOT_EXIST",
             uuid4(),
             0,
@@ -767,7 +789,6 @@ class TestMsgPackEventSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            "RESPONSE",
             "ORDER_DOES_NOT_EXIST",
             uuid4(),
             0,

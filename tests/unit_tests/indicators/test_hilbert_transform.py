@@ -29,33 +29,24 @@ class TestHilbertTransform:
         self.ht = HilbertTransform()
 
     def test_name_returns_expected_name(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.ht.name == "HilbertTransform"
 
     def test_str_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.ht) == "HilbertTransform(7)"
         assert repr(self.ht) == "HilbertTransform(7)"
 
     def test_period_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.ht.period == 7
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.ht.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         for _i in range(10):
             self.ht.update_raw(1.00000)
 
@@ -76,9 +67,7 @@ class TestHilbertTransform:
         assert indicator.value_quad == 0
 
     def test_value_with_no_inputs_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.ht.value_in_phase == 0.0
         assert self.ht.value_quad == 0.0
 
@@ -87,8 +76,7 @@ class TestHilbertTransform:
         for _i in range(100):
             self.ht.update_raw(sys.float_info.epsilon)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.ht.value_in_phase == 0.0
         assert self.ht.value_quad == 0.0
 
@@ -97,8 +85,7 @@ class TestHilbertTransform:
         for _i in range(100):
             self.ht.update_raw(1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.ht.value_in_phase == 0.0
         assert self.ht.value_quad == 0.0
 

@@ -52,6 +52,7 @@ from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport VenueStatusUpdate
@@ -70,10 +71,12 @@ cdef class Actor(Component):
     """
     The abstract base class for all actor components.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, ComponentId component_id=None):
+    def __init__(self, ComponentId component_id=None, dict config=None):
         """
         Initialize a new instance of the ``Actor`` class.
 
@@ -89,18 +92,12 @@ cdef class Actor(Component):
             clock=clock,
             logger=Logger(clock=clock),
             component_id=component_id,
-            log_initialized=False,
+            config=config,
         )
 
         self.trader_id = None  # Initialized when registered
         self.msgbus = None     # Initialized when registered
         self.cache = None      # Initialized when registered
-
-    cdef void _check_registered(self) except *:
-        if self.trader_id is None:
-            # This guards the case where some components are called which
-            # have not yet been assigned, resulting in a SIGSEGV at runtime.
-            raise RuntimeError("Actor has not been registered with a trader")
 
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
@@ -181,6 +178,36 @@ cdef class Actor(Component):
         # Should override in subclass
         warnings.warn("on_dispose was called when not overridden")
 
+    cpdef void on_degrade(self) except *:
+        """
+        Actions to be performed on degrade.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        Should be overridden in the strategy implementation.
+
+        """
+        # Should override in subclass
+        warnings.warn("on_degrade was called when not overridden")
+
+    cpdef void on_fault(self) except *:
+        """
+        Actions to be performed on fault.
+
+        Cleanup any resources used by the strategy here.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        Should be overridden in the strategy implementation.
+
+        """
+        # Should override in subclass
+        warnings.warn("on_fault was called when not overridden")
+
     cpdef void on_instrument(self, Instrument instrument) except *:
         """
         Actions to be performed when running and receives an instrument.
@@ -221,6 +248,22 @@ cdef class Actor(Component):
         ----------
         delta : OrderBookDelta, OrderBookDeltas, OrderBookSnapshot
             The order book delta received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        pass  # Optionally override in subclass
+
+    cpdef void on_ticker(self, Ticker ticker) except *:
+        """
+        Actions to be performed when running and receives a ticker.
+
+        Parameters
+        ----------
+        ticker : Ticker
+            The ticker received.
 
         Warnings
         --------
@@ -396,11 +439,10 @@ cdef class Actor(Component):
         Condition.not_none(clock, "clock")
         Condition.not_none(logger, "logger")
 
-        self.trader_id = trader_id
-
         clock.register_default_handler(self.handle_event)
         self._change_clock(clock)
         self._change_logger(logger)
+        self._change_msgbus(msgbus)  # The trader ID is also assigned here
 
         self.msgbus = msgbus
         self.cache = cache
@@ -408,12 +450,9 @@ cdef class Actor(Component):
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
     cpdef void _start(self) except *:
-        self._check_registered()
         self.on_start()
 
     cpdef void _stop(self) except *:
-        self._check_registered()
-
         # Clean up clock
         cdef list timer_names = self._clock.timer_names()
         self._clock.cancel_timers()
@@ -425,16 +464,19 @@ cdef class Actor(Component):
         self.on_stop()
 
     cpdef void _resume(self) except *:
-        self._check_registered()
         self.on_resume()
 
     cpdef void _reset(self) except *:
-        self._check_registered()
         self.on_reset()
 
     cpdef void _dispose(self) except *:
-        self._check_registered()
         self.on_dispose()
+
+    cpdef void _degrade(self) except *:
+        self.on_degrade()
+
+    cpdef void _fault(self) except *:
+        self.on_fault()
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -453,7 +495,7 @@ cdef class Actor(Component):
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.{data_type}",
             handler=self.handle_data,
         )
@@ -485,7 +527,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(data_type, "data_type")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.strategy"
                   f".{data_type.__name__ if data_type else '*'}"
                   f".{strategy_id or '*'}",
@@ -509,7 +551,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.instrument"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -537,7 +579,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(venue, "venue")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.instrument.{venue}.*",
             handler=self.handle_instrument,
         )
@@ -565,15 +607,15 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument ID to subscribe to.
-        level : BookLevel
-            The order book level (L1, L2, L3).
+        level : BookLevel {``L1``, ``L2``, ``L3``}
+            The order book level.
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.book.deltas"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -612,8 +654,8 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument ID to subscribe to.
-        level : BookLevel
-            The order book level (L1, L2, L3).
+        level : BookLevel {``L1``, ``L2``, ``L3``}
+            The order book level.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         interval_ms : int
@@ -633,7 +675,7 @@ cdef class Actor(Component):
         Condition.not_negative(depth, "depth")
         Condition.not_negative(interval_ms, "interval_ms")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.book.snapshots"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}"
@@ -656,6 +698,34 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *:
+        """
+        Subscribe to streaming `Ticker` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to subscribe to.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._msgbus.subscribe(
+            topic=f"data.tickers"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self.handle_ticker,
+        )
+
+        cdef Subscribe command = Subscribe(
+            client_id=ClientId(instrument_id.venue.value),
+            data_type=DataType(Ticker, metadata={"instrument_id": instrument_id}),
+            command_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
         Subscribe to streaming `QuoteTick` data for the given instrument ID.
@@ -668,7 +738,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.quotes"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -696,7 +766,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.trades"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -724,7 +794,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.bars.{bar_type}",
             handler=self.handle_bar,
         )
@@ -750,7 +820,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(venue, "venue")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.venue.status",
             handler=self.handle_venue_status_update,
         )
@@ -776,7 +846,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.venue.status",
             handler=self.handle_instrument_status_update,
         )
@@ -802,7 +872,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.subscribe(
+        self._msgbus.subscribe(
             topic=f"data.venue.close_price.{instrument_id.value}",
             handler=self.handle_instrument_close_price,
         )
@@ -831,7 +901,7 @@ cdef class Actor(Component):
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
 
-        self.msgbus.unsubscribe(topic=f"data.{data_type}", handler=self.handle_data)
+        self._msgbus.unsubscribe(topic=f"data.{data_type}", handler=self.handle_data)
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
@@ -860,7 +930,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(data_type, "data_type")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.strategy.{data_type.__name__}.{strategy_id or '*'}",
             handler=self.handle_data,
         )
@@ -880,7 +950,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(venue, "venue")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.instrument.{venue}.*",
             handler=self.handle_instrument,
         )
@@ -906,7 +976,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.instrument"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -934,7 +1004,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.book.deltas"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -970,7 +1040,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.book.snapshots"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}"
@@ -990,6 +1060,34 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *:
+        """
+        Unsubscribe from streaming `Ticker` data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The tick instrument to unsubscribe from.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        self._msgbus.unsubscribe(
+            topic=f"data.tickers"
+                  f".{instrument_id.venue}"
+                  f".{instrument_id.symbol}",
+            handler=self.handle_ticker,
+        )
+
+        cdef Unsubscribe command = Unsubscribe(
+            client_id=ClientId(instrument_id.venue.value),
+            data_type=DataType(Ticker, metadata={"instrument_id": instrument_id}),
+            command_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._send_data_cmd(command)
+
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """
         Unsubscribe from streaming `QuoteTick` data for the given instrument ID.
@@ -1002,7 +1100,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.quotes"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -1030,7 +1128,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.trades"
                   f".{instrument_id.venue}"
                   f".{instrument_id.symbol}",
@@ -1058,7 +1156,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        self.msgbus.unsubscribe(
+        self._msgbus.unsubscribe(
             topic=f"data.bars.{bar_type}",
             handler=self.handle_bar,
         )
@@ -1085,7 +1183,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(data, "data")
 
-        self.msgbus.publish_c(
+        self._msgbus.publish_c(
             topic=f"data.{type(data).__name__}.{type(self).__name__}",
             msg=data,
         )
@@ -1256,7 +1354,7 @@ cdef class Actor(Component):
         """
         Handle the given instrument.
 
-        Calls `on_instrument` if state is `RUNNING`.
+        Calls `on_instrument` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1281,7 +1379,7 @@ cdef class Actor(Component):
         """
         Handle the given order book data.
 
-        Calls `on_order_book_delta` if state is `RUNNING`.
+        Calls `on_order_book_delta` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1306,7 +1404,7 @@ cdef class Actor(Component):
         """
         Handle the given order book snapshot.
 
-        Calls `on_order_book` if state is `RUNNING`.
+        Calls `on_order_book` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1327,11 +1425,41 @@ cdef class Actor(Component):
                 self._log.exception(ex)
                 raise
 
+    cpdef void handle_ticker(self, Ticker ticker, bint is_historical=False) except *:
+        """
+        Handle the given ticker.
+
+        Calls `on_ticker` if state is ``RUNNING``.
+
+        Parameters
+        ----------
+        ticker : Ticker
+            The received ticker.
+        is_historical : bool
+            If ticker is historical then it won't be passed to `on_ticker`.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(ticker, "ticker")
+
+        if is_historical:
+            return  # Don't pass to on_ticker()
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_ticker(ticker)
+            except Exception as ex:
+                self._log.exception(ex)
+                raise
+
     cpdef void handle_quote_tick(self, QuoteTick tick, bint is_historical=False) except *:
         """
         Handle the given tick.
 
-        Calls `on_quote_tick` if state is `RUNNING`.
+        Calls `on_quote_tick` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1348,7 +1476,7 @@ cdef class Actor(Component):
         Condition.not_none(tick, "tick")
 
         if is_historical:
-            return  # Don't pass to on_tick()
+            return  # Don't pass to on_quote_tick()
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
@@ -1391,7 +1519,7 @@ cdef class Actor(Component):
         """
         Handle the given tick.
 
-        Calls `on_trade_tick` if state is `RUNNING`.
+        Calls `on_trade_tick` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1408,7 +1536,7 @@ cdef class Actor(Component):
         Condition.not_none(tick, "tick")
 
         if is_historical:
-            return  # Don't pass to on_tick()
+            return  # Don't pass to on_trade_tick()
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
@@ -1451,7 +1579,7 @@ cdef class Actor(Component):
         """
         Handle the given bar data.
 
-        Calls `on_bar` if state is `RUNNING`.
+        Calls `on_bar` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1515,7 +1643,7 @@ cdef class Actor(Component):
         """
         Handle the given venue status update.
 
-        Calls `on_venue_status_update` if state is `RUNNING`.
+        Calls `on_venue_status_update` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1540,7 +1668,7 @@ cdef class Actor(Component):
         """
         Handle the given instrument status update.
 
-        Calls `on_instrument_status_update` if state is `RUNNING`.
+        Calls `on_instrument_status_update` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1565,7 +1693,7 @@ cdef class Actor(Component):
         """
         Handle the given instrument close price update.
 
-        Calls `on_instrument_close_price` if .state is `RUNNING`.
+        Calls `on_instrument_close_price` if .state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1590,7 +1718,7 @@ cdef class Actor(Component):
         """
         Handle the given data.
 
-        Calls `on_data` if state is `RUNNING`.
+        Calls `on_data` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1615,7 +1743,7 @@ cdef class Actor(Component):
         """
         Handle the given event.
 
-        Calls `on_event` if state is `RUNNING`.
+        Calls `on_event` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -1651,13 +1779,11 @@ cdef class Actor(Component):
 # -- EGRESS ----------------------------------------------------------------------------------------
 
     cdef void _send_data_cmd(self, DataCommand command) except *:
-        self._check_registered()
         if not self._log.is_bypassed:
             self._log.info(f"{CMD}{SENT} {command}.")
-        self.msgbus.send(endpoint="DataEngine.execute", msg=command)
+        self._msgbus.send(endpoint="DataEngine.execute", msg=command)
 
     cdef void _send_data_req(self, DataRequest request) except *:
-        self._check_registered()
         if not self._log.is_bypassed:
             self._log.info(f"{REQ}{SENT} {request}.")
-        self.msgbus.request(endpoint="DataEngine.request", request=request)
+        self._msgbus.request(endpoint="DataEngine.request", request=request)

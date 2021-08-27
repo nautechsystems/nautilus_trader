@@ -18,7 +18,9 @@ cdef class ComponentStateParser:
 
     @staticmethod
     cdef str to_str(int value):
-        if value == 1:
+        if value == 0:
+            return "PRE_INITIALIZED"
+        elif value == 1:
             return "INITIALIZED"
         elif value == 2:
             return "STARTING"
@@ -37,13 +39,21 @@ cdef class ComponentStateParser:
         elif value == 9:
             return "DISPOSED"
         elif value == 10:
+            return "DEGRADING"
+        elif value == 11:
+            return "DEGRADED"
+        elif value == 12:
+            return "FAULTING"
+        elif value == 13:
             return "FAULTED"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     cdef ComponentState from_str(str value) except *:
-        if value == "INITIALIZED":
+        if value == "PRE_INITIALIZED":
+            return ComponentState.PRE_INITIALIZED
+        elif value == "INITIALIZED":
             return ComponentState.INITIALIZED
         elif value == "STARTING":
             return ComponentState.STARTING
@@ -61,6 +71,12 @@ cdef class ComponentStateParser:
             return ComponentState.DISPOSING
         elif value == "DISPOSED":
             return ComponentState.DISPOSED
+        elif value == "DEGRADING":
+            return ComponentState.DEGRADING
+        elif value == "DEGRADED":
+            return ComponentState.DEGRADED
+        elif value == "FAULTING":
+            return ComponentState.FAULTING
         elif value == "FAULTED":
             return ComponentState.FAULTED
         else:

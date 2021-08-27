@@ -43,8 +43,7 @@ class TestBacktestDataProducer:
         # Arrange
         producer = BacktestDataProducer(logger=self.logger)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert producer.min_timestamp_ns == 9223285636854775000
         assert producer.max_timestamp_ns == -9223285636854776000
         assert producer.min_timestamp == pd.Timestamp("2262-04-10 23:47:16.854774+0000", tz="UTC")
