@@ -44,6 +44,7 @@ class TestPersistenceStreaming:
         )
         return data
 
+    @pytest.mark.skip("Awaiting backtest config refactor")
     def test_feather_writer(self):
         # Arrange
         path = "/root/backtest001"
