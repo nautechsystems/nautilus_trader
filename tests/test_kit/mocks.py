@@ -668,8 +668,8 @@ class MockLiveRiskEngine(LiveRiskEngine):
 
 
 class MockReader(Reader):
-    def parse(self, chunk: bytes) -> Generator:
-        yield chunk
+    def parse(self, block: bytes) -> Generator:
+        yield block
 
 
 def data_catalog_setup():
