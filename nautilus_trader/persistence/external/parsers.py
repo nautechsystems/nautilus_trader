@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
+import logging
 import sys
 from io import BytesIO
 from typing import Any, Callable, Dict, Generator, List, Optional, Union
@@ -213,7 +214,7 @@ class CSVReader(Reader):
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update=None,
         chunked=True,
-        as_dataframe=False,
+        as_dataframe=True,
     ):
         """
         Initialize a new instance of the ``CSVReader`` class.
@@ -257,9 +258,9 @@ class CSVReader(Reader):
                 chunks = tuple([row for _, row in df.iterrows()])  # type: ignore
         else:
             if self.chunked:
-                chunks = tuple([dict(zip(self.header, line)) for line in process.split(b"\n")])  # type: ignore
-            else:
                 chunks = (process,)
+            else:
+                chunks = tuple([dict(zip(self.header, line)) for line in process.split(b"\n")])  # type: ignore
 
         for chunk in chunks:
             if self.instrument_provider_update is not None:
@@ -301,7 +302,7 @@ class ParquetReader(ByteReader):
             df = pd.read_parquet(BytesIO(block))
             self.buffer = b""
         except Exception as e:
-            print(e)
+            logging.error(e)
             return
 
         if self.instrument_provider_update is not None:

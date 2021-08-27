@@ -22,7 +22,6 @@ from nautilus_trader.persistence.external.metadata import _glob_path_to_fs
 from nautilus_trader.persistence.external.metadata import load_processed_raw_files
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.parsers import Reader
-from nautilus_trader.persistence.external.synchronization import has_working_lock
 from nautilus_trader.persistence.external.synchronization import named_lock
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
@@ -99,9 +98,10 @@ def process_files(
     catalog: DataCatalog,
     block_size="128mb",
     compression="infer",
-    scheduler: Union[str, "distributed.Client"] = "threads",
+    scheduler: Union[str, "distributed.Client"] = "sync",
     **kw,
 ):
+    assert scheduler == "sync" or str(scheduler.__module__) == "distributed.client"
     raw_files = make_raw_files(
         glob_path=glob_path,
         reader=reader,
@@ -114,13 +114,6 @@ def process_files(
     ]
     with ProgressBar():
         with dask.config.set(scheduler=scheduler):
-            if not has_working_lock(scheduler=scheduler):
-                err = (
-                    "Windows does not support named locks, need to use dask.distributed client to process files.\n"
-                    "Pass scheduler=distributed.Client(..) "
-                )
-                raise RuntimeError(err)
-
             results = compute(tasks)
     return dict((rf.open_file.path, value) for rf, value in zip(raw_files, results[0]))
 
