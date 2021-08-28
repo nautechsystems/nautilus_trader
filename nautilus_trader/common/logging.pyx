@@ -80,15 +80,15 @@ cdef class LogLevelParser:
 
     @staticmethod
     cdef LogLevel from_str(str value):
-        if value == "DBG":
+        if value == "DBG" or value == "DEBUG":
             return LogLevel.DEBUG
-        elif value == "INF":
+        elif value == "INF" or value == "INFO":
             return LogLevel.INFO
-        elif value == "WRN":
+        elif value == "WRN" or value == "WARNING":
             return LogLevel.WARNING
-        elif value == "ERR":
+        elif value == "ERR" or value == "ERROR":
             return LogLevel.ERROR
-        elif value == "CRT":
+        elif value == "CRT" or value == "CRITICAL":
             return LogLevel.CRITICAL
 
     @staticmethod
