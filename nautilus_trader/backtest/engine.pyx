@@ -17,8 +17,8 @@ import socket
 from typing import Any, Dict, Optional
 
 import pandas as pd
+import pydantic
 import pytz
-from pydantic import BaseModel
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
@@ -84,7 +84,7 @@ from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentS
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-class BacktestEngineConfig(BaseModel):
+class BacktestEngineConfig(pydantic.BaseModel):
     """
     Provides configuration for ``BacktestEngine`` instances
 
@@ -111,7 +111,6 @@ class BacktestEngineConfig(BaseModel):
     level_stdout : int, optional
         The minimum log level for logging messages to stdout.
     """
-
     trader_id: Optional[str] = None
     config_cache: Dict[str, Any]= {}
     config_data: Dict[str, Any] = {}
@@ -131,18 +130,26 @@ cdef class BacktestEngine:
     data.
     """
 
-    def __init__(self, config not None: BacktestEngineConfig=BacktestEngineConfig()):
+    def __init__(self, config: Optional[BacktestEngineConfig]=None):
         """
         Initialize a new instance of the ``BacktestEngine`` class.
 
         Parameters
         ----------
-        config : BacktestEngineConfig
+        config : BacktestEngineConfig, optional
             The configuration for the instance.
 
+        Raises
+        ------
+        TypeError
+            If config is not of type BacktestEngineConfig.
+
         """
+        if config is None:
+            config = BacktestEngineConfig()
+        Condition.type(config, BacktestEngineConfig, "config")
+
         # Configuration
-        trader_id = TraderId(config.trader_id or "BACKTESTER-000")
         self._cache_db_flush = config.cache_db_flush
         self._use_data_cache = config.use_data_cache
         self._run_analysis = config.run_analysis
@@ -164,12 +171,13 @@ cdef class BacktestEngine:
         self._uuid_factory = UUIDFactory()
 
         # Identifiers
+        self.trader_id = TraderId(config.trader_id or "BACKTESTER-000")
         self.host_id = socket.gethostname()
         self.instance_id = self._uuid_factory.generate()
 
         self._logger = Logger(
             clock=LiveClock(),
-            trader_id=trader_id,
+            trader_id=self.trader_id,
             host_id=self.host_id,
             instance_id=self.instance_id,
         )
@@ -181,7 +189,7 @@ cdef class BacktestEngine:
 
         self._test_logger = Logger(
             clock=self._clock,
-            trader_id=trader_id,
+            trader_id=self.trader_id,
             host_id=self.host_id,
             instance_id=self.instance_id,
             level_stdout=LogLevelParser.from_str(config.level_stdout),
@@ -200,7 +208,7 @@ cdef class BacktestEngine:
             cache_db = None
         elif cache_db_type == "redis":
             cache_db = RedisCacheDatabase(
-                trader_id=trader_id,
+                trader_id=self.trader_id,
                 logger=self._test_logger,
                 instrument_serializer=MsgPackInstrumentSerializer(),
                 command_serializer=MsgPackCommandSerializer(),
@@ -217,7 +225,7 @@ cdef class BacktestEngine:
             cache_db.flush()
 
         self._msgbus = MessageBus(
-            trader_id=trader_id,
+            trader_id=self.trader_id,
             clock=self._test_clock,
             logger=self._test_logger,
         )
@@ -272,7 +280,7 @@ cdef class BacktestEngine:
         )
 
         self.trader = Trader(
-            trader_id=trader_id,
+            trader_id=self.trader_id,
             msgbus=self._msgbus,
             cache=self._cache,
             portfolio=self.portfolio,

@@ -111,7 +111,6 @@ cdef class DataEngine(Component):
         super().__init__(
             clock=clock,
             logger=logger,
-            component_id=ComponentId("DataEngine"),
             msgbus=msgbus,
             config=config,
         )

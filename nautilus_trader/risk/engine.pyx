@@ -16,6 +16,8 @@
 from decimal import Decimal
 
 import pandas as pd
+import pydantic
+
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
 
@@ -44,7 +46,6 @@ from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.events.order cimport OrderDenied
-from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -56,6 +57,13 @@ from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
+
+
+class RiskEngineConfig(pydantic.BaseModel):
+    """
+    Provides configuration for ``RiskEngine`` instances.
+    """
+    bypass: bool = False
 
 
 cdef class RiskEngine(Component):
@@ -111,7 +119,6 @@ cdef class RiskEngine(Component):
         super().__init__(
             clock=clock,
             logger=logger,
-            component_id=ComponentId("RiskEngine"),
             msgbus=msgbus,
             config=config,
         )
