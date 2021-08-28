@@ -130,9 +130,18 @@ class TestBarSpecification:
         is_information_aggregated,
     ):
         # Arrange, Act, Assert
-        assert is_time_aggregated == bar_spec.is_time_aggregated()
-        assert is_threshold_aggregated == bar_spec.is_threshold_aggregated()
-        assert is_information_aggregated == bar_spec.is_information_aggregated()
+        assert bar_spec.is_time_aggregated() == is_time_aggregated
+        assert bar_spec.is_threshold_aggregated() == is_threshold_aggregated
+        assert bar_spec.is_information_aggregated() == is_information_aggregated
+        assert BarSpecification.check_time_aggregated(bar_spec.aggregation) == is_time_aggregated
+        assert (
+            BarSpecification.check_threshold_aggregated(bar_spec.aggregation)
+            == is_threshold_aggregated
+        )
+        assert (
+            BarSpecification.check_information_aggregated(bar_spec.aggregation)
+            == is_information_aggregated
+        )
 
 
 class TestBarType:

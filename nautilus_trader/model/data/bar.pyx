@@ -78,72 +78,42 @@ cdef class BarSpecification:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
-    cpdef bint is_time_aggregated(self) except *:
-        """
-        Return a value indicating whether the aggregation method is time-driven.
+    @staticmethod
+    cdef bint check_time_aggregated_c(BarAggregation aggregation):
+        if (
+            aggregation == BarAggregation.SECOND
+            or aggregation == BarAggregation.MINUTE
+            or aggregation == BarAggregation.HOUR
+            or aggregation == BarAggregation.DAY
+        ):
+            return True
+        else:
+            return False
 
-        - ``SECOND``
-        - ``MINUTE``
-        - ``HOUR``
-        - ``DAY``
+    @staticmethod
+    cdef bint check_threshold_aggregated_c(BarAggregation aggregation):
+        if (
+            aggregation == BarAggregation.TICK
+            or aggregation == BarAggregation.TICK_IMBALANCE
+            or aggregation == BarAggregation.VOLUME
+            or aggregation == BarAggregation.VOLUME_IMBALANCE
+            or aggregation == BarAggregation.VALUE
+            or aggregation == BarAggregation.VALUE_IMBALANCE
+        ):
+            return True
+        else:
+            return False
 
-        Returns
-        -------
-        bool
-
-        """
-        return (
-            self.aggregation == BarAggregation.SECOND
-            or self.aggregation == BarAggregation.MINUTE
-            or self.aggregation == BarAggregation.HOUR
-            or self.aggregation == BarAggregation.DAY
-        )
-
-    cpdef bint is_threshold_aggregated(self) except *:
-        """
-        Return a value indicating whether the bar aggregation method is
-        threshold-driven.
-
-        - ``TICK``
-        - ``TICK_IMBALANCE``
-        - ``VOLUME``
-        - ``VOLUME_IMBALANCE``
-        - ``VALUE``
-        - ``VALUE_IMBALANCE``
-
-        Returns
-        -------
-        bool
-
-        """
-        return (
-            self.aggregation == BarAggregation.TICK
-            or self.aggregation == BarAggregation.TICK_IMBALANCE
-            or self.aggregation == BarAggregation.VOLUME
-            or self.aggregation == BarAggregation.VOLUME_IMBALANCE
-            or self.aggregation == BarAggregation.VALUE
-            or self.aggregation == BarAggregation.VALUE_IMBALANCE
-        )
-
-    cpdef bint is_information_aggregated(self) except *:
-        """
-        Return a value indicating whether the aggregation method is
-        information-driven.
-
-        - ``TICK_RUNS``
-        - ``VOLUME_RUNS``
-        - ``VALUE_RUNS``
-
-        Returns
-        -------
-        bool
-
-        """
-        return (
-            self.aggregation == BarAggregation.TICK_RUNS
-            or self.aggregation == BarAggregation.VOLUME_RUNS
-            or self.aggregation == BarAggregation.VALUE_RUNS
-        )
+    @staticmethod
+    cdef bint check_information_aggregated_c(BarAggregation aggregation):
+        if (
+            aggregation == BarAggregation.TICK_RUNS
+            or aggregation == BarAggregation.VOLUME_RUNS
+            or aggregation == BarAggregation.VALUE_RUNS
+        ):
+            return True
+        else:
+            return False
 
     @staticmethod
     cdef BarSpecification from_str_c(str value):
@@ -152,7 +122,9 @@ cdef class BarSpecification:
         cdef list pieces = value.split('-', maxsplit=2)
 
         if len(pieces) != 3:
-            raise ValueError(f"The BarSpecification string value was malformed, was {value}")
+            raise ValueError(
+                f"The BarSpecification string value was malformed, was {value}",
+            )
 
         return BarSpecification(
             int(pieces[0]),
@@ -185,6 +157,111 @@ cdef class BarSpecification:
 
         """
         return BarSpecification.from_str_c(value)
+
+    @staticmethod
+    def check_time_aggregated(BarAggregation aggregation):
+        """
+        Check the given aggregation is a type of time aggregation.
+
+        Parameters
+        ----------
+        aggregation : BarAggregation
+            The aggregation type to check.
+
+        Returns
+        -------
+        bool
+            True if time aggregated, else False.
+
+        """
+        return BarSpecification.check_time_aggregated_c(aggregation)
+
+    @staticmethod
+    def check_threshold_aggregated(BarAggregation aggregation):
+        """
+        Check the given aggregation is a type of threshold aggregation.
+
+        Parameters
+        ----------
+        aggregation : BarAggregation
+            The aggregation type to check.
+
+        Returns
+        -------
+        bool
+            True if threshold aggregated, else False.
+
+        """
+        return BarSpecification.check_threshold_aggregated_c(aggregation)
+
+    @staticmethod
+    def check_information_aggregated(BarAggregation aggregation):
+        """
+        Check the given aggregation is a type of information aggregation.
+
+        Parameters
+        ----------
+        aggregation : BarAggregation
+            The aggregation type to check.
+
+        Returns
+        -------
+        bool
+            True if information aggregated, else False.
+
+        """
+        return BarSpecification.check_information_aggregated_c(aggregation)
+
+    cpdef bint is_time_aggregated(self) except *:
+        """
+        Return a value indicating whether the aggregation method is time-driven.
+
+        - ``SECOND``
+        - ``MINUTE``
+        - ``HOUR``
+        - ``DAY``
+
+        Returns
+        -------
+        bool
+
+        """
+        return BarSpecification.check_time_aggregated_c(self.aggregation)
+
+    cpdef bint is_threshold_aggregated(self) except *:
+        """
+        Return a value indicating whether the bar aggregation method is
+        threshold-driven.
+
+        - ``TICK``
+        - ``TICK_IMBALANCE``
+        - ``VOLUME``
+        - ``VOLUME_IMBALANCE``
+        - ``VALUE``
+        - ``VALUE_IMBALANCE``
+
+        Returns
+        -------
+        bool
+
+        """
+        return BarSpecification.check_threshold_aggregated_c(self.aggregation)
+
+    cpdef bint is_information_aggregated(self) except *:
+        """
+        Return a value indicating whether the aggregation method is
+        information-driven.
+
+        - ``TICK_RUNS``
+        - ``VOLUME_RUNS``
+        - ``VALUE_RUNS``
+
+        Returns
+        -------
+        bool
+
+        """
+        return BarSpecification.check_information_aggregated_c(self.aggregation)
 
 
 cdef class BarType:
@@ -240,28 +317,6 @@ cdef class BarType:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
-    cpdef bint is_external_aggregation(self) except *:
-        """
-        Return a value indicating whether the bar aggregation source is ``EXTERNAL``.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.aggregation_source == AggregationSource.EXTERNAL
-
-    cpdef bint is_internal_aggregation(self) except *:
-        """
-        Return a value indicating whether the bar aggregation source is ``INTERNAL``.
-
-        Returns
-        -------
-        bool
-
-        """
-        return self.aggregation_source == AggregationSource.INTERNAL
-
     @staticmethod
     cdef BarType from_str_c(str value):
         Condition.valid_string(value, 'value')
@@ -306,6 +361,28 @@ cdef class BarType:
 
         """
         return BarType.from_str_c(value)
+
+    cpdef bint is_externally_aggregated(self) except *:
+        """
+        Return a value indicating whether the bar aggregation source is ``EXTERNAL``.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.aggregation_source == AggregationSource.EXTERNAL
+
+    cpdef bint is_internally_aggregated(self) except *:
+        """
+        Return a value indicating whether the bar aggregation source is ``INTERNAL``.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.aggregation_source == AggregationSource.INTERNAL
 
 
 cdef class Bar(Data):
