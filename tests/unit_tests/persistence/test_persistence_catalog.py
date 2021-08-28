@@ -9,6 +9,7 @@ import pytest
 from examples.strategies.orderbook_imbalance import OrderbookImbalance
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.enums import AccountType
@@ -112,7 +113,9 @@ def test_data_catalog_backtest_data_no_filter(loaded_catalog):
 
 def test_data_catalog_backtest_data_filtered(loaded_catalog):
     instruments = loaded_catalog.instruments(as_nautilus=True)
-    engine = BacktestEngine(bypass_logging=True)
+    config = BacktestEngineConfig()
+    config.bypass_logging = True
+    engine = BacktestEngine(config=config)
     engine = loaded_catalog.setup_engine(
         engine=engine,
         instruments=[instruments[1]],
@@ -135,7 +138,10 @@ def test_data_catalog_backtest_data_filtered(loaded_catalog):
 @pytest.mark.skip(reason="flaky")
 def test_data_catalog_backtest_run(loaded_catalog):
     instruments = loaded_catalog.instruments(as_nautilus=True)
-    engine = BacktestEngine(bypass_logging=True)
+    config = BacktestEngineConfig()
+    config.bypass_logging = True
+    config.run_analysis = False
+    engine = BacktestEngine(config=config)
     engine = loaded_catalog.setup_engine(engine=engine, instruments=[instruments[1]])
     engine.add_venue(
         venue=BETFAIR_VENUE,

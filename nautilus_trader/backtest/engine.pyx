@@ -14,9 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import socket
+from typing import Any, Dict, Optional
 
 import pandas as pd
 import pytz
+from pydantic import BaseModel
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
@@ -36,7 +38,7 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.logging cimport LogLevel
+from nautilus_trader.common.logging cimport LogLevelParser
 from nautilus_trader.common.logging cimport log_memory
 from nautilus_trader.common.logging cimport nautilus_header
 from nautilus_trader.common.timer cimport TimeEventHandler
@@ -59,6 +61,7 @@ from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.c_enums.price_type cimport PriceTypeParser
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarSpecification
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport GenericData
@@ -81,12 +84,45 @@ from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentS
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
-cdef tuple TIME_AGGREGATIONS = (
-    BarAggregation.SECOND,
-    BarAggregation.MINUTE,
-    BarAggregation.HOUR,
-    BarAggregation.DAY,
-)
+class BacktestEngineConfig(BaseModel):
+    """
+    Provides configuration for ``BacktestEngine`` instances
+
+    trader_id : TraderId, optional
+        The trader ID.
+    config_data : dict[str, object]
+        The configuration for the cache.
+    config_data : dict[str, object]
+        The configuration for the data engine.
+    config_risk : dict[str, object]
+        The configuration for the risk engine.
+    config_exec : dict[str, object]
+        The configuration for the execution engine.
+    cache_db_type : str {'in-memory', 'redis'}
+        The type for the cache.
+    cache_db_flush : bool, optional
+        If the cache should be flushed on each run.
+    use_data_cache : bool, optional
+        If use cache for DataProducer (increased performance with repeated backtests on same data).
+    bypass_logging : bool, optional
+        If logging should be bypassed.
+    run_analysis : bool
+        If post backtest performance analysis should be run.
+    level_stdout : int, optional
+        The minimum log level for logging messages to stdout.
+    """
+
+    trader_id: Optional[str] = None
+    config_cache: Dict[str, Any]= {}
+    config_data: Dict[str, Any] = {}
+    config_risk: Dict[str, Any] = {}
+    config_exec: Dict[str, Any] = {}
+    cache_db_type: Optional[str] = None
+    cache_db_flush: bool = True
+    use_data_cache: bool = False
+    bypass_logging: bool = False
+    run_analysis: bool = True
+    level_stdout: str = "INF"
 
 
 cdef class BacktestEngine:
@@ -95,57 +131,21 @@ cdef class BacktestEngine:
     data.
     """
 
-    def __init__(
-        self,
-        TraderId trader_id=None,
-        dict config_cache=None,
-        dict config_data=None,
-        dict config_risk=None,
-        dict config_exec=None,
-        str cache_db_type not None="in-memory",
-        bint cache_db_flush=True,
-        bint use_data_cache=False,
-        bint bypass_logging=False,
-        bint run_analysis=True,
-        int level_stdout=LogLevel.INFO,
-    ):
+    def __init__(self, config not None: BacktestEngineConfig=BacktestEngineConfig()):
         """
         Initialize a new instance of the ``BacktestEngine`` class.
 
         Parameters
         ----------
-        trader_id : TraderId, optional
-            The trader ID.
-        config_data : dict[str, object]
-            The configuration for the cache.
-        config_data : dict[str, object]
-            The configuration for the data engine.
-        config_risk : dict[str, object]
-            The configuration for the risk engine.
-        config_exec : dict[str, object]
-            The configuration for the execution engine.
-        cache_db_type : str {'in-memory', 'redis'}
-            The type for the cache.
-        cache_db_flush : bool, optional
-            If the cache should be flushed on each run.
-        use_data_cache : bool, optional
-            If use cache for DataProducer (increased performance with repeated backtests on same data).
-        bypass_logging : bool, optional
-            If logging should be bypassed.
-        run_analysis : bool
-            If post backtest performance analysis should be run.
-        level_stdout : int, optional
-            The minimum log level for logging messages to stdout.
+        config : BacktestEngineConfig
+            The configuration for the instance.
 
         """
-        if trader_id is None:
-            trader_id = TraderId("BACKTESTER-000")
-        Condition.valid_string(cache_db_type, "cache_db_type")
-
-        # Options
-        self._cache_db_flush = cache_db_flush
-        self._use_data_cache = use_data_cache
-        self._run_analysis = run_analysis
+        # Configuration
+        trader_id = TraderId(config.trader_id or "BACKTESTER-000")
+        self._cache_db_flush = config.cache_db_flush
+        self._use_data_cache = config.use_data_cache
+        self._run_analysis = config.run_analysis
 
         # Data
         self._generic_data = []     # type: list[GenericData]
@@ -184,8 +184,8 @@ cdef class BacktestEngine:
             trader_id=trader_id,
             host_id=self.host_id,
             instance_id=self.instance_id,
-            level_stdout=level_stdout,
-            bypass=bypass_logging,
+            level_stdout=LogLevelParser.from_str(config.level_stdout),
+            bypass=config.bypass_logging,
         )
 
         nautilus_header(self._log)
@@ -195,6 +195,7 @@ cdef class BacktestEngine:
         ########################################################################
         # Build platform
         ########################################################################
+        cache_db_type = config.cache_db_type or "in-memory"
         if cache_db_type == "in-memory":
             cache_db = None
         elif cache_db_type == "redis":
@@ -224,7 +225,7 @@ cdef class BacktestEngine:
         self._cache = Cache(
             database=cache_db,
             logger=self._test_logger,
-            config=config_cache,
+            config=config.config_cache,
         )
         # Set external facade
         self.cache = self._cache
@@ -240,16 +241,16 @@ cdef class BacktestEngine:
 
         self._data_producer = None  # Instantiated on first run
 
-        if config_data is None:
-            config_data = {}
-        config_data["use_previous_close"] = False  # Ensure bars match historical data
+        if config.config_data is None:
+            config.config_data = {}
+        config.config_data["use_previous_close"] = False  # Ensure bars match historical data
 
         self._data_engine = DataEngine(
             msgbus=self._msgbus,
             cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
-            config=config_data,
+            config=config.config_data,
         )
 
         self._exec_engine = ExecutionEngine(
@@ -257,7 +258,7 @@ cdef class BacktestEngine:
             cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
-            config=config_exec,
+            config=config.config_exec,
         )
         self._exec_engine.load_cache()
 
@@ -267,7 +268,7 @@ cdef class BacktestEngine:
             cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
-            config=config_risk,
+            config=config.config_risk,
         )
 
         self.trader = Trader(
@@ -629,7 +630,7 @@ cdef class BacktestEngine:
         self._data_engine.process(instrument)
 
         # Add quote ticks from data if time aggregated
-        if bar_type.spec.aggregation in TIME_AGGREGATIONS:
+        if bar_type.spec.is_time_aggregated():
             self.add_bars_as_ticks(
                 instrument_id=instrument.id,
                 aggregation=bar_type.spec.aggregation,
@@ -746,7 +747,7 @@ cdef class BacktestEngine:
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(data, "data")
-        Condition.is_in(aggregation, TIME_AGGREGATIONS, "aggregation", "time aggregations")
+        Condition.true(BarSpecification.check_time_aggregated_c(aggregation), "aggregation not a type of time aggregation")
         Condition.true(price_type != PriceType.LAST, "price_type was PriceType.LAST")
         Condition.false(data.empty, "data was empty")
         Condition.true(

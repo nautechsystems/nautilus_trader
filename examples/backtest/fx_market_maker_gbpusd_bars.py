@@ -29,6 +29,7 @@ sys.path.insert(
 from examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
@@ -45,12 +46,12 @@ from tests.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
+    # Configure backtest engine
+    config = BacktestEngineConfig()
+    config.use_data_cache = True  # Pre-cache data for increased performance on repeated runs
+
     # Build the backtest engine
-    engine = BacktestEngine(
-        use_data_cache=True,
-        # cache_db_type="redis",
-        # bypass_logging=True
-    )
+    engine = BacktestEngine(config=config)
 
     # Setup trading instruments
     SIM = Venue("SIM")
