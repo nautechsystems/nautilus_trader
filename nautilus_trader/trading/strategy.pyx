@@ -24,7 +24,9 @@ attempts to operate without a managing `Trader` instance.
 
 """
 
-from pydantic import BaseModel
+from typing import Optional
+
+import pydantic
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
@@ -78,7 +80,7 @@ cdef tuple _WARNING_EVENTS = (
 )
 
 
-class TradingStrategyConfig(BaseModel):
+class TradingStrategyConfig(pydantic.BaseModel):
     """
     The base model for all trading strategy configurations.
 
@@ -89,7 +91,6 @@ class TradingStrategyConfig(BaseModel):
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
     """
-
     order_id_tag: str = "000"
     oms_type: OMSType = OMSType.HEDGING
 
@@ -112,13 +113,13 @@ cdef class TradingStrategy(Actor):
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, config not None: TradingStrategyConfig=TradingStrategyConfig()):
+    def __init__(self, config: Optional[TradingStrategyConfig]=None):
         """
         Initialize a new instance of the ``TradingStrategy`` class.
 
         Parameters
         ----------
-        config : TradingStrategyConfig
+        config : TradingStrategyConfig, optional
             The trading strategy configuration.
 
         Raises
@@ -127,6 +128,8 @@ cdef class TradingStrategy(Actor):
             If config is not of type TradingStrategyConfig.
 
         """
+        if config is None:
+            config = TradingStrategyConfig()
         Condition.type(config, TradingStrategyConfig, "config")
 
         self.oms_type = config.oms_type

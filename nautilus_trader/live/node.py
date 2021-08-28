@@ -119,9 +119,9 @@ class TradingNode:
         self._is_running = False
 
         # Identifiers
-        self.trader_id = TraderId(
-            f"{config_trader['name']}-{config_trader['id_tag']}",
-        )
+        trader_name = config_trader["name"]
+        trader_id_tag = config_trader["id_tag"]
+        self.trader_id = TraderId(f"{trader_name}-{trader_id_tag}")
         self.host_id = socket.gethostname()
         self.instance_id = self._uuid_factory.generate()
 

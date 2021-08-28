@@ -28,6 +28,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
+from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 from nautilus_trader.portfolio.portfolio cimport Portfolio
@@ -65,6 +66,8 @@ cdef class BacktestEngine:
 
     cdef readonly Trader trader
     """The trader for the backtest.\n\n:returns: `Trader`"""
+    cdef readonly TraderId trader_id
+    """The trader ID associated with the engine.\n\n:returns: `TraderId`"""
     cdef readonly str host_id
     """The backtest engine host ID.\n\n:returns: `str`"""
     cdef readonly UUID4 instance_id
