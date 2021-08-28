@@ -18,6 +18,7 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.data.wrangling import BarDataWrangler
 from nautilus_trader.model.currencies import USD
@@ -415,7 +416,7 @@ class TestBacktestEngineData:
 class TestBacktestEngine:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(use_data_cache=True)
+        self.engine = BacktestEngine()
 
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
@@ -493,10 +494,10 @@ class TestBacktestEngine:
 class TestBacktestWithAddedBars:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(
-            bypass_logging=True,
-            run_analysis=False,
-        )
+        config = BacktestEngineConfig()
+        config.bypass_logging = True
+        config.run_analysis = False
+        self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")
         self.engine.add_instrument(GBPUSD_SIM)

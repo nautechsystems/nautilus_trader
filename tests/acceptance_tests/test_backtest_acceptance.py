@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
@@ -52,10 +53,11 @@ from tests.test_kit.strategies import OrderBookImbalanceStrategyConfig
 class TestBacktestAcceptanceTestsUSDJPY:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(
-            bypass_logging=True,
-            run_analysis=False,
-        )
+        config = BacktestEngineConfig()
+        config.bypass_logging = True
+        config.run_analysis = False
+
+        self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
@@ -172,10 +174,11 @@ class TestBacktestAcceptanceTestsUSDJPY:
 class TestBacktestAcceptanceTestsGBPUSD:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(
-            bypass_logging=True,
-            run_analysis=False,
-        )
+        config = BacktestEngineConfig()
+        config.bypass_logging = True
+        config.run_analysis = False
+
+        self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")
         self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
@@ -235,10 +238,11 @@ class TestBacktestAcceptanceTestsGBPUSD:
 class TestBacktestAcceptanceTestsAUDUSD:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(
-            bypass_logging=True,
-            run_analysis=False,
-        )
+        config = BacktestEngineConfig()
+        config.bypass_logging = True
+        config.run_analysis = False
+
+        self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")
         self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -306,10 +310,11 @@ class TestBacktestAcceptanceTestsAUDUSD:
 class TestBacktestAcceptanceTestsETHUSDT:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(
-            bypass_logging=True,
-            run_analysis=False,
-        )
+        config = BacktestEngineConfig()
+        config.bypass_logging = True
+        config.run_analysis = False
+
+        self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("BINANCE")
         self.ethusdt = TestInstrumentProvider.ethusdt_binance()
@@ -353,10 +358,11 @@ class TestBacktestAcceptanceTestsETHUSDT:
 class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(
-            bypass_logging=True,
-            run_analysis=False,
-        )
+        config = BacktestEngineConfig()
+        config.bypass_logging = True
+        config.run_analysis = False
+
+        self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("BINANCE")
         self.btcusdt = TestInstrumentProvider.btcusdt_binance()
@@ -402,10 +408,12 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
     def setup(self):
         # Fixture Setup
         data_catalog_setup()
-        self.engine = BacktestEngine(
-            bypass_logging=True,
-            run_analysis=False,
-        )
+
+        config = BacktestEngineConfig()
+        config.bypass_logging = True
+        config.run_analysis = False
+
+        self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("BETFAIR")
 
@@ -457,10 +465,12 @@ class TestBacktestAcceptanceTestsMarketMaking:
     def setup(self):
         # Fixture Setup
         data_catalog_setup()
-        self.engine = BacktestEngine(
-            bypass_logging=True,
-            run_analysis=False,
-        )
+
+        config = BacktestEngineConfig()
+        config.bypass_logging = True
+        config.run_analysis = False
+
+        self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("BETFAIR")
 

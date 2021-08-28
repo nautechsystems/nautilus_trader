@@ -21,6 +21,7 @@ import pandas as pd
 import pytz
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
@@ -49,7 +50,9 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     def test_run_with_empty_strategy(benchmark):
         def setup():
             # Arrange
-            engine = BacktestEngine(bypass_logging=True)
+            config = BacktestEngineConfig()
+            config.bypass_logging = True
+            engine = BacktestEngine(config=config)
 
             engine.add_instrument(USDJPY_SIM)
             engine.add_bars_as_ticks(
@@ -87,7 +90,9 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_run_for_tick_processing(benchmark):
         def setup():
-            engine = BacktestEngine(bypass_logging=True)
+            config = BacktestEngineConfig()
+            config.bypass_logging = True
+            engine = BacktestEngine(config=config)
 
             engine.add_instrument(USDJPY_SIM)
             engine.add_bars_as_ticks(
@@ -134,7 +139,9 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_run_with_ema_cross_strategy(benchmark):
         def setup():
-            engine = BacktestEngine(bypass_logging=True)
+            config = BacktestEngineConfig()
+            config.bypass_logging = True
+            engine = BacktestEngine(config=config)
 
             engine.add_instrument(USDJPY_SIM)
             engine.add_bars_as_ticks(

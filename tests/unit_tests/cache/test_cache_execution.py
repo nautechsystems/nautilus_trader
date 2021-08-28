@@ -16,6 +16,7 @@
 from decimal import Decimal
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
@@ -1006,9 +1007,10 @@ class TestCache:
 class TestExecutionCacheIntegrityCheck:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(
-            bypass_logging=True,  # Uncomment this to see integrity check failure messages
-        )
+        config = BacktestEngineConfig()
+        config.bypass_logging = True
+        config.run_analysis = False
+        self.engine = BacktestEngine(config=config)
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
