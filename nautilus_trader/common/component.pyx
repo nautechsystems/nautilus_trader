@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import warnings
-
 from libc.stdint cimport int64_t
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
@@ -318,32 +316,32 @@ cdef class Component:
 # -- ABSTRACT METHODS ------------------------------------------------------------------------------
 
     cpdef void _start(self) except *:
-        # Should override in subclass
-        warnings.warn("_start was called when not overridden")
+        # Optionally override in subclass
+        pass
 
     cpdef void _stop(self) except *:
-        # Should override in subclass
-        warnings.warn("_stop was called when not overridden")
+        # Optionally override in subclass
+        pass
 
     cpdef void _resume(self) except *:
-        # Should override in subclass
-        warnings.warn("_resume was called when not overridden")
+        # Optionally override in subclass
+        pass
 
     cpdef void _reset(self) except *:
-        # Should override in subclass
-        warnings.warn("_reset was called when not overridden")
+        # Optionally override in subclass
+        pass
 
     cpdef void _dispose(self) except *:
-        # Should override in subclass
-        warnings.warn("_dispose was called when not overridden")
+        # Optionally override in subclass
+        pass
 
     cpdef void _degrade(self) except *:
-        # Should override in subclass
-        warnings.warn("_degrade was called when not overridden")
+        # Optionally override in subclass
+        pass
 
     cpdef void _fault(self) except *:
-        # Should override in subclass
-        warnings.warn("_fault was called when not overridden")
+        # Optionally override in subclass
+        pass
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

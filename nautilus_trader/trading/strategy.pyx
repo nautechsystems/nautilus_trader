@@ -98,15 +98,14 @@ cdef class TradingStrategy(Actor):
     """
     The abstract base class for all trading strategies.
 
-    Strategy OMS (Order Management System):
-    An individual trading strategy can configure its own order management system
-    type which determines how positions are handled by the `ExecutionEngine`.
+    A trading strategy can configure its own order management system type, which
+    determines how positions are handled by the `ExecutionEngine`.
 
-    - ``HEDGING``: A position ID will be assigned for each new position which
-      is opened per instrument.
-
-    - ``NETTING``: There will only ever be a single position for the strategy
-      per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
+    Strategy OMS (Order Management System) types:
+     - ``HEDGING``: A position ID will be assigned for each new position which
+       is opened per instrument.
+     - ``NETTING``: There will only ever be a single position for the strategy
+       per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
 
     Warnings
     --------
