@@ -67,14 +67,14 @@ cdef class RiskEngine(Component):
     risk monitoring.
 
     Configuration options:
-    - bypass: If True then all risk checks are bypassed (will still check for duplicate IDs).
-    - max_order_rate: tuple(int, timedelta), default=10/00:00:01.
-    - max_notional_per_order: { str: Decimal }, default = {}.
+     - ``bypass``: If True then all risk checks are bypassed (will still check for duplicate IDs).
+     - ``max_order_rate``: str, default=100/00:00:01 i.e 100 per second.
+     - ``max_notional_per_order``: { str: Decimal }, default = {}.
 
-    Possible trading states;
-    - ``ACTIVE`` (trading is enabled).
-    - ``REDUCING`` (only new orders or updates which reduce an open position are allowed).
-    - ``HALTED`` (all trading commands except cancels are denied).
+    Possible trading states:
+     - ``ACTIVE`` (trading is enabled).
+     - ``REDUCING`` (only new orders or updates which reduce an open position are allowed).
+     - ``HALTED`` (all trading commands except cancels are denied).
 
     """
 

@@ -14,10 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.factory import AccountFactory
+
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.commands.trading cimport CancelOrder
@@ -91,22 +93,14 @@ cdef class BacktestExecClient(ExecutionClient):
         self.is_connected = False
 
     cpdef void _start(self) except *:
-        self._log.info("Connecting...")
+        self._log.info(f"Connecting...")
         self.is_connected = True
-        self._log.info("Connected.")
+        self._log.info(f"Connected.")
 
     cpdef void _stop(self) except *:
-        self._log.info("Disconnecting...")
+        self._log.info(f"Disconnecting...")
         self.is_connected = False
-        self._log.info("Disconnected.")
-
-    cpdef void _reset(self) except *:
-        pass
-        # Nothing to reset
-
-    cpdef void _dispose(self) except *:
-        pass
-        # Nothing to dispose
+        self._log.info(f"Disconnected.")
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
@@ -120,9 +114,7 @@ cdef class BacktestExecClient(ExecutionClient):
             The command to execute.
 
         """
-        if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot send command (not connected), {command}.")
-            return
+        Condition.true(self.is_connected, "not connected")
 
         self._exchange.handle_submit_order(command)
 
@@ -136,9 +128,7 @@ cdef class BacktestExecClient(ExecutionClient):
             The command to execute.
 
         """
-        if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot send command (not connected), {command}.")
-            return
+        Condition.true(self.is_connected, "not connected")
 
         self._exchange.handle_submit_bracket_order(command)
 
@@ -152,9 +142,7 @@ cdef class BacktestExecClient(ExecutionClient):
             The command to execute.
 
         """
-        if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot send command (not connected), {command}.")
-            return
+        Condition.true(self.is_connected, "not connected")
 
         self._exchange.handle_update_order(command)
 
@@ -168,8 +156,6 @@ cdef class BacktestExecClient(ExecutionClient):
             The command to execute.
 
         """
-        if not self.is_connected:  # Simulate connection behaviour
-            self._log.error(f"Cannot send command (not connected), {command}.")
-            return
+        Condition.true(self.is_connected, "not connected")
 
         self._exchange.handle_cancel_order(command)
