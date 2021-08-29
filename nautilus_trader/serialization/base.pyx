@@ -52,9 +52,13 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
 from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
 from nautilus_trader.model.instruments.currency cimport CurrencySpot
+from nautilus_trader.model.instruments.equity cimport Equity
+from nautilus_trader.model.instruments.future cimport Future
+from nautilus_trader.model.instruments.option cimport Option
 
 
 # Default mappings for Nautilus objects
+
 _OBJECT_TO_DICT_MAP = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
     SubmitBracketOrder.__name__: SubmitBracketOrder.to_dict_c,
@@ -82,6 +86,9 @@ _OBJECT_TO_DICT_MAP = {
     PositionClosed.__name__: PositionClosed.to_dict_c,
     Instrument.__name__: Instrument.base_to_dict_c,
     BettingInstrument.__name__: BettingInstrument.to_dict_c,
+    Equity.__name__: Equity.to_dict_c,
+    Future.__name__: Future.to_dict_c,
+    Option.__name__: Option.to_dict_c,
     CryptoSwap.__name__: CryptoSwap.to_dict_c,
     CurrencySpot.__name__: CurrencySpot.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
@@ -121,6 +128,9 @@ _OBJECT_FROM_DICT_MAP = {
     PositionClosed.__name__: PositionClosed.from_dict_c,
     Instrument.__name__: Instrument.base_from_dict_c,
     BettingInstrument.__name__: BettingInstrument.from_dict_c,
+    Equity.__name__: Equity.from_dict_c,
+    Future.__name__: Future.from_dict_c,
+    Option.__name__: Option.from_dict_c,
     CryptoSwap.__name__: CryptoSwap.from_dict_c,
     CurrencySpot.__name__: CurrencySpot.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,

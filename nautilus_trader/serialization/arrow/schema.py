@@ -41,36 +41,14 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.equity import Equity
+from nautilus_trader.model.instruments.future import Future
+from nautilus_trader.model.instruments.option import Option
 from nautilus_trader.model.orderbook.data import OrderBookData
 
 
 NAUTILUS_PARQUET_SCHEMA = {
-    BettingInstrument: pa.schema(
-        {
-            "venue_name": pa.string(),
-            "currency": pa.string(),
-            "instrument_id": pa.string(),
-            "event_type_id": pa.string(),
-            "event_type_name": pa.string(),
-            "competition_id": pa.string(),
-            "competition_name": pa.string(),
-            "event_id": pa.string(),
-            "event_name": pa.string(),
-            "event_country_code": pa.string(),
-            "event_open_date": pa.string(),
-            "betting_type": pa.string(),
-            "market_id": pa.string(),
-            "market_name": pa.string(),
-            "market_start_time": pa.string(),
-            "market_type": pa.string(),
-            "selection_id": pa.string(),
-            "selection_name": pa.string(),
-            "selection_handicap": pa.string(),
-            "ts_init": pa.int64(),
-            "ts_event": pa.int64(),
-        },
-        metadata={"type": "BettingInstrument"},
-    ),
     OrderBookData: pa.schema(
         {
             "instrument_id": pa.string(),
@@ -427,6 +405,101 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_opened": pa.int64(),
             "ts_closed": pa.int64(),
             "ts_init": pa.int64(),
+        }
+    ),
+    BettingInstrument: pa.schema(
+        {
+            "venue_name": pa.string(),
+            "currency": pa.string(),
+            "instrument_id": pa.string(),
+            "event_type_id": pa.string(),
+            "event_type_name": pa.string(),
+            "competition_id": pa.string(),
+            "competition_name": pa.string(),
+            "event_id": pa.string(),
+            "event_name": pa.string(),
+            "event_country_code": pa.string(),
+            "event_open_date": pa.string(),
+            "betting_type": pa.string(),
+            "market_id": pa.string(),
+            "market_name": pa.string(),
+            "market_start_time": pa.string(),
+            "market_type": pa.string(),
+            "selection_id": pa.string(),
+            "selection_name": pa.string(),
+            "selection_handicap": pa.string(),
+            "ts_init": pa.int64(),
+            "ts_event": pa.int64(),
+        },
+        metadata={"type": "BettingInstrument"},
+    ),
+    CurrencySpot: pa.schema(
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "base_currency": pa.dictionary(pa.int8(), pa.string()),
+            "quote_currency": pa.dictionary(pa.int8(), pa.string()),
+            "price_precision": pa.int64(),
+            "size_precision": pa.int64(),
+            "price_increment": pa.dictionary(pa.int8(), pa.string()),
+            "size_increment": pa.dictionary(pa.int8(), pa.string()),
+            "lot_size": pa.dictionary(pa.int8(), pa.string()),
+            "max_quantity": pa.dictionary(pa.int8(), pa.string()),
+            "min_quantity": pa.dictionary(pa.int8(), pa.string()),
+            "max_notional": pa.dictionary(pa.int8(), pa.string()),
+            "min_notional": pa.dictionary(pa.int8(), pa.string()),
+            "max_price": pa.dictionary(pa.int8(), pa.string()),
+            "min_price": pa.dictionary(pa.int8(), pa.string()),
+            "margin_init": pa.string(),
+            "margin_maint": pa.string(),
+            "maker_fee": pa.string(),
+            "taker_fee": pa.string(),
+            "info": pa.string(),
+            "ts_init": pa.int64(),
+            "ts_event": pa.int64(),
+        }
+    ),
+    Equity: pa.schema(
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "currency": pa.dictionary(pa.int8(), pa.string()),
+            "price_precision": pa.int64(),
+            "size_precision": pa.int64(),
+            "price_increment": pa.dictionary(pa.int8(), pa.string()),
+            "size_increment": pa.dictionary(pa.int8(), pa.string()),
+            "lot_size": pa.dictionary(pa.int8(), pa.string()),
+            "isin": pa.string(),
+            "margin_init": pa.string(),
+            "margin_maint": pa.string(),
+            "ts_init": pa.int64(),
+            "ts_event": pa.int64(),
+        }
+    ),
+    Future: pa.schema(
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "asset_class": pa.string(),
+            "currency": pa.dictionary(pa.int8(), pa.string()),
+            "price_precision": pa.int64(),
+            "size_precision": pa.int64(),
+            "price_increment": pa.dictionary(pa.int8(), pa.string()),
+            "size_increment": pa.dictionary(pa.int8(), pa.string()),
+            "lot_size": pa.dictionary(pa.int8(), pa.string()),
+            "ts_init": pa.int64(),
+            "ts_event": pa.int64(),
+        }
+    ),
+    Option: pa.schema(
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "asset_class": pa.string(),
+            "currency": pa.dictionary(pa.int8(), pa.string()),
+            "price_precision": pa.int64(),
+            "size_precision": pa.int64(),
+            "price_increment": pa.dictionary(pa.int8(), pa.string()),
+            "size_increment": pa.dictionary(pa.int8(), pa.string()),
+            "lot_size": pa.dictionary(pa.int8(), pa.string()),
+            "ts_init": pa.int64(),
+            "ts_event": pa.int64(),
         }
     ),
 }

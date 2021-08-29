@@ -13,18 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport date
+
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Price
 
 
 cdef class Option(Instrument):
-    cdef readonly int contract_id
-    cdef readonly str last_trade_date_or_contract_month
-    cdef readonly str local_symbol
-    cdef readonly str trading_class
-    cdef readonly str market_name
-    cdef readonly str long_name
-    cdef readonly str contract_month
-    cdef readonly str time_zone_id
-    cdef readonly str trading_hours
-    cdef readonly str liquid_hours
-    cdef readonly str last_trade_time
+    cdef readonly str underlying
+    cdef readonly date expiry_date
+    cdef readonly Price strike_price
+
+    @staticmethod
+    cdef Option from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(Option obj)
