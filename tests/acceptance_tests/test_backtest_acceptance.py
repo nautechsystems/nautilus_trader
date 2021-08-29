@@ -53,10 +53,10 @@ from tests.test_kit.strategies import OrderBookImbalanceStrategyConfig
 class TestBacktestAcceptanceTestsUSDJPY:
     def setup(self):
         # Fixture Setup
-        config = BacktestEngineConfig()
-        config.bypass_logging = True
-        config.run_analysis = False
-
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+        )
         self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")
@@ -174,10 +174,10 @@ class TestBacktestAcceptanceTestsUSDJPY:
 class TestBacktestAcceptanceTestsGBPUSD:
     def setup(self):
         # Fixture Setup
-        config = BacktestEngineConfig()
-        config.bypass_logging = True
-        config.run_analysis = False
-
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+        )
         self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")
@@ -238,10 +238,10 @@ class TestBacktestAcceptanceTestsGBPUSD:
 class TestBacktestAcceptanceTestsAUDUSD:
     def setup(self):
         # Fixture Setup
-        config = BacktestEngineConfig()
-        config.bypass_logging = True
-        config.run_analysis = False
-
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+        )
         self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")
@@ -310,10 +310,10 @@ class TestBacktestAcceptanceTestsAUDUSD:
 class TestBacktestAcceptanceTestsETHUSDT:
     def setup(self):
         # Fixture Setup
-        config = BacktestEngineConfig()
-        config.bypass_logging = True
-        config.run_analysis = False
-
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+        )
         self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("BINANCE")
@@ -358,10 +358,10 @@ class TestBacktestAcceptanceTestsETHUSDT:
 class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes:
     def setup(self):
         # Fixture Setup
-        config = BacktestEngineConfig()
-        config.bypass_logging = True
-        config.run_analysis = False
-
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+        )
         self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("BINANCE")
@@ -409,10 +409,10 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         # Fixture Setup
         data_catalog_setup()
 
-        config = BacktestEngineConfig()
-        config.bypass_logging = True
-        config.run_analysis = False
-
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+        )
         self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("BETFAIR")
@@ -466,10 +466,10 @@ class TestBacktestAcceptanceTestsMarketMaking:
         # Fixture Setup
         data_catalog_setup()
 
-        config = BacktestEngineConfig()
-        config.bypass_logging = True
-        config.run_analysis = False
-
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+        )
         self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("BETFAIR")

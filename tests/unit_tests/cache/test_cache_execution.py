@@ -1007,9 +1007,10 @@ class TestCache:
 class TestExecutionCacheIntegrityCheck:
     def setup(self):
         # Fixture Setup
-        config = BacktestEngineConfig()
-        config.bypass_logging = True
-        config.run_analysis = False
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+        )
         self.engine = BacktestEngine(config=config)
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")

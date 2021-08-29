@@ -39,10 +39,11 @@ from tests.test_kit.strategies import EMACrossConfig
 class TestBacktestAcceptanceTestsWithCache:
     def setup(self):
         # Fixture Setup
-        config = BacktestEngineConfig()
-        config.bypass_logging = True
-        config.use_data_cache = True
-
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            use_data_cache=True,
+            run_analysis=False,
+        )
         self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")

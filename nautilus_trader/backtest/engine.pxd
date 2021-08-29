@@ -37,6 +37,7 @@ from nautilus_trader.trading.trader cimport Trader
 
 
 cdef class BacktestEngine:
+    cdef object _config
     cdef Clock _clock
     cdef Clock _test_clock
     cdef UUIDFactory _uuid_factory
@@ -50,10 +51,6 @@ cdef class BacktestEngine:
     cdef LoggerAdapter _log
     cdef Logger _logger
     cdef Logger _test_logger
-    cdef bint _log_to_file
-    cdef bint _cache_db_flush
-    cdef bint _use_data_cache
-    cdef bint _run_analysis
 
     cdef dict _exchanges
     cdef list _generic_data

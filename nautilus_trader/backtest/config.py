@@ -168,10 +168,10 @@ def load(config: BacktestDataConfig):
 # @delayed(pure=True)
 def create_backtest_engine(venues, instruments, data):
     # Configure backtest engine
-    config = BacktestEngineConfig()
-    config.bypass_logging = True
-    config.run_analysis = True
-
+    config = BacktestEngineConfig(
+        bypass_logging=True,
+        run_analysis=True,
+    )
     # Build the backtest engine
     engine = BacktestEngine(config=config)
 

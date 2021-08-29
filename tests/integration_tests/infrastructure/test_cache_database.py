@@ -23,6 +23,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
@@ -115,18 +116,12 @@ class TestRedisCacheDatabase:
             logger=self.logger,
         )
 
-        config = {
-            "host": "localhost",
-            "port": 6379,
-        }
-
         self.database = RedisCacheDatabase(
             trader_id=self.trader_id,
             logger=self.logger,
             instrument_serializer=MsgPackInstrumentSerializer(),
             command_serializer=MsgPackCommandSerializer(),
             event_serializer=MsgPackEventSerializer(),
-            config=config,
         )
 
         self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
@@ -638,10 +633,13 @@ class TestRedisCacheDatabase:
 class TestExecutionCacheWithRedisDatabaseTests:
     def setup(self):
         # Fixture Setup
-        config = BacktestEngineConfig()
-        config.bypass_logging = False  # Uncomment this to see integrity check failure messages
-        config.cache_db_type = "redis"
-        config.cache_db_flush = False
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            cache_database=CacheDatabaseConfig(),  # default redis
+            cache_db_flush=False,
+        )
+
         self.engine = BacktestEngine(config=config)
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
