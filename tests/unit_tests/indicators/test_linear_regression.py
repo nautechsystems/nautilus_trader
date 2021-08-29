@@ -8,6 +8,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 class TestLinearRegression:
     def setup(self):
+        # Fixture Setup
         self.period = 4
         self.linear_regression = LinearRegression(period=self.period)
 

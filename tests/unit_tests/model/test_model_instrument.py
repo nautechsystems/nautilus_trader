@@ -285,6 +285,7 @@ class TestInstrument:
 
 class TestBettingInstrument:
     def setup(self):
+        # Fixture Setup
         self.instrument = BetfairTestStubs.betting_instrument()
 
     def test_notional_value(self):
