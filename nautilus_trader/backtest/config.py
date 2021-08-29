@@ -23,6 +23,7 @@ from dask.base import normalize_token
 from dask.base import tokenize
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import SimulationModule
 from nautilus_trader.core.message import Event
@@ -166,10 +167,13 @@ def load(config: BacktestDataConfig):
 
 # @delayed(pure=True)
 def create_backtest_engine(venues, instruments, data):
-    engine = BacktestEngine(
-        bypass_logging=True,
-        run_analysis=False,
-    )
+    # Configure backtest engine
+    config = BacktestEngineConfig()
+    config.bypass_logging = True
+    config.run_analysis = True
+
+    # Build the backtest engine
+    engine = BacktestEngine(config=config)
 
     # Add Instruments
     for instrument in instruments:

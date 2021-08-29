@@ -18,6 +18,7 @@ from decimal import Decimal
 import redis
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
@@ -638,11 +639,11 @@ class TestRedisCacheDatabase:
 class TestExecutionCacheWithRedisDatabaseTests:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(
-            bypass_logging=False,  # Uncomment this to see integrity check failure messages
-            cache_db_type="redis",
-            cache_db_flush=False,
-        )
+        config = BacktestEngineConfig()
+        config.bypass_logging = False  # Uncomment this to see integrity check failure messages
+        config.cache_db_type = "redis"
+        config.cache_db_flush = False
+        self.engine = BacktestEngine(config=config)
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 

@@ -19,6 +19,7 @@ from decimal import Decimal
 import pandas as pd
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
@@ -38,10 +39,11 @@ from tests.test_kit.strategies import EMACrossConfig
 class TestBacktestAcceptanceTestsWithCache:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(
-            bypass_logging=True,
-            use_data_cache=True,
-        )
+        config = BacktestEngineConfig()
+        config.bypass_logging = True
+        config.use_data_cache = True
+
+        self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")

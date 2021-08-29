@@ -30,12 +30,21 @@ cdef class BarSpecification:
     cdef readonly PriceType price_type
     """The specified price type for bar aggregation.\n\n:returns: `PriceType`"""
 
-    cpdef bint is_time_aggregated(self) except *
-    cpdef bint is_threshold_aggregated(self) except *
-    cpdef bint is_information_aggregated(self) except *
+    @staticmethod
+    cdef bint check_time_aggregated_c(BarAggregation aggregation)
+
+    @staticmethod
+    cdef bint check_threshold_aggregated_c(BarAggregation aggregation)
+
+    @staticmethod
+    cdef bint check_information_aggregated_c(BarAggregation aggregation)
 
     @staticmethod
     cdef BarSpecification from_str_c(str value)
+
+    cpdef bint is_time_aggregated(self) except *
+    cpdef bint is_threshold_aggregated(self) except *
+    cpdef bint is_information_aggregated(self) except *
 
 
 cdef class BarType:
@@ -46,11 +55,11 @@ cdef class BarType:
     cdef readonly AggregationSource aggregation_source
     """The bar aggregation source.\n\n:returns: `bool`"""
 
-    cpdef bint is_external_aggregation(self) except *
-    cpdef bint is_internal_aggregation(self) except *
-
     @staticmethod
     cdef BarType from_str_c(str value)
+
+    cpdef bint is_externally_aggregated(self) except *
+    cpdef bint is_internally_aggregated(self) except *
 
 
 cdef class Bar(Data):

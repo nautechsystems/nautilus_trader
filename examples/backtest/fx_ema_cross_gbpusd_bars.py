@@ -28,9 +28,9 @@ sys.path.insert(
 from examples.strategies.ema_cross_simple import EMACross
 from examples.strategies.ema_cross_simple import EMACrossConfig
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
-from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
@@ -45,17 +45,17 @@ from tests.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
-    # Create the backtest engine
-    engine = BacktestEngine(
-        use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
-        # cache_db_type="redis",
-        # bypass_logging=True,
+    # Configure backtest engine
+    config = BacktestEngineConfig(
+        level_stdout="INFO",
+        use_data_cache=True,
         config_risk={
             "bypass": True,  # Example of bypassing pre-trade risk checks for backtests
             "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
         },
-        level_stdout=LogLevel.INFO,
     )
+    # Build backtest engine
+    engine = BacktestEngine(config=config)
 
     # Setup trading instruments
     SIM = Venue("SIM")

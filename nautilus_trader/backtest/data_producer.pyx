@@ -310,8 +310,10 @@ cdef class BacktestDataProducer(DataProducer):
 
         total_elements = len(self._quote_tick_data) + len(self._trade_tick_data) + len(self._stream)
 
-        self._log.info(f"Prepared {total_elements:,} total data elements "
-                       f"in {unix_timestamp() - ts_total:.3f}s.")
+        self._log.info(
+            f"Prepared {total_elements:,} total data elements "
+            f"in {unix_timestamp() - ts_total:.3f}s.",
+        )
 
         gc.collect()  # Garbage collection to remove redundant processing artifacts
 
