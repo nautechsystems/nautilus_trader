@@ -822,10 +822,10 @@ class TestLiveClockWithThreadTimer:
 
 class TestLiveClockWithLoopTimer:
     def setup(self):
+        # Fixture Setup
         self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
 
-        # Fixture Setup
         self.handler = []
         self.clock = LiveClock(loop=self.loop)
         self.clock.register_default_handler(self.handler.append)

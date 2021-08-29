@@ -22,7 +22,7 @@ from nautilus_trader.common.throttler import Throttler
 
 class TestBufferingThrottler:
     def setup(self):
-        # Fixture setup
+        # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(self.clock)
 
@@ -162,7 +162,7 @@ class TestBufferingThrottler:
 
 class TestDroppingThrottler:
     def setup(self):
-        # Fixture setup
+        # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(self.clock)
 

@@ -185,6 +185,7 @@ class TestLoggerTests:
 
 class TestLiveLogger:
     def setup(self):
+        # Fixture Setup
         self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
 
