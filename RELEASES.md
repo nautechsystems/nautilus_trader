@@ -1,12 +1,11 @@
 # NautilusTrader 1.128.0 Beta - Release Notes
 
-Improve adding bar data to `BacktestEngine`.
-Added serializable configuration classes leveraging `pydantic`.
-
-This release also introduces the concept of an `active` order, which is an order
-whose state can change (is not a `completed` order).
+This release continues the focus on the core system, with upgrades and cleanups
+to the component base class. The concept of an `active` order has been introduced, 
+which is an order whose state can change (is not a `completed` order).
 
 ## Breaking Changes
+- All configuration due `pydantic` upgrade.
 - Throttling config now takes string e.g. "100/00:00:01" which is 100 / second.
 - Renamed `DataProducerFacade` to `DataProducer`.
 - Renamed `fill.side` to `fill.order_side` (clarity and standardization).
@@ -14,6 +13,7 @@ whose state can change (is not a `completed` order).
 
 ## Enhancements
 - Added serializable configuration classes leveraging `pydantic`.
+- Improved adding bar data to `BacktestEngine`.
 - Added `BacktestEngine.add_bar_objects()`.
 - Added `BacktestEngine.add_bars_as_ticks()`.
 - Added order `active` concept, with `order.is_active` and cache methods.
