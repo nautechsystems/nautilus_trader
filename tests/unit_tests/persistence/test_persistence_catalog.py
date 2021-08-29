@@ -113,8 +113,11 @@ def test_data_catalog_backtest_data_no_filter(loaded_catalog):
 
 def test_data_catalog_backtest_data_filtered(loaded_catalog):
     instruments = loaded_catalog.instruments(as_nautilus=True)
-    config = BacktestEngineConfig()
-    config.bypass_logging = True
+
+    config = BacktestEngineConfig(
+        bypass_logging=True,
+        run_analysis=False,
+    )
     engine = BacktestEngine(config=config)
     engine = loaded_catalog.setup_engine(
         engine=engine,
@@ -138,9 +141,11 @@ def test_data_catalog_backtest_data_filtered(loaded_catalog):
 @pytest.mark.skip(reason="flaky")
 def test_data_catalog_backtest_run(loaded_catalog):
     instruments = loaded_catalog.instruments(as_nautilus=True)
-    config = BacktestEngineConfig()
-    config.bypass_logging = True
-    config.run_analysis = False
+
+    config = BacktestEngineConfig(
+        bypass_logging=True,
+        run_analysis=False,
+    )
     engine = BacktestEngine(config=config)
     engine = loaded_catalog.setup_engine(engine=engine, instruments=[instruments[1]])
     engine.add_venue(

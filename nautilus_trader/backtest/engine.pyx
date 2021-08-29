@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import socket
-from typing import Any, Dict, Optional
+from typing import Optional
 
 import pandas as pd
 import pydantic
@@ -22,6 +22,12 @@ import pytz
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
+
+from nautilus_trader.cache.cache import CacheConfig
+from nautilus_trader.data.engine import DataEngineConfig
+from nautilus_trader.execution.engine import ExecEngineConfig
+from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
+from nautilus_trader.risk.engine import RiskEngineConfig
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
@@ -83,11 +89,6 @@ from nautilus_trader.serialization.msgpack.serializer cimport MsgPackEventSerial
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
-from nautilus_trader.cache.cache import CacheConfig
-from nautilus_trader.data.engine import DataEngineConfig
-from nautilus_trader.execution.engine import ExecEngineConfig
-from nautilus_trader.risk.engine import RiskEngineConfig
-
 
 class BacktestEngineConfig(pydantic.BaseModel):
     """
@@ -117,17 +118,16 @@ class BacktestEngineConfig(pydantic.BaseModel):
         The minimum log level for logging messages to stdout.
     """
 
-    trader_id: Optional[str] = None
-    config_cache: CacheConfig = None
-    config_data: DataEngineConfig = None
-    config_risk: RiskEngineConfig = None
-    config_exec: ExecEngineConfig = None
-    cache_db_type: Optional[str] = None
-    cache_db_flush: bool = True
+    trader_id: str = "BACKTESTER-000"
+    log_level: str = "INF"
+    cache: CacheConfig = None
+    cache_database: Optional[CacheDatabaseConfig] = None
+    data_engine: Optional[DataEngineConfig] = None
+    risk_engine: Optional[RiskEngineConfig] = None
+    exec_engine: Optional[ExecEngineConfig] = None
     use_data_cache: bool = False
     bypass_logging: bool = False
     run_analysis: bool = True
-    level_stdout: str = "INF"
 
 
 cdef class BacktestEngine:
@@ -156,9 +156,7 @@ cdef class BacktestEngine:
         Condition.type(config, BacktestEngineConfig, "config")
 
         # Configuration
-        self._cache_db_flush = config.cache_db_flush
-        self._use_data_cache = config.use_data_cache
-        self._run_analysis = config.run_analysis
+        self._config = config
 
         # Data
         self._generic_data = []     # type: list[GenericData]
@@ -177,7 +175,7 @@ cdef class BacktestEngine:
         self._uuid_factory = UUIDFactory()
 
         # Identifiers
-        self.trader_id = TraderId(config.trader_id or "BACKTESTER-000")
+        self.trader_id = TraderId(config.trader_id)
         self.host_id = socket.gethostname()
         self.instance_id = self._uuid_factory.generate()
 
@@ -198,7 +196,7 @@ cdef class BacktestEngine:
             trader_id=self.trader_id,
             host_id=self.host_id,
             instance_id=self.instance_id,
-            level_stdout=LogLevelParser.from_str(config.level_stdout.upper()),
+            level_stdout=LogLevelParser.from_str(config.log_level.upper()),
             bypass=config.bypass_logging,
         )
 
@@ -209,26 +207,22 @@ cdef class BacktestEngine:
         ########################################################################
         # Build platform
         ########################################################################
-        cache_db_type = config.cache_db_type or "in-memory"
-        if cache_db_type == "in-memory":
+        if config.cache_database is None or config.cache_database.type == "in-memory":
             cache_db = None
-        elif cache_db_type == "redis":
+        elif config.cache_database.type == "redis":
             cache_db = RedisCacheDatabase(
                 trader_id=self.trader_id,
                 logger=self._test_logger,
                 instrument_serializer=MsgPackInstrumentSerializer(),
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
-                config={"host": "localhost", "port": 6379},
+                config=config.cache_database,
             )
         else:
             raise ValueError(
                 f"The cache_db_type in the configuration is unrecognized, "
                 f"can one of {{\'in-memory\', \'redis\'}}.",
             )
-
-        if self._cache_db_flush and cache_db:
-            cache_db.flush()
 
         self._msgbus = MessageBus(
             trader_id=self.trader_id,
@@ -239,7 +233,7 @@ cdef class BacktestEngine:
         self._cache = Cache(
             database=cache_db,
             logger=self._test_logger,
-            config=config.config_cache,
+            config=config.cache,
         )
         # Set external facade
         self.cache = self._cache
@@ -260,7 +254,7 @@ cdef class BacktestEngine:
             cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
-            config=config.config_data,
+            config=config.data_engine,
         )
 
         self._exec_engine = ExecutionEngine(
@@ -268,7 +262,7 @@ cdef class BacktestEngine:
             cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
-            config=config.config_exec,
+            config=config.exec_engine,
         )
         self._exec_engine.load_cache()
 
@@ -278,7 +272,7 @@ cdef class BacktestEngine:
             cache=self.cache,
             clock=self._test_clock,
             logger=self._test_logger,
-            config=config.config_risk,
+            config=config.risk_engine,
         )
 
         self.trader = Trader(
@@ -937,7 +931,7 @@ cdef class BacktestEngine:
         # Reset ExecEngine
         if self._exec_engine.state_c() == ComponentState.RUNNING:
             self._exec_engine.stop()
-        if self._cache_db_flush:
+        if self._config.cache_database is not None and self._config.cache_database.flush:
             self._exec_engine.flush_db()
         self._exec_engine.reset()
 
@@ -1033,7 +1027,7 @@ cdef class BacktestEngine:
                 data=self._data,
             )
 
-            if self._use_data_cache:
+            if self._config.use_data_cache:
                 self._data_producer = CachedProducer(self._data_producer)
 
         log_memory(self._log)
@@ -1184,7 +1178,7 @@ cdef class BacktestEngine:
         self._log.info(f"Total orders: {self.cache.orders_total_count():,}")
         self._log.info(f"Total positions: {self.cache.positions_total_count():,}")
 
-        if not self._run_analysis:
+        if not self._config.run_analysis:
             return
 
         for exchange in self._exchanges.values():

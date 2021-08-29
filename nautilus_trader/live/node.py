@@ -22,12 +22,15 @@ import sys
 import time
 import warnings
 from datetime import timedelta
-from typing import Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 import msgpack
+import pydantic
 import redis
+from pydantic import PositiveFloat
 
 from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.cache import CacheConfig
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LiveLogger
@@ -37,11 +40,15 @@ from nautilus_trader.common.logging import LogLevelParser
 from nautilus_trader.common.logging import nautilus_header
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
+from nautilus_trader.live.data_engine import LiveDataEngineConfig
+from nautilus_trader.live.execution_engine import LiveExecEngineConfig
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.node_builder import TradingNodeBuilder
 from nautilus_trader.live.risk_engine import LiveRiskEngine
+from nautilus_trader.live.risk_engine import LiveRiskEngineConfig
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -61,56 +68,96 @@ except ImportError:
     warnings.warn("uvloop is not available.")
 
 
+class TradingNodeConfig(pydantic.BaseModel):
+    """
+    Provides configuration for ``TradingNode`` instances.
+
+    trader_id : str
+        The trader ID for the node (must be a name and ID tag separated by a hyphen)
+    log_level : str, default="INFO"
+        The stdout log level for the node.
+    cache : CacheConfig, optional
+        The cache configuration.
+    cache_database : CacheDatabaseConfig, optional
+        The cache database configuration.
+    data_engine : LiveDataEngineConfig, optional
+        The live data engine configuration.
+    risk_engine : LiveRiskEngineConfig, optional
+        The live risk engine configuration.
+    exec_engine : LiveExecEngineConfig, optional
+        The live execution engine configuration.
+    loop_debug : bool, default=False
+        If the asyncio event loop should be in debug mode.
+    load_strategy_state : bool
+        If trading strategy state should be loaded from the database on start.
+    save_strategy_state : bool
+        If trading strategy state should be saved to the database on stop.
+    timeout_connection : float (seconds)
+        The timeout for all clients to connect and initialize.
+    timeout_reconciliation : float (seconds)
+        The timeout for execution state to reconcile.
+    timeout_portfolio : float (seconds)
+        The timeout for portfolio to initialize margins and unrealized PnLs.
+    timeout_disconnection : float
+        The timeout for all engine clients to disconnect.
+    data_clients : Dict[str, Dict[str, Any]], optional
+        The data client configurations.
+    exec_clients : Dict[str, Dict[str, Any]], optional
+        The execution client configurations.
+    """
+
+    trader_id: str = "TRADER-000"
+    log_level: str = "INFO"
+    cache: Optional[CacheConfig] = None
+    cache_database: Optional[CacheDatabaseConfig] = None
+    data_engine: Optional[LiveDataEngineConfig] = None
+    risk_engine: Optional[LiveRiskEngineConfig] = None
+    exec_engine: Optional[LiveExecEngineConfig] = None
+    loop_debug: bool = False
+    load_strategy_state: bool = True
+    save_strategy_state: bool = True
+    timeout_connection: PositiveFloat = 10.0
+    timeout_reconciliation: PositiveFloat = 10.0
+    timeout_portfolio: PositiveFloat = 10.0
+    timeout_disconnection: PositiveFloat = 10.0
+    check_residuals_delay: PositiveFloat = 10.0
+    data_clients: Dict[str, Dict[str, Any]] = {}
+    exec_clients: Dict[str, Dict[str, Any]] = {}
+
+
 class TradingNode:
     """
     Provides an asynchronous network node for live trading.
     """
 
-    def __init__(self, config: Dict[str, Dict[str, object]]):
+    def __init__(self, config: Optional[TradingNodeConfig] = None):
         """
         Initialize a new instance of the TradingNode class.
 
         Parameters
         ----------
-        config : dict[str, dict[str, object]]
-            The configuration for the trading node.
+        config : TradingNodeConfig, optional
+            The configuration for the instance.
 
         Raises
         ------
-        ValueError
-            If config is None or empty.
+        TypeError
+            If config is not of type TradingNodeConfig.
 
         """
+        if config is None:
+            config = TradingNodeConfig()
         PyCondition.not_none(config, "config")
-        PyCondition.not_empty(config, "config")
+        PyCondition.type(config, TradingNodeConfig, "config")
 
+        # Configuration
         self._config = config
-
-        # Extract configs
-        config_trader = config.get("trader", {})
-        config_system = config.get("system", {})
-        config_log = config.get("logging", {})
-        config_db = config.get("database", {})
-        config_cache = config.get("cache", {})
-        config_data = config.get("data_engine", {})
-        config_risk = config.get("risk_engine", {})
-        config_exec = config.get("exec_engine", {})
-        config_strategy = config.get("strategy", {})
-
-        # System config
-        self._timeout_connection: float = config_system.get("timeout_connection", 5.0)  # type: ignore
-        self._timeout_reconciliation: float = config_system.get("timeout_reconciliation", 10.0)  # type: ignore
-        self._timeout_portfolio: float = config_system.get("timeout_portfolio", 10.0)  # type: ignore
-        self._timeout_disconnection: float = config_system.get("timeout_disconnection", 5.0)  # type: ignore
-        self._check_residuals_delay: float = config_system.get("check_residuals_delay", 5.0)  # type: ignore
-        self._load_strategy_state: bool = config_strategy.get("load_state", True)  # type: ignore
-        self._save_strategy_state: bool = config_strategy.get("save_state", True)  # type: ignore
 
         # Setup loop
         self._loop = asyncio.get_event_loop()
         self._executor = concurrent.futures.ThreadPoolExecutor()
         self._loop.set_default_executor(self._executor)
-        self._loop.set_debug(bool(config_system.get("loop_debug", False)))
+        self._loop.set_debug(config.loop_debug)
 
         # Components
         self._clock = LiveClock(loop=self._loop)
@@ -119,22 +166,18 @@ class TradingNode:
         self._is_running = False
 
         # Identifiers
-        trader_name = config_trader["name"]
-        trader_id_tag = config_trader["id_tag"]
-        self.trader_id = TraderId(f"{trader_name}-{trader_id_tag}")
+        self.trader_id = TraderId(config.trader_id)
         self.host_id = socket.gethostname()
         self.instance_id = self._uuid_factory.generate()
 
         # Setup logging
-        level_stdout = LogLevelParser.from_str_py(config_log.get("level_stdout"))
-
         self._logger = LiveLogger(
             loop=self._loop,
             clock=self._clock,
             trader_id=self.trader_id,
             host_id=self.host_id,
             instance_id=self.instance_id,
-            level_stdout=level_stdout,
+            level_stdout=LogLevelParser.from_str_py(config.log_level.upper()),
         )
 
         self._log = LoggerAdapter(
@@ -153,19 +196,16 @@ class TradingNode:
         ########################################################################
         # Build platform
         ########################################################################
-        if config_db["type"] == "in-memory":
+        if config.cache_database is None or config.cache_database.type == "in-memory":
             cache_db = None
-        elif config_db["type"] == "redis":
+        elif config.cache_database.type == "redis":
             cache_db = RedisCacheDatabase(
                 trader_id=self.trader_id,
                 logger=self._logger,
                 instrument_serializer=MsgPackInstrumentSerializer(),
                 command_serializer=MsgPackCommandSerializer(),
                 event_serializer=MsgPackEventSerializer(),
-                config={
-                    "host": config_db["host"],
-                    "port": config_db["port"],
-                },
+                config=config.cache_database,
             )
         else:
             raise ValueError(
@@ -182,7 +222,7 @@ class TradingNode:
         self._cache = Cache(
             database=cache_db,
             logger=self._logger,
-            config=config_cache,
+            config=config.cache,
         )
 
         self.portfolio = Portfolio(
@@ -198,7 +238,7 @@ class TradingNode:
             cache=self._cache,
             clock=self._clock,
             logger=self._logger,
-            config=config_data,
+            config=config.data_engine,
         )
 
         self._exec_engine = LiveExecutionEngine(
@@ -207,7 +247,7 @@ class TradingNode:
             cache=self._cache,
             clock=self._clock,
             logger=self._logger,
-            config=config_exec,
+            config=config.exec_engine,
         )
         self._exec_engine.load_cache()
 
@@ -218,7 +258,7 @@ class TradingNode:
             cache=self._cache,
             clock=self._clock,
             logger=self._logger,
-            config=config_risk,
+            config=config.risk_engine,
         )
 
         self.trader = Trader(
@@ -233,7 +273,7 @@ class TradingNode:
             logger=self._logger,
         )
 
-        if self._load_strategy_state:
+        if config.load_strategy_state:
             self.trader.load()
 
         self._builder = TradingNodeBuilder(
@@ -365,8 +405,8 @@ class TradingNode:
         if self._is_built:
             raise RuntimeError("the trading nodes clients are already built.")
 
-        self._builder.build_data_clients(self._config.get("data_clients"))
-        self._builder.build_exec_clients(self._config.get("exec_clients"))
+        self._builder.build_data_clients(self._config.data_clients)
+        self._builder.build_exec_clients(self._config.exec_clients)
         self._is_built = True
 
     def start(self) -> None:
@@ -414,12 +454,12 @@ class TradingNode:
 
         """
         try:
-            timeout = self._clock.utc_now() + timedelta(seconds=self._timeout_disconnection)
+            timeout = self._clock.utc_now() + timedelta(seconds=self._config.timeout_disconnection)
             while self._is_running:
                 time.sleep(0.1)
                 if self._clock.utc_now() >= timeout:
                     self._log.warning(
-                        f"Timed out ({self._timeout_disconnection}s) waiting for node to stop."
+                        f"Timed out ({self._config.timeout_disconnection}s) waiting for node to stop."
                         f"\nStatus"
                         f"\n------"
                         f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"
@@ -511,12 +551,12 @@ class TradingNode:
             # Await engine connection and initialization
             self._log.info(
                 f"Waiting for engines to connect and initialize "
-                f"({self._timeout_connection}s timeout)...",
+                f"({self._config.timeout_connection}s timeout)...",
                 color=LogColor.BLUE,
             )
             if not await self._await_engines_connected():
                 self._log.warning(
-                    f"Timed out ({self._timeout_connection}s) waiting for engines to connect and initialize."
+                    f"Timed out ({self._config.timeout_connection}s) waiting for engines to connect and initialize."
                     f"\nStatus"
                     f"\n------"
                     f"\nDataEngine.check_connected() == {self._data_engine.check_connected()}"
@@ -528,14 +568,14 @@ class TradingNode:
             # Await execution state reconciliation
             self._log.info(
                 f"Waiting for execution state to reconcile "
-                f"({self._timeout_reconciliation}s timeout)...",
+                f"({self._config.timeout_reconciliation}s timeout)...",
                 color=LogColor.BLUE,
             )
             if not await self._exec_engine.reconcile_state(
-                timeout_secs=self._timeout_reconciliation,
+                timeout_secs=self._config.timeout_reconciliation,
             ):
                 self._log.warning(
-                    f"Timed out ({self._timeout_reconciliation}s) waiting for "
+                    f"Timed out ({self._config.timeout_reconciliation}s) waiting for "
                     f"execution state to reconcile."
                 )
                 return
@@ -547,12 +587,13 @@ class TradingNode:
 
             # Await portfolio initialization
             self._log.info(
-                "Waiting for portfolio to initialize " f"({self._timeout_portfolio}s timeout)...",
+                "Waiting for portfolio to initialize "
+                f"({self._config.timeout_portfolio}s timeout)...",
                 color=LogColor.BLUE,
             )
             if not await self._await_portfolio_initialized():
                 self._log.warning(
-                    f"Timed out ({self._timeout_portfolio}s) waiting for portfolio to initialize."
+                    f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize."
                     f"\nStatus"
                     f"\n------"
                     f"\nPortfolio.initialized == {self.portfolio.initialized}"
@@ -582,7 +623,7 @@ class TradingNode:
         # accounts are updated and the current order and position status is
         # reconciled.
         # Thus any delay here will be due to blocking network IO.
-        seconds = self._timeout_connection
+        seconds = self._config.timeout_connection
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0)
@@ -600,7 +641,7 @@ class TradingNode:
         # - The portfolio will be set initialized when all margin and unrealized
         # PnL calculations are completed (may be waiting on first quote).
         # Thus any delay here will be due to blocking network IO.
-        seconds = self._timeout_portfolio
+        seconds = self._config.timeout_portfolio
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0)
@@ -619,13 +660,13 @@ class TradingNode:
         if self.trader.state == ComponentState.RUNNING:
             self.trader.stop()
             self._log.info(
-                f"Awaiting residual state ({self._check_residuals_delay}s delay)...",
+                f"Awaiting residual state ({self._config.check_residuals_delay}s delay)...",
                 color=LogColor.BLUE,
             )
-            await asyncio.sleep(self._check_residuals_delay)
+            await asyncio.sleep(self._config.check_residuals_delay)
             self.trader.check_residuals()
 
-        if self._save_strategy_state:
+        if self._config.save_strategy_state:
             self.trader.save()
 
         if self._data_engine.state == ComponentState.RUNNING:
@@ -636,12 +677,13 @@ class TradingNode:
             self._risk_engine.stop()
 
         self._log.info(
-            f"Waiting for engines to disconnect " f"({self._timeout_disconnection}s timeout)...",
+            f"Waiting for engines to disconnect "
+            f"({self._config.timeout_disconnection}s timeout)...",
             color=LogColor.BLUE,
         )
         if not await self._await_engines_disconnected():
             self._log.error(
-                f"Timed out ({self._timeout_disconnection}s) waiting for engines to disconnect."
+                f"Timed out ({self._config.timeout_disconnection}s) waiting for engines to disconnect."
                 f"\nStatus"
                 f"\n------"
                 f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"
@@ -660,7 +702,7 @@ class TradingNode:
         self._is_running = False
 
     async def _await_engines_disconnected(self) -> bool:
-        seconds = self._timeout_disconnection
+        seconds = self._config.timeout_disconnection
         timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
         while True:
             await asyncio.sleep(0)

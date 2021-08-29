@@ -36,6 +36,7 @@ from tests.test_kit.stubs import TestStubs
 
 class TestBetfairFactory:
     def setup(self):
+        # Fixture Setup
         self.loop = asyncio.get_event_loop()
         self.loop.set_debug(True)
 

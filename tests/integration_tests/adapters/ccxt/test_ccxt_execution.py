@@ -141,7 +141,7 @@ class TestCCXTExecutionClient:
         # Assert
         assert self.client.is_connected
 
-        # Tear down
+        # Tear Down
         self.exec_engine.stop()
         await self.exec_engine.get_run_queue_task()
 

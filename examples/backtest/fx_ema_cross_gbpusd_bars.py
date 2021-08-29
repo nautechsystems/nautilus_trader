@@ -47,14 +47,14 @@ from tests.test_kit.providers import TestInstrumentProvider
 if __name__ == "__main__":
     # Configure backtest engine
     config = BacktestEngineConfig(
-        level_stdout="INFO",
+        trader_id="BACKTESTER-001",
+        log_level="INFO",
         use_data_cache=True,
-        config_risk={
+        risk_engine={
             "bypass": True,  # Example of bypassing pre-trade risk checks for backtests
             "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
         },
     )
-
     # Build backtest engine
     engine = BacktestEngine(config=config)
 
