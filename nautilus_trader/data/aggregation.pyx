@@ -49,7 +49,6 @@ cdef class BarBuilder:
         self,
         Instrument instrument not None,
         BarType bar_type not None,
-        bint use_previous_close=False,
     ):
         """
         Initialize a new instance of the ``BarBuilder`` class.
@@ -60,8 +59,6 @@ cdef class BarBuilder:
             The instrument for the builder.
         bar_type : BarType
             The bar type for the builder.
-        use_previous_close : bool
-            If the previous close price should set the open price of a new bar.
 
         Raises
         ------
@@ -75,7 +72,6 @@ cdef class BarBuilder:
 
         self.price_precision = instrument.price_precision
         self.size_precision = instrument.size_precision
-        self.use_previous_close = use_previous_close
         self.initialized = False
         self.ts_last = 0
         self.count = 0
@@ -174,15 +170,9 @@ cdef class BarBuilder:
 
         All stateful fields are reset to their initial value.
         """
-        if self.use_previous_close:
-            self._open = self._close
-            self._high = self._close
-            self._low = self._close
-        else:
-            self._open = None
-            self._high = None
-            self._low = None
-            self._close = None
+        self._open = self._close
+        self._high = self._close
+        self._low = self._close
 
         self.volume = Decimal(0)
         self.count = 0
@@ -245,7 +235,6 @@ cdef class BarAggregator:
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
         Logger logger not None,
-        bint use_previous_close,
     ):
         """
         Initialize a new instance of the ``BarAggregator`` class.
@@ -260,8 +249,6 @@ cdef class BarAggregator:
             The bar handler for the aggregator.
         logger : Logger
             The logger for the aggregator.
-        use_previous_close : bool
-            If the previous close price should set the open price of a new bar.
 
         Raises
         ------
@@ -280,7 +267,6 @@ cdef class BarAggregator:
         self._builder = BarBuilder(
             instrument=instrument,
             bar_type=self.bar_type,
-            use_previous_close=use_previous_close,
         )
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
@@ -371,7 +357,6 @@ cdef class TickBarAggregator(BarAggregator):
             bar_type=bar_type,
             handler=handler,
             logger=logger,
-            use_previous_close=False,
         )
 
     cdef void _apply_update(self, Price price, Quantity size, int64_t ts_event) except *:
@@ -421,7 +406,6 @@ cdef class VolumeBarAggregator(BarAggregator):
             bar_type=bar_type,
             handler=handler,
             logger=logger,
-            use_previous_close=False,
         )
 
     cdef void _apply_update(self, Price price, Quantity size, int64_t ts_event) except *:
@@ -493,7 +477,6 @@ cdef class ValueBarAggregator(BarAggregator):
             bar_type=bar_type,
             handler=handler,
             logger=logger,
-            use_previous_close=False,
         )
 
         self._cum_value = Decimal(0)  # Cumulative value
@@ -554,7 +537,6 @@ cdef class TimeBarAggregator(BarAggregator):
         Instrument instrument not None,
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
-        bint use_previous_close,
         Clock clock not None,
         Logger logger not None,
     ):
@@ -569,8 +551,6 @@ cdef class TimeBarAggregator(BarAggregator):
             The bar type for the aggregator.
         handler : Callable[[Bar], None]
             The bar handler for the aggregator.
-        use_previous_close : bool
-            If the previous close should set the next open.
         clock : Clock
             The clock for the aggregator.
         logger : Logger
@@ -587,7 +567,6 @@ cdef class TimeBarAggregator(BarAggregator):
             bar_type=bar_type,
             handler=handler,
             logger=logger,
-            use_previous_close=use_previous_close,
         )
 
         self._clock = clock
@@ -739,7 +718,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self.next_close_ns = timer.next_time_ns
 
     cpdef void _build_event(self, TimeEvent event) except *:
-        if self._builder.use_previous_close and not self._builder.initialized:
+        if not self._builder.initialized:
             # Set flag to build on next close with the stored close time
             self._build_on_next_tick = True
             self._stored_close_ns = self.next_close_ns
