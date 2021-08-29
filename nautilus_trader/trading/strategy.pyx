@@ -91,6 +91,7 @@ class TradingStrategyConfig(pydantic.BaseModel):
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
     """
+
     order_id_tag: str = "000"
     oms_type: OMSType = OMSType.HEDGING
 

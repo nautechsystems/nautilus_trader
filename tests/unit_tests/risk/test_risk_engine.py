@@ -46,6 +46,7 @@ from nautilus_trader.model.orders.bracket import BracketOrder
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.risk.engine import RiskEngineConfig
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
 from tests.test_kit.providers import TestInstrumentProvider
@@ -121,11 +122,11 @@ class TestRiskEngine:
         # Arrange
         self.msgbus.deregister("RiskEngine.execute", self.risk_engine.execute)
 
-        config = {
-            "bypass": True,  # <-- bypassing pre-trade risk checks for backtest
-            "max_order_rate": "5/00:00:01",
-            "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
-        }
+        config = RiskEngineConfig(
+            bypass=True,  # <-- bypassing pre-trade risk checks for backtest
+            max_order_rate="5/00:00:01",
+            max_notional_per_order={"GBP/USD.SIM": 2_000_000},
+        )
 
         # Act
         risk_engine = RiskEngine(

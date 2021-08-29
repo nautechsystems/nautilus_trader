@@ -15,7 +15,10 @@
 
 from collections import deque
 from decimal import Decimal
+from typing import Optional
 
+import pydantic
+from pydantic import PositiveInt
 from libc.stdint cimport int64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -47,6 +50,19 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
+class CacheConfig(pydantic.BaseModel):
+    """
+    Provides configuration for ``Cache`` instances.
+
+    tick_capacity : int
+        The maximum length for internal tick deques.
+    bar_capacity : int
+        The maximum length for internal bar deques.
+    """
+    tick_capacity: PositiveInt = 1000
+    bar_capacity: PositiveInt = 1000
+
+
 cdef class Cache(CacheFacade):
     """
     Provides a common object cache for market and execution related data.
@@ -56,7 +72,7 @@ cdef class Cache(CacheFacade):
         self,
         CacheDatabase database,  # Can be None
         Logger logger not None,
-        dict config=None,
+        config: Optional[CacheConfig]=None,
     ):
         """
         Initialize a new instance of the ``Cache`` class.
@@ -67,29 +83,26 @@ cdef class Cache(CacheFacade):
             The database for the cache. If None then will bypass persistence.
         logger : Logger
             The logger for the cache.
-        config : dict[str, object], optional
-            The cache configuration options.
+        config : CacheConfig, optional
+            The cache configuration.
 
         Raises
         ------
-        ValueError
-            If config and 'config[tick_capacity]' is not positive.
-        ValueError
-            If config and 'config[bar_capacity]' is not positive.
+        TypeError
+            If config is not of type CacheConfig.
 
         """
         if config is None:
-            config = {}
+            config = CacheConfig()
+        Condition.type(config, CacheConfig, "config")
 
         self._database = database
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
         self._xrate_calculator = ExchangeRateCalculator()
 
-        # Cache deque capacities (per instrument_id)
-        self.tick_capacity = config.get("tick_capacity", 1000)
-        self.bar_capacity = config.get("bar_capacity", 1000)
-        Condition.positive_int(self.tick_capacity, "tick_capacity")
-        Condition.positive_int(self.bar_capacity, "bar_capacity")
+        # Configuration
+        self.tick_capacity = config.tick_capacity
+        self.bar_capacity = config.bar_capacity
 
         # Caches
         self._xrate_symbols = {}               # type: dict[InstrumentId, str]

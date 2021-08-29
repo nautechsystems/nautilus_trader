@@ -25,6 +25,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
+from nautilus_trader.live.risk_engine import LiveRiskEngineConfig
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
@@ -111,7 +112,6 @@ class TestLiveRiskEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={},
         )
 
         self.exec_client = MockExecutionClient(
@@ -154,7 +154,7 @@ class TestLiveRiskEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveRiskEngineConfig(qsize=1),
         )
 
         strategy = TradingStrategy()
@@ -200,7 +200,7 @@ class TestLiveRiskEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveRiskEngineConfig(qsize=1),
         )
 
         strategy = TradingStrategy()

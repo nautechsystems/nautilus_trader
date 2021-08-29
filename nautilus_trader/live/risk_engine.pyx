@@ -14,6 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Optional
+
+from pydantic import PositiveInt
+
+from nautilus_trader.risk.engine import RiskEngineConfig
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport LiveClock
@@ -26,6 +31,14 @@ from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
+
+
+class LiveRiskEngineConfig(RiskEngineConfig):
+    """
+    Provides configuration for ``LiveRiskEngine`` instances.
+    """
+
+    qsize: PositiveInt = 10000
 
 
 cdef class LiveRiskEngine(RiskEngine):
@@ -41,7 +54,7 @@ cdef class LiveRiskEngine(RiskEngine):
         CacheFacade cache not None,
         LiveClock clock not None,
         Logger logger not None,
-        dict config=None,
+        config: Optional[LiveRiskEngineConfig]=None,
     ):
         """
         Initialize a new instance of the ``LiveRiskEngine`` class.
@@ -60,12 +73,18 @@ cdef class LiveRiskEngine(RiskEngine):
             The clock for the engine.
         logger : Logger
             The logger for the engine.
-        config : dict[str, object], optional
-            The configuration options.
+        config : LiveRiskEngineConfig
+            The configuration for the instance.
+
+        Raises
+        ------
+        TypeError
+            If config is not of type LiveRiskEngineConfig.
 
         """
         if config is None:
-            config = {}
+            config = LiveRiskEngineConfig()
+        Condition.type(config, LiveRiskEngineConfig, "config")
         super().__init__(
             portfolio=portfolio,
             msgbus=msgbus,
@@ -76,7 +95,7 @@ cdef class LiveRiskEngine(RiskEngine):
         )
 
         self._loop = loop
-        self._queue = Queue(maxsize=config.get("qsize", 10000))
+        self._queue = Queue(maxsize=config.qsize)
 
         self._run_queue_task = None
         self.is_running = False

@@ -42,7 +42,6 @@ from nautilus_trader.model.orderbook.data cimport OrderBookData
 cdef class DataEngine(Component):
     cdef Cache _cache
 
-    cdef bint _use_previous_close
     cdef dict _clients
     cdef dict _order_book_intervals
     cdef dict _bar_aggregators

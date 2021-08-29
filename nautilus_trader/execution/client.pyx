@@ -101,7 +101,7 @@ cdef class ExecutionClient(Component):
         logger : Logger
             The logger for the client.
         config : dict[str, object], optional
-            The configuration options.
+            The configuration for the instance.
 
         Raises
         ------

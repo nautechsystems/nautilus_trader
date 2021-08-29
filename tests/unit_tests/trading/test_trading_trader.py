@@ -75,7 +75,6 @@ class TestTrader:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"use_previous_close": False},
         )
 
         self.data_engine.process(USDJPY_SIM)
