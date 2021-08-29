@@ -83,20 +83,25 @@ from nautilus_trader.serialization.msgpack.serializer cimport MsgPackEventSerial
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
+from nautilus_trader.cache.cache import CacheConfig
+from nautilus_trader.data.engine import DataEngineConfig
+from nautilus_trader.execution.engine import ExecEngineConfig
+from nautilus_trader.risk.engine import RiskEngineConfig
+
 
 class BacktestEngineConfig(pydantic.BaseModel):
     """
-    Provides configuration for ``BacktestEngine`` instances
+    Provides configuration for ``BacktestEngine`` instances.
 
     trader_id : TraderId, optional
         The trader ID.
-    config_data : dict[str, object]
+    config_cache : CacheConfig
         The configuration for the cache.
-    config_data : dict[str, object]
+    config_data : DataEngineConfig
         The configuration for the data engine.
-    config_risk : dict[str, object]
+    config_risk : RiskEngineConfig
         The configuration for the risk engine.
-    config_exec : dict[str, object]
+    config_exec : ExecEngineConfig
         The configuration for the execution engine.
     cache_db_type : str {'in-memory', 'redis'}
         The type for the cache.
@@ -111,11 +116,12 @@ class BacktestEngineConfig(pydantic.BaseModel):
     level_stdout : int, optional
         The minimum log level for logging messages to stdout.
     """
+
     trader_id: Optional[str] = None
-    config_cache: Dict[str, Any]= {}
-    config_data: Dict[str, Any] = {}
-    config_risk: Dict[str, Any] = {}
-    config_exec: Dict[str, Any] = {}
+    config_cache: CacheConfig = None
+    config_data: DataEngineConfig = None
+    config_risk: RiskEngineConfig = None
+    config_exec: ExecEngineConfig = None
     cache_db_type: Optional[str] = None
     cache_db_flush: bool = True
     use_data_cache: bool = False
@@ -192,7 +198,7 @@ cdef class BacktestEngine:
             trader_id=self.trader_id,
             host_id=self.host_id,
             instance_id=self.instance_id,
-            level_stdout=LogLevelParser.from_str(config.level_stdout),
+            level_stdout=LogLevelParser.from_str(config.level_stdout.upper()),
             bypass=config.bypass_logging,
         )
 
@@ -248,10 +254,6 @@ cdef class BacktestEngine:
         self.portfolio = self._portfolio
 
         self._data_producer = None  # Instantiated on first run
-
-        if config.config_data is None:
-            config.config_data = {}
-        config.config_data["use_previous_close"] = False  # Ensure bars match historical data
 
         self._data_engine = DataEngine(
             msgbus=self._msgbus,

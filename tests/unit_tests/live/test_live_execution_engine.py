@@ -26,6 +26,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.live.data_engine import LiveDataEngine
+from nautilus_trader.live.execution_engine import LiveExecEngineConfig
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -166,7 +167,7 @@ class TestLiveExecutionEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveExecEngineConfig(qsize=1),
         )
 
         strategy = TradingStrategy()
@@ -214,7 +215,7 @@ class TestLiveExecutionEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveExecEngineConfig(qsize=1),
         )
 
         strategy = TradingStrategy()

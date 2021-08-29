@@ -29,8 +29,9 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
+import pydantic
 from cpython.datetime cimport timedelta
-from typing import Callable
+from typing import Callable, Optional
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
@@ -67,12 +68,19 @@ from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.msgbus.bus cimport MessageBus
+
+
+class DataEngineConfig(pydantic.BaseModel):
+    """
+    Provides configuration for ``DataEngine`` instances.
+    """
+
+    pass  # No configuration currently
 
 
 cdef class DataEngine(Component):
@@ -87,7 +95,7 @@ cdef class DataEngine(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        dict config=None,
+        config: Optional[DataEngineConfig]=None,
     ):
         """
         Initialize a new instance of the ``DataEngine`` class.
@@ -102,22 +110,22 @@ cdef class DataEngine(Component):
             The clock for the engine.
         logger : Logger
             The logger for the engine.
-        config : dict[str, object], optional
-            The configuration options.
+        config : DataEngineConfig, optional
+            The configuration for the instance.
 
         """
         if config is None:
-            config = {}
+            config = DataEngineConfig()
+        Condition.type(config, DataEngineConfig, "config")
         super().__init__(
             clock=clock,
             logger=logger,
             msgbus=msgbus,
-            config=config,
+            config=config.dict(),
         )
 
         self._cache = cache
 
-        self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}               # type: dict[ClientId, DataClient]
         self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[Callable[[Bar], None]]]
         self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
@@ -1131,7 +1139,6 @@ cdef class DataEngine(Component):
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
-                use_previous_close=self._use_previous_close,
                 clock=self._clock,
                 logger=self._log.get_logger(),
             )

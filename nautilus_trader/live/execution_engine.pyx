@@ -18,6 +18,11 @@ import asyncio
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 
+from pydantic import PositiveInt
+
+from nautilus_trader.execution.engine import ExecEngineConfig
+from nautilus_trader.execution.engine import Optional
+
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport LogColor
@@ -39,6 +44,14 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
+class LiveExecEngineConfig(ExecEngineConfig):
+    """
+    Provides configuration for ``LiveExecEngine`` instances.
+    """
+
+    qsize: PositiveInt = 10000
+
+
 cdef class LiveExecutionEngine(ExecutionEngine):
     """
     Provides a high-performance asynchronous live execution engine.
@@ -52,7 +65,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
-        dict config=None,
+        config: Optional[LiveExecEngineConfig]=None,
     ):
         """
         Initialize a new instance of the ``LiveExecutionEngine`` class.
@@ -69,12 +82,18 @@ cdef class LiveExecutionEngine(ExecutionEngine):
             The clock for the engine.
         logger : Logger
             The logger for the engine.
-        config : dict[str, object], optional
-            The configuration options.
+        config : LiveExecEngineConfig, optional
+            The configuration for the instance.
+
+        Raises
+        ------
+        TypeError
+            If config is not of type LiveExecEngineConfig.
 
         """
         if config is None:
-            config = {}
+            config = LiveExecEngineConfig()
+        Condition.type(config, LiveExecEngineConfig, "config")
         super().__init__(
             msgbus=msgbus,
             cache=cache,
@@ -84,7 +103,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         )
 
         self._loop = loop
-        self._queue = Queue(maxsize=config.get("qsize", 10000))
+        self._queue = Queue(maxsize=config.qsize)
 
         self._run_queue_task = None
         self.is_running = False
