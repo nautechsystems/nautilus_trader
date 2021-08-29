@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import datetime
 import os
 from decimal import Decimal
 from typing import List
@@ -36,6 +37,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -43,6 +45,9 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.crypto_swap import CryptoSwap
 from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.equity import Equity
+from nautilus_trader.model.instruments.future import Future
+from nautilus_trader.model.instruments.option import Option
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -497,6 +502,53 @@ class TestInstrumentProvider:
             selection_id="50214",
             selection_name="Kansas City Chiefs",
             currency="GBP",
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def aapl_equity():
+        return Equity(
+            instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),
+            currency=USD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1),
+            isin="US0378331005",
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def es_future():
+        return Future(
+            instrument_id=InstrumentId(symbol=Symbol("ESZ21"), venue=Venue("CME")),
+            asset_class=AssetClass.INDEX,
+            currency=USD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1),
+            underlying="ES",
+            expiry_date=datetime.date(2021, 12, 17),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def aapl_option():
+        return Option(
+            instrument_id=InstrumentId(symbol=Symbol("AAPL211217C00150000"), venue=Venue("OPRA")),
+            asset_class=AssetClass.EQUITY,
+            currency=USD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            underlying="AAPL",
+            expiry_date=datetime.date(2021, 12, 17),
+            strike_price=Price.from_str("149.00"),
             ts_event=0,
             ts_init=0,
         )

@@ -13,11 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport date
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
+from nautilus_trader.model.c_enums.asset_class cimport AssetClassParser
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -40,17 +43,8 @@ cdef class Future(Instrument):
         Price price_increment not None,
         Quantity multiplier,
         Quantity lot_size not None,
-        str expiry not None,
-        int contract_id,
-        str local_symbol not None,
-        str trading_class not None,
-        str market_name not None,
-        str long_name not None,
-        str contract_month not None,
-        str time_zone_id not None,
-        str trading_hours not None,
-        str liquid_hours not None,
-        str last_trade_time not None,
+        str underlying,
+        date expiry_date,
         int64_t ts_event,
         int64_t ts_init,
     ):
@@ -69,6 +63,14 @@ cdef class Future(Instrument):
             The price decimal precision.
         price_increment : Decimal
             The minimum price increment (tick size).
+        multiplier : Quantity
+            The contract multiplier.
+        lot_size : Quantity
+            The rounded lot unit size (standard/board).
+        underlying : str
+            The underlying asset.
+        expiry_date : date
+            The contract expiry date.
         ts_event: int64
             The UNIX timestamp (nanoseconds) when the data event occurred.
         ts_init: int64
@@ -112,18 +114,47 @@ cdef class Future(Instrument):
             ts_init=ts_init,
             info={},
         )
+        self.underlying = underlying
+        self.expiry_date = expiry_date
 
-        self.contract_id = contract_id
-        self.last_trade_date_or_contract_month = expiry
-        self.local_symbol = local_symbol
-        self.trading_class = trading_class
-        self.market_name = market_name
-        self.long_name = long_name
-        self.contract_month = contract_month
-        self.time_zone_id = time_zone_id
-        self.trading_hours = trading_hours
-        self.liquid_hours = liquid_hours
-        self.last_trade_time = last_trade_time
+    @staticmethod
+    cdef Future from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return Future(
+            instrument_id=InstrumentId.from_str_c(values["id"]),
+            asset_class=AssetClassParser.from_str(values["asset_class"]),
+            currency=Currency.from_str_c(values['currency']),
+            price_precision=values['price_precision'],
+            price_increment=Price.from_str(values['price_increment']),
+            multiplier=Quantity.from_str(values['multiplier']),
+            lot_size=Quantity.from_str(values['lot_size']),
+            underlying=values['underlying'],
+            expiry_date=date.fromisoformat(values['expiry_date']),
+            ts_event=values['ts_event'],
+            ts_init=values['ts_init'],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(Future obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "Equity",
+            "id": obj.id.value,
+            "asset_class": AssetClassParser.to_str(obj.asset_class),
+            "currency": obj.quote_currency.code,
+            "price_precision": obj.price_precision,
+            "price_increment": str(obj.price_increment),
+            "size_precision": obj.size_precision,
+            "size_increment": str(obj.size_increment),
+            "multiplier": str(obj.multiplier),
+            "lot_size": str(obj.lot_size),
+            "underlying": obj.underlying,
+            "expiry_date": obj.expiry_date.isoformat(),
+            "margin_init": str(obj.margin_init),
+            "margin_maint": str(obj.margin_maint),
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
+        }
 
     @staticmethod
     def from_dict(dict values) -> Instrument:
