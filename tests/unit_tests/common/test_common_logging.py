@@ -50,10 +50,15 @@ class TestLogLevelParser:
         "string, expected",
         [
             ["DBG", LogLevel.DEBUG],
+            ["DEBUG", LogLevel.DEBUG],
             ["INF", LogLevel.INFO],
+            ["INFO", LogLevel.INFO],
             ["WRN", LogLevel.WARNING],
+            ["WARNING", LogLevel.WARNING],
             ["ERR", LogLevel.ERROR],
+            ["ERROR", LogLevel.ERROR],
             ["CRT", LogLevel.CRITICAL],
+            ["CRITICAL", LogLevel.CRITICAL],
         ],
     )
     def test_log_level_from_str(self, string, expected):

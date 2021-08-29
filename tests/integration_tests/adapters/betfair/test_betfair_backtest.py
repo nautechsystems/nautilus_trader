@@ -18,6 +18,7 @@ import pytest
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.currencies import GBP
@@ -37,7 +38,10 @@ from tests.test_kit.strategies import OrderBookImbalanceStrategy
 
 def create_engine(instruments, data):
     # Create engine
-    engine = BacktestEngine(level_stdout=LogLevel.WARNING)
+    config = BacktestEngineConfig()
+    config.level_stdout = LogLevel.WARNING
+
+    engine = BacktestEngine(config=config)
 
     # Filter and add to engine
     for instrument in instruments[:1]:

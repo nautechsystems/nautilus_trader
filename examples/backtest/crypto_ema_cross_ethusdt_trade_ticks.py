@@ -30,6 +30,7 @@ from examples.strategies.ema_cross_simple import EMACross
 from examples.strategies.ema_cross_simple import EMACrossConfig
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
@@ -50,12 +51,12 @@ if __name__ == "__main__":
     print("Loading instruments...")
     instruments = CCXTInstrumentProvider(client=ccxt.binance(), load_all=True)
 
+    # Configure backtest engine
+    config = BacktestEngineConfig()
+    config.use_data_cache = True  # Pre-cache data for increased performance on repeated runs
+
     # Build the backtest engine
-    engine = BacktestEngine(
-        use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
-        # cache_db_type="redis",
-        # bypass_logging=True
-    )
+    engine = BacktestEngine(config=config)
 
     BINANCE = Venue("BINANCE")
     instrument_id = InstrumentId(symbol=Symbol("ETH/USDT"), venue=BINANCE)
