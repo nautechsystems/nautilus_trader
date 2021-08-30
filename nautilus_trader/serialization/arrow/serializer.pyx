@@ -182,7 +182,7 @@ cdef class ParquetSerializer:
 # Objects requiring special handling in parquet
 #################################################
 
-for cls in OrderBookData.__subclasses__():
+for cls in [OrderBookData] + OrderBookData.__subclasses__():
     register_parquet(
         cls=cls,
         serializer=order_book.serialize,

@@ -16,7 +16,7 @@
 import inspect
 import os
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, Generator, List, Optional
 
 from fsspec.implementations.memory import MemoryFileSystem
 
@@ -46,6 +46,7 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.external.parsers import Reader
 from nautilus_trader.persistence.util import clear_singleton_instances
 from nautilus_trader.trading.strategy import TradingStrategy
 
@@ -801,6 +802,11 @@ class MockLiveRiskEngine(LiveRiskEngine):
 
     def process(self, event):
         self.events.append(event)
+
+
+class MockReader(Reader):
+    def parse(self, block: bytes) -> Generator:
+        yield block
 
 
 def data_catalog_setup():
