@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 import fsspec
+import pytest
 
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.persistence.catalog import DataCatalog
@@ -30,6 +31,7 @@ class TestBetfairPersistence:
         self.fs = self.catalog.fs
         self.reader = BetfairTestStubs.betfair_reader()
 
+    @pytest.mark.skip("compression broken in github ci")
     def test_bsp_deltas(self):
         rf = RawFile(
             open_file=fsspec.open(
