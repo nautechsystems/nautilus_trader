@@ -14,9 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import hashlib
+from functools import partial
 from typing import Dict
 
 import orjson
+
+from nautilus_trader.persistence.external.parsers import TextReader
 
 
 def flatten_tree(y: Dict, **filters):
@@ -112,3 +115,23 @@ def historical_instrument_provider_loader(instrument_provider, line):
     if not instrument_provider.list_instruments():
         # TODO - Need to add historical search
         raise Exception("No instruments found")
+
+
+def line_parser(x, instrument_provider):
+    from nautilus_trader.adapters.betfair.parsing import on_market_update
+
+    yield from on_market_update(instrument_provider=instrument_provider, update=orjson.loads(x))
+
+
+def make_betfair_reader(instrument_provider=None, line_preprocessor=None) -> TextReader:
+    from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+
+    instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])
+
+    return TextReader(
+        # use the standard `on_market_update` betfair parser that the adapter uses
+        line_preprocessor=line_preprocessor,
+        line_parser=partial(line_parser, instrument_provider=instrument_provider),
+        instrument_provider_update=historical_instrument_provider_loader,
+        instrument_provider=instrument_provider,
+    )
