@@ -155,7 +155,7 @@ def _load(config: BacktestDataConfig):
     query = config.query
     return {
         "type": query["cls"],
-        "data": catalog._query(**query),
+        "data": catalog.query(**query),
         "client_id": config.client_id,
     }
 
@@ -208,7 +208,7 @@ def create_backtest_engine(venues, instruments, data):
 
 # @delayed(pure=True)
 def run_engine(engine, strategies):
-    strategies = [cls(**kw) for cls, kw in strategies]
+    strategies = [cls(config) for cls, config in strategies]
     engine.run(strategies=strategies)
     data = {
         "account": pd.concat(
@@ -252,7 +252,7 @@ def _check_configs(configs):
         if not isinstance(config.strategies, list):
             config.strategies = [config.strategies]
         for strategy in config.strategies:
-            err = "strategy argument must be tuple of (TradingStrategy class, kwargs dict)"
+            err = "strategy argument must be tuple of (TradingStrategy, TradingStrategyConfig)"
             assert (
                 isinstance(strategy, tuple)
                 and isinstance(strategy[0], type)

@@ -166,7 +166,7 @@ class DataCatalog(metaclass=Singleton):
         as_nautilus=False,
         **kwargs,
     ):
-        subclasses = base_cls.__subclasses__()
+        subclasses = [base_cls] + base_cls.__subclasses__()
 
         dfs = []
         for cls in subclasses:
@@ -207,7 +207,7 @@ class DataCatalog(metaclass=Singleton):
     ):
         if instrument_type is not None:
             assert isinstance(instrument_type, type)
-            base_cls = (instrument_type,)
+            base_cls = instrument_type
         else:
             base_cls = Instrument
 
