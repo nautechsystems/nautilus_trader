@@ -32,6 +32,8 @@ cdef class OrderBookData(Data):
     """
     The abstract base class for all `OrderBook` data.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -49,8 +51,8 @@ cdef class OrderBookData(Data):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the book.
-        level : BookLevel
-            The order book level (L1, L2, L3).
+        level : BookLevel {``L1``, ``L2``, ``L3``}
+            The order book level.
         ts_event: int64
             The UNIX timestamp (nanoseconds) when the data event occurred.
         ts_init: int64
@@ -84,8 +86,8 @@ cdef class OrderBookSnapshot(OrderBookData):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the book.
-        level : BookLevel
-            The order book level (L1, L2, L3).
+        level : BookLevel {``L1``, ``L2``, ``L3``}
+            The order book level.
         bids : list
             The bids for the snapshot.
         asks : list
@@ -190,8 +192,8 @@ cdef class OrderBookDeltas(OrderBookData):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the book.
-        level : BookLevel
-            The order book level (L1, L2, L3).
+        level : BookLevel {``L1``, ``L2``, ``L3``}
+            The order book level.
         deltas : list[OrderBookDelta]
             The list of order book changes.
         ts_event: int64
@@ -291,10 +293,10 @@ cdef class OrderBookDelta(OrderBookData):
         ----------
         instrument_id : InstrumentId
             The instrument ID.
-        level : BookLevel
-            The book level for the delta.
-        delta_type : DeltaType
-            The type of change (ADD, UPDATED, DELETE, CLEAR).
+        level : BookLevel {``L1``, ``L2``, ``L3``}
+            The order book level.
+        delta_type : DeltaType {``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``}
+            The type of change.
         order : Order
             The order to apply.
         ts_event: int64
@@ -477,7 +479,7 @@ cdef class Order:
 
     cpdef double signed_size(self):
         """
-        Return the signed size of the order (negative for SELL).
+        Return the signed size of the order (negative for ``SELL``).
 
         Returns
         -------

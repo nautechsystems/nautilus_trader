@@ -27,28 +27,20 @@ class TestDonchianChannel:
         self.dc = DonchianChannel(10)
 
     def test_name_returns_expected_name(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.dc.name == "DonchianChannel"
 
     def test_str_repr_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.dc) == "DonchianChannel(10)"
         assert repr(self.dc) == "DonchianChannel(10)"
 
     def test_period_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.dc.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.dc.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
@@ -64,8 +56,7 @@ class TestDonchianChannel:
         self.dc.update_raw(1.00000, 1.00000)
         self.dc.update_raw(1.00000, 1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.dc.initialized is True
 
     def test_handle_quote_tick_updates_indicator(self):
@@ -111,8 +102,7 @@ class TestDonchianChannel:
         # Arrange
         self.dc.update_raw(1.00020, 1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.dc.upper == 1.00020
         assert self.dc.middle == 1.00010
         assert self.dc.lower == 1.00000
@@ -123,8 +113,7 @@ class TestDonchianChannel:
         self.dc.update_raw(1.00030, 1.00010)
         self.dc.update_raw(1.00040, 1.00020)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.dc.upper == 1.00040
         assert self.dc.middle == 1.00020
         assert self.dc.lower == 1.00000

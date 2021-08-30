@@ -139,15 +139,14 @@ class TestCCXTDataClient:
 
     @pytest.mark.asyncio
     async def test_connect(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.data_engine.start()  # Also starts client which connects
         await asyncio.sleep(0.3)  # Allow engine message queue to start
 
         # Assert
         assert self.client.is_connected
 
-        # Tear down
+        # Tear Down
         self.data_engine.stop()
         await self.data_engine.get_run_queue_task()
 

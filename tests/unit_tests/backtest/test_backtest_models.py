@@ -21,8 +21,7 @@ class TestFillModel:
         # Arrange
         fill_model = FillModel()
 
-        # Act
-        # Assert
+        # Act, Assert
         assert not fill_model.is_slipped()
         assert fill_model.is_limit_filled()
         assert fill_model.is_stop_filled()
@@ -31,8 +30,7 @@ class TestFillModel:
         # Arrange
         fill_model = FillModel(random_seed=42)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert not fill_model.is_slipped()
         assert fill_model.is_limit_filled()
         assert fill_model.is_stop_filled()
@@ -44,8 +42,7 @@ class TestFillModel:
             random_seed=42,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert not fill_model.is_stop_filled()
 
     def test_is_limit_filled_with_random_seed(self):
@@ -55,8 +52,7 @@ class TestFillModel:
             random_seed=42,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert not fill_model.is_limit_filled()
 
     def test_is_slipped_with_random_seed(self):
@@ -66,6 +62,5 @@ class TestFillModel:
             random_seed=42,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert not fill_model.is_slipped()

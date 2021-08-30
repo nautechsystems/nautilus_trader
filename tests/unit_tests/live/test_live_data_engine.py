@@ -25,6 +25,7 @@ from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.live.data_engine import LiveDataEngine
+from nautilus_trader.live.data_engine import LiveDataEngineConfig
 from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
@@ -84,8 +85,7 @@ class TestLiveDataEngine:
         self.engine.dispose()
 
     def test_start_when_loop_not_running_logs(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.engine.start()
 
         # Assert
@@ -105,7 +105,7 @@ class TestLiveDataEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveDataEngineConfig(qsize=1),
         )
 
         subscribe = Subscribe(
@@ -136,7 +136,7 @@ class TestLiveDataEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveDataEngineConfig(qsize=1),
         )
 
         handler = []
@@ -177,7 +177,7 @@ class TestLiveDataEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveDataEngineConfig(qsize=1),
         )
 
         response = DataResponse(
@@ -210,7 +210,7 @@ class TestLiveDataEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveDataEngineConfig(qsize=1),
         )
 
         data = Data(1_000_000_000, 1_000_000_000)
@@ -224,8 +224,7 @@ class TestLiveDataEngine:
         assert self.engine.data_count == 0
 
     def test_get_event_loop_returns_expected_loop(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         loop = self.engine.get_event_loop()
 
         # Assert
@@ -233,8 +232,7 @@ class TestLiveDataEngine:
 
     @pytest.mark.asyncio
     async def test_start(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.engine.start()
         await asyncio.sleep(0.1)
 
@@ -246,8 +244,7 @@ class TestLiveDataEngine:
 
     @pytest.mark.asyncio
     async def test_kill_when_running_and_no_messages_on_queues(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.engine.start()
         await asyncio.sleep(0)
         self.engine.kill()
@@ -257,8 +254,7 @@ class TestLiveDataEngine:
 
     @pytest.mark.asyncio
     async def test_kill_when_not_running_with_messages_on_queue(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.engine.kill()
 
         # Assert

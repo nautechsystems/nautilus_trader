@@ -24,48 +24,22 @@ sys.path.insert(
 )  # Allows relative imports from examples
 
 from examples.strategies.volatility_market_maker import VolatilityMarketMaker
+from examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.live.node import TradingNodeConfig
 
 
-# The configuration dictionary can come from anywhere such as a JSON or YAML
-# file. Here it is hardcoded into the example for clarity.
-config = {
-    "trader": {
-        "name": "TESTER",  # Not sent beyond system boundary
-        "id_tag": "001",  # Used to ensure orders are unique for this trader
-    },
-    "system": {
-        "loop_debug": False,  # If event loop debug mode
-        "timeout_connection": 10.0,  # Timeout for all clients to connect and initialize
-        "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
-        "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
-        "timeout_disconnection": 10.0,  # Timeout for all engine clients to disconnect
-        "check_residuals_delay": 10.0,  # Delay to await residual events after stopping engines
-    },
-    "logging": {
-        "level_stdout": "INF",
-    },
-    "database": {
-        "type": "redis",
-        "host": "localhost",
-        "port": 6379,
-    },
-    "data_engine": {},
-    "risk_engine": {},
-    "exec_engine": {},
-    "strategy": {
-        "load_state": True,  # Strategy state is loaded from the database on start
-        "save_state": True,  # Strategy state is saved to the database on shutdown
-    },
-    "data_clients": {
+# Configure the trading node
+config_node = TradingNodeConfig(
+    trader_id="TESTER-001",
+    log_level="INFO",
+    # risk_engine=LiveRiskEngineConfig(
+    #     max_order_rate="5/00:00:01",
+    #     max_notional_per_order={"BTC/USD.BITMEX": 10000},
+    # ),
+    data_clients={
         "CCXT-BITMEX": {
             "account_id": "BITMEX_ACCOUNT_ID",  # value is the environment variable key
             "api_key": "BITMEX_API_KEY",  # value is the environment variable key
@@ -73,37 +47,29 @@ config = {
             "sandbox_mode": False,  # If client uses the testnet
         },
     },
-    "exec_clients": {
+    exec_clients={
         "CCXT-BITMEX": {
             "account_id": "BITMEX_ACCOUNT_ID",  # value is the environment variable key
             "api_key": "BITMEX_API_KEY",  # value is the environment variable key
             "api_secret": "BITMEX_API_SECRET",  # value is the environment variable key
-            "sandbox_mode": False,  # If client uses the testnet
+            "sandbox_mode": False,  # If client uses the testnet,
         },
     },
-}
-
-
-# Instantiate your strategies to pass into the trading node. You could add
-# custom options into the configuration file or even use another configuration
-# file.
-
-instrument_id = InstrumentId(
-    symbol=Symbol("BTC/USD"),
-    venue=Venue("BITMEX"),
 )
+# Instantiate the node with a configuration
+node = TradingNode(config=config_node)
 
-strategy = VolatilityMarketMaker(
-    instrument_id=instrument_id,
-    bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
-    trade_size=Decimal("100"),
+# Configure your strategy
+config = VolatilityMarketMakerConfig(
+    instrument_id="BTC/USD.BITMEX",
+    bar_type="BTC/USD.BITMEX-1-MINUTE-LAST-INTERNAL",
     atr_period=20,
     atr_multiple=1.5,
+    trade_size=Decimal("100"),
     order_id_tag="091",
 )
-
-# Instantiate the node with a configuration
-node = TradingNode(config=config)  # type: ignore
+# Instantiate your strategy
+strategy = VolatilityMarketMaker(config=config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

@@ -127,15 +127,14 @@ class TestBitmexExecutionClient:
 
     @pytest.mark.asyncio
     async def test_connect(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.exec_engine.start()  # Also connects clients
         await asyncio.sleep(1)  # Allow engine message queue to start
 
         # Assert
         assert self.client.is_connected
 
-        # Tear down
+        # Tear Down
         self.exec_engine.stop()
 
     @pytest.mark.asyncio

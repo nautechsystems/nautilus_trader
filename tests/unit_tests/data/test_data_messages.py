@@ -37,8 +37,7 @@ class TestDataMessage:
         self.uuid_factory = UUIDFactory()
 
     def test_data_command_str_and_repr(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         command_id = self.uuid_factory.generate()
 
         command = Subscribe(
@@ -58,8 +57,7 @@ class TestDataMessage:
         ) == repr(command)
 
     def test_data_request_message_str_and_repr(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         handler = [].append
         request_id = self.uuid_factory.generate()
 
@@ -97,8 +95,7 @@ class TestDataMessage:
         ) == repr(request)
 
     def test_data_response_message_str_and_repr(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         correlation_id = self.uuid_factory.generate()
         response_id = self.uuid_factory.generate()
         instrument_id = InstrumentId(Symbol("AUD/USD"), IDEALPRO)

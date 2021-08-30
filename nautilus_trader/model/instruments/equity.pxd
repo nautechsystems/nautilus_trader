@@ -17,11 +17,10 @@ from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class Equity(Instrument):
-    cdef readonly int contract_id
-    cdef readonly str local_symbol
-    cdef readonly str trading_class
-    cdef readonly str market_name
-    cdef readonly str long_name
-    cdef readonly str time_zone_id
-    cdef readonly str trading_hours
-    cdef readonly str last_trade_time
+    cdef readonly str isin
+
+    @staticmethod
+    cdef Equity from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(Equity obj)

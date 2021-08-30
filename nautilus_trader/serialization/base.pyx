@@ -15,6 +15,8 @@
 
 from typing import Any, Callable, Dict
 
+from nautilus_trader.common.events.risk cimport TradingStateChanged
+from nautilus_trader.common.events.system cimport ComponentStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
@@ -50,6 +52,9 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
 from nautilus_trader.model.instruments.crypto_swap cimport CryptoSwap
 from nautilus_trader.model.instruments.currency cimport CurrencySpot
+from nautilus_trader.model.instruments.equity cimport Equity
+from nautilus_trader.model.instruments.future cimport Future
+from nautilus_trader.model.instruments.option cimport Option
 
 
 # Default mappings for Nautilus objects
@@ -59,6 +64,8 @@ _OBJECT_TO_DICT_MAP = {
     SubmitBracketOrder.__name__: SubmitBracketOrder.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
     UpdateOrder.__name__: UpdateOrder.to_dict_c,
+    ComponentStateChanged.__name__: ComponentStateChanged.to_dict_c,
+    TradingStateChanged.__name__: TradingStateChanged.to_dict_c,
     AccountState.__name__: AccountState.to_dict_c,
     OrderAccepted.__name__: OrderAccepted.to_dict_c,
     OrderCancelRejected.__name__: OrderCancelRejected.to_dict_c,
@@ -79,6 +86,9 @@ _OBJECT_TO_DICT_MAP = {
     PositionClosed.__name__: PositionClosed.to_dict_c,
     Instrument.__name__: Instrument.base_to_dict_c,
     BettingInstrument.__name__: BettingInstrument.to_dict_c,
+    Equity.__name__: Equity.to_dict_c,
+    Future.__name__: Future.to_dict_c,
+    Option.__name__: Option.to_dict_c,
     CryptoSwap.__name__: CryptoSwap.to_dict_c,
     CurrencySpot.__name__: CurrencySpot.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
@@ -96,6 +106,8 @@ _OBJECT_FROM_DICT_MAP = {
     SubmitBracketOrder.__name__: SubmitBracketOrder.from_dict_c,
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
     UpdateOrder.__name__: UpdateOrder.from_dict_c,
+    ComponentStateChanged.__name__: ComponentStateChanged.from_dict_c,
+    TradingStateChanged.__name__: TradingStateChanged.from_dict_c,
     AccountState.__name__: AccountState.from_dict_c,
     OrderAccepted.__name__: OrderAccepted.from_dict_c,
     OrderCancelRejected.__name__: OrderCancelRejected.from_dict_c,
@@ -116,6 +128,9 @@ _OBJECT_FROM_DICT_MAP = {
     PositionClosed.__name__: PositionClosed.from_dict_c,
     Instrument.__name__: Instrument.base_from_dict_c,
     BettingInstrument.__name__: BettingInstrument.from_dict_c,
+    Equity.__name__: Equity.from_dict_c,
+    Future.__name__: Future.from_dict_c,
+    Option.__name__: Option.from_dict_c,
     CryptoSwap.__name__: CryptoSwap.from_dict_c,
     CurrencySpot.__name__: CurrencySpot.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,
@@ -165,6 +180,8 @@ cdef class InstrumentSerializer:
     """
     The abstract base class for all instrument serializers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -188,6 +205,8 @@ cdef class CommandSerializer:
     """
     The abstract base class for all command serializers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -210,6 +229,8 @@ cdef class EventSerializer:
     """
     The abstract base class for all event serializers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

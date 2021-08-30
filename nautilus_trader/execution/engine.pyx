@@ -28,7 +28,7 @@ messages.
 Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
 """
-
+import pydantic
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
@@ -72,6 +72,15 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.msgbus.bus cimport MessageBus
+
+
+class ExecEngineConfig(pydantic.BaseModel):
+    """
+    Provides configuration for ``ExecutionEngine`` instances.
+    """
+
+    pass  # No configuration currently
 
 
 cdef class ExecutionEngine(Component):
@@ -87,7 +96,7 @@ cdef class ExecutionEngine(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        dict config=None,
+        config: Optional[ExecEngineConfig]=None,
     ):
         """
         Initialize a new instance of the ``ExecutionEngine`` class.
@@ -102,19 +111,26 @@ cdef class ExecutionEngine(Component):
             The clock for the engine.
         logger : Logger
             The logger for the engine.
-        config : dict[str, object], optional
-            The configuration options.
+        config : ExecEngineConfig, optional
+            The configuration for the instance.
+
+        Raises
+        ------
+        TypeError
+            If config is not of type ExecEngineConfig.
 
         """
         if config is None:
-            config = {}
+            config = ExecEngineConfig()
+        Condition.type(config, ExecEngineConfig, "config")
         super().__init__(
             clock=clock,
             logger=logger,
             component_id=ComponentId("ExecEngine"),
+            msgbus=msgbus,
+            config=config.dict(),
         )
 
-        self._msgbus = msgbus
         self._cache = cache
 
         self._clients = {}           # type: dict[ClientId, ExecutionClient]
@@ -238,7 +254,7 @@ cdef class ExecutionEngine(Component):
         """
         Register the given execution client with the execution engine.
 
-        If the client.venue_type == BROKERAGE_MULTI_VENUE and a default client
+        If the client.venue_type == ``BROKERAGE_MULTI_VENUE`` and a default client
         has not been previously registered then will be registered as such.
 
         Parameters
@@ -666,7 +682,7 @@ cdef class ExecutionEngine(Component):
         # Check for flip (last_qty guaranteed to be positive)
         if (
             oms_type == OMSType.HEDGING
-            and position.is_opposite_side(fill.side)
+            and position.is_opposite_side(fill.order_side)
             and fill.last_qty > position.quantity
         ):
             self._flip_position(position, fill, oms_type)
@@ -725,8 +741,8 @@ cdef class ExecutionEngine(Component):
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
             position_id=fill.position_id,
-            order_side=fill.side,
-            order_type=fill.type,
+            order_side=fill.order_side,
+            order_type=fill.order_type,
             last_qty=position.quantity,  # Fill original position quantity remaining
             last_px=fill.last_px,
             currency=fill.currency,
@@ -758,8 +774,8 @@ cdef class ExecutionEngine(Component):
             venue_order_id=fill.venue_order_id,
             execution_id=fill.execution_id,
             position_id=position_id_flip,
-            order_side=fill.side,
-            order_type=fill.type,
+            order_side=fill.order_side,
+            order_type=fill.order_type,
             last_qty=difference,  # Fill difference from original as above
             last_px=fill.last_px,
             currency=fill.currency,

@@ -30,6 +30,9 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class Position:
     """
     Represents a position in a financial market.
+
+    The position ID may be assigned at the trading venue, or can be system
+    generated depending on a strategies OMS (Order Management System) settings.
     """
 
     def __init__(
@@ -53,13 +56,10 @@ cdef class Position:
             If instrument.id is not equal to fill.instrument_id.
         ValueError
             If event.position_id is None.
-        ValueError
-            If event.strategy_id is None.
 
         """
         Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")
         Condition.not_none(fill.position_id, "fill.position_id")
-        Condition.not_none(fill.strategy_id, "fill.position_id")
 
         self._events = []         # type: list[OrderFilled]
         self._execution_ids = []  # type: list[ExecutionId]
@@ -76,8 +76,8 @@ cdef class Position:
         self.from_order = fill.client_order_id
 
         # Properties
-        self.entry = fill.side
-        self.side = Position.side_from_order_side(fill.side)
+        self.entry = fill.order_side
+        self.side = Position.side_from_order_side(fill.order_side)
         self.net_qty = Decimal(0)
         self.quantity = Quantity.zero_c(precision=instrument.size_precision)
         self.peak_qty = Quantity.zero_c(precision=instrument.size_precision)
@@ -312,12 +312,11 @@ cdef class Position:
     @property
     def is_open(self):
         """
-        If the position side is not `FLAT`.
+        If the position side is **not** ``FLAT``.
 
         Returns
         -------
         bool
-            True if FLAT, else False.
 
         """
         return self.is_open_c()
@@ -325,12 +324,11 @@ cdef class Position:
     @property
     def is_closed(self):
         """
-        If the position side is `FLAT`.
+        If the position side is ``FLAT``.
 
         Returns
         -------
         bool
-            True if not FLAT, else False.
 
         """
         return self.is_closed_c()
@@ -338,12 +336,11 @@ cdef class Position:
     @property
     def is_long(self):
         """
-        If the position side is `LONG`.
+        If the position side is ``LONG``.
 
         Returns
         -------
         bool
-            True if LONG, else False.
 
         """
         return self.is_long_c()
@@ -351,12 +348,11 @@ cdef class Position:
     @property
     def is_short(self):
         """
-        If the position side is `SHORT`.
+        If the position side is ``SHORT``.
 
         Returns
         -------
         bool
-            True if SHORT, else False.
 
         """
         return self.is_short_c()
@@ -373,7 +369,7 @@ cdef class Position:
     @staticmethod
     def side_from_order_side(OrderSide side):
         """
-        Return the position side resulting from the given order side (from FLAT).
+        Return the position side resulting from the given order side (from ``FLAT``).
 
         Parameters
         ----------
@@ -431,9 +427,9 @@ cdef class Position:
         self._commissions[currency] = cum_commission
 
         # Calculate avg prices, points, return, PnL
-        if fill.side == OrderSide.BUY:
+        if fill.order_side == OrderSide.BUY:
             self._handle_buy_order_fill(fill)
-        else:  # event.side == OrderSide.SELL:
+        else:  # event.order_side == OrderSide.SELL:
             self._handle_sell_order_fill(fill)
 
         # Set quantities

@@ -23,6 +23,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 class TestBetfairSockets:
     def setup(self):
+        # Fixture Setup
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
         self.logger = LiveLogger(loop=self.loop, clock=self.clock)

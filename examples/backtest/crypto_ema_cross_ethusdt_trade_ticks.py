@@ -27,16 +27,15 @@ sys.path.insert(
 )  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
+from examples.strategies.ema_cross_simple import EMACrossConfig
 from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -52,12 +51,13 @@ if __name__ == "__main__":
     print("Loading instruments...")
     instruments = CCXTInstrumentProvider(client=ccxt.binance(), load_all=True)
 
-    # Build the backtest engine
-    engine = BacktestEngine(
+    # Configure backtest engine
+    config = BacktestEngineConfig(
+        trader_id="BACKTESTER-001",
         use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
-        # cache_db_type="redis",
-        # bypass_logging=True
     )
+    # Build the backtest engine
+    engine = BacktestEngine(config=config)
 
     BINANCE = Venue("BINANCE")
     instrument_id = InstrumentId(symbol=Symbol("ETH/USDT"), venue=BINANCE)
@@ -87,15 +87,17 @@ if __name__ == "__main__":
         fill_model=fill_model,
     )
 
-    # Instantiate your strategy
-    strategy = EMACross(
-        instrument_id=ETHUSDT_BINANCE.id,
-        bar_spec=BarSpecification(250, BarAggregation.TICK, PriceType.LAST),
-        fast_ema_period=10,
-        slow_ema_period=20,
+    # Configure your strategy
+    config = EMACrossConfig(
+        instrument_id=str(ETHUSDT_BINANCE.id),
+        bar_type="ETH/USDT.BINANCE-250-TICK-LAST-INTERNAL",
         trade_size=Decimal("0.05"),
+        fast_ema=10,
+        slow_ema=20,
         order_id_tag="001",
     )
+    # Instantiate your strategy
+    strategy = EMACross(config=config)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 

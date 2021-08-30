@@ -65,7 +65,10 @@ def is_nautilus_class(cls):
     else:
         is_data_or_event = issubclass(cls, (Data, Event))
         is_nautilus_builtin = any(
-            (cls.__module__.startswith(p) for p in ("nautilus_trader.model",))
+            (
+                cls.__module__.startswith(p)
+                for p in ("nautilus_trader.model", "nautilus_trader.adapters")
+            )
         )
         return is_data_or_event and is_nautilus_builtin
 

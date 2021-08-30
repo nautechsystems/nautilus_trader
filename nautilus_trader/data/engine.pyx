@@ -29,8 +29,9 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
+import pydantic
 from cpython.datetime cimport timedelta
-from typing import Callable
+from typing import Callable, Optional
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
@@ -67,12 +68,19 @@ from nautilus_trader.model.data.venue cimport InstrumentClosePrice
 from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
 from nautilus_trader.model.data.venue cimport StatusUpdate
 from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.msgbus.bus cimport MessageBus
+
+
+class DataEngineConfig(pydantic.BaseModel):
+    """
+    Provides configuration for ``DataEngine`` instances.
+    """
+
+    pass  # No configuration currently
 
 
 cdef class DataEngine(Component):
@@ -87,7 +95,7 @@ cdef class DataEngine(Component):
         Cache cache not None,
         Clock clock not None,
         Logger logger not None,
-        dict config=None,
+        config: Optional[DataEngineConfig]=None,
     ):
         """
         Initialize a new instance of the ``DataEngine`` class.
@@ -102,22 +110,22 @@ cdef class DataEngine(Component):
             The clock for the engine.
         logger : Logger
             The logger for the engine.
-        config : dict[str, object], optional
-            The configuration options.
+        config : DataEngineConfig, optional
+            The configuration for the instance.
 
         """
         if config is None:
-            config = {}
+            config = DataEngineConfig()
+        Condition.type(config, DataEngineConfig, "config")
         super().__init__(
             clock=clock,
             logger=logger,
-            component_id=ComponentId("DataEngine"),
+            msgbus=msgbus,
+            config=config.dict(),
         )
 
-        self._msgbus = msgbus
         self._cache = cache
 
-        self._use_previous_close = config.get("use_previous_close", True)
         self._clients = {}               # type: dict[ClientId, DataClient]
         self._order_book_intervals = {}  # type: dict[(InstrumentId, int), list[Callable[[Bar], None]]]
         self._bar_aggregators = {}       # type: dict[BarType, BarAggregator]
@@ -127,8 +135,6 @@ cdef class DataEngine(Component):
         self.data_count = 0
         self.request_count = 0
         self.response_count = 0
-
-        self._log.info(f"use_previous_close={self._use_previous_close}")
 
         # Register endpoints
         self._msgbus.register(endpoint="DataEngine.execute", handler=self.execute)
@@ -249,6 +255,21 @@ cdef class DataEngine(Component):
             subscriptions += client.subscribed_order_book_snapshots()
         return subscriptions
 
+    cpdef list subscribed_tickers(self):
+        """
+        Return the ticker instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        cdef list subscriptions = []
+        cdef MarketDataClient client
+        for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
+            subscriptions += client.subscribed_tickers()
+        return subscriptions
+
     cpdef list subscribed_quote_ticks(self):
         """
         Return the quote tick instruments subscribed to.
@@ -292,7 +313,7 @@ cdef class DataEngine(Component):
         cdef MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
             subscriptions += client.subscribed_bars()
-        return subscriptions
+        return subscriptions + list(self._bar_aggregators.keys())
 
     cpdef list subscribed_instrument_status_updates(self):
         """
@@ -473,8 +494,8 @@ cdef class DataEngine(Component):
         if client is None:
             self._log.error(
                 f"Cannot handle command: "
-                f"no client registered for '{command.client_id}' in {self.registered_clients}, "
-                f" {command}.")
+                f"no client registered for '{command.client_id}', {command}.",
+            )
             return  # No client to handle command
 
         if isinstance(command, Subscribe):
@@ -501,6 +522,11 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
+            )
+        elif command.data_type.type == Ticker:
+            self._handle_subscribe_ticker(
+                client,
+                command.data_type.metadata.get("instrument_id"),
             )
         elif command.data_type.type == QuoteTick:
             self._handle_subscribe_quote_ticks(
@@ -547,6 +573,11 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
+            )
+        elif command.data_type.type == Ticker:
+            self._handle_unsubscribe_ticker(
+                client,
+                command.data_type.metadata.get("instrument_id"),
             )
         elif command.data_type.type == QuoteTick:
             self._handle_unsubscribe_quote_ticks(
@@ -665,6 +696,17 @@ cdef class DataEngine(Component):
             priority=10,
         )
 
+    cdef void _handle_subscribe_ticker(
+        self,
+        MarketDataClient client,
+        InstrumentId instrument_id,
+    ) except *:
+        Condition.not_none(client, "client")
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if instrument_id not in client.subscribed_tickers():
+            client.subscribe_ticker(instrument_id)
+
     cdef void _handle_subscribe_quote_ticks(
         self,
         MarketDataClient client,
@@ -695,7 +737,7 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
 
-        if bar_type.is_internal_aggregation and bar_type not in self._bar_aggregators:
+        if bar_type.is_internally_aggregated() and bar_type not in self._bar_aggregators:
             # Internal aggregation
             self._start_bar_aggregator(client, bar_type)
         else:
@@ -773,9 +815,9 @@ cdef class DataEngine(Component):
         Condition.not_none(metadata, "metadata")
 
         if not self._msgbus.has_subscribers(
-                f"data.book.deltas"
-                f".{instrument_id.venue}"
-                f".{instrument_id.symbol}",
+            f"data.book.deltas"
+            f".{instrument_id.venue}"
+            f".{instrument_id.symbol}",
         ):
             client.unsubscribe_order_book_deltas(instrument_id)
 
@@ -790,11 +832,26 @@ cdef class DataEngine(Component):
         Condition.not_none(metadata, "metadata")
 
         if not self._msgbus.has_subscribers(
-                f"data.book.snapshots"
-                f".{instrument_id.venue}"
-                f".{instrument_id.symbol}",
+            f"data.book.snapshots"
+            f".{instrument_id.venue}"
+            f".{instrument_id.symbol}",
         ):
             client.unsubscribe_order_book_snapshots(instrument_id)
+
+    cdef void _handle_unsubscribe_ticker(
+        self,
+        MarketDataClient client,
+        InstrumentId instrument_id,
+    ) except *:
+        Condition.not_none(client, "client")
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if not self._msgbus.has_subscribers(
+            f"data.tickers"
+            f".{instrument_id.venue}"
+            f".{instrument_id.symbol}",
+        ):
+            client.unsubscribe_ticker(instrument_id)
 
     cdef void _handle_unsubscribe_quote_ticks(
         self,
@@ -805,9 +862,9 @@ cdef class DataEngine(Component):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self._msgbus.has_subscribers(
-                f"data.quotes"
-                f".{instrument_id.venue}"
-                f".{instrument_id.symbol}",
+            f"data.quotes"
+            f".{instrument_id.venue}"
+            f".{instrument_id.symbol}",
         ):
             client.unsubscribe_quote_ticks(instrument_id)
 
@@ -820,9 +877,9 @@ cdef class DataEngine(Component):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self._msgbus.has_subscribers(
-                f"data.trades"
-                f".{instrument_id.venue}"
-                f".{instrument_id.symbol}",
+            f"data.trades"
+            f".{instrument_id.venue}"
+            f".{instrument_id.symbol}",
         ):
             client.unsubscribe_trade_ticks(instrument_id)
 
@@ -834,7 +891,7 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
 
-        if bar_type.is_internal_aggregation and bar_type in self._bar_aggregators:
+        if bar_type.is_internally_aggregated() and bar_type in self._bar_aggregators:
             # Internal aggregation
             self._stop_bar_aggregator(client, bar_type)
         else:
@@ -910,12 +967,14 @@ cdef class DataEngine(Component):
     cdef void _handle_data(self, Data data) except *:
         self.data_count += 1
 
-        if isinstance(data, QuoteTick):
+        if isinstance(data, OrderBookData):
+            self._handle_order_book_data(data)
+        elif isinstance(data, Ticker):
+            self._handle_ticker(data)
+        elif isinstance(data, QuoteTick):
             self._handle_quote_tick(data)
         elif isinstance(data, TradeTick):
             self._handle_trade_tick(data)
-        elif isinstance(data, OrderBookData):
-            self._handle_order_book_data(data)
         elif isinstance(data, Bar):
             self._handle_bar(data)
         elif isinstance(data, Instrument):
@@ -944,6 +1003,15 @@ cdef class DataEngine(Component):
                   f".{data.instrument_id.venue}"
                   f".{data.instrument_id.symbol}",
             msg=data,
+        )
+
+    cdef void _handle_ticker(self, Ticker ticker) except *:
+        self._cache.add_ticker(ticker)
+        self._msgbus.publish_c(
+            topic=f"data.tickers"
+                  f".{ticker.instrument_id.venue}"
+                  f".{ticker.instrument_id.symbol}",
+            msg=ticker,
         )
 
     cdef void _handle_quote_tick(self, QuoteTick tick) except *:
@@ -1071,7 +1139,6 @@ cdef class DataEngine(Component):
                 instrument=instrument,
                 bar_type=bar_type,
                 handler=self.process,
-                use_previous_close=self._use_previous_close,
                 clock=self._clock,
                 logger=self._log.get_logger(),
             )

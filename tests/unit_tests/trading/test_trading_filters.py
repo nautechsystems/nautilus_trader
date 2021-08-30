@@ -34,7 +34,7 @@ class TestForexSessionFilter:
         self.session_filter = ForexSessionFilter()
 
     @pytest.mark.parametrize(
-        "session,expected",
+        "session, expected",
         [
             [ForexSession.SYDNEY, "1970-01-01 10:00:00+10:00"],
             [ForexSession.TOKYO, "1970-01-01 09:00:00+09:00"],
@@ -45,15 +45,14 @@ class TestForexSessionFilter:
     def test_local_from_utc_given_various_sessions_returns_expected_datetime(
         self, session, expected
     ):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.session_filter.local_from_utc(session, UNIX_EPOCH)
 
         # Assert
         assert str(result) == expected
 
     @pytest.mark.parametrize(
-        "session,expected",
+        "session, expected",
         [
             [ForexSession.SYDNEY, datetime(1970, 1, 1, 21, 0, tzinfo=pytz.utc)],
             [ForexSession.TOKYO, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
@@ -62,16 +61,14 @@ class TestForexSessionFilter:
         ],
     )
     def test_next_start_given_various_sessions_returns_expected_datetime(self, session, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.session_filter.next_start(session, UNIX_EPOCH)
 
         # Assert
         assert result == expected
 
     def test_next_start_on_weekend_returns_expected_datetime_monday(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         time_now = datetime(2020, 7, 12, 9, 0, tzinfo=pytz.utc)
         result = self.session_filter.next_start(ForexSession.TOKYO, time_now)
 
@@ -79,8 +76,7 @@ class TestForexSessionFilter:
         assert result == datetime(2020, 7, 13, 0, 0, tzinfo=pytz.utc)
 
     def test_next_in_session_returns_expected_datetime_next_day(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         time_now = datetime(2020, 7, 13, 1, 0, tzinfo=pytz.utc)
         result = self.session_filter.next_start(ForexSession.TOKYO, time_now)
 
@@ -88,7 +84,7 @@ class TestForexSessionFilter:
         assert result == datetime(2020, 7, 14, 0, 0, tzinfo=pytz.utc)
 
     @pytest.mark.parametrize(
-        "session,expected",
+        "session, expected",
         [
             [ForexSession.SYDNEY, datetime(1969, 12, 31, 21, 0, tzinfo=pytz.utc)],
             [ForexSession.TOKYO, datetime(1970, 1, 1, 0, 0, tzinfo=pytz.utc)],
@@ -97,15 +93,14 @@ class TestForexSessionFilter:
         ],
     )
     def test_prev_start_given_various_sessions_returns_expected_datetime(self, session, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.session_filter.prev_start(session, UNIX_EPOCH)
 
         # Assert
         assert result == expected
 
     @pytest.mark.parametrize(
-        "session,expected",
+        "session, expected",
         [
             [ForexSession.SYDNEY, datetime(1970, 1, 1, 6, 0, tzinfo=pytz.utc)],
             [ForexSession.TOKYO, datetime(1970, 1, 1, 9, 0, tzinfo=pytz.utc)],
@@ -114,15 +109,14 @@ class TestForexSessionFilter:
         ],
     )
     def test_next_end_given_various_sessions_returns_expected_datetime(self, session, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.session_filter.next_end(session, UNIX_EPOCH)
 
         # Assert
         assert result == expected
 
     @pytest.mark.parametrize(
-        "session,expected",
+        "session, expected",
         [
             [ForexSession.SYDNEY, datetime(1969, 12, 31, 6, 0, tzinfo=pytz.utc)],
             [ForexSession.TOKYO, datetime(1969, 12, 31, 9, 0, tzinfo=pytz.utc)],
@@ -131,8 +125,7 @@ class TestForexSessionFilter:
         ],
     )
     def test_prev_end_given_various_sessions_returns_expected_datetime(self, session, expected):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.session_filter.prev_end(session, UNIX_EPOCH)
 
         # Assert
@@ -155,8 +148,7 @@ class TestEconomicNewsEventFilter:
             news_data=self.news_data,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert (
             pd.Timestamp("2008-01-01 10:00:00+0000", tz="UTC") == news_filter.unfiltered_data_start
         )
@@ -190,8 +182,7 @@ class TestEconomicNewsEventFilter:
             news_data=self.news_data,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(ValueError):
             news_filter.next_event(UNIX_EPOCH)
 
@@ -203,8 +194,7 @@ class TestEconomicNewsEventFilter:
             news_data=self.news_data,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(ValueError):
             news_filter.next_event(datetime(2050, 1, 1, 1, 1, tzinfo=pytz.utc))
 
@@ -216,8 +206,7 @@ class TestEconomicNewsEventFilter:
             news_data=self.news_data,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(ValueError):
             news_filter.prev_event(UNIX_EPOCH)
 
@@ -229,8 +218,7 @@ class TestEconomicNewsEventFilter:
             news_data=self.news_data,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(ValueError):
             news_filter.prev_event(datetime(2050, 1, 1, 1, 1, tzinfo=pytz.utc))
 

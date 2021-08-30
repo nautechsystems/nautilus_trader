@@ -36,22 +36,16 @@ class TestSwings:
         self.swings = Swings(3)
 
     def test_name_returns_expected_name(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.swings.name == "Swings"
 
     def test_str_repr_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.swings) == "Swings(3)"
         assert repr(self.swings) == "Swings(3)"
 
     def test_instantiate_returns_expected_property_values(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.swings.period == 3
         assert self.swings.initialized is False
         assert self.swings.direction == 0
@@ -87,8 +81,7 @@ class TestSwings:
         self.swings.update_raw(1.00060, 1.00040, UNIX_EPOCH)
         self.swings.update_raw(1.00050, 1.00040, UNIX_EPOCH)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.swings.direction == 1
         assert self.swings.high_price == 1.0006
 
@@ -101,8 +94,7 @@ class TestSwings:
         self.swings.update_raw(1.00020, 1.00010, UNIX_EPOCH)
         self.swings.update_raw(1.00020, 1.00020, UNIX_EPOCH)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.swings.direction == -1
         assert self.swings.low_price == 1.0001
 
@@ -116,8 +108,7 @@ class TestSwings:
         self.swings.update_raw(1.00060, 1.00050, UNIX_EPOCH)
         self.swings.update_raw(1.00050, 1.00040, UNIX_EPOCH)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.swings.direction == -1
         assert self.swings.changed
         assert self.swings.since_low == 0
@@ -133,8 +124,7 @@ class TestSwings:
         self.swings.update_raw(1.00050, 1.00040, UNIX_EPOCH)
         self.swings.update_raw(1.00060, 1.00050, UNIX_EPOCH)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.swings.direction == 1
         assert self.swings.changed
         assert self.swings.since_high == 0
@@ -158,8 +148,7 @@ class TestSwings:
         self.swings.update_raw(1.00030, 1.00020, UNIX_EPOCH)
         self.swings.update_raw(1.00040, 1.00030, UNIX_EPOCH)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.swings.direction == 1
         assert self.swings.since_low == 3
         assert self.swings.since_high == 0

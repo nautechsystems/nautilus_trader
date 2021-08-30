@@ -16,7 +16,7 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -54,6 +54,7 @@ cdef class MarketOrder(Order):
     last-traded price is not necessarily the price at which a market order will
     be executed.
     """
+
     def __init__(
         self,
         TraderId trader_id not None,
@@ -63,7 +64,7 @@ cdef class MarketOrder(Order):
         OrderSide order_side,
         Quantity quantity not None,
         TimeInForce time_in_force,
-        UUID init_id not None,
+        UUID4 init_id not None,
         int64_t ts_init,
     ):
         """
@@ -80,10 +81,10 @@ cdef class MarketOrder(Order):
         client_order_id : ClientOrderId
             The client order ID.
         order_side : OrderSide
-            The order side (BUY or SELL).
+            The order side (``BUY`` or ``SELL``).
         quantity : Quantity
             The order quantity (> 0).
-        init_id : UUID
+        init_id : UUID4
             The order initialization event ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the order was initialized.
@@ -93,7 +94,7 @@ cdef class MarketOrder(Order):
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is other than GTC, IOC or FOK.
+            If time_in_force is other than ``GTC``, ``IOC`` or ``FOK``.
 
         """
         Condition.positive(quantity, "quantity")
@@ -140,7 +141,7 @@ cdef class MarketOrder(Order):
             "filled_qty": str(self.filled_qty),
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "slippage": str(self.slippage),
-            "state": self._fsm.state_string_c(),
+            "status": self._fsm.state_string_c(),
             "ts_last": self.ts_last,
             "ts_init": self.ts_init,
         }
@@ -162,7 +163,7 @@ cdef class MarketOrder(Order):
         Raises
         ------
         ValueError
-            If init.type is not equal to MARKET.
+            If init.type is not equal to ``MARKET``.
 
         """
         Condition.not_none(init, "init")

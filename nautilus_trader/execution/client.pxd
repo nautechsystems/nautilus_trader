@@ -36,23 +36,17 @@ from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class ExecutionClient(Component):
-    cdef MessageBus _msgbus
     cdef Cache _cache
     cdef Account _account
-    cdef dict _config
 
-    cdef readonly TraderId trader_id
-    """The trader ID associated with the client.\n\n:returns: `TraderId`"""
     cdef readonly Venue venue
     """The clients venue ID (if not multi-venue brokerage).\n\n:returns: `Venue` or None"""
     cdef readonly VenueType venue_type
@@ -131,7 +125,6 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        str response_to,
         str reason,
         int64_t ts_event,
     ) except *
@@ -141,7 +134,6 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        str response_to,
         str reason,
         int64_t ts_event,
     ) except *

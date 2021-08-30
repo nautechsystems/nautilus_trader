@@ -92,6 +92,8 @@ cdef class LiveExecutionClient(ExecutionClient):
     """
     The abstract base class for all live execution clients.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -138,7 +140,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         logger : Logger
             The logger for the client.
         config : dict[str, object], optional
-            The configuration options.
+            The configuration for the instance.
 
         """
         super().__init__(

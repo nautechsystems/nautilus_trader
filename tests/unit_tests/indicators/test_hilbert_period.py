@@ -29,33 +29,24 @@ class TestHilbertPeriod:
         self.h_period = HilbertPeriod()
 
     def test_name_returns_expected_name(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.h_period.name == "HilbertPeriod"
 
     def test_str_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.h_period) == "HilbertPeriod(7)"
         assert repr(self.h_period) == "HilbertPeriod(7)"
 
     def test_period_returns_expected_value(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.h_period.period == 7
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.h_period.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         for _i in range(10):
             self.h_period.update_raw(1.00010, 1.00000)
 
@@ -76,9 +67,7 @@ class TestHilbertPeriod:
         assert indicator.value == 0
 
     def test_value_with_no_inputs_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.h_period.value == 0
 
     def test_value_with_epsilon_inputs_returns_expected_value(self):
@@ -86,8 +75,7 @@ class TestHilbertPeriod:
         for _i in range(100):
             self.h_period.update_raw(sys.float_info.epsilon, sys.float_info.epsilon)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.h_period.value == 7
 
     def test_value_with_ones_inputs_returns_expected_value(self):
@@ -95,8 +83,7 @@ class TestHilbertPeriod:
         for _i in range(100):
             self.h_period.update_raw(1.00000, 1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.h_period.value == 7
 
     def test_value_with_seven_inputs_returns_expected_value(self):

@@ -28,13 +28,11 @@ class TestHullMovingAverage:
         self.hma = HullMovingAverage(10)
 
     def test_name_returns_expected_string(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert self.hma.name == "HullMovingAverage"
 
     def test_str_repr_returns_expected_string(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert str(self.hma) == "HullMovingAverage(10)"
         assert repr(self.hma) == "HullMovingAverage(10)"
 
@@ -51,8 +49,7 @@ class TestHullMovingAverage:
         self.hma.update_raw(9.00000)
         self.hma.update_raw(10.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.hma.initialized is True
 
     def test_handle_quote_tick_updates_indicator(self):
@@ -98,8 +95,7 @@ class TestHullMovingAverage:
         # Arrange
         self.hma.update_raw(1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.hma.value == 1.0
 
     def test_value_with_three_inputs_returns_expected_value(self):
@@ -108,8 +104,7 @@ class TestHullMovingAverage:
         self.hma.update_raw(2.00000)
         self.hma.update_raw(3.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.hma.value == 1.8245614035087718
 
     def test_value_with_ten_inputs_returns_expected_value(self):
@@ -126,8 +121,7 @@ class TestHullMovingAverage:
         self.hma.update_raw(1.00010)
         self.hma.update_raw(1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.hma.value == 1.0001403928170594
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):

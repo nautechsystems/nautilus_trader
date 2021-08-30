@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data.base cimport Data
@@ -30,7 +31,17 @@ cdef class BarSpecification:
     """The specified price type for bar aggregation.\n\n:returns: `PriceType`"""
 
     @staticmethod
+    cdef bint check_time_aggregated_c(BarAggregation aggregation)
+
+    @staticmethod
+    cdef bint check_threshold_aggregated_c(BarAggregation aggregation)
+
+    @staticmethod
+    cdef bint check_information_aggregated_c(BarAggregation aggregation)
+
+    @staticmethod
     cdef BarSpecification from_str_c(str value)
+
     cpdef bint is_time_aggregated(self) except *
     cpdef bint is_threshold_aggregated(self) except *
     cpdef bint is_information_aggregated(self) except *
@@ -41,11 +52,14 @@ cdef class BarType:
     """The bar type instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly BarSpecification spec
     """The bar type specification.\n\n:returns: `BarSpecification`"""
-    cdef readonly bint is_internal_aggregation
-    """If bar aggregation is internal to the platform.\n\n:returns: `bool`"""
+    cdef readonly AggregationSource aggregation_source
+    """The bar aggregation source.\n\n:returns: `bool`"""
 
     @staticmethod
-    cdef BarType from_str_c(str value, bint internal_aggregation=*)
+    cdef BarType from_str_c(str value)
+
+    cpdef bint is_externally_aggregated(self) except *
+    cpdef bint is_internally_aggregated(self) except *
 
 
 cdef class Bar(Data):

@@ -16,6 +16,7 @@
 from decimal import Decimal
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
@@ -23,7 +24,6 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import CurrencyType
@@ -46,6 +46,7 @@ from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
+from tests.test_kit.strategies import EMACrossConfig
 from tests.test_kit.stubs import TestStubs
 
 
@@ -103,7 +104,7 @@ class TestCache:
             logger=self.logger,
         )
 
-        self.strategy = TradingStrategy(order_id_tag="001")
+        self.strategy = TradingStrategy()
         self.strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -114,48 +115,42 @@ class TestCache:
         )
 
     def test_cache_currencies_with_no_currencies(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.cache.cache_currencies()
 
         # Assert
         assert True  # No exception raised
 
     def test_cache_instruments_with_no_instruments(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.cache.cache_instruments()
 
         # Assert
         assert True  # No exception raised
 
     def test_cache_accounts_with_no_accounts(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.cache.cache_accounts()
 
         # Assert
         assert True  # No exception raised
 
     def test_cache_orders_with_no_orders(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.cache.cache_orders()
 
         # Assert
         assert True  # No exception raised
 
     def test_cache_positions_with_no_positions(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.cache.cache_positions()
 
         # Assert
         assert True  # No exception raised
 
     def test_build_index_with_no_objects(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.cache.build_index()
 
         # Assert
@@ -210,32 +205,28 @@ class TestCache:
         assert result == account
 
     def test_account_for_venue(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.cache.account_for_venue(Venue("SIM"))
 
         # Assert
         assert result is None
 
     def test_accounts_when_no_accounts_returns_empty_list(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.cache.accounts()
 
         # Assert
         assert result == []
 
     def test_get_strategy_ids_with_no_ids_returns_empty_set(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.cache.strategy_ids()
 
         # Assert
         assert result == set()
 
     def test_get_order_ids_with_no_ids_returns_empty_set(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         result = self.cache.client_order_ids()
 
         # Assert
@@ -252,15 +243,11 @@ class TestCache:
         assert result == {self.strategy.id}
 
     def test_position_exists_when_no_position_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert not self.cache.position_exists(PositionId("P-123456"))
 
     def test_order_exists_when_no_order_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert not self.cache.order_exists(ClientOrderId("O-123456"))
 
     def test_position_when_no_position_returns_none(self):
@@ -284,9 +271,7 @@ class TestCache:
         assert result is None
 
     def test_strategy_id_for_position_when_no_strategy_registered_returns_none(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.cache.strategy_id_for_position(PositionId("P-123456")) is None
 
     def test_add_order(self):
@@ -422,6 +407,12 @@ class TestCache:
         assert self.cache.order_exists(order.client_order_id)
         assert order.client_order_id in self.cache.client_order_ids()
         assert order in self.cache.orders()
+        assert order in self.cache.orders_active()
+        assert order in self.cache.orders_active(instrument_id=order.instrument_id)
+        assert order in self.cache.orders_active(strategy_id=self.strategy.id)
+        assert order in self.cache.orders_active(
+            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+        )
         assert order in self.cache.orders_inflight()
         assert order in self.cache.orders_inflight(instrument_id=order.instrument_id)
         assert order in self.cache.orders_inflight(strategy_id=self.strategy.id)
@@ -441,6 +432,7 @@ class TestCache:
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
 
+        assert self.cache.orders_active_count() == 1
         assert self.cache.orders_inflight_count() == 1
         assert self.cache.orders_working_count() == 0
         assert self.cache.orders_completed_count() == 0
@@ -470,10 +462,10 @@ class TestCache:
         assert self.cache.order_exists(order.client_order_id)
         assert order.client_order_id in self.cache.client_order_ids()
         assert order in self.cache.orders()
-        assert order in self.cache.orders_working()
-        assert order in self.cache.orders_working(instrument_id=order.instrument_id)
-        assert order in self.cache.orders_working(strategy_id=self.strategy.id)
-        assert order in self.cache.orders_working(
+        assert order in self.cache.orders_active()
+        assert order in self.cache.orders_active(instrument_id=order.instrument_id)
+        assert order in self.cache.orders_active(strategy_id=self.strategy.id)
+        assert order in self.cache.orders_active(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
         assert order not in self.cache.orders_inflight()
@@ -483,6 +475,12 @@ class TestCache:
         assert order not in self.cache.orders_inflight(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
+        assert order in self.cache.orders_working()
+        assert order in self.cache.orders_working(instrument_id=order.instrument_id)
+        assert order in self.cache.orders_working(strategy_id=self.strategy.id)
+        assert order in self.cache.orders_working(
+            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+        )
         assert order not in self.cache.orders_completed()
         assert order not in self.cache.orders_completed(instrument_id=order.instrument_id)
         assert order not in self.cache.orders_completed(strategy_id=self.strategy.id)
@@ -490,6 +488,7 @@ class TestCache:
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
 
+        assert self.cache.orders_active_count() == 1
         assert self.cache.orders_inflight_count() == 0
         assert self.cache.orders_working_count() == 1
         assert self.cache.orders_completed_count() == 0
@@ -524,10 +523,10 @@ class TestCache:
         assert self.cache.order_exists(order.client_order_id)
         assert order.client_order_id in self.cache.client_order_ids()
         assert order in self.cache.orders()
-        assert order in self.cache.orders_completed()
-        assert order in self.cache.orders_completed(instrument_id=order.instrument_id)
-        assert order in self.cache.orders_completed(strategy_id=self.strategy.id)
-        assert order in self.cache.orders_completed(
+        assert order not in self.cache.orders_active()
+        assert order not in self.cache.orders_active(instrument_id=order.instrument_id)
+        assert order not in self.cache.orders_active(strategy_id=self.strategy.id)
+        assert order not in self.cache.orders_active(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
         assert order not in self.cache.orders_inflight()
@@ -542,7 +541,15 @@ class TestCache:
         assert order not in self.cache.orders_working(
             instrument_id=order.instrument_id, strategy_id=self.strategy.id
         )
+        assert order in self.cache.orders_completed()
+        assert order in self.cache.orders_completed(instrument_id=order.instrument_id)
+        assert order in self.cache.orders_completed(strategy_id=self.strategy.id)
+        assert order in self.cache.orders_completed(
+            instrument_id=order.instrument_id, strategy_id=self.strategy.id
+        )
+
         assert self.cache.venue_order_id(order.client_order_id) == order.venue_order_id
+        assert self.cache.orders_active_count() == 0
         assert self.cache.orders_inflight_count() == 0
         assert self.cache.orders_working_count() == 0
         assert self.cache.orders_completed_count() == 1
@@ -1000,24 +1007,26 @@ class TestCache:
 class TestExecutionCacheIntegrityCheck:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(
-            bypass_logging=True,  # Uncomment this to see integrity check failure messages
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
         )
+        self.engine = BacktestEngine(config=config)
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_bars(
+        self.engine.add_bars_as_ticks(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.BID,
-            TestDataProvider.usdjpy_1min_bid(),
+            TestDataProvider.usdjpy_1min_bid()[:2000],
         )
-        self.engine.add_bars(
+        self.engine.add_bars_as_ticks(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
-            TestDataProvider.usdjpy_1min_ask(),
+            TestDataProvider.usdjpy_1min_ask()[:2000],
         )
 
         self.engine.add_venue(
@@ -1032,13 +1041,14 @@ class TestExecutionCacheIntegrityCheck:
 
     def test_exec_cache_check_integrity_when_cache_cleared_fails(self):
         # Arrange
-        strategy = EMACross(
-            instrument_id=self.usdjpy.id,
-            bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+        config = EMACrossConfig(
+            instrument_id=str(self.usdjpy.id),
+            bar_type=str(TestStubs.bartype_usdjpy_1min_bid()),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
         )
+        strategy = EMACross(config=config)
 
         # Generate a lot of data
         self.engine.run(strategies=[strategy])
@@ -1046,19 +1056,19 @@ class TestExecutionCacheIntegrityCheck:
         # Remove data
         self.engine.cache.clear_cache()
 
-        # Act
-        # Assert
+        # Act, Assert
         assert not self.engine.cache.check_integrity()
 
     def test_exec_cache_check_integrity_when_index_cleared_fails(self):
         # Arrange
-        strategy = EMACross(
-            instrument_id=self.usdjpy.id,
-            bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+        config = EMACrossConfig(
+            instrument_id=str(self.usdjpy.id),
+            bar_type="USD/JPY.SIM-15-MINUTE-BID-INTERNAL",
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
         )
+        strategy = EMACross(config=config)
 
         # Generate a lot of data
         self.engine.run(strategies=[strategy])
@@ -1066,6 +1076,5 @@ class TestExecutionCacheIntegrityCheck:
         # Clear index
         self.engine.cache.clear_index()
 
-        # Act
-        # Assert
+        # Act, Assert
         assert not self.engine.cache.check_integrity()

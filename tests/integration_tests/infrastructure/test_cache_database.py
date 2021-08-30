@@ -18,14 +18,15 @@ from decimal import Decimal
 import redis
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
+from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import CurrencyType
@@ -50,6 +51,7 @@ from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
+from tests.test_kit.strategies import EMACrossConfig
 from tests.test_kit.stubs import TestStubs
 
 
@@ -87,7 +89,6 @@ class TestRedisCacheDatabase:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"use_previous_close": False},
         )
 
         self.exec_engine = ExecutionEngine(
@@ -105,7 +106,7 @@ class TestRedisCacheDatabase:
             logger=self.logger,
         )
 
-        self.strategy = TradingStrategy(order_id_tag="001")
+        self.strategy = TradingStrategy()
         self.strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -115,18 +116,12 @@ class TestRedisCacheDatabase:
             logger=self.logger,
         )
 
-        config = {
-            "host": "localhost",
-            "port": 6379,
-        }
-
         self.database = RedisCacheDatabase(
             trader_id=self.trader_id,
             logger=self.logger,
             instrument_serializer=MsgPackInstrumentSerializer(),
             command_serializer=MsgPackCommandSerializer(),
             event_serializer=MsgPackEventSerializer(),
-            config=config,
         )
 
         self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
@@ -519,8 +514,7 @@ class TestRedisCacheDatabase:
         assert self.database.load_accounts() == {account.id: account}
 
     def test_load_orders_cache_when_no_orders(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.database.load_orders()
 
         # Assert
@@ -543,8 +537,7 @@ class TestRedisCacheDatabase:
         assert result == {order.client_order_id: order}
 
     def test_load_positions_cache_when_no_positions(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.database.load_positions()
 
         # Assert
@@ -585,8 +578,7 @@ class TestRedisCacheDatabase:
         assert result == {position.id: position}
 
     def test_delete_strategy(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.database.delete_strategy(self.strategy.id)
         result = self.database.load_strategy(self.strategy.id)
 
@@ -641,22 +633,25 @@ class TestRedisCacheDatabase:
 class TestExecutionCacheWithRedisDatabaseTests:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(
-            bypass_logging=False,  # Uncomment this to see integrity check failure messages
-            cache_db_type="redis",
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            cache_database=CacheDatabaseConfig(),  # default redis
             cache_db_flush=False,
         )
+
+        self.engine = BacktestEngine(config=config)
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_bars(
+        self.engine.add_bars_as_ticks(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.usdjpy_1min_bid(),
         )
-        self.engine.add_bars(
+        self.engine.add_bars_as_ticks(
             self.usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
@@ -681,13 +676,14 @@ class TestExecutionCacheWithRedisDatabaseTests:
 
     def test_rerunning_backtest_with_redis_db_builds_correct_index(self):
         # Arrange
-        strategy = EMACross(
-            instrument_id=self.usdjpy.id,
-            bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+        config = EMACrossConfig(
+            instrument_id=str(self.usdjpy.id),
+            bar_type=str(TestStubs.bartype_usdjpy_1min_bid()),
             trade_size=Decimal(1_000_000),
             fast_ema=10,
             slow_ema=20,
         )
+        strategy = EMACross(config=config)
 
         # Generate a lot of data
         self.engine.run(strategies=[strategy])

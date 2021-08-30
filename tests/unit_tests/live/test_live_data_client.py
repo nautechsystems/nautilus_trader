@@ -131,9 +131,7 @@ class TestLiveDataClientTests:
         )
 
     def test_dummy_test(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert True  # No exception raised
 
 
@@ -182,7 +180,5 @@ class TestLiveMarketDataClientTests:
         )
 
     def test_dummy_test(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert True  # No exception raised

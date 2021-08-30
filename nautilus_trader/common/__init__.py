@@ -30,5 +30,5 @@ Common logging components.
 
 A high performance `Queue`.
 
-Common `UUID` factory.
+Common `UUID4` factory.
 """

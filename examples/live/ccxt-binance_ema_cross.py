@@ -24,48 +24,18 @@ sys.path.insert(
 )  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
+from examples.strategies.ema_cross_simple import EMACrossConfig
 from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import PriceType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.live.node import TradingNodeConfig
 
 
-# The configuration dictionary can come from anywhere such as a JSON or YAML
-# file. Here it is hardcoded into the example for clarity.
-config = {
-    "trader": {
-        "name": "TESTER",  # Not sent beyond system boundary
-        "id_tag": "001",  # Used to ensure orders are unique for this trader
-    },
-    "system": {
-        "loop_debug": False,  # If event loop debug mode
-        "timeout_connection": 10.0,  # Timeout for all clients to connect and initialize
-        "timeout_reconciliation": 10.0,  # Timeout for execution state to reconcile
-        "timeout_portfolio": 10.0,  # Timeout for portfolio to initialize margins and unrealized PnLs
-        "timeout_disconnection": 10.0,  # Timeout for all engine clients to disconnect
-        "check_residuals_delay": 10.0,  # Delay to await residual events after stopping engines
-    },
-    "logging": {
-        "level_stdout": "INF",
-    },
-    "database": {
-        "type": "redis",
-        "host": "localhost",
-        "port": 6379,
-    },
-    "data_engine": {},
-    "risk_engine": {},
-    "exec_engine": {},
-    "strategy": {
-        "load_state": True,  # Strategy state is loaded from the database on start
-        "save_state": True,  # Strategy state is saved to the database on shutdown
-    },
-    "data_clients": {
+# Configure the trading node
+config_node = TradingNodeConfig(
+    trader_id="TESTER-001",
+    log_level="INFO",
+    data_clients={
         "CCXT-BINANCE": {
             "account_id": "BINANCE_ACCOUNT_ID",  # value is the environment variable key
             "api_key": "BINANCE_API_KEY",  # value is the environment variable key
@@ -73,37 +43,29 @@ config = {
             "sandbox_mode": False,  # If client uses the testnet
         },
     },
-    "exec_clients": {
+    exec_clients={
         "CCXT-BINANCE": {
             "account_id": "BINANCE_ACCOUNT_ID",  # value is the environment variable key
             "api_key": "BINANCE_API_KEY",  # value is the environment variable key
             "api_secret": "BINANCE_API_SECRET",  # value is the environment variable key
-            "sandbox_mode": False,  # If client uses the testnet
+            "sandbox_mode": False,  # If client uses the testnet,
         },
     },
-}
-
-
-# Instantiate your strategies to pass into the trading node. You could add
-# custom options into the configuration file or even use another configuration
-# file.
-
-instrument_id = InstrumentId(
-    symbol=Symbol("ETH/USDT"),
-    venue=Venue("BINANCE"),
 )
+# Instantiate the node with a configuration
+node = TradingNode(config=config_node)
 
-strategy = EMACross(
-    instrument_id=instrument_id,
-    bar_spec=BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
+# Configure your strategy
+strat_config = EMACrossConfig(
+    instrument_id="ETH/USDT.BINANCE",
+    bar_type="ETH/USDT.BINANCE-1-MINUTE-LAST-INTERNAL",
     fast_ema_period=10,
     slow_ema_period=20,
     trade_size=Decimal("0.01"),
     order_id_tag="001",
 )
-
-# Instantiate the node with a configuration
-node = TradingNode(config=config)  # type: ignore
+# Instantiate your strategy
+strategy = EMACross(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

@@ -26,6 +26,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.live.data_engine import LiveDataEngine
+from nautilus_trader.live.execution_engine import LiveExecEngineConfig
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -147,8 +148,7 @@ class TestLiveExecutionEngine:
         self.exec_engine.dispose()
 
     def test_start_when_loop_not_running_logs(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.exec_engine.start()
 
         # Assert
@@ -167,10 +167,10 @@ class TestLiveExecutionEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveExecEngineConfig(qsize=1),
         )
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -215,10 +215,10 @@ class TestLiveExecutionEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveExecEngineConfig(qsize=1),
         )
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -277,8 +277,7 @@ class TestLiveExecutionEngine:
 
     @pytest.mark.asyncio
     async def test_kill_when_not_running_with_messages_on_queue(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.exec_engine.kill()
 
         # Assert
@@ -289,7 +288,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -330,7 +329,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -352,7 +351,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -406,7 +405,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -460,7 +459,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -515,7 +514,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -597,7 +596,7 @@ class TestLiveExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,

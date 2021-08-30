@@ -19,6 +19,7 @@ from decimal import Decimal
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.enums import LogLevel
+from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
@@ -45,6 +46,7 @@ from nautilus_trader.model.orders.bracket import BracketOrder
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.risk.engine import RiskEngineConfig
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockExecutionClient
 from tests.test_kit.providers import TestInstrumentProvider
@@ -120,11 +122,11 @@ class TestRiskEngine:
         # Arrange
         self.msgbus.deregister("RiskEngine.execute", self.risk_engine.execute)
 
-        config = {
-            "bypass": True,  # <-- bypassing pre-trade risk checks for backtest
-            "max_order_rate": (5, timedelta(seconds=1)),
-            "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
-        }
+        config = RiskEngineConfig(
+            bypass=True,  # <-- bypassing pre-trade risk checks for backtest
+            max_order_rate="5/00:00:01",
+            max_notional_per_order={"GBP/USD.SIM": 2_000_000},
+        )
 
         # Act
         risk_engine = RiskEngine(
@@ -170,11 +172,23 @@ class TestRiskEngine:
         # Assert
         assert result == TradingState.ACTIVE
 
-    def test_set_trading_state_changes_value(self):
+    def test_set_trading_state_when_no_change_logs_warning(self):
         # Arrange, Act
+        self.risk_engine.set_trading_state(TradingState.ACTIVE)
+
+        # Assert
+        assert self.risk_engine.trading_state == TradingState.ACTIVE
+
+    def test_set_trading_state_changes_value_and_publishes_event(self):
+        # Arrange
+        handler = []
+        self.msgbus.subscribe(topic="events.risk*", handler=handler.append)
+
+        # Act
         self.risk_engine.set_trading_state(TradingState.HALTED)
 
         # Assert
+        assert type(handler[0]) == TradingStateChanged
         assert self.risk_engine.trading_state == TradingState.HALTED
 
     def test_max_order_rate_when_no_risk_config_returns_100_per_second(self):
@@ -234,7 +248,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -270,7 +284,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -308,7 +322,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -344,7 +358,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -389,7 +403,7 @@ class TestRiskEngine:
         submit_order2 = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=strategy.id,
-            position_id=PositionId("P-19700101-000000-000-001-1"),
+            position_id=PositionId("P-19700101-000000-000-000-1"),
             order=order2,
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -403,7 +417,7 @@ class TestRiskEngine:
         submit_order3 = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=strategy.id,
-            position_id=PositionId("P-19700101-000000-000-001-1"),
+            position_id=PositionId("P-19700101-000000-000-000-1"),
             order=order3,
             command_id=self.uuid_factory.generate(),
             ts_init=self.clock.timestamp_ns(),
@@ -420,7 +434,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -455,7 +469,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -490,7 +504,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -526,7 +540,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -562,7 +576,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -599,7 +613,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -635,7 +649,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -671,7 +685,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -709,7 +723,7 @@ class TestRiskEngine:
 
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -750,7 +764,7 @@ class TestRiskEngine:
 
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -791,7 +805,7 @@ class TestRiskEngine:
 
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -855,7 +869,7 @@ class TestRiskEngine:
 
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -913,7 +927,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -953,7 +967,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -994,7 +1008,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1036,7 +1050,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1119,7 +1133,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1202,7 +1216,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1244,7 +1258,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1279,7 +1293,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1336,7 +1350,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1391,7 +1405,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1446,7 +1460,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1478,7 +1492,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1529,7 +1543,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1583,7 +1597,7 @@ class TestRiskEngine:
         # Arrange
         self.exec_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,

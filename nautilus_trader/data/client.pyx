@@ -27,7 +27,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data.bar cimport BarType
@@ -43,6 +43,8 @@ cdef class DataClient(Component):
     """
     The abstract base class for all data clients.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -69,7 +71,7 @@ cdef class DataClient(Component):
         logger : Logger
             The logger for the client.
         config : dict[str, object], optional
-            The configuration options.
+            The configuration for the instance.
 
         """
         if config is None:
@@ -79,11 +81,11 @@ cdef class DataClient(Component):
             logger=logger,
             component_id=client_id,
             component_name=config.get("name", f"DataClient-{client_id.value}"),
+            msgbus=msgbus,
+            config=config,
         )
 
-        self._msgbus = msgbus
         self._cache = cache
-        self._config = config
 
         # Feeds
         self._feeds_generic_data = {}  # type: dict[DataType, asyncio.Task]
@@ -116,7 +118,7 @@ cdef class DataClient(Component):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID correlation_id) except *:
+    cpdef void request(self, DataType data_type, UUID4 correlation_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -125,7 +127,7 @@ cdef class DataClient(Component):
     def _handle_data_py(self, Data data):
         self._handle_data(data)
 
-    def _handle_data_response_py(self, DataType data_type, Data data, UUID correlation_id):
+    def _handle_data_response_py(self, DataType data_type, Data data, UUID4 correlation_id):
         self._handle_data_response(data_type, data, correlation_id)
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
@@ -133,7 +135,7 @@ cdef class DataClient(Component):
     cdef void _handle_data(self, Data data) except *:
         self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
-    cdef void _handle_data_response(self, DataType data_type, Data data, UUID correlation_id) except *:
+    cdef void _handle_data_response(self, DataType data_type, Data data, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             data_type=data_type,
@@ -150,6 +152,8 @@ cdef class MarketDataClient(DataClient):
     """
     The abstract base class for all market data clients.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -178,7 +182,7 @@ cdef class MarketDataClient(DataClient):
         logger : Logger
             The logger for the client.
         config : dict[str, object], optional
-            The configuration options.
+            The configuration for the instance.
 
         """
         super().__init__(
@@ -193,6 +197,7 @@ cdef class MarketDataClient(DataClient):
         # Feeds
         self._feeds_order_book_delta = {}          # type: dict[InstrumentId, asyncio.Task]
         self._feeds_order_book_snapshot = {}       # type: dict[InstrumentId, asyncio.Task]
+        self._feeds_ticker = {}                    # type: dict[InstrumentId, asyncio.Task]
         self._feeds_quote_tick = {}                # type: dict[InstrumentId, asyncio.Task]
         self._feeds_trade_tick = {}                # type: dict[InstrumentId, asyncio.Task]
         self._feeds_bar = {}                       # type: dict[BarType, asyncio.Task]
@@ -248,6 +253,17 @@ cdef class MarketDataClient(DataClient):
 
         """
         return sorted(list(self._feeds_order_book_snapshot.keys()))
+
+    cpdef list subscribed_tickers(self):
+        """
+        Return the ticker instruments subscribed to.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(list(self._feeds_ticker.keys()))
 
     cpdef list subscribed_quote_ticks(self):
         """
@@ -328,6 +344,10 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -368,6 +388,10 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -394,7 +418,7 @@ cdef class MarketDataClient(DataClient):
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType datatype, UUID correlation_id) except *:
+    cpdef void request(self, DataType datatype, UUID4 correlation_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -404,7 +428,7 @@ cdef class MarketDataClient(DataClient):
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -415,7 +439,7 @@ cdef class MarketDataClient(DataClient):
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -426,7 +450,7 @@ cdef class MarketDataClient(DataClient):
         datetime from_datetime,
         datetime to_datetime,
         int limit,
-        UUID correlation_id,
+        UUID4 correlation_id,
     ) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -436,18 +460,18 @@ cdef class MarketDataClient(DataClient):
     # Convenient pure Python wrappers for the data handlers. Often Python methods
     # involving threads or the event loop don't work with cpdef methods.
 
-    def _handle_quote_ticks_py(self, InstrumentId instrument_id, list ticks, UUID correlation_id):
+    def _handle_quote_ticks_py(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id):
         self._handle_quote_ticks(instrument_id, ticks, correlation_id)
 
-    def _handle_trade_ticks_py(self, InstrumentId instrument_id, list ticks, UUID correlation_id):
+    def _handle_trade_ticks_py(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id):
         self._handle_trade_ticks(instrument_id, ticks, correlation_id)
 
-    def _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID correlation_id):
+    def _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id):
         self._handle_bars(bar_type, bars, partial, correlation_id)
 
 # -- DATA HANDLERS ---------------------------------------------------------------------------------
 
-    cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
+    cdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             data_type=DataType(QuoteTick, metadata={"instrument_id": instrument_id}),
@@ -459,7 +483,7 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID correlation_id) except *:
+    cdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             data_type=DataType(TradeTick, metadata={"instrument_id": instrument_id}),
@@ -471,7 +495,7 @@ cdef class MarketDataClient(DataClient):
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID correlation_id) except *:
+    cdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id) except *:
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             data_type=DataType(Bar, metadata={"bar_type": bar_type, "Partial": partial}),

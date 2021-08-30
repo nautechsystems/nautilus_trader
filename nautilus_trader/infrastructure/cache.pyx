@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pydantic
 import redis
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -50,6 +51,26 @@ cdef str _POSITIONS = 'Positions'
 cdef str _STRATEGIES = 'Strategies'
 
 
+class CacheDatabaseConfig(pydantic.BaseModel):
+    """
+    Provides configuration for ``CacheDatabase`` instances.
+
+    type : str
+        The database type.
+    host : str
+        The database host address.
+    port : int
+        The database port.
+    flush : bool
+        If database should be flushed before start.
+    """
+
+    type: str = "redis"
+    host: str = "localhost"
+    port: int = 6379
+    flush: bool = False
+
+
 cdef class RedisCacheDatabase(CacheDatabase):
     """
     Provides a cache database backed by Redis.
@@ -70,7 +91,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         InstrumentSerializer instrument_serializer not None,
         CommandSerializer command_serializer not None,
         EventSerializer event_serializer not None,
-        dict config,
+        config: CacheDatabaseConfig=None,
     ):
         """
         Initialize a new instance of the ``RedisCacheDatabase`` class.
@@ -87,19 +108,18 @@ cdef class RedisCacheDatabase(CacheDatabase):
             The command serializer for caching operations.
         event_serializer : EventSerializer
             The event serializer for caching operations.
+        config : CacheDatabaseConfig, optional
+            The configuration for the instance.
 
         Raises
         ------
-        ValueError
-            If host is not a valid string.
-        ValueError
-            If port is not in range [0, 65535].
+        TypeError
+            If config is not of type CacheDatabaseConfig
 
         """
-        cdef str host = config["host"]
-        cdef int port = int(config["port"])
-        Condition.valid_string(host, "host")
-        Condition.in_range_int(port, 0, 65535, "port")
+        if config is None:
+            config = CacheDatabaseConfig()
+        Condition.type(config, CacheDatabaseConfig, "config")
         super().__init__(logger)
 
         # Database keys
@@ -117,7 +137,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._event_serializer = event_serializer
 
         # Redis client
-        self._redis = redis.Redis(host=host, port=port, db=0)
+        self._redis = redis.Redis(host=config.host, port=config.port, db=0)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

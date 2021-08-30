@@ -16,7 +16,6 @@
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
-from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -60,6 +59,8 @@ cdef class ExecutionClient(Component):
     """
     The abstract base class for all execution clients.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -100,7 +101,7 @@ cdef class ExecutionClient(Component):
         logger : Logger
             The logger for the client.
         config : dict[str, object], optional
-            The configuration options.
+            The configuration for the instance.
 
         Raises
         ------
@@ -117,11 +118,11 @@ cdef class ExecutionClient(Component):
             logger=logger,
             component_id=client_id,
             component_name=config.get("name", f"ExecClient-{client_id.value}"),
+            msgbus=msgbus,
+            config=config,
         )
 
-        self._msgbus = msgbus
         self._cache = cache
-        self._config = config
         self._account = None  # Initialized on connection
 
         self.trader_id = msgbus.trader_id
@@ -429,7 +430,6 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        str response_to,
         str reason,
         int64_t ts_event,
     ) except *:
@@ -446,8 +446,6 @@ cdef class ExecutionClient(Component):
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID.
-        response_to : str
-            The order update rejected response.
         reason : str
             The order update rejected reason.
         ts_event : datetime
@@ -462,7 +460,6 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            response_to=response_to,
             reason=reason,
             event_id=self._uuid_factory.generate(),
             ts_event=ts_event,
@@ -477,7 +474,6 @@ cdef class ExecutionClient(Component):
         InstrumentId instrument_id,
         ClientOrderId client_order_id,
         VenueOrderId venue_order_id,
-        str response_to,
         str reason,
         int64_t ts_event,
     ) except *:
@@ -494,8 +490,6 @@ cdef class ExecutionClient(Component):
             The client order ID.
         venue_order_id : VenueOrderId
             The venue order ID.
-        response_to : str
-            The order cancel rejected response.
         reason : str
             The order cancel rejected reason.
         ts_event : datetime
@@ -510,7 +504,6 @@ cdef class ExecutionClient(Component):
             instrument_id=instrument_id,
             client_order_id=client_order_id,
             venue_order_id=venue_order_id,
-            response_to=response_to,
             reason=reason,
             event_id=self._uuid_factory.generate(),
             ts_event=ts_event,

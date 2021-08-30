@@ -26,12 +26,12 @@ sys.path.insert(
 )  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
+from examples.strategies.ema_cross_simple import EMACrossConfig
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
-from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
@@ -45,32 +45,33 @@ from tests.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
-    # Create the backtest engine
-    engine = BacktestEngine(
-        use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
-        # cache_db_type="redis",
-        # bypass_logging=True,
-        config_risk={
+    # Configure backtest engine
+    config = BacktestEngineConfig(
+        trader_id="BACKTESTER-001",
+        log_level="INFO",
+        use_data_cache=True,
+        risk_engine={
             "bypass": True,  # Example of bypassing pre-trade risk checks for backtests
             "max_notional_per_order": {"GBP/USD.SIM": 2_000_000},
         },
-        level_stdout=LogLevel.INFO,
     )
+    # Build backtest engine
+    engine = BacktestEngine(config=config)
 
     # Setup trading instruments
     SIM = Venue("SIM")
-    GBPUSD = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
+    GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
 
     # Setup data
-    engine.add_instrument(GBPUSD)
-    engine.add_bars(
-        instrument_id=GBPUSD.id,
+    engine.add_instrument(GBPUSD_SIM)
+    engine.add_bars_as_ticks(
+        instrument_id=GBPUSD_SIM.id,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.BID,
         data=TestDataProvider.gbpusd_1min_bid(),  # Stub data from the test kit
     )
-    engine.add_bars(
-        instrument_id=GBPUSD.id,
+    engine.add_bars_as_ticks(
+        instrument_id=GBPUSD_SIM.id,
         aggregation=BarAggregation.MINUTE,
         price_type=PriceType.ASK,
         data=TestDataProvider.gbpusd_1min_ask(),  # Stub data from the test kit
@@ -102,15 +103,17 @@ if __name__ == "__main__":
         modules=[fx_rollover_interest],
     )
 
-    # Instantiate your strategy
-    strategy = EMACross(
-        instrument_id=GBPUSD.id,
-        bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
+    # Configure your strategy
+    config = EMACrossConfig(
+        instrument_id=str(GBPUSD_SIM.id),
+        bar_type="GBP/USD.SIM-5-MINUTE-BID-INTERNAL",
         fast_ema_period=10,
         slow_ema_period=20,
         trade_size=Decimal(1_000_000),
         order_id_tag="001",
     )
+    # Instantiate your strategy
+    strategy = EMACross(config=config)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 

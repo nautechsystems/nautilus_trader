@@ -22,7 +22,7 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 
 
-cdef class DataProducerFacade:
+cdef class DataProducer:
     cdef readonly list execution_resolutions
     cdef readonly datetime min_timestamp
     cdef readonly datetime max_timestamp
@@ -35,7 +35,7 @@ cdef class DataProducerFacade:
     cpdef Data next(self)
 
 
-cdef class BacktestDataProducer(DataProducerFacade):
+cdef class BacktestDataProducer(DataProducer):
     cdef LoggerAdapter _log
 
     cdef list _instruments
@@ -81,7 +81,7 @@ cdef class BacktestDataProducer(DataProducerFacade):
     cdef TradeTick _generate_trade_tick(self, int index)
 
 
-cdef class CachedProducer(DataProducerFacade):
+cdef class CachedProducer(DataProducer):
     cdef BacktestDataProducer _producer
     cdef LoggerAdapter _log
     cdef list _timestamp_cache

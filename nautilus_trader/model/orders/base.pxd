@@ -17,7 +17,7 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.fsm cimport FiniteStateMachine
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
@@ -83,8 +83,8 @@ cdef class Order:
     """The order average fill price.\n\n:returns: `Decimal` or None"""
     cdef readonly object slippage
     """The order total price slippage.\n\n:returns: `Decimal`"""
-    cdef readonly UUID init_id
-    """The ID of the `OrderInitialized` event.\n\n:returns: `UUID`"""
+    cdef readonly UUID4 init_id
+    """The ID of the `OrderInitialized` event.\n\n:returns: `UUID4`"""
     cdef readonly int64_t ts_last
     """The UNIX timestamp (nanoseconds) when the last fill occurred (0 for no fill).\n\n:returns: `int64`"""
     cdef readonly int64_t ts_init
@@ -104,6 +104,7 @@ cdef class Order:
     cdef bint is_sell_c(self) except *
     cdef bint is_passive_c(self) except *
     cdef bint is_aggressive_c(self) except *
+    cdef bint is_active_c(self) except *
     cdef bint is_inflight_c(self) except *
     cdef bint is_working_c(self) except *
     cdef bint is_pending_update_c(self) except *

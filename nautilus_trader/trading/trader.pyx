@@ -59,6 +59,7 @@ cdef class Trader(Component):
         ExecutionEngine exec_engine not None,
         Clock clock not None,
         Logger logger not None,
+        dict config=None,
     ):
         """
         Initialize a new instance of the ``Trader`` class.
@@ -83,6 +84,8 @@ cdef class Trader(Component):
             The clock for the trader.
         logger : Logger
             The logger for the trader.
+        config : dict[str, Any]
+            The configuration for the trader.
 
         Raises
         ------
@@ -96,13 +99,16 @@ cdef class Trader(Component):
             If strategies list contains a type other than TradingStrategy.
 
         """
+        if config is None:
+            config = {}
         super().__init__(
             clock=clock,
             logger=logger,
             component_id=trader_id,
+            msgbus=msgbus,
+            config=config,
         )
 
-        self._msgbus = msgbus
         self._cache = cache
         self._portfolio = portfolio
         self._data_engine = data_engine
@@ -253,7 +259,7 @@ cdef class Trader(Component):
         KeyError
             If strategy.id already exists in the trader.
         ValueError
-            If strategy.state is `RUNNING` or `DISPOSED`.
+            If strategy.state is ``RUNNING`` or ``DISPOSED``.
 
         """
         Condition.not_none(strategy, "strategy")
@@ -315,7 +321,7 @@ cdef class Trader(Component):
         KeyError
             If component.id already exists in the trader.
         ValueError
-            If component.state is `RUNNING` or `DISPOSED`.
+            If component.state is ``RUNNING`` or ``DISPOSED``.
 
         """
         Condition.not_in(component, self._components, "component", "components")
@@ -367,7 +373,7 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
-            If state is RUNNING.
+            If state is ``RUNNING``.
 
         """
         if self._fsm.state == ComponentState.RUNNING:
@@ -386,7 +392,7 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
-            If state is RUNNING.
+            If state is ``RUNNING``.
 
         """
         if self._fsm.state == ComponentState.RUNNING:

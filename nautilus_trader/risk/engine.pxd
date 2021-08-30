@@ -32,13 +32,11 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.bracket cimport BracketOrder
-from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class RiskEngine(Component):
     cdef PortfolioFacade _portfolio
-    cdef MessageBus _msgbus
     cdef CacheFacade _cache
     cdef dict _max_notional_per_order
     cdef Throttler _order_throttler
@@ -51,8 +49,6 @@ cdef class RiskEngine(Component):
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
-
-    cdef void _initialize_risk_checks(self, dict config) except *
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

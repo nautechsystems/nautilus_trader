@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Optional
 
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
 from nautilus_trader.cache.base cimport CacheFacade
@@ -49,6 +50,10 @@ cdef class AccountsManager:
         ----------
         cache : CacheFacade
             The read-only cache for the manager.
+        log : LoggerAdapter
+            The logger for the manager.
+        clock : Clock
+            The clock for the manager.
 
         """
         self._clock = clock
@@ -61,6 +66,7 @@ cdef class AccountsManager:
         Account account,
         Instrument instrument,
         list passive_orders_working,
+        int64_t ts_event,
     ):
         """
         Update the initial (order) margin for margin accounts or locked balance
@@ -76,6 +82,8 @@ cdef class AccountsManager:
             The instrument for the update.
         passive_orders_working : list[PassiveOrder]
             The passive working orders for the update.
+        ts_event : int64
+            The UNIX timestamp (nanoseconds) when the account event occurred.
 
         Returns
         -------
@@ -90,12 +98,13 @@ cdef class AccountsManager:
             account.clear_margin_init(instrument.id)
             return self._generate_account_state(
                 account=account,
-                ts_event=account.last_event_c().ts_event,
+                ts_event=ts_event,
             )
 
         total_margin_init: Decimal = Decimal(0)
-        cdef Currency currency = instrument.get_cost_currency()
+        base_xrate: Optional[Decimal] = None
 
+        cdef Currency currency = instrument.get_cost_currency()
         cdef PassiveOrder order
         for order in passive_orders_working:
             assert order.instrument_id == instrument.id
@@ -109,6 +118,10 @@ cdef class AccountsManager:
             ).as_decimal()
 
             if account.base_currency is not None:
+                if base_xrate is not None:
+                    margin_init *= base_xrate
+                    return
+
                 currency = account.base_currency
                 xrate: Decimal = self._calculate_xrate_to_base(
                     instrument=instrument,
@@ -124,7 +137,8 @@ cdef class AccountsManager:
                     )
                     return None  # Cannot calculate
 
-                margin_init *= xrate
+                base_xrate = xrate  # Cache xrate
+                margin_init *= base_xrate  # Apply xrate
 
             # Increment total initial margin
             total_margin_init += margin_init
@@ -136,7 +150,7 @@ cdef class AccountsManager:
 
         return self._generate_account_state(
             account=account,
-            ts_event=account.last_event_c().ts_event,
+            ts_event=ts_event,
         )
 
     cdef AccountState update_margin_maint(
@@ -144,6 +158,7 @@ cdef class AccountsManager:
         MarginAccount account,
         Instrument instrument,
         list positions_open,
+        int64_t ts_event,
     ):
         """
         Update the maintenance (position) margin.
@@ -157,6 +172,9 @@ cdef class AccountsManager:
         instrument : Instrument
             The instrument for the update.
         positions_open : list[Position]
+            The open positions for the update.
+        ts_event : int64
+            The UNIX timestamp (nanoseconds) when the account event occurred.
 
         Returns
         -------
@@ -171,12 +189,13 @@ cdef class AccountsManager:
             account.clear_margin_maint(instrument.id)
             return self._generate_account_state(
                 account=account,
-                ts_event=account.last_event_c().ts_event,
+                ts_event=ts_event,
             )
 
         total_margin_maint: Decimal = Decimal(0)
-        cdef Currency currency = instrument.get_cost_currency()
+        base_xrate: Optional[Decimal] = None
 
+        cdef Currency currency = instrument.get_cost_currency()
         cdef Position position
         for position in positions_open:
             assert position.instrument_id == instrument.id
@@ -191,6 +210,10 @@ cdef class AccountsManager:
             ).as_decimal()
 
             if account.base_currency is not None:
+                if base_xrate is not None:
+                    margin_maint *= base_xrate
+                    return
+
                 currency = account.base_currency
                 xrate: Decimal = self._calculate_xrate_to_base(
                     instrument=instrument,
@@ -206,7 +229,8 @@ cdef class AccountsManager:
                     )
                     return None  # Cannot calculate
 
-                margin_maint *= xrate
+                base_xrate = xrate  # Cache xrate
+                margin_maint *= base_xrate  # Apply xrate
 
             # Increment total maintenance margin
             total_margin_maint += margin_maint
@@ -218,7 +242,7 @@ cdef class AccountsManager:
 
         return self._generate_account_state(
             account=account,
-            ts_event=account.last_event_c().ts_event,
+            ts_event=ts_event,
         )
 
     cdef AccountState update_balances(
@@ -285,7 +309,10 @@ cdef class AccountsManager:
 
         account.update_commissions(fill.commission)
 
-        return self._generate_account_state(account, fill.ts_event)
+        return self._generate_account_state(
+            account=account,
+            ts_event=fill.ts_event,
+        )
 
     cdef void _update_balance_single_currency(
         self,
@@ -300,7 +327,7 @@ cdef class AccountsManager:
                 venue=fill.instrument_id.venue,
                 from_currency=fill.commission.currency,
                 to_currency=account.base_currency,
-                price_type=PriceType.BID if fill.side is OrderSide.SELL else PriceType.ASK,
+                price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
             )
             if xrate == 0:
                 self._log.error(
@@ -318,7 +345,7 @@ cdef class AccountsManager:
                 venue=fill.instrument_id.venue,
                 from_currency=pnl.currency,
                 to_currency=account.base_currency,
-                price_type=PriceType.BID if fill.side is OrderSide.SELL else PriceType.ASK,
+                price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
             )
             if xrate == 0:
                 self._log.error(

@@ -32,6 +32,8 @@ cdef class StatusUpdate(Data):
     """
     The abstract base class for all status updates.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

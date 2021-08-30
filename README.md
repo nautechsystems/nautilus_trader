@@ -12,6 +12,7 @@
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
+![total-lines](https://img.shields.io/tokei/lines/github/nautechsystems/nautilus_trader)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 ## Introduction
@@ -97,7 +98,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 NautilusTrader is designed to work with modular adapters which provide integrations with data
 publishers and/or trading venues (exchanges/brokers).
 
-Refer to the [integrations](https://docs.nautilustrader.io/integrations) documentation.
+Refer to the [integrations](https://docs.nautilustrader.io/integrations) documentation for further details.
 
 ## Installation
 
@@ -105,7 +106,7 @@ To install the latest binary wheel (or sdist package) from PyPI:
 
     pip install -U nautilus_trader
 
-Refer to the [installation guide](https://docs.nautilustrader.io/getting-started/installation).
+Refer to the [Installation Guide](https://docs.nautilustrader.io/getting-started/installation) for further details.
 
 ## Examples
 
@@ -114,7 +115,7 @@ Examples of both backtest and live trading launch scripts are available in the `
 ## Development
 
 We aim to make the developer experience for this hybrid codebase of Cython and Python
-as pleasant as possible. Please refer to the [developer guide](https://docs.nautilustrader.io/developer-guide) for helpful information.
+as pleasant as possible. Please refer to the [Developer Guide](https://docs.nautilustrader.io/developer-guide) for helpful information.
 
 ## Contributing
 

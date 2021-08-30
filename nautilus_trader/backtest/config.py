@@ -23,6 +23,7 @@ from dask.base import normalize_token
 from dask.base import tokenize
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import SimulationModule
 from nautilus_trader.core.message import Event
@@ -166,10 +167,13 @@ def load(config: BacktestDataConfig):
 
 # @delayed(pure=True)
 def create_backtest_engine(venues, instruments, data):
-    engine = BacktestEngine(
+    # Configure backtest engine
+    config = BacktestEngineConfig(
         bypass_logging=True,
-        run_analysis=False,
+        run_analysis=True,
     )
+    # Build the backtest engine
+    engine = BacktestEngine(config=config)
 
     # Add Instruments
     for instrument in instruments:
@@ -204,7 +208,7 @@ def create_backtest_engine(venues, instruments, data):
 
 # @delayed(pure=True)
 def run_engine(engine, strategies):
-    strategies = [cls(**kw) for cls, kw in strategies]
+    strategies = [cls(config) for cls, config in strategies]
     engine.run(strategies=strategies)
     data = {
         "account": pd.concat(
@@ -248,7 +252,7 @@ def _check_configs(configs):
         if not isinstance(config.strategies, list):
             config.strategies = [config.strategies]
         for strategy in config.strategies:
-            err = "strategy argument must be tuple of (TradingStrategy class, kwargs dict)"
+            err = "strategy argument must be tuple of (TradingStrategy, TradingStrategyConfig)"
             assert (
                 isinstance(strategy, tuple)
                 and isinstance(strategy[0], type)
