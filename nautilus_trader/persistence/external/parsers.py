@@ -13,22 +13,72 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import copy
 import inspect
-import math
-import pathlib
+import logging
 import sys
 from io import BytesIO
-from typing import Callable, Generator, List, Optional, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Union
 
-import fsspec
 import pandas as pd
 
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.serialization.arrow.util import identity
 
 
 PY37 = sys.version_info < (3, 8)
+
+
+class LinePreprocessor:
+    def __init__(self):
+        """
+        A class for preprocessing lines before they are passed to a `Reader` class (currently only `TextReader`). Used
+        if the input data requires any preprocessing that may also be required as attributes on the resulting nautilus
+        objects that are created.
+
+        For example, if you were logging data in python with a prepended timestamp, as below:
+
+        2021-06-29T06:03:14.528000 - {"op":"mcm","pt":1624946594395,"mc":[{"id":"1.179082386","rc":[{"atb":[[1.93,0]]}]}
+
+        The raw JSON data is contained after the logging timestamp, but we would also want to use this timestamp as the
+        `ts_init` value in nautilus. In this instance, you could use something along the lines of:
+
+        class LoggingLinePreprocessor(LinePreprocessor):
+            @staticmethod
+            def pre_process(line):
+                timestamp, json_data = line.split(' - ')
+                yield json_data, {'ts_init': pd.Timestamp(timestamp)}
+
+            @staticmethod
+            def post_process(obj: Any, state: dict):
+                obj.ts_init = state['ts_init']
+                return obj
+
+
+        """
+        self.state = {}
+        self.line = None
+
+    @staticmethod
+    def pre_process(line) -> Dict:
+        return {"line": line, "state": {}}
+
+    @staticmethod
+    def post_process(obj: Any, state: dict) -> Any:
+        return obj
+
+    def _process_new_line(self, raw_line):
+        result = self.pre_process(raw_line)
+        err = "Return value of `pre_process` should be dict with keys `line` and `state`"
+        assert isinstance(result, dict) and "line" in result and "state" in result, err
+        self.line = result["line"]
+        self.state = result["state"]
+        return self.line
+
+    def _process_object(self, obj: Any):
+        return self.post_process(obj=obj, state=self.state)
+
+    def _clear(self):
+        self.line = None
+        self.state = {}
 
 
 class Reader:
@@ -38,7 +88,7 @@ class Reader:
         instrument_provider_update: Callable = None,
     ):
         """
-        Provides parsing of raw byte chunks to Nautilus objects.
+        Provides parsing of raw byte blocks to Nautilus objects.
         """
         self.instrument_provider = instrument_provider
         self.instrument_provider_update = instrument_provider_update
@@ -60,24 +110,24 @@ class Reader:
             if new_instruments:
                 return list(new_instruments)
 
-    def parse(self, chunk: bytes) -> Generator:
+    def parse(self, block: bytes) -> Generator:
         raise NotImplementedError
 
 
 class ByteReader(Reader):
     def __init__(
         self,
-        byte_parser: Callable,
+        block_parser: Callable,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Callable = None,
     ):
         """
-        A Reader subclass for reading chunks of raw bytes; `byte_parser` will be passed a chunk of raw bytes.
+        A Reader subclass for reading blocks of raw bytes; `byte_parser` will be passed a blocks of raw bytes.
 
         Parameters
         ----------
-        byte_parser : Callable
-            The handler which takes a chunk of bytes and yields Nautilus objects.
+        block_parser : Callable
+            The handler which takes a blocks of bytes and yields Nautilus objects.
         instrument_provider_update : Callable , optional
             An optional hook/callable to update instrument provider before data is passed to `byte_parser`
             (in many cases instruments need to be known ahead of parsing).
@@ -87,21 +137,21 @@ class ByteReader(Reader):
             instrument_provider=instrument_provider,
         )
         if not PY37:
-            assert inspect.isgeneratorfunction(byte_parser)
-        self.parser = byte_parser
+            assert inspect.isgeneratorfunction(block_parser)
+        self.parser = block_parser
 
-    def parse(self, chunk: bytes) -> Generator:
-        instruments = self.check_instrument_provider(data=chunk)
+    def parse(self, block: bytes) -> Generator:
+        instruments = self.check_instrument_provider(data=block)
         if instruments:
             yield from instruments
-        yield from self.parser(chunk)
+        yield from self.parser(block)
 
 
 class TextReader(ByteReader):
     def __init__(
         self,
         line_parser: Callable,
-        line_preprocessor: Callable = None,
+        line_preprocessor: LinePreprocessor = None,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Callable = None,
     ):
@@ -122,28 +172,35 @@ class TextReader(ByteReader):
             data is passed to `line_parser` (in many cases instruments need to
             be known ahead of parsing).
         """
+        assert line_preprocessor is None or isinstance(line_preprocessor, LinePreprocessor)
         super().__init__(
             instrument_provider_update=instrument_provider_update,
-            byte_parser=line_parser,
+            block_parser=line_parser,
             instrument_provider=instrument_provider,
         )
-        self.line_preprocessor = line_preprocessor or identity
+        self.line_preprocessor = line_preprocessor or LinePreprocessor()
 
-    def parse(self, chunk) -> Generator:  # noqa: C901
-        self.buffer += chunk
-        if b"\n" in chunk:
+    def parse(self, block) -> Generator:  # noqa: C901
+        self.buffer += block
+        if b"\n" in block:
             process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
         else:
-            process, self.buffer = chunk, b""
+            process, self.buffer = block, b""
         if process:
-            yield from self.process_chunk(chunk=process)
+            yield from self.process_block(block=process)
 
-    def process_chunk(self, chunk):
-        for line in map(self.line_preprocessor, chunk.split(b"\n")):
+    def process_block(self, block: bytes):
+        assert isinstance(block, bytes), "Block not bytes"
+        for raw_line in block.split(b"\n"):
+            line = self.line_preprocessor._process_new_line(raw_line=raw_line)
+            if not line:
+                continue
             instruments = self.check_instrument_provider(data=line)
             if instruments:
                 yield from instruments
-            yield from self.parser(line)
+            for obj in self.parser(line):
+                yield self.line_preprocessor._process_object(obj=obj)
+            self.line_preprocessor._clear()
 
 
 class CSVReader(Reader):
@@ -153,50 +210,62 @@ class CSVReader(Reader):
 
     def __init__(
         self,
-        chunk_parser: Callable,
+        block_parser: Callable,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update=None,
         chunked=True,
-        as_dataframe=False,
+        as_dataframe=True,
     ):
         """
         Initialize a new instance of the ``CSVReader`` class.
 
         Parameters
         ----------
-        chunk_parser : callable
+        block_parser : callable
             The handler which takes byte strings and yields Nautilus objects.
         instrument_provider_update
             Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
         chunked: bool, default=True
-            If chunked=False, each CSV line will be passed to `chunk_parser` individually, if chunked=True, the data
-            passed will potentially contain many lines (a chunk).
+            If chunked=False, each CSV line will be passed to `block_parser` individually, if chunked=True, the data
+            passed will potentially contain many lines (a block).
         as_dataframe: bool, default=False
-            If as_dataframe=True, the passes chunk will be parsed into a DataFrame before passing to `chunk_parser`
+            If as_dataframe=True, the passes block will be parsed into a DataFrame before passing to `block_parser`
 
         """
         super().__init__(
             instrument_provider=instrument_provider,
             instrument_provider_update=instrument_provider_update,
         )
-        self.chunk_parser = chunk_parser
+        self.block_parser = block_parser
         self.header: Optional[List[str]] = None
         self.chunked = chunked
         self.as_dataframe = as_dataframe
 
-    def parse(self, chunk: bytes) -> Generator:
+    def parse(self, block: bytes) -> Generator:
         if self.header is None:
-            header, chunk = chunk.split(b"\n", maxsplit=1)
+            header, block = block.split(b"\n", maxsplit=1)
             self.header = header.decode().split(",")
 
-        self.buffer += chunk
+        self.buffer += block
         process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
 
+        # Prepare - a little gross but allows a lot of flexibility
         if self.as_dataframe:
-            process = pd.read_csv(BytesIO(process), names=self.header)
-        if self.instrument_provider_update is not None:
-            self.instrument_provider_update(self.instrument_provider, process)
-        yield from self.chunk_parser(process)
+            df = pd.read_csv(BytesIO(process), names=self.header)
+            if self.chunked:
+                chunks = (df,)
+            else:
+                chunks = tuple([row for _, row in df.iterrows()])  # type: ignore
+        else:
+            if self.chunked:
+                chunks = (process,)
+            else:
+                chunks = tuple([dict(zip(self.header, line)) for line in process.split(b"\n")])  # type: ignore
+
+        for chunk in chunks:
+            if self.instrument_provider_update is not None:
+                self.instrument_provider_update(self.instrument_provider, chunk)
+            yield from self.block_parser(chunk)
 
 
 class ParquetReader(ByteReader):
@@ -206,7 +275,6 @@ class ParquetReader(ByteReader):
 
     def __init__(
         self,
-        data_type: str,
         parser: Callable = None,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update=None,
@@ -216,70 +284,30 @@ class ParquetReader(ByteReader):
 
         Parameters
         ----------
-        data_type : One of `quote_ticks`, `trade_ticks`
-            The wrangler which takes pandas dataframes (from parquet) and yields Nautilus objects.
         instrument_provider_update
             Optional hook to call before `parser` for the purpose of loading instruments into the InstrumentProvider
 
         """
-        data_types = ("quote_ticks", "trade_ticks")
-        assert data_type in data_types, f"data_type must be one of {data_types}"
         super().__init__(
-            byte_parser=parser,
+            block_parser=parser,
             instrument_provider_update=instrument_provider_update,
             instrument_provider=instrument_provider,
         )
         self.parser = parser
         self.filename = None
-        self.data_type = data_type
 
-    def parse(self, chunk: bytes) -> Generator:
-        df = pd.read_parquet(BytesIO(chunk))
+    def parse(self, block: bytes) -> Generator:
+        self.buffer += block
+        try:
+            df = pd.read_parquet(BytesIO(block))
+            self.buffer = b""
+        except Exception as e:
+            logging.error(e)
+            return
+
         if self.instrument_provider_update is not None:
             self.instrument_provider_update(
                 instrument_provider=self.instrument_provider,
                 df=df,
-                filename=self.filename,
             )
-        yield from self.parser(data_type=self.data_type, df=df, filename=self.filename)
-
-
-class RawFile(fsspec.core.OpenFile):
-    def __init__(self, fs: fsspec.AbstractFileSystem, path: str, chunk_size: int = -1, **kwargs):
-        """
-        A subclass of fsspec.OpenFile than can be read in chunks
-        """
-        super().__init__(fs=fs, path=path, **kwargs)
-        self.name = pathlib.Path(path).name
-        self.chunk_size = chunk_size
-        self._reader: Optional[Reader] = None
-
-    @property
-    def reader(self):
-        return self._reader
-
-    @reader.setter
-    def reader(self, reader: Reader):
-        assert isinstance(reader, Reader)
-        self._reader = copy.copy(reader)
-
-    @property
-    def num_chunks(self):
-        if self.chunk_size == -1:
-            return 1
-        stat = self.fs.stat(self.path)
-        return math.ceil(stat["size"] / self.chunk_size)
-
-    def iter_raw(self):
-        with self.open() as f:
-            f.seek(0, 2)
-            end = f.tell()
-            f.seek(0)
-            while f.tell() < end:
-                chunk = f.read(self.chunk_size)
-                yield chunk
-
-    def iter_parsed(self):
-        for chunk in self.iter_raw():
-            parsed = list(filter(None, self.reader.parse(chunk)))
-            yield parsed
+        yield from self.parser(df)
