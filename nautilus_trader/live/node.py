@@ -72,34 +72,36 @@ class TradingNodeConfig(pydantic.BaseModel):
     """
     Provides configuration for ``TradingNode`` instances.
 
-    trader_id : str
+    trader_id : str, default="TRADER-000"
         The trader ID for the node (must be a name and ID tag separated by a hyphen)
     log_level : str, default="INFO"
         The stdout log level for the node.
-    cache : CacheConfig, optional
+    cache : Optional[CacheConfig]
         The cache configuration.
-    cache_database : CacheDatabaseConfig, optional
+    cache_database : Optional[CacheDatabaseConfig]
         The cache database configuration.
-    data_engine : LiveDataEngineConfig, optional
+    data_engine : Optional[LiveDataEngineConfig]
         The live data engine configuration.
-    risk_engine : LiveRiskEngineConfig, optional
+    risk_engine : Optional[LiveRiskEngineConfig]
         The live risk engine configuration.
-    exec_engine : LiveExecEngineConfig, optional
+    exec_engine : Optional[LiveExecEngineConfig]
         The live execution engine configuration.
     loop_debug : bool, default=False
         If the asyncio event loop should be in debug mode.
-    load_strategy_state : bool
+    load_strategy_state : bool, default=True
         If trading strategy state should be loaded from the database on start.
-    save_strategy_state : bool
+    save_strategy_state : bool, default=True
         If trading strategy state should be saved to the database on stop.
-    timeout_connection : float (seconds)
+    timeout_connection : PositiveFloat (seconds)
         The timeout for all clients to connect and initialize.
-    timeout_reconciliation : float (seconds)
+    timeout_reconciliation : PositiveFloat (seconds)
         The timeout for execution state to reconcile.
-    timeout_portfolio : float (seconds)
+    timeout_portfolio : PositiveFloat (seconds)
         The timeout for portfolio to initialize margins and unrealized PnLs.
-    timeout_disconnection : float
+    timeout_disconnection : PositiveFloat (seconds)
         The timeout for all engine clients to disconnect.
+    check_residuals_delay : PositiveFloat (seconds)
+        The delay after stopping the node to check residual state before final shutdown.
     data_clients : Dict[str, Dict[str, Any]], optional
         The data client configurations.
     exec_clients : Dict[str, Dict[str, Any]], optional
