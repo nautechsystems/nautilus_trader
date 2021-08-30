@@ -494,8 +494,8 @@ cdef class DataEngine(Component):
         if client is None:
             self._log.error(
                 f"Cannot handle command: "
-                f"no client registered for '{command.client_id}' in {self.registered_clients}, "
-                f" {command}.")
+                f"no client registered for '{command.client_id}', {command}.",
+            )
             return  # No client to handle command
 
         if isinstance(command, Subscribe):
