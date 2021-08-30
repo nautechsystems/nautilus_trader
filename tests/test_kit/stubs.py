@@ -37,13 +37,17 @@ from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TradingState
+from nautilus_trader.model.enums import VenueStatus
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -266,6 +270,30 @@ class TestStubs:
             low=Price.from_str("90.001"),
             close=Price.from_str("90.003"),
             volume=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def venue_status_update(
+        venue: Venue = None,
+        status: VenueStatus = None,
+    ):
+        return VenueStatusUpdate(
+            venue=venue or Venue("BINANCE"),
+            status=status or VenueStatus.OPEN,
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def instrument_status_update(
+        instrument_id: InstrumentId = None,
+        status: InstrumentStatus = None,
+    ):
+        return InstrumentStatusUpdate(
+            instrument_id=instrument_id or InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
+            status=status or InstrumentStatus.PAUSE,
             ts_event=0,
             ts_init=0,
         )
