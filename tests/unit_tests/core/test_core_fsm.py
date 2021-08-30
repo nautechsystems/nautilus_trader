@@ -33,9 +33,7 @@ class TestFiniteStateMachine:
         )
 
     def test_fsm_initialization(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.fsm.state == ComponentState.INITIALIZED
 
     def test_trigger_with_invalid_transition_raises_exception(self):
@@ -47,14 +45,12 @@ class TestFiniteStateMachine:
             trigger_parser=None,
         )  # Invalid trigger will call parsers for ex msg
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(InvalidStateTrigger):
             fsm.trigger(ComponentTrigger.RUNNING)
 
     def test_trigger_with_valid_transition_results_in_expected_state(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.fsm.trigger(ComponentTrigger.START)
 
         # Assert

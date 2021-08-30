@@ -28,22 +28,16 @@ class TestMovingAverageConvergenceDivergence:
         self.macd = MovingAverageConvergenceDivergence(3, 10)
 
     def test_name_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.macd.name == "MovingAverageConvergenceDivergence"
 
     def test_str_repr_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.macd) == "MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)"
         assert repr(self.macd) == "MovingAverageConvergenceDivergence(3, 10, EXPONENTIAL)"
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.macd.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
@@ -65,8 +59,7 @@ class TestMovingAverageConvergenceDivergence:
         self.macd.update_raw(15.00000)
         self.macd.update_raw(16.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.macd.initialized is True
 
     def test_handle_quote_tick_updates_indicator(self):
@@ -112,8 +105,7 @@ class TestMovingAverageConvergenceDivergence:
         # Arrange
         self.macd.update_raw(1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.macd.value == 0
 
     def test_value_with_three_inputs_returns_expected_value(self):
@@ -122,8 +114,7 @@ class TestMovingAverageConvergenceDivergence:
         self.macd.update_raw(2.00000)
         self.macd.update_raw(3.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.macd.value == 0.7376033057851243
 
     def test_value_with_more_inputs_expected_value(self):
@@ -145,8 +136,7 @@ class TestMovingAverageConvergenceDivergence:
         self.macd.update_raw(15.00000)
         self.macd.update_raw(16.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.macd.value == 3.2782313673122907
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):

@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any, Dict, Optional
@@ -24,7 +25,6 @@ from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.c_enums.instrument_status import InstrumentStatus
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -43,6 +43,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook.book import OrderBook
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.trading.strategy import TradingStrategy
+from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 
 class TickTock(TradingStrategy):
@@ -62,10 +63,12 @@ class TickTock(TradingStrategy):
             The bar type for the strategy.
 
         """
-        super().__init__(order_id_tag="000")
+        super().__init__()
 
+        # Configuration
         self.instrument = instrument
         self.bar_type = bar_type
+
         self.store = []  # type: list[Any]
         self.timer_running = False
         self.time_alert_counter = 0
@@ -99,6 +102,31 @@ class TickTock(TradingStrategy):
         self.store.append(event)
 
 
+class EMACrossConfig(TradingStrategyConfig):
+    """
+    Provides configuration for ``EMACross`` instances.
+
+    instrument_id : InstrumentId
+        The instrument ID for the strategy.
+    bar_type : BarType
+        The bar type for the strategy.
+    trade_size : Decimal
+        The position size per trade.
+    fast_ema_period : int
+        The fast EMA period.
+    slow_ema_period : int
+        The slow EMA period.
+    """
+
+    instrument_id: str
+    bar_type: str
+    trade_size: Decimal
+    fast_ema_period: int = 10
+    slow_ema_period: int = 20
+    order_id_tag: str = "001"
+    oms_type: OMSType = OMSType.HEDGING
+
+
 class EMACross(TradingStrategy):
     """
     A simple moving average cross example strategy.
@@ -107,47 +135,28 @@ class EMACross(TradingStrategy):
     direction.
     """
 
-    def __init__(
-        self,
-        instrument_id: InstrumentId,
-        bar_spec: BarSpecification,
-        trade_size: Decimal,
-        fast_ema: int = 10,
-        slow_ema: int = 20,
-        extra_id_tag: str = "",
-    ):
+    def __init__(self, config: EMACrossConfig):
         """
         Initialize a new instance of the ``EMACross`` class.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument ID for the strategy.
-        bar_spec : BarSpecification
-            The bar specification for the strategy.
-        trade_size : Decimal
-            The position size per trade.
-        fast_ema : int
-            The fast EMA period.
-        slow_ema : int
-            The slow EMA period.
-        extra_id_tag : str
-            An additional order ID tag.
+        config : EMACrossConfig
+            The configuration for the instance.
 
         """
-        if extra_id_tag is None:
-            extra_id_tag = ""
-        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag)
+        super().__init__(config)
 
-        # Custom strategy variables
-        self.instrument_id = instrument_id
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
-        self.bar_type = BarType(instrument_id, bar_spec)
-        self.trade_size = trade_size
+        # Configuration
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        self.bar_type = BarType.from_str(config.bar_type)
+        self.trade_size = config.trade_size
 
         # Create the indicators for the strategy
-        self.fast_ema = ExponentialMovingAverage(fast_ema)
-        self.slow_ema = ExponentialMovingAverage(slow_ema)
+        self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
+        self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
+
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
 
     def on_start(self):
         """Actions to be performed on strategy start."""
@@ -344,39 +353,43 @@ class EMACross(TradingStrategy):
         self.unsubscribe_bars(self.bar_type)
 
 
+class OrderBookImbalanceStrategyConfig(TradingStrategyConfig):
+    """
+    Provides configuration for ``OrderBookImbalance`` instances.
+
+    instrument_id : InstrumentId
+        The instrument ID for the strategy.
+    trade_size : Decimal
+        The position size per trade.
+    """
+
+    instrument_id: str
+    trade_size: Decimal
+    oms_type: OMSType = OMSType.NETTING
+
+
 class OrderBookImbalanceStrategy(TradingStrategy):
     """
     A simple orderbook imbalance hitting strategy
     """
 
-    def __init__(
-        self,
-        instrument_id: InstrumentId,
-        trade_size: Decimal,
-        extra_id_tag: str = "",
-    ):
+    def __init__(self, config: OrderBookImbalanceStrategyConfig):
         """
-        Initialize a new instance of the ``EMACross`` class.
+        Initialize a new instance of the ``OrderBookImbalanceStrategy`` class.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument ID for the strategy.
-        trade_size : Decimal
-            The position size per trade.
-        extra_id_tag : str
-            An additional order ID tag.
+        config: OrderBookImbalanceStrategyConfig
+            The configuration for the instance.
 
         """
-        if extra_id_tag is None:
-            extra_id_tag = ""
-        super().__init__(
-            order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag,
-            oms_type=OMSType.NETTING,
-        )
-        self.instrument_id = instrument_id
+        super().__init__(config)
+
+        # Configuration
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        self.trade_size = config.trade_size
+
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
-        self.trade_size = trade_size
         self.instrument_status: Optional[InstrumentStatus] = None
         self.close_price: Optional[InstrumentClosePrice] = None
         self.book: Optional[OrderBook] = None
@@ -470,12 +483,15 @@ class OrderBookImbalanceStrategy(TradingStrategy):
 
 
 class MarketMaker(TradingStrategy):
+    """
+    Provides a market making strategy for testing.
+    """
+
     def __init__(
         self,
         instrument_id: InstrumentId,
         trade_size: Decimal,
         max_size: Decimal,
-        extra_id_tag: str = "",
     ):
         """
         Initialize a new instance of the ``MarketMaker`` class.
@@ -486,17 +502,18 @@ class MarketMaker(TradingStrategy):
             The instrument ID for the strategy.
         trade_size : Decimal
             The position size per trade.
-        extra_id_tag : str
-            An additional order ID tag.
+        max_size : Decimal
+            The maximum inventory size allowed.
 
         """
-        if extra_id_tag is None:
-            extra_id_tag = ""
-        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", "") + extra_id_tag)
+        super().__init__()
+
+        # Configuration
         self.instrument_id = instrument_id
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self.trade_size = trade_size
         self.max_size = max_size
+
+        self.instrument: Optional[Instrument] = None  # Initialized in on_start
         self._book: Optional[OrderBook] = None
         self._mid: Optional[Decimal] = None
         self._adj = Decimal(0)
@@ -568,29 +585,42 @@ class MarketMaker(TradingStrategy):
         self.flatten_all_positions(self.instrument_id)
 
 
+class RepeatedOrdersConfig(TradingStrategyConfig):
+    """
+    Provides configuration for ``RepeatedOrders`` instances.
+
+    instrument_id : InstrumentId
+        The instrument ID for the strategy.
+    trade_size : Decimal
+        The position size per trade.
+    """
+
+    instrument_id: str
+    trade_size: Decimal
+
+
 class RepeatedOrders(TradingStrategy):
-    def __init__(
-        self,
-        instrument_id: InstrumentId,
-        trade_size: Decimal,
-    ):
+    """
+    Provides a repeated orders strategy for testing.
+    """
+
+    def __init__(self, config: RepeatedOrdersConfig):
         """
-        Initialize a new instance of the ``MarketMaker`` class.
+        Initialize a new instance of the ``RepeatedOrders`` class.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument ID for the strategy.
-        trade_size : Decimal
-            The position size per trade.
-        extra_id_tag : str
-            An additional order ID tag.
+        config : RepeatedOrdersConfig
+            The configuration for the instance.
 
         """
-        super().__init__(order_id_tag=instrument_id.symbol.value.replace("/", ""))
-        self.instrument_id = instrument_id
+        super().__init__(config)
+
+        # Configuration
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        self.trade_size = config.trade_size
+
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
-        self.trade_size = trade_size
         self._last_sent = self.clock.utc_now()
         self._order_count = 0
 

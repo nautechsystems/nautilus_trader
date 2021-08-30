@@ -12,16 +12,22 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from decimal import Decimal
 
 import pandas as pd
 import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.data.wrangling import BarDataWrangler
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import DeltaType
@@ -42,16 +48,20 @@ from nautilus_trader.trading.strategy import TradingStrategy
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
+from tests.test_kit.strategies import EMACross
+from tests.test_kit.strategies import EMACrossConfig
 from tests.test_kit.stubs import MyData
+from tests.test_kit.stubs import TestStubs
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
 class TestBacktestEngineData:
-    def test_add_generic_data_adds_to_container(self):
+    def test_add_generic_data_adds_to_engine(self, capsys):
         # Arrange
         engine = BacktestEngine()
 
@@ -85,12 +95,11 @@ class TestBacktestEngineData:
         engine.add_generic_data(ClientId("NEWS_CLIENT"), generic_data2)
 
         # Assert
-        # TODO: WIP - Implement asserts
-        # assert ClientId("NEWS_CLIENT") in data.clients
-        # assert len(data.generic_data) == 5
-        # assert data.generic_data[-1].ts_init == 3000  # sorted
+        log = "".join(capsys.readouterr())
+        assert "Added 4 GenericData points." in log
+        assert "Added 1 GenericData points." in log
 
-    def test_add_instrument_adds_to_container(self):
+    def test_add_instrument_adds_to_engine(self, capsys):
         # Arrange
         engine = BacktestEngine()
 
@@ -98,11 +107,10 @@ class TestBacktestEngineData:
         engine.add_instrument(ETHUSDT_BINANCE)
 
         # Assert
-        # TODO: WIP - Implement asserts
-        # assert ETHUSDT_BINANCE.id in data.instruments
-        # assert data.instruments[ETHUSDT_BINANCE.id] == ETHUSDT_BINANCE
+        log = "".join(capsys.readouterr())
+        assert "Added ETH/USDT.BINANCE Instrument." in log
 
-    def test_add_order_book_snapshots_adds_to_container(self):
+    def test_add_order_book_snapshots_adds_to_engine(self, capsys):
         # Arrange
         engine = BacktestEngine()
         engine.add_instrument(ETHUSDT_BINANCE)
@@ -129,12 +137,10 @@ class TestBacktestEngineData:
         engine.add_order_book_data([snapshot2, snapshot1])  # <-- reverse order
 
         # Assert
-        # TODO: WIP - Implement asserts
-        # assert ClientId("BINANCE") in data.clients
-        # assert ETHUSDT_BINANCE.id in data.books
-        # assert data.order_book_data == [snapshot1, snapshot2]  # <-- sorted
+        log = "".join(capsys.readouterr())
+        assert "Added 2 ETH/USDT.BINANCE OrderBookData elements (total: 2)." in log
 
-    def test_add_order_book_operations_adds_to_container(self):
+    def test_add_order_book_operations_adds_to_engine(self, capsys):
         # Arrange
         engine = BacktestEngine()
         engine.add_instrument(AUDUSD_SIM)
@@ -235,12 +241,10 @@ class TestBacktestEngineData:
         engine.add_order_book_data([operations2, operations1])  # <-- not sorted
 
         # Assert
-        # TODO: WIP - Implement asserts
-        # assert ClientId("BINANCE") in data.clients
-        # assert ETHUSDT_BINANCE.id in data.books
-        # assert data.order_book_data == [operations1, operations2]  # <-- sorted
+        log = "".join(capsys.readouterr())
+        assert "Added 2 ETH/USDT.BINANCE OrderBookData elements (total: 2)." in log
 
-    def test_add_quote_ticks_adds_to_container(self):
+    def test_add_quote_ticks_adds_to_engine(self, capsys):
         # Arrange
         engine = BacktestEngine()
         engine.add_instrument(AUDUSD_SIM)
@@ -252,13 +256,10 @@ class TestBacktestEngineData:
         )
 
         # Assert
-        # TODO: WIP - Implement asserts
-        # assert ClientId("SIM") in data.clients
-        # assert data.has_quote_data(AUDUSD_SIM.id)
-        # assert AUDUSD_SIM.id in data.quote_ticks
-        # assert len(data.quote_ticks[AUDUSD_SIM.id]) == 100000
+        log = "".join(capsys.readouterr())
+        assert "Added 100000 AUD/USD.SIM QuoteTick data elements." in log
 
-    def test_add_trade_ticks_adds_to_container(self):
+    def test_add_trade_ticks_adds_to_engine(self, capsys):
         # Arrange
         engine = BacktestEngine()
         engine.add_instrument(ETHUSDT_BINANCE)
@@ -270,18 +271,13 @@ class TestBacktestEngineData:
         )
 
         # Assert
-        # TODO: WIP - Implement asserts
-        # assert ClientId("BINANCE") in data.clients
-        # assert data.has_trade_data(ETHUSDT_BINANCE.id)
-        # assert ETHUSDT_BINANCE.id in data.trade_ticks
-        # assert len(data.trade_ticks[ETHUSDT_BINANCE.id]) == 69806
+        log = "".join(capsys.readouterr())
+        assert "Added 69806 ETH/USDT.BINANCE TradeTick data elements." in log
 
-    @pytest.mark.skip()
-    def test_add_trade_tick_objects_adds_to_container(self, capsys):
+    def test_add_trade_tick_objects_adds_to_engine(self, capsys):
         # Arrange
-        with capsys.disabled():
-            engine = BacktestEngine()
-            engine.add_instrument(ETHUSDT_BINANCE)
+        engine = BacktestEngine()
+        engine.add_instrument(ETHUSDT_BINANCE)
 
         # Act
         engine.add_trade_tick_objects(
@@ -291,20 +287,85 @@ class TestBacktestEngineData:
         log = "".join(capsys.readouterr())
         assert "Added 17798 ETH/USDT.BINANCE TradeTick data elements." in log
 
-    def test_add_bars_adds_to_container(self):
+    def test_add_bars_adds_to_engine(self, capsys):
+        # Arrange
+        engine = BacktestEngine()
+        engine.add_instrument(USDJPY_SIM)
+
+        bar_spec = BarSpecification(
+            step=1,
+            aggregation=BarAggregation.MINUTE,
+            price_type=PriceType.BID,
+        )
+
+        bar_type = BarType(
+            instrument_id=USDJPY_SIM.id,
+            bar_spec=bar_spec,
+            aggregation_source=AggregationSource.EXTERNAL,  # <-- important
+        )
+
+        # Act
+        engine.add_bars(
+            instrument=USDJPY_SIM,
+            bar_type=bar_type,
+            data=TestDataProvider.usdjpy_1min_bid()[:2000],
+        )
+
+        # Assert
+        log = "".join(capsys.readouterr())
+        assert "Added USD/JPY.SIM Instrument." in log
+        assert "Added 2000 USD/JPY.SIM MINUTE-BID tick rows." in log
+        assert "Added 2000 USD/JPY.SIM-1-MINUTE-BID-EXTERNAL bar elements." in log
+
+    def test_add_bar_objects_adds_to_engine(self, capsys):
+        # Arrange
+        engine = BacktestEngine()
+        engine.add_instrument(USDJPY_SIM)
+
+        bar_spec = BarSpecification(
+            step=1,
+            aggregation=BarAggregation.MINUTE,
+            price_type=PriceType.BID,
+        )
+
+        bar_type = BarType(
+            instrument_id=USDJPY_SIM.id,
+            bar_spec=bar_spec,
+            aggregation_source=AggregationSource.EXTERNAL,  # <-- important
+        )
+
+        bars = BarDataWrangler(
+            bar_type=bar_type,
+            price_precision=USDJPY_SIM.price_precision,
+            size_precision=USDJPY_SIM.size_precision,
+            data=TestDataProvider.usdjpy_1min_bid()[:2000],
+        ).build_bars_all()
+
+        # Act
+        engine.add_bar_objects(
+            bar_type=bar_type,
+            bars=bars,
+        )
+
+        # Assert
+        log = "".join(capsys.readouterr())
+        assert "Added USD/JPY.SIM Instrument." in log
+        assert "Added 2000 USD/JPY.SIM-1-MINUTE-BID-EXTERNAL bar elements." in log
+
+    def test_add_bars_as_ticks_adds_to_engine(self, capsys):
         # Arrange
         engine = BacktestEngine()
         engine.add_instrument(USDJPY_SIM)
 
         # Act
-        engine.add_bars(
+        engine.add_bars_as_ticks(
             USDJPY_SIM.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.usdjpy_1min_bid()[:2000],
         )
 
-        engine.add_bars(
+        engine.add_bars_as_ticks(
             USDJPY_SIM.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
@@ -312,12 +373,9 @@ class TestBacktestEngineData:
         )
 
         # Assert
-        # TODO: WIP - Implement asserts
-        # assert ClientId("SIM") in data.clients
-        # assert USDJPY_SIM.id in data.bars_ask
-        # assert USDJPY_SIM.id in data.bars_bid
-        # assert len(data.bars_bid[USDJPY_SIM.id]) == 1  # MINUTE key
-        # assert len(data.bars_ask[USDJPY_SIM.id]) == 1  # MINUTE key
+        log = "".join(capsys.readouterr())
+        assert "Added 2000 USD/JPY.SIM MINUTE-BID tick rows." in log
+        assert "Added 2000 USD/JPY.SIM MINUTE-ASK tick rows." in log
 
     def test_check_integrity_when_instrument_not_added_raises_runtime_error(self):
         # Arrange
@@ -338,7 +396,7 @@ class TestBacktestEngineData:
         engine.add_instrument(USDJPY_SIM)
 
         # Act
-        engine.add_bars(
+        engine.add_bars_as_ticks(
             USDJPY_SIM.id,
             BarAggregation.MINUTE,
             PriceType.BID,
@@ -347,7 +405,7 @@ class TestBacktestEngineData:
 
         # Assert
         with pytest.raises(RuntimeError):
-            engine.add_bars(
+            engine.add_bars_as_ticks(
                 USDJPY_SIM.id,
                 BarAggregation.MINUTE,
                 PriceType.ASK,
@@ -358,18 +416,18 @@ class TestBacktestEngineData:
 class TestBacktestEngine:
     def setup(self):
         # Fixture Setup
-        self.engine = BacktestEngine(use_data_cache=True)
+        self.engine = BacktestEngine()
 
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
         self.engine.add_instrument(usdjpy)
-        self.engine.add_bars(
+        self.engine.add_bars_as_ticks(
             usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.BID,
             TestDataProvider.usdjpy_1min_bid()[:2000],
         )
-        self.engine.add_bars(
+        self.engine.add_bars_as_ticks(
             usdjpy.id,
             BarAggregation.MINUTE,
             PriceType.ASK,
@@ -391,9 +449,8 @@ class TestBacktestEngine:
         self.engine.dispose()
 
     def test_initialization(self):
-        # Arrange
-        # Act
-        self.engine.run(strategies=[TradingStrategy("000")])
+        # Arrange, Act
+        self.engine.run(strategies=[TradingStrategy()])
         # Assert
         assert len(self.engine.trader.strategy_states()) == 1
 
@@ -408,16 +465,14 @@ class TestBacktestEngine:
         assert self.engine.iteration == 0  # No exceptions raised
 
     def test_run_empty_strategy(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.engine.run()
 
         # Assert
         assert self.engine.iteration == 7999
 
     def test_change_fill_model(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.engine.change_fill_model(Venue("SIM"), FillModel())
 
         # Assert
@@ -434,3 +489,76 @@ class TestBacktestEngine:
         # Assert
         assert len(report) == 1
         assert report.index[0] == start
+
+
+class TestBacktestWithAddedBars:
+    def setup(self):
+        # Fixture Setup
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+        )
+        self.engine = BacktestEngine(config=config)
+
+        self.venue = Venue("SIM")
+        self.engine.add_instrument(GBPUSD_SIM)
+
+        bid_bar_type = BarType(
+            instrument_id=GBPUSD_SIM.id,
+            bar_spec=TestStubs.bar_spec_1min_bid(),
+            aggregation_source=AggregationSource.EXTERNAL,  # <-- important
+        )
+
+        self.engine.add_bars(
+            instrument=GBPUSD_SIM,
+            bar_type=bid_bar_type,
+            data=TestDataProvider.gbpusd_1min_bid(),
+        )
+
+        ask_bar_type = BarType(
+            instrument_id=GBPUSD_SIM.id,
+            bar_spec=TestStubs.bar_spec_1min_ask(),
+            aggregation_source=AggregationSource.EXTERNAL,  # <-- important
+        )
+
+        self.engine.add_bars(
+            instrument=GBPUSD_SIM,
+            bar_type=ask_bar_type,
+            data=TestDataProvider.gbpusd_1min_ask(),
+        )
+
+        self.engine.add_venue(
+            venue=self.venue,
+            venue_type=VenueType.ECN,
+            oms_type=OMSType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+        )
+
+    def teardown(self):
+        self.engine.dispose()
+
+    def test_run_ema_cross_with_added_bars(self):
+        # Arrange
+        bar_type = BarType(
+            instrument_id=GBPUSD_SIM.id,
+            bar_spec=TestStubs.bar_spec_1min_bid(),
+            aggregation_source=AggregationSource.EXTERNAL,  # <-- important
+        )
+        config = EMACrossConfig(
+            instrument_id=str(GBPUSD_SIM.id),
+            bar_type=str(bar_type),
+            trade_size=Decimal(1_000_000),
+            fast_ema=10,
+            slow_ema=20,
+        )
+        strategy = EMACross(config=config)
+
+        # Act
+        self.engine.run(strategies=[strategy])
+
+        # Assert
+        assert strategy.fast_ema.count == 30117
+        assert self.engine.iteration == 180701
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(749122.06, USD)

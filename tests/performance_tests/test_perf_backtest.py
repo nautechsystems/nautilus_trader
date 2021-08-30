@@ -21,6 +21,7 @@ import pandas as pd
 import pytz
 
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
@@ -37,6 +38,7 @@ from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
+from tests.test_kit.strategies import EMACrossConfig
 from tests.test_kit.stubs import TestStubs
 
 
@@ -48,16 +50,17 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     def test_run_with_empty_strategy(benchmark):
         def setup():
             # Arrange
-            engine = BacktestEngine(bypass_logging=True)
+            config = BacktestEngineConfig(bypass_logging=True)
+            engine = BacktestEngine(config=config)
 
             engine.add_instrument(USDJPY_SIM)
-            engine.add_bars(
+            engine.add_bars_as_ticks(
                 USDJPY_SIM.id,
                 BarAggregation.MINUTE,
                 PriceType.BID,
                 TestDataProvider.usdjpy_1min_bid(),
             )
-            engine.add_bars(
+            engine.add_bars_as_ticks(
                 USDJPY_SIM.id,
                 BarAggregation.MINUTE,
                 PriceType.ASK,
@@ -73,7 +76,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 starting_balances=[Money(1_000_000, USD)],
                 fill_model=FillModel(),
             )
-            strategies = [TradingStrategy("001")]
+            strategies = [TradingStrategy()]
             start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
             stop = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
             return (engine, start, stop, strategies), {}
@@ -86,16 +89,17 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_run_for_tick_processing(benchmark):
         def setup():
-            engine = BacktestEngine(bypass_logging=True)
+            config = BacktestEngineConfig(bypass_logging=True)
+            engine = BacktestEngine(config=config)
 
             engine.add_instrument(USDJPY_SIM)
-            engine.add_bars(
+            engine.add_bars_as_ticks(
                 USDJPY_SIM.id,
                 BarAggregation.MINUTE,
                 PriceType.BID,
                 TestDataProvider.usdjpy_1min_bid(),
             )
-            engine.add_bars(
+            engine.add_bars_as_ticks(
                 USDJPY_SIM.id,
                 BarAggregation.MINUTE,
                 PriceType.ASK,
@@ -111,13 +115,14 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 starting_balances=[Money(1_000_000, USD)],
             )
 
-            strategy = EMACross(
-                instrument_id=USDJPY_SIM.id,
-                bar_spec=TestStubs.bar_spec_1min_bid(),
+            config = EMACrossConfig(
+                instrument_id=str(USDJPY_SIM.id),
+                bar_type=str(TestStubs.bartype_usdjpy_1min_bid()),
                 trade_size=Decimal(1_000_000),
                 fast_ema=10,
                 slow_ema=20,
             )
+            strategy = EMACross(config=config)
 
             start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
             stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
@@ -132,16 +137,17 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_run_with_ema_cross_strategy(benchmark):
         def setup():
-            engine = BacktestEngine(bypass_logging=True)
+            config = BacktestEngineConfig(bypass_logging=True)
+            engine = BacktestEngine(config=config)
 
             engine.add_instrument(USDJPY_SIM)
-            engine.add_bars(
+            engine.add_bars_as_ticks(
                 USDJPY_SIM.id,
                 BarAggregation.MINUTE,
                 PriceType.BID,
                 TestDataProvider.usdjpy_1min_bid(),
             )
-            engine.add_bars(
+            engine.add_bars_as_ticks(
                 USDJPY_SIM.id,
                 BarAggregation.MINUTE,
                 PriceType.ASK,
@@ -163,13 +169,14 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 modules=[fx_rollover_interest],
             )
 
-            strategy = EMACross(
-                instrument_id=USDJPY_SIM.id,
-                bar_spec=TestStubs.bar_spec_1min_bid(),
+            config = EMACrossConfig(
+                instrument_id=str(USDJPY_SIM.id),
+                bar_type=str(TestStubs.bartype_usdjpy_1min_bid()),
                 trade_size=Decimal(1_000_000),
                 fast_ema=10,
                 slow_ema=20,
             )
+            strategy = EMACross(config=config)
 
             start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
             stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)

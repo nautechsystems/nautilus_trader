@@ -144,8 +144,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         AccountFactory.register_calculated_account(account_id.issuer)
 
-        AccountFactory.register_calculated_account(account_id.issuer)
-
     cpdef void _start(self) except *:
         self._log.info("Connecting...")
         self._loop.create_task(self._connect())
@@ -283,7 +281,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 instrument_id=command.instrument_id,
                 client_order_id=client_order_id,
                 venue_order_id=command.venue_order_id,
-                response_to=command.id.value,
                 reason='ORDER NOT IN CACHE',
                 ts_event=self._clock.timestamp_ns(),
             )
@@ -298,7 +295,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 instrument_id=command.instrument_id,
                 client_order_id=client_order_id,
                 venue_order_id=VenueOrderId('-1'),
-                response_to=command.id.value,
                 reason='ORDER MISSING VENUE_ORDER_ID',
                 ts_event=self._clock.timestamp_ns(),
             )
@@ -385,7 +381,6 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                     instrument_id=command.instrument_id,
                     client_order_id=command.client_order_id,
                     venue_order_id=venue_order_id,
-                    response_to=command.id.value,
                     reason=reason,
                     ts_event=self._clock.timestamp_ns(),
                 )

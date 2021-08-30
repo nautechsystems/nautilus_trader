@@ -22,6 +22,9 @@ import pytz
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.common.events.risk import TradingStateChanged
+from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.c_enums.account_type import AccountType
@@ -33,12 +36,18 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TradingState
+from nautilus_trader.model.enums import VenueStatus
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
@@ -53,6 +62,7 @@ from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
@@ -126,6 +136,65 @@ class TestStubs:
     @staticmethod
     def usdjpy_id() -> InstrumentId:
         return InstrumentId(Symbol("USD/JPY"), Venue("SIM"))
+
+    @staticmethod
+    def ticker(instrument_id=None) -> Ticker:
+        return Ticker(
+            instrument_id=instrument_id or TestStubs.audusd_id(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def quote_tick_3decimal(
+        instrument_id=None,
+        bid=None,
+        ask=None,
+        bid_volume=None,
+        ask_volume=None,
+    ) -> QuoteTick:
+        return QuoteTick(
+            instrument_id=instrument_id or TestStubs.usdjpy_id(),
+            bid=bid or Price.from_str("90.002"),
+            ask=ask or Price.from_str("90.005"),
+            bid_size=bid_volume or Quantity.from_int(1_000_000),
+            ask_size=ask_volume or Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def quote_tick_5decimal(
+        instrument_id=None,
+        bid=None,
+        ask=None,
+    ) -> QuoteTick:
+        return QuoteTick(
+            instrument_id=instrument_id or TestStubs.audusd_id(),
+            bid=bid or Price.from_str("1.00001"),
+            ask=ask or Price.from_str("1.00003"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def trade_tick_5decimal(
+        instrument_id=None,
+        price=None,
+        aggressor_side=None,
+        quantity=None,
+    ) -> TradeTick:
+        return TradeTick(
+            instrument_id=instrument_id or TestStubs.audusd_id(),
+            price=price or Price.from_str("1.00001"),
+            size=quantity or Quantity.from_int(100000),
+            aggressor_side=aggressor_side or AggressorSide.BUY,
+            match_id="123456",
+            ts_event=0,
+            ts_init=0,
+        )
 
     @staticmethod
     def bar_spec_1min_bid() -> BarSpecification:
@@ -206,41 +275,25 @@ class TestStubs:
         )
 
     @staticmethod
-    def quote_tick_3decimal(
-        instrument_id=None, bid=None, ask=None, bid_volume=None, ask_volume=None
-    ) -> QuoteTick:
-        return QuoteTick(
-            instrument_id=instrument_id or TestStubs.usdjpy_id(),
-            bid=bid or Price.from_str("90.002"),
-            ask=ask or Price.from_str("90.005"),
-            bid_size=bid_volume or Quantity.from_int(1_000_000),
-            ask_size=ask_volume or Quantity.from_int(1_000_000),
+    def venue_status_update(
+        venue: Venue = None,
+        status: VenueStatus = None,
+    ):
+        return VenueStatusUpdate(
+            venue=venue or Venue("BINANCE"),
+            status=status or VenueStatus.OPEN,
             ts_event=0,
             ts_init=0,
         )
 
     @staticmethod
-    def quote_tick_5decimal(instrument_id=None, bid=None, ask=None) -> QuoteTick:
-        return QuoteTick(
-            instrument_id=instrument_id or TestStubs.audusd_id(),
-            bid=bid or Price.from_str("1.00001"),
-            ask=ask or Price.from_str("1.00003"),
-            bid_size=Quantity.from_int(1_000_000),
-            ask_size=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
-        )
-
-    @staticmethod
-    def trade_tick_5decimal(
-        instrument_id=None, price=None, aggressor_side=None, quantity=None
-    ) -> TradeTick:
-        return TradeTick(
-            instrument_id=instrument_id or TestStubs.audusd_id(),
-            price=price or Price.from_str("1.00001"),
-            size=quantity or Quantity.from_int(100000),
-            aggressor_side=aggressor_side or AggressorSide.BUY,
-            match_id="123456",
+    def instrument_status_update(
+        instrument_id: InstrumentId = None,
+        status: InstrumentStatus = None,
+    ):
+        return InstrumentStatusUpdate(
+            instrument_id=instrument_id or InstrumentId(Symbol("BTC/USDT"), Venue("BINANCE")),
+            status=status or InstrumentStatus.PAUSE,
             ts_event=0,
             ts_init=0,
         )
@@ -344,6 +397,30 @@ class TestStubs:
             time_in_force=time_in_force or TimeInForce.GTC,
         )
         return order
+
+    @staticmethod
+    def event_component_state_changed() -> ComponentStateChanged:
+        return ComponentStateChanged(
+            trader_id=TestStubs.trader_id(),
+            component_id=ComponentId("MyActor-001"),
+            component_type="MyActor",
+            state=ComponentState.RUNNING,
+            config={"do_something": True},
+            event_id=uuid4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def event_trading_state_changed() -> TradingStateChanged:
+        return TradingStateChanged(
+            trader_id=TestStubs.trader_id(),
+            state=TradingState.HALTED,
+            config={"max_order_rate": "100/00:00:01"},
+            event_id=uuid4(),
+            ts_event=0,
+            ts_init=0,
+        )
 
     @staticmethod
     def event_cash_account_state(account_id=None) -> AccountState:
@@ -629,7 +706,7 @@ class TestStubs:
 
     @staticmethod
     def trading_strategy():
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=TraderId("TESTER-000"),
             portfolio=TestStubs.portfolio(),

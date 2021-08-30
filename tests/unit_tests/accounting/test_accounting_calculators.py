@@ -44,8 +44,7 @@ class TestExchangeRateCalculator:
         bid_rates = {"AUD/USD": Decimal("0.80000")}
         ask_rates = {"AUD/USD": Decimal("0.80010")}
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(ValueError):
             converter.get_rate(USD, JPY, PriceType.LAST, bid_rates, ask_rates)
 
@@ -270,8 +269,7 @@ class TestRolloverInterestCalculator:
         # Arrange
         calculator = RolloverInterestCalculator(data=self.data)
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(RuntimeError):
             calculator.calc_overnight_rate(AUDUSD_SIM, datetime.date(1900, 1, 1))
 

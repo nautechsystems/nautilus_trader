@@ -21,7 +21,7 @@ import numpy as np
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.wildcard cimport is_matching
 
@@ -90,7 +90,7 @@ cdef class MessageBus:
         self._endpoints = {}          # type: dict[str, Callable[[Any], None]]
         self._patterns = {}           # type: dict[str, Subscription[:]]
         self._subscriptions = {}      # type: dict[Subscription, list[str]]
-        self._correlation_index = {}  # type: dict[UUID, Callable[[Any], None]]
+        self._correlation_index = {}  # type: dict[UUID4, Callable[[Any], None]]
 
         # Counters
         self.sent_count = 0
@@ -185,7 +185,7 @@ cdef class MessageBus:
 
         self._endpoints[endpoint] = handler
 
-        self._log.debug(f"Added endpoint {endpoint} {handler}.")
+        self._log.debug(f"Added endpoint '{endpoint}' {handler}.")
 
     cpdef void deregister(self, str endpoint, handler: Callable[[Any], None]) except *:
         """
@@ -217,7 +217,7 @@ cdef class MessageBus:
 
         del self._endpoints[endpoint]
 
-        self._log.debug(f"Removed endpoint {endpoint} {handler}.")
+        self._log.debug(f"Removed endpoint '{endpoint}' {handler}.")
 
     cpdef void send(self, str endpoint, msg: Any) except *:
         """

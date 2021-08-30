@@ -27,7 +27,7 @@ from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport nanos_to_secs
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 
 
 cdef class TimeEvent(Event):
@@ -38,7 +38,7 @@ cdef class TimeEvent(Event):
     def __init__(
         self,
         str name not None,
-        UUID event_id not None,
+        UUID4 event_id not None,
         datetime timestamp not None,
         int64_t ts_event,
         int64_t ts_init,
@@ -50,7 +50,7 @@ cdef class TimeEvent(Event):
         ----------
         name : str
             The event name.
-        event_id : UUID
+        event_id : UUID4
             The event ID.
         timestamp : datetime
             The event timestamp (UTC).
@@ -122,6 +122,8 @@ cdef class Timer:
     """
     The abstract base class for all timers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -187,13 +189,13 @@ cdef class Timer:
                 f"stop_time_ns={self.stop_time_ns}, "
                 f"is_expired={self.is_expired})")
 
-    cpdef TimeEvent pop_event(self, UUID event_id, int64_t ts_init):
+    cpdef TimeEvent pop_event(self, UUID4 event_id, int64_t ts_init):
         """
         Return a generated time event with the given ID.
 
         Parameters
         ----------
-        event_id : UUID
+        event_id : UUID4
             The ID for the time event.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the time event object was initialization.
@@ -333,6 +335,8 @@ cdef class LiveTimer(Timer):
     """
     The abstract base class for all live timers.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

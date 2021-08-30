@@ -1,4 +1,4 @@
-EXTRAS?=	"betfair ccxt distributed docs ib"
+EXTRAS?=	"ccxt distributed docs ib"
 .PHONY: build clean docs
 
 install:

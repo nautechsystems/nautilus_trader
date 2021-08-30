@@ -25,6 +25,7 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
+from nautilus_trader.live.risk_engine import LiveRiskEngineConfig
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
@@ -111,7 +112,6 @@ class TestLiveRiskEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={},
         )
 
         self.exec_client = MockExecutionClient(
@@ -130,8 +130,7 @@ class TestLiveRiskEngine:
         self.exec_engine.register_client(self.exec_client)
 
     def test_start_when_loop_not_running_logs(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.risk_engine.start()
 
         # Assert
@@ -139,8 +138,7 @@ class TestLiveRiskEngine:
         self.risk_engine.stop()
 
     def test_get_event_loop_returns_expected_loop(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         loop = self.risk_engine.get_event_loop()
 
         # Assert
@@ -156,10 +154,10 @@ class TestLiveRiskEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveRiskEngineConfig(qsize=1),
         )
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -202,10 +200,10 @@ class TestLiveRiskEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveRiskEngineConfig(qsize=1),
         )
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -242,8 +240,7 @@ class TestLiveRiskEngine:
 
     @pytest.mark.asyncio
     async def test_start(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.risk_engine.start()
         await asyncio.sleep(0.1)
 
@@ -255,8 +252,7 @@ class TestLiveRiskEngine:
 
     @pytest.mark.asyncio
     async def test_kill_when_running_and_no_messages_on_queues(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.risk_engine.start()
         await asyncio.sleep(0)
         self.risk_engine.kill()
@@ -266,8 +262,7 @@ class TestLiveRiskEngine:
 
     @pytest.mark.asyncio
     async def test_kill_when_not_running_with_messages_on_queue(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.risk_engine.kill()
 
         # Assert
@@ -278,7 +273,7 @@ class TestLiveRiskEngine:
         # Arrange
         self.risk_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -320,7 +315,7 @@ class TestLiveRiskEngine:
         # Arrange
         self.risk_engine.start()
 
-        strategy = TradingStrategy(order_id_tag="001")
+        strategy = TradingStrategy()
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,

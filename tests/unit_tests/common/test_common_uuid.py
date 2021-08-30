@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.uuid import UUIDFactory
-from nautilus_trader.core.uuid import UUID
+from nautilus_trader.core.uuid import UUID4
 
 
 class TestUUIDFactory:
@@ -27,6 +27,6 @@ class TestUUIDFactory:
         result2 = factory.generate()
         result3 = factory.generate()
 
-        assert isinstance(result1, UUID)
+        assert isinstance(result1, UUID4)
         assert result1 != result2
         assert result2 != result3

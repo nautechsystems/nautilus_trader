@@ -55,7 +55,7 @@ cdef class CashAccount(Account):
         Raises
         ------
         ValueError
-            If event.account_type is not equal to AccountType.CASH.
+            If event.account_type is not equal to ``CASH``.
 
         """
         Condition.not_none(event, "event")
@@ -280,7 +280,7 @@ cdef class CashAccount(Account):
         fill_qty: Decimal = fill.last_qty.as_decimal()
         fill_px: Decimal = fill.last_px.as_decimal()
 
-        if fill.side == OrderSide.BUY:
+        if fill.order_side == OrderSide.BUY:
             if base_currency:
                 pnls.append(Money(fill_qty, base_currency))
             pnls.append(Money(-(fill_px * fill_qty), quote_currency))

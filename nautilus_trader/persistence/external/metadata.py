@@ -17,6 +17,7 @@ from typing import Dict, List
 
 import fsspec
 import orjson
+from fsspec.utils import infer_storage_options
 
 
 PROCESSED_FILES_FN = ".processed_raw_files.json"
@@ -30,7 +31,7 @@ def load_mappings(fs, path) -> Dict:
         return orjson.loads(f.read())
 
 
-def write_mappings(fs, path, mappings) -> None:
+def write_partition_column_mappings(fs, path, mappings) -> None:
     with fs.open(f"{path}/{PARTITION_MAPPINGS_FN}", "wb") as f:
         f.write(orjson.dumps(mappings))
 
@@ -49,3 +50,8 @@ def load_processed_raw_files(fs):
             return orjson.loads(f.read())
     else:
         return []
+
+
+def _glob_path_to_fs(glob_path):
+    inferred = infer_storage_options(glob_path)
+    return fsspec.filesystem(**inferred)

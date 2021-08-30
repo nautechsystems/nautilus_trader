@@ -20,40 +20,15 @@ import pytest
 from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
 from nautilus_trader.common.enums import ComponentState
+from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.live.node import TradingNodeConfig
 
 
 class TestTradingNodeConfiguration:
     def test_config_with_inmemory_execution_database(self):
         # Arrange
-        config = {
-            "trader": {
-                "name": "tester",
-                "id_tag": "000",
-            },
-            "logging": {
-                "log_level_console": "INF",
-            },
-            "database": {
-                "type": "in-memory",
-            },
-            "strategy": {
-                "load_state": True,
-                "save_state": True,
-            },
-            "data_clients": {
-                "binance": {
-                    "api_key": "BINANCE_API_KEY",  # value is the environment variable name
-                    "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
-                },
-            },
-            "exec_clients": {
-                "binance": {
-                    "api_key": "BINANCE_API_KEY",  # value is the environment variable name
-                    "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
-                },
-            },
-        }
+        config = TradingNodeConfig(cache_database=CacheDatabaseConfig(type="in-memory"))
 
         # Act
         node = TradingNode(config=config)
@@ -62,40 +37,8 @@ class TestTradingNodeConfiguration:
         assert node is not None
 
     def test_config_with_redis_execution_database(self):
-        # Arrange
-        config = {
-            "trader": {
-                "name": "tester",
-                "id_tag": "000",
-            },
-            "logging": {
-                "log_level_console": "INF",
-            },
-            "database": {
-                "type": "redis",
-                "host": "localhost",
-                "port": 6379,
-            },
-            "strategy": {
-                "load_state": True,
-                "save_state": True,
-            },
-            "data_clients": {
-                "binance": {
-                    "api_key": "BINANCE_API_KEY",  # value is the environment variable name
-                    "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
-                },
-            },
-            "exec_clients": {
-                "binance": {
-                    "api_key": "BINANCE_API_KEY",  # value is the environment variable name
-                    "api_secret": "BINANCE_API_SECRET",  # value is the environment variable name
-                },
-            },
-        }
-
-        # Act
-        node = TradingNode(config=config)
+        # Arrange, Act
+        node = TradingNode()
 
         # Assert
         assert node is not None
@@ -104,30 +47,14 @@ class TestTradingNodeConfiguration:
 class TestTradingNodeOperation:
     def setup(self):
         # Fixture Setup
-        config = {
-            "trader": {
-                "name": "tester",
-                "id_tag": "000",
-            },
-            "logging": {
-                "log_level_console": "INF",
-            },
-            "database": {
-                "type": "in-memory",
-            },
-            "strategy": {
-                "load_state": True,
-                "save_state": True,
-            },
-            "data_clients": {},
-            "exec_clients": {},
-        }
-
-        self.node = TradingNode(config=config)
+        self.node = TradingNode()
 
     def test_get_event_loop_returns_a_loop(self):
-        # Arrange, Act
-        loop = self.node.get_event_loop()
+        # Arrange
+        node = TradingNode()
+
+        # Act
+        loop = node.get_event_loop()
 
         # Assert
         assert isinstance(loop, asyncio.AbstractEventLoop)
@@ -159,7 +86,9 @@ class TestTradingNodeOperation:
         await asyncio.sleep(1)
 
         # Assert: Log record received
-        assert sink[-1]["system_id"] == self.node.system_id.value
+        assert sink[-1]["trader_id"] == self.node.trader_id.value
+        assert sink[-1]["host_id"] == self.node.host_id
+        assert sink[-1]["instance_id"] == self.node.instance_id.value
 
     @pytest.mark.asyncio
     async def test_start(self):
@@ -202,6 +131,5 @@ class TestTradingNodeOperation:
         self.node.dispose()
         await asyncio.sleep(1)  # Allow node to dispose
 
-        # Act
         # Assert
         assert self.node.trader.state == ComponentState.DISPOSED

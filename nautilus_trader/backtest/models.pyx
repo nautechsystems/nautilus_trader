@@ -68,7 +68,7 @@ cdef class FillModel:
 
     cpdef bint is_limit_filled(self) except *:
         """
-        Return a value indicating whether a `LIMIT` order filled.
+        Return a value indicating whether a ``LIMIT`` order filled.
 
         Returns
         -------
@@ -79,7 +79,7 @@ cdef class FillModel:
 
     cpdef bint is_stop_filled(self) except *:
         """
-        Return a value indicating whether a `STOP-MARKET` order filling.
+        Return a value indicating whether a ``STOP-MARKET`` order filled.
 
         Returns
         -------
@@ -90,7 +90,7 @@ cdef class FillModel:
 
     cpdef bint is_slipped(self) except *:
         """
-        Return a value indicating whether an order fill slipping.
+        Return a value indicating whether an order fill slipped.
 
         Returns
         -------

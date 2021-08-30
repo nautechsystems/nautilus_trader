@@ -73,6 +73,8 @@ cdef class LiveDataClient(DataClient):
     """
     The abstract base class for all live data clients.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -104,7 +106,7 @@ cdef class LiveDataClient(DataClient):
         logger : Logger
             The logger for the client.
         config : dict[str, object], optional
-            The configuration options.
+            The configuration for the instance.
 
         """
         super().__init__(
@@ -123,6 +125,8 @@ cdef class LiveMarketDataClient(MarketDataClient):
     """
     The abstract base class for all live data clients.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -154,7 +158,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
         logger : Logger
             The logger for the client.
         config : dict[str, object], optional
-            The configuration options.
+            The configuration for the instance.
 
         """
         super().__init__(

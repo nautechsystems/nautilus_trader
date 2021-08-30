@@ -380,6 +380,23 @@ cdef class CCXTExecutionClient(LiveExecutionClient):
         self.is_connected = False
         self._log.info("Disconnected.")
 
+    cpdef void _reset(self) except *:
+        if self.is_connected:
+            self._log.error("Cannot reset a connected execution client.")
+            return
+
+        self._instrument_provider = CCXTInstrumentProvider(
+            client=self._client,
+            load_all=False,
+        )
+
+    cpdef void _dispose(self) except *:
+        if self.is_connected:
+            self._log.error("Cannot dispose a connected execution client.")
+            return
+
+        # Nothing to dispose yet
+
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *:

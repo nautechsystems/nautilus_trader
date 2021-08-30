@@ -73,4 +73,5 @@ def test_clear_instance():
 
     clear_singleton_instances(Test)
 
+    # Assert
     assert not Test._instances

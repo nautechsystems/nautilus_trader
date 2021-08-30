@@ -37,28 +37,21 @@ class TestWeightedMovingAverage:
         )
 
     def test_name_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.wma.name == "WeightedMovingAverage"
 
     def test_str_repr_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         weights_repr = repr(self.wma.weights)
         assert str(self.wma) == f"WeightedMovingAverage(10, {weights_repr})"
         assert repr(self.wma) == f"WeightedMovingAverage(10, {weights_repr})"
 
     def test_weights_returns_expected_weights(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert list(self.wma.weights) == self.w
 
     def test_wma_factory_update_raw(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         for i in range(1, 12):
             self.wma_factory.update_raw(float(i))
 
@@ -109,8 +102,7 @@ class TestWeightedMovingAverage:
         # Arrange
         self.wma.update_raw(1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.wma.value == 1.0
 
     def test_value_with_two_input_returns_expected_value(self):
@@ -120,8 +112,7 @@ class TestWeightedMovingAverage:
 
         # 10 * 1.0, 1 * 0.9
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.wma.value == (10 * 1.0 + 1 * 0.9) / 1.9
 
     def test_value_with_no_weights(self):
@@ -129,8 +120,7 @@ class TestWeightedMovingAverage:
         self.wma_noweights.update_raw(1.00000)
         self.wma_noweights.update_raw(2.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.wma_noweights.value == 1.5
 
     def test_value_with_ten_inputs_returns_expected_value(self):
@@ -146,8 +136,7 @@ class TestWeightedMovingAverage:
         self.wma.update_raw(9.00000)
         self.wma.update_raw(10.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.wma.value == pytest.approx(7.00, 2)
 
     def test_value_at_returns_expected_value(self):
@@ -164,8 +153,7 @@ class TestWeightedMovingAverage:
         self.wma.update_raw(10.00000)
         self.wma.update_raw(11.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.wma.value == 8.0
 
     def test_reset(self):

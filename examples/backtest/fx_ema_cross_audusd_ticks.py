@@ -26,15 +26,14 @@ sys.path.insert(
 )  # Allows relative imports from examples
 
 from examples.strategies.ema_cross_simple import EMACross
+from examples.strategies.ema_cross_simple import EMACrossConfig
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -44,21 +43,22 @@ from tests.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
-    # Build the backtest engine
-    engine = BacktestEngine(
+    # Configure backtest engine
+    config = BacktestEngineConfig(
+        trader_id="BACKTESTER-001",
         use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
-        # cache_db_type="redis",
-        # bypass_logging=True
     )
+    # Build the backtest engine
+    engine = BacktestEngine(config=config)
 
     # Setup trading instruments
     SIM = Venue("SIM")
-    AUDUSD = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
+    AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
 
     # Setup data
-    engine.add_instrument(AUDUSD)
+    engine.add_instrument(AUDUSD_SIM)
     engine.add_quote_ticks(
-        instrument_id=AUDUSD.id,
+        instrument_id=AUDUSD_SIM.id,
         data=TestDataProvider.audusd_ticks(),  # Stub data from the test kit
     )
 
@@ -88,15 +88,17 @@ if __name__ == "__main__":
         modules=[fx_rollover_interest],
     )
 
-    # Instantiate your strategy
-    strategy = EMACross(
-        instrument_id=AUDUSD.id,
-        bar_spec=BarSpecification(100, BarAggregation.TICK, PriceType.MID),
+    # Configure your strategy
+    config = EMACrossConfig(
+        instrument_id=str(AUDUSD_SIM.id),
+        bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
         fast_ema_period=10,
         slow_ema_period=20,
         trade_size=Decimal(1_000_000),
         order_id_tag="001",
     )
+    # Instantiate your strategy
+    strategy = EMACross(config=config)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 

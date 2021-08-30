@@ -168,6 +168,7 @@ cdef class Portfolio(PortfolioFacade):
                 account=account,
                 instrument=instrument,
                 passive_orders_working=[o for o in orders_working if o.is_passive_c()],
+                ts_event=account.last_event_c().ts_event,
             )
             if result is None:
                 initialized = False
@@ -235,6 +236,7 @@ cdef class Portfolio(PortfolioFacade):
                     venue=None,  # Faster query filtering
                     instrument_id=instrument_id,
                 ),
+                ts_event=account.last_event_c().ts_event,
             )
             if result is None:
                 initialized = False
@@ -290,6 +292,7 @@ cdef class Portfolio(PortfolioFacade):
                 account=account,
                 instrument=instrument,
                 passive_orders_working=[o for o in orders_working if o.is_passive_c()],
+                ts_event=account.last_event_c().ts_event,
             )
 
             positions_open = self._cache.positions_open(
@@ -302,6 +305,7 @@ cdef class Portfolio(PortfolioFacade):
                 account=account,
                 instrument=instrument,
                 positions_open=positions_open,
+                ts_event=account.last_event_c().ts_event,
             )
 
             # Calculate unrealized PnL
@@ -403,6 +407,7 @@ cdef class Portfolio(PortfolioFacade):
             account=account,
             instrument=instrument,
             passive_orders_working=[o for o in orders_working if o.is_passive_c()],
+            ts_event=event.ts_event,
         )
 
         if account_state is None:
@@ -464,6 +469,7 @@ cdef class Portfolio(PortfolioFacade):
             account=account,
             instrument=instrument,
             positions_open=positions_open,
+            ts_event=event.ts_event,
         )
 
         if account_state is None:

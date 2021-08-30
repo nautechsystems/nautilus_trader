@@ -38,7 +38,7 @@ from nautilus_trader.adapters.betfair.util import historical_instrument_provider
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.core.uuid import UUID
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -57,8 +57,8 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
-from nautilus_trader.persistence.backtest.parsers import TextReader
-from nautilus_trader.persistence.backtest.scanner import scan
+from nautilus_trader.persistence.external.core import make_raw_files
+from nautilus_trader.persistence.external.parsers import TextReader
 from nautilus_trader.portfolio.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit import PACKAGE_ROOT
@@ -126,7 +126,7 @@ class BetfairTestStubs:
 
     @staticmethod
     def uuid():
-        return UUID(value=b"\x03\x89\x90\xc6\x19\xd2\xb5\xc87\xa6\xfe\x91\xf9\xb7\xb9\xed")
+        return UUID4("038990c6-19d2-b5c8-37a6-fe91f9b7b9ed")
 
     @staticmethod
     def account_id() -> AccountId:
@@ -470,18 +470,17 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def betfair_reader():
-        def inner(instrument_provider):
-            reader = TextReader(
-                line_parser=partial(
-                    BetfairTestStubs.parse_betfair, instrument_provider=instrument_provider
-                ),
-                instrument_provider=instrument_provider,
-                instrument_provider_update=historical_instrument_provider_loader,
-            )
-            return reader
-
-        return inner
+    def betfair_reader(instrument_provider=None, **kwargs):
+        instrument_provider = instrument_provider or BetfairInstrumentProvider.from_instruments([])
+        reader = TextReader(
+            line_parser=partial(
+                BetfairTestStubs.parse_betfair, instrument_provider=instrument_provider
+            ),
+            instrument_provider=instrument_provider,
+            instrument_provider_update=historical_instrument_provider_loader,
+            **kwargs,
+        )
+        return reader
 
 
 class BetfairRequests:
@@ -872,24 +871,23 @@ class BetfairDataProvider:
     @staticmethod
     def betfair_feed_parsed(market_id="1.166564490", folder="data"):
         instrument_provider = BetfairInstrumentProvider.from_instruments([])
-        reader = BetfairTestStubs.betfair_reader()
-        files = scan(
-            path=f"{PACKAGE_ROOT}/{folder}",
-            glob_pattern=f"{market_id}*",
-        )
-        reader = reader(instrument_provider=instrument_provider)
+        reader = BetfairTestStubs.betfair_reader(instrument_provider=instrument_provider)
+        files = make_raw_files(glob_path=f"{PACKAGE_ROOT}/{folder}/{market_id}*")
 
         data = []
         for rf in files:
-            rf.reader = reader
-            for chunk in rf.iter_parsed():
-                data.extend(chunk)
+            for block in rf.iter():
+                data.extend(reader.parse(block=block))
 
         return data
 
     @staticmethod
     def betfair_trade_ticks():
         return [msg["trade"] for msg in TestDataProvider.l2_feed() if msg.get("op") == "trade"]
+
+    @staticmethod
+    def badly_formatted_log():
+        return open(DATA_PATH / "badly_formatted.txt", "rb").read()
 
 
 @contextlib.contextmanager

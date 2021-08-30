@@ -116,7 +116,7 @@ cdef class Throttler:
         self.recv_count = 0
         self.sent_count = 0
 
-        self._log.info("Initialized.")
+        self._log.info("INITIALIZED.")
 
     @property
     def qsize(self):

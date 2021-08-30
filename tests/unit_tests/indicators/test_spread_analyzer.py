@@ -32,8 +32,7 @@ class TestSpreadAnalyzer:
         # Arrange
         analyzer = SpreadAnalyzer(AUDUSD_SIM.id, 1000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert analyzer.current == 0
         assert analyzer.current == 0
         assert analyzer.average == 0
@@ -63,8 +62,7 @@ class TestSpreadAnalyzer:
             0,
             0,
         )
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(ValueError):
             analyzer.handle_quote_tick(tick)
 

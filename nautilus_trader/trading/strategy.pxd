@@ -46,7 +46,7 @@ cdef class TradingStrategy(Actor):
     cdef readonly Clock clock
     """The trading strategies clock.\n\n:returns: `Clock`"""
     cdef readonly UUIDFactory uuid_factory
-    """The trading strategies UUID factory.\n\n:returns: `UUIDFactory`"""
+    """The trading strategies UUID4 factory.\n\n:returns: `UUIDFactory`"""
     cdef readonly LoggerAdapter log
     """The trading strategies logger adapter.\n\n:returns: `LoggerAdapter`"""
     cdef readonly PortfolioFacade portfolio

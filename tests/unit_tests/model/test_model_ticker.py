@@ -20,7 +20,7 @@ from tests.test_kit.providers import TestInstrumentProvider
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-class TestQuoteTick:
+class TestTicker:
     def test_ticker_hash_str_and_repr(self):
         # Arrange
         ticker = Ticker(

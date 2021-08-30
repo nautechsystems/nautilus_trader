@@ -37,6 +37,8 @@ cdef class MovingAverage(Indicator):
     """
     The abstract base class for all moving average type indicators.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 

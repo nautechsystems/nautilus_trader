@@ -30,24 +30,20 @@ class TestVolumeWeightedAveragePrice:
         self.vwap = VolumeWeightedAveragePrice()
 
     def test_name_returns_expected_string(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert self.vwap.name == "VolumeWeightedAveragePrice"
 
     def test_str_repr_returns_expected_string(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert str(self.vwap) == "VolumeWeightedAveragePrice()"
         assert repr(self.vwap) == "VolumeWeightedAveragePrice()"
 
     def test_initialized_without_inputs_returns_false(self):
-        # Act
-        # Assert
+        # Act, Assert
         assert self.vwap.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH)
 
         # Assert
@@ -70,13 +66,11 @@ class TestVolumeWeightedAveragePrice:
         # Arrange
         self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.vwap.value == 1.00000
 
     def test_values_with_higher_inputs_returns_expected_value(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH)
         self.vwap.update_raw(1.00010, 11000, UNIX_EPOCH)
         self.vwap.update_raw(1.00020, 12000, UNIX_EPOCH)
@@ -92,8 +86,7 @@ class TestVolumeWeightedAveragePrice:
         assert self.vwap.value == 1.0005076923076923
 
     def test_values_with_all_lower_inputs_returns_expected_value(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.vwap.update_raw(1.00100, 20000, UNIX_EPOCH)
         self.vwap.update_raw(1.00090, 19000, UNIX_EPOCH)
         self.vwap.update_raw(1.00080, 18000, UNIX_EPOCH)
@@ -109,8 +102,7 @@ class TestVolumeWeightedAveragePrice:
         assert self.vwap.value == 1.0006032258064514
 
     def test_new_day_resets_values(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.vwap.update_raw(1.00000, 10000, UNIX_EPOCH)
         self.vwap.update_raw(1.00010, 11000, UNIX_EPOCH)
         self.vwap.update_raw(1.00020, 12000, UNIX_EPOCH)
@@ -127,8 +119,7 @@ class TestVolumeWeightedAveragePrice:
         assert self.vwap.value == 1.00000
 
     def test_new_day_with_first_volume_zero_returns_price_as_value(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.vwap.update_raw(2.00000, 10000, UNIX_EPOCH)
         self.vwap.update_raw(1.00000, 0, UNIX_EPOCH + timedelta(1))
 

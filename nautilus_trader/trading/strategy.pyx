@@ -24,6 +24,10 @@ attempts to operate without a managing `Trader` instance.
 
 """
 
+from typing import Optional
+
+import pydantic
+
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
@@ -75,54 +79,65 @@ cdef tuple _WARNING_EVENTS = (
     OrderUpdateRejected,
 )
 
+
+class TradingStrategyConfig(pydantic.BaseModel):
+    """
+    The base model for all trading strategy configurations.
+
+    order_id_tag : str
+        The unique order ID tag for the strategy. Must be unique
+        amongst all running strategies for a particular trader ID.
+    oms_type : OMSType
+        The order management system type for the strategy. This will determine
+        how the `ExecutionEngine` handles position IDs (see docs).
+    """
+
+    order_id_tag: str = "000"
+    oms_type: OMSType = OMSType.HEDGING
+
+
 cdef class TradingStrategy(Actor):
     """
     The abstract base class for all trading strategies.
 
+    A trading strategy can configure its own order management system type, which
+    determines how positions are handled by the `ExecutionEngine`.
+
+    Strategy OMS (Order Management System) types:
+     - ``HEDGING``: A position ID will be assigned for each new position which
+       is opened per instrument.
+     - ``NETTING``: There will only ever be a single position for the strategy
+       per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
+
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
-
-    Strategy OMS (Order Management System):
-    An individual trading strategy can configure its own order management system
-    type which determines how positions are handled by the `ExecutionEngine`.
-
-    - OMSType.HEDGING: A position ID will be assigned for each new position
-      which is opened per instrument.
-
-    - OMSType.NETTING: There will only ever be a single position for the strategy
-      per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
-
     """
 
-    def __init__(
-        self,
-        str order_id_tag not None,
-        OMSType oms_type=OMSType.HEDGING,
-    ):
+    def __init__(self, config: Optional[TradingStrategyConfig]=None):
         """
         Initialize a new instance of the ``TradingStrategy`` class.
 
         Parameters
         ----------
-        order_id_tag : str
-            The unique order ID tag for the strategy. Must be unique
-            amongst all running strategies for a particular trader ID.
-        oms_type : OMSType
-            The order management system type for the strategy. This will determine
-            how the `ExecutionEngine` handles position IDs (see docs).
+        config : TradingStrategyConfig, optional
+            The trading strategy configuration.
 
         Raises
         ------
-        ValueError
-            If order_id_tag is not a valid string.
+        TypeError
+            If config is not of type TradingStrategyConfig.
 
         """
-        Condition.valid_string(order_id_tag, "order_id_tag")
+        if config is None:
+            config = TradingStrategyConfig()
+        Condition.type(config, TradingStrategyConfig, "config")
 
-        self.oms_type = oms_type
+        self.oms_type = config.oms_type
 
         # Assign strategy ID
-        strategy_id = StrategyId(f"{type(self).__name__}-{order_id_tag}")
-        super().__init__(component_id=strategy_id)
+        strategy_id = StrategyId(f"{type(self).__name__}-{config.order_id_tag}")
+        super().__init__(component_id=strategy_id, config=config.dict())
 
         # Indicators
         self._indicators = []             # type: list[Indicator]
@@ -272,8 +287,8 @@ cdef class TradingStrategy(Actor):
         self.log.info(f"Set ClientOrderIdGenerator count to {order_id_count}.")
 
         # Required subscriptions
-        self.msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)
-        self.msgbus.subscribe(topic=f"events.position.{self.id}", handler=self.handle_event)
+        self._msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)
+        self._msgbus.subscribe(topic=f"events.position.{self.id}", handler=self.handle_event)
 
     cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator) except *:
         """
@@ -362,8 +377,6 @@ cdef class TradingStrategy(Actor):
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
     cpdef void _reset(self) except *:
-        self._check_registered()
-
         if self.order_factory:
             self.order_factory.reset()
 
@@ -392,8 +405,11 @@ cdef class TradingStrategy(Actor):
         Exceptions raised will be caught, logged, and reraised.
 
         """
-        self._check_registered()
-
+        if not self.is_initialized_c():
+            self.log.error(
+                "Cannot save: strategy has not been registered with a trader.",
+            )
+            return
         try:
             self.log.debug("Saving state...")
             user_state = self.on_save()
@@ -429,8 +445,6 @@ cdef class TradingStrategy(Actor):
         """
         Condition.not_none(state, "state")
 
-        self._check_registered()
-
         if not state:
             self.log.info("No user state to load.", color=LogColor.BLUE)
             return
@@ -457,7 +471,7 @@ cdef class TradingStrategy(Actor):
         """
         Condition.not_none(data, "data")
 
-        self.msgbus.publish_c(
+        self._msgbus.publish_c(
             topic=f"data.strategy.{type(data).__name__}.{self.id}",
             msg=data,
         )
@@ -487,7 +501,7 @@ cdef class TradingStrategy(Actor):
         Condition.not_none(self.trader_id, "self.trader_id")
 
         # Publish initialized event
-        self.msgbus.publish_c(
+        self._msgbus.publish_c(
             topic=f"events.order.{order.strategy_id.value}",
             msg=order.init_event_c(),
         )
@@ -520,15 +534,15 @@ cdef class TradingStrategy(Actor):
         Condition.not_none(self.trader_id, "self.trader_id")
 
         # Publish initialized events
-        self.msgbus.publish_c(
+        self._msgbus.publish_c(
             topic=f"events.order.{bracket_order.entry.strategy_id.value}",
             msg=bracket_order.entry.init_event_c(),
         )
-        self.msgbus.publish_c(
+        self._msgbus.publish_c(
             topic=f"events.order.{bracket_order.stop_loss.strategy_id.value}",
             msg=bracket_order.stop_loss.init_event_c(),
         )
-        self.msgbus.publish_c(
+        self._msgbus.publish_c(
             topic=f"events.order.{bracket_order.take_profit.strategy_id.value}",
             msg=bracket_order.take_profit.init_event_c(),
         )
@@ -576,7 +590,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         ValueError
-            If trigger is not None and order.type != STOP_LIMIT
+            If trigger is not None and order.type != ``STOP_LIMIT``.
 
         References
         ----------
@@ -753,7 +767,7 @@ cdef class TradingStrategy(Actor):
         )
 
         # Publish initialized event
-        self.msgbus.publish_c(
+        self._msgbus.publish_c(
             topic=f"events.order.{order.strategy_id.value}",
             msg=order.init_event_c(),
         )
@@ -808,7 +822,7 @@ cdef class TradingStrategy(Actor):
         """
         Handle the given tick.
 
-        Calls `on_quote_tick` if state is `RUNNING`.
+        Calls `on_quote_tick` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -845,7 +859,7 @@ cdef class TradingStrategy(Actor):
         """
         Handle the given tick.
 
-        Calls `on_trade_tick` if state is `RUNNING`.
+        Calls `on_trade_tick` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -882,7 +896,7 @@ cdef class TradingStrategy(Actor):
         """
         Handle the given bar data.
 
-        Calls `on_bar` if state is `RUNNING`.
+        Calls `on_bar` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -919,7 +933,7 @@ cdef class TradingStrategy(Actor):
         """
         Handle the given event.
 
-        Calls `on_event` if state is `RUNNING`.
+        Calls `on_event` if state is ``RUNNING``.
 
         Parameters
         ----------
@@ -948,7 +962,6 @@ cdef class TradingStrategy(Actor):
 # -- EGRESS ----------------------------------------------------------------------------------------
 
     cdef void _send_exec_cmd(self, TradingCommand command) except *:
-        self._check_registered()
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
-        self.msgbus.send(endpoint="RiskEngine.execute", msg=command)
+        self._msgbus.send(endpoint="RiskEngine.execute", msg=command)

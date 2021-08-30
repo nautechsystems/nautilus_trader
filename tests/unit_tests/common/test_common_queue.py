@@ -25,8 +25,7 @@ class TestQueue:
         # Arrange
         queue = Queue()
 
-        # Act
-        # Assert
+        # Act, Assert
         assert queue.maxsize == 0
         assert queue.qsize() == 0
         assert queue.empty()
@@ -104,8 +103,7 @@ class TestQueue:
         # Arrange
         queue = Queue()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(asyncio.QueueEmpty):
             queue.get_nowait()
 
@@ -139,8 +137,7 @@ class TestQueue:
         # Arrange
         queue = Queue()
 
-        # Act
-        # Assert
+        # Act, Assert
         assert queue.peek_back() is None
 
     def test_peek_front_when_items_returns_expected_front_of_queue(self):
@@ -150,8 +147,7 @@ class TestQueue:
         queue.put_nowait("B")
         queue.put_nowait("C")
 
-        # Act
-        # Assert
+        # Act, Assert
         assert queue.peek_front() == "A"
 
     def test_peek_index_when_items_returns_expected_front_of_queue(self):
@@ -161,8 +157,7 @@ class TestQueue:
         queue.put_nowait("B")
         queue.put_nowait("C")
 
-        # Act
-        # Assert
+        # Act, Assert
         assert queue.peek_index(-1) == "A"
         assert queue.peek_index(1) == "B"
         assert queue.peek_index(0) == "C"
@@ -174,8 +169,7 @@ class TestQueue:
         queue.put_nowait("B")
         queue.put_nowait("C")
 
-        # Act
-        # Assert
+        # Act, Assert
         assert queue.peek_back() == "C"
 
     def test_as_list_when_no_items_returns_empty_list(self):

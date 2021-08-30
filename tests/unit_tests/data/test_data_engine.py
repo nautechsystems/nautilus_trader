@@ -34,6 +34,7 @@ from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookLevel
@@ -127,38 +128,27 @@ class TestDataEngine:
         self.data_engine.process(XBTUSD_BITMEX)
 
     def test_registered_venues(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.data_engine.registered_clients() == []
 
     def test_subscribed_instruments_when_nothing_subscribed_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.data_engine.subscribed_instruments() == []
 
     def test_subscribed_quote_ticks_when_nothing_subscribed_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.data_engine.subscribed_quote_ticks() == []
 
     def test_subscribed_trade_ticks_when_nothing_subscribed_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.data_engine.subscribed_trade_ticks() == []
 
     def test_subscribed_bars_when_nothing_subscribed_returns_empty_list(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.data_engine.subscribed_bars() == []
 
     def test_register_client_successfully_adds_client(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.data_engine.register_client(self.binance_client)
 
         # Assert
@@ -175,8 +165,7 @@ class TestDataEngine:
         assert BINANCE.value not in self.data_engine.registered_clients()
 
     def test_reset(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         self.data_engine.reset()
 
         # Assert
@@ -273,8 +262,7 @@ class TestDataEngine:
         # Arrange
         self.data_engine.dispose()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(InvalidStateTrigger):
             self.data_engine.reset()
 
@@ -282,8 +270,7 @@ class TestDataEngine:
         # Arrange
         self.data_engine.dispose()
 
-        # Act
-        # Assert
+        # Act, Assert
         with pytest.raises(InvalidStateTrigger):
             self.data_engine.dispose()
 
@@ -611,9 +598,8 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.command_count == 1
-        # assert self.data_engine.subscribed_instruments == [ETHUSDT_BINANCE.id]
+        assert self.data_engine.subscribed_instruments() == [ETHUSDT_BINANCE.id]
 
-    @pytest.mark.skip(reason="implement")
     def test_execute_unsubscribe_instrument_then_removes_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
@@ -639,7 +625,7 @@ class TestDataEngine:
         self.data_engine.execute(unsubscribe)
 
         # Assert
-        assert self.data_engine.subscribed_instruments == []
+        assert self.data_engine.subscribed_instruments() == []
 
     def test_process_instrument_when_subscriber_then_sends_to_registered_handler(self):
         # Arrange
@@ -754,7 +740,7 @@ class TestDataEngine:
         # Assert
         # assert self.data_engine.subscribed_order_book_deltas == [ETHUSDT_BINANCE.id]
 
-    @pytest.mark.skip
+    @pytest.mark.skip(reason="WIP")
     def test_execute_subscribe_order_book_intervals_then_adds_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
@@ -779,7 +765,7 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         # Assert
-        # assert self.data_engine.subscribed_order_book_snapshots == [ETHUSDT_BINANCE.id]
+        assert self.data_engine.subscribed_order_book_snapshots() == [ETHUSDT_BINANCE.id]
 
     def test_execute_unsubscribe_order_book_stream_then_removes_handler(self):
         # Arrange
@@ -1068,7 +1054,57 @@ class TestDataEngine:
         assert handler1[0] == cached_book
         assert handler2[0] == cached_book
 
-    def test_execute_subscribe_for_quote_ticks(self):
+    def test_execute_subscribe_ticker(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        handler = []
+        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USD", handler=handler.append)
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            data_type=DataType(Ticker, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            command_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        assert self.data_engine.subscribed_tickers() == [ETHUSDT_BINANCE.id]
+
+    def test_execute_unsubscribe_ticker(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        handler = []
+        self.msgbus.subscribe(topic="data.quotes.BINANCE.ETH/USD", handler=handler.append)
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            data_type=DataType(Ticker, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            command_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        unsubscribe = Unsubscribe(
+            client_id=ClientId(BINANCE.value),
+            data_type=DataType(Ticker, metadata={"instrument_id": ETHUSDT_BINANCE.id}),
+            command_id=self.uuid_factory.generate(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(unsubscribe)
+
+        # Assert
+        assert self.data_engine.subscribed_tickers() == []
+
+    def test_execute_subscribe_quote_ticks(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
@@ -1083,12 +1119,13 @@ class TestDataEngine:
             ts_init=self.clock.timestamp_ns(),
         )
 
+        # Act
         self.data_engine.execute(subscribe)
 
         # Assert
         assert self.data_engine.subscribed_quote_ticks() == [ETHUSDT_BINANCE.id]
 
-    def test_execute_unsubscribe_for_quote_ticks(self):
+    def test_execute_unsubscribe_quote_ticks(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
@@ -1331,7 +1368,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec, internal_aggregation=False)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
 
         handler = ObjectStorer()
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.store_2)
@@ -1356,7 +1393,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec, internal_aggregation=False)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
 
         handler = ObjectStorer()
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.store_2)
@@ -1391,7 +1428,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec, internal_aggregation=True)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
 
         handler = []
         self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
@@ -1428,7 +1465,7 @@ class TestDataEngine:
         self.binance_client.start()
 
         bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
-        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec, internal_aggregation=True)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
 
         handler1 = []
         handler2 = []

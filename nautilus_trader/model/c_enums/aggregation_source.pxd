@@ -12,3 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+
+cpdef enum AggregationSource:
+    EXTERNAL = 1,
+    INTERNAL = 2,
+
+
+cdef class AggregationSourceParser:
+
+    @staticmethod
+    cdef str to_str(int value)
+
+    @staticmethod
+    cdef AggregationSource from_str(str value) except *

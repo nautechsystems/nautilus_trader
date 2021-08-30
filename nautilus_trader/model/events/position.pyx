@@ -20,7 +20,7 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.position_side cimport PositionSide
@@ -40,6 +40,8 @@ cdef class PositionEvent(Event):
     """
     The abstract base class for all position events.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -65,7 +67,7 @@ cdef class PositionEvent(Event):
         realized_return not None: Decimal,
         Money realized_pnl not None,
         Money unrealized_pnl not None,
-        UUID event_id not None,
+        UUID4 event_id not None,
         int64_t ts_opened,
         int64_t ts_closed,
         int64_t duration_ns,
@@ -94,7 +96,7 @@ cdef class PositionEvent(Event):
         side : PositionSide
             The current position side.
         net_qty : Decimal
-            The current net quantity (positive for LONG, negative for SHORT).
+            The current net quantity (positive for ``LONG``, negative for ``SHORT``).
         quantity : Quantity
             The current open quantity.
         peak_qty : Quantity
@@ -117,7 +119,7 @@ cdef class PositionEvent(Event):
             The realized PnL for the position.
         unrealized_pnl : Money
             The unrealized PnL for the position.
-        event_id : UUID
+        event_id : UUID4
             The event ID.
         ts_opened : int64
             The UNIX timestamp (nanoseconds) when the position opened event occurred.
@@ -232,7 +234,7 @@ cdef class PositionOpened(PositionEvent):
         Currency currency not None,
         avg_px_open not None: Decimal,
         Money realized_pnl not None,
-        UUID event_id not None,
+        UUID4 event_id not None,
         int64_t ts_event,
         int64_t ts_init,
     ):
@@ -260,7 +262,7 @@ cdef class PositionOpened(PositionEvent):
         side : PositionSide
             The current position side.
         net_qty : Decimal
-            The current net quantity (positive for LONG, negative for SHORT).
+            The current net quantity (positive for ``LONG``, negative for ``SHORT``).
         quantity : Quantity
             The current open quantity.
         peak_qty : Quantity
@@ -275,7 +277,7 @@ cdef class PositionOpened(PositionEvent):
             The average open price.
         realized_pnl : Money
             The realized PnL for the position.
-        event_id : UUID
+        event_id : UUID4
             The event ID.
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the position opened event occurred.
@@ -317,7 +319,7 @@ cdef class PositionOpened(PositionEvent):
     cdef PositionOpened create_c(
         Position position,
         OrderFilled fill,
-        UUID event_id,
+        UUID4 event_id,
         int64_t ts_init,
     ):
         Condition.not_none(position, "position")
@@ -366,7 +368,7 @@ cdef class PositionOpened(PositionEvent):
             currency=Currency.from_str_c(values["currency"]),
             avg_px_open=Decimal(values["avg_px_open"]),
             realized_pnl=Money.from_str_c(values["realized_pnl"]),
-            event_id=UUID.from_str_c(values["event_id"]),
+            event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -402,7 +404,7 @@ cdef class PositionOpened(PositionEvent):
     def create(
         Position position,
         OrderFilled fill,
-        UUID event_id,
+        UUID4 event_id,
         int64_t ts_init,
     ):
         """
@@ -414,7 +416,7 @@ cdef class PositionOpened(PositionEvent):
             The position for the event.
         fill : OrderFilled
             The order fill for the event.
-        event_id : UUID
+        event_id : UUID4
             The event ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) the event object was initialized.
@@ -483,7 +485,7 @@ cdef class PositionChanged(PositionEvent):
         realized_return not None: Decimal,
         Money realized_pnl not None,
         Money unrealized_pnl not None,
-        UUID event_id not None,
+        UUID4 event_id not None,
         int64_t ts_opened,
         int64_t ts_event,
         int64_t ts_init,
@@ -512,7 +514,7 @@ cdef class PositionChanged(PositionEvent):
         side : PositionSide
             The current position side.
         net_qty : Decimal
-            The current net quantity (positive for LONG, negative for SHORT).
+            The current net quantity (positive for ``LONG``, negative for ``SHORT``).
         quantity : Quantity
             The current open quantity.
         peak_qty : Quantity
@@ -535,7 +537,7 @@ cdef class PositionChanged(PositionEvent):
             The realized PnL for the position.
         unrealized_pnl : Money
             The unrealized PnL for the position.
-        event_id : UUID
+        event_id : UUID4
             The event ID.
         ts_opened : int64
             The UNIX timestamp (nanoseconds) when the position opened event occurred.
@@ -579,7 +581,7 @@ cdef class PositionChanged(PositionEvent):
     cdef PositionChanged create_c(
         Position position,
         OrderFilled fill,
-        UUID event_id,
+        UUID4 event_id,
         int64_t ts_init,
     ):
         Condition.not_none(position, "position")
@@ -639,7 +641,7 @@ cdef class PositionChanged(PositionEvent):
             realized_return=Decimal(values["realized_return"]),
             realized_pnl=Money.from_str_c(values["realized_pnl"]),
             unrealized_pnl=Money.from_str_c(values["unrealized_pnl"]),
-            event_id=UUID.from_str_c(values["event_id"]),
+            event_id=UUID4(values["event_id"]),
             ts_opened=values["ts_opened"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -680,7 +682,7 @@ cdef class PositionChanged(PositionEvent):
     def create(
         Position position,
         OrderFilled fill,
-        UUID event_id,
+        UUID4 event_id,
         int64_t ts_init,
     ):
         """
@@ -692,7 +694,7 @@ cdef class PositionChanged(PositionEvent):
             The position for the event.
         fill : OrderFilled
             The order fill for the event.
-        event_id : UUID
+        event_id : UUID4
             The event ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
@@ -760,7 +762,7 @@ cdef class PositionClosed(PositionEvent):
         realized_points not None: Decimal,
         realized_return not None: Decimal,
         Money realized_pnl not None,
-        UUID event_id not None,
+        UUID4 event_id not None,
         int64_t ts_opened,
         int64_t ts_closed,
         int64_t duration_ns,
@@ -790,7 +792,7 @@ cdef class PositionClosed(PositionEvent):
         side : PositionSide
             The current position side.
         net_qty : Decimal
-            The current net quantity (positive for LONG, negative for SHORT).
+            The current net quantity (positive for ``LONG``, negative for ``SHORT``).
         quantity : Quantity
             The current open quantity.
         peak_qty : Quantity
@@ -811,7 +813,7 @@ cdef class PositionClosed(PositionEvent):
             The realized return for the position.
         realized_pnl : Money
             The realized PnL for the position.
-        event_id : UUID
+        event_id : UUID4
             The event ID.
         ts_opened : int64
             The UNIX timestamp (nanoseconds) when the position opened event occurred.
@@ -857,7 +859,7 @@ cdef class PositionClosed(PositionEvent):
     cdef PositionClosed create_c(
         Position position,
         OrderFilled fill,
-        UUID event_id,
+        UUID4 event_id,
         int64_t ts_init,
     ):
         Condition.not_none(position, "position")
@@ -914,7 +916,7 @@ cdef class PositionClosed(PositionEvent):
             realized_points=Decimal(values["realized_points"]),
             realized_return=Decimal(values["realized_return"]),
             realized_pnl=Money.from_str_c(values["realized_pnl"]),
-            event_id=UUID.from_str_c(values["event_id"]),
+            event_id=UUID4(values["event_id"]),
             ts_opened=values["ts_opened"],
             ts_closed=values["ts_closed"],
             duration_ns=values["duration_ns"],
@@ -956,7 +958,7 @@ cdef class PositionClosed(PositionEvent):
     def create(
         Position position,
         OrderFilled fill,
-        UUID event_id,
+        UUID4 event_id,
         int64_t ts_init,
     ):
         """
@@ -968,7 +970,7 @@ cdef class PositionClosed(PositionEvent):
             The position for the event.
         fill : OrderFilled
             The order fill for the event.
-        event_id : UUID
+        event_id : UUID4
             The event ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.

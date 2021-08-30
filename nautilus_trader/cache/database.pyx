@@ -30,6 +30,8 @@ cdef class CacheDatabase:
     """
     The abstract base class for all cache databases.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -45,7 +47,7 @@ cdef class CacheDatabase:
         """
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
 
-        self._log.info("Initialized.")
+        self._log.info("INITIALIZED.")
 
     cpdef void flush(self) except *:
         """Abstract method (implement in subclass)."""

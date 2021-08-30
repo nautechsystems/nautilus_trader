@@ -18,7 +18,7 @@ import orjson
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.uuid cimport UUID
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
@@ -34,6 +34,8 @@ cdef class TradingCommand(Command):
     """
     The abstract base class for all trading related commands.
 
+    Warnings
+    --------
     This class should not be used directly, but through a concrete subclass.
     """
 
@@ -42,7 +44,7 @@ cdef class TradingCommand(Command):
         TraderId trader_id not None,
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
-        UUID command_id not None,
+        UUID4 command_id not None,
         int64_t ts_init,
     ):
         """
@@ -56,7 +58,7 @@ cdef class TradingCommand(Command):
             The strategy ID for the command.
         instrument_id : InstrumentId
             The instrument ID for the command.
-        command_id : UUID
+        command_id : UUID4
             The commands ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the command object was initialized.
@@ -84,7 +86,7 @@ cdef class SubmitOrder(TradingCommand):
         StrategyId strategy_id not None,
         PositionId position_id,  # Can be None
         Order order not None,
-        UUID command_id not None,
+        UUID4 command_id not None,
         int64_t ts_init,
     ):
         """
@@ -100,7 +102,7 @@ cdef class SubmitOrder(TradingCommand):
             The position ID for the command.
         order : Order
             The order to submit.
-        command_id : UUID
+        command_id : UUID4
             The commands ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the command object was initialized.
@@ -132,7 +134,7 @@ cdef class SubmitOrder(TradingCommand):
                 f"client_order_id={self.order.client_order_id.value}, "
                 f"position_id={self.position_id}, "
                 f"order={self.order.info()}, "
-                f"command_id={self.id}, "
+                f"command_id={self.id.value}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
@@ -145,7 +147,7 @@ cdef class SubmitOrder(TradingCommand):
             strategy_id=StrategyId(values["strategy_id"]),
             position_id=position_id,
             order=OrderUnpacker.unpack_c(orjson.loads(values["order"])),
-            command_id=UUID.from_str_c(values["command_id"]),
+            command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -206,7 +208,7 @@ cdef class SubmitBracketOrder(TradingCommand):
         TraderId trader_id not None,
         StrategyId strategy_id not None,
         BracketOrder bracket_order not None,
-        UUID command_id not None,
+        UUID4 command_id not None,
         int64_t ts_init,
     ):
         """
@@ -220,7 +222,7 @@ cdef class SubmitBracketOrder(TradingCommand):
             The strategy ID for the command.
         bracket_order : BracketOrder
             The bracket order to submit.
-        command_id : UUID
+        command_id : UUID4
             The command ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the command object was initialized.
@@ -253,7 +255,7 @@ cdef class SubmitBracketOrder(TradingCommand):
                 f"entry={self.bracket_order.entry.info()}, "
                 f"stop_loss={self.bracket_order.stop_loss.info()}, "
                 f"take_profit={self.bracket_order.take_profit.info()}, "
-                f"command_id={self.id}, "
+                f"command_id={self.id.value}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
@@ -268,7 +270,7 @@ cdef class SubmitBracketOrder(TradingCommand):
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             bracket_order=bracket_order,
-            command_id=UUID.from_str_c(values["command_id"]),
+            command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -335,7 +337,7 @@ cdef class UpdateOrder(TradingCommand):
         Quantity quantity,  # Can be None
         Price price,  # Can be None
         Price trigger,  # Can be None
-        UUID command_id not None,
+        UUID4 command_id not None,
         int64_t ts_init,
     ):
         """
@@ -359,7 +361,7 @@ cdef class UpdateOrder(TradingCommand):
             The price for the order update.
         trigger : Price, optional
             The trigger price for the order update.
-        command_id : UUID
+        command_id : UUID4
             The command ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the command object was initialized.
@@ -398,7 +400,7 @@ cdef class UpdateOrder(TradingCommand):
                 f"quantity={self.quantity.to_str()}, "
                 f"price={self.price}, "
                 f"trigger={self.trigger}, "
-                f"command_id={self.id}, "
+                f"command_id={self.id.value}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
@@ -416,7 +418,7 @@ cdef class UpdateOrder(TradingCommand):
             quantity=Quantity.from_str_c(q) if q is not None else None,
             price=Price.from_str_c(p) if p is not None else None,
             trigger=Price.from_str_c(t) if t is not None else None,
-            command_id=UUID.from_str_c(values["command_id"]),
+            command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
@@ -483,7 +485,7 @@ cdef class CancelOrder(TradingCommand):
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
-        UUID command_id not None,
+        UUID4 command_id not None,
         int64_t ts_init,
     ):
         """
@@ -501,7 +503,7 @@ cdef class CancelOrder(TradingCommand):
             The client order ID to cancel.
         venue_order_id : VenueOrderId
             The venue order ID to cancel.
-        command_id : UUID
+        command_id : UUID4
             The command ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the command object was initialized.
@@ -531,7 +533,7 @@ cdef class CancelOrder(TradingCommand):
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"venue_order_id={self.venue_order_id.value}, "
-                f"command_id={self.id}, "
+                f"command_id={self.id.value}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
@@ -543,7 +545,7 @@ cdef class CancelOrder(TradingCommand):
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
-            command_id=UUID.from_str_c(values["command_id"]),
+            command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
 

@@ -31,33 +31,24 @@ class TestAverageTrueRange:
         self.atr = AverageTrueRange(10)
 
     def test_name_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.atr.name == "AverageTrueRange"
 
     def test_str_repr_returns_expected_string(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert str(self.atr) == "AverageTrueRange(10, SIMPLE, True, 0.0)"
         assert repr(self.atr) == "AverageTrueRange(10, SIMPLE, True, 0.0)"
 
     def test_period(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.atr.period == 10
 
     def test_initialized_without_inputs_returns_false(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.atr.initialized is False
 
     def test_initialized_with_required_inputs_returns_true(self):
-        # Arrange
-        # Act
+        # Arrange, Act
         for _i in range(10):
             self.atr.update_raw(1.00000, 1.00000, 1.00000)
 
@@ -78,9 +69,7 @@ class TestAverageTrueRange:
         assert indicator.value == 2.999999999997449e-05
 
     def test_value_with_no_inputs_returns_zero(self):
-        # Arrange
-        # Act
-        # Assert
+        # Arrange, Act, Assert
         assert self.atr.value == 0.0
 
     def test_value_with_epsilon_input(self):
@@ -88,24 +77,21 @@ class TestAverageTrueRange:
         epsilon = sys.float_info.epsilon
         self.atr.update_raw(epsilon, epsilon, epsilon)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.atr.value == 0.0
 
     def test_value_with_one_ones_input(self):
         # Arrange
         self.atr.update_raw(1.00000, 1.00000, 1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.atr.value == 0.0
 
     def test_value_with_one_input(self):
         # Arrange
         self.atr.update_raw(1.00020, 1.00000, 1.00010)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.atr.value == pytest.approx(0.00020)
 
     def test_value_with_three_inputs(self):
@@ -114,8 +100,7 @@ class TestAverageTrueRange:
         self.atr.update_raw(1.00020, 1.00000, 1.00010)
         self.atr.update_raw(1.00020, 1.00000, 1.00010)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert self.atr.value == pytest.approx(0.00020)
 
     def test_value_with_close_on_high(self):
@@ -156,8 +141,7 @@ class TestAverageTrueRange:
         for _i in range(20):
             floored_atr.update_raw(1.00000, 1.00000, 1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert floored_atr.value == 5e-05
 
     def test_floor_with_exponentially_decreasing_high_inputs(self):
@@ -173,8 +157,7 @@ class TestAverageTrueRange:
             high -= (high - low) / 2
             floored_atr.update_raw(high, low, close)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert floored_atr.value == 5e-05
 
     def test_reset_successfully_returns_indicator_to_fresh_state(self):

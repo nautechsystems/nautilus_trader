@@ -26,16 +26,14 @@ class TestBollingerBands:
         # Arrange
         indicator = BollingerBands(20, 2.0)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert indicator.name == "BollingerBands"
 
     def test_str_repr_returns_expected_string(self):
         # Arrange
         indicator = BollingerBands(20, 2.0)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert str(indicator) == "BollingerBands(20, 2.0, SIMPLE)"
         assert repr(indicator) == "BollingerBands(20, 2.0, SIMPLE)"
 
@@ -43,8 +41,7 @@ class TestBollingerBands:
         # Arrange
         indicator = BollingerBands(20, 2.0)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert indicator.period == 20
         assert indicator.k == 2.0
         assert indicator.upper == 0
@@ -61,8 +58,7 @@ class TestBollingerBands:
         indicator.update_raw(1.00000, 1.00000, 1.00000)
         indicator.update_raw(1.00000, 1.00000, 1.00000)
 
-        # Act
-        # Assert
+        # Act, Assert
         assert indicator.initialized is True
 
     def test_handle_quote_tick_updates_indicator(self):
