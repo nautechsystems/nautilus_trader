@@ -10,6 +10,7 @@ repository = "https://github.com/nautechsystems/nautilus_trader"
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
 ]
@@ -23,7 +24,7 @@ include = [
 requires = [
     "setuptools",
     "poetry-core>=1.0.3",
-    "numpy>=1.21.1",
+    "numpy>=1.21.2",
     "Cython>=3.0.0a9",
 ]
 build-backend = "poetry.core.masonry.api"
