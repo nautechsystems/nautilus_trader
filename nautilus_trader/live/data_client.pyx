@@ -106,7 +106,7 @@ cdef class LiveDataClient(DataClient):
         logger : Logger
             The logger for the client.
         config : dict[str, object], optional
-            The configuration options.
+            The configuration for the instance.
 
         """
         super().__init__(
@@ -158,7 +158,7 @@ cdef class LiveMarketDataClient(MarketDataClient):
         logger : Logger
             The logger for the client.
         config : dict[str, object], optional
-            The configuration options.
+            The configuration for the instance.
 
         """
         super().__init__(

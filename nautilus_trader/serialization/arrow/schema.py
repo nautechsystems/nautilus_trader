@@ -42,6 +42,9 @@ from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.currency import CurrencySpot
+from nautilus_trader.model.instruments.equity import Equity
+from nautilus_trader.model.instruments.future import Future
+from nautilus_trader.model.instruments.option import Option
 from nautilus_trader.model.orderbook.data import OrderBookData
 
 
@@ -451,6 +454,50 @@ NAUTILUS_PARQUET_SCHEMA = {
             "maker_fee": pa.string(),
             "taker_fee": pa.string(),
             "info": pa.string(),
+            "ts_init": pa.int64(),
+            "ts_event": pa.int64(),
+        }
+    ),
+    Equity: pa.schema(
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "currency": pa.dictionary(pa.int8(), pa.string()),
+            "price_precision": pa.int64(),
+            "size_precision": pa.int64(),
+            "price_increment": pa.dictionary(pa.int8(), pa.string()),
+            "size_increment": pa.dictionary(pa.int8(), pa.string()),
+            "lot_size": pa.dictionary(pa.int8(), pa.string()),
+            "isin": pa.string(),
+            "margin_init": pa.string(),
+            "margin_maint": pa.string(),
+            "ts_init": pa.int64(),
+            "ts_event": pa.int64(),
+        }
+    ),
+    Future: pa.schema(
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "asset_class": pa.string(),
+            "currency": pa.dictionary(pa.int8(), pa.string()),
+            "price_precision": pa.int64(),
+            "size_precision": pa.int64(),
+            "price_increment": pa.dictionary(pa.int8(), pa.string()),
+            "size_increment": pa.dictionary(pa.int8(), pa.string()),
+            "lot_size": pa.dictionary(pa.int8(), pa.string()),
+            "ts_init": pa.int64(),
+            "ts_event": pa.int64(),
+        }
+    ),
+    Option: pa.schema(
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "asset_class": pa.string(),
+            "currency": pa.dictionary(pa.int8(), pa.string()),
+            "price_precision": pa.int64(),
+            "size_precision": pa.int64(),
+            "price_increment": pa.dictionary(pa.int8(), pa.string()),
+            "size_increment": pa.dictionary(pa.int8(), pa.string()),
+            "lot_size": pa.dictionary(pa.int8(), pa.string()),
             "ts_init": pa.int64(),
             "ts_event": pa.int64(),
         }

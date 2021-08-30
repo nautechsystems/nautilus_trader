@@ -134,7 +134,7 @@ class TestBitmexExecutionClient:
         # Assert
         assert self.client.is_connected
 
-        # Tear down
+        # Tear Down
         self.exec_engine.stop()
 
     @pytest.mark.asyncio

@@ -24,7 +24,7 @@ from tests.test_kit.stubs import TestStubs
 
 class TestMessageBus:
     def setup(self):
-        # Fixture setup
+        # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
         self.logger = Logger(self.clock)

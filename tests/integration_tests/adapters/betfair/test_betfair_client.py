@@ -31,6 +31,7 @@ pytestmark = pytest.mark.skipif(sys.version_info < (3, 8), reason="Mock client b
 
 class TestBetfairClient:
     def setup(self):
+        # Fixture Setup
         self.loop = asyncio.get_event_loop()
         self.clock = LiveClock()
         self.logger = LiveLogger(loop=self.loop, clock=self.clock)

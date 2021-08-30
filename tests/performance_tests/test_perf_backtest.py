@@ -50,8 +50,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     def test_run_with_empty_strategy(benchmark):
         def setup():
             # Arrange
-            config = BacktestEngineConfig()
-            config.bypass_logging = True
+            config = BacktestEngineConfig(bypass_logging=True)
             engine = BacktestEngine(config=config)
 
             engine.add_instrument(USDJPY_SIM)
@@ -90,8 +89,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_run_for_tick_processing(benchmark):
         def setup():
-            config = BacktestEngineConfig()
-            config.bypass_logging = True
+            config = BacktestEngineConfig(bypass_logging=True)
             engine = BacktestEngine(config=config)
 
             engine.add_instrument(USDJPY_SIM)
@@ -139,8 +137,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
     @staticmethod
     def test_run_with_ema_cross_strategy(benchmark):
         def setup():
-            config = BacktestEngineConfig()
-            config.bypass_logging = True
+            config = BacktestEngineConfig(bypass_logging=True)
             engine = BacktestEngine(config=config)
 
             engine.add_instrument(USDJPY_SIM)

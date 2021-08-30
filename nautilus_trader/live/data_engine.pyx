@@ -14,6 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Optional
+
+from pydantic import PositiveInt
+
+from nautilus_trader.data.engine import DataEngineConfig
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
@@ -30,6 +35,14 @@ from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
+class LiveDataEngineConfig(DataEngineConfig):
+    """
+    Provides configuration for ``LiveDataEngine`` instances.
+    """
+
+    qsize: PositiveInt = 10000
+
+
 cdef class LiveDataEngine(DataEngine):
     """
     Provides a high-performance asynchronous live data engine.
@@ -43,7 +56,7 @@ cdef class LiveDataEngine(DataEngine):
         Cache cache not None,
         LiveClock clock not None,
         Logger logger not None,
-        dict config=None,
+        config: Optional[LiveDataEngineConfig]=None,
     ):
         """
         Initialize a new instance of the ``LiveDataEngine`` class.
@@ -60,12 +73,18 @@ cdef class LiveDataEngine(DataEngine):
             The clock for the engine.
         logger : Logger
             The logger for the engine.
-        config : dict[str, object], optional
-            The configuration options.
+        config : LiveDataEngineConfig, optional
+            The configuration for the instance.
+
+        Raises
+        ------
+        TypeError
+            If config is not of type LiveExecEngineConfig.
 
         """
         if config is None:
-            config = {}
+            config = LiveDataEngineConfig()
+        Condition.type(config, LiveDataEngineConfig, "config")
         super().__init__(
             msgbus=msgbus,
             cache=cache,
@@ -75,8 +94,8 @@ cdef class LiveDataEngine(DataEngine):
         )
 
         self._loop = loop
-        self._data_queue = Queue(maxsize=config.get("qsize", 10000))
-        self._message_queue = Queue(maxsize=config.get("qsize", 10000))
+        self._data_queue = Queue(maxsize=config.qsize)
+        self._message_queue = Queue(maxsize=config.qsize)
 
         self._run_queues_task = None
         self.is_running = False

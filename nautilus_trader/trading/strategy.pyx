@@ -24,7 +24,9 @@ attempts to operate without a managing `Trader` instance.
 
 """
 
-from pydantic import BaseModel
+from typing import Optional
+
+import pydantic
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
@@ -78,7 +80,7 @@ cdef tuple _WARNING_EVENTS = (
 )
 
 
-class TradingStrategyConfig(BaseModel):
+class TradingStrategyConfig(pydantic.BaseModel):
     """
     The base model for all trading strategy configurations.
 
@@ -98,28 +100,27 @@ cdef class TradingStrategy(Actor):
     """
     The abstract base class for all trading strategies.
 
-    Strategy OMS (Order Management System):
-    An individual trading strategy can configure its own order management system
-    type which determines how positions are handled by the `ExecutionEngine`.
+    A trading strategy can configure its own order management system type, which
+    determines how positions are handled by the `ExecutionEngine`.
 
-    - ``HEDGING``: A position ID will be assigned for each new position which
-      is opened per instrument.
-
-    - ``NETTING``: There will only ever be a single position for the strategy
-      per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
+    Strategy OMS (Order Management System) types:
+     - ``HEDGING``: A position ID will be assigned for each new position which
+       is opened per instrument.
+     - ``NETTING``: There will only ever be a single position for the strategy
+       per instrument. The position ID will be `{instrument_id}-{strategy_id}`.
 
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, config not None: TradingStrategyConfig=TradingStrategyConfig()):
+    def __init__(self, config: Optional[TradingStrategyConfig]=None):
         """
         Initialize a new instance of the ``TradingStrategy`` class.
 
         Parameters
         ----------
-        config : TradingStrategyConfig
+        config : TradingStrategyConfig, optional
             The trading strategy configuration.
 
         Raises
@@ -128,6 +129,8 @@ cdef class TradingStrategy(Actor):
             If config is not of type TradingStrategyConfig.
 
         """
+        if config is None:
+            config = TradingStrategyConfig()
         Condition.type(config, TradingStrategyConfig, "config")
 
         self.oms_type = config.oms_type

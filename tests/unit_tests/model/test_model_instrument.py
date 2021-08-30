@@ -38,6 +38,9 @@ XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSDT_BINANCE_INSTRUMENT = TestDataProvider.binance_btcusdt_instrument()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
+AAPL_EQUITY = TestInstrumentProvider.aapl_equity()
+ES_FUTURE = TestInstrumentProvider.es_future()
+AAPL_OPTION = TestInstrumentProvider.aapl_option()
 
 
 class TestInstrument:

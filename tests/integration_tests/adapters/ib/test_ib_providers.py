@@ -16,6 +16,8 @@
 import pickle
 from unittest.mock import MagicMock
 
+import pytest
+
 from nautilus_trader.adapters.ib.providers import IBInstrumentProvider
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
@@ -29,6 +31,7 @@ from tests import TESTS_PACKAGE_ROOT
 TEST_PATH = TESTS_PACKAGE_ROOT + "/integration_tests/adapters/ib/responses/"
 
 
+@pytest.mark.skip(reason="bm to fix")
 class TestIBInstrumentProvider:
     def test_load_futures_contract_instrument(self):
         # Arrange

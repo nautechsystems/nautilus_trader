@@ -146,7 +146,7 @@ class TestCCXTDataClient:
         # Assert
         assert self.client.is_connected
 
-        # Tear down
+        # Tear Down
         self.data_engine.stop()
         await self.data_engine.get_run_queue_task()
 

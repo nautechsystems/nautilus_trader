@@ -65,6 +65,7 @@ def _reset():
 @pytest.mark.skipif(sys.platform == "win32", reason="does not run on windows")
 class TestParquetSerializer:
     def setup(self):
+        # Fixture Setup
         _reset()
         self.catalog = DataCatalog(path="/root", fs_protocol="memory")
         self.order_factory = OrderFactory(

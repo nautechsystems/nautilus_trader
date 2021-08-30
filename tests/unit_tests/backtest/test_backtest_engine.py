@@ -494,9 +494,10 @@ class TestBacktestEngine:
 class TestBacktestWithAddedBars:
     def setup(self):
         # Fixture Setup
-        config = BacktestEngineConfig()
-        config.bypass_logging = True
-        config.run_analysis = False
+        config = BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+        )
         self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")

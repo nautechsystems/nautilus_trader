@@ -50,8 +50,6 @@ cdef class RiskEngine(Component):
     cdef readonly int event_count
     """The total count of events received by the engine.\n\n:returns: `int`"""
 
-    cdef void _initialize_risk_checks(self, dict config) except *
-
 # -- COMMANDS --------------------------------------------------------------------------------------
 
     cpdef void execute(self, Command command) except *
