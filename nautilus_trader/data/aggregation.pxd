@@ -36,8 +36,6 @@ cdef class BarBuilder:
     """The price precision for the builders instrument.\n\n:returns: `uint8`"""
     cdef readonly uint8_t size_precision
     """The size precision for the builders instrument.\n\n:returns: `uint8`"""
-    cdef readonly bint use_previous_close
-    """If the builder is using the previous close for aggregation.\n\n:returns: `bool`"""
     cdef readonly bint initialized
     """If the builder is initialized.\n\n:returns: `bool`"""
     cdef readonly int64_t ts_last

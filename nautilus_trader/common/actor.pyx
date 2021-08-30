@@ -114,7 +114,7 @@ cdef class Actor(Component):
         --------
         System method (not intended to be called by user code).
 
-        Should be overridden in the implementation.
+        Should be overridden in the actor implementation.
 
         """
         # Should override in subclass
@@ -131,7 +131,7 @@ cdef class Actor(Component):
         --------
         System method (not intended to be called by user code).
 
-        Should be overridden in the implementation.
+        Should be overridden in the actor implementation.
 
         """
         # Should override in subclass
@@ -156,7 +156,7 @@ cdef class Actor(Component):
         --------
         System method (not intended to be called by user code).
 
-        Should be overridden in the strategy implementation.
+        Should be overridden in the actor implementation.
 
         """
         # Should override in subclass
@@ -172,7 +172,7 @@ cdef class Actor(Component):
         --------
         System method (not intended to be called by user code).
 
-        Should be overridden in the strategy implementation.
+        Should be overridden in the actor implementation.
 
         """
         # Should override in subclass
@@ -186,7 +186,7 @@ cdef class Actor(Component):
         --------
         System method (not intended to be called by user code).
 
-        Should be overridden in the strategy implementation.
+        Should be overridden in the actor implementation.
 
         """
         # Should override in subclass
@@ -196,13 +196,13 @@ cdef class Actor(Component):
         """
         Actions to be performed on fault.
 
-        Cleanup any resources used by the strategy here.
+        Cleanup any resources used by the actor here.
 
         Warnings
         --------
         System method (not intended to be called by user code).
 
-        Should be overridden in the strategy implementation.
+        Should be overridden in the actor implementation.
 
         """
         # Should override in subclass
@@ -418,15 +418,15 @@ cdef class Actor(Component):
         Parameters
         ----------
         trader_id : TraderId
-            The trader ID for the strategy.
+            The trader ID for the actor.
         msgbus : MessageBus
-            The message bus for the strategy.
+            The message bus for the actor.
         cache : CacheFacade
-            The read-only cache for the strategy.
+            The read-only cache for the actor.
         clock : Clock
-            The clock for the strategy.
+            The clock for the actor.
         logger : Logger
-            The logger for the strategy.
+            The logger for the actor.
 
         Warnings
         --------

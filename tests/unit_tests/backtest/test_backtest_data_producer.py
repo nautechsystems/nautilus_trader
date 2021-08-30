@@ -37,6 +37,7 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 class TestBacktestDataProducer:
     def setup(self):
+        # Fixture Setup
         self.logger = Logger(clock=TestClock())
 
     def test_producer_when_data_not_setup(self):

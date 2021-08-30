@@ -17,6 +17,7 @@ from libc.stdint cimport int64_t
 
 from decimal import Decimal
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.asset_type cimport AssetType
 from nautilus_trader.model.currency cimport Currency
@@ -37,16 +38,9 @@ cdef class Equity(Instrument):
         Currency currency not None,
         int price_precision,
         Price price_increment not None,
-        Quantity multiplier,
+        Quantity multiplier not None,
         Quantity lot_size not None,
-        int contract_id,
-        str local_symbol not None,
-        str trading_class not None,
-        str market_name not None,
-        str long_name not None,
-        str time_zone_id not None,
-        str trading_hours not None,
-        str last_trade_time not None,
+        str isin,  # can be None
         int64_t ts_event,
         int64_t ts_init,
     ):
@@ -67,10 +61,12 @@ cdef class Equity(Instrument):
             The contract value multiplier (determines tick value).
         lot_size : Quantity
             The rounded lot unit size (standard/board).
+        isin : str
+            The International Securities Identification Number (ISIN).
         ts_event: int64
-            The UNIX timestamp (nanoseconds) when the instrument update occurred.
+            The UNIX timestamp (nanoseconds) when the data event occurred.
         ts_init: int64
-            The UNIX timestamp (nanoseconds) when the instrument object was initialized.
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Raises
         ------
@@ -110,15 +106,42 @@ cdef class Equity(Instrument):
             ts_init=ts_init,
             info={},
         )
+        self.isin = isin
 
-        self.contract_id = contract_id
-        self.local_symbol = local_symbol
-        self.trading_class = trading_class
-        self.market_name = market_name
-        self.long_name = long_name
-        self.time_zone_id = time_zone_id
-        self.trading_hours = trading_hours
-        self.last_trade_time = last_trade_time
+    @staticmethod
+    cdef Equity from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return Equity(
+            instrument_id=InstrumentId.from_str_c(values["id"]),
+            currency=Currency.from_str_c(values['currency']),
+            price_precision=values['price_precision'],
+            price_increment=Price.from_str(values['price_increment']),
+            multiplier=Quantity.from_str(values['multiplier']),
+            lot_size=Quantity.from_str(values['lot_size']),
+            isin=values['isin'],
+            ts_event=values['ts_event'],
+            ts_init=values['ts_init'],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(Equity obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "Equity",
+            "id": obj.id.value,
+            "currency": obj.quote_currency.code,
+            "price_precision": obj.price_precision,
+            "price_increment": str(obj.price_increment),
+            "size_precision": obj.size_precision,
+            "size_increment": str(obj.size_increment),
+            "multiplier": str(obj.multiplier),
+            "lot_size": str(obj.lot_size),
+            "isin": obj.isin,
+            "margin_init": str(obj.margin_init),
+            "margin_maint": str(obj.margin_maint),
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
+        }
 
     @staticmethod
     def from_dict(dict values) -> Instrument:
@@ -147,4 +170,4 @@ cdef class Equity(Instrument):
         dict[str, object]
 
         """
-        return Instrument.to_dict_c(obj)
+        return Instrument.to_d1ict_c(obj)

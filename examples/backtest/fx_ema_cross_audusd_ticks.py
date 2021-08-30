@@ -44,9 +44,10 @@ from tests.test_kit.providers import TestInstrumentProvider
 
 if __name__ == "__main__":
     # Configure backtest engine
-    config = BacktestEngineConfig()
-    config.use_data_cache = True  # Pre-cache data for increased performance on repeated runs
-
+    config = BacktestEngineConfig(
+        trader_id="BACKTESTER-001",
+        use_data_cache=True,  # Pre-cache data for increased performance on repeated runs
+    )
     # Build the backtest engine
     engine = BacktestEngine(config=config)
 

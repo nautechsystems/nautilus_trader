@@ -25,6 +25,7 @@ from nautilus_trader.data.messages import DataRequest
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import Subscribe
 from nautilus_trader.live.data_engine import LiveDataEngine
+from nautilus_trader.live.data_engine import LiveDataEngineConfig
 from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
@@ -104,7 +105,7 @@ class TestLiveDataEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveDataEngineConfig(qsize=1),
         )
 
         subscribe = Subscribe(
@@ -135,7 +136,7 @@ class TestLiveDataEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveDataEngineConfig(qsize=1),
         )
 
         handler = []
@@ -176,7 +177,7 @@ class TestLiveDataEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveDataEngineConfig(qsize=1),
         )
 
         response = DataResponse(
@@ -209,7 +210,7 @@ class TestLiveDataEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"qsize": 1},
+            config=LiveDataEngineConfig(qsize=1),
         )
 
         data = Data(1_000_000_000, 1_000_000_000)

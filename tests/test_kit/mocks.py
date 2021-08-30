@@ -37,7 +37,6 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
@@ -110,9 +109,8 @@ class MockActor(Actor):
         """
         Initialize a new instance of the ``MockActor`` class.
 
-
         """
-        super().__init__(component_id=ComponentId("Actor-000"))
+        super().__init__()
 
         self.object_storer = ObjectStorer()
 
@@ -288,7 +286,7 @@ class KaboomActor(Actor):
         """
         Initialize a new instance of the ``KaboomActor`` class.
         """
-        super().__init__(component_id=ComponentId("Actor-000"))
+        super().__init__()
 
         self._explode_on_start = True
         self._explode_on_stop = True

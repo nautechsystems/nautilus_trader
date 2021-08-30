@@ -14,9 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Dict, Optional
 
 import pandas as pd
-from cpython.datetime cimport timedelta
+import pydantic
+
 from libc.stdint cimport int64_t
 
 from nautilus_trader.cache.base cimport CacheFacade
@@ -44,7 +46,6 @@ from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.events.order cimport OrderDenied
-from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -58,6 +59,23 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
+class RiskEngineConfig(pydantic.BaseModel):
+    """
+    Provides configuration for ``RiskEngine`` instances.
+
+    bypass : bool
+        If True then all risk checks are bypassed (will still check for duplicate IDs).
+    max_order_rate : str, default=100/00:00:01
+        The maximum order rate per timedelta.
+    max_notional_per_order : Dict[str, Decimal]
+        The maximum notional value of an order per instrument ID.
+    """
+
+    bypass: bool = False
+    max_order_rate: pydantic.ConstrainedStr = "100/00:00:01"
+    max_notional_per_order: Dict[str, Decimal] = {}
+
+
 cdef class RiskEngine(Component):
     """
     Provides a high-performance risk engine.
@@ -66,16 +84,10 @@ cdef class RiskEngine(Component):
     within the platform. This includes both pre-trade risk checks and post-trade
     risk monitoring.
 
-    Configuration options:
-    - bypass: If True then all risk checks are bypassed (will still check for duplicate IDs).
-    - max_order_rate: tuple(int, timedelta), default=10/00:00:01.
-    - max_notional_per_order: { str: Decimal }, default = {}.
-
-    Possible trading states;
-    - ``ACTIVE`` (trading is enabled).
-    - ``REDUCING`` (only new orders or updates which reduce an open position are allowed).
-    - ``HALTED`` (all trading commands except cancels are denied).
-
+    Possible trading states:
+     - ``ACTIVE`` (trading is enabled).
+     - ``REDUCING`` (only new orders or updates which reduce an open position are allowed).
+     - ``HALTED`` (all trading commands except cancels are denied).
     """
 
     def __init__(
@@ -85,7 +97,7 @@ cdef class RiskEngine(Component):
         CacheFacade cache not None,
         Clock clock not None,
         Logger logger not None,
-        dict config=None,
+        config: Optional[RiskEngineConfig]=None,
     ):
         """
         Initialize a new instance of the ``RiskEngine`` class.
@@ -102,25 +114,30 @@ cdef class RiskEngine(Component):
             The clock for the engine.
         logger : Logger
             The logger for the engine.
-        config : dict[str, object], optional
-            The configuration options.
+        config : RiskEngineConfig, optional
+            The configuration for the instance.
+
+        Raises
+        ------
+        TypeError
+            If config is not of type RiskEngineConfig.
 
         """
         if config is None:
-            config = {}
+            config = RiskEngineConfig()
+        Condition.type(config, RiskEngineConfig, "config")
         super().__init__(
             clock=clock,
             logger=logger,
-            component_id=ComponentId("RiskEngine"),
             msgbus=msgbus,
-            config=config,
+            config=config.dict(),
         )
 
         self._portfolio = portfolio
         self._cache = cache
 
         self.trading_state = TradingState.ACTIVE  # Start active by default
-        self.is_bypassed = config.get("bypass", False)
+        self.is_bypassed = config.bypass
         self._log_state()
 
         # Counters
@@ -128,15 +145,9 @@ cdef class RiskEngine(Component):
         self.event_count = 0
 
         # Throttlers
-        config_max_order_rate = config.get("max_order_rate")
-        if config_max_order_rate is None:
-            order_rate_limit = 100
-            order_rate_interval = timedelta(seconds=1)
-        else:
-            pieces = config_max_order_rate.split("/")
-            order_rate_limit = int(pieces[0])
-            order_rate_interval = pd.to_timedelta(pieces[1])
-
+        pieces = config.max_order_rate.split("/")
+        order_rate_limit = int(pieces[0])
+        order_rate_interval = pd.to_timedelta(pieces[1])
         self._order_throttler = Throttler(
             name="ORDER_RATE",
             limit=order_rate_limit,
@@ -166,8 +177,8 @@ cdef class RiskEngine(Component):
         self._msgbus.subscribe(topic="events.order*", handler=self._handle_event, priority=10)
         self._msgbus.subscribe(topic="events.position*", handler=self._handle_event, priority=10)
 
-    cdef void _initialize_risk_checks(self, dict config) except *:
-        cdef dict max_notional_config = config.get("max_notional_per_order", {})
+    def _initialize_risk_checks(self, config: RiskEngineConfig):
+        cdef dict max_notional_config = config.max_notional_per_order
         for instrument_id, value in max_notional_config.items():
             self.set_max_notional_per_order(InstrumentId.from_str_c(instrument_id), value)
 

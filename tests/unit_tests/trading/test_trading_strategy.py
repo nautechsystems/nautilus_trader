@@ -95,7 +95,6 @@ class TestTradingStrategy:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config={"use_previous_close": False},  # To correctly reproduce historical data bars
         )
 
         self.exec_engine = ExecutionEngine(

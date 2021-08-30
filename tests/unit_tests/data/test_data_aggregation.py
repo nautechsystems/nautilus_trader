@@ -55,10 +55,9 @@ class TestBarBuilder:
     def test_instantiate(self):
         # Arrange
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
-        builder = BarBuilder(BTCUSDT_BINANCE, bar_type, use_previous_close=False)
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         # Act, Assert
-        assert not builder.use_previous_close
         assert not builder.initialized
         assert builder.ts_last == 0
         assert builder.count == 0
@@ -66,7 +65,7 @@ class TestBarBuilder:
     def test_str_repr(self):
         # Arrange
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
-        builder = BarBuilder(BTCUSDT_BINANCE, bar_type, use_previous_close=False)
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         # Act, Assert
         assert (
@@ -81,7 +80,7 @@ class TestBarBuilder:
     def test_set_partial_updates_bar_to_expected_properties(self):
         # Arrange
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
-        builder = BarBuilder(BTCUSDT_BINANCE, bar_type, use_previous_close=True)
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         partial_bar = Bar(
             bar_type=bar_type,
@@ -111,7 +110,7 @@ class TestBarBuilder:
     def test_set_partial_when_already_set_does_not_update(self):
         # Arrange
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
-        builder = BarBuilder(BTCUSDT_BINANCE, bar_type, use_previous_close=True)
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         partial_bar1 = Bar(
             bar_type=bar_type,
@@ -153,7 +152,7 @@ class TestBarBuilder:
     def test_single_update_results_in_expected_properties(self):
         # Arrange
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
-        builder = BarBuilder(BTCUSDT_BINANCE, bar_type, use_previous_close=True)
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         # Act
         builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 0)
@@ -166,7 +165,7 @@ class TestBarBuilder:
     def test_single_update_when_timestamp_less_than_last_update_ignores(self):
         # Arrange
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
-        builder = BarBuilder(BTCUSDT_BINANCE, bar_type, use_previous_close=True)
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
         builder.update(Price.from_str("1.00000"), Quantity.from_str("1"), 1_000)
 
         # Act
@@ -180,7 +179,7 @@ class TestBarBuilder:
     def test_multiple_updates_correctly_increments_count(self):
         # Arrange
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
-        builder = BarBuilder(BTCUSDT_BINANCE, bar_type, use_previous_close=True)
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         # Act
         builder.update(Price.from_str("1.00000"), Quantity.from_int(1), 1_000)
@@ -195,7 +194,7 @@ class TestBarBuilder:
     def test_build_when_no_updates_raises_exception(self):
         # Arrange
         bar_type = TestStubs.bartype_audusd_1min_bid()
-        builder = BarBuilder(AUDUSD_SIM, bar_type, use_previous_close=False)
+        builder = BarBuilder(AUDUSD_SIM, bar_type)
 
         # Act, Assert
         with pytest.raises(TypeError):
@@ -204,7 +203,7 @@ class TestBarBuilder:
     def test_build_when_received_updates_returns_expected_bar(self):
         # Arrange
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
-        builder = BarBuilder(BTCUSDT_BINANCE, bar_type, use_previous_close=True)
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         builder.update(Price.from_str("1.00001"), Quantity.from_str("1.0"), 0)
         builder.update(Price.from_str("1.00002"), Quantity.from_str("1.5"), 0)
@@ -230,7 +229,7 @@ class TestBarBuilder:
     def test_build_with_previous_close(self):
         # Arrange
         bar_type = TestStubs.bartype_btcusdt_binance_100tick_last()
-        builder = BarBuilder(BTCUSDT_BINANCE, bar_type, use_previous_close=True)
+        builder = BarBuilder(BTCUSDT_BINANCE, bar_type)
 
         builder.update(Price.from_str("1.00001"), Quantity.from_str("1.0"), 0)
         builder.build_now()  # This close should become the next open
@@ -453,7 +452,7 @@ class TestTickBarAggregator:
         # Assert
         last_bar = bar_store.get_store()[-1]
         assert len(bar_store.get_store()) == 10
-        assert last_bar.open == Price.from_str("0.670340")
+        assert last_bar.open == Price.from_str("0.670335")
         assert last_bar.high == Price.from_str("0.670345")
         assert last_bar.low == Price.from_str("0.670225")
         assert last_bar.close == Price.from_str("0.670230")
@@ -488,7 +487,7 @@ class TestTickBarAggregator:
         # Assert
         last_bar = bar_store.get_store()[-1]
         assert len(bar_store.get_store()) == 10
-        assert last_bar.open == Price.from_str("424.69")
+        assert last_bar.open == Price.from_str("424.70")
         assert last_bar.high == Price.from_str("425.25")
         assert last_bar.low == Price.from_str("424.51")
         assert last_bar.close == Price.from_str("425.15")
@@ -833,7 +832,7 @@ class TestVolumeBarAggregator:
         # Assert
         last_bar = bar_store.get_store()[-1]
         assert len(bar_store.get_store()) == 10
-        assert last_bar.open == Price.from_str("0.670650")
+        assert last_bar.open == Price.from_str("0.670635")
         assert last_bar.high == Price.from_str("0.670705")
         assert last_bar.low == Price.from_str("0.670370")
         assert last_bar.close == Price.from_str("0.670655")
@@ -1145,7 +1144,6 @@ class TestTimeBarAggregator:
                 instrument,
                 bar_type,
                 handler,
-                True,
                 clock,
                 Logger(clock),
             )
@@ -1184,7 +1182,6 @@ class TestTimeBarAggregator:
             AUDUSD_SIM,
             bar_type,
             handler,
-            True,
             clock,
             Logger(clock),
         )
@@ -1204,7 +1201,6 @@ class TestTimeBarAggregator:
             AUDUSD_SIM,
             bar_type,
             handler,
-            True,
             TestClock(),
             Logger(clock),
         )
