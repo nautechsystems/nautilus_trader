@@ -94,33 +94,31 @@ class BacktestEngineConfig(pydantic.BaseModel):
     """
     Provides configuration for ``BacktestEngine`` instances.
 
-    trader_id : TraderId, optional
+    trader_id : str, default="BACKTESTER-000"
         The trader ID.
-    config_cache : CacheConfig
-        The configuration for the cache.
-    config_data : DataEngineConfig
-        The configuration for the data engine.
-    config_risk : RiskEngineConfig
-        The configuration for the risk engine.
-    config_exec : ExecEngineConfig
-        The configuration for the execution engine.
-    cache_db_type : str {'in-memory', 'redis'}
-        The type for the cache.
-    cache_db_flush : bool, optional
-        If the cache should be flushed on each run.
-    use_data_cache : bool, optional
-        If use cache for DataProducer (increased performance with repeated backtests on same data).
-    bypass_logging : bool, optional
-        If logging should be bypassed.
-    run_analysis : bool
-        If post backtest performance analysis should be run.
-    level_stdout : int, optional
+    log_level : str, default="INFO"
         The minimum log level for logging messages to stdout.
+    cache : Optional[CacheConfig]
+        The configuration for the cache.
+    cache_database : Optional[CacheDatabaseConfig]
+        The configuration for the cache database.
+    data_engine : Optional[DataEngineConfig]
+        The configuration for the data engine.
+    risk_engine : Optional[RiskEngineConfig]
+        The configuration for the risk engine.
+    exec_engine : Optional[ExecEngineConfig]
+        The configuration for the execution engine.
+    use_data_cache : bool, default=False
+        If use cache for DataProducer (increased performance with repeated backtests on same data).
+    bypass_logging : bool, default=False
+        If logging should be bypassed.
+    run_analysis : bool, default=True
+        If post backtest performance analysis should be run.
     """
 
     trader_id: str = "BACKTESTER-000"
-    log_level: str = "INF"
-    cache: CacheConfig = None
+    log_level: str = "INFO"
+    cache: Optional[CacheConfig] = None
     cache_database: Optional[CacheDatabaseConfig] = None
     data_engine: Optional[DataEngineConfig] = None
     risk_engine: Optional[RiskEngineConfig] = None
