@@ -37,7 +37,9 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.bar import BarSpecification
+from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import Venue
@@ -51,6 +53,7 @@ from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACross
+from tests.test_kit.strategies import EMACrossConfig
 from tests.test_kit.stubs import TestStubs
 
 
@@ -307,7 +310,7 @@ def test_build_graph_shared_nodes(backtest_configs):
     assert result == expected
 
 
-@pytest.mark.skip(reason="bm to fix")
+@pytest.mark.skip("bm to fix")
 def test_backtest_against_example(catalog):
     # Replicate examples/fx_ema_cross_audusd_ticks.py backtest result
 
@@ -344,9 +347,15 @@ def test_backtest_against_example(catalog):
         strategies=[
             (
                 EMACross,
-                dict(
-                    instrument_id=AUDUSD.id,
-                    bar_spec=BarSpecification(100, BarAggregation.TICK, PriceType.MID),
+                EMACrossConfig(
+                    instrument_id=AUDUSD.id.value,
+                    bar_type=str(
+                        BarType(
+                            instrument_id=AUDUSD.id,
+                            bar_spec=BarSpecification(100, BarAggregation.TICK, PriceType.MID),
+                            aggregation_source=AggregationSource.EXTERNAL,
+                        )
+                    ),
                     fast_ema=10,
                     slow_ema=20,
                     trade_size=Decimal(1_000_000),
@@ -366,14 +375,14 @@ def test_backtest_against_example(catalog):
     assert account_result == expected
 
 
-@pytest.mark.skip(reason="bm to fix")
+@pytest.mark.skip("bm to fix")
 def test_backtest_run_sync(backtest_configs, catalog):
     tasks = build_graph(backtest_configs)
     result = tasks.compute()
     assert len(result) == 2
 
 
-@pytest.mark.skip(reason="bm to fix")
+@pytest.mark.skip("bm to fix")
 def test_backtest_run_distributed(backtest_configs, catalog):
     from distributed import Client
 

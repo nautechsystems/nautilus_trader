@@ -241,24 +241,24 @@ class TestParquetSerializer:
         assert deserialized == [book]
         write_chunk(catalog=self.catalog, chunk=[book])
 
-    @pytest.mark.skip(reason="bm to fix")
     def test_serialize_and_deserialize_component_state_changed(self):
         event = TestStubs.event_component_state_changed()
 
         serialized = ParquetSerializer.serialize(event)
-        [deserialized] = ParquetSerializer.deserialize(cls=ComponentStateChanged, chunk=serialized)
+        [deserialized] = ParquetSerializer.deserialize(
+            cls=ComponentStateChanged, chunk=[serialized]
+        )
 
         # Assert
         assert deserialized == event
 
         write_chunk(catalog=self.catalog, chunk=[event])
 
-    @pytest.mark.skip(reason="bm to fix")
     def test_serialize_and_deserialize_trading_state_changed(self):
         event = TestStubs.event_trading_state_changed()
 
         serialized = ParquetSerializer.serialize(event)
-        [deserialized] = ParquetSerializer.deserialize(cls=TradingStateChanged, chunk=serialized)
+        [deserialized] = ParquetSerializer.deserialize(cls=TradingStateChanged, chunk=[serialized])
 
         # Assert
         assert deserialized == event
@@ -433,4 +433,24 @@ class TestParquetSerializer:
         # assert deserialized == [event]
         write_chunk(catalog=self.catalog, chunk=[event])
         df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
+        assert len(df) == 1
+
+    @pytest.mark.parametrize(
+        "instrument",
+        [
+            TestInstrumentProvider.btcusdt_binance(),
+            TestInstrumentProvider.aapl_equity(),
+            TestInstrumentProvider.es_future(),
+            TestInstrumentProvider.aapl_option(),
+        ],
+    )
+    def test_serialize_and_deserialize_instruments(self, instrument):
+        serialized = ParquetSerializer.serialize(instrument)
+        assert serialized
+        deserialized = ParquetSerializer.deserialize(cls=type(instrument), chunk=[serialized])
+
+        # Assert
+        assert deserialized == [instrument]
+        write_chunk(catalog=self.catalog, chunk=[instrument])
+        df = self.catalog.instruments()
         assert len(df) == 1
