@@ -15,16 +15,12 @@
 
 import inspect
 import logging
-import sys
 from io import BytesIO
 from typing import Any, Callable, Dict, Generator, List, Optional, Union
 
 import pandas as pd
 
 from nautilus_trader.common.providers import InstrumentProvider
-
-
-PY37 = sys.version_info < (3, 8)
 
 
 class LinePreprocessor:
@@ -110,6 +106,9 @@ class Reader:
             if new_instruments:
                 return list(new_instruments)
 
+    def on_file_complete(self):
+        self.buffer = b""
+
     def parse(self, block: bytes) -> Generator:
         raise NotImplementedError
 
@@ -136,8 +135,7 @@ class ByteReader(Reader):
             instrument_provider_update=instrument_provider_update,
             instrument_provider=instrument_provider,
         )
-        if not PY37:
-            assert inspect.isgeneratorfunction(block_parser)
+        assert inspect.isgeneratorfunction(block_parser)
         self.parser = block_parser
 
     def parse(self, block: bytes) -> Generator:
@@ -267,6 +265,10 @@ class CSVReader(Reader):
                 self.instrument_provider_update(self.instrument_provider, chunk)
             yield from self.block_parser(chunk)
 
+    def on_file_complete(self):
+        self.header = None
+        self.buffer = b""
+
 
 class ParquetReader(ByteReader):
     """
@@ -294,7 +296,6 @@ class ParquetReader(ByteReader):
             instrument_provider=instrument_provider,
         )
         self.parser = parser
-        self.filename = None
 
     def parse(self, block: bytes) -> Generator:
         self.buffer += block

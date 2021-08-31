@@ -145,6 +145,7 @@ class BacktestConfig(Partialable):
     venues: Optional[List[BacktestVenueConfig]] = None
     instruments: Optional[List[Instrument]] = None
     data_config: Optional[List[BacktestDataConfig]] = None
+    engine_config: Optional[BacktestEngineConfig] = None
     strategies: Optional[List[Tuple[type, dict]]] = None
     name: Optional[str] = None
     # data_catalog_path: Optional[str] = None

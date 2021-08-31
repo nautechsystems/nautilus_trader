@@ -26,6 +26,8 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
+from nautilus_trader.model.c_enums.asset_class import AssetClassParser
+
 
 cdef class Equity(Instrument):
     """
@@ -113,6 +115,7 @@ cdef class Equity(Instrument):
         Condition.not_none(values, "values")
         return Equity(
             instrument_id=InstrumentId.from_str_c(values["id"]),
+            asset_class=AssetClassParser.from_str(values["asset_class"]),
             currency=Currency.from_str_c(values['currency']),
             price_precision=values['price_precision'],
             price_increment=Price.from_str(values['price_increment']),

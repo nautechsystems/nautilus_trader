@@ -126,7 +126,6 @@ class TestPersistenceCore:
         assert result1.open_file.compression == "bz2"
 
     @patch("nautilus_trader.persistence.external.core.tqdm", spec=True)
-    @pytest.mark.skip(reason="Awaiting fsspec tqdm callback implementation")
     def test_raw_file_progress(self, mock_progress):
         # Arrange
         raw_file = RawFile(

@@ -88,6 +88,7 @@ def process_raw_file(catalog: DataCatalog, raw_file: RawFile, reader: Reader):
         dicts = split_and_serialize(objs)
         dataframes = dicts_to_dataframes(dicts)
         n_rows += write_tables(catalog=catalog, tables=dataframes)
+    reader.on_file_complete()
     return n_rows
 
 
@@ -103,7 +104,6 @@ def process_files(
     assert scheduler == "sync" or str(scheduler.__module__) == "distributed.client"
     raw_files = make_raw_files(
         glob_path=glob_path,
-        reader=reader,
         block_size=block_size,
         compression=compression,
         **kw,
