@@ -245,7 +245,10 @@ class CSVReader(Reader):
             self.header = header.decode().split(",")
 
         self.buffer += block
-        process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
+        if b"\n" in block:
+            process, self.buffer = self.buffer.rsplit(b"\n", maxsplit=1)
+        else:
+            process, self.buffer = block, b""
 
         # Prepare - a little gross but allows a lot of flexibility
         if self.as_dataframe:
