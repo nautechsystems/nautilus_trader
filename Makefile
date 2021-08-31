@@ -21,7 +21,6 @@ clean:
 	find . -name '*.pyc' -exec rm {} +
 	find . -name '*.pyo' -exec rm {} +
 	find . -name '*.so' -exec rm {} +
-	find . -name '*.c' -not -path ".nautilus_trader/msgbus/*" -exec rm {} +
 	find . -name '*.o' -exec rm {} +
 	rm -f coverage.xml
 	rm -f dump.rdb
