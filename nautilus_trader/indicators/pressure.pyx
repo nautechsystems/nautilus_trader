@@ -13,14 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.data.bar cimport Bar
-
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.atr cimport AverageTrueRange
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.data.bar cimport Bar
 
 
 cdef class Pressure(Indicator):
