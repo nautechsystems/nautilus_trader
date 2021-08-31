@@ -97,6 +97,7 @@ def betfair_server():
         yield server
 
 
+@pytest.mark.skip(reason="flaky test")
 @pytest.mark.asyncio
 async def test_client_recv(betfair_server, event_loop):
     lines = []
