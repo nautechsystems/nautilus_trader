@@ -55,7 +55,7 @@ class DataCatalog(metaclass=Singleton):
         fs_protocol : str
             The file system protocol to use.
         """
-        self.fs = fsspec.filesystem(fs_protocol, **fs_storage_options)
+        self.fs = fsspec.filesystem(fs_protocol, **(fs_storage_options or {}))
         self.path = pathlib.Path(path)
 
     @classmethod
