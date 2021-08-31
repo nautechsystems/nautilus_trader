@@ -33,5 +33,3 @@ cdef class AdaptiveMovingAverage(MovingAverage):
     """The alpha slow value.\n\n:returns: `double`"""
     cdef readonly double alpha_diff
     """The alpha difference value.\n\n:returns: `double`"""
-
-    cpdef void update_raw(self, double value) except *
