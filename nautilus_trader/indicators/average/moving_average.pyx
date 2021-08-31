@@ -69,6 +69,18 @@ cdef class MovingAverage(Indicator):
         self.count = 0
         self.value = 0
 
+    cpdef void update_raw(self, double value) except *:
+        """
+        Update the indicator with the given raw value.
+
+        Parameters
+        ----------
+        value : double
+            The update value.
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cdef void _increment_count(self) except *:
         self.count += 1
 
@@ -79,12 +91,6 @@ cdef class MovingAverage(Indicator):
                 self._set_initialized(True)
 
     cdef void _reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful fields are reset to their initial value.
-
-        """
         self._reset_ma()
         self.count = 0
         self.value = 0

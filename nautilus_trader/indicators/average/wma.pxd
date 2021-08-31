@@ -23,5 +23,3 @@ cdef class WeightedMovingAverage(MovingAverage):
 
     cdef readonly np.ndarray weights
     """The weights for the moving average calculation.\n\n:returns: `np.ndarray[float64]`"""
-
-    cpdef void update_raw(self, double value) except *
