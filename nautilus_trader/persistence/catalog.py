@@ -42,7 +42,9 @@ from nautilus_trader.serialization.arrow.util import is_nautilus_class
 
 
 class DataCatalog(metaclass=Singleton):
-    def __init__(self, path: str, fs_protocol: str = "file", **fs_storage_options):
+    def __init__(
+        self, path: str, fs_protocol: str = "file", fs_storage_options: Optional[Dict] = None
+    ):
         """
         Provides a queryable data catalogue.
 
