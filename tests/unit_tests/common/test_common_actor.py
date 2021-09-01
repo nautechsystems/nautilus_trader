@@ -202,6 +202,86 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
+    def test_on_degrade_when_not_overridden_does_nothing(self):
+        # Arrange
+        actor = Actor(self.component_id)
+
+        # Act
+        actor.on_degrade()
+
+        # Assert
+        assert True  # Exception not raised
+
+    def test_on_fault_when_not_overridden_does_nothing(self):
+        # Arrange
+        actor = Actor(self.component_id)
+
+        # Act
+        actor.on_fault()
+
+        # Assert
+        assert True  # Exception not raised
+
+    def test_on_instrument_when_not_overridden_does_nothing(self):
+        # Arrange
+        actor = Actor(self.component_id)
+
+        # Act
+        actor.on_instrument(TestInstrumentProvider.btcusdt_binance())
+
+        # Assert
+        assert True  # Exception not raised
+
+    def test_on_order_book_when_not_overridden_does_nothing(self):
+        # Arrange
+        actor = Actor(self.component_id)
+
+        # Act
+        actor.on_order_book(TestStubs.order_book())
+
+        # Assert
+        assert True  # Exception not raised
+
+    def test_on_order_book_delta_when_not_overridden_does_nothing(self):
+        # Arrange
+        actor = Actor(self.component_id)
+
+        # Act
+        actor.on_order_book_delta(TestStubs.order_book_snapshot())
+
+        # Assert
+        assert True  # Exception not raised
+
+    def test_on_ticker_when_not_overridden_does_nothing(self):
+        # Arrange
+        actor = Actor(self.component_id)
+
+        # Act
+        actor.on_ticker(TestStubs.ticker())
+
+        # Assert
+        assert True  # Exception not raised
+
+    def test_on_venue_status_update_when_not_overridden_does_nothing(self):
+        # Arrange
+        actor = Actor(self.component_id)
+
+        # Act
+        actor.on_venue_status_update(TestStubs.venue_status_update())
+
+        # Assert
+        assert True  # Exception not raised
+
+    def test_on_instrument_status_update_when_not_overridden_does_nothing(self):
+        # Arrange
+        actor = Actor(self.component_id)
+
+        # Act
+        actor.on_instrument_status_update(TestStubs.instrument_status_update())
+
+        # Assert
+        assert True  # Exception not raised
+
     def test_on_event_when_not_overridden_does_nothing(self):
         # Arrange
         actor = Actor(self.component_id)
@@ -1437,6 +1517,22 @@ class TestActor:
         # Assert
         assert self.data_engine.subscribed_bars() == []
         assert self.data_engine.command_count == 2
+
+    def test_subscribe_venue_status_updates(self):
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        actor.subscribe_venue_status_updates(Venue("NYMEX"))
+
+        # Assert
+        # TODO(cs): DataEngine.subscribed_venue_status_updates()
 
     def test_request_data_sends_request_to_data_engine(self):
         # Arrange

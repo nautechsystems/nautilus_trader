@@ -108,6 +108,16 @@ To install the latest binary wheel (or sdist package) from PyPI:
 
 Refer to the [Installation Guide](https://docs.nautilustrader.io/getting-started/installation) for further details.
 
+## Makefile
+
+A `Makefile` is provided to automate most installation and build tasks. It provides the following targets:
+- `make install` -- Installs the package using poetry.
+- `make build` -- Runs the Cython build script.
+- `make clean` -- Cleans all none source artifacts from the repository.
+- `make clean-build` -- Runs `clean` and then `build`.
+- `make docs` -- Builds the internal documentation HTML using Sphinx.
+- `make pre-commit` -- Runs the pre-commit checks over all files.
+
 ## Examples
 
 Examples of both backtest and live trading launch scripts are available in the `examples` directory.
