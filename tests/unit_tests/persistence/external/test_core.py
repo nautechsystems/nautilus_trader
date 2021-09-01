@@ -130,7 +130,6 @@ class TestPersistenceCore:
         # Arrange
         raw_file = RawFile(
             open_file=fsspec.open(f"{TEST_DATA}/1.166564490.bz2", compression="infer"),
-            progress=True,
             block_size=5000,
         )
 
