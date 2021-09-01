@@ -32,6 +32,7 @@ from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.config import Partialable
 from nautilus_trader.backtest.config import build_graph
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_nanos
@@ -144,6 +145,7 @@ def backtest_config(catalog):
                 end_time=1580504394501000000,
             )
         ],
+        engine_config=BacktestEngineConfig(),
         strategies=[
             (
                 EMACross,
@@ -166,13 +168,19 @@ def backtest_configs(backtest_config):
     base.strategies = None
 
     shared_params = dict(
-        instrument_id=instrument_id,
-        bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+        instrument_id=instrument_id.value,
+        bar_type=str(
+            BarType(
+                instrument_id=instrument_id,
+                bar_spec=BarSpecification(15, BarAggregation.MINUTE, PriceType.BID),
+                aggregation_source=AggregationSource.EXTERNAL,
+            )
+        ),
         trade_size=Decimal(1_000_000),
     )
     # Create two strategies with different params
     strategies = [
-        (EMACross, {**shared_params, **{"fast_ema": x, "slow_ema": y}})
+        (EMACross, EMACrossConfig(**shared_params, **{"fast_ema": x, "slow_ema": y}))
         for x, y in [(10, 20), (20, 30)]
     ]
     # Create a backtest config for each strategy
@@ -310,13 +318,13 @@ def test_build_graph_shared_nodes(backtest_configs):
     assert result == expected
 
 
-@pytest.mark.skip("bm to fix")
 def test_backtest_against_example(catalog):
     # Replicate examples/fx_ema_cross_audusd_ticks.py backtest result
 
     AUDUSD = TestInstrumentProvider.default_fx_ccy("AUD/USD", Venue("SIM"))
 
     config = BacktestConfig(
+        engine_config=BacktestEngineConfig(),
         venues=[
             BacktestVenueConfig(
                 name="SIM",
@@ -349,22 +357,17 @@ def test_backtest_against_example(catalog):
                 EMACross,
                 EMACrossConfig(
                     instrument_id=AUDUSD.id.value,
-                    bar_type=str(
-                        BarType(
-                            instrument_id=AUDUSD.id,
-                            bar_spec=BarSpecification(100, BarAggregation.TICK, PriceType.MID),
-                            aggregation_source=AggregationSource.EXTERNAL,
-                        )
-                    ),
-                    fast_ema=10,
-                    slow_ema=20,
+                    bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
+                    fast_ema_period=10,
+                    slow_ema_period=20,
                     trade_size=Decimal(1_000_000),
+                    order_id_tag="001",
                 ),
             )
         ],
     )
 
-    tasks = build_graph(config)
+    tasks = build_graph(config, sync=False)
     results = tasks.compute()
     result = results[list(results)[0]]
     assert len(result["account"]) == 193
@@ -375,14 +378,12 @@ def test_backtest_against_example(catalog):
     assert account_result == expected
 
 
-@pytest.mark.skip("bm to fix")
 def test_backtest_run_sync(backtest_configs, catalog):
     tasks = build_graph(backtest_configs)
     result = tasks.compute()
     assert len(result) == 2
 
 
-@pytest.mark.skip("bm to fix")
 def test_backtest_run_distributed(backtest_configs, catalog):
     from distributed import Client
 

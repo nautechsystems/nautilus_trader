@@ -52,8 +52,6 @@ class RawFile:
         ----------
         open_file : OpenFile
             The fsspec.OpenFile source of this data
-        reader: Reader
-            The Reader to parse the raw bytes read from this file
         block_size: int
             The max block (chunk) size to read from the file
         partition_name_callable: Callable
@@ -65,13 +63,17 @@ class RawFile:
         self.open_file = open_file
         self.block_size = block_size
         self.partition_name_callable = partition_name_callable
-        if progress:
-            self.iter = read_progress(  # type: ignore
-                self.iter, total=self.open_file.fs.stat(self.open_file.path)["size"]
-            )
+        # TODO - waiting for tqdm support in fsspec https://github.com/intake/filesystem_spec/pulls?q=callback
+        assert not progress, "Progress not yet available, awaiting fsspec feature"
+        self.progress = progress
 
     def iter(self):
         with self.open_file as f:
+            if self.progress:
+                f.read = read_progress(  # type: ignore
+                    f.read, total=self.open_file.fs.stat(self.open_file.path)["size"]
+                )
+
             while True:
                 raw = f.read(self.block_size)
                 if not raw:
@@ -86,6 +88,7 @@ def process_raw_file(catalog: DataCatalog, raw_file: RawFile, reader: Reader):
         dicts = split_and_serialize(objs)
         dataframes = dicts_to_dataframes(dicts)
         n_rows += write_tables(catalog=catalog, tables=dataframes)
+    reader.on_file_complete()
     return n_rows
 
 
@@ -101,7 +104,6 @@ def process_files(
     assert scheduler == "sync" or str(scheduler.__module__) == "distributed.client"
     raw_files = make_raw_files(
         glob_path=glob_path,
-        reader=reader,
         block_size=block_size,
         compression=compression,
         **kw,

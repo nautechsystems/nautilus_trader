@@ -126,11 +126,11 @@ class TestPersistenceCore:
         assert result1.open_file.compression == "bz2"
 
     @patch("nautilus_trader.persistence.external.core.tqdm", spec=True)
+    @pytest.mark.skip("Awaiting fsspec callback feature")
     def test_raw_file_progress(self, mock_progress):
         # Arrange
         raw_file = RawFile(
             open_file=fsspec.open(f"{TEST_DATA}/1.166564490.bz2"),
-            progress=True,
             block_size=5000,
         )
 
@@ -140,6 +140,7 @@ class TestPersistenceCore:
         # Assert
         assert len(data) == 17338
         result = [call.kwargs for call in mock_progress.mock_calls[:5]]
+        # Progress bar should update with compressed block size
         expected = [
             {"total": 17338},
             {"n": 5000},
