@@ -38,6 +38,7 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 
 PARTIAL_SUFFIX = "Partial-"
@@ -145,6 +146,7 @@ class BacktestConfig(Partialable):
     venues: Optional[List[BacktestVenueConfig]] = None
     instruments: Optional[List[Instrument]] = None
     data_config: Optional[List[BacktestDataConfig]] = None
+    engine_config: Optional[BacktestEngineConfig] = None
     strategies: Optional[List[Tuple[type, dict]]] = None
     name: Optional[str] = None
     # data_catalog_path: Optional[str] = None
@@ -256,7 +258,7 @@ def _check_configs(configs):
             assert (
                 isinstance(strategy, tuple)
                 and isinstance(strategy[0], type)
-                and isinstance(strategy[1], dict)
+                and isinstance(strategy[1], TradingStrategyConfig)
             ), err
 
     return configs

@@ -42,10 +42,9 @@ from nautilus_trader.serialization.arrow.util import is_nautilus_class
 
 
 class DataCatalog(metaclass=Singleton):
-    PROCESSED_FILES_FN = ".processed_raw_files.json"
-    PARTITION_MAPPINGS_FN = "_partition_mappings.json"
-
-    def __init__(self, path: str, fs_protocol: str = "file"):
+    def __init__(
+        self, path: str, fs_protocol: str = "file", fs_storage_options: Optional[Dict] = None
+    ):
         """
         Provides a queryable data catalogue.
 
@@ -56,7 +55,7 @@ class DataCatalog(metaclass=Singleton):
         fs_protocol : str
             The file system protocol to use.
         """
-        self.fs = fsspec.filesystem(fs_protocol)
+        self.fs = fsspec.filesystem(fs_protocol, **(fs_storage_options or {}))
         self.path = pathlib.Path(path)
 
     @classmethod
