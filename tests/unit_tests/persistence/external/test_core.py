@@ -126,10 +126,11 @@ class TestPersistenceCore:
         assert result1.open_file.compression == "bz2"
 
     @patch("nautilus_trader.persistence.external.core.tqdm", spec=True)
+    @pytest.mark.skip("Awaiting fsspec callback feature")
     def test_raw_file_progress(self, mock_progress):
         # Arrange
         raw_file = RawFile(
-            open_file=fsspec.open(f"{TEST_DATA}/1.166564490.bz2", compression="infer"),
+            open_file=fsspec.open(f"{TEST_DATA}/1.166564490.bz2"),
             block_size=5000,
         )
 
