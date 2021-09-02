@@ -44,6 +44,11 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
         -------
         bytes
 
+        Raises
+        ------
+        RuntimeError
+            If command cannot be serialized.
+
         """
         Condition.not_none(instrument, "instrument")
 
@@ -68,11 +73,11 @@ cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
 
         Raises
         ------
-        ValueError
-            If instrument_bytes is empty.
+        RuntimeError
+            If command cannot be deserialized.
 
         """
-        Condition.not_empty(instrument_bytes, "instrument_bytes")
+        Condition.not_none(instrument_bytes, "instrument_bytes")
 
         cdef dict unpacked = msgpack.unpackb(instrument_bytes)  # type: dict[str, object]
 

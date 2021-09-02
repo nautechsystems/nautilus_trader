@@ -142,7 +142,7 @@ _OBJECT_FROM_DICT_MAP = {
 }
 
 
-cpdef inline void register_serializable_object(
+cpdef void register_serializable_object(
     object obj,
     to_dict: Callable[[Any], Dict[str, Any]],
     from_dict: Callable[[Dict[str, Any]], Any],

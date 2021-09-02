@@ -29,7 +29,7 @@ GENERIC_DATA_PREFIX = "genericdata_"
 
 def list_dicts_to_dict_lists(dicts, keys=None):
     """
-    Convert a list of dictionaries into a dictionary of lists
+    Convert a list of dictionaries into a dictionary of lists.
     """
     result = {}
     for d in dicts:
@@ -56,7 +56,7 @@ def maybe_list(obj):
 
 def is_nautilus_class(cls):
     """
-    Determine whether a class belongs to nautilus_trader
+    Determine whether a class belongs to `nautilus_trader`.
     """
     is_nautilus_paths = cls.__module__.startswith("nautilus_trader.")
     if not is_nautilus_paths:
@@ -77,10 +77,11 @@ def check_partition_columns(
     df: pd.DataFrame, partition_columns: Optional[List[str]]
 ) -> Dict[str, Dict[str, str]]:
     """
-    When writing a parquet dataset, parquet uses the values in `partition_columns` as part of the filename. The values
-    in `df` could potentially contain illegal characters. This function generates a mapping of {illegal: legal} that is
-    used to "clean" the values before they are written to the filename (and also saving this mapping for reversing the
-    process on reload)
+    When writing a parquet dataset, parquet uses the values in `partition_columns`
+    as part of the filename. The values in `df` could potentially contain illegal
+    characters. This function generates a mapping of {illegal: legal} that is
+    used to "clean" the values before they are written to the filename (and also
+    saving this mapping for reversing the process on reload)
     """
     if partition_columns:
         missing = [c for c in partition_columns if c not in df.columns]
@@ -108,8 +109,9 @@ def check_partition_columns(
 
 def clean_partition_cols(df, mappings: Dict[str, Dict[str, str]]):
     """
-    The values in `partition_cols` may have characters that are illegal in filenames. Strip them out and return a
-    dataframe we can write into a parquet file.
+    The values in `partition_cols` may have characters that are illegal in
+    filenames. Strip them out and return a dataframe we can write into a parquet
+    file.
     """
     for col, val_map in mappings.items():
         df.loc[:, col] = df[col].map(val_map)
@@ -118,7 +120,7 @@ def clean_partition_cols(df, mappings: Dict[str, Dict[str, str]]):
 
 def clean_key(s):
     """
-    Clean characters that are illegal on windows from the string `s`
+    Clean characters that are illegal on windows from the string `s`.
     """
     for ch in INVALID_WINDOWS_CHARS:
         if ch in s:

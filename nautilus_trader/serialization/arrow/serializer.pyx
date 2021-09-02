@@ -64,9 +64,7 @@ def get_cls_table(cls: type):
 
 
 def _clear_all(**kwargs):
-    """
-    Used for testing
-    """
+    # Used for testing
     global _CLS_TO_TABLE, _SCHEMAS, _PARTITION_KEYS, _CHUNK
     if kwargs.get("force", False):
         _PARTITION_KEYS = {}
@@ -93,7 +91,8 @@ def register_parquet(
     cls : type
         The type to register serialization for.
     serializer : Optional[Callable]
-        The callable to serialize instances of type `cls_type` to something parquet can write.
+        The callable to serialize instances of type `cls_type` to something
+        parquet can write.
     deserializer : Optional[Callable]
         The callable to deserialize rows from parquet into `cls_type`.
     schema : Optional[pa.Schema]
@@ -102,11 +101,14 @@ def register_parquet(
     partition_keys : tuple, optional
         The partition key for data written to parquet (typically an ID).
     chunk : bool, optional
-        Whether to group objects by timestamp and operate together (Used for complex objects where
-        we write each object as multiple rows in parquet, ie OrderBook or AccountState).
+        Whether to group objects by timestamp and operate together (Used for
+        complex objects where we write each object as multiple rows in parquet,
+        i.e. `OrderBook` or `AccountState`).
     table : type, optional
-        Optional table override for `cls`. Used if `cls` is going to be transformed and stored in a table other than
-        its own. (for example, OrderBookSnapshots are stored as OrderBookDeltas, so we use table=OrderBookDeltas).
+        Optional table override for `cls`. Used if `cls` is going to be
+        transformed and stored in a table other than
+        its own. (for example, `OrderBookSnapshots` are stored as
+        `OrderBookDeltas`, so we use `table=OrderBookDeltas`).
 
     """
     Condition.type_or_none(serializer, Callable, "serializer")
@@ -146,6 +148,24 @@ cdef class ParquetSerializer:
 
     @staticmethod
     def serialize(object obj):
+        """
+        Serialize the given instrument to `Parquet` specification bytes.
+
+        Parameters
+        ----------
+        obj : object
+            The object to serialize.
+
+        Returns
+        -------
+        bytes
+
+        Raises
+        ------
+        TypeError
+            If object cannot be serialized.
+
+        """
         if isinstance(obj, GenericData):
             obj = obj.data
         cdef type cls = type(obj)
@@ -163,6 +183,26 @@ cdef class ParquetSerializer:
 
     @staticmethod
     def deserialize(type cls, chunk):
+        """
+        Deserialize the given `Parquet` specification bytes to an object.
+
+        Parameters
+        ----------
+        cls : type
+            The type to deserialize to.
+        chunk : bytes
+            The chunk to deserialize.
+
+        Returns
+        -------
+        object
+
+        Raises
+        ------
+        TypeError
+            If chunk cannot be deserialized.
+
+        """
         delegate = _PARQUET_FROM_DICT_MAP.get(cls)
         if delegate is None:
             delegate = _OBJECT_FROM_DICT_MAP.get(cls.__name__)
