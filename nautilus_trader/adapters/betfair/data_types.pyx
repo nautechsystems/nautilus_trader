@@ -18,8 +18,8 @@ from libc.stdint cimport int64_t
 import orjson
 import pyarrow as pa
 
-from nautilus_trader.serialization.arrow.serializer import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import register_parquet
+from nautilus_trader.serialization.base import register_serializable_object
 
 from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.ticker cimport Ticker
@@ -27,9 +27,6 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.data cimport OrderBookDelta
-
-from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.serialization.base import register_serializable_object
 
 
 cpdef enum SubscriptionStatus:

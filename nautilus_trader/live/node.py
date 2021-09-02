@@ -52,9 +52,7 @@ from nautilus_trader.live.risk_engine import LiveRiskEngineConfig
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
-from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
-from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
 from nautilus_trader.trading.trader import Trader
 
 
@@ -204,9 +202,7 @@ class TradingNode:
             cache_db = RedisCacheDatabase(
                 trader_id=self.trader_id,
                 logger=self._logger,
-                instrument_serializer=MsgPackInstrumentSerializer(),
-                command_serializer=MsgPackCommandSerializer(),
-                event_serializer=MsgPackEventSerializer(),
+                serializer=MsgPackSerializer(),
                 config=config.cache_database,
             )
         else:

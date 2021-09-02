@@ -13,18 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.serialization.base cimport CommandSerializer
-from nautilus_trader.serialization.base cimport EventSerializer
-from nautilus_trader.serialization.base cimport InstrumentSerializer
+from nautilus_trader.serialization.base cimport Serializer
 
 
-cdef class MsgPackInstrumentSerializer(InstrumentSerializer):
-    pass
-
-
-cdef class MsgPackCommandSerializer(CommandSerializer):
-    pass
-
-
-cdef class MsgPackEventSerializer(EventSerializer):
+cdef class MsgPackSerializer(Serializer):
     pass

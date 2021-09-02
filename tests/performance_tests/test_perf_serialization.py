@@ -24,7 +24,7 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
 
@@ -60,7 +60,7 @@ class TestSerializationPerformance(PerformanceHarness):
             0,
         )
 
-        self.serializer = MsgPackCommandSerializer()
+        self.serializer = MsgPackSerializer()
 
     @pytest.fixture(autouse=True)
     @pytest.mark.benchmark(disable_gc=True, warmup=True)

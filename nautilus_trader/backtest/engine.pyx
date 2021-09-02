@@ -84,9 +84,7 @@ from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.portfolio.portfolio cimport Portfolio
 from nautilus_trader.risk.engine cimport RiskEngine
-from nautilus_trader.serialization.msgpack.serializer cimport MsgPackCommandSerializer
-from nautilus_trader.serialization.msgpack.serializer cimport MsgPackEventSerializer
-from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentSerializer
+from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -211,9 +209,7 @@ cdef class BacktestEngine:
             cache_db = RedisCacheDatabase(
                 trader_id=self.trader_id,
                 logger=self._test_logger,
-                instrument_serializer=MsgPackInstrumentSerializer(),
-                command_serializer=MsgPackCommandSerializer(),
-                event_serializer=MsgPackEventSerializer(),
+                serializer=MsgPackSerializer(),
                 config=config.cache_database,
             )
         else:
