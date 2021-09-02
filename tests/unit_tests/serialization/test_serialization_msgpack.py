@@ -66,9 +66,7 @@ from nautilus_trader.model.orders.stop_limit import StopLimitOrder
 from nautilus_trader.model.orders.stop_market import StopMarketOrder
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
 from nautilus_trader.model.position import Position
-from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
-from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
-from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import UNIX_EPOCH
 from tests.test_kit.stubs import TestStubs
@@ -78,10 +76,22 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-class TestMsgPackInstrumentSerializer:
+class TestMsgPackSerializer:
     def setup(self):
         # Fixture Setup
-        self.serializer = MsgPackInstrumentSerializer()
+        self.trader_id = TestStubs.trader_id()
+        self.strategy_id = TestStubs.strategy_id()
+        self.account_id = TestStubs.account_id()
+        self.venue = Venue("SIM")
+
+        self.unpacker = OrderUnpacker()
+        self.order_factory = OrderFactory(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            clock=TestClock(),
+        )
+
+        self.serializer = MsgPackSerializer()
 
     def test_serialize_and_deserialize_fx_instrument(self):
         # Arrange, Act
@@ -112,20 +122,6 @@ class TestMsgPackInstrumentSerializer:
         assert deserialized == ETHUSDT_BINANCE
         print(b64encode(serialized))
         print(deserialized)
-
-
-class TestOrderSerializer:
-    def setup(self):
-        # Fixture Setup
-        self.unpacker = OrderUnpacker()
-        self.trader_id = TestStubs.trader_id()
-        self.strategy_id = TestStubs.strategy_id()
-
-        self.order_factory = OrderFactory(
-            trader_id=self.trader_id,
-            strategy_id=self.strategy_id,
-            clock=TestClock(),
-        )
 
     def test_pack_and_unpack_market_orders(self):
         # Arrange
@@ -252,22 +248,6 @@ class TestOrderSerializer:
 
         # Assert
         assert unpacked == order
-
-
-class TestMsgPackCommandSerializer:
-    def setup(self):
-        # Fixture Setup
-        self.venue = Venue("SIM")
-        self.trader_id = TestStubs.trader_id()
-        self.strategy_id = TestStubs.strategy_id()
-        self.account_id = TestStubs.account_id()
-        self.serializer = MsgPackCommandSerializer()
-
-        self.order_factory = OrderFactory(
-            trader_id=self.trader_id,
-            strategy_id=self.strategy_id,
-            clock=TestClock(),
-        )
 
     def test_serialize_and_deserialize_submit_order_commands(self):
         # Arrange
@@ -411,21 +391,6 @@ class TestMsgPackCommandSerializer:
         assert deserialized == command
         print(b64encode(serialized))
         print(command)
-
-
-class TestMsgPackEventSerializer:
-    def setup(self):
-        # Fixture Setup
-        self.trader_id = TestStubs.trader_id()
-        self.strategy_id = TestStubs.strategy_id()
-        self.account_id = TestStubs.account_id()
-
-        self.order_factory = OrderFactory(
-            trader_id=self.trader_id,
-            strategy_id=self.strategy_id,
-            clock=TestClock(),
-        )
-        self.serializer = MsgPackEventSerializer()
 
     def test_serialize_and_deserialize_component_state_changed_events(self):
         # Arrange

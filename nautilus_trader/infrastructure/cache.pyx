@@ -35,9 +35,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.serialization.base cimport CommandSerializer
-from nautilus_trader.serialization.base cimport EventSerializer
-from nautilus_trader.serialization.base cimport InstrumentSerializer
+from nautilus_trader.serialization.base cimport Serializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
 
@@ -88,9 +86,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self,
         TraderId trader_id not None,
         Logger logger not None,
-        InstrumentSerializer instrument_serializer not None,
-        CommandSerializer command_serializer not None,
-        EventSerializer event_serializer not None,
+        Serializer serializer not None,
         config: CacheDatabaseConfig=None,
     ):
         """
@@ -102,12 +98,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
             The trader ID for the database.
         logger : Logger
             The logger for the database.
-        instrument_serializer : InstrumentSerializer
-            The instrument serializer for caching operations.
-        command_serializer : CommandSerializer
-            The command serializer for caching operations.
-        event_serializer : EventSerializer
-            The event serializer for caching operations.
+        serializer : Serializer
+            The serializer for database operations.
         config : CacheDatabaseConfig, optional
             The configuration for the instance.
 
@@ -132,9 +124,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._key_strategies  = f"{self._key_trader}:{_STRATEGIES}:"  # noqa
 
         # Serializers
-        self._instrument_serializer = instrument_serializer
-        self._command_serializer = command_serializer
-        self._event_serializer = event_serializer
+        self._serializer = serializer
 
         # Redis client
         self._redis = redis.Redis(host=config.host, port=config.port, db=0)
@@ -342,7 +332,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         if not instrument_bytes:
             return None
 
-        return self._instrument_serializer.deserialize(instrument_bytes)
+        return self._serializer.deserialize(instrument_bytes)
 
     cpdef Account load_account(self, AccountId account_id):
         """
@@ -371,9 +361,9 @@ cdef class RedisCacheDatabase(CacheDatabase):
             return None
 
         cdef bytes event
-        cdef Account account = AccountFactory.create_c(self._event_serializer.deserialize(events[0]))
+        cdef Account account = AccountFactory.create_c(self._serializer.deserialize(events[0]))
         for event in events[1:]:
-            account.apply(event=self._event_serializer.deserialize(event))
+            account.apply(event=self._serializer.deserialize(event))
 
         return account
 
@@ -403,12 +393,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
         if not events:
             return None
 
-        cdef OrderInitialized init = self._event_serializer.deserialize(events.pop(0))
+        cdef OrderInitialized init = self._serializer.deserialize(events.pop(0))
         cdef Order order = OrderUnpacker.from_init_c(init)
 
         cdef bytes event_bytes
         for event_bytes in events:
-            order.apply(self._event_serializer.deserialize(event_bytes))
+            order.apply(self._serializer.deserialize(event_bytes))
 
         return order
 
@@ -438,7 +428,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         if not events:
             return None
 
-        cdef OrderFilled initial_fill = self._event_serializer.deserialize(events.pop(0))
+        cdef OrderFilled initial_fill = self._serializer.deserialize(events.pop(0))
         cdef Instrument instrument = self.load_instrument(initial_fill.instrument_id)
         if instrument is None:
             self._log.error(
@@ -451,7 +441,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         cdef bytes event_bytes
         for event_bytes in events:
-            position.apply(self._event_serializer.deserialize(event_bytes))
+            position.apply(self._serializer.deserialize(event_bytes))
 
         return position
 
@@ -532,7 +522,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(instrument, "instrument")
 
         cdef str key = self._key_instruments + instrument.id.value
-        self._redis.set(name=key, value=self._instrument_serializer.serialize(instrument))
+        self._redis.set(name=key, value=self._serializer.serialize(instrument))
 
         self._log.debug(f"Added instrument {instrument.id}.")
 
@@ -550,7 +540,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         # Command pipeline
         pipe = self._redis.pipeline()
-        pipe.rpush(self._key_accounts + account.id.value, self._event_serializer.serialize(account.last_event_c()))
+        pipe.rpush(self._key_accounts + account.id.value, self._serializer.serialize(account.last_event_c()))
         cdef list reply = pipe.execute()
 
         # Check data integrity of reply
@@ -574,7 +564,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(order, "order")
 
-        cdef bytes last_event = self._event_serializer.serialize(order.last_event_c())
+        cdef bytes last_event = self._serializer.serialize(order.last_event_c())
         cdef int reply = self._redis.rpush(self._key_orders + order.client_order_id.value, last_event)
 
         # Check data integrity of reply
@@ -598,7 +588,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(position, "position")
 
-        cdef bytes last_event = self._event_serializer.serialize(position.last_event_c())
+        cdef bytes last_event = self._serializer.serialize(position.last_event_c())
         cdef int reply = self._redis.rpush(self._key_positions + position.id.value, last_event)
 
         # Check data integrity of reply
@@ -648,7 +638,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(account, "account")
 
-        cdef bytes serialized_event = self._event_serializer.serialize(account.last_event_c())
+        cdef bytes serialized_event = self._serializer.serialize(account.last_event_c())
         self._redis.rpush(self._key_accounts + account.id.value, serialized_event)
 
         self._log.debug(f"Updated {account}.")
@@ -665,7 +655,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(order, "order")
 
-        cdef bytes serialized_event = self._event_serializer.serialize(order.last_event_c())
+        cdef bytes serialized_event = self._serializer.serialize(order.last_event_c())
         cdef int reply = self._redis.rpush(self._key_orders + order.client_order_id.value, serialized_event)
 
         # Check data integrity of reply
@@ -686,7 +676,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(position, "position")
 
-        cdef bytes serialized_event = self._event_serializer.serialize(position.last_event_c())
+        cdef bytes serialized_event = self._serializer.serialize(position.last_event_c())
         cdef int reply = self._redis.rpush(self._key_positions + position.id.value, serialized_event)
 
         # Check data integrity of reply

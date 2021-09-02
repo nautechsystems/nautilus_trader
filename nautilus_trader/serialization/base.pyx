@@ -18,8 +18,6 @@ from typing import Any, Callable, Dict
 from nautilus_trader.common.events.risk cimport TradingStateChanged
 from nautilus_trader.common.events.system cimport ComponentStateChanged
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport Command
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -176,9 +174,9 @@ cpdef void register_serializable_object(
     _OBJECT_FROM_DICT_MAP[obj.__name__] = from_dict
 
 
-cdef class InstrumentSerializer:
+cdef class Serializer:
     """
-    The abstract base class for all instrument serializers.
+    The abstract base class for all serializers.
 
     Warnings
     --------
@@ -187,63 +185,15 @@ cdef class InstrumentSerializer:
 
     def __init__(self):
         """
-        Initialize a new instance of the ``InstrumentSerializer`` class.
+        Initialize a new instance of the ``Serializer`` class.
 
         """
         super().__init__()
 
-    cpdef bytes serialize(self, Instrument instrument):
+    cpdef bytes serialize(self, object obj):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Instrument deserialize(self, bytes instrument_bytes):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-
-cdef class CommandSerializer:
-    """
-    The abstract base class for all command serializers.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the ``CommandSerializer`` class.
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, Command command):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef Command deserialize(self, bytes command_bytes):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-
-cdef class EventSerializer:
-    """
-    The abstract base class for all event serializers.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the ``EventSerializer`` class.
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, Event event):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef Event deserialize(self, bytes event_bytes):
+    cpdef object deserialize(self, bytes obj_bytes):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
