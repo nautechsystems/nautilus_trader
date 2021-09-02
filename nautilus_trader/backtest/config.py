@@ -40,9 +40,6 @@ from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.persistence.catalog import DataCatalog
 
 
-PARTIAL_SUFFIX = "Partial-"
-
-
 class Partialable:
     def missing(self):
         return [x for x in self.__dataclass_fields__ if getattr(self, x) is None]
@@ -60,13 +57,13 @@ class Partialable:
             assert k in self.__dataclass_fields__, f"Unknown kwarg: {k}"
 
     def update(self, **kwargs):
-        """Update attributes on this instance"""
+        """Update attributes on this instance."""
         self._check_kwargs(kwargs)
         self.__dict__.update(kwargs)
         return self
 
     def replace(self, **kwargs):
-        """Return a new instance with some attributes replaces"""
+        """Return a new instance with some attributes replaces."""
         return self.__class__(
             **{**{k: getattr(self, k) for k in self.__dataclass_fields__}, **kwargs}
         )
@@ -110,7 +107,7 @@ class BacktestDataConfig(Partialable):
 @dataclasses.dataclass()
 class BacktestVenueConfig:
     """
-    Represents the venue configuration for one specific backtest run.
+    Represents the venue configuration for one specific backtest engine.
     """
 
     name: str
