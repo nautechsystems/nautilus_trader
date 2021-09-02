@@ -51,11 +51,6 @@ jobs:
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
       # Install and run database dependencies
-      - name: Install Memurai (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          choco install memurai-developer.install
-
       - name: Install Redis (macOS)
         if: runner.os == 'macOS'
         run: |
