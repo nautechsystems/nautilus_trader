@@ -482,20 +482,21 @@ cdef class BacktestDataProducer(DataProducer):
 
         """
         # Determine next data element
-        cdef int64_t next_timestamp_ns = INT64_MAX
+        cdef int64_t next_ts_init = INT64_MAX
         cdef int choice = 0
 
         if self._next_quote_tick is not None:
-            next_timestamp_ns = self._next_quote_tick.ts_init
+            next_ts_init = self._next_quote_tick.ts_init
             choice = 1
 
         if self._next_trade_tick is not None:
-            if choice == 0 or self._next_trade_tick.ts_init <= next_timestamp_ns:
+            if self._next_trade_tick.ts_init <= next_ts_init:
+                next_ts_init = self._next_trade_tick.ts_init
                 choice = 2
 
         cdef Data next_data = None
         if self._next_data is not None:
-            if choice == 0 or self._next_data.ts_init <= next_timestamp_ns:
+            if self._next_data.ts_init <= next_ts_init:
                 next_data = self._next_data
                 self._iterate_stream()
                 return next_data
