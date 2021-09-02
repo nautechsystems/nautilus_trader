@@ -54,4 +54,5 @@ def load_processed_raw_files(fs):
 
 def _glob_path_to_fs(glob_path):
     inferred = infer_storage_options(glob_path)
+    inferred.pop("path", None)
     return fsspec.filesystem(**inferred)

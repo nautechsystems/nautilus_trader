@@ -75,3 +75,20 @@ def test_clear_instance():
 
     # Assert
     assert not Test._instances
+
+
+def test_dict_kwarg():
+    # Arrange
+    class Test(metaclass=Singleton):
+        def __init__(self, a, b):
+            self.a = a
+            self.b = b
+
+    # Act
+    test1 = Test(1, b={"hello": "world"})
+
+    # Assert
+    assert test1.a == 1
+    assert test1.b == {"hello": "world"}
+    instances = {(("a", 1), ("b", (("hello", "world"),))): test1}
+    assert Test._instances == instances
