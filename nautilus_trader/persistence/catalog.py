@@ -42,11 +42,18 @@ from nautilus_trader.serialization.arrow.util import is_nautilus_class
 
 
 class DataCatalog(metaclass=Singleton):
+    """
+    Provides a queryable data catalogue
+    """
+
     def __init__(
-        self, path: str, fs_protocol: str = "file", fs_storage_options: Optional[Dict] = None
+        self,
+        path: str,
+        fs_protocol: str = "file",
+        fs_storage_options: Optional[Dict] = None,
     ):
         """
-        Provides a queryable data catalogue.
+        Initialize a new instance of the ``DataCatalog`` class.
 
         Parameters
         ----------
@@ -54,6 +61,9 @@ class DataCatalog(metaclass=Singleton):
             The root path to the data.
         fs_protocol : str
             The file system protocol to use.
+        fs_storage_options : Optional[Dict]
+            The fs storage options.
+
         """
         self.fs = fsspec.filesystem(fs_protocol, **(fs_storage_options or {}))
         self.path = pathlib.Path(path)

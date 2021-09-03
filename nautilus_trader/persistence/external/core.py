@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 from typing import Callable, Dict, List, Optional, Union
 
 import dask
@@ -131,7 +146,8 @@ def scan_files(glob_path, compression="infer", **kw) -> List[OpenFile]:
 
 def split_and_serialize(objs: List) -> Dict[type, Dict[str, List]]:
     """
-    Given a list of nautilus `objs`; serialize and split into dictionaries per type / instrument_id.
+    Given a list of Nautilus `objs`; serialize and split into dictionaries per
+    type / instrument ID.
     """
     # Split objects into their respective tables
     values: Dict[type, Dict[str, List]] = {}
@@ -192,7 +208,8 @@ def read_and_clear_existing_data(
     partition_cols: List[str],
 ):
     """
-    Check if any file exists at `path`, reading if it exists and removing the file. It will be rewritten later.
+    Check if any file exists at `path`, reading if it exists and removing the
+    file. It will be rewritten later.
     """
     fs = catalog.fs
     if fs.exists(path) or fs.isdir(path):
@@ -225,7 +242,7 @@ def merge_with_existing_data(
     partition_cols: Optional[List],
 ):
     """
-    Load any exiting data (and clear) and merge to this dataframe `df`
+    Load any exiting data (and clear) and merge to this dataframe `df`.
     """
     existing = read_and_clear_existing_data(
         catalog=catalog,
@@ -335,7 +352,7 @@ def write_chunk(catalog: DataCatalog, chunk: List):
 
 def read_progress(func, total):
     """
-    Wrap a file handle and update progress bar as bytes are read
+    Wrap a file handle and update progress bar as bytes are read.
     """
     progress = tqdm(total=total)
 
