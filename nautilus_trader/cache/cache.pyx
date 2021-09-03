@@ -59,6 +59,7 @@ class CacheConfig(pydantic.BaseModel):
     bar_capacity : int
         The maximum length for internal bar deques.
     """
+
     tick_capacity: PositiveInt = 1000
     bar_capacity: PositiveInt = 1000
 

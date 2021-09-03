@@ -79,7 +79,7 @@ cdef class LiveDataEngine(DataEngine):
         Raises
         ------
         TypeError
-            If config is not of type LiveExecEngineConfig.
+            If config is not of type LiveDataEngineConfig.
 
         """
         if config is None:
