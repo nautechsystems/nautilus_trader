@@ -46,7 +46,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 class LiveExecEngineConfig(ExecEngineConfig):
     """
-    Provides configuration for ``LiveExecEngine`` instances.
+    Configuration for ``LiveExecEngine`` instances.
     """
 
     qsize: PositiveInt = 10000

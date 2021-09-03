@@ -29,7 +29,7 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 class MyStrategyConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``MyStrategy`` instances.
+    Configuration for ``MyStrategy`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.

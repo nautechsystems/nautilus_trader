@@ -33,7 +33,7 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 class OrderbookImbalanceConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``OrderbookImbalance`` instances.
+    Configuration for ``OrderbookImbalance`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.

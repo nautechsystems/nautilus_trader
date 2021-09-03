@@ -104,7 +104,7 @@ class TickTock(TradingStrategy):
 
 class EMACrossConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``EMACross`` instances.
+    Configuration for ``EMACross`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
@@ -355,7 +355,7 @@ class EMACross(TradingStrategy):
 
 class OrderBookImbalanceStrategyConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``OrderBookImbalance`` instances.
+    Configuration for ``OrderBookImbalance`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
@@ -587,7 +587,7 @@ class MarketMaker(TradingStrategy):
 
 class RepeatedOrdersConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``RepeatedOrders`` instances.
+    Configuration for ``RepeatedOrders`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.

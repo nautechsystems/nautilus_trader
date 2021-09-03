@@ -61,7 +61,7 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 class RiskEngineConfig(pydantic.BaseModel):
     """
-    Provides configuration for ``RiskEngine`` instances.
+    Configuration for ``RiskEngine`` instances.
 
     bypass : bool
         If True then all risk checks are bypassed (will still check for duplicate IDs).

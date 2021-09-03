@@ -42,7 +42,7 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 class VolatilityMarketMakerConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``VolatilityMarketMaker`` instances.
+    Configuration for ``VolatilityMarketMaker`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
