@@ -98,6 +98,14 @@ class TestCacheDatabase:
         with pytest.raises(NotImplementedError):
             self.database.delete_strategy(None)
 
+    def test_add_currency_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.database.add_currency(None)
+
+    def test_add_instrument_when_not_implemented_raises_exception(self):
+        with pytest.raises(NotImplementedError):
+            self.database.add_instrument(None)
+
     def test_add_account_when_not_implemented_raises_exception(self):
         with pytest.raises(NotImplementedError):
             self.database.add_account(None)
