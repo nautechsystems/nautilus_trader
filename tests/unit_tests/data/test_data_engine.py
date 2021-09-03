@@ -686,7 +686,6 @@ class TestDataEngine:
         assert handler1 == [ETHUSDT_BINANCE]
         assert handler2 == [ETHUSDT_BINANCE]
 
-    @pytest.mark.skip
     def test_execute_subscribe_order_book_snapshots_then_adds_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
@@ -711,9 +710,8 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         # Assert
-        assert self.data_engine.subscribed_order_book_snapshots == [ETHUSDT_BINANCE.id]
+        assert self.data_engine.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
 
-    @pytest.mark.skip
     def test_execute_subscribe_order_book_deltas_then_adds_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
@@ -738,9 +736,8 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         # Assert
-        # assert self.data_engine.subscribed_order_book_deltas == [ETHUSDT_BINANCE.id]
+        assert self.data_engine.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
 
-    @pytest.mark.skip(reason="WIP")
     def test_execute_subscribe_order_book_intervals_then_adds_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
@@ -765,7 +762,7 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         # Assert
-        assert self.data_engine.subscribed_order_book_snapshots() == [ETHUSDT_BINANCE.id]
+        assert self.data_engine.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
 
     def test_execute_unsubscribe_order_book_stream_then_removes_handler(self):
         # Arrange
