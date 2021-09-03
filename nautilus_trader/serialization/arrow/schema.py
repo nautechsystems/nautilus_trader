@@ -466,6 +466,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "size_precision": pa.int64(),
             "price_increment": pa.dictionary(pa.int8(), pa.string()),
             "size_increment": pa.dictionary(pa.int8(), pa.string()),
+            "multiplier": pa.dictionary(pa.int8(), pa.string()),
             "lot_size": pa.dictionary(pa.int8(), pa.string()),
             "isin": pa.string(),
             "margin_init": pa.string(),
@@ -477,13 +478,16 @@ NAUTILUS_PARQUET_SCHEMA = {
     Future: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
-            "asset_class": pa.string(),
+            "underlying": pa.dictionary(pa.int8(), pa.string()),
+            "asset_class": pa.dictionary(pa.int8(), pa.string()),
             "currency": pa.dictionary(pa.int8(), pa.string()),
             "price_precision": pa.int64(),
             "size_precision": pa.int64(),
             "price_increment": pa.dictionary(pa.int8(), pa.string()),
             "size_increment": pa.dictionary(pa.int8(), pa.string()),
+            "multiplier": pa.dictionary(pa.int8(), pa.string()),
             "lot_size": pa.dictionary(pa.int8(), pa.string()),
+            "expiry_date": pa.dictionary(pa.int8(), pa.string()),
             "ts_init": pa.int64(),
             "ts_event": pa.int64(),
         }
@@ -491,13 +495,17 @@ NAUTILUS_PARQUET_SCHEMA = {
     Option: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
-            "asset_class": pa.string(),
+            "underlying": pa.dictionary(pa.int8(), pa.string()),
+            "asset_class": pa.dictionary(pa.int8(), pa.string()),
             "currency": pa.dictionary(pa.int8(), pa.string()),
             "price_precision": pa.int64(),
             "size_precision": pa.int64(),
             "price_increment": pa.dictionary(pa.int8(), pa.string()),
             "size_increment": pa.dictionary(pa.int8(), pa.string()),
+            "multiplier": pa.dictionary(pa.int8(), pa.string()),
             "lot_size": pa.dictionary(pa.int8(), pa.string()),
+            "expiry_date": pa.dictionary(pa.int8(), pa.string()),
+            "strike_price": pa.dictionary(pa.int16(), pa.string()),
             "ts_init": pa.int64(),
             "ts_event": pa.int64(),
         }

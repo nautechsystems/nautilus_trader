@@ -90,13 +90,17 @@ class DataCatalog(metaclass=Singleton):
         end=None,
         ts_column="ts_event",
         raise_on_empty=True,
+        instrument_id_column="instrument_id",
+        table_kwargs: Optional[Dict] = None,
     ):
         filters = [filter_expr] if filter_expr is not None else []
         if instrument_ids is not None:
             if not isinstance(instrument_ids, list):
                 instrument_ids = [instrument_ids]
             filters.append(
-                ds.field("instrument_id").isin(list(set(map(clean_key, instrument_ids))))
+                ds.field(instrument_id_column)
+                .cast("string")
+                .isin(list(set(map(clean_key, instrument_ids))))
             )
         if start is not None:
             filters.append(ds.field(ts_column) >= int(pd.Timestamp(start).to_datetime64()))
@@ -111,7 +115,7 @@ class DataCatalog(metaclass=Singleton):
                 return pd.DataFrame()
 
         dataset = ds.dataset(full_path, partitioning="hive", filesystem=self.fs)
-        table = dataset.to_table(filter=combine_filters(*filters))
+        table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
         df = table.to_pandas().drop_duplicates()
         mappings = load_mappings(fs=self.fs, path=full_path)
         for col in mappings:
@@ -225,6 +229,7 @@ class DataCatalog(metaclass=Singleton):
             instrument_ids=instrument_ids,
             filter_expr=filter_expr,
             as_nautilus=as_nautilus,
+            instrument_id_column="id",
             **kwargs,
         )
 
