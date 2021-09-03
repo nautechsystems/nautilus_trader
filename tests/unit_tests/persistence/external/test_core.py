@@ -216,7 +216,7 @@ class TestPersistenceCore:
         # Assert
         assert result == {
             "BetfairTicker": 82,
-            "BettingInstrument": 1,
+            "BettingInstrument": 2,
             "InstrumentStatusUpdate": 1,
             "OrderBookData": 1077,
             "TradeTick": 114,

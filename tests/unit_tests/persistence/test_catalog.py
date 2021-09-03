@@ -60,14 +60,13 @@ class TestPersistenceCatalog:
         instruments = self.catalog.instruments()
         assert len(instruments) == 2
 
-    @pytest.mark.skip(reason="bm to fix")
     def test_data_catalog_instruments_filtered_df(self):
         instrument_id = (
             "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,237491,0.0.BETFAIR"
         )
         instruments = self.catalog.instruments(instrument_ids=[instrument_id])
         assert len(instruments) == 1
-        assert instruments["instrument_id"].iloc[0] == instrument_id
+        assert instruments["id"].iloc[0] == instrument_id
 
     def test_data_catalog_instruments_as_nautilus(self):
         instruments = self.catalog.instruments(as_nautilus=True)
