@@ -41,13 +41,6 @@ def list_dicts_to_dict_lists(dicts, keys=None):
     return result
 
 
-def identity(x):
-    """
-    The identity function
-    """
-    return x
-
-
 def maybe_list(obj):
     if isinstance(obj, dict):
         return [obj]
@@ -60,7 +53,7 @@ def is_nautilus_class(cls):
     """
     is_nautilus_paths = cls.__module__.startswith("nautilus_trader.")
     if not is_nautilus_paths:
-        # This object is defined outside of nautilus, definitely custom
+        # This object is defined outside of Nautilus, definitely custom
         return False
     else:
         is_data_or_event = issubclass(cls, (Data, Event))
@@ -129,10 +122,16 @@ def clean_key(s):
 
 
 def camel_to_snake_case(s):
+    """
+    Convert the given string from camel to snake case.
+    """
     return re.sub(r"((?<=[a-z0-9])[A-Z]|(?!^)[A-Z](?=[a-z]))", r"_\1", s).lower()
 
 
 def class_to_filename(cls):
+    """
+    Convert the given class to a filename.
+    """
     name = f"{camel_to_snake_case(cls.__name__)}"
     if not is_nautilus_class(cls):
         name = f"{GENERIC_DATA_PREFIX}{camel_to_snake_case(cls.__name__)}"

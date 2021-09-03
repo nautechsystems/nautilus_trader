@@ -24,31 +24,36 @@ from nautilus_trader.common.providers import InstrumentProvider
 
 
 class LinePreprocessor:
+    """
+    Provides preprocessing lines before they are passed to a `Reader` class
+    (currently only `TextReader`).
+
+    Used if the input data requires any preprocessing that may also be required
+    as attributes on the resulting Nautilus objects that are created.
+
+    For example, if you were logging data in python with a prepended timestamp, as below:
+
+    2021-06-29T06:03:14.528000 - {"op":"mcm","pt":1624946594395,"mc":[{"id":"1.179082386","rc":[{"atb":[[1.93,0]]}]}
+
+    The raw JSON data is contained after the logging timestamp, but we would
+    also want to use this timestamp as the `ts_init` value in Nautilus. In
+    this instance, you could use something along the lines of:
+
+    class LoggingLinePreprocessor(LinePreprocessor):
+        @staticmethod
+        def pre_process(line):
+            timestamp, json_data = line.split(' - ')
+            yield json_data, {'ts_init': pd.Timestamp(timestamp)}
+
+        @staticmethod
+        def post_process(obj: Any, state: dict):
+            obj.ts_init = state['ts_init']
+            return obj
+    """
+
     def __init__(self):
         """
-        A class for preprocessing lines before they are passed to a `Reader` class (currently only `TextReader`). Used
-        if the input data requires any preprocessing that may also be required as attributes on the resulting nautilus
-        objects that are created.
-
-        For example, if you were logging data in python with a prepended timestamp, as below:
-
-        2021-06-29T06:03:14.528000 - {"op":"mcm","pt":1624946594395,"mc":[{"id":"1.179082386","rc":[{"atb":[[1.93,0]]}]}
-
-        The raw JSON data is contained after the logging timestamp, but we would also want to use this timestamp as the
-        `ts_init` value in nautilus. In this instance, you could use something along the lines of:
-
-        class LoggingLinePreprocessor(LinePreprocessor):
-            @staticmethod
-            def pre_process(line):
-                timestamp, json_data = line.split(' - ')
-                yield json_data, {'ts_init': pd.Timestamp(timestamp)}
-
-            @staticmethod
-            def post_process(obj: Any, state: dict):
-                obj.ts_init = state['ts_init']
-                return obj
-
-
+        Initialize a new instance of the ``LinePreprocessor`` class.
         """
         self.state = {}
         self.line = None
@@ -78,13 +83,17 @@ class LinePreprocessor:
 
 
 class Reader:
+    """
+    Provides parsing of raw byte blocks to Nautilus objects.
+    """
+
     def __init__(
         self,
         instrument_provider: Optional[InstrumentProvider] = None,
         instrument_provider_update: Callable = None,
     ):
         """
-        Provides parsing of raw byte blocks to Nautilus objects.
+        Initialize a new instance of the ``Reader`` class.
         """
         self.instrument_provider = instrument_provider
         self.instrument_provider_update = instrument_provider_update
@@ -114,6 +123,11 @@ class Reader:
 
 
 class ByteReader(Reader):
+    """
+    A Reader subclass for reading blocks of raw bytes; `byte_parser` will be
+    passed a blocks of raw bytes.
+    """
+
     def __init__(
         self,
         block_parser: Callable,
@@ -121,7 +135,7 @@ class ByteReader(Reader):
         instrument_provider_update: Callable = None,
     ):
         """
-        A Reader subclass for reading blocks of raw bytes; `byte_parser` will be passed a blocks of raw bytes.
+        Initialize a new instance of the ``ByteReader`` class.
 
         Parameters
         ----------
@@ -146,15 +160,20 @@ class ByteReader(Reader):
 
 
 class TextReader(ByteReader):
+    """
+    A Reader subclass for reading lines of a text-like file; `line_parser` will
+    be passed a single row of bytes.
+    """
+
     def __init__(
         self,
         line_parser: Callable,
         line_preprocessor: LinePreprocessor = None,
         instrument_provider: Optional[InstrumentProvider] = None,
-        instrument_provider_update: Callable = None,
+        instrument_provider_update: Optional[Callable] = None,
     ):
         """
-        A Reader subclass for reading lines of a text-like file; `line_parser` will be passed a single row of bytes.
+        Initialize a new instance of the ``TextReader`` class.
 
         Parameters
         ----------
@@ -165,7 +184,7 @@ class TextReader(ByteReader):
             before json.loads is called. Nautilus objects are returned to the
             context manager for any post-processing also (for example, setting
             the `ts_init`).
-        instrument_provider_update : Callable , optional
+        instrument_provider_update : Optional[Callable]
             An optional hook/callable to update instrument provider before
             data is passed to `line_parser` (in many cases instruments need to
             be known ahead of parsing).
@@ -290,7 +309,8 @@ class ParquetReader(ByteReader):
         Parameters
         ----------
         instrument_provider_update
-            Optional hook to call before `parser` for the purpose of loading instruments into the InstrumentProvider
+            Optional hook to call before `parser` for the purpose of loading
+            instruments into the InstrumentProvider.
 
         """
         super().__init__(
