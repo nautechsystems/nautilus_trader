@@ -75,7 +75,7 @@ cdef class MessageBus:
         Raises
         ------
         ValueError
-            If name is not None and not a valid string.
+            If name is not `None` and not a valid string.
 
         """
         if name is None:
@@ -128,7 +128,7 @@ cdef class MessageBus:
         ----------
         topic : str, optional
             The topic filter. May include wildcard characters '*' and '?'.
-            If None then query is for ALL topics.
+            If `None` then query is for ALL topics.
 
         Returns
         -------
@@ -149,7 +149,7 @@ cdef class MessageBus:
         ----------
         topic : str, optional
             The topic filter. May include wildcard characters '*' and '?'.
-            If None then query is for ALL topics.
+            If `None` then query is for ALL topics.
 
         Returns
         -------
@@ -174,7 +174,7 @@ cdef class MessageBus:
         ValueError
             If endpoint is not a valid string.
         ValueError
-            If handler is not of type of type Callable.
+            If handler is not of type `Callable`.
         KeyError
             If endpoint already registered.
 
@@ -203,7 +203,7 @@ cdef class MessageBus:
         ValueError
             If endpoint is not a valid string.
         ValueError
-            If handler is not of type Callable.
+            If handler is not of type `Callable`.
         KeyError
             If endpoint is not registered.
         ValueError
@@ -330,7 +330,7 @@ cdef class MessageBus:
         ValueError
             If topic is not a valid string.
         ValueError
-            If handler is not of type Callable.
+            If handler is not of type `Callable`.
 
         Warnings
         --------
@@ -390,7 +390,7 @@ cdef class MessageBus:
         ValueError
             If topic is not a valid string.
         ValueError
-            If handler is not of type Callable.
+            If handler is not of type `Callable`.
 
         """
         Condition.valid_string(topic, "topic")

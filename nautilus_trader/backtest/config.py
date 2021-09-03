@@ -42,6 +42,10 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 
 class Partialable:
+    """
+    The abstract base class for all partialable configurations.
+    """
+
     def missing(self):
         return [x for x in self.__dataclass_fields__ if getattr(self, x) is None]
 

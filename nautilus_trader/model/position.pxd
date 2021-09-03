@@ -74,7 +74,7 @@ cdef class Position:
     cdef readonly Currency quote_currency
     """The position quote currency.\n\n:returns: `Currency`"""
     cdef readonly Currency base_currency
-    """The position base currency (if applicable).\n\n:returns: `Currency` or None"""
+    """The position base currency (if applicable).\n\n:returns: `Currency` or `None`"""
     cdef readonly Currency cost_currency
     """The position cost currency (for PnL).\n\n:returns: `Currency`"""
     cdef readonly int64_t ts_init

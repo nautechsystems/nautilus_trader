@@ -142,7 +142,7 @@ class TradingNode:
         Raises
         ------
         TypeError
-            If config is not of type TradingNodeConfig.
+            If config is not of type `TradingNodeConfig`.
 
         """
         if config is None:

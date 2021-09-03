@@ -756,7 +756,7 @@ cdef class BulkTickBarBuilder:
         Raises
         ------
         ValueError
-            If callback is not of type Callable.
+            If callback is not of type `Callable`.
         ValueError
             If instrument.id != bar_type.instrument_id.
 

@@ -62,10 +62,10 @@ cdef class FiniteStateMachine:
             The initial state for the FSM.
         trigger_parser : Callable[[int], str], optional
             The trigger parser needed to convert C Enum ints into strings.
-            If None then will just print the integer.
+            If `None` then will just print the integer.
         state_parser : Callable[[int], str], optional
             The state parser needed to convert C Enum ints into strings.
-            If None then will just print the integer.
+            If `None` then will just print the integer.
 
         Raises
         ------
@@ -74,9 +74,9 @@ cdef class FiniteStateMachine:
         ValueError
             If state_transition_table key not tuple.
         ValueError
-            If trigger_parser not of type Callable or None.
+            If trigger_parser not of type `Callable` or `None`.
         ValueError
-            If state_parser not of type Callable or None.
+            If state_parser not of type `Callable` or `None`.
 
         """
         if trigger_parser is None:

@@ -25,7 +25,7 @@ cdef class AccountState(Event):
     cdef readonly AccountType account_type
     """The account type for the event.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
-    """The account type for the event.\n\n:returns: `Currency` or None"""
+    """The account type for the event.\n\n:returns: `Currency` or `None`"""
     cdef readonly list balances
     """The account balances.\n\n:returns: `list[AccountBalance]`"""
     cdef readonly bint is_reported

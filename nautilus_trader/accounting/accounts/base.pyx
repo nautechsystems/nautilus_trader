@@ -203,7 +203,7 @@ cdef class Account:
         Parameters
         ----------
         currency : Currency, optional
-            The currency for the query. If None then will use the default
+            The currency for the query. If `None` then will use the default
             currency (if set).
 
         Returns
@@ -213,7 +213,7 @@ cdef class Account:
         Raises
         ------
         ValueError
-            If currency is None and base_currency is None.
+            If currency is `None` and base_currency is `None`.
 
         Warnings
         --------
@@ -236,7 +236,7 @@ cdef class Account:
         Parameters
         ----------
         currency : Currency, optional
-            The currency for the query. If None then will use the default
+            The currency for the query. If `None` then will use the default
             currency (if set).
 
         Returns
@@ -246,7 +246,7 @@ cdef class Account:
         Raises
         ------
         ValueError
-            If currency is None and base_currency is None.
+            If currency is `None` and base_currency is `None`.
 
         Warnings
         --------
@@ -272,7 +272,7 @@ cdef class Account:
         Parameters
         ----------
         currency : Currency, optional
-            The currency for the query. If None then will use the default
+            The currency for the query. If `None` then will use the default
             currency (if set).
 
         Returns
@@ -282,7 +282,7 @@ cdef class Account:
         Raises
         ------
         ValueError
-            If currency is None and base_currency is None.
+            If currency is `None` and base_currency is `None`.
 
         Warnings
         --------
@@ -308,7 +308,7 @@ cdef class Account:
         Parameters
         ----------
         currency : Currency, optional
-            The currency for the query. If None then will use the default
+            The currency for the query. If `None` then will use the default
             currency (if set).
 
         Returns
@@ -318,7 +318,7 @@ cdef class Account:
         Raises
         ------
         ValueError
-            If currency is None and base_currency is None.
+            If currency is `None` and base_currency is `None`.
 
         Warnings
         --------

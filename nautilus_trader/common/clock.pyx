@@ -188,7 +188,7 @@ cdef class Clock:
         Raises
         ------
         TypeError
-            If handler is not of type Callable.
+            If handler is not of type `Callable`.
 
         """
         Condition.callable(handler, "handler")
@@ -225,9 +225,9 @@ cdef class Clock:
         ValueError
             If alert_time is not >= the clocks current time.
         TypeError
-            If handler is not of type Callable or None.
+            If handler is not of type `Callable` or `None`.
         ValueError
-            If handler is None and no default handler is registered.
+            If handler is `None` and no default handler is registered.
 
         """
         Condition.not_none(name, "name")
@@ -288,13 +288,13 @@ cdef class Clock:
         ValueError
             If interval is not positive (> 0).
         ValueError
-            If stop_time is not None and stop_time < time_now.
+            If stop_time is not `None` and stop_time < time_now.
         ValueError
-            If stop_time is not None and start_time + interval > stop_time.
+            If stop_time is not `None` and start_time + interval > stop_time.
         TypeError
-            If handler is not of type Callable or None.
+            If handler is not of type `Callable` or `None`.
         ValueError
-            If handler is None and no default handler is registered.
+            If handler is `None` and no default handler is registered.
 
         """
         cdef datetime now = self.utc_now()  # Call here for greater accuracy
@@ -566,7 +566,7 @@ cdef class LiveClock(Clock):
         """
         Initialize a new instance of the ``LiveClock`` class.
 
-        If loop is None then threads will be used for timers.
+        If loop is `None` then threads will be used for timers.
 
         Parameters
         ----------

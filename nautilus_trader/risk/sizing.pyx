@@ -157,7 +157,7 @@ cdef class FixedRiskSizer(PositionSizer):
         ValueError
             If the commission_rate is negative (< 0).
         ValueError
-            If hard_limit is not None and is not positive (> 0).
+            If hard_limit is not `None` and is not positive (> 0).
         ValueError
             If the unit_batch_size is not positive (> 0).
         ValueError

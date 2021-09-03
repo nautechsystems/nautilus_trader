@@ -88,7 +88,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Raises
         ------
         TypeError
-            If config is not of type LiveExecEngineConfig.
+            If config is not of type `LiveExecEngineConfig`.
 
         """
         if config is None:

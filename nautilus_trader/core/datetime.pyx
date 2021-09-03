@@ -163,7 +163,7 @@ cpdef int64_t dt_to_unix_millis(datetime dt) except *:
     Raises
     ------
     TypeError
-        If timestamp is None.
+        If timestamp is `None`.
 
     """
     # If timestamp is None then `-` unsupported operand for `NoneType` and `timedelta`
@@ -186,7 +186,7 @@ cpdef int64_t dt_to_unix_micros(datetime dt) except *:
     Raises
     ------
     TypeError
-        If timestamp is None.
+        If timestamp is `None`.
 
     """
     # If timestamp is None then `-` unsupported operand for `NoneType` and `timedelta`
@@ -209,7 +209,7 @@ cpdef int64_t dt_to_unix_nanos(datetime dt) except *:
     Raises
     ------
     TypeError
-        If timestamp is None.
+        If timestamp is `None`.
 
     Warnings
     --------
@@ -285,7 +285,7 @@ cpdef maybe_dt_to_unix_nanos(datetime dt):
     """
     Return the UNIX time (nanoseconds) from the given datetime, or None.
 
-    If dt is None, then will return None.
+    If dt is `None`, then will return None.
 
     Parameters
     ----------
@@ -307,7 +307,7 @@ cpdef maybe_nanos_to_unix_dt(nanos):
     """
     Return the datetime in UTC from the given UNIX time (nanoseconds), or None.
 
-    If nanos is None, then will return None.
+    If nanos is `None`, then will return None.
 
     Parameters
     ----------

@@ -66,9 +66,9 @@ cdef class Order:
     cdef readonly PositionId position_id
     """The position ID associated with the order.\n\n:returns: `PositionId`"""
     cdef readonly AccountId account_id
-    """The account ID associated with the order.\n\n:returns: `AccountId` or None"""
+    """The account ID associated with the order.\n\n:returns: `AccountId` or `None`"""
     cdef readonly ExecutionId execution_id
-    """The orders last execution ID.\n\n:returns: `ExecutionId` or None"""
+    """The orders last execution ID.\n\n:returns: `ExecutionId` or `None`"""
     cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType type
@@ -80,7 +80,7 @@ cdef class Order:
     cdef readonly Quantity filled_qty
     """The order total filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly object avg_px
-    """The order average fill price.\n\n:returns: `Decimal` or None"""
+    """The order average fill price.\n\n:returns: `Decimal` or `None`"""
     cdef readonly object slippage
     """The order total price slippage.\n\n:returns: `Decimal`"""
     cdef readonly UUID4 init_id
@@ -139,7 +139,7 @@ cdef class PassiveOrder(Order):
     cdef readonly LiquiditySide liquidity_side
     """The order liquidity side.\n\n:returns: `LiquiditySide`"""
     cdef readonly datetime expire_time
-    """The order expire time.\n\n:returns: `datetime` or None"""
+    """The order expire time.\n\n:returns: `datetime` or `None`"""
     cdef readonly int64_t expire_time_ns
     """The order expire time (nanoseconds), zero for no expire time.\n\n:returns: `int64`"""
 

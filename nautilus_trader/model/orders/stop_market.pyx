@@ -99,7 +99,7 @@ cdef class StopMarketOrder(PassiveOrder):
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is ``GTD`` and the expire_time is None.
+            If time_in_force is ``GTD`` and the expire_time is `None`.
 
         """
         super().__init__(
