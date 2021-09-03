@@ -1,4 +1,4 @@
-![Nautech Systems](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/nautech-systems-logo.png?raw=true "logo")
+![Nautech Systems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/nautech-systems-logo.png?raw=true "logo")
 
 ---
 
@@ -151,7 +151,6 @@ Contributors are also required to sign a standard Contributor License Agreement 
 ---
 
 Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+https://nautechsystems.io
 
-> https://nautechsystems.io
-
-![cython](https://github.com/nautechsystems/nautilus_trader/blob/master/docs/artwork/cython-logo.png?raw=true "cython")
+![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ns-logo.png?raw=true "nautechsystems")![cython](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/cython-logo.png?raw=true "cython")
