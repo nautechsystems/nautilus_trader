@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 import pickle
 import sys
 from unittest.mock import patch
@@ -23,12 +38,14 @@ from nautilus_trader.persistence.external.core import process_raw_file
 from nautilus_trader.persistence.external.core import read_and_clear_existing_data
 from nautilus_trader.persistence.external.core import scan_files
 from nautilus_trader.persistence.external.core import split_and_serialize
+from nautilus_trader.persistence.external.core import write_chunk
 from nautilus_trader.persistence.external.core import write_parquet
 from nautilus_trader.persistence.external.core import write_tables
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import MockReader
 from tests.test_kit.mocks import data_catalog_setup
+from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 
@@ -174,33 +191,41 @@ class TestPersistenceCore:
 
     @patch("nautilus_trader.persistence.external.core.load_processed_raw_files")
     def test_scan_processed(self, mock_load_processed_raw_files):
+        # Arrange
         mock_load_processed_raw_files.return_value = [
             TEST_DATA_DIR + "/truefx-audusd-ticks.csv",
             TEST_DATA_DIR + "/news_events.csv",
             TEST_DATA_DIR + "/tardis_trades.csv",
         ]
+
+        # Act
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/*.csv")
+
+        # Assert
         assert len(files) == 8
 
     def test_nautilus_chunk_to_dataframes(self):
+        # Arrange, Act
         data = self._loaded_data_into_catalog()
         dfs = split_and_serialize(data)
         result = {}
         for cls in dfs:
             for ins in dfs[cls]:
                 result[cls.__name__] = len(dfs[cls][ins])
-        expected = {
+
+        # Assert
+        assert result == {
             "BetfairTicker": 82,
             "BettingInstrument": 1,
             "InstrumentStatusUpdate": 1,
             "OrderBookData": 1077,
             "TradeTick": 114,
         }
-        assert result == expected
 
     def test_write_parquet_no_partitions(
         self,
     ):
+        # Arrange
         df = pd.DataFrame(
             {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
         )
@@ -208,6 +233,7 @@ class TestPersistenceCore:
         fs = catalog.fs
         root = catalog.path
 
+        # Act
         write_parquet(
             fs=fs,
             path=f"{root}/sample.parquet",
@@ -218,11 +244,14 @@ class TestPersistenceCore:
         result = (
             ds.dataset(str(root.joinpath("sample.parquet")), filesystem=fs).to_table().to_pandas()
         )
+
+        # Assert
         assert result.equals(df)
 
     def test_write_parquet_partitions(
         self,
     ):
+        # Arrange
         catalog = DataCatalog.from_env()
         fs = catalog.fs
         root = catalog.path
@@ -231,6 +260,8 @@ class TestPersistenceCore:
         df = pd.DataFrame(
             {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
         )
+
+        # Act
         write_parquet(
             fs=fs,
             path=f"{root}/{path}",
@@ -240,6 +271,8 @@ class TestPersistenceCore:
         )
         dataset = ds.dataset(str(root.joinpath("sample.parquet")), filesystem=fs)
         result = dataset.to_table().to_pandas()
+
+        # Assert
         assert result.equals(df[["value"]])  # instrument_id is a partition now
         assert dataset.files[0].startswith("/root/sample.parquet/instrument_id=a/")
         assert dataset.files[1].startswith("/root/sample.parquet/instrument_id=b/")
@@ -307,6 +340,8 @@ class TestPersistenceCore:
         df = pd.DataFrame(
             {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
         )
+
+        # Act
         write_parquet(
             fs=fs,
             path=path,
@@ -322,22 +357,26 @@ class TestPersistenceCore:
             )
 
     def test_load_text_betfair(self):
+        # Arrange
         instrument_provider = BetfairInstrumentProvider.from_instruments([])
 
+        # Act
         files = process_files(
             glob_path=f"{TEST_DATA_DIR}/**.bz2",
             reader=BetfairTestStubs.betfair_reader(instrument_provider=instrument_provider),
             catalog=self.catalog,
             instrument_provider=instrument_provider,
         )
-        expected = {
+
+        # Assert
+        assert files == {
             TEST_DATA_DIR + "/1.166564490.bz2": 2908,
             TEST_DATA_DIR + "/betfair/1.180305278.bz2": 17085,
             TEST_DATA_DIR + "/betfair/1.166811431.bz2": 22692,
         }
-        assert files == expected
 
     def test_data_catalog_instruments_no_partition(self):
+        # Arrange, Act
         self._loaded_data_into_catalog()
         path = f"{self.catalog.path}/data/betting_instrument.parquet"
         dataset = pq.ParquetDataset(
@@ -345,9 +384,12 @@ class TestPersistenceCore:
             filesystem=self.fs,
         )
         partitions = dataset.partitions
+
+        # Assert
         assert not partitions.levels
 
     def test_data_catalog_metadata(self):
+        # Arrange, Act, Assert
         self._loaded_data_into_catalog()
         assert ds.parquet_dataset(
             f"{self.catalog.path}/data/trade_tick.parquet/_metadata",
@@ -359,7 +401,10 @@ class TestPersistenceCore:
         )
 
     def test_data_catalog_dataset_types(self):
+        # Arrange
         self._loaded_data_into_catalog()
+
+        # Act
         dataset = ds.dataset(
             str(self.catalog.path / "data" / "trade_tick.parquet"),
             filesystem=self.catalog.fs,
@@ -367,7 +412,9 @@ class TestPersistenceCore:
         schema = {
             n: t.__class__.__name__ for n, t in zip(dataset.schema.names, dataset.schema.types)
         }
-        expected = {
+
+        # Assert
+        assert schema == {
             "price": "DataType",
             "size": "DataType",
             "aggressor_side": "DictionaryType",
@@ -375,14 +422,44 @@ class TestPersistenceCore:
             "ts_event": "DataType",
             "ts_init": "DataType",
         }
-        assert schema == expected
+
+    def test_data_catalog_instruments_load(self):
+        # Arrange
+        instruments = [
+            TestInstrumentProvider.aapl_equity(),
+            TestInstrumentProvider.es_future(),
+            TestInstrumentProvider.aapl_option(),
+        ]
+        write_chunk(catalog=self.catalog, chunk=instruments)
+
+        # Act
+        instruments = self.catalog.instruments(as_nautilus=True)
+
+        # Assert
+        assert len(instruments) == 3
+
+    def test_data_catalog_instruments_filter_by_instrument_id(self):
+        # Arrange
+        instruments = [
+            TestInstrumentProvider.aapl_equity(),
+            TestInstrumentProvider.es_future(),
+            TestInstrumentProvider.aapl_option(),
+        ]
+        write_chunk(catalog=self.catalog, chunk=instruments)
+
+        # Act
+        instrument_ids = [instrument.id.value for instrument in instruments]
+        instruments = self.catalog.instruments(instrument_ids=instrument_ids)
+
+        # Assert
+        assert len(instruments) == 3
 
     def test_load_dask_distributed_client(self):
+        # Arrange
         from distributed import Client
 
         instrument_provider = BetfairInstrumentProvider.from_instruments([])
 
-        # Arrange
         with Client(processes=False, threads_per_worker=1) as c:
             tasks = process_files(
                 glob_path=f"{TEST_DATA_DIR}/1.166564490*",
