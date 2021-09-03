@@ -52,7 +52,7 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 class CacheConfig(pydantic.BaseModel):
     """
-    Provides configuration for ``Cache`` instances.
+    Configuration for ``Cache`` instances.
 
     tick_capacity : int
         The maximum length for internal tick deques.

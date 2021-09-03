@@ -77,7 +77,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 class DataEngineConfig(pydantic.BaseModel):
     """
-    Provides configuration for ``DataEngine`` instances.
+    Configuration for ``DataEngine`` instances.
     """
 
     pass  # No configuration currently

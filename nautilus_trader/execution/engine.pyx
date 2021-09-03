@@ -77,7 +77,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 class ExecEngineConfig(pydantic.BaseModel):
     """
-    Provides configuration for ``ExecutionEngine`` instances.
+    Configuration for ``ExecutionEngine`` instances.
     """
 
     pass  # No configuration currently

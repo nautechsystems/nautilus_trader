@@ -42,7 +42,7 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 class EMACrossStopEntryTrailConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``EMACross`` instances.
+    Configuration for ``EMACross`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.

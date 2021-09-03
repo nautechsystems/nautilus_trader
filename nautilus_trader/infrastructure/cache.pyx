@@ -51,7 +51,7 @@ cdef str _STRATEGIES = 'Strategies'
 
 class CacheDatabaseConfig(pydantic.BaseModel):
     """
-    Provides configuration for ``CacheDatabase`` instances.
+    Configuration for ``CacheDatabase`` instances.
 
     type : str
         The database type.

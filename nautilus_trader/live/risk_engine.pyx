@@ -35,7 +35,7 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 class LiveRiskEngineConfig(RiskEngineConfig):
     """
-    Provides configuration for ``LiveRiskEngine`` instances.
+    Configuration for ``LiveRiskEngine`` instances.
     """
 
     qsize: PositiveInt = 10000

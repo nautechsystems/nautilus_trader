@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-This module provides a data producer for backtesting.
+This module provides a data client for backtesting.
 """
 
 from cpython.datetime cimport datetime

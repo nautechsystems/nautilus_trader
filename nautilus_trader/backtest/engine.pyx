@@ -90,7 +90,7 @@ from nautilus_trader.trading.strategy cimport TradingStrategy
 
 class BacktestEngineConfig(pydantic.BaseModel):
     """
-    Provides configuration for ``BacktestEngine`` instances.
+    Configuration for ``BacktestEngine`` instances.
 
     trader_id : str, default="BACKTESTER-000"
         The trader ID.
