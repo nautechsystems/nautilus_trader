@@ -124,14 +124,14 @@ cdef class BettingInstrument(Instrument):
         data = values.copy()
         data['event_open_date'] = pd.Timestamp(data['event_open_date'])
         data['market_start_time'] = pd.Timestamp(data['market_start_time'])
-        return BettingInstrument(**{k: v for k, v in data.items() if k not in ('instrument_id',)})
+        return BettingInstrument(**{k: v for k, v in data.items() if k not in ('id',)})
 
     @staticmethod
     cdef dict to_dict_c(BettingInstrument obj):
         Condition.not_none(obj, "obj")
         return {
             "type": "BettingInstrument",
-            "instrument_id": obj.id.value,
+            "id": obj.id.value,
             "venue_name": obj.id.venue.value,
             "event_type_id": obj.event_type_id,
             "event_type_name": obj.event_type_name,

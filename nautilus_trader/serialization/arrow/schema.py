@@ -411,7 +411,7 @@ NAUTILUS_PARQUET_SCHEMA = {
         {
             "venue_name": pa.string(),
             "currency": pa.string(),
-            "instrument_id": pa.string(),
+            "id": pa.string(),
             "event_type_id": pa.string(),
             "event_type_name": pa.string(),
             "competition_id": pa.string(),
