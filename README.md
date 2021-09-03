@@ -32,7 +32,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 - **Fast:** C-level speed and type safety provided through Cython. Asynchronous networking utilizing uvloop.
 - **Reliable:** Redis backed performant state persistence for live implementations.
-- **Flexible:** Any REST/WebSocket/FIX API can be integrated into the platform.
+- **Flexible:** Cross-platform. Any REST/WebSocket/FIX API can be integrated into the platform.
 - **Backtesting:** Multiple instruments and strategies simultaneously with historical quote tick, trade tick, bar and order book data.
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
@@ -125,7 +125,8 @@ Examples of both backtest and live trading launch scripts are available in the `
 ## Development
 
 We aim to make the developer experience for this hybrid codebase of Cython and Python
-as pleasant as possible. Please refer to the [Developer Guide](https://docs.nautilustrader.io/developer-guide) for helpful information.
+as pleasant as possible.
+Please refer to the [Developer Guide](https://docs.nautilustrader.io/developer-guide) for helpful information.
 
 ## Contributing
 
