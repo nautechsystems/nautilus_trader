@@ -38,13 +38,13 @@ cdef class OrderEvent(Event):
     cdef readonly StrategyId strategy_id
     """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId` or None"""
+    """The account ID associated with the event.\n\n:returns: `AccountId` or `None`"""
     cdef readonly InstrumentId instrument_id
     """The instrument ID associated with the event.\n\n:returns: `InstrumentId`"""
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the event.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue order ID associated with the event.\n\n:returns: `VenueOrderId` or None"""
+    """The venue order ID associated with the event.\n\n:returns: `VenueOrderId` or `None`"""
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -179,7 +179,7 @@ cdef class OrderUpdated(OrderEvent):
     cdef readonly Price price
     """The orders current price.\n\n:returns: `Price`"""
     cdef readonly Price trigger
-    """The orders current trigger price.\n\n:returns: `Price` or None"""
+    """The orders current trigger price.\n\n:returns: `Price` or `None`"""
 
     @staticmethod
     cdef OrderUpdated from_dict_c(dict values)
@@ -192,7 +192,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly ExecutionId execution_id
     """The execution ID associated with the event.\n\n:returns: `ExecutionId`"""
     cdef readonly PositionId position_id
-    """The position ID associated with the event.\n\n:returns: `PositionId` or None"""
+    """The position ID associated with the event.\n\n:returns: `PositionId` or `None`"""
     cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType order_type

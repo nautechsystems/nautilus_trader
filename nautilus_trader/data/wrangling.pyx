@@ -102,7 +102,7 @@ cdef class QuoteTickDataWrangler:
             The instrument ID indexer for the built ticks.
         random_seed : int, optional
             The random seed for shuffling order of high and low ticks from bar
-            data. If random_seed is None then won't shuffle.
+            data. If random_seed is `None` then won't shuffle.
         default_volume : Decimal
             The volume per tick if not available from the data.
 

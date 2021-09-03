@@ -117,7 +117,7 @@ cdef class ExecutionEngine(Component):
         Raises
         ------
         TypeError
-            If config is not of type ExecEngineConfig.
+            If config is not of type `ExecEngineConfig`.
 
         """
         if config is None:

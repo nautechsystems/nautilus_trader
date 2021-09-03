@@ -81,7 +81,7 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         database : CacheDatabase, optional
-            The database for the cache. If None then will bypass persistence.
+            The database for the cache. If `None` then will bypass persistence.
         logger : Logger
             The logger for the cache.
         config : CacheConfig, optional
@@ -90,7 +90,7 @@ cdef class Cache(CacheFacade):
         Raises
         ------
         TypeError
-            If config is not of type CacheConfig.
+            If config is not of type `CacheConfig`.
 
         """
         if config is None:
@@ -1657,7 +1657,7 @@ cdef class Cache(CacheFacade):
         Returns
         -------
         Bar or None
-            If no bars or no bar at index then returns None.
+            If no bars or no bar at index then returns `None`.
 
         Notes
         -----

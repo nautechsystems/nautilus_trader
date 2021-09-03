@@ -55,7 +55,7 @@ cdef class Subscription:
         ValueError
             If topic is not a valid string.
         ValueError
-            If handler is not of type Callable.
+            If handler is not of type `Callable`.
         ValueError
             If priority is negative (< 0).
 

@@ -92,11 +92,11 @@ cdef class Trader(Component):
         ValueError
             If portfolio is not equal to the exec_engine._portfolio.
         ValueError
-            If strategies is None.
+            If strategies is `None`.
         ValueError
             If strategies list is empty.
         TypeError
-            If strategies list contains a type other than TradingStrategy.
+            If strategies list contains a type other than `TradingStrategy`.
 
         """
         if config is None:
@@ -298,7 +298,7 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
-            If strategies is None or empty.
+            If strategies is `None` or empty.
 
         """
         Condition.not_empty(strategies, "strategies")
@@ -357,7 +357,7 @@ cdef class Trader(Component):
         Raises
         ------
         ValueError
-            If components is None or empty.
+            If components is `None` or empty.
 
         """
         Condition.not_empty(components, "components")

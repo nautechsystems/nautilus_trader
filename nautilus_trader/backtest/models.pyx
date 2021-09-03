@@ -50,7 +50,7 @@ cdef class FillModel:
         ValueError
             If any probability argument is not within range [0, 1].
         TypeError
-            If random_seed is not None and not of type int.
+            If random_seed is not None and not of type `int`.
 
         """
         Condition.in_range(prob_fill_at_limit, 0.0, 1.0, "prob_fill_at_limit")

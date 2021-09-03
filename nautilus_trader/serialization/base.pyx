@@ -160,7 +160,7 @@ cpdef void register_serializable_object(
     Raises
     ------
     TypeError
-        If `to_dict` or `from_dict` are not of type Callable.
+        If `to_dict` or `from_dict` are not of type `Callable`.
     KeyError
         If obj already registered with the global object maps.
 

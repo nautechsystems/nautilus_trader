@@ -13,4 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# WIP
+
+class BacktestNode:
+    """
+    Provides a node for managing backtest runs.
+    """
+
+    def __init__(self):
+        """
+        Initialize a new instance of the ``BacktestNode`` class.
+        """
+        pass

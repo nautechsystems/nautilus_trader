@@ -144,7 +144,7 @@ cdef class BacktestEngine:
         Raises
         ------
         TypeError
-            If config is not of type BacktestEngineConfig.
+            If config is not of type `BacktestEngineConfig`.
 
         """
         if config is None:
@@ -837,8 +837,8 @@ cdef class BacktestEngine:
         venue_type : VenueType
             The type of venue (will determine venue -> client_id mapping).
         oms_type : OMSType {``HEDGING``, ``NETTING``}
-            The order management system type for the exchange. If ``HEDGING`` and
-            no position_id for an order then will generate a new position_id.
+            The order management system type for the exchange. If ``HEDGING`` will
+            generate new position IDs.
         account_type : AccountType
             The account type for the client.
         base_currency : Currency, optional
@@ -991,10 +991,10 @@ cdef class BacktestEngine:
         Parameters
         ----------
         start : datetime, optional
-            The start datetime (UTC) for the backtest run. If None engine runs
+            The start datetime (UTC) for the backtest run. If `None` engine runs
             from the start of the data.
         stop : datetime, optional
-            The stop datetime (UTC) for the backtest run. If None engine runs
+            The stop datetime (UTC) for the backtest run. If `None` engine runs
             to the end of the data.
         strategies : list, optional
             The strategies for the backtest run (if None will use previous).

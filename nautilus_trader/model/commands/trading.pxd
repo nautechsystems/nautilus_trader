@@ -65,11 +65,11 @@ cdef class UpdateOrder(TradingCommand):
     cdef readonly VenueOrderId venue_order_id
     """The venue order ID associated with the command.\n\n:returns: `VenueOrderId`"""
     cdef readonly Quantity quantity
-    """The updated quantity for the command.\n\n:returns: `Quantity` or None"""
+    """The updated quantity for the command.\n\n:returns: `Quantity` or `None`"""
     cdef readonly Price price
-    """The updated price for the command.\n\n:returns: `Price` or None"""
+    """The updated price for the command.\n\n:returns: `Price` or `None`"""
     cdef readonly Price trigger
-    """The updated trigger price for the command.\n\n:returns: `Price` or None"""
+    """The updated trigger price for the command.\n\n:returns: `Price` or `None`"""
 
     @staticmethod
     cdef UpdateOrder from_dict_c(dict values)

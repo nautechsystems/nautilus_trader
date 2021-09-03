@@ -83,7 +83,7 @@ cdef class Actor(Component):
         Parameters
         ----------
         component_id : ComponentId, optional
-            The component ID. If None is passed then the identifier will be
+            The component ID. If `None` is passed then the identifier will be
             taken from `type(self).__name__`.
 
         """
@@ -1233,7 +1233,7 @@ cdef class Actor(Component):
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
-            The specified to datetime for the data. If None then will default
+            The specified to datetime for the data. If `None` then will default
             to the current datetime.
 
         Notes
@@ -1277,7 +1277,7 @@ cdef class Actor(Component):
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
-            The specified to datetime for the data. If None then will default
+            The specified to datetime for the data. If `None` then will default
             to the current datetime.
 
         Notes
@@ -1321,7 +1321,7 @@ cdef class Actor(Component):
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
-            The specified to datetime for the data. If None then will default
+            The specified to datetime for the data. If `None` then will default
             to the current datetime.
 
         Notes

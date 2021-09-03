@@ -184,7 +184,7 @@ cdef class MarginAccount(Account):
         Returns
         -------
         TypeError
-            If leverage is not of type Decimal.
+            If leverage is not of type `Decimal`.
         ValueError
             If leverage is not >= 1.
 

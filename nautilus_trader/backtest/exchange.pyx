@@ -120,15 +120,15 @@ cdef class SimulatedExchange:
         ValueError
             If instruments is empty.
         ValueError
-            If instruments contains a type other than Instrument.
+            If instruments contains a type other than `Instrument`.
         ValueError
             If starting_balances is empty.
         ValueError
-            If starting_balances contains a type other than Money.
+            If starting_balances contains a type other than `Money`.
         ValueError
             If base currency and multiple starting balances.
         ValueError
-            If modules contains a type other than SimulationModule.
+            If modules contains a type other than `SimulationModule`.
 
         """
         Condition.not_empty(instruments, "instruments")

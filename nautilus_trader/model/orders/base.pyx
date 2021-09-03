@@ -588,7 +588,7 @@ cdef class Order:
         ValueError
             If self.client_order_id is not equal to event.client_order_id.
         ValueError
-            If self.venue_order_id and event.venue_order_id are both not None, and are not equal.
+            If self.venue_order_id and event.venue_order_id are both not `None`, and are not equal.
         InvalidStateTrigger
             If event is not a valid trigger from the current order.status.
         KeyError
@@ -755,7 +755,7 @@ cdef class PassiveOrder(Order):
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is ``GTD`` and the expire_time is None.
+            If time_in_force is ``GTD`` and the expire_time is `None`.
 
         """
         Condition.positive(quantity, "quantity")

@@ -79,7 +79,7 @@ cdef class LiveRiskEngine(RiskEngine):
         Raises
         ------
         TypeError
-            If config is not of type LiveRiskEngineConfig.
+            If config is not of type `LiveRiskEngineConfig`.
 
         """
         if config is None:

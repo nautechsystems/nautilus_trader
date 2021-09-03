@@ -156,7 +156,7 @@ cdef class Timer:
         ValueError
             If name is not a valid string.
         TypeError
-            If callback is not of type Callable.
+            If callback is not of type `Callable`.
 
         """
         Condition.valid_string(name, "name")
@@ -370,7 +370,7 @@ cdef class LiveTimer(Timer):
         Raises
         ------
         TypeError
-            If callback is not of type Callable.
+            If callback is not of type `Callable`.
 
         """
         Condition.valid_string(name, "name")
@@ -442,7 +442,7 @@ cdef class ThreadTimer(LiveTimer):
         Raises
         ------
         TypeError
-            If callback is not of type Callable.
+            If callback is not of type `Callable`.
 
         """
         super().__init__(
@@ -504,7 +504,7 @@ cdef class LoopTimer(LiveTimer):
         Raises
         ------
         TypeError
-            If callback is not of type Callable.
+            If callback is not of type `Callable`.
 
         """
         Condition.valid_string(name, "name")

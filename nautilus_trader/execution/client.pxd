@@ -48,7 +48,7 @@ cdef class ExecutionClient(Component):
     cdef Account _account
 
     cdef readonly Venue venue
-    """The clients venue ID (if not multi-venue brokerage).\n\n:returns: `Venue` or None"""
+    """The clients venue ID (if not multi-venue brokerage).\n\n:returns: `Venue` or `None`"""
     cdef readonly VenueType venue_type
     """The clients venue type.\n\n:returns: `VenueType`"""
     cdef readonly AccountId account_id
@@ -56,7 +56,7 @@ cdef class ExecutionClient(Component):
     cdef readonly AccountType account_type
     """The clients account type.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
-    """The clients account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or None"""
+    """The clients account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or `None`"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 
