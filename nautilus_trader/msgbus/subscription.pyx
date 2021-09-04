@@ -33,10 +33,10 @@ cdef class Subscription:
     """
 
     def __init__(
-            self,
-            str topic,
-            handler not None: Callable[[Any], None],
-            int priority=0,
+        self,
+        str topic,
+        handler not None: Callable[[Any], None],
+        int priority=0,
     ):
         """
         Initialize a new instance of the ``Subscription`` class.
