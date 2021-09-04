@@ -35,7 +35,8 @@ cdef class MsgPackSerializer(Serializer):
         Parameters
         ----------
         timestamps_as_str : bool
-            If the serializer converts timestamp int64_t to str.
+            If the serializer converts timestamp int64_t to str on serialization,
+            and back to int64_t on deserialization.
 
         """
         self.timestamps_as_str = timestamps_as_str

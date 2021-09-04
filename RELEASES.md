@@ -1,4 +1,21 @@
+# NautilusTrader 1.129.0 Beta - Release Notes
+
+Released on **TBD**
+
+## Breaking Changes
+None
+
+## Enhancements
+None
+
+## Fixes
+- Fixed Redis loss of precision for timestamp int64s [#363](https://github.com/nautechsystems/nautilus_trader/issues/363).
+
+---
+
 # NautilusTrader 1.128.0 Beta - Release Notes
+
+Released on 30th, August 2021
 
 This release continues the focus on the core system, with upgrades and cleanups
 to the component base class. The concept of an `active` order has been introduced, 
@@ -38,6 +55,8 @@ which is an order whose state can change (is not a `completed` order).
 ---
 
 # NautilusTrader 1.127.0 Beta - Release Notes
+
+Released on 17th, August 2021
 
 This release has again focused on core areas of the platform, including a 
 significant overhaul of accounting and portfolio components. The wiring between 
@@ -79,6 +98,8 @@ as closely as possible with established terminology in the domain.
 
 # NautilusTrader 1.126.1 Beta - Release Notes
 
+Released on 3rd, August 2021
+
 This is a patch release which fixes a bug involving `NotImplementedError` 
 exception handling when subscribing to order book deltas when not supported by 
 a client. This bug affected CCXT order book subscriptions.
@@ -95,6 +116,8 @@ None
 ---
 
 # NautilusTrader 1.126.0 Beta - Release Notes
+
+Released on 2nd, August 2021
 
 This release sees the completion of the initial implementation of the 
 `MessageBus`, with data now being handled by PUB/SUB patterns, along with the 
@@ -152,6 +175,8 @@ in the years ahead.
 
 # NautilusTrader 1.125.0 Beta - Release Notes
 
+Released on 18th, July 2021
+
 This release introduces a major re-architecture of the internal messaging system.
 A common message bus has been implemented which now handles all events via a 
 PUB/SUB messaging pattern. The next release will see all data being handled by 
@@ -195,6 +220,8 @@ on events, along with numerous 'under the hood' cleanups and two bug fixes.
 
 # NautilusTrader 1.124.0 Beta - Release Notes
 
+Released on 6th, July 2021
+
 This release sees the expansion of pre-trade risk check options (see 
 `RiskEngine` class documentation). There has also been extensive 'under the 
 hood' code cleanup and consolidation.
@@ -219,6 +246,8 @@ hood' code cleanup and consolidation.
 ---
 
 # NautilusTrader 1.123.0 Beta - Release Notes
+
+Released on 20th, June 2021
 
 A major feature of this release is a complete re-design of serialization for the
 platform, along with initial support for the [Parquet](https://parquet.apache.org/) format.
@@ -272,6 +301,8 @@ Initial scaffolding for new backtest data tooling has been added.
 
 # NautilusTrader 1.122.0 Beta - Release Notes
 
+Released on 6th, June 2021
+
 This release includes numerous breaking changes with a view to enhancing the core
 functionality and API of the platform. The data and execution caches have been 
 unified for simplicity. There have also been large changes to the accounting 
@@ -312,6 +343,8 @@ handling of margins.
 ---
 
 # NautilusTrader 1.121.0 Beta - Release Notes
+
+Released on 30th, May 2021
 
 In this release there has been a major change to the use of inlines for method
 signatures. From the Cython docs:

@@ -77,9 +77,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
     --------
     Redis can only accurately store int64 types to 17 digits of precision.
     Therefore nanosecond timestamp int64's with 19 digits will lose 2 digits of
-    precision when persisted. If precision to this level is important, then you
-    could additionally persist events in another medium/database which can
-    properly handle int64 types.
+    precision when persisted. One way to solve this is to ensure the serializer
+    converts timestamp int64's to strings on the way into Redis, and converts
+    timestamp strings back to int64's on the way out. One way to achieve this is
+    to set the `timestamps_as_str` flag to true for the `MsgPackSerializer`, as
+    per the default implementations for both `TradingNode` and `BacktestEngine`.
     """
 
     def __init__(
