@@ -439,11 +439,13 @@ cdef class MessageBus:
         Condition.not_none(topic, "topic")
         Condition.not_none(msg, "msg")
 
+        # Get all subscriptions matching topic pattern
         cdef Subscription[:] subs = self._patterns.get(topic)
         if subs is None:
+            # Add the topic pattern and get matching subscribers
             subs = self._resolve_subscriptions(topic)
 
-        # Send to all matched subscribers
+        # Send message to all matched subscribers
         cdef int i
         for i in range(len(subs)):
             subs[i].handler(msg)
