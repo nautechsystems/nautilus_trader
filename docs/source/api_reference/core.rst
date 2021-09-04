@@ -4,6 +4,15 @@ Core
 .. automodule:: nautilus_trader.core
 
 
+Collections
+-----------
+
+.. automodule:: nautilus_trader.core.collections
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
 Datetime
 --------
 
@@ -22,19 +31,28 @@ Finite-State Machine (FSM)
    :members:
    :member-order: bysource
 
-Functions
----------
+Message
+-------
 
-.. automodule:: nautilus_trader.core.functions
+.. automodule:: nautilus_trader.core.message
    :show-inheritance:
    :inherited-members:
    :members:
    :member-order: bysource
 
-Message
--------
+Stats
+-----
 
-.. automodule:: nautilus_trader.core.message
+.. automodule:: nautilus_trader.core.stats
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Text
+----
+
+.. automodule:: nautilus_trader.core.text
    :show-inheritance:
    :inherited-members:
    :members:

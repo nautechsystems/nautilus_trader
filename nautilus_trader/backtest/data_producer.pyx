@@ -18,7 +18,7 @@ This module provides a data producer for backtesting.
 """
 
 import gc
-from bisect import bisect_left
+from nautilus_trader.core.collections cimport bisect_left
 
 import numpy as np
 import pandas as pd
@@ -32,7 +32,6 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
 from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
@@ -677,3 +676,12 @@ cdef class CachedProducer(DataProducer):
         self._producer.reset()
         self._producer.clear()
         gc.collect()  # Removes redundant processing artifacts
+
+
+cdef inline object slice_dataframe(dataframe, start, end):
+    # Slice the dataframe with the given start and end.
+    # Method only exists due to cython limitation compiling closures.
+    if dataframe is None:
+        return pd.DataFrame()
+
+    return dataframe[start:end]
