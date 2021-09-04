@@ -205,7 +205,7 @@ class TradingNode:
                 serializer=MsgPackSerializer(),
                 config=config.cache_database,
             )
-        else:
+        else:  # pragma: no cover
             raise ValueError(
                 "The cache_db_type in the configuration is unrecognized, "
                 "can one of {{'in-memory', 'redis'}}.",
@@ -737,7 +737,7 @@ class TradingNode:
 
         self._log.debug(f"{finish_all_tasks}")
 
-        for task in to_cancel:
+        for task in to_cancel:  # pragma: no cover
             if task.cancelled():
                 continue
             if task.exception() is not None:

@@ -27,6 +27,7 @@ from examples.strategies.ema_cross_simple import EMACross
 from examples.strategies.ema_cross_simple import EMACrossConfig
 from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
+from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.live.node import TradingNodeConfig
 
@@ -35,6 +36,7 @@ from nautilus_trader.live.node import TradingNodeConfig
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     log_level="INFO",
+    cache_database=CacheDatabaseConfig(),  # Redis by default if provided
     data_clients={
         "CCXT-BINANCE": {
             "account_id": "BINANCE_ACCOUNT_ID",  # value is the environment variable key

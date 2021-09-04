@@ -27,6 +27,7 @@ from examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
 from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
+from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.live.node import TradingNodeConfig
 from nautilus_trader.live.risk_engine import LiveRiskEngineConfig
@@ -36,6 +37,7 @@ from nautilus_trader.live.risk_engine import LiveRiskEngineConfig
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     log_level="INFO",
+    cache_database=CacheDatabaseConfig(),  # Redis by default if provided
     risk_engine=LiveRiskEngineConfig(
         max_order_rate="5/00:00:01",
         max_notional_per_order={"BTC/USD.BITMEX": 10000},
