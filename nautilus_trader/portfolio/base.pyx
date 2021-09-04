@@ -24,7 +24,7 @@ cdef class PortfolioFacade:
     Provides a read-only facade for a `Portfolio`.
     """
 
-    # -- QUERIES ---------------------------------------------------------------------------------------
+# -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef Account account(self, Venue venue):
         """Abstract method (implement in subclass)."""
