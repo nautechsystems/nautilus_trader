@@ -14,14 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-
-from cpython.datetime cimport datetime
-from cpython.datetime cimport timedelta
+from typing import Optional
 
 from pydantic import PositiveInt
 
-from nautilus_trader.execution.engine import ExecEngineConfig
-from nautilus_trader.execution.engine import Optional
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
@@ -42,6 +40,8 @@ from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
+
+from nautilus_trader.execution.engine import ExecEngineConfig
 
 
 class LiveExecEngineConfig(ExecEngineConfig):

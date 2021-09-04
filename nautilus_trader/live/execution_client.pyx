@@ -85,7 +85,7 @@ cdef class LiveExecutionClientFactory:
         LiveExecutionClient
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
 cdef class LiveExecutionClient(ExecutionClient):
@@ -208,7 +208,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         OrderStatusReport or None
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def generate_exec_reports(self, VenueOrderId venue_order_id, Symbol symbol, datetime since=None):
         """
@@ -230,7 +230,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         list[ExecutionReport]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def generate_mass_status(self, list active_orders):
         """
