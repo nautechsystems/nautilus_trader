@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `TradingStrategy` class allows traders to implement their own customized trading strategies.
+This module defines a trading strategy class which allows users to implement
+their own customized trading strategies
 
 A user can inherit from `TradingStrategy` and optionally override any of the
 "on" named event methods. The class is not entirely initialized in a stand-alone
@@ -42,7 +43,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
@@ -93,13 +94,14 @@ class TradingStrategyConfig(pydantic.BaseModel):
     """
 
     order_id_tag: str = "000"
-    oms_type: OMSType = OMSType.HEDGING
+    oms_type: str = "HEDGING"
 
 
 cdef class TradingStrategy(Actor):
     """
     The abstract base class for all trading strategies.
 
+    This class allows traders to implement their own customized trading strategies.
     A trading strategy can configure its own order management system type, which
     determines how positions are handled by the `ExecutionEngine`.
 
@@ -133,7 +135,7 @@ cdef class TradingStrategy(Actor):
             config = TradingStrategyConfig()
         Condition.type(config, TradingStrategyConfig, "config")
 
-        self.oms_type = config.oms_type
+        self.oms_type = OMSTypeParser.from_str(config.oms_type)
 
         # Assign strategy ID
         strategy_id = StrategyId(f"{type(self).__name__}-{config.order_id_tag}")

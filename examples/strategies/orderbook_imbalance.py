@@ -17,7 +17,6 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.model.enums import BookLevel
-from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -58,8 +57,6 @@ class OrderbookImbalanceConfig(TradingStrategyConfig):
     max_trade_size: Decimal
     trigger_min_size = 100.0
     trigger_imbalance_ratio = 0.20
-    order_id_tag: str = "001"
-    oms_type: OMSType = OMSType.HEDGING
 
 
 class OrderbookImbalance(TradingStrategy):
