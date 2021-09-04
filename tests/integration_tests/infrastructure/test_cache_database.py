@@ -120,7 +120,7 @@ class TestRedisCacheDatabase:
         self.database = RedisCacheDatabase(
             trader_id=self.trader_id,
             logger=self.logger,
-            serializer=MsgPackSerializer(),
+            serializer=MsgPackSerializer(timestamps_as_str=True),
         )
 
         self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
