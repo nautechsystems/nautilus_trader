@@ -21,7 +21,7 @@ import pyarrow as pa
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 from nautilus_trader.serialization.base import register_serializable_object
 
-from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.data.ticker cimport Ticker
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price

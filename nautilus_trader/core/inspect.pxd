@@ -13,21 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.data cimport Data
-
-
-cdef class DataType:
-    cdef frozenset _key
-    cdef int _hash
-
-    cdef readonly type type
-    """The `Data` type of the data.\n\n:returns: `type`"""
-    cdef readonly dict metadata
-    """The data types metadata.\n\n:returns: `dict[str, object]`"""
-
-
-cdef class GenericData(Data):
-    cdef readonly DataType data_type
-    """The data type.\n\n:returns: `DataType`"""
-    cdef readonly Data data
-    """The data.\n\n:returns: `Data`"""
+cpdef bint is_nautilus_class(cls)

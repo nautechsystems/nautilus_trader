@@ -29,7 +29,7 @@ from cpython.unicode cimport PyUnicode_Contains
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport lround
+from nautilus_trader.core.math cimport lround
 
 
 # UNIX epoch is the UTC time at 00:00:00 on 1/1/1970

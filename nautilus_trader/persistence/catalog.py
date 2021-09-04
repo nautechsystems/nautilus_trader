@@ -23,6 +23,7 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from pyarrow import ArrowInvalid
 
+from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.data.tick import QuoteTick
@@ -38,7 +39,6 @@ from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
 from nautilus_trader.serialization.arrow.util import class_to_filename
 from nautilus_trader.serialization.arrow.util import clean_key
-from nautilus_trader.serialization.arrow.util import is_nautilus_class
 
 
 class DataCatalog(metaclass=Singleton):
@@ -300,7 +300,7 @@ class DataCatalog(metaclass=Singleton):
         ]
 
     def list_partitions(self, cls_type):
-        assert isinstance(cls_type, type), "`cls_type` should be type, ie TradeTick"
+        assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
         prefix = GENERIC_DATA_PREFIX if not is_nautilus_class(cls_type) else ""
         name = prefix + camel_to_snake_case(cls_type.__name__)
         dataset = pq.ParquetDataset(self.path / f"{name}.parquet", filesystem=self.fs)

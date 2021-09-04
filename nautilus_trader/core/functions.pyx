@@ -13,31 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import gc
-import sys
-
 import cython
 
 cimport numpy as np
-from libc.math cimport llround as llround_func
-from libc.math cimport lround as lround_func
 from libc.math cimport pow
 from libc.math cimport sqrt
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.correctness cimport Condition
-
-
-# Determine correct C lround function
-cdef round_func_type _get_round_func() except *:
-    if sizeof(long) == 8:
-        return <round_func_type>lround_func
-    elif sizeof(long long) == 8:
-        return <round_func_type>llround_func
-    else:
-        raise TypeError(f"Can't support 'C' lround function.")
-
-lround = _get_round_func()
 
 
 @cython.boundscheck(False)
@@ -157,7 +140,7 @@ cpdef inline int bisect_double_right(list a, double x, int lo=0, hi=None) except
 @cython.wraparound(False)
 cpdef double fast_mean(np.ndarray values) except *:
     """
-    Return the average value for numpy.ndarray values
+    Return the average value for numpy.ndarray values.
 
     Parameters
     ----------
@@ -323,48 +306,6 @@ cpdef inline double basis_points_as_percentage(double basis_points) except *:
 
     """
     return basis_points * 0.0001
-
-
-def get_size_of(obj):
-    """
-    Return the bytes size in memory of the given object.
-
-    Parameters
-    ----------
-    obj : object
-        The object to analyze.
-
-    Returns
-    -------
-    uint64
-
-    """
-    Condition.not_none(obj, "obj")
-
-    cdef set marked = {id(obj)}
-    obj_q = [obj]
-    size = 0
-
-    while obj_q:
-        size += sum(map(sys.getsizeof, obj_q))
-
-        # Lookup all the object referred to by the object in obj_q.
-        # See: https://docs.python.org/3.7/library/gc.html#gc.get_referents
-        all_refs = [(id(o), o) for o in gc.get_referents(*obj_q)]
-
-        # Filter object that are already marked.
-        # Using dict notation will prevent repeated objects.
-        new_ref = {
-            o_id: o for o_id, o in all_refs if o_id not in marked and not isinstance(o, type)
-        }
-
-        # The new obj_q will be the ones that were not marked,
-        # and we will update marked with their ids so we will
-        # not traverse them again.
-        obj_q = new_ref.values()
-        marked.update(new_ref.keys())
-
-    return size
 
 
 cdef dict POWER_LABELS = {
