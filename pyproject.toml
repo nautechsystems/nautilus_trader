@@ -38,7 +38,7 @@ python = ">=3.8,<3.10"
 cython = "^3.0.0a9"
 aiodns = "^3.0.0"
 aiohttp = "^3.7.4"
-dask = "^2021.8.1"
+dask = "^2021.9.0"
 empyrical = "^0.5.5"
 fsspec = "^2021.8.1"
 msgpack = "^1.0.2"
@@ -64,7 +64,7 @@ ib_insync = { version = "^0.9.66", optional = true }
 # https://github.com/cython/cython/issues/3515
 coverage = "4.5.4"  # Pinned at 4.5.4 due Cython 3.0.0a9
 nox = "^2021.6.12"
-pre-commit = "^2.14.1"
+pre-commit = "^2.15.0"
 pytest = "^6.2.5"
 pytest-asyncio = "^0.15.1"
 pytest-benchmark = "^3.4.1"
