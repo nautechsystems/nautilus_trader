@@ -13,7 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import importlib.util
+import sys
 from functools import partial
+from importlib.machinery import ModuleSpec
+from types import ModuleType
 
 import pandas as pd
 from dask import delayed
@@ -24,7 +28,6 @@ from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.core.message import Event
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
@@ -34,6 +37,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.trading.strategy import ImportableStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 
@@ -70,6 +74,13 @@ class BacktestNode:
             "client_id": config.client_id,
         }
 
+    def import_strategy(self, config: ImportableStrategyConfig):
+        # TODO(cs): Implement importing in various ways
+        spec: ModuleSpec = importlib.util.spec_from_file_location(config.module_name, config.path)
+        module: ModuleType = importlib.util.module_from_spec(spec)
+        sys.modules[config.module_name] = module
+        # spec.loader.exec_module(module)
+
     def create_backtest_engine(self, venues, data):
         # Configure backtest engine
         config = BacktestEngineConfig(
@@ -91,8 +102,9 @@ class BacktestNode:
                 engine.add_trade_tick_objects(data=d["data"], instrument_id=d["instrument_id"])
             elif d["type"] == OrderBookDelta:
                 engine.add_order_book_data(data=d["data"])
-            elif isinstance(d["data"][0], Event):
-                engine.add_events(client_id=d["client_id"], data=d["data"])
+            # TODO(cs): Unsure if we should allow adding events to the engine directly in this way?
+            # elif isinstance(d["data"][0], Event):
+            #     engine.add_events(client_id=d["client_id"], data=d["data"])
             else:
                 engine.add_generic_data(client_id=d["client_id"], data=d["data"])
 

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import dataclasses
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional
 
 import pydantic
 
@@ -23,7 +23,7 @@ from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.execution.engine import ExecEngineConfig
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.risk.engine import RiskEngineConfig
-from nautilus_trader.trading.strategy import TradingStrategyConfig
+from nautilus_trader.trading.strategy import ImportableStrategyConfig
 
 
 class Partialable:
@@ -68,60 +68,6 @@ class Partialable:
         return r
 
 
-@pydantic.dataclasses.dataclass()
-class BacktestDataConfig(Partialable):
-    """
-    Represents the data configuration for one specific backtest run.
-    """
-
-    catalog_path: str
-    data_type: type
-    catalog_fs_protocol: str = None
-    instrument_id: Optional[str] = None
-    start_time: Optional[int] = None
-    end_time: Optional[int] = None
-    filters: Optional[dict] = None
-    client_id: Optional[str] = None
-
-    @property
-    def query(self):
-        return dict(
-            cls=self.data_type,
-            instrument_ids=[self.instrument_id] if self.instrument_id else None,
-            start=self.start_time,
-            end=self.end_time,
-            as_nautilus=True,
-        )
-
-
-@pydantic.dataclasses.dataclass()
-class BacktestVenueConfig(Partialable):
-    """
-    Represents the venue configuration for one specific backtest engine.
-    """
-
-    name: str
-    venue_type: str
-    oms_type: str
-    account_type: str
-    base_currency: str
-    starting_balances: List[str]
-    # fill_model: Optional[FillModel] = None
-    # modules: Optional[List[SimulationModule]] = None
-
-    def __dask_tokenize__(self):
-        values = [
-            self.name,
-            self.venue_type,
-            self.oms_type,
-            self.account_type,
-            self.base_currency,
-            ",".join(sorted([b for b in self.starting_balances])),
-            # self.modules,
-        ]
-        return tuple(values)
-
-
 class BacktestEngineConfig(pydantic.BaseModel):
     """
     Configuration for ``BacktestEngine`` instances.
@@ -161,15 +107,68 @@ class BacktestEngineConfig(pydantic.BaseModel):
 
 
 @pydantic.dataclasses.dataclass()
+class BacktestVenueConfig(Partialable):
+    """
+    Represents the venue configuration for one specific backtest engine.
+    """
+
+    name: str
+    venue_type: str
+    oms_type: str
+    account_type: str
+    base_currency: Optional[str]
+    starting_balances: List[str]
+    # fill_model: Optional[FillModel] = None  # TODO(cs): Implement next iteration
+    # modules: Optional[List[SimulationModule]] = None  # TODO(cs): Implement next iteration
+
+    def __dask_tokenize__(self):
+        values = [
+            self.name,
+            self.venue_type,
+            self.oms_type,
+            self.account_type,
+            self.base_currency,
+            ",".join(sorted([b for b in self.starting_balances])),
+            # self.modules,  # TODO(cs): Implement next iteration
+        ]
+        return tuple(values)
+
+
+@pydantic.dataclasses.dataclass()
+class BacktestDataConfig(Partialable):
+    """
+    Represents the data configuration for one specific backtest run.
+    """
+
+    catalog_path: str
+    data_type: type
+    catalog_fs_protocol: str = None
+    instrument_id: Optional[str] = None
+    start_time: Optional[int] = None
+    end_time: Optional[int] = None
+    filters: Optional[dict] = None
+    client_id: Optional[str] = None
+
+    @property
+    def query(self):
+        return dict(
+            cls=self.data_type,
+            instrument_ids=[self.instrument_id] if self.instrument_id else None,
+            start=self.start_time,
+            end=self.end_time,
+            as_nautilus=True,
+        )
+
+
+@pydantic.dataclasses.dataclass()
 class BacktestConfig(Partialable):
     """
     Represents the configuration for one specific backtest run (a single set of
     data / strategies / parameters).
     """
 
-    venues: Optional[List[BacktestVenueConfig]] = None
-    data_config: Optional[List[BacktestDataConfig]] = None
-    engine_config: Optional[BacktestEngineConfig] = None
-    strategies: Optional[List[Tuple[Any, TradingStrategyConfig]]] = None
     name: Optional[str] = None
-    # data_catalog_path: Optional[str] = None
+    engine: Optional[BacktestEngineConfig] = None
+    venues: Optional[List[BacktestVenueConfig]] = None
+    data: Optional[List[BacktestDataConfig]] = None
+    strategies: Optional[List[ImportableStrategyConfig]] = None
