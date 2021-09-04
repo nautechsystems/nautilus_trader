@@ -15,6 +15,9 @@
 
 from base64 import b64encode
 
+import msgpack
+import pytest
+
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.system import ComponentStateChanged
@@ -92,6 +95,16 @@ class TestMsgPackSerializer:
         )
 
         self.serializer = MsgPackSerializer()
+
+    def test_serialize_unknown_object_raises_runtime_error(self):
+        # Arrange, Act
+        with pytest.raises(RuntimeError):
+            self.serializer.serialize({"type": "UNKNOWN"})
+
+    def test_deserialize_unknown_object_raises_runtime_error(self):
+        # Arrange, Act
+        with pytest.raises(RuntimeError):
+            self.serializer.deserialize(msgpack.packb({"type": "UNKNOWN"}))
 
     def test_serialize_and_deserialize_fx_instrument(self):
         # Arrange, Act

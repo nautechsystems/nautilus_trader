@@ -43,7 +43,7 @@ cdef class MsgPackSerializer(Serializer):
 
     cpdef bytes serialize(self, object obj):
         """
-        Serialize the given instrument to `MessagePack` specification bytes.
+        Serialize the given object to `MessagePack` specification bytes.
 
         Parameters
         ----------
@@ -64,7 +64,7 @@ cdef class MsgPackSerializer(Serializer):
 
         delegate = _OBJECT_TO_DICT_MAP.get(type(obj).__name__)
         if delegate is None:
-            raise RuntimeError("cannot serialize instrument: unrecognized type")
+            raise RuntimeError("cannot serialize object: unrecognized type")
 
         cdef dict obj_dict = delegate(obj)
         if self.timestamps_as_str:
@@ -111,6 +111,6 @@ cdef class MsgPackSerializer(Serializer):
 
         delegate = _OBJECT_FROM_DICT_MAP.get(obj_dict["type"])
         if delegate is None:
-            raise RuntimeError("cannot deserialize instrument: unrecognized type")
+            raise RuntimeError("cannot deserialize object: unrecognized type")
 
         return delegate(obj_dict)
