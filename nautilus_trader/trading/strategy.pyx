@@ -72,6 +72,24 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
+class ImportableStrategyConfig(pydantic.BaseModel):
+    """
+    Represents the trading strategy configuration for one specific backtest run.
+
+    name : str
+        The fully-qualified name of the module.
+    path : str
+        The path to the source code.
+
+    """
+
+    module_name: str
+    strategy_name: str
+    path: Optional[str]
+    source: Optional[bytes]
+    config: Optional[TradingStrategyConfig]
+
+
 class TradingStrategyConfig(pydantic.BaseModel):
     """
     The base model for all trading strategy configurations.
@@ -943,7 +961,7 @@ cdef class TradingStrategy(Actor):
         """
         Condition.not_none(event, "event")
 
-        if isinstance(event, self._warning_events):
+        if type(event) in self._warning_events:
             self.log.warning(f"{RECV}{EVT} {event}.")
         else:
             self.log.info(f"{RECV}{EVT} {event}.")
