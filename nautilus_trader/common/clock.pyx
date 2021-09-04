@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Callable
+
 import cython
 import numpy as np
 import pytz
@@ -20,7 +22,6 @@ import pytz
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
-from typing import Callable
 from libc.stdint cimport int64_t
 
 from nautilus_trader.common.timer cimport LoopTimer
