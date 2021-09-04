@@ -95,6 +95,8 @@ cdef class Actor(Component):
             config=config,
         )
 
+        self._warning_events = set()
+
         self.trader_id = None  # Initialized when registered
         self.msgbus = None     # Initialized when registered
         self.cache = None      # Initialized when registered
@@ -446,6 +448,38 @@ cdef class Actor(Component):
 
         self.msgbus = msgbus
         self.cache = cache
+
+    cpdef void register_warning_event(self, type event):
+        """
+        Register the given event type for warning log levels.
+
+        Parameters
+        ----------
+        event : type
+            The event class to register.
+
+        """
+        Condition.not_none(event, "event")
+
+        self._warning_events.add(event)
+
+        self._log.debug(f"Registered `{event.__name__}` for warning log levels.")
+
+    cpdef void deregister_warning_event(self, type event):
+        """
+        Deregister the given event type from warning log levels.
+
+        Parameters
+        ----------
+        event : type
+            The event class to deregister.
+
+        """
+        Condition.not_none(event, "event")
+
+        self._warning_events.discard(event)
+
+        self._log.debug(f"Deregistered `{event.__name__}` from warning log levels.")
 
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 

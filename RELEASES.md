@@ -3,10 +3,13 @@
 Released on **TBD**
 
 ## Breaking Changes
-None
+- Backtest configurations.
 
 ## Enhancements
-None
+- Added `BacktestNode`.
+- Refined backtest configuration options.
+- Added `Actor.register_warning_event` (also applicable to `TradingStrategy`).
+- Added `Actor.deregister_warning_event` (also applicable to `TradingStrategy`).
 
 ## Fixes
 - Fixed Redis loss of precision for timestamp int64s [#363](https://github.com/nautechsystems/nautilus_trader/issues/363).
