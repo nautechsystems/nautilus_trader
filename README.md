@@ -32,7 +32,8 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 - **Fast:** C-level speed through Cython. Asynchronous networking with `uvloop`.
 - **Reliable:** Type safety through Cython. Redis backed performant state persistence for live.
-- **Flexible:** Cross-platform runs on Linux, macOS, Windows. Modular adapters mean any REST/WebSocket/FIX API can be integrated.
+- **Flexible:** OS independent / cross-platform runs on Linux, macOS, Windows. Deploy using Docker.
+- **Integrated:** Modular adapters mean any REST/FIX/WebSocket API can be integrated.
 - **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data.
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
