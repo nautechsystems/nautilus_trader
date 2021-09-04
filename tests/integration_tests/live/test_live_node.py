@@ -59,6 +59,17 @@ class TestTradingNodeOperation:
         # Assert
         assert isinstance(loop, asyncio.AbstractEventLoop)
 
+    def test_build_called_twice_raises_runtime_error(self):
+        # Arrange, # Act
+        with pytest.raises(RuntimeError):
+            self.node.build()
+            self.node.build()
+
+    def test_start_when_not_built_raises_runtime_error(self):
+        # Arrange, # Act
+        with pytest.raises(RuntimeError):
+            self.node.start()
+
     def test_add_data_client_factory(self):
         # Arrange, # Act
         self.node.add_data_client_factory("CCXT", CCXTDataClientFactory)
@@ -68,6 +79,14 @@ class TestTradingNodeOperation:
 
     def test_add_exec_client_factory(self):
         # Arrange, # Act
+        self.node.add_exec_client_factory("CCXT", CCXTExecutionClientFactory)
+        self.node.build()
+
+        # TODO(cs): Assert existence of client
+
+    def test_build_with_multiple_clients(self):
+        # Arrange, # Act
+        self.node.add_data_client_factory("CCXT", CCXTDataClientFactory)
         self.node.add_exec_client_factory("CCXT", CCXTExecutionClientFactory)
         self.node.build()
 
