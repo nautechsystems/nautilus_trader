@@ -462,7 +462,6 @@ cdef class BacktestEngine:
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(data, "data")
         Condition.type(data, pd.DataFrame, "data")
         Condition.false(data.empty, "data was empty")
         Condition.true(
@@ -538,7 +537,6 @@ cdef class BacktestEngine:
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(data, "data")
         Condition.type(data, pd.DataFrame, "data")
         Condition.false(data.empty, "data was empty")
         Condition.true(

@@ -26,8 +26,8 @@ import pandas as pd
 import pytest
 from dask.base import tokenize
 
-from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.config import BacktestDataConfig
+from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.config import Partialable
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -105,7 +105,7 @@ def catalog(data_loader):
 
 @pytest.fixture(scope="function")
 def backtest_config(catalog):
-    return BacktestConfig(
+    return BacktestRunConfig(
         engine=BacktestEngineConfig(),
         venues=[
             BacktestVenueConfig(
@@ -248,7 +248,7 @@ def test_backtest_data_config_load(catalog):
 
 
 def test_backtest_config_partial():
-    config = BacktestConfig()
+    config = BacktestRunConfig()
     config.update(
         venues=[
             BacktestVenueConfig(
@@ -296,7 +296,7 @@ def test_build_graph_shared_nodes(backtest_configs):
 def test_backtest_against_example(catalog):
     # Replicate examples/fx_ema_cross_audusd_ticks.py backtest result
 
-    config = BacktestConfig(
+    config = BacktestRunConfig(
         engine=BacktestEngineConfig(),
         venues=[
             BacktestVenueConfig(
