@@ -17,8 +17,8 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.adapters.ccxt.factories import CCXTDataClientFactory
-from nautilus_trader.adapters.ccxt.factories import CCXTExecutionClientFactory
+from nautilus_trader.adapters.betfair.factory import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientFactory
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.live.node import TradingNode
@@ -72,22 +72,22 @@ class TestTradingNodeOperation:
 
     def test_add_data_client_factory(self):
         # Arrange, # Act
-        self.node.add_data_client_factory("CCXT", CCXTDataClientFactory)
+        self.node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
         self.node.build()
 
         # TODO(cs): Assert existence of client
 
     def test_add_exec_client_factory(self):
         # Arrange, # Act
-        self.node.add_exec_client_factory("CCXT", CCXTExecutionClientFactory)
+        self.node.add_exec_client_factory("BETFAIR", BetfairLiveExecutionClientFactory)
         self.node.build()
 
         # TODO(cs): Assert existence of client
 
     def test_build_with_multiple_clients(self):
         # Arrange, # Act
-        self.node.add_data_client_factory("CCXT", CCXTDataClientFactory)
-        self.node.add_exec_client_factory("CCXT", CCXTExecutionClientFactory)
+        self.node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
+        self.node.add_exec_client_factory("BETFAIR", BetfairLiveExecutionClientFactory)
         self.node.build()
 
         # TODO(cs): Assert existence of client

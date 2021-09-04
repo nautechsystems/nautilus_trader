@@ -3,6 +3,7 @@
 Released on **TBD**
 
 ## Breaking Changes
+- Removed CCXT adapter [#428](https://github.com/nautechsystems/nautilus_trader/issues/428).
 - Backtest configurations.
 
 ## Enhancements

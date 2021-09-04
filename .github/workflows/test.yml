@@ -34,7 +34,7 @@ jobs:
       # Test pip installation
       - name: Test pip installation
         if: runner.os != 'Windows'
-        run: pip install .[ccxt,docs,ib]
+        run: pip install .[distributed,docs]
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
