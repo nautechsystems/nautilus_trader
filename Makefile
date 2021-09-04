@@ -22,6 +22,7 @@ clean:
 	find . -name '*.pyo' -exec rm {} +
 	find . -name '*.so' -exec rm {} +
 	find . -name '*.o' -exec rm {} +
+	find . -name '*.c' -exec rm {} +
 	rm -f coverage.xml
 	rm -f dump.rdb
 
