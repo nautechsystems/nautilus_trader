@@ -75,7 +75,7 @@ cdef class OrderBook:
             If initializing type is not a subclass of `OrderBook`.
 
         """
-        if self.__class__.__name__ == OrderBook.__name__:
+        if self.__class__.__name__ == OrderBook.__name__:  # pragma: no cover
             raise RuntimeError("cannot instantiate OrderBook directly: use OrderBook.create()")
 
         self.instrument_id = instrument_id

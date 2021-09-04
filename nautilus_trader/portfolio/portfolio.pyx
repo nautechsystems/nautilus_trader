@@ -605,8 +605,6 @@ cdef class Portfolio(PortfolioFacade):
             return {}  # Nothing to calculate
 
         cdef set instrument_ids = {p.instrument_id for p in positions_open}
-        if not instrument_ids:
-            return {}  # Nothing to calculate
 
         cdef dict unrealized_pnls = {}  # type: dict[Currency, Decimal]
 
@@ -759,7 +757,10 @@ cdef class Portfolio(PortfolioFacade):
             )
             return None  # Cannot calculate
 
-        cdef list positions_open = self._cache.positions_open(instrument_id.venue)
+        cdef list positions_open = self._cache.positions_open(
+            venue=None,  # Faster query filtering
+            instrument_id=instrument_id,
+        )
         if not positions_open:
             return Money(0, instrument.get_cost_currency())
 
@@ -768,9 +769,6 @@ cdef class Portfolio(PortfolioFacade):
         cdef Position position
         cdef Price last
         for position in positions_open:
-            if position.instrument_id != instrument_id:
-                continue
-
             last = self._get_last_price(position)
             if last is None:
                 self._log.error(
@@ -1002,7 +1000,7 @@ cdef class Portfolio(PortfolioFacade):
                 return quote_tick.bid
             elif position.side == PositionSide.SHORT:
                 return quote_tick.ask
-            else:
+            else:  # pragma: no cover
                 raise RuntimeError(
                     f"invalid PositionSide, was {PositionSideParser.to_str(position.side)}",
                 )

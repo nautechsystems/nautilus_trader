@@ -595,7 +595,7 @@ cdef class SimulatedExchange:
             self._update_stop_market_order(order, qty, price)
         elif order.type == OrderType.STOP_LIMIT:
             self._update_stop_limit_order(order, qty, price, trigger)
-        else:
+        else:  # pragma: no cover
             # Design-time error
             raise RuntimeError("invalid order type")
 
@@ -789,7 +789,7 @@ cdef class SimulatedExchange:
             self._process_stop_market_order(order)
         elif order.type == OrderType.STOP_LIMIT:
             self._process_stop_limit_order(order)
-        else:
+        else:  # pragma: no cover
             # Design-time error
             raise RuntimeError("invalid order type")
 
@@ -989,7 +989,7 @@ cdef class SimulatedExchange:
             self._match_stop_market_order(order)
         elif order.type == OrderType.STOP_LIMIT:
             self._match_stop_limit_order(order)
-        else:
+        else:  # pragma: no cover
             # Design-time error
             raise RuntimeError("invalid order type")
 

@@ -94,7 +94,7 @@ cdef class CCXTDataClientFactory(LiveDataClientFactory):
         if client_cls is None:
             try:
                 import ccxtpro
-            except ImportError:
+            except ImportError:  # pragma: no cover
                 raise ImportError(
                     "ccxtpro is not installed, "
                     "installation instructions can be found at https://ccxt.pro"
@@ -180,7 +180,7 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
         if client_cls is None:
             try:
                 import ccxtpro
-            except ImportError:
+            except ImportError:  # pragma: no cover
                 raise ImportError(
                     "ccxtpro is not installed, "
                     "installation instructions can be found at https://ccxt.pro"
@@ -191,9 +191,9 @@ cdef class CCXTExecutionClientFactory(LiveExecutionClientFactory):
         client.set_sandbox_mode(config.get("sandbox_mode", False))
 
         # Check required CCXT methods are available
-        if not client.has.get("fetchTrades", False):
+        if not client.has.get("fetchTrades", False):  # pragma: no cover
             raise RuntimeError(f"CCXT `fetch_trades` not available for {client.name}")
-        if not client.has.get("watchTrades", False):
+        if not client.has.get("watchTrades", False):  # pragma: no cover
             raise RuntimeError(f"CCXT `watch_trades` not available for {client.name}")
 
         # Get account ID env variable or set default

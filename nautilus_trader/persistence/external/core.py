@@ -48,7 +48,7 @@ from nautilus_trader.serialization.arrow.util import maybe_list
 
 try:
     import distributed
-except ImportError:
+except ImportError:  # pragma: no cover
     distributed = None
 
 

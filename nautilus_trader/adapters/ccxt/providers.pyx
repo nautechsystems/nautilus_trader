@@ -143,7 +143,7 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                 amount_prec = 1
             size_increment = Quantity(float(amount_prec) / 10 ** size_precision, size_precision)
         else:
-            raise RuntimeError(
+            raise RuntimeError(  # pragma: nocover
                 f"{self._client.name} exchange is using SIGNIFICANT_DIGITS "
                 f"precision which is not currently supported in this version."
             )
@@ -259,5 +259,5 @@ cdef class CCXTInstrumentProvider(InstrumentProvider):
                 ts_init=timestamp,
                 info=values,
             )
-        elif is_option:
+        elif is_option:  # pragma: nocover
             raise RuntimeError("crypto options not supported in this version")
