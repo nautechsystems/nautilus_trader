@@ -1,4 +1,4 @@
-EXTRAS?=	"ccxt distributed docs ib"
+EXTRAS?=	"distributed docs ib"
 .PHONY: build clean docs
 
 install:
