@@ -13,17 +13,5 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.math cimport llround as llround_func
-from libc.math cimport lround as lround_func
-
-
-# Determine correct C lround function
-cdef round_func_type _get_round_func() except *:
-    if sizeof(long) == 8:
-        return <round_func_type>lround_func
-    elif sizeof(long long) == 8:
-        return <round_func_type>llround_func
-    else:
-        raise TypeError(f"Can't support 'C' lround function.")
-
-lround = _get_round_func()
+cpdef int bisect_left(list a, double x, int lo=*, hi=*) except *
+cpdef int bisect_right(list a, double x, int lo=*, hi=*) except *

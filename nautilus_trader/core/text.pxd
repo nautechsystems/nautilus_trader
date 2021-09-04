@@ -13,17 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.math cimport llround as llround_func
-from libc.math cimport lround as lround_func
+from libc.stdint cimport uint8_t
 
 
-# Determine correct C lround function
-cdef round_func_type _get_round_func() except *:
-    if sizeof(long) == 8:
-        return <round_func_type>lround_func
-    elif sizeof(long long) == 8:
-        return <round_func_type>llround_func
-    else:
-        raise TypeError(f"Can't support 'C' lround function.")
-
-lround = _get_round_func()
+cpdef uint8_t precision_from_str(str value) except *
+cpdef str format_bytes(double size)
+cpdef str pad_string(str string, int final_length, str pad=*)

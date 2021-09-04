@@ -18,7 +18,7 @@ from collections import deque
 import numpy as np
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport fast_mean
+from nautilus_trader.core.stats cimport fast_mean
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data.bar cimport Bar

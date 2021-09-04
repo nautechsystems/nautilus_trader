@@ -20,7 +20,7 @@ from libc.stdint cimport int64_t
 import ccxt
 
 from nautilus_trader.common.providers cimport InstrumentProvider
-from nautilus_trader.core.functions cimport precision_from_str
+from nautilus_trader.core.text cimport precision_from_str
 from nautilus_trader.core.time cimport unix_timestamp_ns
 from nautilus_trader.model.c_enums.currency_type cimport CurrencyType
 from nautilus_trader.model.currency cimport Currency
