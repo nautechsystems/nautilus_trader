@@ -282,14 +282,8 @@ cdef class TradeTickDataWrangler:
         data : pd.DataFrame
             The pd.DataFrame containing the tick data.
 
-        Raises
-        ------
-        ValueError
-            If processed_data not type None or DataFrame.
-
         """
-        Condition.not_none(data, "data")
-        Condition.type_or_none(data, pd.DataFrame, "data")
+        Condition.type(data, pd.DataFrame, "data")
         Condition.false(data.empty, "data was empty")
 
         self.instrument = instrument

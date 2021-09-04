@@ -119,7 +119,7 @@ class BacktestDataConfig(Partialable):
 
 
 @pydantic.dataclasses.dataclass()
-class BacktestConfig(Partialable):
+class BacktestRunConfig(Partialable):
     """
     Represents the configuration for one specific backtest run (a single set of
     data / strategies / parameters).
