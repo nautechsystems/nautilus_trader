@@ -28,7 +28,7 @@ cdef class Condition:
     A condition is a predicate which must be true just prior to the execution of
     some section of code - for correct behaviour as per the design specification.
 
-    If a check fails an Exception is thrown with a descriptive message.
+    If a check fails, then an Exception is thrown with a descriptive message.
     """
 
     @staticmethod
