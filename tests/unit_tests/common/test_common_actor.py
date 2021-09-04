@@ -31,6 +31,7 @@ from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.events.order import OrderDenied
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ComponentId
@@ -139,6 +140,42 @@ class TestActor:
         # Act, Assert
         assert actor.state == ComponentState.INITIALIZED
         assert actor.is_initialized
+
+    def test_register_warning_event(self):
+        # Arrange
+        actor = Actor(self.component_id)
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        actor.register_warning_event(OrderDenied)
+
+        # Assert
+        assert True  # Exception not raised
+
+    def test_deregister_warning_event(self):
+        # Arrange
+        actor = Actor(self.component_id)
+        actor.register_base(
+            trader_id=self.trader_id,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        actor.register_warning_event(OrderDenied)
+
+        # Act
+        actor.deregister_warning_event(OrderDenied)
+
+        # Assert
+        assert True  # Exception not raised
 
     def test_handle_event(self):
         # Arrange

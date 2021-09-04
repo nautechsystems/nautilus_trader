@@ -72,15 +72,6 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
-# Events for WRN log level
-cdef tuple _WARNING_EVENTS = (
-    OrderDenied,
-    OrderRejected,
-    OrderCancelRejected,
-    OrderUpdateRejected,
-)
-
-
 class TradingStrategyConfig(pydantic.BaseModel):
     """
     The base model for all trading strategy configurations.
@@ -155,8 +146,11 @@ cdef class TradingStrategy(Actor):
         self.portfolio = None      # Initialized when registered
         self.order_factory = None  # Initialized when registered
 
-    def __eq__(self, TradingStrategy other) -> bool:
-        return self.id.value == other.id.value
+        # Register warning events
+        self.register_warning_event(OrderDenied)
+        self.register_warning_event(OrderRejected)
+        self.register_warning_event(OrderCancelRejected)
+        self.register_warning_event(OrderUpdateRejected)
 
     @property
     def registered_indicators(self):
@@ -949,7 +943,7 @@ cdef class TradingStrategy(Actor):
         """
         Condition.not_none(event, "event")
 
-        if isinstance(event, _WARNING_EVENTS):
+        if isinstance(event, self._warning_events):
             self.log.warning(f"{RECV}{EVT} {event}.")
         else:
             self.log.info(f"{RECV}{EVT} {event}.")
