@@ -14,13 +14,20 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.execution.messages import ExecutionMassStatus
+from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.execution.messages import PositionStatusReport
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ExecutionId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.stubs import TestStubs
 
@@ -29,6 +36,31 @@ AUDUSD_SIM = TestStubs.audusd_id()
 
 
 class TestExecutionStateReport:
+    def test_instantiate_execution_report(self):
+        # Arrange, Act
+        report = ExecutionReport(
+            client_order_id=ClientOrderId("O-123456789"),
+            venue_order_id=VenueOrderId("1"),
+            venue_position_id=PositionId("1"),
+            execution_id=ExecutionId("1"),
+            last_qty=Quantity.from_int(100),
+            last_px=Price.from_str("100.50"),
+            commission=Money("4.50", USD),
+            liquidity_side=LiquiditySide.TAKER,
+            ts_event=0,
+            ts_init=0,
+        )
+
+        # Assert
+        assert (
+            str(report)
+            == "ExecutionReport(client_order_id=O-123456789, venue_order_id=1, venue_position_id=1, id=1, last_qty=100, last_px=100.50, commission=4.50 USD, liquidity_side=TAKER, ts_event=0, ts_init=0)"  # noqa
+        )  # noqa
+        assert (
+            repr(report)
+            == "ExecutionReport(client_order_id=O-123456789, venue_order_id=1, venue_position_id=1, id=1, last_qty=100, last_px=100.50, commission=4.50 USD, liquidity_side=TAKER, ts_event=0, ts_init=0)"  # noqa
+        )  # noqa
+
     def test_instantiate_execution_mass_status_report(self):
         # Arrange
         client_id = ClientId("IB")
