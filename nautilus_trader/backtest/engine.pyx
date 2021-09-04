@@ -48,7 +48,7 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.functions cimport pad_string
+from nautilus_trader.core.text cimport pad_string
 from nautilus_trader.data.wrangling cimport BarDataWrangler
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase

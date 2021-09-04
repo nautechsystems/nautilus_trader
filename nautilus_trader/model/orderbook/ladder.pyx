@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint8_t
-
 import heapq
 
+from libc.stdint cimport uint8_t
+
+from nautilus_trader.core.collections cimport bisect_right
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport bisect_double_right
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -100,7 +100,7 @@ cdef class Ladder:
                 # TODO: heapq._siftdown_max is temporary before custom data structure
                 heapq._siftdown_max(self.levels, 0, len(self.levels) - 1)
             else:
-                price_idx = bisect_double_right(existing_prices, level.price)
+                price_idx = bisect_right(existing_prices, level.price)
                 self.levels.insert(price_idx, level)
 
         self._order_id_level_index[order.id] = level
