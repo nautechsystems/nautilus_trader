@@ -303,6 +303,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         cdef dict c_hash = self._redis.hgetall(name=self._key_currencies + code)
         cdef dict c_map = {k.decode('utf-8'): v for k, v in c_hash.items()}
+        if not c_map:
+            return None
 
         return Currency(
             code=code,
@@ -680,9 +682,5 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         cdef bytes serialized_event = self._serializer.serialize(position.last_event_c())
         cdef int reply = self._redis.rpush(self._key_positions + position.id.value, serialized_event)
-
-        # Check data integrity of reply
-        if reply == 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The updated Position(id={position.id.value}) did not already exist.")
 
         self._log.debug(f"Updated {position}.")
