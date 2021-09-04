@@ -28,6 +28,7 @@ from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
 
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
@@ -38,7 +39,6 @@ from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
-from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity

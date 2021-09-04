@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 

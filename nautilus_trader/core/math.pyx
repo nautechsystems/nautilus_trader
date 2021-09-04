@@ -13,21 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.data cimport Data
+
+from libc.math cimport llround as llround_func
+from libc.math cimport lround as lround_func
 
 
-cdef class DataType:
-    cdef frozenset _key
-    cdef int _hash
+# Determine correct C lround function
+cdef round_func_type _get_round_func() except *:
+    if sizeof(long) == 8:
+        return <round_func_type>lround_func
+    elif sizeof(long long) == 8:
+        return <round_func_type>llround_func
+    else:
+        raise TypeError(f"Can't support 'C' lround function.")
 
-    cdef readonly type type
-    """The `Data` type of the data.\n\n:returns: `type`"""
-    cdef readonly dict metadata
-    """The data types metadata.\n\n:returns: `dict[str, object]`"""
-
-
-cdef class GenericData(Data):
-    cdef readonly DataType data_type
-    """The data type.\n\n:returns: `DataType`"""
-    cdef readonly Data data
-    """The data.\n\n:returns: `Data`"""
+lround = _get_round_func()

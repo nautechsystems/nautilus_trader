@@ -26,6 +26,7 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.logging import LiveLogger
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.book_level import BookLevel
@@ -33,7 +34,6 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker

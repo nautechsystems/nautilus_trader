@@ -30,7 +30,9 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
 import pydantic
+
 from cpython.datetime cimport timedelta
+
 from typing import Callable, Optional
 
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
@@ -42,6 +44,7 @@ from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport RES
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport BulkTimeBarUpdater
 from nautilus_trader.data.aggregation cimport TickBarAggregator
@@ -60,7 +63,6 @@ from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick

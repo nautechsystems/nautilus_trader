@@ -17,7 +17,7 @@ import orjson
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.data.base cimport Data
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 

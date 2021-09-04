@@ -18,8 +18,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from nautilus_trader.core.message import Event
-from nautilus_trader.model.data.base import Data
+from nautilus_trader.core.inspect import is_nautilus_class
 
 
 INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
@@ -45,25 +44,6 @@ def maybe_list(obj):
     if isinstance(obj, dict):
         return [obj]
     return obj
-
-
-def is_nautilus_class(cls):
-    """
-    Determine whether a class belongs to `nautilus_trader`.
-    """
-    is_nautilus_paths = cls.__module__.startswith("nautilus_trader.")
-    if not is_nautilus_paths:
-        # This object is defined outside of Nautilus, definitely custom
-        return False
-    else:
-        is_data_or_event = issubclass(cls, (Data, Event))
-        is_nautilus_builtin = any(
-            (
-                cls.__module__.startswith(p)
-                for p in ("nautilus_trader.model", "nautilus_trader.adapters")
-            )
-        )
-        return is_data_or_event and is_nautilus_builtin
 
 
 def check_partition_columns(

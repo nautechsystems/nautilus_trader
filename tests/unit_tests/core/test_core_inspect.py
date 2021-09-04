@@ -16,42 +16,34 @@
 import pandas as pd
 import pytest
 
+from nautilus_trader.core.inspect import get_size_of
+from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.orderbook.data import OrderBookData
-from nautilus_trader.serialization.arrow.util import camel_to_snake_case
-from nautilus_trader.serialization.arrow.util import class_to_filename
-from nautilus_trader.serialization.arrow.util import clean_key
 
 
 @pytest.mark.parametrize(
-    "s, expected",
+    "cls, is_nautilus",
     [
-        ("BSPOrderBookDelta", "bsp_order_book_delta"),
-        ("OrderBookData", "order_book_data"),
-        ("TradeTick", "trade_tick"),
+        (OrderBookData, True),
+        (TradeTick, True),
+        (OrderAccepted, True),
+        (pd.DataFrame, False),
     ],
 )
-def test_camel_to_snake_case(s, expected):
-    assert camel_to_snake_case(s) == expected
+def test_is_nautilus_class(cls, is_nautilus):
+    # Arrange, Act, Assert
+    assert is_nautilus_class(cls) is is_nautilus
 
 
-@pytest.mark.parametrize(
-    "s, expected",
-    [
-        ("Instrument\\ID:hello", "Instrument-ID-hello"),
-    ],
-)
-def test_clean_key(s, expected):
-    assert clean_key(s) == expected
+def test_get_size_of():
+    # Arrange, Act
+    result1 = get_size_of(0)
+    result2 = get_size_of(1.1)
+    result3 = get_size_of("abc")
 
-
-@pytest.mark.parametrize(
-    "s, expected",
-    [
-        (TradeTick, "trade_tick"),
-        (OrderBookData, "order_book_data"),
-        (pd.DataFrame, "genericdata_data_frame"),
-    ],
-)
-def test_class_to_filename(s, expected):
-    assert class_to_filename(s) == expected
+    # Assert
+    assert result1 == 24
+    assert result2 == 24
+    assert result3 == 52

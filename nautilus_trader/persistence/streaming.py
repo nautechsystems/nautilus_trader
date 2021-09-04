@@ -21,6 +21,7 @@ import fsspec
 import pyarrow as pa
 from pyarrow import RecordBatchStreamWriter
 
+from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
@@ -29,7 +30,6 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import list_schemas
-from nautilus_trader.serialization.arrow.util import is_nautilus_class
 from nautilus_trader.serialization.arrow.util import list_dicts_to_dict_lists
 
 

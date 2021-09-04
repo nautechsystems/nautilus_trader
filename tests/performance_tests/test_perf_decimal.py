@@ -16,7 +16,7 @@
 import decimal
 from decimal import Decimal
 
-from nautilus_trader.core.functions import get_size_of
+from nautilus_trader.core.inspect import get_size_of
 from nautilus_trader.model.objects import BaseDecimal
 from nautilus_trader.model.objects import Price
 from tests.test_kit.performance import PerformanceHarness

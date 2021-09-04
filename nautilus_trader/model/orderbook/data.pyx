@@ -18,6 +18,7 @@ from libc.stdint cimport int64_t
 import orjson
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.uuid cimport uuid4
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.book_level cimport BookLevelParser
@@ -25,7 +26,6 @@ from nautilus_trader.model.c_enums.delta_type cimport DeltaType
 from nautilus_trader.model.c_enums.delta_type cimport DeltaTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.data.base cimport Data
 
 
 cdef class OrderBookData(Data):

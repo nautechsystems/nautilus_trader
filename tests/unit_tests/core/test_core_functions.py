@@ -24,7 +24,6 @@ from nautilus_trader.core.functions import fast_mean_iterated
 from nautilus_trader.core.functions import fast_std
 from nautilus_trader.core.functions import fast_std_with_mean
 from nautilus_trader.core.functions import format_bytes
-from nautilus_trader.core.functions import get_size_of
 from nautilus_trader.core.functions import pad_string
 
 
@@ -198,17 +197,6 @@ class TestFunctions:
         # Assert
         assert result1 == 0.0
         assert result2 == 2.0000000000000003e-06
-
-    def test_get_size_of(self):
-        # Arrange, Act
-        result1 = get_size_of(0)
-        result2 = get_size_of(1.1)
-        result3 = get_size_of("abc")
-
-        # Assert
-        assert result1 == 24
-        assert result2 == 24
-        assert result3 == 52
 
     @pytest.mark.parametrize(
         "original, final_length, expected",
