@@ -61,7 +61,7 @@ try:
 
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     uvloop_version = uvloop.__version__
-except ImportError:
+except ImportError:  # pragma: no cover
     uvloop_version = None
     warnings.warn("uvloop is not available.")
 

@@ -158,7 +158,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
                     mid = book.best_bid_price()
                 if mid is None:
                     mid = book.best_ask_price()
-                if mid is None:
+                if mid is None:  # pragma: no cover
                     raise RuntimeError("cannot apply rollover interest, no market prices")
                 mid_prices[instrument.id] = Price(mid, precision=instrument.price_precision)
 

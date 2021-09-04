@@ -18,7 +18,7 @@ import contextlib
 
 try:
     import distributed
-except ImportError:
+except ImportError:  # pragma: no cover
     distributed = None
 
 
@@ -28,7 +28,7 @@ def running_on_dask() -> bool:
 
         get_client()
         return True
-    except (ImportError, ValueError):
+    except (ImportError, ValueError):  # pragma: no cover
         return False
 
 

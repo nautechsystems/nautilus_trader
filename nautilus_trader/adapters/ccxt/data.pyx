@@ -231,7 +231,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
             kwargs = {}
         Condition.not_none(instrument_id, "instrument_id")
 
-        if not self._client.has.get("watchOrderBook", False):
+        if not self._client.has.get("watchOrderBook", False):  # pragma: no cover
             raise RuntimeError(f"CCXT `watch_order_book` not available for {self._client.name}")
 
         if instrument_id in self._feeds_order_book_snapshot:
@@ -302,7 +302,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         """
         Condition.not_none(bar_type, "bar_type")
 
-        if not self._client.has.get("watchOHLCV", False):
+        if not self._client.has.get("watchOHLCV", False):  # pragma: no cover
             raise RuntimeError(f"CCXT `watch_ohlcv` not available for {self._client.name}")
 
         if bar_type.spec.price_type != PriceType.LAST:
@@ -533,7 +533,7 @@ cdef class CCXTDataClient(LiveMarketDataClient):
         Condition.not_none(bar_type, "bar_type")
         Condition.not_none(correlation_id, "correlation_id")
 
-        if not self._client.has.get("fetchOHLCV", False):
+        if not self._client.has.get("fetchOHLCV", False):  # pragma: no cover
             raise RuntimeError(f"CCXT `fetch_ohlcv` not available for {self._client.name}")
 
         if bar_type.spec.price_type != PriceType.LAST:

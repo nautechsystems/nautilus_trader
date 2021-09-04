@@ -1165,7 +1165,7 @@ cdef class DataEngine(Component):
                 handler=self.process,
                 logger=self._log.get_logger(),
             )
-        else:
+        else:  # pragma: no cover
             raise RuntimeError(
                 f"Cannot start aggregator, "
                 f"BarAggregation.{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
