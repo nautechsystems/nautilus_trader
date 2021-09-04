@@ -28,9 +28,9 @@ from dask.base import tokenize
 
 from nautilus_trader.backtest.config import BacktestConfig
 from nautilus_trader.backtest.config import BacktestDataConfig
-from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.config import Partialable
+from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_nanos
