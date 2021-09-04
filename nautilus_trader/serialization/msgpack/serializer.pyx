@@ -28,6 +28,18 @@ cdef class MsgPackSerializer(Serializer):
     Provides a serializer for the `MessagePack` specification.
     """
 
+    def __init__(self, timestamps_as_str=False):
+        """
+        Initializes a new instance of the ``MsgPackSerializer`` class.
+
+        Parameters
+        ----------
+        timestamps_as_str : bool
+            If the serializer converts timestamp int64_t to str.
+
+        """
+        self.timestamps_as_str = timestamps_as_str
+
     cpdef bytes serialize(self, object obj):
         """
         Serialize the given instrument to `MessagePack` specification bytes.
@@ -53,7 +65,17 @@ cdef class MsgPackSerializer(Serializer):
         if delegate is None:
             raise RuntimeError("cannot serialize instrument: unrecognized type")
 
-        return msgpack.packb(delegate(obj))
+        cdef dict obj_dict = delegate(obj)
+        if self.timestamps_as_str:
+            ts_event = obj_dict.get("ts_event")
+            if ts_event is not None:
+                obj_dict["ts_event"] = str(ts_event)
+
+            ts_init = obj_dict.get("ts_init")
+            if ts_init is not None:
+                obj_dict["ts_init"] = str(ts_init)
+
+        return msgpack.packb(obj_dict)
 
     cpdef object deserialize(self, bytes obj_bytes):
         """
@@ -76,10 +98,18 @@ cdef class MsgPackSerializer(Serializer):
         """
         Condition.not_none(obj_bytes, "obj_bytes")
 
-        cdef dict unpacked = msgpack.unpackb(obj_bytes)  # type: dict[str, Any]
+        cdef dict obj_dict = msgpack.unpackb(obj_bytes)  # type: dict[str, Any]
+        if self.timestamps_as_str:
+            ts_event = obj_dict.get("ts_event")
+            if ts_event is not None:
+                obj_dict["ts_event"] = int(ts_event)
 
-        delegate = _OBJECT_FROM_DICT_MAP.get(unpacked["type"])
+            ts_init = obj_dict.get("ts_init")
+            if ts_init is not None:
+                obj_dict["ts_init"] = int(ts_init)
+
+        delegate = _OBJECT_FROM_DICT_MAP.get(obj_dict["type"])
         if delegate is None:
             raise RuntimeError("cannot deserialize instrument: unrecognized type")
 
-        return delegate(unpacked)
+        return delegate(obj_dict)

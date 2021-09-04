@@ -202,7 +202,7 @@ class TradingNode:
             cache_db = RedisCacheDatabase(
                 trader_id=self.trader_id,
                 logger=self._logger,
-                serializer=MsgPackSerializer(),
+                serializer=MsgPackSerializer(timestamps_as_str=True),
                 config=config.cache_database,
             )
         else:  # pragma: no cover
