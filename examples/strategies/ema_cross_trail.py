@@ -25,7 +25,6 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
@@ -73,8 +72,6 @@ class EMACrossWithTrailingStopConfig(TradingStrategyConfig):
     atr_period: int
     trail_atr_multiple: float
     trade_size: Decimal
-    order_id_tag: str = "001"
-    oms_type: OMSType = OMSType.HEDGING
 
 
 class EMACrossWithTrailingStop(TradingStrategy):

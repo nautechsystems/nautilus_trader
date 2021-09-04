@@ -17,17 +17,10 @@ import socket
 from typing import Optional
 
 import pandas as pd
-import pydantic
 import pytz
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
-
-from nautilus_trader.cache.cache import CacheConfig
-from nautilus_trader.data.engine import DataEngineConfig
-from nautilus_trader.execution.engine import ExecEngineConfig
-from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
-from nautilus_trader.risk.engine import RiskEngineConfig
 
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
@@ -87,43 +80,7 @@ from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
-
-class BacktestEngineConfig(pydantic.BaseModel):
-    """
-    Configuration for ``BacktestEngine`` instances.
-
-    trader_id : str, default="BACKTESTER-000"
-        The trader ID.
-    log_level : str, default="INFO"
-        The minimum log level for logging messages to stdout.
-    cache : Optional[CacheConfig]
-        The configuration for the cache.
-    cache_database : Optional[CacheDatabaseConfig]
-        The configuration for the cache database.
-    data_engine : Optional[DataEngineConfig]
-        The configuration for the data engine.
-    risk_engine : Optional[RiskEngineConfig]
-        The configuration for the risk engine.
-    exec_engine : Optional[ExecEngineConfig]
-        The configuration for the execution engine.
-    use_data_cache : bool, default=False
-        If use cache for DataProducer (increased performance with repeated backtests on same data).
-    bypass_logging : bool, default=False
-        If logging should be bypassed.
-    run_analysis : bool, default=True
-        If post backtest performance analysis should be run.
-    """
-
-    trader_id: str = "BACKTESTER-000"
-    log_level: str = "INFO"
-    cache: Optional[CacheConfig] = None
-    cache_database: Optional[CacheDatabaseConfig] = None
-    data_engine: Optional[DataEngineConfig] = None
-    risk_engine: Optional[RiskEngineConfig] = None
-    exec_engine: Optional[ExecEngineConfig] = None
-    use_data_cache: bool = False
-    bypass_logging: bool = False
-    run_analysis: bool = True
+from nautilus_trader.backtest.config import BacktestEngineConfig
 
 
 cdef class BacktestEngine:

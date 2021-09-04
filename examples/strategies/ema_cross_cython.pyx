@@ -70,8 +70,6 @@ class EMACrossConfig(TradingStrategyConfig):
     fast_ema_period: int = 10
     slow_ema_period: int = 20
     trade_size: Decimal
-    order_id_tag: str = "001"
-    oms_type: OMSType = OMSType.HEDGING
 
 
 cdef class EMACross(TradingStrategy):

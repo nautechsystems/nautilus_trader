@@ -100,6 +100,9 @@ class TestAccountType:
         # Assert
         assert expected == result
 
+    def test_instantiate_from_string(self):
+        assert AccountType["CASH"] == AccountType.CASH
+
 
 class TestAggregationSource:
     def test_aggregation_source_parser_given_invalid_value_raises_value_error(self):

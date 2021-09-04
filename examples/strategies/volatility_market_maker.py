@@ -24,7 +24,6 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderFilled
@@ -68,7 +67,6 @@ class VolatilityMarketMakerConfig(TradingStrategyConfig):
     atr_multiple: float
     order_id_tag: str = "001"
     trade_size: Decimal
-    oms_type: OMSType = OMSType.HEDGING
 
 
 class VolatilityMarketMaker(TradingStrategy):

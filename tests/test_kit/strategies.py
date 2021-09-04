@@ -31,7 +31,6 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookLevel
-from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.position import PositionChanged
@@ -123,8 +122,6 @@ class EMACrossConfig(TradingStrategyConfig):
     trade_size: Decimal
     fast_ema_period: int = 10
     slow_ema_period: int = 20
-    order_id_tag: str = "001"
-    oms_type: OMSType = OMSType.HEDGING
 
 
 class EMACross(TradingStrategy):
@@ -365,7 +362,7 @@ class OrderBookImbalanceStrategyConfig(TradingStrategyConfig):
 
     instrument_id: str
     trade_size: Decimal
-    oms_type: OMSType = OMSType.NETTING
+    oms_type: str = "NETTING"
 
 
 class OrderBookImbalanceStrategy(TradingStrategy):
