@@ -15,8 +15,6 @@
 
 from datetime import timedelta
 
-import pytest
-
 from nautilus_trader.common.timer import TimeEvent
 from nautilus_trader.common.timer import TimeEventHandler
 from nautilus_trader.common.timer import Timer
@@ -171,17 +169,3 @@ class TestTimer:
         # Act, Assert
         assert isinstance(hash(timer), int)
         assert hash(timer) == hash(timer)
-
-    def test_cancel_when_not_overridden_raises_not_implemented_error(self):
-        # Arrange
-        receiver = []
-        timer = Timer(
-            "TIMER_1",
-            receiver.append,
-            1_000_000_000,
-            0,
-        )
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            timer.cancel()

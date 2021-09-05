@@ -18,6 +18,16 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 
 
+# The 'pragma: no cover' comment excludes a method from test coverage.
+# https://coverage.readthedocs.io/en/coverage-4.3.3/excluding.html
+# The reason for their use is to reduce redundant/needless tests which simply
+# assert that a `NotImplementedError` is raised when calling abstract methods.
+# These tests are expensive to maintain (as they must be kept in line with any
+# refactorings), and offer little to no benefit in return. However, the intention
+# is for all method implementations to be fully covered by tests.
+
+# *** THESE PRAGMA: NO COVER COMMENTS MUST BE REMOVED IN ANY IMPLEMENTATION. ***
+
 # Its recommended to have one constant for the venue
 TEMPLATE_VENUE = Venue("TEMPLATE")
 

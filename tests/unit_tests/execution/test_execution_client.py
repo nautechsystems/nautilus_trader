@@ -13,31 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.model.commands.trading import CancelOrder
-from nautilus_trader.model.commands.trading import SubmitBracketOrder
-from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
@@ -119,84 +108,3 @@ class TestExecutionClient:
 
         # Act, Assert
         assert client.venue is None
-
-    def test_submit_order_raises_exception(self):
-        order = self.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.SELL,
-            Quantity.from_int(100000),
-            Price.from_str("1.00000"),
-        )
-
-        command = SubmitOrder(
-            self.trader_id,
-            order.strategy_id,
-            None,
-            order,
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
-        )
-
-        with pytest.raises(NotImplementedError):
-            self.client.submit_order(command)
-
-    def test_submit_bracket_order_raises_not_implemented_error(self):
-        entry_order = self.order_factory.stop_market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-            Price.from_str("0.99995"),
-        )
-
-        # Act
-        bracket_order = self.order_factory.bracket(
-            entry_order,
-            Price.from_str("0.99990"),
-            Price.from_str("1.00010"),
-        )
-
-        command = SubmitBracketOrder(
-            self.trader_id,
-            entry_order.strategy_id,
-            bracket_order,
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
-        )
-
-        with pytest.raises(NotImplementedError):
-            self.client.submit_bracket_order(command)
-
-    def test_update_order_raises_not_implemented_error(self):
-        # Arrange, Act
-        command = UpdateOrder(
-            self.trader_id,
-            StrategyId("SCALPER-001"),
-            AUDUSD_SIM.id,
-            ClientOrderId("O-123456789"),
-            VenueOrderId("001"),
-            Quantity.from_int(120000),
-            Price.from_str("1.00000"),
-            None,
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
-        )
-
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.update_order(command)
-
-    def test_cancel_order_raises_not_implemented_error(self):
-        # Arrange, Act
-        command = CancelOrder(
-            self.trader_id,
-            StrategyId("SCALPER-001"),
-            AUDUSD_SIM.id,
-            ClientOrderId("O-123456789"),
-            VenueOrderId("001"),
-            self.uuid_factory.generate(),
-            self.clock.timestamp_ns(),
-        )
-
-        # Assert
-        with pytest.raises(NotImplementedError):
-            self.client.cancel_order(command)

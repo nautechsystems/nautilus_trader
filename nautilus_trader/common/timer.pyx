@@ -229,7 +229,7 @@ cdef class Timer:
         if self.stop_time_ns and now_ns >= self.stop_time_ns:
             self.is_expired = True
 
-    cpdef void cancel(self) except *:
+    cpdef void cancel(self) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -402,7 +402,7 @@ cdef class LiveTimer(Timer):
         """
         self._internal.cancel()
 
-    cdef object _start_timer(self, int64_t now_ns):
+    cdef object _start_timer(self, int64_t now_ns):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

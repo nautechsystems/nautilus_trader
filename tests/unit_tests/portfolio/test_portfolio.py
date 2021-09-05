@@ -15,8 +15,6 @@
 
 from decimal import Decimal
 
-import pytest
-
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.common.clock import TestClock
@@ -45,7 +43,6 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.portfolio.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
@@ -63,104 +60,6 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
 BETTING_INSTRUMENT = TestInstrumentProvider.betting_instrument()
-
-
-class TestPortfolioFacade:
-    def test_account_raises_not_implemented_error(self):
-        # Arrange
-        portfolio = PortfolioFacade()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            portfolio.account(SIM)
-
-    def test_order_margin_raises_not_implemented_error(self):
-        # Arrange
-        portfolio = PortfolioFacade()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            portfolio.margins_init(SIM)
-
-    def test_position_margin_raises_not_implemented_error(self):
-        # Arrange
-        portfolio = PortfolioFacade()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            portfolio.margins_maint(SIM)
-
-    def test_unrealized_pnl_for_venue_raises_not_implemented_error(self):
-        # Arrange
-        portfolio = PortfolioFacade()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            portfolio.unrealized_pnls(SIM)
-
-    def test_unrealized_pnl_for_instrument_raises_not_implemented_error(self):
-        # Arrange
-        portfolio = PortfolioFacade()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            portfolio.unrealized_pnl(BTCUSDT_BINANCE.id)
-
-    def test_market_value_raises_not_implemented_error(self):
-        # Arrange
-        portfolio = PortfolioFacade()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            portfolio.net_exposure(AUDUSD_SIM.id)
-
-    def test_market_values_raises_not_implemented_error(self):
-        # Arrange
-        portfolio = PortfolioFacade()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            portfolio.net_exposures(BITMEX)
-
-    def test_net_position_raises_not_implemented_error(self):
-        # Arrange
-        portfolio = PortfolioFacade()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            portfolio.net_position(GBPUSD_SIM.id)
-
-    def test_is_net_long_raises_not_implemented_error(self):
-        # Arrange
-        portfolio = PortfolioFacade()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            portfolio.is_net_long(GBPUSD_SIM.id)
-
-    def test_is_net_short_raises_not_implemented_error(self):
-        # Arrange
-        portfolio = PortfolioFacade()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            portfolio.is_net_short(GBPUSD_SIM.id)
-
-    def test_is_flat_raises_not_implemented_error(self):
-        # Arrange
-        portfolio = PortfolioFacade()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            portfolio.is_flat(GBPUSD_SIM.id)
-
-    def test_is_completely_flat_raises_not_implemented_error(self):
-        # Arrange
-        portfolio = PortfolioFacade()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            portfolio.is_completely_flat()
 
 
 class TestPortfolio:

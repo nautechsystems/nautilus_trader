@@ -875,7 +875,7 @@ cdef class L1OrderBook(OrderBook):
         self._top_bid_level = None
         self._top_ask_level = None
 
-    cpdef void add(self, Order order) except *:
+    cpdef void add(self, Order order) except *:  # pragma: no cover
         """
         NotImplemented (Use `update(order)` for L1OrderBook).
         """

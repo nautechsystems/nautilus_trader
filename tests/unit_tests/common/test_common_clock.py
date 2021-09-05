@@ -21,56 +21,12 @@ from datetime import timedelta
 import pytest
 import pytz
 
-from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.timer import TimeEvent
 from nautilus_trader.common.timer import TimeEventHandler
 from nautilus_trader.core.datetime import millis_to_nanos
 from tests.test_kit.stubs import UNIX_EPOCH
-
-
-class TestClockBase:
-    def test_utc_now_when_not_implemented_raises_exception(self):
-        # Arrange
-        clock = Clock()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            clock.utc_now()
-
-    def test_timestamp_when_not_implemented_raises_exception(self):
-        # Arrange
-        clock = Clock()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            clock.timestamp()
-
-    def test_timestamp_ns_when_not_implemented_raises_exception(self):
-        # Arrange
-        clock = Clock()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            clock.timestamp_ns()
-
-    def test_set_timer_when_not_implemented_raises_exception(self):
-        # Arrange
-        clock = Clock()
-        name = "TEST_TIMER"
-        interval = timedelta(minutes=1)
-        handler = []
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            clock.set_timer(
-                name=name,
-                interval=interval,
-                start_time=UNIX_EPOCH + interval,
-                stop_time=None,
-                handler=handler.append,
-            )
 
 
 class TestTestClock:
