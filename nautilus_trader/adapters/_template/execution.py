@@ -85,9 +85,9 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         """
         raise NotImplementedError("method must be implemented in the subclass")
 
-    async def generate_exec_reports(  # pragma: no cover
+    async def generate_exec_reports(
         self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None
-    ):
+    ):  # pragma: no cover
         """
         Generate a list of execution reports.
 
