@@ -190,10 +190,10 @@ cdef class Serializer:
         """
         super().__init__()
 
-    cpdef bytes serialize(self, object obj):
+    cpdef bytes serialize(self, object obj):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef object deserialize(self, bytes obj_bytes):
+    cpdef object deserialize(self, bytes obj_bytes):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")

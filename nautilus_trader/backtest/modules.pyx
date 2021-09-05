@@ -69,15 +69,15 @@ cdef class SimulationModule:
 
         self._exchange = exchange
 
-    cpdef void process(self, int64_t now_ns) except *:
+    cpdef void process(self, int64_t now_ns) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void log_diagnostics(self, LoggerAdapter log) except *:
+    cpdef void log_diagnostics(self, LoggerAdapter log) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void reset(self) except *:
+    cpdef void reset(self) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

@@ -33,10 +33,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport nanos_to_secs
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
+from nautilus_trader.core.datetime cimport timedelta_to_nanos
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.core.time cimport unix_timestamp_ns
-
-from nautilus_trader.core.datetime import timedelta_to_nanos
 
 
 cdef class Clock:
@@ -65,7 +64,7 @@ cdef class Clock:
         self.next_event_time = None
         self.next_event_time_ns = 0
 
-    cpdef double timestamp(self) except *:
+    cpdef double timestamp(self) except *:  # pragma: no cover
         """
         Return the current UNIX time in seconds.
 
@@ -80,7 +79,7 @@ cdef class Clock:
         """
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef int64_t timestamp_ns(self) except *:
+    cpdef int64_t timestamp_ns(self) except *:  # pragma: no cover
         """
         Return the current UNIX time in nanoseconds.
 
@@ -95,7 +94,7 @@ cdef class Clock:
         """
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef datetime utc_now(self):
+    cpdef datetime utc_now(self):  # pragma: no cover
         """
         Return the current time (UTC).
 
@@ -372,7 +371,7 @@ cdef class Clock:
         int64_t interval_ns,
         int64_t start_time_ns,
         int64_t stop_time_ns,
-    ):
+    ):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

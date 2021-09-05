@@ -424,15 +424,15 @@ cdef class Account:
         total_commissions: Decimal = self._commissions.get(currency, Decimal(0))
         self._commissions[currency] = Money(total_commissions + commission, currency)
 
-    cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init) except *:
+    cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void clear_margin_init(self, InstrumentId instrument_id) except *:
+    cpdef void clear_margin_init(self, InstrumentId instrument_id) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cdef void _recalculate_balance(self, Currency currency) except *:
+    cdef void _recalculate_balance(self, Currency currency) except *:  # pragma: no cover
         raise NotImplementedError("method must be implemented in the subclass")
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
@@ -444,7 +444,7 @@ cdef class Account:
         last_px: Decimal,
         LiquiditySide liquidity_side,
         bint inverse_as_quote=False,
-    ):
+    ):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

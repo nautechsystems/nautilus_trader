@@ -51,15 +51,15 @@ cdef class DataProducer:
     Provides a read-only facade for data producers.
     """
 
-    cpdef list instruments(self):
+    cpdef list instruments(self):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void reset(self) except *:
+    cpdef void reset(self) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Data next(self):
+    cpdef Data next(self):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

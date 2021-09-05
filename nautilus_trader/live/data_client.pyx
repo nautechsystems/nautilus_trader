@@ -39,7 +39,7 @@ cdef class LiveDataClientFactory:
         LiveClock clock not None,
         LiveLogger logger not None,
         client_cls=None,
-    ):
+    ):  # pragma: no cover
         """
         Return a new data client from the given parameters.
 
@@ -66,7 +66,7 @@ cdef class LiveDataClientFactory:
         LiveDataClient
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method must be implemented in the subclass")
 
 
 cdef class LiveDataClient(DataClient):

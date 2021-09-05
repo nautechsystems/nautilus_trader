@@ -175,7 +175,7 @@ cdef class Order:
         """
         raise NotImplemented("method must be implemented in subclass")
 
-    cpdef dict to_dict(self):
+    cpdef dict to_dict(self):  # pragma: no cover
         """
         Return a dictionary representation of this object.
 
@@ -808,7 +808,7 @@ cdef class PassiveOrder(Order):
                 f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
                 f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}")
 
-    cpdef dict to_dict(self):
+    cpdef dict to_dict(self):  # pragma: no cover
         """
         Return a dictionary representation of this object.
 

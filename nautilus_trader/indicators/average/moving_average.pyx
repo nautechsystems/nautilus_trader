@@ -69,7 +69,7 @@ cdef class MovingAverage(Indicator):
         self.count = 0
         self.value = 0
 
-    cpdef void update_raw(self, double value) except *:
+    cpdef void update_raw(self, double value) except *:  # pragma: no cover
         """
         Update the indicator with the given raw value.
 
@@ -95,6 +95,6 @@ cdef class MovingAverage(Indicator):
         self.count = 0
         self.value = 0
 
-    cdef void _reset_ma(self) except *:
+    cdef void _reset_ma(self) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")

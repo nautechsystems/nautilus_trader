@@ -244,15 +244,6 @@ def test_add(empty_l2_book):
     assert empty_l2_book.bids.top().price == 10.0
 
 
-def test_add_l1_fails():
-    book = OrderBook.create(
-        instrument=AUDUSD_SIM,
-        level=BookLevel.L1,
-    )
-    with pytest.raises(NotImplementedError):
-        book.add(TestStubs.order(price=10.0, side=OrderSide.BUY))
-
-
 def test_delete_l1():
     book = OrderBook.create(
         instrument=AUDUSD_SIM,

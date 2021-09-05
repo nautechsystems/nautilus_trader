@@ -26,50 +26,50 @@ cdef class PortfolioFacade:
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
-    cpdef Account account(self, Venue venue):
+    cpdef Account account(self, Venue venue):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef dict margins_init(self, Venue venue):
+    cpdef dict margins_init(self, Venue venue):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef dict margins_maint(self, Venue venue):
+    cpdef dict margins_maint(self, Venue venue):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef dict unrealized_pnls(self, Venue venue):
+    cpdef dict unrealized_pnls(self, Venue venue):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef dict net_exposures(self, Venue venue):
+    cpdef dict net_exposures(self, Venue venue):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Money unrealized_pnl(self, InstrumentId instrument_id):
+    cpdef Money unrealized_pnl(self, InstrumentId instrument_id):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef Money net_exposure(self, InstrumentId instrument_id):
+    cpdef Money net_exposure(self, InstrumentId instrument_id):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef object net_position(self, InstrumentId instrument_id):
+    cpdef object net_position(self, InstrumentId instrument_id):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef bint is_net_long(self, InstrumentId instrument_id) except *:
+    cpdef bint is_net_long(self, InstrumentId instrument_id) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef bint is_net_short(self, InstrumentId instrument_id) except *:
+    cpdef bint is_net_short(self, InstrumentId instrument_id) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef bint is_flat(self, InstrumentId instrument_id) except *:
+    cpdef bint is_flat(self, InstrumentId instrument_id) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef bint is_completely_flat(self) except *:
+    cpdef bint is_completely_flat(self) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")

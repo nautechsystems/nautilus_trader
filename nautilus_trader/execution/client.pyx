@@ -173,19 +173,19 @@ cdef class ExecutionClient(Component):
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
-    cpdef void submit_order(self, SubmitOrder command) except *:
+    cpdef void submit_order(self, SubmitOrder command) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:
+    cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void update_order(self, UpdateOrder command) except *:
+    cpdef void update_order(self, UpdateOrder command) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void cancel_order(self, CancelOrder command) except *:
+    cpdef void cancel_order(self, CancelOrder command) except *:  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
