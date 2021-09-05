@@ -305,8 +305,8 @@ cdef class BarAggregator:
             ts_event=tick.ts_event,
         )
 
-    cdef void _apply_update(self, Price price, Quantity size, int64_t ts_event) except *:  # pragma: no cover
-        raise NotImplementedError("method must be implemented in the subclass")
+    cdef void _apply_update(self, Price price, Quantity size, int64_t ts_event) except *:
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef void _build_now_and_send(self) except *:
         cdef Bar bar = self._builder.build_now()

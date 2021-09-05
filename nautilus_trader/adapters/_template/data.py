@@ -40,135 +40,133 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     which must be implemented for an integration to be complete.
     """
 
-    def connect(self):  # pragma: no cover
+    def connect(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def disconnect(self):  # pragma: no cover
+    def disconnect(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def reset(self):  # pragma: no cover
+    def reset(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def dispose(self):  # pragma: no cover
+    def dispose(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     # -- SUBSCRIPTIONS -----------------------------------------------------------------------------
 
-    def subscribe(self, data_type: DataType):  # pragma: no cover
+    def subscribe(self, data_type: DataType):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe(self, data_type: DataType):  # pragma: no cover
+    def unsubscribe(self, data_type: DataType):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_instruments(self):  # pragma: no cover
+    def subscribe_instruments(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_instrument(self, instrument_id: InstrumentId):  # pragma: no cover
+    def subscribe_instrument(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def subscribe_order_book_deltas(
         self, instrument_id: InstrumentId, level: BookLevel, kwargs: dict = None
-    ):  # pragma: no cover
+    ):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def subscribe_order_book_snapshots(
         self, instrument_id: InstrumentId, level: BookLevel, depth: int = 0, kwargs: dict = None
-    ):  # pragma: no cover
+    ):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_ticker(self, instrument_id: InstrumentId):  # pragma: no cover
+    def subscribe_ticker(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_quote_ticks(self, instrument_id: InstrumentId):  # pragma: no cover
+    def subscribe_quote_ticks(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_trade_ticks(self, instrument_id: InstrumentId):  # pragma: no cover
+    def subscribe_trade_ticks(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_venue_status_update(self, instrument_id: InstrumentId):  # pragma: no cover
+    def subscribe_venue_status_update(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_bars(self, bar_type: BarType):  # pragma: no cover
+    def subscribe_bars(self, bar_type: BarType):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_venue_status_updates(self, instrument_id: InstrumentId):  # pragma: no cover
+    def subscribe_venue_status_updates(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_instrument_status_updates(self, instrument_id: InstrumentId):  # pragma: no cover
+    def subscribe_instrument_status_updates(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def subscribe_instrument_close_prices(self, instrument_id: InstrumentId):  # pragma: no cover
+    def subscribe_instrument_close_prices(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_instruments(self):  # pragma: no cover
+    def unsubscribe_instruments(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_instrument(self, instrument_id: InstrumentId):  # pragma: no cover
+    def unsubscribe_instrument(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId):  # pragma: no cover
+    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId):  # pragma: no cover
+    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_ticker(self, instrument_id: InstrumentId):  # pragma: no cover
+    def unsubscribe_ticker(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_quote_ticks(self, instrument_id: InstrumentId):  # pragma: no cover
+    def unsubscribe_quote_ticks(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_trade_ticks(self, instrument_id: InstrumentId):  # pragma: no cover
+    def unsubscribe_trade_ticks(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_bars(self, bar_type: BarType):  # pragma: no cover
+    def unsubscribe_bars(self, bar_type: BarType):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_venue_status_updates(self, instrument_id: InstrumentId):  # pragma: no cover
+    def unsubscribe_venue_status_updates(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_instrument_status_updates(
-        self, instrument_id: InstrumentId
-    ):  # pragma: no cover
+    def unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def unsubscribe_instrument_close_prices(self, instrument_id: InstrumentId):  # pragma: no cover
+    def unsubscribe_instrument_close_prices(self, instrument_id: InstrumentId):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     # -- REQUESTS ----------------------------------------------------------------------------------
 
-    def request(self, datatype: DataType, correlation_id: UUID4):  # pragma: no cover
+    def request(self, datatype: DataType, correlation_id: UUID4):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def request_quote_ticks(
         self,
@@ -177,9 +175,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         to_datetime: datetime,
         limit: int,
         correlation_id: UUID4,
-    ):  # pragma: no cover
+    ):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def request_trade_ticks(
         self,
@@ -188,9 +186,9 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         to_datetime: datetime,
         limit: int,
         correlation_id: UUID4,
-    ):  # pragma: no cover
+    ):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def request_bars(
         self,
@@ -199,6 +197,6 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         to_datetime: datetime,
         limit: int,
         correlation_id: UUID4,
-    ):  # pragma: no cover
+    ):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

@@ -39,7 +39,7 @@ cdef class LiveDataClientFactory:
         LiveClock clock not None,
         LiveLogger logger not None,
         client_cls=None,
-    ):  # pragma: no cover
+    ):
         """
         Return a new data client from the given parameters.
 
@@ -66,7 +66,7 @@ cdef class LiveDataClientFactory:
         LiveDataClient
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
 cdef class LiveDataClient(DataClient):
@@ -120,13 +120,13 @@ cdef class LiveDataClient(DataClient):
 
         self._loop = loop
 
-    def connect(self):  # pragma: no cover
+    def connect(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def disconnect(self):  # pragma: no cover
+    def disconnect(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
 cdef class LiveMarketDataClient(MarketDataClient):
@@ -180,10 +180,10 @@ cdef class LiveMarketDataClient(MarketDataClient):
 
         self._loop = loop
 
-    def connect(self):  # pragma: no cover
+    def connect(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def disconnect(self):  # pragma: no cover
+    def disconnect(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

@@ -42,43 +42,43 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     which must be implemented for an integration to be complete.
     """
 
-    def connect(self):  # pragma: no cover
+    def connect(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def disconnect(self):  # pragma: no cover
+    def disconnect(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def reset(self):  # pragma: no cover
+    def reset(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def dispose(self):  # pragma: no cover
+    def dispose(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
-    def submit_order(self, command: SubmitOrder):  # pragma: no cover
+    def submit_order(self, command: SubmitOrder):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def submit_bracket_order(self, command: SubmitBracketOrder):  # pragma: no cover
+    def submit_bracket_order(self, command: SubmitBracketOrder):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def update_order(self, command: UpdateOrder):  # pragma: no cover
+    def update_order(self, command: UpdateOrder):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def cancel_order(self, command: CancelOrder):  # pragma: no cover
+    def cancel_order(self, command: CancelOrder):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     # -- RECONCILIATION ----------------------------------------------------------------------------
 
-    async def generate_order_status_report(self, order: Order):  # pragma: no cover
+    async def generate_order_status_report(self, order: Order):
         """
         Generate an order status report for the given order.
 
@@ -94,11 +94,11 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         OrderStatusReport or None
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def generate_exec_reports(
         self, venue_order_id: VenueOrderId, symbol: Symbol, since: datetime = None
-    ):  # pragma: no cover
+    ):
         """
         Generate a list of execution reports.
 
@@ -118,4 +118,4 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         list[ExecutionReport]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

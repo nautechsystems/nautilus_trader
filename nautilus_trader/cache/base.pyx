@@ -68,7 +68,7 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef Bar bar(self, BarType bar_type, int index=0):  # pragma: no cover
+    cpdef Bar bar(self, BarType bar_type, int index=0):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -114,7 +114,7 @@ cdef class CacheFacade:
         Currency from_currency,
         Currency to_currency,
         PriceType price_type=PriceType.MID,
-    ):  # pragma: no cover
+    ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -184,7 +184,7 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef set strategy_ids(self):  # pragma: no cover
+    cpdef set strategy_ids(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

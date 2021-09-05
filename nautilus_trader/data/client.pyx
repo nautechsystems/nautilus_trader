@@ -95,13 +95,13 @@ cdef class DataClient(Component):
     def __repr__(self) -> str:
         return f"{type(self).__name__}-{self.id.value}"
 
-    def connect(self):  # pragma: no cover
+    def connect(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def disconnect(self):  # pragma: no cover
+    def disconnect(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
@@ -116,19 +116,19 @@ cdef class DataClient(Component):
         """
         return sorted(list(self._feeds_generic_data.keys()))
 
-    cpdef void subscribe(self, DataType data_type) except *:  # pragma: no cover
+    cpdef void subscribe(self, DataType data_type) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe(self, DataType data_type) except *:  # pragma: no cover
+    cpdef void unsubscribe(self, DataType data_type) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType data_type, UUID4 correlation_id) except *:  # pragma: no cover
+    cpdef void request(self, DataType data_type, UUID4 correlation_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 
@@ -328,107 +328,107 @@ cdef class MarketDataClient(DataClient):
         """
         return sorted(list(self._feeds_instrument_close_price.keys()))
 
-    cpdef void subscribe(self, DataType data_type) except *:  # pragma: no cover
+    cpdef void subscribe(self, DataType data_type) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe(self, DataType data_type) except *:  # pragma: no cover
+    cpdef void unsubscribe(self, DataType data_type) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void subscribe_instruments(self) except *:  # pragma: no cover
+    cpdef void subscribe_instruments(self) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:  # pragma: no cover  # noqa
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookLevel level, int depth=0, dict kwargs=None) except *:  # pragma: no cover  # noqa
+    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookLevel level, int depth=0, dict kwargs=None) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void subscribe_venue_status_updates(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void subscribe_venue_status_updates(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void subscribe_bars(self, BarType bar_type) except *:  # pragma: no cover
+    cpdef void subscribe_bars(self, BarType bar_type) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe_instruments(self) except *:  # pragma: no cover
+    cpdef void unsubscribe_instruments(self) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void unsubscribe_ticker(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe_bars(self, BarType bar_type) except *:  # pragma: no cover
+    cpdef void unsubscribe_bars(self, BarType bar_type) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe_venue_status_updates(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void unsubscribe_venue_status_updates(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:  # pragma: no cover
+    cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 # -- REQUESTS --------------------------------------------------------------------------------------
 
-    cpdef void request(self, DataType datatype, UUID4 correlation_id) except *:  # pragma: no cover
+    cpdef void request(self, DataType datatype, UUID4 correlation_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void request_quote_ticks(
         self,
@@ -437,9 +437,9 @@ cdef class MarketDataClient(DataClient):
         datetime to_datetime,
         int limit,
         UUID4 correlation_id,
-    ) except *:  # pragma: no cover
+    ) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void request_trade_ticks(
         self,
@@ -448,9 +448,9 @@ cdef class MarketDataClient(DataClient):
         datetime to_datetime,
         int limit,
         UUID4 correlation_id,
-    ) except *:  # pragma: no cover
+    ) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void request_bars(
         self,
@@ -459,9 +459,9 @@ cdef class MarketDataClient(DataClient):
         datetime to_datetime,
         int limit,
         UUID4 correlation_id,
-    ) except *:  # pragma: no cover
+    ) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 # -- PYTHON WRAPPERS -------------------------------------------------------------------------------
 

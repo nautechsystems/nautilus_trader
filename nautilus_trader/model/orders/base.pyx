@@ -175,7 +175,7 @@ cdef class Order:
         """
         raise NotImplemented("method must be implemented in subclass")
 
-    cpdef dict to_dict(self):  # pragma: no cover
+    cpdef dict to_dict(self):
         """
         Return a dictionary representation of this object.
 
@@ -184,7 +184,7 @@ cdef class Order:
         dict[str, object]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef OrderStatus status_c(self) except *:
         return <OrderStatus>self._fsm.state
@@ -808,7 +808,7 @@ cdef class PassiveOrder(Order):
                 f"{OrderTypeParser.to_str(self.type)} @ {self.price} "
                 f"{TimeInForceParser.to_str(self.time_in_force)}{expire_time}")
 
-    cpdef dict to_dict(self):  # pragma: no cover
+    cpdef dict to_dict(self):
         """
         Return a dictionary representation of this object.
 
@@ -817,7 +817,7 @@ cdef class PassiveOrder(Order):
         dict[str, object]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef list venue_order_ids_c(self):
         return self._venue_order_ids.copy()

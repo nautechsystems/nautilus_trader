@@ -47,17 +47,17 @@ cdef class InstrumentProvider:
         """
         return len(self._instruments)
 
-    async def load_all_async(self):  # pragma: no cover
+    async def load_all_async(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void load_all(self) except *:  # pragma: no cover
+    cpdef void load_all(self) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void load(self, InstrumentId instrument_id, dict details) except *:  # pragma: no cover
+    cpdef void load(self, InstrumentId instrument_id, dict details) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void add(self, Instrument instrument) except *:
         """

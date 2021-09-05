@@ -58,7 +58,7 @@ cdef class LiveExecutionClientFactory:
         LiveClock clock not None,
         LiveLogger logger not None,
         client_cls=None,
-    ):  # pragma: no cover
+    ):
         """
         Return a new execution client from the given parameters.
 
@@ -85,7 +85,7 @@ cdef class LiveExecutionClientFactory:
         LiveExecutionClient
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
 cdef class LiveExecutionClient(ExecutionClient):
@@ -159,13 +159,13 @@ cdef class LiveExecutionClient(ExecutionClient):
         self._loop = loop
         self._instrument_provider = instrument_provider
 
-    def connect(self):  # pragma: no cover
+    def connect(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def disconnect(self):  # pragma: no cover
+    def disconnect(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void reset(self) except *:
         """
@@ -200,7 +200,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         # Nothing to dispose yet
         self._log.info("Disposed.")
 
-    async def generate_order_status_report(self, Order order):  # pragma: no cover
+    async def generate_order_status_report(self, Order order):
         """
         Generate an order status report for the given order.
 
@@ -216,14 +216,14 @@ cdef class LiveExecutionClient(ExecutionClient):
         OrderStatusReport or None
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def generate_exec_reports(
         self,
         VenueOrderId venue_order_id,
         Symbol symbol,
         datetime since=None,
-    ):  # pragma: no cover
+    ):
         """
         Generate a list of execution reports.
 
@@ -243,7 +243,7 @@ cdef class LiveExecutionClient(ExecutionClient):
         list[ExecutionReport]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def generate_mass_status(self, list active_orders):
         """
