@@ -95,6 +95,14 @@ cdef class DataClient(Component):
     def __repr__(self) -> str:
         return f"{type(self).__name__}-{self.id.value}"
 
+    def connect(self):  # pragma: no cover
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    def disconnect(self):  # pragma: no cover
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 
     cpdef list subscribed_generic_data(self):
@@ -356,7 +364,7 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_venue_status_update(self, InstrumentId instrument_id) except *:
+    cpdef void subscribe_venue_status_updates(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -404,7 +412,7 @@ cdef class MarketDataClient(DataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_venue_status_update(self, InstrumentId instrument_id) except *:
+    cpdef void unsubscribe_venue_status_updates(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 

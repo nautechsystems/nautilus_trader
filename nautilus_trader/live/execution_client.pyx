@@ -159,6 +159,14 @@ cdef class LiveExecutionClient(ExecutionClient):
         self._loop = loop
         self._instrument_provider = instrument_provider
 
+    def connect(self):  # pragma: no cover
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    def disconnect(self):  # pragma: no cover
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void reset(self) except *:
         """
         Reset the client.

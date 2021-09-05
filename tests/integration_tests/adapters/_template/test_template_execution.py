@@ -16,48 +16,48 @@
 import pytest
 
 from nautilus_trader.adapters._template.execution import TemplateLiveExecutionClient  # noqa
-from nautilus_trader.execution.client import ExecutionClient
+from nautilus_trader.live.execution_client import LiveExecutionClient
 
 
 @pytest.mark.skip(reason="WIP")
 @pytest.fixture()
-def execution_client() -> ExecutionClient:
+def execution_client() -> LiveExecutionClient:
     return TemplateLiveExecutionClient()
 
 
 @pytest.mark.skip(reason="WIP")
-def test_connect(execution_client: ExecutionClient):
+def test_connect(execution_client: LiveExecutionClient):
     execution_client.connect()
     assert execution_client.is_connected
 
 
 @pytest.mark.skip(reason="WIP")
-def test_disconnect(execution_client: ExecutionClient):
+def test_disconnect(execution_client: LiveExecutionClient):
     execution_client.connect()
     execution_client.disconnect()
     assert not execution_client.is_connected
 
 
 @pytest.mark.skip(reason="WIP")
-def test_submit_order(execution_client: ExecutionClient):
+def test_submit_order(execution_client: LiveExecutionClient):
     pass
 
 
 @pytest.mark.skip(reason="WIP")
-def test_submit_bracket_order(execution_client: ExecutionClient):
+def test_submit_bracket_order(execution_client: LiveExecutionClient):
     pass
 
 
 @pytest.mark.skip(reason="WIP")
-def test_update_order(execution_client: ExecutionClient):
+def test_update_order(execution_client: LiveExecutionClient):
     pass
 
 
 @pytest.mark.skip(reason="WIP")
-def test_cancel_order(execution_client: ExecutionClient):
+def test_cancel_order(execution_client: LiveExecutionClient):
     pass
 
 
 @pytest.mark.skip(reason="WIP")
-def test_generate_order_status_report(execution_client: ExecutionClient):
+def test_generate_order_status_report(execution_client: LiveExecutionClient):
     pass
