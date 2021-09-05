@@ -38,14 +38,14 @@ class TemplateInstrumentProvider(InstrumentProvider):
     which must be implemented for an integration to be complete.
     """
 
-    async def load_all_async(self):  # pragma: no cover
+    async def load_all_async(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def load_all(self):  # pragma: no cover
+    def load_all(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def load(self, instrument_id: InstrumentId, details: dict):  # pragma: no cover
+    def load(self, instrument_id: InstrumentId, details: dict):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

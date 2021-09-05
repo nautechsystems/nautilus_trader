@@ -64,7 +64,7 @@ cdef class Clock:
         self.next_event_time = None
         self.next_event_time_ns = 0
 
-    cpdef double timestamp(self) except *:  # pragma: no cover
+    cpdef double timestamp(self) except *:
         """
         Return the current UNIX time in seconds.
 
@@ -77,9 +77,9 @@ cdef class Clock:
         https://en.wikipedia.org/wiki/Unix_time
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef int64_t timestamp_ns(self) except *:  # pragma: no cover
+    cpdef int64_t timestamp_ns(self) except *:
         """
         Return the current UNIX time in nanoseconds.
 
@@ -92,9 +92,9 @@ cdef class Clock:
         https://en.wikipedia.org/wiki/Unix_time
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef datetime utc_now(self):  # pragma: no cover
+    cpdef datetime utc_now(self):
         """
         Return the current time (UTC).
 
@@ -104,7 +104,7 @@ cdef class Clock:
             The current tz-aware UTC time of the clock.
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef datetime local_now(self, tzinfo tz=None):
         """
@@ -371,9 +371,9 @@ cdef class Clock:
         int64_t interval_ns,
         int64_t start_time_ns,
         int64_t stop_time_ns,
-    ):  # pragma: no cover
+    ):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef void _add_timer(self, Timer timer, handler: Callable[[TimeEvent], None]) except *:
         self._timers[timer.name] = timer

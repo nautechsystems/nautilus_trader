@@ -50,7 +50,7 @@ cdef class Indicator:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError(f"Cannot handle {repr(tick)}: method not implemented in subclass")
 
-    cpdef void handle_bar(self, Bar bar) except *:  # pragma: no cover
+    cpdef void handle_bar(self, Bar bar) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError(f"Cannot handle {repr(bar)}: method not implemented in subclass")
 
@@ -73,6 +73,6 @@ cdef class Indicator:
     cdef void _set_initialized(self, bint setting) except *:
         self.initialized = setting
 
-    cdef void _reset(self) except *:  # pragma: no cover
+    cdef void _reset(self) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

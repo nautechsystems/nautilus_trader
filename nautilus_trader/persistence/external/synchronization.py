@@ -28,7 +28,7 @@ def running_on_dask() -> bool:
 
         get_client()
         return True
-    except (ImportError, ValueError):  # pragma: no cover
+    except (ImportError, ValueError):
         return False
 
 
