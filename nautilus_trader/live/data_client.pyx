@@ -120,6 +120,14 @@ cdef class LiveDataClient(DataClient):
 
         self._loop = loop
 
+    def connect(self):  # pragma: no cover
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    def disconnect(self):  # pragma: no cover
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
 
 cdef class LiveMarketDataClient(MarketDataClient):
     """
@@ -171,3 +179,11 @@ cdef class LiveMarketDataClient(MarketDataClient):
         )
 
         self._loop = loop
+
+    def connect(self):  # pragma: no cover
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    def disconnect(self):  # pragma: no cover
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")

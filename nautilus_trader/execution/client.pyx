@@ -137,6 +137,18 @@ cdef class ExecutionClient(Component):
     def __repr__(self) -> str:
         return f"{type(self).__name__}-{self.id.value}"
 
+    cpdef void _set_connected(self, bint value=True) except *:
+        """
+        Setter for pure Python implementations to change the readonly property.
+
+        Parameters
+        ----------
+        value : bool
+            The value to set for is_connected.
+
+        """
+        self.is_connected = value
+
     cpdef Account get_account(self):
         """
         Return the account for the client (if registered).
@@ -158,18 +170,6 @@ cdef class ExecutionClient(Component):
             self._account = account
 
         return self._account
-
-    cpdef void _set_connected(self, bint value=True) except *:
-        """
-        Setter for pure Python implementations to change the readonly property.
-
-        Parameters
-        ----------
-        value : bool
-            The value to set for is_connected.
-
-        """
-        self.is_connected = value
 
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 

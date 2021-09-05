@@ -18,10 +18,16 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 
 
+# Its recommended to have one constant for the venue
 TEMPLATE_VENUE = Venue("TEMPLATE")
 
 
 class TemplateInstrumentProvider(InstrumentProvider):
+    """
+    An example template of an ``InstrumentProvider`` showing the minimal methods
+    which must be implemented for an integration to be complete.
+    """
+
     async def load_all_async(self):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")

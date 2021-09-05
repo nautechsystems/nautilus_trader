@@ -26,6 +26,11 @@ from nautilus_trader.model.orders.base import Order
 
 
 class TemplateLiveExecutionClient(LiveExecutionClient):
+    """
+    An example template of a ``LiveExecutionClient`` showing the minimal methods
+    which must be implemented for an integration to be complete.
+    """
+
     def connect(self):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -42,7 +47,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- COMMAND HANDLERS ------------------------------------------------------------------------------
+    # -- COMMAND HANDLERS --------------------------------------------------------------------------
 
     def submit_order(self, command: SubmitOrder):  # pragma: no cover
         """Abstract method (implement in subclass)."""
@@ -60,7 +65,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- RECONCILIATION ------------------------------------------------------------------------------
+    # -- RECONCILIATION ----------------------------------------------------------------------------
 
     async def generate_order_status_report(self, order: Order):  # pragma: no cover
         """

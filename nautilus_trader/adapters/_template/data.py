@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import datetime
+
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.bar import BarType
@@ -22,6 +24,11 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 
 class TemplateLiveMarketDataClient(LiveMarketDataClient):
+    """
+    An example template of a ``LiveMarketDataClient`` showing the minimal methods
+    which must be implemented for an integration to be complete.
+    """
+
     def connect(self):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -38,7 +45,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
+    # -- SUBSCRIPTIONS -----------------------------------------------------------------------------
 
     def subscribe(self, data_type: DataType):  # pragma: no cover
         """Abstract method (implement in subclass)."""
@@ -48,19 +55,27 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    def subscribe_instrument(self, instrument_id: InstrumentId):  # pragma: no cover
+    def subscribe_instruments(self):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    def subscribe_order_book(  # pragma: no cover
-        self, instrument_id: InstrumentId, level: BookLevel, depth: int = 0, kwargs: dict = None
-    ):
+    def subscribe_instrument(self, instrument_id: InstrumentId):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
     def subscribe_order_book_deltas(  # pragma: no cover
         self, instrument_id: InstrumentId, level: BookLevel, kwargs: dict = None
     ):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    def subscribe_order_book_snapshots(  # pragma: no cover
+        self, instrument_id: InstrumentId, level: BookLevel, depth: int = 0, kwargs: dict = None
+    ):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    def subscribe_ticker(self, instrument_id: InstrumentId):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -76,6 +91,14 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
+    def subscribe_bars(self, bar_type: BarType):  # pragma: no cover
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    def subscribe_venue_status_updates(self, instrument_id: InstrumentId):  # pragma: no cover
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
     def subscribe_instrument_status_updates(self, instrument_id: InstrumentId):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
@@ -84,7 +107,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    def subscribe_bars(self, bar_type: BarType):  # pragma: no cover
+    def unsubscribe_instruments(self):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -92,11 +115,15 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    def unsubscribe_order_book(self, instrument_id: InstrumentId):  # pragma: no cover
+    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId):  # pragma: no cover
+    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId):  # pragma: no cover
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    def unsubscribe_ticker(self, instrument_id: InstrumentId):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -112,13 +139,13 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    def unsubscribe_venue_status_update(self, instrument_id: InstrumentId):  # pragma: no cover
+    def unsubscribe_venue_status_updates(self, instrument_id: InstrumentId):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    def unsubscribe_instrument_status_updates(
+    def unsubscribe_instrument_status_updates(  # pragma: no cover
         self, instrument_id: InstrumentId
-    ):  # pragma: no cover
+    ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -126,18 +153,41 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    # -- REQUESTS --------------------------------------------------------------------------------------
+    # -- REQUESTS ----------------------------------------------------------------------------------
 
     def request(self, datatype: DataType, correlation_id: UUID4):  # pragma: no cover
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    def request_instrument(
-        self, instrument_id: InstrumentId, correlation_id: UUID4
-    ):  # pragma: no cover
+    def request_quote_ticks(  # pragma: no cover
+        self,
+        instrument_id: InstrumentId,
+        from_datetime: datetime,
+        to_datetime: datetime,
+        limit: int,
+        correlation_id: UUID4,
+    ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
 
-    def request_instruments(self, correlation_id: UUID4):  # pragma: no cover
+    def request_trade_ticks(  # pragma: no cover
+        self,
+        instrument_id: InstrumentId,
+        from_datetime: datetime,
+        to_datetime: datetime,
+        limit: int,
+        correlation_id: UUID4,
+    ):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")
+
+    def request_bars(  # pragma: no cover
+        self,
+        bar_type: BarType,
+        from_datetime: datetime,
+        to_datetime: datetime,
+        limit: int,
+        correlation_id: UUID4,
+    ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")
