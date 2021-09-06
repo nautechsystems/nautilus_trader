@@ -21,7 +21,7 @@ from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import AUD
@@ -119,7 +119,7 @@ class TestCashAccount:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -161,7 +161,7 @@ class TestCashAccount:
                 ),
             ],
             info={},  # No default currency set
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -216,7 +216,7 @@ class TestCashAccount:
                 ),
             ],
             info={},  # No default currency set
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -244,7 +244,7 @@ class TestCashAccount:
                 ),
             ],
             info={},  # No default currency set
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -279,7 +279,7 @@ class TestCashAccount:
                 ),
             ],
             info={},  # No default currency set
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -334,7 +334,7 @@ class TestCashAccount:
                 ),
             ],
             info={},  # No default currency set
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -389,7 +389,7 @@ class TestCashAccount:
                 ),
             ],
             info={},  # No default currency set
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )

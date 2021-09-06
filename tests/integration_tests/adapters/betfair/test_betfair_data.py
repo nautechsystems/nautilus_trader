@@ -18,7 +18,6 @@ import sys
 from collections import Counter
 from functools import partial
 from unittest.mock import patch
-from uuid import uuid4
 
 import pytest
 
@@ -101,7 +100,7 @@ class TestBetfairDataClient:
         self.uuid_factory = UUIDFactory()
 
         self.trader_id = TestStubs.trader_id()
-        self.uuid = uuid4()
+        self.uuid = UUID4()
         self.venue = BETFAIR_VENUE
         self.account_id = AccountId(self.venue.value, "001")
 

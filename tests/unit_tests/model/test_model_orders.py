@@ -19,7 +19,7 @@ import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -117,7 +117,7 @@ class TestOrders:
                 OrderSide.BUY,
                 Quantity.zero(),
                 TimeInForce.DAY,
-                uuid4(),
+                UUID4(),
                 0,
             )
 
@@ -132,7 +132,7 @@ class TestOrders:
                 OrderSide.BUY,
                 Quantity.zero(),
                 TimeInForce.GTD,  # <-- invalid
-                uuid4(),
+                UUID4(),
                 0,
             )
 
@@ -147,7 +147,7 @@ class TestOrders:
                 OrderSide.BUY,
                 Quantity.from_int(100000),
                 price=Price.from_str("1.00000"),
-                init_id=uuid4(),
+                init_id=UUID4(),
                 ts_init=0,
                 time_in_force=TimeInForce.GTD,
                 expire_time=None,
@@ -165,7 +165,7 @@ class TestOrders:
                 Quantity.from_int(100000),
                 price=Price.from_str("1.00001"),
                 trigger=Price.from_str("1.00000"),
-                init_id=uuid4(),
+                init_id=UUID4(),
                 ts_init=0,
                 time_in_force=TimeInForce.GTD,
                 expire_time=None,
@@ -637,7 +637,7 @@ class TestOrders:
             AUDUSD_SIM.id,
             order.client_order_id,
             "SOME_REASON",
-            uuid4(),
+            UUID4(),
             0,
         )
 
@@ -868,7 +868,7 @@ class TestOrders:
             Quantity.from_int(120000),
             Price.from_str("1.00001"),
             None,
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -910,7 +910,7 @@ class TestOrders:
             Quantity.from_int(120000),
             Price.from_str("1.00001"),
             None,
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -1121,7 +1121,7 @@ class TestOrders:
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.MAKER,
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -1169,7 +1169,7 @@ class TestOrders:
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.MAKER,
-            uuid4(),
+            UUID4(),
             1_000_000_000,
             1_000_000_000,
         )
