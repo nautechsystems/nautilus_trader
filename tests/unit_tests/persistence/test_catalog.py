@@ -100,9 +100,7 @@ class TestPersistenceCatalog:
     def test_data_catalog_filter(self):
         # Arrange, Act
         deltas = self.catalog.order_book_deltas()
-        filtered_deltas = self.catalog.order_book_deltas(
-            filter_expr=ds.field("delta_type") == "DELETE"
-        )
+        filtered_deltas = self.catalog.order_book_deltas(filter_expr=ds.field("action") == "DELETE")
 
         # Assert
         assert len(deltas) == 2384
@@ -124,7 +122,5 @@ class TestPersistenceCatalog:
         deltas = self.catalog.order_book_deltas()
         assert len(deltas) == 2384
 
-        filtered_deltas = self.catalog.order_book_deltas(
-            filter_expr=ds.field("delta_type") == "DELETE"
-        )
+        filtered_deltas = self.catalog.order_book_deltas(filter_expr=ds.field("action") == "DELETE")
         assert len(filtered_deltas) == 351

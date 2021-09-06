@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.model.c_enums.book_action cimport BookAction
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
-from nautilus_trader.model.c_enums.delta_type cimport DeltaType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 
@@ -52,8 +52,8 @@ cdef class OrderBookDeltas(OrderBookData):
 
 
 cdef class OrderBookDelta(OrderBookData):
-    cdef readonly DeltaType type
-    """The type of change (``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``).\n\n:returns: `DeltaType`"""
+    cdef readonly BookAction action
+    """The order book delta action {``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``}.\n\n:returns: `BookAction`"""
     cdef readonly Order order
     """The order to apply.\n\n:returns: `Order`"""
 

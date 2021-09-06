@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class DeltaTypeParser:
+cdef class BookActionParser:
 
     @staticmethod
     cdef str to_str(int value):
@@ -30,22 +30,22 @@ cdef class DeltaTypeParser:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef DeltaType from_str(str value) except *:
+    cdef BookAction from_str(str value) except *:
         if value == "ADD":
-            return DeltaType.ADD
+            return BookAction.ADD
         elif value == "UPDATE":
-            return DeltaType.UPDATE
+            return BookAction.UPDATE
         elif value == "DELETE":
-            return DeltaType.DELETE
+            return BookAction.DELETE
         elif value == "CLEAR":
-            return DeltaType.CLEAR
+            return BookAction.CLEAR
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):
-        return DeltaTypeParser.to_str(value)
+        return BookActionParser.to_str(value)
 
     @staticmethod
     def from_str_py(str value):
-        return DeltaTypeParser.from_str(value)
+        return BookActionParser.from_str(value)

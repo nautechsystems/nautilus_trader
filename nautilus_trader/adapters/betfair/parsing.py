@@ -50,8 +50,8 @@ from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookLevel
-from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
@@ -353,7 +353,7 @@ def _handle_bsp_updates(runner, instrument, ts_event, ts_init):
             delta = BSPOrderBookDelta(
                 instrument_id=instrument.id,
                 level=BookLevel.L2,
-                delta_type=DeltaType.DELETE if volume == 0 else DeltaType.UPDATE,
+                action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                 order=Order(
                     price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
                     size=Quantity(volume, precision=8),
@@ -379,7 +379,7 @@ def _handle_book_updates(runner, instrument, ts_event, ts_init):
                 OrderBookDelta(
                     instrument_id=instrument.id,
                     level=BookLevel.L2,
-                    delta_type=DeltaType.DELETE if volume == 0 else DeltaType.UPDATE,
+                    action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                     order=Order(
                         price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
                         size=Quantity(volume, precision=8),
