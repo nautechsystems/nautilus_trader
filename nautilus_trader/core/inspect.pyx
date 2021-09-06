@@ -16,32 +16,12 @@
 import gc
 import sys
 
-from nautilus_trader.core.data cimport Data
-from nautilus_trader.core.message cimport Event
-
 
 cpdef bint is_nautilus_class(cls):
     """
     Determine whether a class belongs to `nautilus_trader`.
-
-    Defined as a `cdef` as closures not yet supported in `cpdef` functions.
     """
-    cdef bint is_nautilus_paths = cls.__module__.startswith("nautilus_trader.")
-    if not is_nautilus_paths:
-        # This object is defined outside of Nautilus, definitely custom
-        return False
-
-    if issubclass(cls, (Data, Event)):
-        return True
-
-    cdef str cls_module = cls.__module__
-    if (
-        cls_module.startswith("nautilus_trader.model")
-        or cls_module.startswith("nautilus_trader.adapters")
-    ):
-        return True
-
-    return False
+    return cls.__module__.startswith("nautilus_trader.")
 
 
 def get_size_of(obj):
