@@ -362,7 +362,6 @@ def test_backtest_run_sync(backtest_configs, catalog):
     assert len(result) == 2
 
 
-@pytest.mark.skip(reason="WIP")
 def test_backtest_run_distributed(backtest_configs, catalog):
     from distributed import Client
 

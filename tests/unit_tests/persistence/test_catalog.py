@@ -22,6 +22,7 @@ import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -29,6 +30,7 @@ from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import split_and_serialize
+from nautilus_trader.persistence.external.core import write_chunk
 from nautilus_trader.persistence.external.core import write_tables
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
@@ -71,6 +73,18 @@ class TestPersistenceCatalog:
     def test_data_catalog_instruments_as_nautilus(self):
         instruments = self.catalog.instruments(as_nautilus=True)
         assert all(isinstance(ins, BettingInstrument) for ins in instruments)
+
+    def test_data_catalog_currency_with_null_max_price_loads(self):
+        # Arrange
+        catalog = DataCatalog.from_env()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+        write_chunk(catalog=catalog, chunk=[instrument])
+
+        # Act
+        instrument = catalog.instruments(as_nautilus=True)[0]
+
+        # Assert
+        assert instrument.max_price is None
 
     def test_partition_key_correctly_remapped(self):
         # Arrange
