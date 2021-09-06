@@ -15,7 +15,7 @@
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
@@ -66,7 +66,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 class TestModelEvents:
     def test_account_state_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         balance = AccountBalance(
             currency=USD,
             total=Money(1525000, USD),
@@ -98,7 +98,7 @@ class TestModelEvents:
 
     def test_order_initialized_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderInitialized(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -126,7 +126,7 @@ class TestModelEvents:
 
     def test_order_denied_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderDenied(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -150,7 +150,7 @@ class TestModelEvents:
 
     def test_order_submitted_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderSubmitted(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -175,7 +175,7 @@ class TestModelEvents:
 
     def test_order_accepted_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderAccepted(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -201,7 +201,7 @@ class TestModelEvents:
 
     def test_order_rejected_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderRejected(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -227,7 +227,7 @@ class TestModelEvents:
 
     def test_order_canceled_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderCanceled(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -253,7 +253,7 @@ class TestModelEvents:
 
     def test_order_expired_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderExpired(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -279,7 +279,7 @@ class TestModelEvents:
 
     def test_order_triggered_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderTriggered(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -305,7 +305,7 @@ class TestModelEvents:
 
     def test_order_pending_update_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderPendingUpdate(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -331,7 +331,7 @@ class TestModelEvents:
 
     def test_order_pending_cancel_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderPendingCancel(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -357,7 +357,7 @@ class TestModelEvents:
 
     def test_order_update_rejected_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderModifyRejected(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -384,7 +384,7 @@ class TestModelEvents:
 
     def test_order_cancel_rejected_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderCancelRejected(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -411,7 +411,7 @@ class TestModelEvents:
 
     def test_order_updated_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderUpdated(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -440,7 +440,7 @@ class TestModelEvents:
 
     def test_order_filled_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderFilled(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -503,7 +503,7 @@ class TestPositionEvents:
 
         position = Position(instrument=AUDUSD_SIM, fill=fill)
 
-        uuid = uuid4()
+        uuid = UUID4()
         event = PositionOpened.create(position, fill, uuid, 0)
 
         # Act, Assert
@@ -550,7 +550,7 @@ class TestPositionEvents:
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
         position.apply(fill2)
 
-        uuid = uuid4()
+        uuid = UUID4()
         event = PositionChanged.create(position, fill2, uuid, 0)
 
         # Act, Assert
@@ -597,7 +597,7 @@ class TestPositionEvents:
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
         position.apply(fill2)
 
-        uuid = uuid4()
+        uuid = UUID4()
         event = PositionClosed.create(position, fill2, uuid, 0)
 
         # Act, Assert

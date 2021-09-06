@@ -16,7 +16,7 @@
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.identifiers import ComponentId
 from tests.test_kit.stubs import TestStubs
@@ -25,7 +25,7 @@ from tests.test_kit.stubs import TestStubs
 class TestCommonEvents:
     def test_component_state_changed(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = ComponentStateChanged(
             trader_id=TestStubs.trader_id(),
             component_id=ComponentId("MyActor-001"),
@@ -50,7 +50,7 @@ class TestCommonEvents:
 
     def test_trading_state_changed(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = TradingStateChanged(
             trader_id=TestStubs.trader_id(),
             state=TradingState.HALTED,

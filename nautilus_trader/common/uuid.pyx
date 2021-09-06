@@ -14,12 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.core.uuid cimport uuid4
 
 
 cdef class UUIDFactory:
     """
-    Provides a factory which generates version 4 UUID4's.
+    Provides a factory which generates UUID's.
     """
 
     cpdef UUID4 generate(self):
@@ -31,4 +30,4 @@ cdef class UUIDFactory:
         UUID4
 
         """
-        return uuid4()
+        return UUID4()

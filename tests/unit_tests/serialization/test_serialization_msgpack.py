@@ -22,7 +22,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitBracketOrder
@@ -180,7 +180,7 @@ class TestMsgPackSerializer:
             price=Price(1.00000, precision=5),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
-            init_id=uuid4(),
+            init_id=UUID4(),
             ts_init=0,
         )
 
@@ -203,7 +203,7 @@ class TestMsgPackSerializer:
             price=Price(1.00000, precision=5),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
-            init_id=uuid4(),
+            init_id=UUID4(),
             ts_init=0,
         )
 
@@ -227,7 +227,7 @@ class TestMsgPackSerializer:
             trigger=Price(1.00010, precision=5),
             time_in_force=TimeInForce.GTC,
             expire_time=None,
-            init_id=uuid4(),
+            init_id=UUID4(),
             ts_init=0,
         )
 
@@ -251,7 +251,7 @@ class TestMsgPackSerializer:
             trigger=Price(1.00010, precision=5),
             time_in_force=TimeInForce.GTD,
             expire_time=UNIX_EPOCH,
-            init_id=uuid4(),
+            init_id=UUID4(),
             ts_init=0,
         )
 
@@ -275,7 +275,7 @@ class TestMsgPackSerializer:
             StrategyId("SCALPER-001"),
             PositionId("P-123456"),
             order,
-            uuid4(),
+            UUID4(),
             0,
         )
 
@@ -311,7 +311,7 @@ class TestMsgPackSerializer:
             self.trader_id,
             StrategyId("SCALPER-001"),
             bracket_order,
-            uuid4(),
+            UUID4(),
             0,
         )
 
@@ -346,7 +346,7 @@ class TestMsgPackSerializer:
             self.trader_id,
             StrategyId("SCALPER-001"),
             bracket_order,
-            uuid4(),
+            UUID4(),
             0,
         )
 
@@ -371,7 +371,7 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             Price(1.00001, precision=5),
             None,
-            uuid4(),
+            UUID4(),
             0,
         )
 
@@ -392,7 +392,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("001"),
-            uuid4(),
+            UUID4(),
             0,
         )
 
@@ -413,7 +413,7 @@ class TestMsgPackSerializer:
             component_type="MyActor",
             state=ComponentState.RUNNING,
             config={"do_something": True},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -434,7 +434,7 @@ class TestMsgPackSerializer:
             reported=True,
             balances=[AccountBalance(USD, Money(1525000, USD), Money(0, USD), Money(1525000, USD))],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=1_000_000_000,
         )
@@ -462,7 +462,7 @@ class TestMsgPackSerializer:
                 )
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=1_000_000_000,
         )
@@ -485,7 +485,7 @@ class TestMsgPackSerializer:
             OrderType.MARKET,
             Quantity(100000, precision=0),
             TimeInForce.FOK,
-            uuid4(),
+            UUID4(),
             0,
             options={},
         )
@@ -516,7 +516,7 @@ class TestMsgPackSerializer:
             OrderType.LIMIT,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
-            uuid4(),
+            UUID4(),
             0,
             options=options,
         )
@@ -546,7 +546,7 @@ class TestMsgPackSerializer:
             OrderType.STOP_MARKET,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
-            uuid4(),
+            UUID4(),
             0,
             options=options,
         )
@@ -579,7 +579,7 @@ class TestMsgPackSerializer:
             OrderType.STOP_LIMIT,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
-            uuid4(),
+            UUID4(),
             0,
             options=options,
         )
@@ -600,7 +600,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             "Exceeds MAX_NOTIONAL_PER_ORDER",
-            uuid4(),
+            UUID4(),
             0,
         )
 
@@ -619,7 +619,7 @@ class TestMsgPackSerializer:
             self.account_id,
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -640,7 +640,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("B-123456"),
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -661,7 +661,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             "ORDER_ID_INVALID",
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -682,7 +682,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -703,7 +703,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -724,7 +724,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -746,7 +746,7 @@ class TestMsgPackSerializer:
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             "ORDER_DOES_NOT_EXIST",
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -768,7 +768,7 @@ class TestMsgPackSerializer:
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
             "ORDER_DOES_NOT_EXIST",
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -792,7 +792,7 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             Price(0.80010, precision=5),
             Price(0.80050, precision=5),
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -813,7 +813,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -834,7 +834,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             VenueOrderId("1"),
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -864,7 +864,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.MAKER,
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -894,7 +894,7 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.TAKER,
-            uuid4(),
+            UUID4(),
             0,
             0,
         )
@@ -924,7 +924,7 @@ class TestMsgPackSerializer:
 
         position = Position(instrument=AUDUSD_SIM, fill=fill)
 
-        uuid = uuid4()
+        uuid = UUID4()
         event = PositionOpened.create(position, fill, uuid, 0)
 
         # Act
@@ -967,7 +967,7 @@ class TestMsgPackSerializer:
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
         position.apply(fill2)
 
-        uuid = uuid4()
+        uuid = UUID4()
         event = PositionChanged.create(position, fill2, uuid, 0)
 
         # Act
@@ -1010,7 +1010,7 @@ class TestMsgPackSerializer:
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
         position.apply(fill2)
 
-        uuid = uuid4()
+        uuid = UUID4()
         event = PositionClosed.create(position, fill2, uuid, 0)
 
         # Act

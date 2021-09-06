@@ -16,7 +16,6 @@
 import pytest
 
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.core.uuid import uuid4
 
 
 class TestUUID:
@@ -35,17 +34,6 @@ class TestUUID:
         assert uuid1 == uuid1
         assert uuid1 == uuid2
         assert uuid2 != uuid3
-
-    def test_comparison(self):
-        # Arrange, Act
-        uuid1 = UUID4("a2988650-5beb-8af8-e714-377a3a1c26ed")
-        uuid2 = UUID4("b2988650-5beb-8af8-e714-377a3a1c26ed")
-
-        # Assert
-        assert uuid1 <= uuid1
-        assert uuid1 < uuid2
-        assert uuid2 >= uuid2
-        assert uuid2 > uuid1
 
     def test_hash(self):
         # Arrange
@@ -66,7 +54,7 @@ class TestUUID:
 
     def test_uuid4_produces_valid_uuid4(self):
         # Arrange, Act
-        result = uuid4()
+        result = UUID4()
 
         # Assert
         assert isinstance(result, UUID4)

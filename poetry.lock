@@ -323,6 +323,14 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 testing = ["pre-commit"]
 
 [[package]]
+name = "fastuuid"
+version = "0.7.0"
+description = "Python bindings to Rust's UUID library."
+category = "main"
+optional = false
+python-versions = ">=3.6"
+
+[[package]]
 name = "filelock"
 version = "3.0.12"
 description = "A platform independent file lock."
@@ -1191,7 +1199,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<3.10"
-content-hash = "23ab33da524686e64ce7df53d78764b60efe4ed1bcd8be601e219aa7a33b31ee"
+content-hash = "37b3ba8739ac4450b3e3b1049d63196db415ae50cc044dce2e28b557e75ccf91"
 
 [metadata.files]
 aiodns = [
@@ -1443,6 +1451,17 @@ eventkit = [
 execnet = [
     {file = "execnet-1.9.0-py2.py3-none-any.whl", hash = "sha256:a295f7cc774947aac58dde7fdc85f4aa00c42adf5d8f5468fc630c1acf30a142"},
     {file = "execnet-1.9.0.tar.gz", hash = "sha256:8f694f3ba9cc92cab508b152dcfe322153975c29bda272e2fd7f3f00f36e47c5"},
+]
+fastuuid = [
+    {file = "fastuuid-0.7.0-cp36-cp36m-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:269dc57b1499b893f346f8b3de818ac9b679f83dcf2c3e4c533eb0446dcfaffb"},
+    {file = "fastuuid-0.7.0-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:36202f4a62a8b837cb6ceca47c150db71dbcaaa2e5470e1a128f1a26edcae637"},
+    {file = "fastuuid-0.7.0-cp37-cp37m-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:80784f90c03de4e4a1bf1669d2d47c3994e5bfb1f54fd356844e4899fc55580c"},
+    {file = "fastuuid-0.7.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fdd91f4ed267a369d29db95eed8b01aa4a3076ba1ec48fc82136e582e00d2b75"},
+    {file = "fastuuid-0.7.0-cp38-cp38-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:cc628e11d87b59990fb8d87915923d42c0be4e4debfae4aac6893e12b4542752"},
+    {file = "fastuuid-0.7.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ab90aa6fb5fa7abbbfad60686b6145b9ae9c21c7d55de642d0271ff7e43d9361"},
+    {file = "fastuuid-0.7.0-cp39-cp39-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:362b4a7c2e1ab4be632f1f287aab23013811312bf57609f8d46d06e12682fbeb"},
+    {file = "fastuuid-0.7.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d8651dd444f8f48d5292bf7008e18fdd9daebf704c5c5cd7c7f185839fcae085"},
+    {file = "fastuuid-0.7.0.tar.gz", hash = "sha256:3c3e28c616c70452e3eb0f000c94f8f6f256b839e4df24f76bb20304c276419d"},
 ]
 filelock = [
     {file = "filelock-3.0.12-py3-none-any.whl", hash = "sha256:929b7d63ec5b7d6b71b0fa5ac14e030b3f70b75747cef1b10da9b879fef15836"},
