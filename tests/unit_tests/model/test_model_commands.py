@@ -17,9 +17,9 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitBracketOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -119,7 +119,7 @@ class TestCommands:
         # Arrange
         uuid = self.uuid_factory.generate()
 
-        command = UpdateOrder(
+        command = ModifyOrder(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("S-001"),
             instrument_id=AUDUSD_SIM.id,
@@ -133,14 +133,14 @@ class TestCommands:
         )
 
         # Act, Assert
-        assert UpdateOrder.from_dict(UpdateOrder.to_dict(command)) == command
+        assert ModifyOrder.from_dict(ModifyOrder.to_dict(command)) == command
         assert (
             str(command)
-            == "UpdateOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010)"  # noqa
+            == "ModifyOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010)"  # noqa
         )
         assert (
             repr(command)
-            == f"UpdateOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010, command_id={uuid}, ts_init=0)"  # noqa
+            == f"ModifyOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010, command_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_cancel_order_command_to_from_dict_and_str_repr(self):

@@ -23,10 +23,10 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitBracketOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import TradingCommand
-from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
@@ -926,7 +926,7 @@ class TestExecutionEngine:
         self.exec_engine.process(TestStubs.event_order_accepted(order))
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
-        update_order = UpdateOrder(
+        modify = ModifyOrder(
             self.trader_id,
             order.strategy_id,
             order.instrument_id,
@@ -940,7 +940,7 @@ class TestExecutionEngine:
         )
 
         # Act
-        self.exec_engine.execute(update_order)
+        self.exec_engine.execute(modify)
 
         # Assert
         assert order.status == OrderStatus.FILLED

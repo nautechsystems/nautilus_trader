@@ -47,17 +47,17 @@ from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderRejected
-from nautilus_trader.model.events.order cimport OrderUpdateRejected
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -168,7 +168,7 @@ cdef class TradingStrategy(Actor):
         self.register_warning_event(OrderDenied)
         self.register_warning_event(OrderRejected)
         self.register_warning_event(OrderCancelRejected)
-        self.register_warning_event(OrderUpdateRejected)
+        self.register_warning_event(OrderModifyRejected)
 
     @property
     def registered_indicators(self):
@@ -571,7 +571,7 @@ cdef class TradingStrategy(Actor):
 
         self._send_exec_cmd(command)
 
-    cpdef void update_order(
+    cpdef void modify_order(
         self,
         PassiveOrder order,
         Quantity quantity=None,
@@ -579,9 +579,9 @@ cdef class TradingStrategy(Actor):
         Price trigger=None,
     ) except *:
         """
-        Update the given order with optional parameters and routing instructions.
+        Modify the given order with optional parameters and routing instructions.
 
-        An `UpdateOrder` command is created and then sent to the
+        An `ModifyOrder` command is created and then sent to the
         `ExecutionEngine`. Either one or both values must differ from the
         original order for the command to be valid.
 
@@ -627,7 +627,7 @@ cdef class TradingStrategy(Actor):
         if trigger is not None:
             if order.is_triggered_c():
                 self.log.warning(
-                    f"Cannot create command UpdateOrder: "
+                    f"Cannot create command ModifyOrder: "
                     f"Order with {repr(order.client_order_id)} already triggered.",
                 )
                 return
@@ -636,14 +636,14 @@ cdef class TradingStrategy(Actor):
 
         if not updating:
             self.log.error(
-                "Cannot create command UpdateOrder: "
+                "Cannot create command ModifyOrder: "
                 "quantity, price and trigger were either None or the same as existing values.",
             )
             return
 
         if order.account_id is None:
             self.log.error(
-                f"Cannot create command UpdateOrder: "
+                f"Cannot create command ModifyOrder: "
                 f"no account assigned to order yet, {order}.",
             )
             return  # Cannot send command
@@ -654,11 +654,11 @@ cdef class TradingStrategy(Actor):
             or order.is_pending_cancel_c()
         ):
             self.log.warning(
-                f"Cannot create command UpdateOrder: state is {order.status_string_c()}, {order}.",
+                f"Cannot create command ModifyOrder: state is {order.status_string_c()}, {order}.",
             )
             return  # Cannot send command
 
-        cdef UpdateOrder command = UpdateOrder(
+        cdef ModifyOrder command = ModifyOrder(
             self.trader_id,
             self.id,
             order.instrument_id,

@@ -29,9 +29,9 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -120,7 +120,7 @@ cdef class SimulatedExchange:
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *
     cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *
-    cpdef void handle_update_order(self, UpdateOrder command) except *
+    cpdef void handle_modify_order(self, ModifyOrder command) except *
     cpdef void handle_cancel_order(self, CancelOrder command) except *
 
 # --------------------------------------------------------------------------------------------------
@@ -144,7 +144,7 @@ cdef class SimulatedExchange:
     cdef void _generate_order_accepted(self, Order order) except *
     cdef void _generate_order_pending_replace(self, Order order) except *
     cdef void _generate_order_pending_cancel(self, Order order) except *
-    cdef void _generate_order_update_rejected(
+    cdef void _generate_order_modify_rejected(
         self,
         StrategyId strategy_id,
         InstrumentId instrument_id,

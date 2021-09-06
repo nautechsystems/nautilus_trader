@@ -38,8 +38,8 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.identifiers cimport AccountId
@@ -252,13 +252,13 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
                 )
                 self._log.debug(f"Generated _generate_order_accepted")
 
-    cpdef void update_order(self, UpdateOrder command) except *:
+    cpdef void modify_order(self, ModifyOrder command) except *:
         Condition.not_none(command, "command")
 
-        self.create_task(self._update_order(command))
+        self.create_task(self._modify_order(command))
 
-    async def _update_order(self, UpdateOrder command):
-        self._log.debug(f"Received update_order {command}")
+    async def _modify_order(self, ModifyOrder command):
+        self._log.debug(f"Received modify_order {command}")
         client_order_id: ClientOrderId = command.client_order_id
         instrument = self._cache.instrument(command.instrument_id)
         Condition.not_none(instrument, "instrument")
@@ -276,7 +276,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
 
         if existing_order is None:
             self._log.warning(f"Attempting to update order that does not exist in the cache: {command}")
-            self.generate_order_update_rejected(
+            self.generate_order_modify_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
                 client_order_id=client_order_id,
@@ -290,7 +290,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
             Condition.not_none(command.strategy_id, "command.strategy_id")
             Condition.not_none(command.instrument_id, "command.instrument_id")
             Condition.not_none(client_order_id, "client_order_id")
-            self.generate_order_update_rejected(
+            self.generate_order_modify_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
                 client_order_id=client_order_id,
@@ -556,7 +556,7 @@ cdef class BetfairExecutionClient(LiveExecutionClient):
         cancel_qty = update["sc"] + update["sl"] + update["sv"]
         if cancel_qty > 0 and not order.is_completed_c():
             assert update['sm'] + cancel_qty == update["s"], f"Size matched + canceled != total: {update}"
-            # If this is the result of a UpdateOrder, we don't want to emit a cancel
+            # If this is the result of a ModifyOrder, we don't want to emit a cancel
 
             key = (client_order_id, venue_order_id)
             self._log.debug(

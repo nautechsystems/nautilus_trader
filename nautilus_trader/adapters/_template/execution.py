@@ -17,9 +17,9 @@ from datetime import datetime
 
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitBracketOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.orders.base import Order
@@ -68,7 +68,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def update_order(self, command: UpdateOrder):
+    def modify_order(self, command: ModifyOrder):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

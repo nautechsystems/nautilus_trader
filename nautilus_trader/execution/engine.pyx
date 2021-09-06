@@ -28,7 +28,9 @@ messages.
 Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
 """
+
 import pydantic
+
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
@@ -53,9 +55,9 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
 from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.position cimport PositionChanged
@@ -524,8 +526,8 @@ cdef class ExecutionEngine(Component):
             self._handle_submit_order(client, command)
         elif isinstance(command, SubmitBracketOrder):
             self._handle_submit_bracket_order(client, command)
-        elif isinstance(command, UpdateOrder):
-            self._handle_update_order(client, command)
+        elif isinstance(command, ModifyOrder):
+            self._handle_modify_order(client, command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(client, command)
         else:
@@ -547,8 +549,8 @@ cdef class ExecutionEngine(Component):
         # Send to execution client
         client.submit_bracket_order(command)
 
-    cdef void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
-        client.update_order(command)
+    cdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command) except *:
+        client.modify_order(command)
 
     cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         client.cancel_order(command)

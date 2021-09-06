@@ -24,9 +24,9 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
@@ -68,7 +68,7 @@ cdef class ExecutionClient(Component):
 
     cpdef void submit_order(self, SubmitOrder command) except *
     cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *
-    cpdef void update_order(self, UpdateOrder command) except *
+    cpdef void modify_order(self, ModifyOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
@@ -119,7 +119,7 @@ cdef class ExecutionClient(Component):
         VenueOrderId venue_order_id,
         int64_t ts_event,
     ) except *
-    cpdef void generate_order_update_rejected(
+    cpdef void generate_order_modify_rejected(
         self,
         StrategyId strategy_id,
         InstrumentId instrument_id,

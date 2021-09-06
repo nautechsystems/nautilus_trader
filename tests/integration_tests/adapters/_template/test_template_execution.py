@@ -49,7 +49,7 @@ def test_submit_bracket_order(execution_client: LiveExecutionClient):
 
 
 @pytest.mark.skip(reason="WIP")
-def test_update_order(execution_client: LiveExecutionClient):
+def test_modify_order(execution_client: LiveExecutionClient):
     pass
 
 

@@ -24,9 +24,9 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderAccepted
@@ -34,13 +34,13 @@ from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
-from nautilus_trader.model.events.order cimport OrderUpdateRejected
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -181,7 +181,7 @@ cdef class ExecutionClient(Component):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void update_order(self, UpdateOrder command) except *:
+    cpdef void modify_order(self, ModifyOrder command) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -424,7 +424,7 @@ cdef class ExecutionClient(Component):
 
         self._send_order_event(pending_cancel)
 
-    cpdef void generate_order_update_rejected(
+    cpdef void generate_order_modify_rejected(
         self,
         StrategyId strategy_id,
         InstrumentId instrument_id,
@@ -434,7 +434,7 @@ cdef class ExecutionClient(Component):
         int64_t ts_event,
     ) except *:
         """
-        Generate an `OrderUpdateRejected` event and send it to the `ExecutionEngine`.
+        Generate an `OrderModifyRejected` event and send it to the `ExecutionEngine`.
 
         Parameters
         ----------
@@ -453,7 +453,7 @@ cdef class ExecutionClient(Component):
 
         """
         # Generate event
-        cdef OrderUpdateRejected update_rejected = OrderUpdateRejected(
+        cdef OrderModifyRejected modify_rejected = OrderModifyRejected(
             trader_id=self.trader_id,
             strategy_id=strategy_id,
             account_id=self.account_id,
@@ -466,7 +466,7 @@ cdef class ExecutionClient(Component):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        self._send_order_event(update_rejected)
+        self._send_order_event(modify_rejected)
 
     cpdef void generate_order_cancel_rejected(
         self,

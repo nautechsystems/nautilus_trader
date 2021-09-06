@@ -24,9 +24,9 @@ from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import uuid4
 from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitBracketOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
@@ -42,13 +42,13 @@ from nautilus_trader.model.events.order import OrderDenied
 from nautilus_trader.model.events.order import OrderExpired
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.model.events.order import OrderModifyRejected
 from nautilus_trader.model.events.order import OrderPendingCancel
 from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderTriggered
 from nautilus_trader.model.events.order import OrderUpdated
-from nautilus_trader.model.events.order import OrderUpdateRejected
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
@@ -362,7 +362,7 @@ class TestMsgPackSerializer:
 
     def test_serialize_and_deserialize_amend_order_commands(self):
         # Arrange
-        command = UpdateOrder(
+        command = ModifyOrder(
             self.trader_id,
             StrategyId("SCALPER-001"),
             AUDUSD_SIM.id,
@@ -738,7 +738,7 @@ class TestMsgPackSerializer:
 
     def test_serialize_and_deserialize_order_update_reject_events(self):
         # Arrange
-        event = OrderUpdateRejected(
+        event = OrderModifyRejected(
             self.trader_id,
             self.strategy_id,
             self.account_id,

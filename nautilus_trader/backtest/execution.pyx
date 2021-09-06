@@ -23,9 +23,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
@@ -132,19 +132,19 @@ cdef class BacktestExecClient(ExecutionClient):
 
         self._exchange.handle_submit_bracket_order(command)
 
-    cpdef void update_order(self, UpdateOrder command) except *:
+    cpdef void modify_order(self, ModifyOrder command) except *:
         """
-        Amend the order with parameters contained in the command.
+        Modify the order with parameters contained in the command.
 
         Parameters
         ----------
-        command : UpdateOrder
+        command : ModifyOrder
             The command to execute.
 
         """
         Condition.true(self.is_connected, "not connected")
 
-        self._exchange.handle_update_order(command)
+        self._exchange.handle_modify_order(command)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         """

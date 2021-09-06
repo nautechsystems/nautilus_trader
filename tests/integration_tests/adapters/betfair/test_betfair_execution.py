@@ -35,12 +35,12 @@ from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderCancelRejected
 from nautilus_trader.model.events.order import OrderFilled
+from nautilus_trader.model.events.order import OrderModifyRejected
 from nautilus_trader.model.events.order import OrderPendingCancel
 from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderUpdated
-from nautilus_trader.model.events.order import OrderUpdateRejected
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -226,11 +226,11 @@ class TestBetfairExecutionClient:
         assert rejected.reason == "PERMISSION_DENIED: ERROR_IN_ORDER"
 
     @pytest.mark.asyncio
-    async def test_update_order_success(self):
+    async def test_modify_order_success(self):
         # Arrange
         venue_order_id = VenueOrderId("240808576108")
         order = BetfairTestStubs.make_accepted_order(venue_order_id=venue_order_id)
-        command = BetfairTestStubs.update_order_command(
+        command = BetfairTestStubs.modify_order_command(
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
@@ -239,7 +239,7 @@ class TestBetfairExecutionClient:
 
         # Act
         self.cache.add_order(order, PositionId("1"))
-        self.client.update_order(command)
+        self.client.modify_order(command)
         await asyncio.sleep(0)
 
         # Assert
@@ -249,12 +249,12 @@ class TestBetfairExecutionClient:
         assert updated.price == Price.from_str("0.02000")
 
     @pytest.mark.asyncio
-    async def test_update_order_error_order_doesnt_exist(self):
+    async def test_modify_order_error_order_doesnt_exist(self):
         # Arrange
         venue_order_id = VenueOrderId("229435133092")
         order = BetfairTestStubs.make_accepted_order(venue_order_id=venue_order_id)
 
-        command = BetfairTestStubs.update_order_command(
+        command = BetfairTestStubs.modify_order_command(
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
@@ -262,22 +262,22 @@ class TestBetfairExecutionClient:
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_replace_orders_success())
 
         # Act
-        self.client.update_order(command)
+        self.client.modify_order(command)
         await asyncio.sleep(0)
 
         # Assert
         pending_update, rejected = self.messages
         assert isinstance(pending_update, OrderPendingUpdate)
-        assert isinstance(rejected, OrderUpdateRejected)
+        assert isinstance(rejected, OrderModifyRejected)
         assert rejected.reason == "ORDER NOT IN CACHE"
 
     @pytest.mark.asyncio
-    async def test_update_order_error_no_venue_id(self):
+    async def test_modify_order_error_no_venue_id(self):
         # Arrange
         order = BetfairTestStubs.make_submitted_order()
         self.cache.add_order(order, position_id=BetfairTestStubs.position_id())
 
-        command = BetfairTestStubs.update_order_command(
+        command = BetfairTestStubs.modify_order_command(
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id="",
@@ -285,13 +285,13 @@ class TestBetfairExecutionClient:
         mock_betfair_request(self.betfair_client, BetfairResponses.betting_replace_orders_success())
 
         # Act
-        self.client.update_order(command)
+        self.client.modify_order(command)
         await asyncio.sleep(0)
 
         # Assert
         pending_update, rejected = self.messages
         assert isinstance(pending_update, OrderPendingUpdate)
-        assert isinstance(rejected, OrderUpdateRejected)
+        assert isinstance(rejected, OrderModifyRejected)
         assert rejected.reason == "ORDER MISSING VENUE_ORDER_ID"
 
     @pytest.mark.asyncio

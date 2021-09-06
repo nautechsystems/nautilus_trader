@@ -42,8 +42,8 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClosePrice
@@ -192,13 +192,13 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
 
 
 def order_update_to_betfair(
-    command: UpdateOrder,
+    command: ModifyOrder,
     venue_order_id: VenueOrderId,
     side: OrderSide,
     instrument: BettingInstrument,
 ):
     """
-    Convert an UpdateOrder command into the data required by BetfairClient
+    Convert an ModifyOrder command into the data required by BetfairClient
     """
     return {
         "market_id": instrument.market_id,

@@ -44,13 +44,13 @@ from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
-from nautilus_trader.model.events.order cimport OrderUpdateRejected
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -619,7 +619,7 @@ cdef class Order:
         elif isinstance(event, OrderPendingCancel):
             self._rollback_status = <OrderStatus>self._fsm.state
             self._fsm.trigger(OrderStatus.PENDING_CANCEL)
-        elif isinstance(event, OrderUpdateRejected):
+        elif isinstance(event, OrderModifyRejected):
             if self._fsm.state == OrderStatus.PENDING_UPDATE:
                 self._fsm.trigger(self._rollback_status)
         elif isinstance(event, OrderCancelRejected):

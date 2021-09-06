@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
 from unittest.mock import patch
 
@@ -80,7 +81,7 @@ class TestBetfairParsing:
 
     def test_order_update_to_betfair(self):
         result = order_update_to_betfair(
-            command=BetfairTestStubs.update_order_command(),
+            command=BetfairTestStubs.modify_order_command(),
             side=OrderSide.BUY,
             venue_order_id=VenueOrderId("1"),
             instrument=self.instrument,

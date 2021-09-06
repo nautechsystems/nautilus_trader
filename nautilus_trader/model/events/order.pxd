@@ -151,15 +151,15 @@ cdef class OrderPendingCancel(OrderEvent):
     cdef dict to_dict_c(OrderPendingCancel obj)
 
 
-cdef class OrderUpdateRejected(OrderEvent):
+cdef class OrderModifyRejected(OrderEvent):
     cdef readonly str reason
-    """The reason for order update rejection.\n\n:returns: `str`"""
+    """The reason for modify order rejection.\n\n:returns: `str`"""
 
     @staticmethod
-    cdef OrderUpdateRejected from_dict_c(dict values)
+    cdef OrderModifyRejected from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(OrderUpdateRejected obj)
+    cdef dict to_dict_c(OrderModifyRejected obj)
 
 
 cdef class OrderCancelRejected(OrderEvent):

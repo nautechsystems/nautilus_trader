@@ -30,13 +30,13 @@ from nautilus_trader.model.events.order import OrderDenied
 from nautilus_trader.model.events.order import OrderExpired
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.model.events.order import OrderModifyRejected
 from nautilus_trader.model.events.order import OrderPendingCancel
 from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderTriggered
 from nautilus_trader.model.events.order import OrderUpdated
-from nautilus_trader.model.events.order import OrderUpdateRejected
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
@@ -304,7 +304,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_init": pa.int64(),
         }
     ),
-    OrderUpdateRejected: pa.schema(
+    OrderModifyRejected: pa.schema(
         {
             "trader_id": pa.dictionary(pa.int8(), pa.string()),
             "strategy_id": pa.dictionary(pa.int8(), pa.string()),

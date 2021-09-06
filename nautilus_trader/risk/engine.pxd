@@ -22,10 +22,10 @@ from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport TradingCommand
-from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -74,7 +74,7 @@ cdef class RiskEngine(Component):
     cdef void _execute_command(self, Command command) except *
     cdef void _handle_submit_order(self, SubmitOrder command) except *
     cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
-    cdef void _handle_update_order(self, UpdateOrder command) except *
+    cdef void _handle_modify_order(self, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
 
 # -- PRE-TRADE CHECKS ------------------------------------------------------------------------------
