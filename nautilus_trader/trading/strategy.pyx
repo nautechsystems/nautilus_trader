@@ -83,11 +83,14 @@ class ImportableStrategyConfig(pydantic.BaseModel):
 
     """
 
-    module_name: str
-    strategy_name: str
+    module: str
+    cls: str
     path: Optional[str]
     source: Optional[bytes]
     config: Optional[TradingStrategyConfig]
+
+
+ImportableStrategyConfig.update_forward_refs()
 
 
 class TradingStrategyConfig(pydantic.BaseModel):
