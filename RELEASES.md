@@ -3,9 +3,10 @@
 Released on **TBD**
 
 ## Breaking Changes
-- Removed CCXT adapter [#428](https://github.com/nautechsystems/nautilus_trader/issues/428).
+- Removed CCXT adapter (#428).
 - Backtest configurations.
 - Renamed `UpdateOrder` to `ModifyOrder` (terminology standardization).
+- Renamed `DeltaType` to `BookAction` (terminology standardization).
 
 ## Enhancements
 - Added `BacktestNode`.
@@ -14,7 +15,7 @@ Released on **TBD**
 - Added `Actor.deregister_warning_event` (also applicable to `TradingStrategy`).
 
 ## Fixes
-- Fixed Redis loss of precision for timestamp int64s [#363](https://github.com/nautechsystems/nautilus_trader/issues/363).
+- Fixed Redis loss of precision for timestamp int64s (#363).
 
 ---
 
