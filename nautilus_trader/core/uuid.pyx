@@ -43,8 +43,8 @@ cdef class UUID4:
 
         Parameters
         ----------
-        value : str
-            The UUID value.
+        value : str, optional
+            The UUID value. If `None` then a value will be generated.
 
         Raises
         ------
