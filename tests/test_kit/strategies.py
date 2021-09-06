@@ -124,9 +124,6 @@ class EMACrossConfig(TradingStrategyConfig):
     slow_ema_period: int = 20
 
 
-EMACrossConfig.update_forward_refs()
-
-
 class EMACross(TradingStrategy):
     """
     A simple moving average cross example strategy.

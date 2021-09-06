@@ -90,9 +90,6 @@ class ImportableStrategyConfig(pydantic.BaseModel):
     config: Optional[TradingStrategyConfig]
 
 
-ImportableStrategyConfig.update_forward_refs()
-
-
 class TradingStrategyConfig(pydantic.BaseModel):
     """
     The base model for all trading strategy configurations.
