@@ -92,16 +92,15 @@ class DataCatalog(metaclass=Singleton):
         raise_on_empty=True,
         instrument_id_column="instrument_id",
         table_kwargs: Optional[Dict] = None,
+        clean_instrument_keys=True,
     ):
         filters = [filter_expr] if filter_expr is not None else []
         if instrument_ids is not None:
             if not isinstance(instrument_ids, list):
                 instrument_ids = [instrument_ids]
-            filters.append(
-                ds.field(instrument_id_column)
-                .cast("string")
-                .isin(list(set(map(clean_key, instrument_ids))))
-            )
+            if clean_instrument_keys:
+                instrument_ids = list(set(map(clean_key, instrument_ids)))
+            filters.append(ds.field(instrument_id_column).cast("string").isin(instrument_ids))
         if start is not None:
             filters.append(ds.field(ts_column) >= int(pd.Timestamp(start).to_datetime64()))
         if end is not None:
@@ -230,6 +229,7 @@ class DataCatalog(metaclass=Singleton):
             filter_expr=filter_expr,
             as_nautilus=as_nautilus,
             instrument_id_column="id",
+            clean_instrument_keys=False,
             **kwargs,
         )
 

@@ -18,6 +18,7 @@ import dataclasses
 import pathlib
 import pickle
 import sys
+from decimal import Decimal
 from functools import partial
 from typing import Optional
 
@@ -41,10 +42,10 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.parsers import CSVReader
+from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
-from tests.test_kit.strategies import EMACross
 from tests.test_kit.strategies import EMACrossConfig
 from tests.test_kit.stubs import TestStubs
 
@@ -147,7 +148,7 @@ def backtest_config(catalog):
 @pytest.fixture(scope="function")
 def backtest_configs(backtest_config):
     base = copy.copy(backtest_config)
-    instrument_id = base.strategies[0][1].instrument_id
+    instrument_id = base.data[0].instrument_id
     base.strategies = None
 
     shared_params = dict(
@@ -157,7 +158,11 @@ def backtest_configs(backtest_config):
     )
     # Create two strategies with different params
     strategies = [
-        (EMACross, EMACrossConfig(**shared_params, **{"fast_ema": x, "slow_ema": y}))
+        ImportableStrategyConfig(
+            module="tests.test_kit.strategies",
+            cls="EMACross",
+            config=EMACrossConfig(**shared_params, **{"fast_ema": x, "slow_ema": y}),
+        )
         for x, y in [(10, 20), (20, 30)]
     ]
     # Create a backtest config for each strategy
@@ -277,7 +282,6 @@ def test_backtest_config_partial():
     assert config.is_partial()
 
 
-@pytest.mark.skip(reason="WIP")
 def test_build_graph_shared_nodes(backtest_configs):
     node = BacktestNode()
     graph = node.build_graph(backtest_configs)
@@ -292,7 +296,6 @@ def test_build_graph_shared_nodes(backtest_configs):
     ]
 
 
-@pytest.mark.skip(reason="WIP")
 def test_backtest_against_example(catalog):
     # Replicate examples/fx_ema_cross_audusd_ticks.py backtest result
 
@@ -324,19 +327,20 @@ def test_backtest_against_example(catalog):
                 end_time=1580504394501000000,
             )
         ],
-        # strategies=[
-        #     (
-        #         EMACross,
-        #         EMACrossConfig(
-        #             instrument_id="AUD/USD.SIM",
-        #             bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
-        #             fast_ema_period=10,
-        #             slow_ema_period=20,
-        #             trade_size=Decimal(1_000_000),
-        #             order_id_tag="001",
-        #         ),
-        #     )
-        # ],
+        strategies=[
+            ImportableStrategyConfig(
+                module="tests.test_kit.strategies",
+                cls="EMACross",
+                config=EMACrossConfig(
+                    instrument_id="AUD/USD.SIM",
+                    bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
+                    fast_ema_period=10,
+                    slow_ema_period=20,
+                    trade_size=Decimal(1_000_000),
+                    order_id_tag="001",
+                ),
+            )
+        ],
     )
 
     node = BacktestNode()
@@ -351,7 +355,6 @@ def test_backtest_against_example(catalog):
     assert account_result == expected
 
 
-@pytest.mark.skip(reason="WIP")
 def test_backtest_run_sync(backtest_configs, catalog):
     node = BacktestNode()
     tasks = node.build_graph(backtest_configs)

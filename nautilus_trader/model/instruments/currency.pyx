@@ -188,6 +188,7 @@ cdef class CurrencySpot(Instrument):
     @staticmethod
     cdef CurrencySpot from_dict_c(dict values):
         Condition.not_none(values, "values")
+        print(values)
         cdef str lot_s = values["lot_size"]
         cdef str max_q = values["max_quantity"]
         cdef str min_q = values["min_quantity"]

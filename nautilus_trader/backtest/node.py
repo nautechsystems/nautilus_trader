@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from functools import partial
+from typing import List
 
 import pandas as pd
 from dask import delayed
@@ -33,11 +34,12 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.trading.strategy import TradingStrategyConfig
+from nautilus_trader.trading.config import ImportableStrategyConfig
 
 
 # Register tokenization methods with dask
 # TODO(cs): Possible move this somewhere else?
+
 for cls in Instrument.__subclasses__():
     normalize_token.register(cls, func=cls.to_dict)
 
@@ -150,29 +152,25 @@ class BacktestNode:
                 config.strategies = [config.strategies]
             for strategy in config.strategies:
                 err = "strategy argument must be tuple of (TradingStrategy, TradingStrategyConfig)"
-                assert (
-                    isinstance(strategy, tuple)
-                    and isinstance(strategy[0], type)
-                    and isinstance(strategy[1], TradingStrategyConfig)
-                ), err
+                assert isinstance(strategy, ImportableStrategyConfig), err
 
         return configs
 
-    def build_graph(self, backtest_configs, sync=False):
+    def build_graph(self, backtest_configs: List[BacktestRunConfig], sync=False):
         backtest_configs = self._check_configs(backtest_configs)
 
         results = []
         for config in backtest_configs:
             config.check(ignore=("name",))  # check all values set
             input_data = []
-            for data_config in config.data_config:
+            for data_config in config.data:
                 load_func = (
                     self._load
                     if sync
                     else partial(self.load, dask_key_name=f"load-{tokenize(data_config.query)}")
                 )
                 input_data.append(
-                    load_func(
+                    load_func(  # type: ignore
                         data_config,
                     )
                 )
