@@ -41,10 +41,10 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.c_enums.trading_state cimport TradingStateParser
 from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport TradingCommand
-from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -372,8 +372,8 @@ cdef class RiskEngine(Component):
             self._handle_submit_order(command)
         elif isinstance(command, SubmitBracketOrder):
             self._handle_submit_bracket_order(command)
-        elif isinstance(command, UpdateOrder):
-            self._handle_update_order(command)
+        elif isinstance(command, ModifyOrder):
+            self._handle_modify_order(command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(command)
         else:
@@ -474,7 +474,7 @@ cdef class RiskEngine(Component):
 
         self._execution_gateway(instrument, command, order=entry)
 
-    cdef void _handle_update_order(self, UpdateOrder command) except *:
+    cdef void _handle_modify_order(self, ModifyOrder command) except *:
         ########################################################################
         # Validate command
         ########################################################################
@@ -703,8 +703,8 @@ cdef class RiskEngine(Component):
             self._deny_order(command.order, reason=reason)
         elif isinstance(command, SubmitBracketOrder):
             self._deny_bracket_order(command.bracket_order, reason=reason)
-        elif isinstance(command, UpdateOrder):
-            self._log.error(f"UpdateOrder DENIED: {reason}.")
+        elif isinstance(command, ModifyOrder):
+            self._log.error(f"ModifyOrder DENIED: {reason}.")
         elif isinstance(command, CancelOrder):
             self._log.error(f"CancelOrder DENIED: {reason}.")
 

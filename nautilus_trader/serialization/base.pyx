@@ -19,9 +19,9 @@ from nautilus_trader.common.events.risk cimport TradingStateChanged
 from nautilus_trader.common.events.system cimport ComponentStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
@@ -36,13 +36,13 @@ from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
-from nautilus_trader.model.events.order cimport OrderUpdateRejected
 from nautilus_trader.model.events.position cimport PositionChanged
 from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionOpened
@@ -61,7 +61,7 @@ _OBJECT_TO_DICT_MAP = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
     SubmitBracketOrder.__name__: SubmitBracketOrder.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
-    UpdateOrder.__name__: UpdateOrder.to_dict_c,
+    ModifyOrder.__name__: ModifyOrder.to_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.to_dict_c,
     TradingStateChanged.__name__: TradingStateChanged.to_dict_c,
     AccountState.__name__: AccountState.to_dict_c,
@@ -77,7 +77,7 @@ _OBJECT_TO_DICT_MAP = {
     OrderRejected.__name__: OrderRejected.to_dict_c,
     OrderSubmitted.__name__: OrderSubmitted.to_dict_c,
     OrderTriggered.__name__: OrderTriggered.to_dict_c,
-    OrderUpdateRejected.__name__: OrderUpdateRejected.to_dict_c,
+    OrderModifyRejected.__name__: OrderModifyRejected.to_dict_c,
     OrderUpdated.__name__: OrderUpdated.to_dict_c,
     PositionOpened.__name__: PositionOpened.to_dict_c,
     PositionChanged.__name__: PositionChanged.to_dict_c,
@@ -103,7 +103,7 @@ _OBJECT_FROM_DICT_MAP = {
     CancelOrder.__name__: CancelOrder.from_dict_c,
     SubmitBracketOrder.__name__: SubmitBracketOrder.from_dict_c,
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
-    UpdateOrder.__name__: UpdateOrder.from_dict_c,
+    ModifyOrder.__name__: ModifyOrder.from_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.from_dict_c,
     TradingStateChanged.__name__: TradingStateChanged.from_dict_c,
     AccountState.__name__: AccountState.from_dict_c,
@@ -119,7 +119,7 @@ _OBJECT_FROM_DICT_MAP = {
     OrderRejected.__name__: OrderRejected.from_dict_c,
     OrderSubmitted.__name__: OrderSubmitted.from_dict_c,
     OrderTriggered.__name__: OrderTriggered.from_dict_c,
-    OrderUpdateRejected.__name__: OrderUpdateRejected.from_dict_c,
+    OrderModifyRejected.__name__: OrderModifyRejected.from_dict_c,
     OrderUpdated.__name__: OrderUpdated.from_dict_c,
     PositionOpened.__name__: PositionOpened.from_dict_c,
     PositionChanged.__name__: PositionChanged.from_dict_c,

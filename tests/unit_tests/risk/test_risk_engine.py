@@ -25,10 +25,10 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.message import Event
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitBracketOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.commands.trading import TradingCommand
-from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
@@ -1268,7 +1268,7 @@ class TestRiskEngine:
             logger=self.logger,
         )
 
-        update = UpdateOrder(
+        modify = ModifyOrder(
             self.trader_id,
             strategy.id,
             AUDUSD_SIM.id,
@@ -1282,7 +1282,7 @@ class TestRiskEngine:
         )
 
         # Act
-        self.risk_engine.execute(update)
+        self.risk_engine.execute(modify)
 
         # Assert
         assert self.exec_client.calls == ["_start"]
@@ -1325,7 +1325,7 @@ class TestRiskEngine:
         self.exec_engine.process(TestStubs.event_order_accepted(order))
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
-        update = UpdateOrder(
+        modify = ModifyOrder(
             self.trader_id,
             strategy.id,
             order.instrument_id,
@@ -1339,7 +1339,7 @@ class TestRiskEngine:
         )
 
         # Act
-        self.risk_engine.execute(update)
+        self.risk_engine.execute(modify)
 
         # Assert
         assert self.exec_client.calls == ["_start", "submit_order"]
@@ -1380,7 +1380,7 @@ class TestRiskEngine:
 
         self.exec_engine.process(TestStubs.event_order_submitted(order))
 
-        update = UpdateOrder(
+        modify = ModifyOrder(
             self.trader_id,
             strategy.id,
             order.instrument_id,
@@ -1394,14 +1394,14 @@ class TestRiskEngine:
         )
 
         # Act
-        self.risk_engine.execute(update)
+        self.risk_engine.execute(modify)
 
         # Assert
         assert self.exec_client.calls == ["_start", "submit_order"]
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 1
 
-    def test_update_order_with_default_settings_then_sends_to_client(self):
+    def test_modify_order_with_default_settings_then_sends_to_client(self):
         # Arrange
         self.exec_engine.start()
 
@@ -1431,7 +1431,7 @@ class TestRiskEngine:
             self.clock.timestamp_ns(),
         )
 
-        update = UpdateOrder(
+        modify = ModifyOrder(
             self.trader_id,
             strategy.id,
             order.instrument_id,
@@ -1447,10 +1447,10 @@ class TestRiskEngine:
         self.risk_engine.execute(submit)
 
         # Act
-        self.risk_engine.execute(update)
+        self.risk_engine.execute(modify)
 
         # Assert
-        assert self.exec_client.calls == ["_start", "submit_order", "update_order"]
+        assert self.exec_client.calls == ["_start", "submit_order", "modify_order"]
         assert self.risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2
 

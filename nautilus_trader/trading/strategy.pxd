@@ -87,7 +87,7 @@ cdef class TradingStrategy(Actor):
 
     cpdef void submit_order(self, Order order, PositionId position_id=*) except *
     cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *
-    cpdef void update_order(
+    cpdef void modify_order(
         self,
         PassiveOrder order,
         Quantity quantity=*,

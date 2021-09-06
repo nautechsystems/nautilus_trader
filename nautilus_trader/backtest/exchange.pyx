@@ -39,9 +39,9 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
 from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -532,12 +532,12 @@ cdef class SimulatedExchange:
         else:
             self._cancel_order(order)
 
-    cpdef void handle_update_order(self, UpdateOrder command) except *:
+    cpdef void handle_modify_order(self, ModifyOrder command) except *:
         Condition.not_none(command, "command")
 
         cdef PassiveOrder order = self._working_orders.get(command.client_order_id)
         if order is None:
-            self._generate_order_update_rejected(
+            self._generate_order_modify_rejected(
                 command.strategy_id,
                 command.instrument_id,
                 command.client_order_id,
@@ -693,7 +693,7 @@ cdef class SimulatedExchange:
             ts_event=self._clock.timestamp_ns(),
         )
 
-    cdef void _generate_order_update_rejected(
+    cdef void _generate_order_modify_rejected(
         self,
         StrategyId strategy_id,
         InstrumentId instrument_id,
@@ -702,7 +702,7 @@ cdef class SimulatedExchange:
         str reason,
     ) except *:
         # Generate event
-        self.exec_client.generate_order_update_rejected(
+        self.exec_client.generate_order_modify_rejected(
             strategy_id=strategy_id,
             instrument_id=instrument_id,
             client_order_id=client_order_id,
@@ -863,7 +863,7 @@ cdef class SimulatedExchange:
     ) except *:
         if self._is_limit_marketable(order.instrument_id, order.side, price):
             if order.is_post_only:
-                self._generate_order_update_rejected(
+                self._generate_order_modify_rejected(
                     order.strategy_id,
                     order.instrument_id,
                     order.client_order_id,
@@ -888,7 +888,7 @@ cdef class SimulatedExchange:
         Price price,
     ) except *:
         if self._is_stop_marketable(order.instrument_id, order.side, price):
-            self._generate_order_update_rejected(
+            self._generate_order_modify_rejected(
                 order.strategy_id,
                 order.instrument_id,
                 order.client_order_id,
@@ -912,7 +912,7 @@ cdef class SimulatedExchange:
         if not order.is_triggered:
             # Amending stop price
             if self._is_stop_marketable(order.instrument_id, order.side, price):
-                self._generate_order_update_rejected(
+                self._generate_order_modify_rejected(
                     order.strategy_id,
                     order.instrument_id,
                     order.client_order_id,
@@ -927,7 +927,7 @@ cdef class SimulatedExchange:
             # Amending limit price
             if self._is_limit_marketable(order.instrument_id, order.side, price):
                 if order.is_post_only:
-                    self._generate_order_update_rejected(
+                    self._generate_order_modify_rejected(
                         order.strategy_id,
                         order.instrument_id,
                         order.client_order_id,

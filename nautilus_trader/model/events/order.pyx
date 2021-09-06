@@ -1211,7 +1211,7 @@ cdef class OrderTriggered(OrderEvent):
 
 cdef class OrderPendingUpdate(OrderEvent):
     """
-    Represents an event where an `UpdateOrder` command has been sent to the
+    Represents an event where an `ModifyOrder` command has been sent to the
     trading venue.
     """
 
@@ -1481,9 +1481,9 @@ cdef class OrderPendingCancel(OrderEvent):
         return OrderPendingCancel.to_dict_c(obj)
 
 
-cdef class OrderUpdateRejected(OrderEvent):
+cdef class OrderModifyRejected(OrderEvent):
     """
-    Represents an event where an `UpdateOrder` command has been rejected by the
+    Represents an event where a `ModifyOrder` command has been rejected by the
     trading venue.
     """
 
@@ -1501,7 +1501,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         int64_t ts_init,
     ):
         """
-        Initialize a new instance of the ``OrderUpdateRejected`` class.
+        Initialize a new instance of the ``OrderModifyRejected`` class.
 
         Parameters
         ----------
@@ -1570,9 +1570,9 @@ cdef class OrderUpdateRejected(OrderEvent):
                 f"ts_init={self.ts_init})")
 
     @staticmethod
-    cdef OrderUpdateRejected from_dict_c(dict values):
+    cdef OrderModifyRejected from_dict_c(dict values):
         Condition.not_none(values, "values")
-        return OrderUpdateRejected(
+        return OrderModifyRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
@@ -1586,10 +1586,10 @@ cdef class OrderUpdateRejected(OrderEvent):
         )
 
     @staticmethod
-    cdef dict to_dict_c(OrderUpdateRejected obj):
+    cdef dict to_dict_c(OrderModifyRejected obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "OrderUpdateRejected",
+            "type": "OrderModifyRejected",
             "trader_id": obj.trader_id.value,
             "account_id": obj.account_id.value,
             "strategy_id": obj.strategy_id.value,
@@ -1603,7 +1603,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values) -> OrderUpdateRejected:
+    def from_dict(dict values) -> OrderModifyRejected:
         """
         Return an order update rejected event from the given dict values.
 
@@ -1614,13 +1614,13 @@ cdef class OrderUpdateRejected(OrderEvent):
 
         Returns
         -------
-        OrderUpdateRejected
+        OrderModifyRejected
 
         """
-        return OrderUpdateRejected.from_dict_c(values)
+        return OrderModifyRejected.from_dict_c(values)
 
     @staticmethod
-    def to_dict(OrderUpdateRejected obj):
+    def to_dict(OrderModifyRejected obj):
         """
         Return a dictionary representation of this object.
 
@@ -1629,7 +1629,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         dict[str, object]
 
         """
-        return OrderUpdateRejected.to_dict_c(obj)
+        return OrderModifyRejected.to_dict_c(obj)
 
 
 cdef class OrderCancelRejected(OrderEvent):

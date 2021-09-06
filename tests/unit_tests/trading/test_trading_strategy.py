@@ -872,7 +872,7 @@ class TestTradingStrategy:
         assert not strategy.cache.is_order_working(order.client_order_id)
         assert strategy.cache.is_order_completed(order.client_order_id)
 
-    def test_update_order_when_pending_update_does_not_submit_command(self):
+    def test_modify_order_when_pending_update_does_not_submit_command(self):
         # Arrange
         strategy = TradingStrategy()
         strategy.register(
@@ -895,7 +895,7 @@ class TestTradingStrategy:
         self.exec_engine.process(TestStubs.event_order_pending_update(order))
 
         # Act
-        strategy.update_order(
+        strategy.modify_order(
             order=order,
             quantity=Quantity.from_int(100000),
             price=Price.from_str("90.000"),
@@ -904,7 +904,7 @@ class TestTradingStrategy:
         # Assert
         assert self.exec_engine.command_count == 1
 
-    def test_update_order_when_pending_cancel_does_not_submit_command(self):
+    def test_modify_order_when_pending_cancel_does_not_submit_command(self):
         # Arrange
         strategy = TradingStrategy()
         strategy.register(
@@ -927,7 +927,7 @@ class TestTradingStrategy:
         self.exec_engine.process(TestStubs.event_order_pending_cancel(order))
 
         # Act
-        strategy.update_order(
+        strategy.modify_order(
             order=order,
             quantity=Quantity.from_int(100000),
             price=Price.from_str("90.000"),
@@ -936,7 +936,7 @@ class TestTradingStrategy:
         # Assert
         assert self.exec_engine.command_count == 1
 
-    def test_update_order_when_completed_does_not_submit_command(self):
+    def test_modify_order_when_completed_does_not_submit_command(self):
         # Arrange
         strategy = TradingStrategy()
         strategy.register(
@@ -959,7 +959,7 @@ class TestTradingStrategy:
         self.exec_engine.process(TestStubs.event_order_expired(order))
 
         # Act
-        strategy.update_order(
+        strategy.modify_order(
             order=order,
             quantity=Quantity.from_int(100000),
             price=Price.from_str("90.000"),
@@ -968,7 +968,7 @@ class TestTradingStrategy:
         # Assert
         assert self.exec_engine.command_count == 1
 
-    def test_update_order_when_no_changes_does_not_submit_command(self):
+    def test_modify_order_when_no_changes_does_not_submit_command(self):
         # Arrange
         strategy = TradingStrategy()
         strategy.register(
@@ -990,7 +990,7 @@ class TestTradingStrategy:
         strategy.submit_order(order)
 
         # Act
-        strategy.update_order(
+        strategy.modify_order(
             order=order,
             quantity=Quantity.from_int(100000),
             price=Price.from_str("90.001"),
@@ -999,7 +999,7 @@ class TestTradingStrategy:
         # Assert
         assert self.exec_engine.command_count == 1
 
-    def test_update_order(self):
+    def test_modify_order(self):
         # Arrange
         strategy = TradingStrategy()
         strategy.register(
@@ -1021,7 +1021,7 @@ class TestTradingStrategy:
         strategy.submit_order(order)
 
         # Act
-        strategy.update_order(
+        strategy.modify_order(
             order=order,
             quantity=Quantity.from_int(110000),
             price=Price.from_str("90.001"),

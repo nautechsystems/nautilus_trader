@@ -318,9 +318,9 @@ cdef class SubmitBracketOrder(TradingCommand):
         return SubmitBracketOrder.to_dict_c(obj)
 
 
-cdef class UpdateOrder(TradingCommand):
+cdef class ModifyOrder(TradingCommand):
     """
-    Represents a command to change to parameters of an existing order.
+    Represents a command to modify the properties of an existing order.
 
     References
     ----------
@@ -341,7 +341,7 @@ cdef class UpdateOrder(TradingCommand):
         int64_t ts_init,
     ):
         """
-        Initialize a new instance of the ``UpdateOrder`` class.
+        Initialize a new instance of the ``ModifyOrder`` class.
 
         Parameters
         ----------
@@ -404,12 +404,12 @@ cdef class UpdateOrder(TradingCommand):
                 f"ts_init={self.ts_init})")
 
     @staticmethod
-    cdef UpdateOrder from_dict_c(dict values):
+    cdef ModifyOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str q = values["quantity"]
         cdef str p = values["price"]
         cdef str t = values["trigger"]
-        return UpdateOrder(
+        return ModifyOrder(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
@@ -423,10 +423,10 @@ cdef class UpdateOrder(TradingCommand):
         )
 
     @staticmethod
-    cdef dict to_dict_c(UpdateOrder obj):
+    cdef dict to_dict_c(ModifyOrder obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "UpdateOrder",
+            "type": "ModifyOrder",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
@@ -440,9 +440,9 @@ cdef class UpdateOrder(TradingCommand):
         }
 
     @staticmethod
-    def from_dict(dict values) -> UpdateOrder:
+    def from_dict(dict values) -> ModifyOrder:
         """
-        Return an update order command from the given dict values.
+        Return a modify order command from the given dict values.
 
         Parameters
         ----------
@@ -451,13 +451,13 @@ cdef class UpdateOrder(TradingCommand):
 
         Returns
         -------
-        UpdateOrder
+        ModifyOrder
 
         """
-        return UpdateOrder.from_dict_c(values)
+        return ModifyOrder.from_dict_c(values)
 
     @staticmethod
-    def to_dict(UpdateOrder obj):
+    def to_dict(ModifyOrder obj):
         """
         Return a dictionary representation of this object.
 
@@ -466,7 +466,7 @@ cdef class UpdateOrder(TradingCommand):
         dict[str, object]
 
         """
-        return UpdateOrder.to_dict_c(obj)
+        return ModifyOrder.to_dict_c(obj)
 
 
 cdef class CancelOrder(TradingCommand):

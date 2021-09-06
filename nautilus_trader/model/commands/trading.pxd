@@ -59,7 +59,7 @@ cdef class SubmitBracketOrder(TradingCommand):
     cdef dict to_dict_c(SubmitBracketOrder obj)
 
 
-cdef class UpdateOrder(TradingCommand):
+cdef class ModifyOrder(TradingCommand):
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the command.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
@@ -72,10 +72,10 @@ cdef class UpdateOrder(TradingCommand):
     """The updated trigger price for the command.\n\n:returns: `Price` or `None`"""
 
     @staticmethod
-    cdef UpdateOrder from_dict_c(dict values)
+    cdef ModifyOrder from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(UpdateOrder obj)
+    cdef dict to_dict_c(ModifyOrder obj)
 
 
 cdef class CancelOrder(TradingCommand):

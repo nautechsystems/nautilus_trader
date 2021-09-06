@@ -122,6 +122,7 @@ class TestComponentTrigger:
             ["DISPOSE", ComponentTrigger.DISPOSE],
             ["DISPOSED", ComponentTrigger.DISPOSED],
             ["DEGRADE", ComponentTrigger.DEGRADE],
+            ["DEGRADED", ComponentTrigger.DEGRADED],
             ["FAULT", ComponentTrigger.FAULT],
             ["FAULTED", ComponentTrigger.FAULTED],
         ],
