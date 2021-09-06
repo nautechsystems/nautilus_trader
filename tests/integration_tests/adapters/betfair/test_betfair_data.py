@@ -41,7 +41,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-from nautilus_trader.model.enums import DeltaType
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.identifiers import AccountId
@@ -262,8 +262,8 @@ class TestBetfairDataClient:
         result = [type(event).__name__ for event in self.messages]
         expected = ["OrderBookDeltas"] * 1
         assert result == expected
-        result = [op.type for op in self.messages[0].deltas]
-        expected = [DeltaType.UPDATE, DeltaType.DELETE]
+        result = [d.action for d in self.messages[0].deltas]
+        expected = [BookAction.UPDATE, BookAction.DELETE]
         assert result == expected
         # Ensure order prices are coming through as probability
         update_op = self.messages[0].deltas[0]

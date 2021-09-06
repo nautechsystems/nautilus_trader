@@ -22,8 +22,8 @@ from tabulate import tabulate
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
+from nautilus_trader.model.c_enums.book_action cimport BookAction
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
-from nautilus_trader.model.c_enums.delta_type cimport DeltaType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -323,11 +323,11 @@ cdef class OrderBook:
         self.clear_asks()
 
     cdef void _apply_delta(self, OrderBookDelta delta) except *:
-        if delta.type == DeltaType.ADD:
+        if delta.action == BookAction.ADD:
             self.add(order=delta.order)
-        elif delta.type == DeltaType.UPDATE:
+        elif delta.action == BookAction.UPDATE:
             self.update(order=delta.order)
-        elif delta.type == DeltaType.DELETE:
+        elif delta.action == BookAction.DELETE:
             self.delete(order=delta.order)
 
         self.ts_last = delta.ts_init

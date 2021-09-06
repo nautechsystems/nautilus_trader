@@ -112,7 +112,7 @@ BSP_SCHEMA =pa.schema(
         "instrument_id": pa.string(),
         "ts_event": pa.int64(),
         "ts_init": pa.int64(),
-        "delta_type": pa.string(),
+        "action": pa.string(),
         "order_side": pa.string(),
         "order_price": pa.float64(),
         "order_size": pa.float64(),

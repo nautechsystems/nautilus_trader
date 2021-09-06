@@ -731,8 +731,8 @@ cdef class PassiveOrder(Order):
             The order instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
-        order_side : OrderSide
-            The order side (``BUY`` or ``SELL``).
+        order_side : OrderSide {``BUY``, ``SELL``}
+            The order side.
         order_type : OrderType
             The order type.
         quantity : Quantity

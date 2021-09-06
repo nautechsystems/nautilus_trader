@@ -14,17 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum DeltaType:
+cpdef enum BookAction:
     ADD = 1,
     UPDATE = 2,
     DELETE = 3,
     CLEAR = 4,
 
 
-cdef class DeltaTypeParser:
+cdef class BookActionParser:
 
     @staticmethod
     cdef str to_str(int value)
 
     @staticmethod
-    cdef DeltaType from_str(str value) except *
+    cdef BookAction from_str(str value) except *

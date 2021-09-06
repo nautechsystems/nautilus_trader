@@ -77,8 +77,8 @@ cdef class StopMarketOrder(PassiveOrder):
             The order instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
-        order_side : OrderSide
-            The order side (``BUY`` or ``SELL``).
+        order_side : OrderSide {``BUY``, ``SELL``}
+            The order side.
         quantity : Quantity
             The order quantity (> 0).
         price : Price

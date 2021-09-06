@@ -17,8 +17,8 @@ import itertools
 from itertools import repeat
 from typing import Dict, List
 
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookLevelParser
-from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook.data import Order
@@ -45,7 +45,7 @@ def serialize(data: OrderBookData):
                     instrument_id=data.instrument_id,
                     level=data.level,
                     order=None,
-                    delta_type=DeltaType.CLEAR,
+                    action=BookAction.CLEAR,
                     ts_event=data.ts_event,
                     ts_init=data.ts_init,
                 ),
@@ -64,7 +64,7 @@ def serialize(data: OrderBookData):
                         ts_event=data.ts_event,
                         ts_init=data.ts_init,
                         order=Order(price=price, size=volume, side=side),
-                        delta_type=DeltaType.ADD,
+                        action=BookAction.ADD,
                     ),
                     cls=OrderBookSnapshot,
                 )

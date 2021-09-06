@@ -387,10 +387,10 @@ cdef class OrderFactory:
             The stop-loss child order stop price.
         take_profit : Price
             The take-profit child order limit price.
-        sl_tif : TimeInForce, optional
-            The stop-loss orders time-in-force (``DAY`` or ``GTC``).
-        tp_tif : TimeInForce, optional
-            The take-profit orders time-in-force (``DAY`` or ``GTC``).
+        sl_tif : TimeInForce {``DAY``, ``GTC``}, optional
+            The stop-loss orders time-in-force .
+        tp_tif : TimeInForce {``DAY``, ``GTC``}, optional
+            The take-profit orders time-in-force.
 
         Returns
         -------
