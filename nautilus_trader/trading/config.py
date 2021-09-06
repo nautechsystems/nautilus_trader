@@ -23,9 +23,9 @@ from nautilus_trader.trading.strategy import ImportableStrategyConfig
 from nautilus_trader.trading.strategy import TradingStrategy
 
 
-class StrategyBuilder:
+class StrategyFactory:
     """
-    Provides strategy importing and configurable building.
+    Provides strategy creation from importable configurations.
     """
 
     @staticmethod
@@ -49,10 +49,19 @@ class StrategyBuilder:
 
         """
         PyCondition.type(config, ImportableStrategyConfig, "config")
+        if (config.path is None or config.path.isspace()) and (
+            config.source is None or config.source.isspace()
+        ):
+            raise ValueError("both `source` and `path` were None")
 
         # TODO(cs): Implement importing in various ways
-        spec: ModuleSpec = importlib.util.spec_from_file_location(config.module_name, config.path)
-        module: ModuleType = importlib.util.module_from_spec(spec)
-        sys.modules[config.module_name] = module
+        if config.source is not None:
+            spec: ModuleSpec = importlib.util.spec_from_loader(config.module, loader=None)
+            module: ModuleType = importlib.util.module_from_spec(spec)
+
+            exec(config.source, module.__dict__)  # noqa
+            sys.modules[config.module] = module
+
         # spec.loader.exec_module(module)
-        pass
+        else:
+            pass
