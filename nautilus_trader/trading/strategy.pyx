@@ -72,24 +72,6 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
-# class ImportableStrategyConfig(pydantic.BaseModel):
-#     """
-#     Represents the trading strategy configuration for one specific backtest run.
-#
-#     name : str
-#         The fully-qualified name of the module.
-#     path : str
-#         The path to the source code.
-#
-#     """
-#
-#     module: str
-#     cls: str
-#     path: Optional[str]
-#     source: Optional[bytes]
-#     config: Optional[TradingStrategyConfig]
-
-
 class TradingStrategyConfig(pydantic.BaseModel):
     """
     The base model for all trading strategy configurations.

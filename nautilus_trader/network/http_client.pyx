@@ -33,7 +33,7 @@ cdef int ONE_DAY = 86_400
 
 cdef class HTTPClient:
     """
-    Provides a low level HTTP2 client.
+    Provides a low-level HTTP2 client.
     """
 
     def __init__(
