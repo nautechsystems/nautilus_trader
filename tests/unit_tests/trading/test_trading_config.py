@@ -17,8 +17,8 @@ import pkgutil
 
 import pytest
 
+from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
-from nautilus_trader.trading.strategy import ImportableStrategyConfig
 from tests.test_kit.strategies import EMACross
 from tests.test_kit.strategies import EMACrossConfig
 
@@ -48,4 +48,29 @@ class TestStrategyFactory:
         assert (
             repr(config)
             == "EMACrossConfig(order_id_tag='000', oms_type='HEDGING', instrument_id='AUD/USD.SIM', bar_type='AUD/USD.SIM-1000-TICK-MID-INTERNAL', trade_size=Decimal('1000000'), fast_ema_period=10, slow_ema_period=20)"  # noqa
+        )
+
+    def test_create_from_path(self):
+        # Arrange
+        config = EMACrossConfig(
+            instrument_id="AUD/USD.SIM",
+            bar_type="AUD/USD.SIM-15-MINUTE-BID-EXTERNAL",
+            trade_size=1_000_000,
+            fast_ema_period=10,
+            slow_ema_period=20,
+        )
+        importable = ImportableStrategyConfig(
+            path="tests.test_kit.strategies:EMACross",
+            config=config,
+        )
+
+        # Act
+        strategy = StrategyFactory.create(importable)
+
+        # Assert
+        assert isinstance(strategy, EMACross)
+        assert (
+            repr(config) == "EMACrossConfig(order_id_tag='000', oms_type='HEDGING', "
+            "instrument_id='AUD/USD.SIM', bar_type='AUD/USD.SIM-15-MINUTE-BID-EXTERNAL', "
+            "trade_size=Decimal('1000000'), fast_ema_period=10, slow_ema_period=20)"  # noqa
         )
