@@ -31,6 +31,8 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookActionParser
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import BookLevelParser
+from nautilus_trader.model.enums import ContingencyType
+from nautilus_trader.model.enums import ContingencyTypeParser
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import CurrencyTypeParser
 from nautilus_trader.model.enums import DepthType
@@ -337,6 +339,46 @@ class TestBarAggregation:
     def test_bar_aggregation_from_str(self, string, expected):
         # Arrange, Act
         result = BarAggregationParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestContingencyType:
+    def test_contingency_type_parser_given_invalid_value_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            ContingencyTypeParser.to_str_py(0)
+
+        with pytest.raises(ValueError):
+            ContingencyTypeParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [ContingencyType.OCO, "OCO"],
+            [ContingencyType.OTO, "OTO"],
+            [ContingencyType.OCA, "OCA"],
+        ],
+    )
+    def test_contingency_type_to_str(self, enum, expected):
+        # Arrange, Act
+        result = ContingencyTypeParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["OCO", ContingencyType.OCO],
+            ["OTO", ContingencyType.OTO],
+            ["OCA", ContingencyType.OCA],
+        ],
+    )
+    def test_contingency_type_from_str(self, string, expected):
+        # Arrange, Act
+        result = ContingencyTypeParser.from_str_py(string)
 
         # Assert
         assert expected == result
