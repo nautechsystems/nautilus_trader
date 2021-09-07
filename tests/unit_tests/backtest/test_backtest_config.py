@@ -342,7 +342,7 @@ def test_backtest_against_example(catalog):
     )
 
     node = BacktestNode()
-    tasks = node.build_graph(config, sync=False)
+    tasks = node.build_graph(config)
     results = tasks.compute()
     result = results[list(results)[0]]
     assert len(result["account"]) == 193
@@ -354,6 +354,12 @@ def test_backtest_against_example(catalog):
 
 
 def test_backtest_run_sync(backtest_configs, catalog):
+    node = BacktestNode()
+    result = node.run_sync(backtest_configs)
+    assert len(result) == 2
+
+
+def test_backtest_build_graph(backtest_configs, catalog):
     node = BacktestNode()
     tasks = node.build_graph(backtest_configs)
     result = tasks.compute()
