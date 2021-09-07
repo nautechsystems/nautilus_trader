@@ -90,12 +90,12 @@ def register_parquet(
     ----------
     cls : type
         The type to register serialization for.
-    serializer : Optional[Callable]
+    serializer : Callable, optional
         The callable to serialize instances of type `cls_type` to something
         parquet can write.
-    deserializer : Optional[Callable]
+    deserializer : Callable, optional
         The callable to deserialize rows from parquet into `cls_type`.
-    schema : Optional[pa.Schema]
+    schema : pa.Schema, optional
         If the schema cannot be correctly inferred from a subset of the data
         (i.e. if certain values may be missing in the first chunk).
     partition_keys : tuple, optional

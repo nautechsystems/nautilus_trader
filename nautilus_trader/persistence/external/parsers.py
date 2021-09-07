@@ -184,7 +184,7 @@ class TextReader(ByteReader):
             before json.loads is called. Nautilus objects are returned to the
             context manager for any post-processing also (for example, setting
             the `ts_init`).
-        instrument_provider_update : Optional[Callable]
+        instrument_provider_update : Callable, optional
             An optional hook/callable to update instrument provider before
             data is passed to `line_parser` (in many cases instruments need to
             be known ahead of parsing).
