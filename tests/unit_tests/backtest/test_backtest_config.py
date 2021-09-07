@@ -159,8 +159,7 @@ def backtest_configs(backtest_config):
     # Create two strategies with different params
     strategies = [
         ImportableStrategyConfig(
-            module="tests.test_kit.strategies",
-            cls="EMACross",
+            path="tests.test_kit.strategies:EMACross",
             config=EMACrossConfig(**shared_params, **{"fast_ema": x, "slow_ema": y}),
         )
         for x, y in [(10, 20), (20, 30)]
@@ -329,8 +328,7 @@ def test_backtest_against_example(catalog):
         ],
         strategies=[
             ImportableStrategyConfig(
-                module="tests.test_kit.strategies",
-                cls="EMACross",
+                path="tests.test_kit.strategies:EMACross",
                 config=EMACrossConfig(
                     instrument_id="AUD/USD.SIM",
                     bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",

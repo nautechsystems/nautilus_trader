@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import importlib
 import importlib.util
 import sys
 from importlib.machinery import ModuleSpec
@@ -57,17 +57,18 @@ class StrategyFactory:
         ):
             raise ValueError("both `source` and `path` were None")
 
+        if config.path is not None:
+            mod = importlib.import_module(config.module)
+            cls = getattr(mod, config.cls)
+            assert isinstance(config.config, TradingStrategyConfig)
+            return cls(config=config.config)
         # TODO(cs): Implement importing in various ways
-        if config.source is not None:
+        else:
             spec: ModuleSpec = importlib.util.spec_from_loader(config.module, loader=None)
             module: ModuleType = importlib.util.module_from_spec(spec)
 
             exec(config.source, module.__dict__)  # noqa
             sys.modules[config.module] = module
-
-        # spec.loader.exec_module(module)
-        else:
-            pass
 
 
 class ImportableStrategyConfig(pydantic.BaseModel):
@@ -81,8 +82,21 @@ class ImportableStrategyConfig(pydantic.BaseModel):
 
     """
 
-    module: str
-    cls: str
     path: Optional[str]
     source: Optional[bytes]
     config: Optional[TradingStrategyConfig]
+    # TODO - We should allow config to be a str path also
+
+    def _check_path(self):
+        assert self.path, "`path` not set, can't parse module"
+        assert ":" in self.path, "Path variable should be of the form: path.to.module:class"
+
+    @property
+    def module(self):
+        self._check_path()
+        return self.path.rsplit(":")[0]
+
+    @property
+    def cls(self):
+        self._check_path()
+        return self.path.rsplit(":")[1]

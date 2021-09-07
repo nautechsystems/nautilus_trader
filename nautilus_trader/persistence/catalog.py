@@ -19,6 +19,7 @@ from typing import Dict, List, Optional
 
 import fsspec
 import pandas as pd
+import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from pyarrow import ArrowInvalid
@@ -39,6 +40,7 @@ from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
 from nautilus_trader.serialization.arrow.util import camel_to_snake_case
 from nautilus_trader.serialization.arrow.util import class_to_filename
 from nautilus_trader.serialization.arrow.util import clean_key
+from nautilus_trader.serialization.arrow.util import dict_of_lists_to_list_of_dicts
 
 
 class DataCatalog(metaclass=Singleton):
@@ -93,6 +95,8 @@ class DataCatalog(metaclass=Singleton):
         instrument_id_column="instrument_id",
         table_kwargs: Optional[Dict] = None,
         clean_instrument_keys=True,
+        as_dataframe=True,
+        **kwargs,
     ):
         filters = [filter_expr] if filter_expr is not None else []
         if instrument_ids is not None:
@@ -111,14 +115,35 @@ class DataCatalog(metaclass=Singleton):
             if raise_on_empty:
                 raise FileNotFoundError(f"protocol={self.fs.protocol}, path={full_path}")
             else:
-                return pd.DataFrame()
+                return pd.DataFrame() if as_dataframe else None
 
         dataset = ds.dataset(full_path, partitioning="hive", filesystem=self.fs)
         table = dataset.to_table(filter=combine_filters(*filters), **(table_kwargs or {}))
+        mappings = self.load_inverse_mappings(path=full_path)
+        if as_dataframe:
+            return self._handle_table_dataframe(
+                table=table, mappings=mappings, raise_on_empty=raise_on_empty, **kwargs
+            )
+        else:
+            return self._handle_table_nautilus(table=table, cls=kwargs["cls"], mappings=mappings)
+
+    def load_inverse_mappings(self, path):
+        mappings = load_mappings(fs=self.fs, path=path)
+        for key in mappings:
+            mappings[key] = {v: k for k, v in mappings[key].items()}
+        return mappings
+
+    @staticmethod
+    def _handle_table_dataframe(
+        table: pa.Table,
+        mappings: Optional[Dict],
+        raise_on_empty: bool = True,
+        sort_columns: Optional[List] = None,
+        as_type: Optional[Dict] = None,
+    ):
         df = table.to_pandas().drop_duplicates()
-        mappings = load_mappings(fs=self.fs, path=full_path)
         for col in mappings:
-            df.loc[:, col] = df[col].map({v: k for k, v in mappings[col].items()})
+            df.loc[:, col] = df[col].map(mappings[col])
 
         if df.empty and raise_on_empty:
             local_vars = dict(locals())
@@ -127,13 +152,23 @@ class DataCatalog(metaclass=Singleton):
                 for k in ("path", "filter_expr", "instrument_ids", "start", "end")
             ]
             raise ValueError(f"Data empty for {kw}")
+        if sort_columns:
+            df = df.sort_values(sort_columns)
+        if as_type:
+            df = df.astype(as_type)
         return df
 
     @staticmethod
-    def _make_objects(df, cls):
-        if df is None:
+    def _handle_table_nautilus(table: pa.Table, cls: type, mappings: Optional[Dict]):
+        dicts = dict_of_lists_to_list_of_dicts(table.to_pydict())
+        if not dicts:
             return []
-        return ParquetSerializer.deserialize(cls=cls, chunk=df.to_dict("records"))
+        for key, maps in mappings.items():
+            for d in dicts:
+                if d[key] in maps:
+                    d[key] = maps[d[key]]
+        data = ParquetSerializer.deserialize(cls=cls, chunk=dicts)
+        return data
 
     def query(
         self,
@@ -155,20 +190,21 @@ class DataCatalog(metaclass=Singleton):
                 as_nautilus=as_nautilus,
                 **kwargs,
             )
-        df = self._query(
+        if as_nautilus:
+            kwargs["cls"] = cls
+        return self._query(
             path=f"data/{path}",
             filter_expr=filter_expr,
             instrument_ids=instrument_ids,
+            sort_columns=sort_columns,
+            as_type=as_type,
+            as_dataframe=not as_nautilus,
             **kwargs,
         )
-        if as_nautilus:
-            return self._make_objects(df=df, cls=cls)
-        else:
-            if sort_columns:
-                df = df.sort_values(sort_columns)
-            if as_type:
-                df = df.astype(as_type)
-            return df
+        # if as_nautilus:
+        #     return self._make_objects(df=df, cls=cls)
+        # else:
+        #     return df
 
     def _query_subclasses(
         self,
@@ -182,12 +218,15 @@ class DataCatalog(metaclass=Singleton):
 
         dfs = []
         for cls in subclasses:
+            if as_nautilus:
+                kwargs["cls"] = cls
             try:
                 df = self._query(
                     path=f"data/{class_to_filename(cls)}.parquet",
                     filter_expr=filter_expr,
                     instrument_ids=instrument_ids,
                     raise_on_empty=False,
+                    as_dataframe=not as_nautilus,
                     **kwargs,
                 )
                 dfs.append(df)
@@ -202,11 +241,7 @@ class DataCatalog(metaclass=Singleton):
         if not as_nautilus:
             return pd.concat([df for df in dfs if df is not None])
         else:
-            objects = []
-            for cls, df in zip(subclasses, dfs):
-                if df is None or (isinstance(df, pd.DataFrame) and df.empty):
-                    continue
-                objects.extend(self._make_objects(df=df, cls=cls))
+            objects = [o for objs in filter(None, dfs) for o in objs]
             return objects
 
     def instruments(

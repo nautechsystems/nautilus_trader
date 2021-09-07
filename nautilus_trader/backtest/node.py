@@ -25,6 +25,7 @@ from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
@@ -32,9 +33,11 @@ from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
+from nautilus_trader.trading.config import StrategyFactory
 
 
 # Register tokenization methods with dask
@@ -87,9 +90,9 @@ class BacktestNode:
                 engine.add_instrument(instrument)
 
             if d["type"] == QuoteTick:
-                engine.add_quote_ticks_objects(data=d["data"], instrument_id=d["instrument_id"])
+                engine.add_quote_ticks_objects(data=d["data"], instrument_id=d["instrument"].id)
             elif d["type"] == TradeTick:
-                engine.add_trade_tick_objects(data=d["data"], instrument_id=d["instrument_id"])
+                engine.add_trade_tick_objects(data=d["data"], instrument_id=d["instrument"].id)
             elif d["type"] == OrderBookDelta:
                 engine.add_order_book_data(data=d["data"])
             # TODO(cs): Unsure if we should allow adding events to the engine directly in this way?
@@ -105,14 +108,14 @@ class BacktestNode:
                 venue_type=VenueType[venue.venue_type],
                 oms_type=OMSType[venue.oms_type],
                 account_type=AccountType[venue.account_type],
-                base_currency=venue.base_currency,
-                starting_balances=venue.starting_balances,
+                base_currency=Currency.from_str(venue.base_currency),
+                starting_balances=[Money.from_str(m) for m in venue.starting_balances],
                 # modules=venue.modules,  # TODO(cs): Implement next iteration
             )
         return engine
 
     def run_engine(self, engine, strategies):
-        strategies = [cls(config) for cls, config in strategies]
+        strategies = [StrategyFactory.create(config) for config in strategies]
         engine.run(strategies=strategies)
         data = {
             "account": pd.concat(

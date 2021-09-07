@@ -22,6 +22,8 @@ import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
@@ -81,10 +83,38 @@ class TestPersistenceCatalog:
         write_chunk(catalog=catalog, chunk=[instrument])
 
         # Act
-        instrument = catalog.instruments(as_nautilus=True)[0]
+        instrument = catalog.instruments(instrument_ids=["AUD/USD.SIM"], as_nautilus=True)[0]
 
         # Assert
         assert instrument.max_price is None
+
+    def test_data_catalog_instrument_ids_correctly_unmapped(self):
+        # Arrange
+        catalog = DataCatalog.from_env()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+        trade_tick = TradeTick(
+            instrument_id=instrument.id,
+            price=Price.from_str("2.0"),
+            size=Quantity.from_int(10),
+            aggressor_side=AggressorSide.UNKNOWN,
+            match_id="1",
+            ts_event=0,
+            ts_init=0,
+        )
+        write_chunk(catalog=catalog, chunk=[instrument, trade_tick])
+
+        # Act
+        instrument = catalog.instruments(instrument_ids=["AUD/USD.SIM"], as_nautilus=True)[0]
+        trade_tick = catalog.trade_ticks(instrument_ids=["AUD/USD.SIM"], as_nautilus=True)[0]
+
+        # Assert
+        assert instrument.id.value == "AUD/USD.SIM"
+        assert trade_tick.instrument_id.value == "AUD/USD.SIM"
+
+    def test_data_catalog_trade_ticks_as_nautilus(self):
+        trade_ticks = self.catalog.trade_ticks(as_nautilus=True)
+        assert all(isinstance(tick, TradeTick) for tick in trade_ticks)
+        assert len(trade_ticks) == 312
 
     def test_partition_key_correctly_remapped(self):
         # Arrange
