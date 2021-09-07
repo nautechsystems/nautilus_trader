@@ -170,7 +170,7 @@ class TestPersistenceCore:
     @pytest.mark.parametrize(
         "glob, num_files",
         [
-            ("**.json", 3),
+            ("**.json", 4),
             ("**.txt", 3),
             ("**.parquet", 2),
             ("**.csv", 11),

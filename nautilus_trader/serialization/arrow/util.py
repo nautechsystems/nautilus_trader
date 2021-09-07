@@ -40,6 +40,16 @@ def list_dicts_to_dict_lists(dicts, keys=None):
     return result
 
 
+def dict_of_lists_to_list_of_dicts(dict_lists):
+    """
+    Convert a dictionary of lists into a list of dictionaries.
+
+    >>> dict_of_lists_to_list_of_dicts({'a': [1,2], 'b': [3,4]})
+    [{'a': 1, 'b': 3}, {'a': 2, 'b': 4}]
+    """
+    return [dict(zip(dict_lists, t)) for t in zip(*dict_lists.values())]
+
+
 def maybe_list(obj):
     if isinstance(obj, dict):
         return [obj]
