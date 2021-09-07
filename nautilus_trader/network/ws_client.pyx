@@ -25,7 +25,7 @@ from nautilus_trader.core.correctness cimport Condition
 
 cdef class WebSocketClient:
     """
-    Provides a low level web socket base client.
+    Provides a low-level web socket base client.
     """
 
     def __init__(

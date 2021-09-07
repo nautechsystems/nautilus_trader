@@ -27,7 +27,7 @@ cdef bytes DEFAULT_CRLF = b"\r\n"
 
 cdef class SocketClient:
     """
-    Provides a low level generic socket base client.
+    Provides a low-level generic socket base client.
     """
 
     def __init__(
