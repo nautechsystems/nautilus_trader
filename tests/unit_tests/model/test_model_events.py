@@ -108,20 +108,21 @@ class TestModelEvents:
             order_type=OrderType.LIMIT,
             quantity=Quantity.from_str("0.561000"),
             time_in_force=TimeInForce.DAY,
+            options={"price": "15200.10"},
+            tags="ENTRY",
             event_id=uuid,
             ts_init=0,
-            options={"price": "15200.10"},
         )
 
         # Act, Assert
         assert OrderInitialized.from_dict(OrderInitialized.to_dict(event)) == event
         assert (
             str(event)
-            == f"OrderInitialized(instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, options={{'price': '15200.10'}})"  # noqa
+            == f"OrderInitialized(instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, options={{'price': '15200.10'}}, tags=ENTRY)"  # noqa
         )
         assert (
             repr(event)
-            == f"OrderInitialized(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, options={{'price': '15200.10'}}, event_id={uuid}, ts_init=0)"  # noqa
+            == f"OrderInitialized(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, options={{'price': '15200.10'}}, tags=ENTRY, event_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_order_denied_event_to_from_dict_and_str_repr(self):

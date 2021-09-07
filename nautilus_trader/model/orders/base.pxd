@@ -83,6 +83,8 @@ cdef class Order:
     """The order average fill price.\n\n:returns: `Decimal` or `None`"""
     cdef readonly object slippage
     """The order total price slippage.\n\n:returns: `Decimal`"""
+    cdef readonly str tags
+    """The order custom user tags.\n\n:returns: `str` or `None`"""
     cdef readonly UUID4 init_id
     """The ID of the `OrderInitialized` event.\n\n:returns: `UUID4`"""
     cdef readonly int64_t ts_last

@@ -60,6 +60,7 @@ cdef class LimitOrder(PassiveOrder):
         bint post_only=False,
         bint reduce_only=False,
         bint hidden=False,
+        str tags=None,
     ):
         """
         Initialize a new instance of the ``LimitOrder`` class.
@@ -94,6 +95,9 @@ cdef class LimitOrder(PassiveOrder):
             If the order will only reduce an open position.
         hidden : bool, optional
             If the order will be hidden from the public book.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Raises
         ------
@@ -118,13 +122,14 @@ cdef class LimitOrder(PassiveOrder):
             price=price,
             time_in_force=time_in_force,
             expire_time=expire_time,
-            init_id=init_id,
-            ts_init=ts_init,
             options={
                 "post_only": post_only,
                 "reduce_only": reduce_only,
                 "hidden": hidden,
             },
+            tags=tags,
+            init_id=init_id,
+            ts_init=ts_init,
         )
 
         self.is_post_only = post_only
@@ -154,8 +159,8 @@ cdef class LimitOrder(PassiveOrder):
             "quantity": str(self.quantity),
             "price": str(self.price),
             "liquidity_side": LiquiditySideParser.to_str(self.liquidity_side),
-            "expire_time_ns": self.expire_time_ns,
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
+            "expire_time_ns": self.expire_time_ns,
             "filled_qty": str(self.filled_qty),
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "slippage": str(self.slippage),
@@ -163,8 +168,9 @@ cdef class LimitOrder(PassiveOrder):
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,
             "is_hidden": self.is_hidden,
-            "ts_init": self.ts_init,
+            "tags": self.tags,
             "ts_last": self.ts_last,
+            "ts_init": self.ts_init,
         }
 
     @staticmethod
@@ -205,4 +211,5 @@ cdef class LimitOrder(PassiveOrder):
             post_only=init.options["post_only"],
             reduce_only=init.options["reduce_only"],
             hidden=init.options["hidden"],
+            tags=init.tags,
         )

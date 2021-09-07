@@ -71,6 +71,7 @@ cdef class StopLimitOrder(PassiveOrder):
         bint post_only=False,
         bint reduce_only=False,
         bint hidden=False,
+        str tags=None,
     ):
         """
         Initialize a new instance of the ``StopLimitOrder`` class.
@@ -107,7 +108,9 @@ cdef class StopLimitOrder(PassiveOrder):
             If the order will only reduce an open position (once triggered).
         hidden : bool, optional
             If the order will be hidden from the public book (once triggered).
-
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Raises
         ------
@@ -132,14 +135,15 @@ cdef class StopLimitOrder(PassiveOrder):
             price=price,
             time_in_force=time_in_force,
             expire_time=expire_time,
-            init_id=init_id,
-            ts_init=ts_init,
             options={
                 "trigger": str(trigger),
                 "post_only": post_only,
                 "reduce_only": reduce_only,
                 "hidden": hidden,
             },
+            tags=tags,
+            init_id=init_id,
+            ts_init=ts_init,
         )
 
         self.trigger = trigger
@@ -190,8 +194,9 @@ cdef class StopLimitOrder(PassiveOrder):
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,
             "is_hidden": self.is_hidden,
-            "ts_init": self.ts_init,
+            "tags": self.tags,
             "ts_last": self.ts_last,
+            "ts_init": self.ts_init,
         }
 
     @staticmethod
@@ -233,6 +238,7 @@ cdef class StopLimitOrder(PassiveOrder):
             post_only=init.options["post_only"],
             reduce_only=init.options["reduce_only"],
             hidden=init.options["hidden"],
+            tags=init.tags,
         )
 
     cdef void _updated(self, OrderUpdated event) except *:

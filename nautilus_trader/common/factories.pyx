@@ -123,6 +123,7 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         TimeInForce time_in_force=TimeInForce.GTC,
+        str tags=None,
     ):
         """
         Create a new market order.
@@ -137,6 +138,9 @@ cdef class OrderFactory:
             The orders quantity (> 0).
         time_in_force : TimeInForce, optional
             The orders time-in-force. Often not applicable for market orders.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Returns
         -------
@@ -160,6 +164,7 @@ cdef class OrderFactory:
             time_in_force=time_in_force,
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
+            tags=tags,
         )
 
     cpdef LimitOrder limit(
@@ -173,6 +178,7 @@ cdef class OrderFactory:
         bint post_only=False,
         bint reduce_only=False,
         bint hidden=False,
+        str tags=None,
     ):
         """
         Create a new limit order.
@@ -199,6 +205,9 @@ cdef class OrderFactory:
             If the order will only reduce an open position.
         hidden : bool, optional
             If the order should be hidden from the public book.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Returns
         -------
@@ -231,6 +240,7 @@ cdef class OrderFactory:
             post_only=post_only,
             reduce_only=reduce_only,
             hidden=hidden,
+            tags=tags,
         )
 
     cpdef StopMarketOrder stop_market(
@@ -242,6 +252,7 @@ cdef class OrderFactory:
         TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
         bint reduce_only=False,
+        str tags=None,
     ):
         """
         Create a new stop-market order.
@@ -264,6 +275,9 @@ cdef class OrderFactory:
             The order expire time (for GTD orders).
         reduce_only : bool,
             If the order will only reduce an open position.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Returns
         -------
@@ -290,6 +304,7 @@ cdef class OrderFactory:
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
             reduce_only=reduce_only,
+            tags=tags,
         )
 
     cpdef StopLimitOrder stop_limit(
@@ -304,6 +319,7 @@ cdef class OrderFactory:
         bint post_only=False,
         bint reduce_only=False,
         bint hidden=False,
+        str tags=None,
     ):
         """
         Create a new stop-limit order.
@@ -332,6 +348,9 @@ cdef class OrderFactory:
             If the order will only reduce an open position.
         hidden : bool, optional
             If the order should be hidden from the public book.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Returns
         -------
@@ -365,6 +384,7 @@ cdef class OrderFactory:
             post_only=post_only,
             reduce_only=reduce_only,
             hidden=hidden,
+            tags=tags,
         )
 
     cpdef BracketOrder bracket(

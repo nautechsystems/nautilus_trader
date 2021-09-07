@@ -115,9 +115,10 @@ cdef class OrderInitialized(OrderEvent):
         OrderType order_type,
         Quantity quantity not None,
         TimeInForce time_in_force,
+        dict options not None,
+        str tags,  # Can be None
         UUID4 event_id not None,
         int64_t ts_init,
-        dict options not None,
     ):
         """
         Initialize a new instance of the ``OrderInitialized`` class.
@@ -140,13 +141,16 @@ cdef class OrderInitialized(OrderEvent):
             The order quantity.
         time_in_force : TimeInForce
             The order time-in-force.
+        options : dict[str, str]
+            The order initialization options. Contains mappings for specific
+            order parameters.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
         event_id : UUID4
             The event ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the event object was initialized.
-        options : dict[str, str]
-            The order initialization options. Contains mappings for specific
-            order parameters.
 
         """
         super().__init__(
@@ -166,6 +170,7 @@ cdef class OrderInitialized(OrderEvent):
         self.quantity = quantity
         self.time_in_force = time_in_force
         self.options = options
+        self.tags = tags
 
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
@@ -174,7 +179,8 @@ cdef class OrderInitialized(OrderEvent):
                 f"side={OrderSideParser.to_str(self.side)}, "
                 f"type={OrderTypeParser.to_str(self.type)}, "
                 f"quantity={self.quantity.to_str()}, "
-                f"options={self.options})")
+                f"options={self.options}, "
+                f"tags={self.tags})")
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -186,6 +192,7 @@ cdef class OrderInitialized(OrderEvent):
                 f"type={OrderTypeParser.to_str(self.type)}, "
                 f"quantity={self.quantity.to_str()}, "
                 f"options={self.options}, "
+                f"tags={self.tags}, "
                 f"event_id={self.id}, "
                 f"ts_init={self.ts_init})")
 
@@ -201,9 +208,10 @@ cdef class OrderInitialized(OrderEvent):
             order_type=OrderTypeParser.from_str(values["order_type"]),
             quantity=Quantity.from_str_c(values["quantity"]),
             time_in_force=TimeInForceParser.from_str(values["time_in_force"]),
+            options=orjson.loads(values["options"]),
+            tags=values["tags"],
             event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
-            options=orjson.loads(values["options"]),
         )
 
     @staticmethod
@@ -219,9 +227,10 @@ cdef class OrderInitialized(OrderEvent):
             "order_type": OrderTypeParser.to_str(obj.type),
             "quantity": str(obj.quantity),
             "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
+            "options": orjson.dumps(obj.options).decode(),
+            "tags": obj.tags,
             "event_id": obj.id.value,
             "ts_init": obj.ts_init,
-            "options": orjson.dumps(obj.options).decode(),
         }
 
     @staticmethod

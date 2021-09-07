@@ -165,15 +165,16 @@ NAUTILUS_PARQUET_SCHEMA = {
             "order_type": pa.dictionary(pa.int8(), pa.string()),
             "quantity": pa.float64(),
             "time_in_force": pa.dictionary(pa.int8(), pa.string()),
-            "event_id": pa.string(),
-            "ts_init": pa.int64(),
-            # Options fields
-            # "options": pa.string(),
+            # -- Options fields -- #
             "post_only": pa.bool_(),
             "reduce_only": pa.bool_(),
             "hidden": pa.bool_(),
             "price": pa.float64(),
             "trigger": pa.bool_(),
+            # --------------------- #
+            "tags": pa.string(),
+            "event_id": pa.string(),
+            "ts_init": pa.int64(),
         },
     ),
     OrderDenied: pa.schema(
