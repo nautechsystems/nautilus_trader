@@ -19,7 +19,7 @@ from typing import List, Optional
 import pydantic
 
 from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.trading.strategy import ImportableStrategyConfig
+from nautilus_trader.trading.config import ImportableStrategyConfig
 
 
 class Partialable:
