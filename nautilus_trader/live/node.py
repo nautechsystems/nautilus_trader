@@ -74,15 +74,15 @@ class TradingNodeConfig(pydantic.BaseModel):
         The trader ID for the node (must be a name and ID tag separated by a hyphen)
     log_level : str, default="INFO"
         The stdout log level for the node.
-    cache : Optional[CacheConfig]
+    cache : CacheConfig, optional
         The cache configuration.
-    cache_database : Optional[CacheDatabaseConfig]
+    cache_database : CacheDatabaseConfig, optional
         The cache database configuration.
-    data_engine : Optional[LiveDataEngineConfig]
+    data_engine : LiveDataEngineConfig, optional
         The live data engine configuration.
-    risk_engine : Optional[LiveRiskEngineConfig]
+    risk_engine : LiveRiskEngineConfig, optional
         The live risk engine configuration.
-    exec_engine : Optional[LiveExecEngineConfig]
+    exec_engine : LiveExecEngineConfig, optional
         The live execution engine configuration.
     loop_debug : bool, default=False
         If the asyncio event loop should be in debug mode.

@@ -63,7 +63,7 @@ class DataCatalog(metaclass=Singleton):
             The root path to the data.
         fs_protocol : str
             The file system protocol to use.
-        fs_storage_options : Optional[Dict]
+        fs_storage_options : Dict, optional
             The fs storage options.
 
         """

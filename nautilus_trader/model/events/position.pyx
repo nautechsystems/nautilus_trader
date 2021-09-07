@@ -109,7 +109,7 @@ cdef class PositionEvent(Event):
             The position quote currency.
         avg_px_open : Decimal
             The average open price.
-        avg_px_close : Optional[Decimal]
+        avg_px_close : Decimal, optional
             The average close price.
         realized_points : Decimal
             The realized points for the position.
@@ -527,7 +527,7 @@ cdef class PositionChanged(PositionEvent):
             The position quote currency.
         avg_px_open : Decimal
             The average open price.
-        avg_px_close : Optional[Decimal]
+        avg_px_close : Decimal, optional
             The average close price.
         realized_points : Decimal
             The realized points for the position.

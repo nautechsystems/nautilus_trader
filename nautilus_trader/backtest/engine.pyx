@@ -96,15 +96,15 @@ class BacktestEngineConfig(pydantic.BaseModel):
         The trader ID.
     log_level : str, default="INFO"
         The minimum log level for logging messages to stdout.
-    cache : Optional[CacheConfig]
+    cache : CacheConfig, optional
         The configuration for the cache.
-    cache_database : Optional[CacheDatabaseConfig]
+    cache_database : CacheDatabaseConfig, optional
         The configuration for the cache database.
-    data_engine : Optional[DataEngineConfig]
+    data_engine : DataEngineConfig, optional
         The configuration for the data engine.
-    risk_engine : Optional[RiskEngineConfig]
+    risk_engine : RiskEngineConfig, optional
         The configuration for the risk engine.
-    exec_engine : Optional[ExecEngineConfig]
+    exec_engine : ExecEngineConfig, optional
         The configuration for the execution engine.
     use_data_cache : bool, default=False
         If use cache for DataProducer (increased performance with repeated backtests on same data).

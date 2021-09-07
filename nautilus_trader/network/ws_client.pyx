@@ -49,7 +49,7 @@ cdef class WebSocketClient:
             The logger adapter for the client.
         loop : asyncio.AbstractEventLoop, optional
             The event loop for the client.
-        kwargs : Optional[Dict]
+        kwargs : dict, optional
             The additional kwargs to pass to aiohttp.ClientSession._ws_connect().
 
         Raises
