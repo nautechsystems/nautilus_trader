@@ -29,6 +29,8 @@ from nautilus_trader.model.c_enums.asset_type import AssetType                  
 from nautilus_trader.model.c_enums.asset_type import AssetTypeParser                       # noqa F401 (being used)
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregation                   # noqa F401 (being used)
 from nautilus_trader.model.c_enums.bar_aggregation import BarAggregationParser             # noqa F401 (being used)
+from nautilus_trader.model.c_enums.contingency_type import ContingencyType                 # noqa F401 (being used)
+from nautilus_trader.model.c_enums.contingency_type import ContingencyTypeParser           # noqa F401 (being used)
 from nautilus_trader.model.c_enums.currency_type import CurrencyType                       # noqa F401 (being used)
 from nautilus_trader.model.c_enums.currency_type import CurrencyTypeParser                 # noqa F401 (being used)
 from nautilus_trader.model.c_enums.depth_type import DepthType                             # noqa F401 (being used)

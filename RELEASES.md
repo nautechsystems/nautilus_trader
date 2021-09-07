@@ -14,6 +14,7 @@ Released on **TBD**
 - Refined backtest configuration options.
 - Added `Actor.register_warning_event` (also applicable to `TradingStrategy`).
 - Added `Actor.deregister_warning_event` (also applicable to `TradingStrategy`).
+- Added `ContingencyType` enum (for contingency orders in an `OrderList`).
 
 ## Fixes
 - Fixed Redis loss of precision for timestamp int64s (#363).
