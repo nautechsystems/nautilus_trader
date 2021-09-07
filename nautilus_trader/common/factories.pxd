@@ -54,6 +54,7 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         TimeInForce time_in_force=*,
+        str tags=*,
     )
 
     cpdef LimitOrder limit(
@@ -67,6 +68,7 @@ cdef class OrderFactory:
         bint post_only=*,
         bint reduce_only=*,
         bint hidden=*,
+        str tags=*,
     )
 
     cpdef StopMarketOrder stop_market(
@@ -78,6 +80,7 @@ cdef class OrderFactory:
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint reduce_only=*,
+        str tags=*,
     )
 
     cpdef StopLimitOrder stop_limit(
@@ -92,6 +95,7 @@ cdef class OrderFactory:
         bint post_only=*,
         bint reduce_only=*,
         bint hidden=*,
+        str tags=*,
     )
 
     cpdef BracketOrder bracket(

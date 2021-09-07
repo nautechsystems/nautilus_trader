@@ -63,6 +63,7 @@ cdef class StopMarketOrder(PassiveOrder):
         UUID4 init_id not None,
         int64_t ts_init,
         bint reduce_only=False,
+        str tags=None,
     ):
         """
         Initialize a new instance of the ``StopMarketOrder`` class.
@@ -93,6 +94,9 @@ cdef class StopMarketOrder(PassiveOrder):
             The UNIX timestamp (nanoseconds) when the order was initialized.
         reduce_only : bool, optional
             If the order will only reduce an open position.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Raises
         ------
@@ -113,9 +117,10 @@ cdef class StopMarketOrder(PassiveOrder):
             price=price,
             time_in_force=time_in_force,
             expire_time=expire_time,
+            options={"reduce_only": reduce_only},
+            tags=tags,
             init_id=init_id,
             ts_init=ts_init,
-            options={"reduce_only": reduce_only},
         )
 
         self.is_reduce_only = reduce_only
@@ -150,8 +155,9 @@ cdef class StopMarketOrder(PassiveOrder):
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
-            "ts_init": self.ts_init,
+            "tags": self.tags,
             "ts_last": self.ts_last,
+            "ts_init": self.ts_init,
         }
 
     @staticmethod
@@ -190,4 +196,5 @@ cdef class StopMarketOrder(PassiveOrder):
             init_id=init.id,
             ts_init=init.ts_init,
             reduce_only=init.options["reduce_only"],
+            tags=init.tags,
         )

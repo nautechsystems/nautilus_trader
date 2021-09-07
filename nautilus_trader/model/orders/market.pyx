@@ -66,6 +66,7 @@ cdef class MarketOrder(Order):
         TimeInForce time_in_force,
         UUID4 init_id not None,
         int64_t ts_init,
+        str tags=None,
     ):
         """
         Initialize a new instance of the ``MarketOrder`` class.
@@ -88,6 +89,9 @@ cdef class MarketOrder(Order):
             The order initialization event ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the order was initialized.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Raises
         ------
@@ -109,9 +113,10 @@ cdef class MarketOrder(Order):
             order_type=OrderType.MARKET,
             quantity=quantity,
             time_in_force=time_in_force,
+            options={},
+            tags=tags,
             event_id=init_id,
             ts_init=ts_init,
-            options={},
         )
 
         super().__init__(init=init)
@@ -142,6 +147,7 @@ cdef class MarketOrder(Order):
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
+            "tags": self.tags,
             "ts_last": self.ts_last,
             "ts_init": self.ts_init,
         }
@@ -179,6 +185,7 @@ cdef class MarketOrder(Order):
             time_in_force=init.time_in_force,
             init_id=init.id,
             ts_init=init.ts_init,
+            tags=init.tags,
         )
 
     cpdef str info(self):

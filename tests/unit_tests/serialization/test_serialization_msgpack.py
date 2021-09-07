@@ -485,9 +485,10 @@ class TestMsgPackSerializer:
             OrderType.MARKET,
             Quantity(100000, precision=0),
             TimeInForce.FOK,
-            UUID4(),
-            0,
             options={},
+            tags=None,
+            event_id=UUID4(),
+            ts_init=0,
         )
 
         # Act
@@ -516,9 +517,10 @@ class TestMsgPackSerializer:
             OrderType.LIMIT,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
-            UUID4(),
-            0,
             options=options,
+            tags=None,
+            event_id=UUID4(),
+            ts_init=0,
         )
 
         # Act
@@ -546,9 +548,10 @@ class TestMsgPackSerializer:
             OrderType.STOP_MARKET,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
-            UUID4(),
-            0,
             options=options,
+            tags=None,
+            event_id=UUID4(),
+            ts_init=0,
         )
 
         # Act
@@ -579,9 +582,10 @@ class TestMsgPackSerializer:
             OrderType.STOP_LIMIT,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
-            UUID4(),
-            0,
             options=options,
+            tags="entry,bulk",
+            event_id=UUID4(),
+            ts_init=0,
         )
 
         # Act
@@ -591,6 +595,7 @@ class TestMsgPackSerializer:
         # Assert
         assert deserialized == event
         assert deserialized.options == options
+        assert deserialized.tags == "entry,bulk"
 
     def test_serialize_and_deserialize_order_denied_events(self):
         # Arrange

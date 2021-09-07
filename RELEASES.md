@@ -10,6 +10,7 @@ Released on **TBD**
 
 ## Enhancements
 - Added `BacktestNode`.
+- Added order custom user tags.
 - Refined backtest configuration options.
 - Added `Actor.register_warning_event` (also applicable to `TradingStrategy`).
 - Added `Actor.deregister_warning_event` (also applicable to `TradingStrategy`).

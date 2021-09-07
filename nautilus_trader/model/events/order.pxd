@@ -58,6 +58,8 @@ cdef class OrderInitialized(OrderEvent):
     """The order time-in-force.\n\n:returns: `TimeInForce`"""
     cdef readonly dict options
     """The order initialization options.\n\n:returns: `dict`"""
+    cdef readonly str tags
+    """The order custom user tags.\n\n:returns: `str` or `None`"""
 
     @staticmethod
     cdef OrderInitialized from_dict_c(dict values)

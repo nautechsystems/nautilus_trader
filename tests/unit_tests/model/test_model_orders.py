@@ -259,17 +259,18 @@ class TestOrders:
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
+            tags="ENTRY",
         )
 
         # Act, Assert
         assert isinstance(hash(order), int)
         assert (
             str(order)
-            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
+            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
         )
         assert (
             repr(order)
-            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
+            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY)"  # noqa
         )
 
     def test_market_order_to_dict(self):
@@ -301,6 +302,7 @@ class TestOrders:
             "avg_px": None,
             "slippage": "0",
             "status": "INITIALIZED",
+            "tags": None,
             "ts_last": 0,
             "ts_init": 0,
         }
@@ -325,11 +327,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
         )
         assert (
             repr(order)
-            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
         )
 
     def test_limit_order_to_dict(self):
@@ -368,6 +370,7 @@ class TestOrders:
             "is_post_only": False,
             "is_reduce_only": False,
             "is_hidden": False,
+            "tags": None,
             "ts_last": 0,
             "ts_init": 0,
         }
@@ -413,11 +416,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
+            == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
         )
         assert (
             repr(order)
-            == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None)"  # noqa
+            == "StopMarketOrder(BUY 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None)"  # noqa
         )
 
     def test_stop_market_order_to_dict(self):
@@ -454,6 +457,7 @@ class TestOrders:
             "slippage": "0",
             "status": "INITIALIZED",
             "is_reduce_only": False,
+            "tags": None,
             "ts_last": 0,
             "ts_init": 0,
         }
@@ -466,6 +470,7 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
+            tags="ENTRY",
         )
 
         # Assert
@@ -493,6 +498,7 @@ class TestOrders:
             Quantity.from_int(100000),
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
+            tags="STOP_LOSS",
         )
 
         # Act
@@ -523,6 +529,7 @@ class TestOrders:
             "is_post_only": False,
             "is_reduce_only": False,
             "is_hidden": False,
+            "tags": "STOP_LOSS",
             "ts_last": 0,
             "ts_init": 0,
         }
@@ -613,13 +620,13 @@ class TestOrders:
         assert str(bracket_order) == (
             "BracketOrder(id=BO-19700101-000000-000-001-1, "
             "EntryMarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, "
-            "status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None), "
+            "status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None), "
             "SL=0.99990, TP=1.00010)"
         )
         assert repr(bracket_order) == (
             "BracketOrder(id=BO-19700101-000000-000-001-1, "
             "EntryMarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, "
-            "status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None), "
+            "status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=None), "
             "SL=0.99990, TP=1.00010)"
         )
 
@@ -696,11 +703,11 @@ class TestOrders:
         assert not order.is_completed
         assert (
             str(order)
-            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=ACCEPTED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=1)"  # noqa
+            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=ACCEPTED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=1, tags=None)"  # noqa
         )
         assert (
             repr(order)
-            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=ACCEPTED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=1)"  # noqa
+            == "MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=ACCEPTED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=1, tags=None)"  # noqa
         )
 
     def test_apply_order_rejected_event(self):

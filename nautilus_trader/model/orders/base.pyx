@@ -144,6 +144,7 @@ cdef class Order:
         self.type = init.type
         self.quantity = init.quantity
         self.time_in_force = init.time_in_force
+        self.tags = init.tags
         self.filled_qty = Quantity.zero_c(precision=0)
         self.avg_px = None  # Can be None
         self.slippage = Decimal(0)
@@ -162,7 +163,8 @@ cdef class Order:
                 f"{self.info()}, "
                 f"status={self._fsm.state_string_c()}, "
                 f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id})")
+                f"venue_order_id={self.venue_order_id}, "
+                f"tags={self.tags})")
 
     cpdef str info(self):
         """
@@ -714,9 +716,11 @@ cdef class PassiveOrder(Order):
         Price price not None,
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
+        dict options not None,
+        str tags,  # Can be None,
         UUID4 init_id not None,
         int64_t ts_init,
-        dict options not None,
+
     ):
         """
         Initialize a new instance of the ``PassiveOrder`` class.
@@ -743,12 +747,15 @@ cdef class PassiveOrder(Order):
             The order time-in-force.
         expire_time : datetime, optional
             The order expiry time - applicable to ``GTD`` orders only.
+        options : dict
+            The order options.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
         init_id : UUID4
             The order initialization event ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the order was initialized.
-        options : dict
-            The order options.
 
         Raises
         ------
@@ -779,9 +786,10 @@ cdef class PassiveOrder(Order):
             order_type=order_type,
             quantity=quantity,
             time_in_force=time_in_force,
+            options=options,
+            tags=tags,
             event_id=init_id,
             ts_init=ts_init,
-            options=options,
         )
 
         super().__init__(init=init)
