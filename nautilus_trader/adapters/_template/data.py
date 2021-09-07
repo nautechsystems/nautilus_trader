@@ -36,8 +36,21 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class TemplateLiveMarketDataClient(LiveMarketDataClient):
     """
-    An example template of a ``LiveMarketDataClient`` showing the minimal methods
-    which must be implemented for an integration to be complete.
+    An example template of a ``LiveMarketDataClient`` showing the overridable
+    abstract methods.
+
+    +------------------------+----------------+
+    | Method                 | Category       |
+    +------------------------+----------------+
+    | connect                | required       |
+    | disconnect             | required       |
+    | reset                  | as required    |
+    | dispose                | as required    |
+    +------------------------+----------------*
+    | subscribe              | as required    |
+    | subscribe_instruments  | if available   |
+    | to be completed...
+
     """
 
     def connect(self):
@@ -59,10 +72,6 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     # -- SUBSCRIPTIONS -----------------------------------------------------------------------------
 
     def subscribe(self, data_type: DataType):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    def unsubscribe(self, data_type: DataType):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -115,6 +124,10 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def subscribe_instrument_close_prices(self, instrument_id: InstrumentId):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    def unsubscribe(self, data_type: DataType):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
