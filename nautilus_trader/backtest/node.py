@@ -20,6 +20,7 @@ import pandas as pd
 from dask import delayed
 from dask.base import normalize_token
 from dask.base import tokenize
+from dask.delayed import Delayed
 
 from nautilus_trader.backtest.config import BacktestDataConfig
 from nautilus_trader.backtest.config import BacktestRunConfig
@@ -159,7 +160,10 @@ class BacktestNode:
 
         return configs
 
-    def build_graph(self, backtest_configs: List[BacktestRunConfig], sync=False):
+    def run_sync(self, backtest_configs: List[BacktestRunConfig]):
+        """
+        Run a list of backtest configs synchronously
+        """
         backtest_configs = self._check_configs(backtest_configs)
 
         results = []
@@ -167,24 +171,37 @@ class BacktestNode:
             config.check(ignore=("name",))  # check all values set
             input_data = []
             for data_config in config.data:
-                load_func = (
-                    self._load
-                    if sync
-                    else partial(self.load, dask_key_name=f"load-{tokenize(data_config.query)}")
-                )
-                input_data.append(
-                    load_func(  # type: ignore
-                        data_config,
-                    )
-                )
-            run_backtest_func = self._run_backtest if sync else self.run_backtest
+                input_data.append(self._load(data_config))
             results.append(
-                run_backtest_func(
+                self._run_backtest(
                     venues=config.venues,
                     data=input_data,
                     strategies=config.strategies,
                     name=config.name or f"backtest-{tokenize(config)}",
                 )
             )
-        gather_func = self._gather if sync else self.gather
-        return gather_func(results)
+        return self._gather(results)
+
+    def build_graph(self, backtest_configs: List[BacktestRunConfig]) -> Delayed:
+        backtest_configs = self._check_configs(backtest_configs)
+
+        results = []
+        for config in backtest_configs:
+            config.check(ignore=("name",))  # check all values set
+            input_data = []
+            for data_config in config.data:
+                load_func = partial(self.load, dask_key_name=f"load-{tokenize(data_config.query)}")
+                input_data.append(
+                    load_func(  # type: ignore
+                        data_config,
+                    )
+                )
+            results.append(
+                self.run_backtest(
+                    venues=config.venues,
+                    data=input_data,
+                    strategies=config.strategies,
+                    name=config.name or f"backtest-{tokenize(config)}",
+                )
+            )
+        return self.gather(results)
