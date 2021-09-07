@@ -13,49 +13,54 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
+import re
+
+from fastuuid import uuid4
+
+from nautilus_trader.core.correctness cimport Condition
+
+
+_UUID_REGEX = re.compile("[0-F]{8}-([0-F]{4}-){3}[0-F]{12}", re.I)
 
 
 cdef class UUID4:
     """
-    Represents a UUID version 4.
+    Represents a pseudo-random UUID (universally unique identifier) version 4
+    based on a 128-bit label as specified in RFC 4122.
+
+    Implemented under the hood with the `fastuuid` library which provides
+    CPython bindings to Rusts UUID library. Benched ~3x faster to instantiate
+    this class vs the Python standard `uuid.uuid4()` function.
+
+    References
+    ----------
+    https://en.wikipedia.org/wiki/Universally_unique_identifier
     """
 
-    def __init__(self, str value not None):
+    def __init__(self, str value=None):
         """
         Initialize a new instance of the ``UUID4`` class.
 
         Parameters
         ----------
         value : str
+            The UUID value.
 
         Raises
         ------
         ValueError
-            If len(value) != 36.
+            If value is not `None` and not a valid UUID.
 
         """
-        if len(value) != 36:
-            raise ValueError("value is not a 36-char string")
+        if value is not None:
+            Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
+        else:
+            value = str(uuid4())
 
         self.value = value
 
     def __eq__(self, UUID4 other) -> bool:
         return self.value == other.value
-
-    # Q. What's the value of being able to sort UUIDs?
-    # A. Use them as keys in a B-Tree or similar mapping.
-    def __lt__(self, UUID4 other) -> bool:
-        return self.value < other.value
-
-    def __gt__(self, UUID4 other) -> bool:
-        return self.value > other.value
-
-    def __le__(self, UUID4 other) -> bool:
-        return self.value <= other.value
-
-    def __ge__(self, UUID4 other) -> bool:
-        return self.value >= other.value
 
     def __hash__(self) -> int:
         return hash(self.value)
@@ -65,20 +70,3 @@ cdef class UUID4:
 
     def __str__(self) -> str:
         return self.value
-
-
-cpdef UUID4 uuid4():
-    """
-    Generate a random UUID (universally unique identifier) version 4 as
-    specified in RFC 4122.
-
-    Returns
-    -------
-    UUID4
-
-    """
-    # Construct hex string from a random integer value
-    cdef str hex_str = "%032x" % int.from_bytes(os.urandom(16), byteorder="big")
-
-    # Parse final UUID value
-    return UUID4(f"{hex_str[:8]}-{hex_str[8:12]}-{hex_str[12:16]}-{hex_str[16:20]}-{hex_str[20:]}")

@@ -20,7 +20,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.currencies import BTC
@@ -126,7 +126,7 @@ class TestPortfolio:
                 )
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -220,7 +220,7 @@ class TestPortfolio:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -297,7 +297,7 @@ class TestPortfolio:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -353,7 +353,7 @@ class TestPortfolio:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -471,7 +471,7 @@ class TestPortfolio:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -557,7 +557,7 @@ class TestPortfolio:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -637,7 +637,7 @@ class TestPortfolio:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -720,7 +720,7 @@ class TestPortfolio:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -776,7 +776,7 @@ class TestPortfolio:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -852,7 +852,7 @@ class TestPortfolio:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -968,7 +968,7 @@ class TestPortfolio:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -1060,7 +1060,7 @@ class TestPortfolio:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -1136,7 +1136,7 @@ class TestPortfolio:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
