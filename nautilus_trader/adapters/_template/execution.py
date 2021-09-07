@@ -38,8 +38,21 @@ from nautilus_trader.model.orders.base import Order
 
 class TemplateLiveExecutionClient(LiveExecutionClient):
     """
-    An example template of a ``LiveExecutionClient`` showing the minimal methods
-    which must be implemented for an integration to be complete.
+    An example template of a ``LiveExecutionClient`` showing the overridable
+    abstract methods.
+
+    +------------------------+----------------+
+    | Method                 | Category       |
+    +------------------------+----------------+
+    | connect                | required       |
+    | disconnect             | required       |
+    | reset                  | as required    |
+    | dispose                | as required    |
+    +------------------------+----------------*
+    |                        |                |
+    |                        |                |
+    | to be completed...
+
     """
 
     def connect(self):
