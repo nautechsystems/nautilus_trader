@@ -183,6 +183,9 @@ class BacktestNode:
         return self._gather(results)
 
     def build_graph(self, backtest_configs: List[BacktestRunConfig]) -> Delayed:
+        """
+        Build a `Delayed` graph from `backtest_configs` that can be passed to a dask executor
+        """
         backtest_configs = self._check_configs(backtest_configs)
 
         results = []
