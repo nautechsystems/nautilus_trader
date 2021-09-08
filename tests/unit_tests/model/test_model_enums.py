@@ -356,8 +356,9 @@ class TestContingencyType:
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [ContingencyType.OCO, "OCO"],
             [ContingencyType.OTO, "OTO"],
+            [ContingencyType.OUO, "OUO"],
+            [ContingencyType.OCO, "OCO"],
             [ContingencyType.OCA, "OCA"],
         ],
     )
@@ -371,8 +372,9 @@ class TestContingencyType:
     @pytest.mark.parametrize(
         "string, expected",
         [
-            ["OCO", ContingencyType.OCO],
             ["OTO", ContingencyType.OTO],
+            ["OUO", ContingencyType.OUO],
+            ["OCO", ContingencyType.OCO],
             ["OCA", ContingencyType.OCA],
         ],
     )

@@ -19,20 +19,24 @@ cdef class ContingencyTypeParser:
     @staticmethod
     cdef str to_str(int value):
         if value == 1:
-            return "OCO"
-        elif value == 2:
             return "OTO"
+        elif value == 2:
+            return "OUO"
         elif value == 3:
+            return "OCO"
+        elif value == 4:
             return "OCA"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     cdef ContingencyType from_str(str value) except *:
-        if value == "OCO":
-            return ContingencyType.OCO
-        elif value == "OTO":
+        if value == "OTO":
             return ContingencyType.OTO
+        if value == "OUO":
+            return ContingencyType.OUO
+        elif value == "OCO":
+            return ContingencyType.OCO
         elif value == "OCA":
             return ContingencyType.OCA
         else:
