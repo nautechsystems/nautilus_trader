@@ -99,7 +99,7 @@ cdef class StopMarketOrder(PassiveOrder):
         init_id : UUID4
             The order initialization event ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the order was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
         reduce_only : bool, optional
             If the order will only reduce an open position.
         order_list_id : OrderListId, optional

@@ -34,7 +34,7 @@ cdef class Data:
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the data event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         # Design-time invariant: correct ordering of timestamps

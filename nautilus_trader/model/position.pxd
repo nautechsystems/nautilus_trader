@@ -78,7 +78,7 @@ cdef class Position:
     cdef readonly Currency cost_currency
     """The position cost currency (for PnL).\n\n:returns: `Currency`"""
     cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the position was initialized.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
     cdef readonly int64_t ts_opened
     """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `int64`"""
     cdef readonly int64_t ts_last

@@ -130,7 +130,7 @@ cdef class PositionEvent(Event):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(event_id, ts_event, ts_init)
@@ -282,7 +282,7 @@ cdef class PositionOpened(PositionEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the position opened event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         assert side != PositionSide.FLAT  # Design-time check: position side matches event
@@ -419,7 +419,7 @@ cdef class PositionOpened(PositionEvent):
         event_id : UUID4
             The event ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -544,7 +544,7 @@ cdef class PositionChanged(PositionEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the position changed event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         assert side != PositionSide.FLAT  # Design-time check: position side matches event
@@ -697,7 +697,7 @@ cdef class PositionChanged(PositionEvent):
         event_id : UUID4
             The event ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -822,7 +822,7 @@ cdef class PositionClosed(PositionEvent):
         duration_ns : int64
             The total open duration (nanoseconds).
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         assert side == PositionSide.FLAT  # Design-time check: position side matches event
@@ -973,7 +973,7 @@ cdef class PositionClosed(PositionEvent):
         event_id : UUID4
             The event ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------

@@ -96,7 +96,7 @@ cdef class MarketOrder(Order):
         init_id : UUID4
             The order initialization event ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the order was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
         order_list_id : OrderListId, optional
             The order list ID associated with the order.
         parent_order_id : ClientOrderId, optional
