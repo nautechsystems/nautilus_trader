@@ -301,7 +301,11 @@ cdef class PerformanceAnalyzer:
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
 
-        return min(realized_pnls)
+        cdef list losers = [x for x in realized_pnls if x < 0.0]
+        if realized_pnls is None or not losers:
+            return 0.0
+
+        return min(np.asarray(losers, dtype=np.float64))
 
     cpdef double min_winner(self, Currency currency=None) except *:
         """
