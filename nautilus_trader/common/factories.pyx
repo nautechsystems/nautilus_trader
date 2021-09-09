@@ -417,8 +417,7 @@ cdef class OrderFactory:
         Quantity quantity,
         Price stop_loss,
         Price take_profit,
-        TimeInForce sl_tif=TimeInForce.GTC,
-        TimeInForce tp_tif=TimeInForce.GTC,
+        TimeInForce tif_bracket=TimeInForce.GTC,
     ):
         """
         Create a bracket order with a MARKET entry from the given parameters.
@@ -435,10 +434,8 @@ cdef class OrderFactory:
             The stop-loss child order stop price.
         take_profit : Price
             The take-profit child order limit price.
-        sl_tif : TimeInForce {``DAY``, ``GTC``}, optional
-            The stop-loss orders time-in-force .
-        tp_tif : TimeInForce {``DAY``, ``GTC``}, optional
-            The take-profit orders time-in-force.
+        tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
+            The bracket orders time-in-force .
 
         Returns
         -------
@@ -447,36 +444,24 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If sl_tif is not either ``DAY`` or ``GTC``.
+            If `tif_bracket` is not either ``DAY`` or ``GTC``.
         ValueError
-            If tp_tif is not either ``DAY`` or ``GTC``.
+            If `entry_order.side` is ``BUY`` and `entry_order.price` <= `stop_loss.price`.
         ValueError
-            If sl_tif is not equal to tp_tif.
+            If `entry_order.side` is ``BUY`` and `entry_order.price` >= `take_profit.price`.
         ValueError
-            If entry_order.side is ``BUY`` and entry_order.price <= stop_loss.price.
+            If `entry_order.side` is ``SELL`` and `entry_order.price` >= `stop_loss.price`.
         ValueError
-            If entry_order.side is ``BUY`` and entry_order.price >= take_profit.price.
-        ValueError
-            If entry_order.side is ``SELL`` and entry_order.price >= stop_loss.price.
-        ValueError
-            If entry_order.side is ``SELL`` and entry_order.price <= take_profit.price.
+            If `entry_order.side` is ``SELL`` and `entry_order.price` <= `take_profit.price`.
 
         """
-        Condition.true(sl_tif == TimeInForce.DAY or sl_tif == TimeInForce.GTC, "sl_tif is unsupported")
-        Condition.true(tp_tif == TimeInForce.DAY or sl_tif == TimeInForce.GTC, "tp_tif is unsupported")
-        Condition.equal(sl_tif, tp_tif, "sl_tif", "tp_tif")
+        Condition.true(tif_bracket == TimeInForce.DAY or tif_bracket == TimeInForce.GTC, "tif_bracket is unsupported")
 
         # Validate prices
         if order_side == OrderSide.BUY:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
-            # if isinstance(entry_order, PassiveOrder):
-            #     Condition.true(entry_order.price > stop_loss, "entry_order.price was <= stop_loss")
-            #     Condition.true(entry_order.price < take_profit, "entry_order.price was > take_profit")
         else:  # entry_order.side == OrderSide.SELL
             Condition.true(stop_loss > take_profit, "stop_loss was <= take_profit")
-            # if isinstance(entry_order, PassiveOrder):
-            #     Condition.true(entry_order.price < stop_loss, "entry_order.price < stop_loss")
-            #     Condition.true(entry_order.price > take_profit, "entry_order.price > take_profit")
 
         cdef OrderListId order_list_id = OrderListId(str(self._order_list_id))
         self._order_list_id += 1
@@ -510,7 +495,7 @@ cdef class OrderFactory:
             order_side=Order.opposite_side_c(entry_order.side),
             quantity=quantity,
             price=stop_loss,
-            time_in_force=sl_tif,
+            time_in_force=tif_bracket,
             expire_time=None,
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
@@ -531,7 +516,7 @@ cdef class OrderFactory:
             order_side=Order.opposite_side_c(entry_order.side),
             quantity=quantity,
             price=take_profit,
-            time_in_force=tp_tif,
+            time_in_force=tif_bracket,
             expire_time=None,
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
@@ -561,8 +546,7 @@ cdef class OrderFactory:
         Price take_profit,
         TimeInForce tif=TimeInForce.GTC,
         datetime expire_time=None,
-        TimeInForce sl_tif=TimeInForce.GTC,
-        TimeInForce tp_tif=TimeInForce.GTC,
+        TimeInForce tif_bracket=TimeInForce.GTC,
     ):
         """
         Create a bracket order with a LIMIT entry from the given parameters.
@@ -585,10 +569,8 @@ cdef class OrderFactory:
             The entry orders time-in-force .
         expire_time : datetime, optional
             The order expire time (for GTD orders).
-        sl_tif : TimeInForce {``DAY``, ``GTC``}, optional
-            The stop-loss orders time-in-force .
-        tp_tif : TimeInForce {``DAY``, ``GTC``}, optional
-            The take-profit orders time-in-force.
+        tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
+            The bracket orders time-in-force.
 
         Returns
         -------
@@ -597,26 +579,20 @@ cdef class OrderFactory:
         Raises
         ------
         ValueError
-            If time_in_force is GTD and expire_time is ``None``.
+            If `tif` is GTD and `expire_time` is ``None``.
         ValueError
-            If sl_tif is not either ``DAY`` or ``GTC``.
+            If `tif_bracket` is not either ``DAY`` or ``GTC``.
         ValueError
-            If tp_tif is not either ``DAY`` or ``GTC``.
+            If `entry_order.side` is ``BUY`` and `entry_order.price` <= `stop_loss.price`.
         ValueError
-            If sl_tif is not equal to tp_tif.
+            If `entry_order.side` is ``BUY`` and `entry_order.price` >= `take_profit.price`.
         ValueError
-            If entry_order.side is ``BUY`` and entry_order.price <= stop_loss.price.
+            If `entry_order.side` is ``SELL`` and `entry_order.price` >= `stop_loss.price`.
         ValueError
-            If entry_order.side is ``BUY`` and entry_order.price >= take_profit.price.
-        ValueError
-            If entry_order.side is ``SELL`` and entry_order.price >= stop_loss.price.
-        ValueError
-            If entry_order.side is ``SELL`` and entry_order.price <= take_profit.price.
+            If `entry_order.side` is ``SELL`` and `entry_order.price` <= `take_profit.price`.
 
         """
-        Condition.true(sl_tif == TimeInForce.DAY or sl_tif == TimeInForce.GTC, "sl_tif is unsupported")
-        Condition.true(tp_tif == TimeInForce.DAY or sl_tif == TimeInForce.GTC, "tp_tif is unsupported")
-        Condition.equal(sl_tif, tp_tif, "sl_tif", "tp_tif")
+        Condition.true(tif_bracket == TimeInForce.DAY or tif_bracket == TimeInForce.GTC, "tif_bracket is unsupported")
 
         # Validate prices
         if order_side == OrderSide.BUY:
@@ -662,7 +638,7 @@ cdef class OrderFactory:
             order_side=Order.opposite_side_c(entry_order.side),
             quantity=quantity,
             price=stop_loss,
-            time_in_force=sl_tif,
+            time_in_force=tif_bracket,
             expire_time=None,
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
@@ -683,7 +659,7 @@ cdef class OrderFactory:
             order_side=Order.opposite_side_c(entry_order.side),
             quantity=quantity,
             price=take_profit,
-            time_in_force=tp_tif,
+            time_in_force=tif_bracket,
             expire_time=None,
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
