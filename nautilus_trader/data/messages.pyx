@@ -49,7 +49,7 @@ cdef class DataCommand(Command):
         command_id : UUID4
             The command ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the command object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(command_id, ts_init)
@@ -91,7 +91,7 @@ cdef class Subscribe(DataCommand):
         command_id : UUID4
             The command ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the command object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -126,7 +126,7 @@ cdef class Unsubscribe(DataCommand):
         command_id : UUID4
             The command ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the command object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -164,7 +164,7 @@ cdef class DataRequest(Request):
         request_id : UUID4
             The request ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the request object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -217,7 +217,7 @@ cdef class DataResponse(Response):
         response_id : UUID4
             The response ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the response object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(

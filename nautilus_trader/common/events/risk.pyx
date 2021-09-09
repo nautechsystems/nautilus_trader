@@ -49,7 +49,7 @@ cdef class RiskEvent(Event):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the component state event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(event_id, ts_event, ts_init)
@@ -85,7 +85,7 @@ cdef class TradingStateChanged(RiskEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the component state event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(trader_id, event_id, ts_event, ts_init)

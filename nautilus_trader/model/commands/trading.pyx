@@ -61,7 +61,7 @@ cdef class TradingCommand(Command):
         command_id : UUID4
             The commands ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the command object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(command_id, ts_init)
@@ -105,7 +105,7 @@ cdef class SubmitOrder(TradingCommand):
         command_id : UUID4
             The commands ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the command object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -229,7 +229,7 @@ cdef class SubmitOrderList(TradingCommand):
         command_id : UUID4
             The command ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the command object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -362,7 +362,7 @@ cdef class ModifyOrder(TradingCommand):
         command_id : UUID4
             The command ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the command object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -504,7 +504,7 @@ cdef class CancelOrder(TradingCommand):
         command_id : UUID4
             The command ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the command object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(

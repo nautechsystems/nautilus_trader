@@ -51,7 +51,7 @@ cdef class Tick(Data):
         ts_event: int64
             The UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(ts_event, ts_init)

@@ -83,7 +83,7 @@ cdef class OrderEvent(Event):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(event_id, ts_event, ts_init)
@@ -166,7 +166,7 @@ cdef class OrderInitialized(OrderEvent):
         event_id : UUID4
             The event ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -360,7 +360,7 @@ cdef class OrderDenied(OrderEvent):
         event_id : UUID4
             The event ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Raises
         ------
@@ -493,7 +493,7 @@ cdef class OrderSubmitted(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order submitted event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -633,7 +633,7 @@ cdef class OrderAccepted(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order accepted event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -768,7 +768,7 @@ cdef class OrderRejected(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order rejected event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialization.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Raises
         ------
@@ -911,7 +911,7 @@ cdef class OrderCanceled(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when order canceled event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -1046,7 +1046,7 @@ cdef class OrderExpired(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order expired event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -1181,7 +1181,7 @@ cdef class OrderTriggered(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order triggered event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -1319,7 +1319,7 @@ cdef class OrderPendingUpdate(OrderEvent):
         ts_event : datetime
             The UNIX timestamp (nanoseconds) when the order pending update event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -1455,7 +1455,7 @@ cdef class OrderPendingCancel(OrderEvent):
         ts_event : datetime
             The UNIX timestamp (nanoseconds) when the order pending cancel event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -1594,7 +1594,7 @@ cdef class OrderModifyRejected(OrderEvent):
         ts_event : datetime
             The UNIX timestamp (nanoseconds) when the order update rejected event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Raises
         ------
@@ -1745,7 +1745,7 @@ cdef class OrderCancelRejected(OrderEvent):
         ts_event : datetime
             The UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Raises
         ------
@@ -1901,7 +1901,7 @@ cdef class OrderUpdated(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order updated event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -2081,7 +2081,7 @@ cdef class OrderFilled(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order filled event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
         info : dict[str, object], optional
             The additional fill information.
 

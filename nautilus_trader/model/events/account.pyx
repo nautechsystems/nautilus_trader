@@ -66,7 +66,7 @@ cdef class AccountState(Event):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the account state event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         Condition.not_empty(balances, "balances")

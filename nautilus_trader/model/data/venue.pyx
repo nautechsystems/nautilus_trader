@@ -50,7 +50,7 @@ cdef class StatusUpdate(Data):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the status update event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(ts_event, ts_init)
@@ -78,7 +78,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the status update event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(ts_event, ts_init)
@@ -169,7 +169,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the status update event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(ts_event, ts_init,)
@@ -263,7 +263,7 @@ cdef class InstrumentClosePrice(Data):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the close price event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(ts_event, ts_init,)

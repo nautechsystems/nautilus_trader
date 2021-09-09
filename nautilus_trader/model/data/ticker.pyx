@@ -47,7 +47,7 @@ cdef class Ticker(Data):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the ticker event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
         info : dict[str, object]
             The additional ticker information.
 
