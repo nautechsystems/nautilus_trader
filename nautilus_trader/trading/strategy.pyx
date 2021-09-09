@@ -580,7 +580,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         ValueError
-            If trigger is not `None` and order.type != ``STOP_LIMIT``.
+            If trigger is not ``None`` and order.type != ``STOP_LIMIT``.
 
         References
         ----------

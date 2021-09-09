@@ -117,7 +117,7 @@ cdef class LiveLogger(Logger):
     cdef readonly bint is_running
     """If the logger is running an event loop task.\n\n:returns: `bool`"""
     cdef readonly datetime last_blocked
-    """The timestamp (UTC) the logger last blocked.\n\n:returns: `datetime` or `None`"""
+    """The timestamp (UTC) the logger last blocked.\n\n:returns: `datetime` or ``None``"""
 
     cpdef void start(self) except *
     cpdef void stop(self) except *

@@ -204,7 +204,7 @@ cdef class SimulatedExchange:
 
         Returns
         -------
-        Price or None
+        Price or ``None``
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -228,7 +228,7 @@ cdef class SimulatedExchange:
 
         Returns
         -------
-        Price or None
+        Price or ``None``
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -301,7 +301,7 @@ cdef class SimulatedExchange:
 
         Returns
         -------
-        Account or None
+        Account or ``None``
 
         """
         if not self.exec_client:

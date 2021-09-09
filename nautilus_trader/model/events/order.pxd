@@ -40,13 +40,13 @@ cdef class OrderEvent(Event):
     cdef readonly StrategyId strategy_id
     """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId` or `None`"""
+    """The account ID associated with the event.\n\n:returns: `AccountId` or ``None``"""
     cdef readonly InstrumentId instrument_id
     """The instrument ID associated with the event.\n\n:returns: `InstrumentId`"""
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the event.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue order ID associated with the event.\n\n:returns: `VenueOrderId` or `None`"""
+    """The venue order ID associated with the event.\n\n:returns: `VenueOrderId` or ``None``"""
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -61,17 +61,17 @@ cdef class OrderInitialized(OrderEvent):
     cdef readonly dict options
     """The order initialization options.\n\n:returns: `dict`"""
     cdef readonly OrderListId order_list_id
-    """The order list ID associated with the order.\n\n:returns: `OrderListId` or `None`"""
+    """The order list ID associated with the order.\n\n:returns: `OrderListId` or ``None``"""
     cdef readonly ClientOrderId parent_order_id
-    """The orders parent client order ID.\n\n:returns: `ClientOrderId` or `None`"""
+    """The orders parent client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly list child_order_ids
-    """The orders child client order ID(s).\n\n:returns: `list[ClientOrderId]` or `None`"""
+    """The orders child client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
     cdef readonly ContingencyType contingency
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly list contingency_ids
-    """The orders contingency IDs.\n\n:returns: `list[ClientOrderId]` or `None`"""
+    """The orders contingency IDs.\n\n:returns: `list[ClientOrderId]` or ``None``"""
     cdef readonly str tags
-    """The order custom user tags.\n\n:returns: `str` or `None`"""
+    """The order custom user tags.\n\n:returns: `str` or ``None``"""
 
     @staticmethod
     cdef OrderInitialized from_dict_c(dict values)
@@ -193,7 +193,7 @@ cdef class OrderUpdated(OrderEvent):
     cdef readonly Price price
     """The orders current price.\n\n:returns: `Price`"""
     cdef readonly Price trigger
-    """The orders current trigger price.\n\n:returns: `Price` or `None`"""
+    """The orders current trigger price.\n\n:returns: `Price` or ``None``"""
 
     @staticmethod
     cdef OrderUpdated from_dict_c(dict values)
@@ -206,7 +206,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly ExecutionId execution_id
     """The execution ID associated with the event.\n\n:returns: `ExecutionId`"""
     cdef readonly PositionId position_id
-    """The position ID associated with the event.\n\n:returns: `PositionId` or `None`"""
+    """The position ID associated with the event.\n\n:returns: `PositionId` or ``None``"""
     cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType order_type

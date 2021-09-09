@@ -477,7 +477,7 @@ cdef class BacktestDataProducer(DataProducer):
 
         Returns
         -------
-        Data or None
+        Data or ``None``
 
         """
         # Determine next data element
@@ -642,7 +642,7 @@ cdef class CachedProducer(DataProducer):
 
         Returns
         -------
-        Data or None
+        Data or ``None``
 
         """
         # Cython does not produce efficient generator code, and so we will

@@ -47,19 +47,19 @@ cdef class Instrument(Data):
     cdef readonly Quantity multiplier
     """The contract multiplier for the instrument (determines tick value).\n\n:returns: `Quantity`"""
     cdef readonly Quantity lot_size
-    """The rounded lot unit size (standard/board) for the instrument.\n\n:returns: `Quantity` or `None`"""
+    """The rounded lot unit size (standard/board) for the instrument.\n\n:returns: `Quantity` or ``None``"""
     cdef readonly Quantity max_quantity
-    """The maximum order quantity for the instrument.\n\n:returns: `Quantity` or `None`"""
+    """The maximum order quantity for the instrument.\n\n:returns: `Quantity` or ``None``"""
     cdef readonly Quantity min_quantity
-    """The minimum order quantity for the instrument.\n\n:returns: `Quantity` or `None`"""
+    """The minimum order quantity for the instrument.\n\n:returns: `Quantity` or ``None``"""
     cdef readonly Money max_notional
-    """The maximum notional order value for the instrument.\n\n:returns: `Money` or `None`"""
+    """The maximum notional order value for the instrument.\n\n:returns: `Money` or ``None``"""
     cdef readonly Money min_notional
-    """The minimum notional order value for the instrument.\n\n:returns: `Money` or `None`"""
+    """The minimum notional order value for the instrument.\n\n:returns: `Money` or ``None``"""
     cdef readonly Price max_price
-    """The maximum printable price for the instrument.\n\n:returns: `Price` or `None`"""
+    """The maximum printable price for the instrument.\n\n:returns: `Price` or ``None``"""
     cdef readonly Price min_price
-    """The minimum printable price for the instrument.\n\n:returns: `Price` or `None`"""
+    """The minimum printable price for the instrument.\n\n:returns: `Price` or ``None``"""
     cdef readonly object margin_init
     """The initial (order) margin rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object margin_maint

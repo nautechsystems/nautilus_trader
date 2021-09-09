@@ -127,7 +127,7 @@ cdef class Currency:
 
         Returns
         -------
-        Currency or None
+        Currency or ``None``
 
         """
         return Currency.from_str_c(code)

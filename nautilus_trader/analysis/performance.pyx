@@ -163,12 +163,12 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        pd.Series or None
+        pd.Series or ``None``
 
         Raises
         ------
         ValueError
-            If currency is `None` when analyzing multi-currency portfolios.
+            If currency is ``None`` when analyzing multi-currency portfolios.
 
         """
         if not self._realized_pnls:
@@ -197,7 +197,7 @@ cdef class PerformanceAnalyzer:
         Raises
         ------
         ValueError
-            If currency is `None` when analyzing multi-currency portfolios.
+            If currency is ``None`` when analyzing multi-currency portfolios.
         ValueError
             If currency is not contained in the tracked account balances.
 
@@ -235,7 +235,7 @@ cdef class PerformanceAnalyzer:
         Raises
         ------
         ValueError
-            If currency is `None` when analyzing multi-currency portfolios.
+            If currency is ``None`` when analyzing multi-currency portfolios.
         ValueError
             If currency is not contained in the tracked account balances.
 

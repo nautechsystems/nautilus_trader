@@ -44,12 +44,12 @@ cdef class UUID4:
         Parameters
         ----------
         value : str, optional
-            The UUID value. If `None` then a value will be generated.
+            The UUID value. If ``None`` then a value will be generated.
 
         Raises
         ------
         ValueError
-            If value is not `None` and not a valid UUID.
+            If value is not ``None`` and not a valid UUID.
 
         """
         if value is not None:

@@ -44,7 +44,7 @@ cdef class WeightedMovingAverage(MovingAverage):
         period : int
             The rolling window period for the indicator (> 0).
         weights : iterable
-            The weights for the moving average calculation (if not `None` then = period).
+            The weights for the moving average calculation (if not ``None`` then = period).
         price_type : PriceType
             The specified price type for extracting values from quote ticks.
 

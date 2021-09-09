@@ -113,7 +113,7 @@ cdef class MarginAccount(Account):
 
         Returns
         -------
-        Decimal or None
+        Decimal or ``None``
 
         """
         return self._leverages.get(instrument_id)
@@ -131,11 +131,11 @@ cdef class MarginAccount(Account):
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         Warnings
         --------
-        Returns `None` if there is no applicable information for the query,
+        Returns ``None`` if there is no applicable information for the query,
         rather than `Money` of zero amount.
 
         """
@@ -156,11 +156,11 @@ cdef class MarginAccount(Account):
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         Warnings
         --------
-        Returns `None` if there is no applicable information for the query,
+        Returns ``None`` if there is no applicable information for the query,
         rather than `Money` of zero amount.
 
         """
@@ -507,7 +507,7 @@ cdef class MarginAccount(Account):
 
         Returns
         -------
-        list[Money] or None
+        list[Money] or ``None``
 
         """
         Condition.not_none(instrument, "instrument")

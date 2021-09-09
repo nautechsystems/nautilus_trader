@@ -49,7 +49,7 @@ cdef class Actor(Component):
     cdef set _warning_events
 
     cdef readonly MessageBus msgbus
-    """The message bus for the actor (if registered).\n\n:returns: `MessageBus` or `None`"""
+    """The message bus for the actor (if registered).\n\n:returns: `MessageBus` or ``None``"""
     cdef readonly CacheFacade cache
     """The read-only cache for the actor.\n\n:returns: `CacheFacade`"""
 

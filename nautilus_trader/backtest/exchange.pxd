@@ -75,7 +75,7 @@ cdef class SimulatedExchange:
     cdef readonly AccountType account_type
     """The account base currency.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
-    """The account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or `None`"""
+    """The account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or ``None``"""
     cdef readonly list starting_balances
     """The account starting balances for each backtest run.\n\n:returns: `bool`"""
     cdef readonly bint is_frozen_account

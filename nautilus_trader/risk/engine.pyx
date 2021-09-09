@@ -280,7 +280,7 @@ cdef class RiskEngine(Component):
         decimal.InvalidOperation
             If new_value not a valid input for decimal.Decimal.
         ValueError
-            If new_value is not `None` and not positive.
+            If new_value is not ``None`` and not positive.
 
         """
         if new_value is not None:
@@ -331,7 +331,7 @@ cdef class RiskEngine(Component):
 
         Returns
         -------
-        Decimal or None
+        Decimal or ``None``
 
         """
         return self._max_notional_per_order.get(instrument_id)

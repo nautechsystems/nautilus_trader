@@ -87,7 +87,7 @@ cdef class AccountsManager:
 
         Returns
         -------
-        AccountState or None
+        AccountState or ``None``
 
         """
         Condition.not_none(account, "account")
@@ -178,7 +178,7 @@ cdef class AccountsManager:
 
         Returns
         -------
-        AccountState or None
+        AccountState or ``None``
 
         """
         Condition.not_none(account, "account")
@@ -267,7 +267,7 @@ cdef class AccountsManager:
 
         Returns
         -------
-        AccountState or None
+        AccountState or ``None``
 
         """
         Condition.not_none(account, "account")

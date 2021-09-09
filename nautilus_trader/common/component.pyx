@@ -135,7 +135,7 @@ cdef class Component:
         trader_id : TraderId, optional
             The trader ID associated with the component.
         component_id : ComponentId, optional
-            The component ID. If `None` is passed then the identifier will be
+            The component ID. If ``None`` is passed then the identifier will be
             taken from `type(self).__name__`.
         component_name : str, optional
             The custom component name.

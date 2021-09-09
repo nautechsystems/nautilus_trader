@@ -60,7 +60,7 @@ cdef class ExecutionReport:
     cdef readonly VenueOrderId venue_order_id
     """The reported venue order ID.\n\n:returns: `VenueOrderId`"""
     cdef readonly PositionId venue_position_id
-    """The reported venue position ID.\n\n:returns: `PositionId` or `None`"""
+    """The reported venue position ID.\n\n:returns: `PositionId` or ``None``"""
     cdef readonly ExecutionId id
     """The reported execution ID.\n\n:returns: `ExecutionId`"""
     cdef readonly Quantity last_qty
