@@ -351,7 +351,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         assert strategy.fast_ema.count == 279
         assert self.engine.iteration == 69806
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == Money(
-            998717.75496820, USDT
+            998705.75736820, USDT
         )
 
 
@@ -400,7 +400,7 @@ class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes:
         assert strategy.fast_ema.count == 39
         assert self.engine.iteration == 19998
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == Money(
-            999921.16730000, USDT
+            999920.84794000, USDT
         )
 
 

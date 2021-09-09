@@ -119,6 +119,15 @@ repos:
             --ignore=C101 D100 E225 E226 E227 E252 E402 E999 W503,
         ]
 
+#  -   repo: https://github.com/pycqa/pydocstyle
+#      rev: 6.1.1
+#      hooks:
+#        -   id: pydocstyle
+#            args: [
+#                "--ignore=D100,D101,D102,D103,D104,D105,D107,D200,D203,D205,
+#                D212,D213,D400,D415"
+#            ]
+
 # Flake8 ignore justifications
 # ----------------------------
 # C101: Coding magic comment not found

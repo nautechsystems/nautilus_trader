@@ -18,8 +18,8 @@ from datetime import datetime
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
-from nautilus_trader.model.commands.trading import SubmitBracketOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.orders.base import Order
@@ -77,7 +77,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def submit_bracket_order(self, command: SubmitBracketOrder):
+    def submit_order_list(self, command: SubmitOrderList):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

@@ -15,23 +15,19 @@
 
 from libc.stdint cimport int64_t
 
-from nautilus_trader.model.identifiers cimport ClientOrderLinkId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.limit cimport LimitOrder
-from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 
 
-cdef class BracketOrder:
-    cdef readonly ClientOrderLinkId id
-    """The client order link ID.\n\n:returns: `ClientOrderLinkId`"""
+cdef class OrderList:
+    cdef readonly OrderListId id
+    """The order list ID.\n\n:returns: `OrderListId`"""
     cdef readonly InstrumentId instrument_id
-    """The order instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly Order entry
-    """The entry order.\n\n:returns: `Order`"""
-    cdef readonly StopMarketOrder stop_loss
-    """The stop-loss order.\n\n:returns: `StopMarketOrder`"""
-    cdef readonly LimitOrder take_profit
-    """The take-profit order.\n\n:returns: `LimitOrder`"""
-    cdef readonly int64_t timestamp_ns
-    """The UNIX timestamp (nanoseconds) of the bracket order.\n\n:returns: `int64`"""
+    """The instrument ID associated with the list.\n\n:returns: `InstrumentId`"""
+    cdef readonly list orders
+    """The orders contained in the list.\n\n:returns: `list[Order]`"""
+    cdef readonly Order first
+    """The first order in the list (typically the parent).\n\n:returns: `list[Order]`"""
+    cdef readonly int64_t ts_init
+    """The UNIX timestamp (nanoseconds) when the order was initialized.\n\n:returns: `int64`"""

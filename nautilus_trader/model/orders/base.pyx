@@ -54,6 +54,7 @@ from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -135,19 +136,29 @@ cdef class Order:
         self.strategy_id = init.strategy_id
         self.instrument_id = init.instrument_id
         self.client_order_id = init.client_order_id
+        self.order_list_id = init.order_list_id
         self.venue_order_id = None  # Can be None
         self.position_id = None  # Can be None
         self.account_id = None  # Can be None
         self.execution_id = None  # Can be None
 
+        # Properties
         self.side = init.side
         self.type = init.type
         self.quantity = init.quantity
         self.time_in_force = init.time_in_force
+        self.parent_order_id = init.parent_order_id  # Can be None
+        self.child_order_ids = init.child_order_ids  # Can be None
+        self.contingency = init.contingency
+        self.contingency_ids = init.contingency_ids  # Can be None
         self.tags = init.tags
+
+        # Execution
         self.filled_qty = Quantity.zero_c(precision=0)
         self.avg_px = None  # Can be None
         self.slippage = Decimal(0)
+
+        # Timestamps
         self.init_id = init.id
         self.ts_last = 0  # No fills yet
         self.ts_init = init.ts_init
@@ -220,6 +231,15 @@ cdef class Order:
 
     cdef bint is_aggressive_c(self) except *:
         return self.type == OrderType.MARKET
+
+    cdef bint is_contingency_c(self) except *:
+        return self.contingency != ContingencyType.NONE
+
+    cdef bint is_parent_order_c(self) except *:
+        return self.child_order_ids is not None
+
+    cdef bint is_child_order_c(self) except *:
+        return self.parent_order_id is not None
 
     cdef bint is_active_c(self) except *:
         return (
@@ -406,6 +426,42 @@ cdef class Order:
 
         """
         return self.is_aggressive_c()
+
+    @property
+    def is_contingency(self):
+        """
+        If the order has a contingency (order.contingency is not ``NONE``).
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_contingency_c()
+
+    @property
+    def is_parent_order(self):
+        """
+        If the order has **at least** one child order.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_parent_order_c()
+
+    @property
+    def is_child_order(self):
+        """
+        If the order has a parent order.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_child_order_c()
 
     @property
     def is_active(self):
@@ -717,52 +773,17 @@ cdef class PassiveOrder(Order):
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         dict options not None,
-        str tags,  # Can be None,
+        OrderListId order_list_id,  # Can be None
+        ClientOrderId parent_order_id,  # Can be None
+        list child_order_ids,  # Can be None
+        ContingencyType contingency,
+        list contingency_ids,  # Can be None
+        str tags,  # Can be None
         UUID4 init_id not None,
         int64_t ts_init,
-
     ):
         """
         Initialize a new instance of the ``PassiveOrder`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID associated with the order.
-        strategy_id : StrategyId
-            The strategy ID associated with the order.
-        instrument_id : InstrumentId
-            The order instrument ID.
-        client_order_id : ClientOrderId
-            The client order ID.
-        order_side : OrderSide {``BUY``, ``SELL``}
-            The order side.
-        order_type : OrderType
-            The order type.
-        quantity : Quantity
-            The order quantity (> 0).
-        price : Price
-            The order price.
-        time_in_force : TimeInForce
-            The order time-in-force.
-        expire_time : datetime, optional
-            The order expiry time - applicable to ``GTD`` orders only.
-        options : dict
-            The order options.
-        tags : str, optional
-            The custom user tags for the order. These are optional and can
-            contain any arbitrary delimiter if required.
-        init_id : UUID4
-            The order initialization event ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the order was initialized.
-
-        Raises
-        ------
-        ValueError
-            If quantity is not positive (> 0).
-        ValueError
-            If time_in_force is ``GTD`` and the expire_time is `None`.
 
         """
         Condition.positive(quantity, "quantity")
@@ -787,6 +808,11 @@ cdef class PassiveOrder(Order):
             quantity=quantity,
             time_in_force=time_in_force,
             options=options,
+            order_list_id=order_list_id,
+            parent_order_id=parent_order_id,
+            child_order_ids=child_order_ids,
+            contingency=contingency,
+            contingency_ids=contingency_ids,
             tags=tags,
             event_id=init_id,
             ts_init=ts_init,

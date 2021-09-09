@@ -23,7 +23,7 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.bracket cimport BracketOrder
+from nautilus_trader.model.orders.list cimport OrderList
 
 
 cdef class TradingCommand(Command):
@@ -48,15 +48,15 @@ cdef class SubmitOrder(TradingCommand):
     cdef dict to_dict_c(SubmitOrder obj)
 
 
-cdef class SubmitBracketOrder(TradingCommand):
-    cdef readonly BracketOrder bracket_order
-    """The bracket order to submit.\n\n:returns: `BracketOrder`"""
+cdef class SubmitOrderList(TradingCommand):
+    cdef readonly OrderList list
+    """The order list for submission.\n\n:returns: `OrderList`"""
 
     @staticmethod
-    cdef SubmitBracketOrder from_dict_c(dict values)
+    cdef SubmitOrderList from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(SubmitBracketOrder obj)
+    cdef dict to_dict_c(SubmitOrderList obj)
 
 
 cdef class ModifyOrder(TradingCommand):

@@ -16,7 +16,7 @@
 
 cdef class Identifier:
     cdef readonly str value
-    """The ID value.\n\n:returns: `str`"""
+    """The identifier (ID) value.\n\n:returns: `str`"""
 
 
 cdef class Symbol(Identifier):
@@ -72,6 +72,10 @@ cdef class ClientOrderLinkId(Identifier):
 
 
 cdef class VenueOrderId(Identifier):
+    pass
+
+
+cdef class OrderListId(Identifier):
     pass
 
 

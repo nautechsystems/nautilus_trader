@@ -26,8 +26,8 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
-from nautilus_trader.model.commands.trading import SubmitBracketOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.commands.trading import TradingCommand
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
@@ -36,13 +36,14 @@ from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.bracket import BracketOrder
+from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
@@ -977,19 +978,15 @@ class TestRiskEngine:
             logger=self.logger,
         )
 
-        entry = strategy.order_factory.market(
+        bracket = strategy.order_factory.bracket_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-        )
-
-        bracket = strategy.order_factory.bracket(
-            entry_order=entry,
             stop_loss=Price.from_str("1.00000"),
             take_profit=Price.from_str("1.00010"),
         )
 
-        submit_bracket = SubmitBracketOrder(
+        submit_bracket = SubmitOrderList(
             self.trader_id,
             strategy.id,
             bracket,
@@ -1002,7 +999,7 @@ class TestRiskEngine:
 
         # Assert
         assert self.exec_engine.command_count == 1
-        assert self.exec_client.calls == ["_start", "submit_bracket_order"]
+        assert self.exec_client.calls == ["_start", "submit_order_list"]
 
     def test_submit_bracket_order_with_duplicate_entry_id_then_denies(self):
         # Arrange
@@ -1018,19 +1015,15 @@ class TestRiskEngine:
             logger=self.logger,
         )
 
-        entry = strategy.order_factory.market(
+        bracket = strategy.order_factory.bracket_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-        )
-
-        bracket = strategy.order_factory.bracket(
-            entry_order=entry,
             stop_loss=Price.from_str("1.00000"),
             take_profit=Price.from_str("1.00010"),
         )
 
-        submit_bracket = SubmitBracketOrder(
+        submit_bracket = SubmitOrderList(
             self.trader_id,
             strategy.id,
             bracket,
@@ -1093,19 +1086,17 @@ class TestRiskEngine:
             Price.from_str("1.10000"),
         )
 
-        bracket1 = BracketOrder(
-            entry=entry1,
-            stop_loss=stop_loss,
-            take_profit=take_profit1,
+        bracket1 = OrderList(
+            list_id=OrderListId("1"),
+            orders=[entry1, stop_loss, take_profit1],
         )
 
-        bracket2 = BracketOrder(
-            entry=entry2,
-            stop_loss=stop_loss,
-            take_profit=take_profit2,
+        bracket2 = OrderList(
+            list_id=OrderListId("1"),
+            orders=[entry2, stop_loss, take_profit2],
         )
 
-        submit_bracket1 = SubmitBracketOrder(
+        submit_bracket1 = SubmitOrderList(
             self.trader_id,
             strategy.id,
             bracket1,
@@ -1113,7 +1104,7 @@ class TestRiskEngine:
             self.clock.timestamp_ns(),
         )
 
-        submit_bracket2 = SubmitBracketOrder(
+        submit_bracket2 = SubmitOrderList(
             self.trader_id,
             strategy.id,
             bracket2,
@@ -1176,19 +1167,17 @@ class TestRiskEngine:
             Price.from_str("1.00000"),
         )
 
-        bracket1 = BracketOrder(
-            entry=entry1,
-            stop_loss=stop_loss1,
-            take_profit=take_profit,
+        bracket1 = OrderList(
+            list_id=OrderListId("1"),
+            orders=[entry1, stop_loss1, take_profit],
         )
 
-        bracket2 = BracketOrder(
-            entry=entry2,
-            stop_loss=stop_loss2,
-            take_profit=take_profit,
+        bracket2 = OrderList(
+            list_id=OrderListId("1"),
+            orders=[entry2, stop_loss2, take_profit],
         )
 
-        submit_bracket1 = SubmitBracketOrder(
+        submit_bracket1 = SubmitOrderList(
             self.trader_id,
             strategy.id,
             bracket1,
@@ -1196,7 +1185,7 @@ class TestRiskEngine:
             self.clock.timestamp_ns(),
         )
 
-        submit_bracket2 = SubmitBracketOrder(
+        submit_bracket2 = SubmitOrderList(
             self.trader_id,
             strategy.id,
             bracket2,
@@ -1226,19 +1215,15 @@ class TestRiskEngine:
             logger=self.logger,
         )
 
-        entry = strategy.order_factory.market(
+        bracket = strategy.order_factory.bracket_market(
             GBPUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100000),
-        )
-
-        bracket = strategy.order_factory.bracket(
-            entry_order=entry,
             stop_loss=Price.from_str("1.00000"),
             take_profit=Price.from_str("1.00010"),
         )
 
-        submit_bracket = SubmitBracketOrder(
+        submit_bracket = SubmitOrderList(
             self.trader_id,
             strategy.id,
             bracket,

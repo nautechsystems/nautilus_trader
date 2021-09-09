@@ -172,6 +172,11 @@ NAUTILUS_PARQUET_SCHEMA = {
             "price": pa.float64(),
             "trigger": pa.bool_(),
             # --------------------- #
+            "order_list_id": pa.string(),
+            "parent_order_id": pa.string(),
+            "child_order_ids": pa.binary(-1),
+            "contingency": pa.string(),
+            "contingency_ids": pa.binary(-1),
             "tags": pa.string(),
             "event_id": pa.string(),
             "ts_init": pa.int64(),

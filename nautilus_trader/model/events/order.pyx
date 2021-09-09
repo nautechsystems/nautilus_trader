@@ -20,6 +20,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -116,6 +117,11 @@ cdef class OrderInitialized(OrderEvent):
         Quantity quantity not None,
         TimeInForce time_in_force,
         dict options not None,
+        OrderListId order_list_id,  # Can be None
+        ClientOrderId parent_order_id,  # Can be None
+        list child_order_ids,  # Can be None
+        ContingencyType contingency,
+        list contingency_ids,
         str tags,  # Can be None
         UUID4 event_id not None,
         int64_t ts_init,
@@ -144,6 +150,16 @@ cdef class OrderInitialized(OrderEvent):
         options : dict[str, str]
             The order initialization options. Contains mappings for specific
             order parameters.
+        order_list_id : OrderListId, optional
+            The order list ID associated with the order.
+        parent_order_id : ClientOrderId, optional
+            The orders parent client order ID.
+        child_order_ids : list[ClientOrderId], optional
+            The orders child order ID(s).
+        contingency : ContingencyType
+            The orders contingency type.
+        contingency_ids : list[ClientOrderId], optional
+            The orders contingency IDs.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -170,9 +186,21 @@ cdef class OrderInitialized(OrderEvent):
         self.quantity = quantity
         self.time_in_force = time_in_force
         self.options = options
+        self.order_list_id = order_list_id
+        self.parent_order_id = parent_order_id
+        self.child_order_ids = child_order_ids
+        self.contingency = contingency
+        self.contingency_ids = contingency_ids
         self.tags = tags
 
     def __str__(self) -> str:
+        cdef ClientOrderId o
+        cdef str child_order_ids = "None"
+        if self.child_order_ids:
+            child_order_ids = str([o.value for o in self.child_order_ids])
+        cdef str contingency_ids = "None"
+        if self.contingency_ids:
+            contingency_ids = str([o.value for o in self.contingency_ids])
         return (f"{type(self).__name__}("
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
@@ -180,9 +208,21 @@ cdef class OrderInitialized(OrderEvent):
                 f"type={OrderTypeParser.to_str(self.type)}, "
                 f"quantity={self.quantity.to_str()}, "
                 f"options={self.options}, "
+                f"order_list_id={self.order_list_id}, "
+                f"parent_order_id={self.parent_order_id}, "
+                f"child_order_ids={child_order_ids}, "
+                f"contingency={ContingencyTypeParser.to_str(self.contingency)}, "
+                f"contingency_ids={contingency_ids}, "
                 f"tags={self.tags})")
 
     def __repr__(self) -> str:
+        cdef ClientOrderId o
+        cdef str child_order_ids = "None"
+        if self.child_order_ids:
+            child_order_ids = str([o.value for o in self.child_order_ids])
+        cdef str contingency_ids = "None"
+        if self.contingency_ids:
+            contingency_ids = str([o.value for o in self.contingency_ids])
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
@@ -192,6 +232,11 @@ cdef class OrderInitialized(OrderEvent):
                 f"type={OrderTypeParser.to_str(self.type)}, "
                 f"quantity={self.quantity.to_str()}, "
                 f"options={self.options}, "
+                f"order_list_id={self.order_list_id}, "
+                f"parent_order_id={self.parent_order_id}, "
+                f"child_order_ids={child_order_ids}, "
+                f"contingency={ContingencyTypeParser.to_str(self.contingency)}, "
+                f"contingency_ids={contingency_ids}, "
                 f"tags={self.tags}, "
                 f"event_id={self.id}, "
                 f"ts_init={self.ts_init})")
@@ -199,6 +244,11 @@ cdef class OrderInitialized(OrderEvent):
     @staticmethod
     cdef OrderInitialized from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str order_list_id_str = values["order_list_id"]
+        cdef str parent_order_id_str = values["parent_order_id"]
+        cdef str child_order_ids_str = values["child_order_ids"]
+        cdef str contingency_ids_str = values["contingency_ids"]
+        cdef str o_str
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -209,6 +259,11 @@ cdef class OrderInitialized(OrderEvent):
             quantity=Quantity.from_str_c(values["quantity"]),
             time_in_force=TimeInForceParser.from_str(values["time_in_force"]),
             options=orjson.loads(values["options"]),
+            order_list_id=OrderListId(order_list_id_str) if order_list_id_str else None,
+            parent_order_id=ClientOrderId(parent_order_id_str) if parent_order_id_str else None,
+            child_order_ids=[ClientOrderId(o_str) for o_str in child_order_ids_str.split(",")] if child_order_ids_str is not None else None,
+            contingency=ContingencyTypeParser.from_str(values["contingency"]),
+            contingency_ids=[ClientOrderId(o_str) for o_str in contingency_ids_str.split(",")] if contingency_ids_str is not None else None,
             tags=values["tags"],
             event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
@@ -217,6 +272,7 @@ cdef class OrderInitialized(OrderEvent):
     @staticmethod
     cdef dict to_dict_c(OrderInitialized obj):
         Condition.not_none(obj, "obj")
+        cdef ClientOrderId o
         return {
             "type": "OrderInitialized",
             "trader_id": obj.trader_id.value,
@@ -228,6 +284,11 @@ cdef class OrderInitialized(OrderEvent):
             "quantity": str(obj.quantity),
             "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
             "options": orjson.dumps(obj.options).decode(),
+            "order_list_id": obj.order_list_id.value if obj.order_list_id is not None else None,
+            "parent_order_id": obj.parent_order_id.value if obj.parent_order_id is not None else None,
+            "child_order_ids": ",".join([o.value for o in obj.child_order_ids]) if obj.child_order_ids is not None else None,  # noqa
+            "contingency": ContingencyTypeParser.to_str(obj.contingency),
+            "contingency_ids": ",".join([o.value for o in obj.contingency_ids]) if obj.contingency_ids is not None else None,  # noqa
             "tags": obj.tags,
             "event_id": obj.id.value,
             "ts_init": obj.ts_init,

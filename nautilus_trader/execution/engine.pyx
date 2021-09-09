@@ -56,8 +56,8 @@ from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
-from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.position cimport PositionChanged
@@ -524,8 +524,8 @@ cdef class ExecutionEngine(Component):
 
         if isinstance(command, SubmitOrder):
             self._handle_submit_order(client, command)
-        elif isinstance(command, SubmitBracketOrder):
-            self._handle_submit_bracket_order(client, command)
+        elif isinstance(command, SubmitOrderList):
+            self._handle_submit_order_list(client, command)
         elif isinstance(command, ModifyOrder):
             self._handle_modify_order(client, command)
         elif isinstance(command, CancelOrder):
@@ -540,14 +540,14 @@ cdef class ExecutionEngine(Component):
         # Send to execution client
         client.submit_order(command)
 
-    cdef void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
+    cdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command) except *:
         # Cache all orders
-        self._cache.add_order(command.bracket_order.entry, position_id=None)
-        self._cache.add_order(command.bracket_order.stop_loss, position_id=None)
-        self._cache.add_order(command.bracket_order.take_profit, position_id=None)
+        cdef Order order
+        for order in command.list.orders:
+            self._cache.add_order(order, position_id=None)
 
         # Send to execution client
-        client.submit_bracket_order(command)
+        client.submit_order_list(command)
 
     cdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command) except *:
         client.modify_order(command)

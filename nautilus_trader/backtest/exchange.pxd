@@ -30,8 +30,8 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
-from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -92,9 +92,6 @@ cdef class SimulatedExchange:
     cdef dict _instrument_orders
     cdef dict _working_orders
     cdef dict _position_index
-    cdef dict _child_orders
-    cdef dict _oco_orders
-    cdef dict _position_oco_orders
     cdef dict _instrument_indexer
     cdef dict _symbol_pos_count
     cdef dict _symbol_ord_count
@@ -119,7 +116,7 @@ cdef class SimulatedExchange:
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *
-    cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *
+    cpdef void handle_submit_order_list(self, SubmitOrderList command) except *
     cpdef void handle_modify_order(self, ModifyOrder command) except *
     cpdef void handle_cancel_order(self, CancelOrder command) except *
 
@@ -195,7 +192,3 @@ cdef class SimulatedExchange:
     cdef void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
     cdef void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *
     cdef void _fill_order(self, Order order, Price last_px, Quantity last_qty, LiquiditySide liquidity_side) except *
-    cdef void _clean_up_child_orders(self, ClientOrderId client_order_id) except *
-    cdef void _check_oco_order(self, ClientOrderId client_order_id) except *
-    cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *
-    cdef void _cancel_oco_order(self, PassiveOrder order) except *

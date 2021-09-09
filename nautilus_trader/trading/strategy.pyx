@@ -48,8 +48,8 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
-from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -66,7 +66,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
-from nautilus_trader.model.orders.bracket cimport BracketOrder
+from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -513,40 +513,34 @@ cdef class TradingStrategy(Actor):
 
         self._send_exec_cmd(command)
 
-    cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *:
+    cpdef void submit_order_list(self, OrderList order_list) except *:
         """
-        Submit the given bracket order with optional routing instructions.
+        Submit the given order list.
 
-        A `SubmitBracketOrder` command with be created and sent to the
+        A `SubmitOrderList` command with be created and sent to the
         `ExecutionEngine`.
 
         Parameters
         ----------
-        bracket_order : BracketOrder
-            The bracket order to submit.
+        order_list : OrderList
+            The order list to submit.
 
         """
-        Condition.not_none(bracket_order, "bracket_order")
+        Condition.not_none(order_list, "order_list")
         Condition.not_none(self.trader_id, "self.trader_id")
 
         # Publish initialized events
-        self._msgbus.publish_c(
-            topic=f"events.order.{bracket_order.entry.strategy_id.value}",
-            msg=bracket_order.entry.init_event_c(),
-        )
-        self._msgbus.publish_c(
-            topic=f"events.order.{bracket_order.stop_loss.strategy_id.value}",
-            msg=bracket_order.stop_loss.init_event_c(),
-        )
-        self._msgbus.publish_c(
-            topic=f"events.order.{bracket_order.take_profit.strategy_id.value}",
-            msg=bracket_order.take_profit.init_event_c(),
-        )
+        cdef Order order
+        for order in order_list.orders:
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.value}",
+                msg=order.init_event_c(),
+            )
 
-        cdef SubmitBracketOrder command = SubmitBracketOrder(
+        cdef SubmitOrderList command = SubmitOrderList(
             self.trader_id,
             self.id,
-            bracket_order,
+            order_list,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )

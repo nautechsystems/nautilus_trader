@@ -935,13 +935,13 @@ cdef class L1OrderBook(OrderBook):
         if tick.aggressor_side == AggressorSide.SELL:  # TAKER hit the bid
             self._update_bid(tick.price, tick.size)
             if self._top_ask and self._top_bid.price >= self._top_ask.price:
-                self._top_ask.price == self._top_bid.price
-                self._top_ask_level.price == self._top_bid.price
+                self._top_ask.price = self._top_bid.price
+                self._top_ask_level.price = self._top_bid.price
         elif tick.aggressor_side == AggressorSide.BUY:  # TAKER lifted the offer
             self._update_ask(tick.price, tick.size)
             if self._top_bid and self._top_ask.price <= self._top_bid.price:
-                self._top_bid.price == self._top_ask.price
-                self._top_bid_level.price == self._top_ask.price
+                self._top_bid.price = self._top_ask.price
+                self._top_bid_level.price = self._top_ask.price
 
     cdef void _update_bid(self, double price, double size):
         if self._top_bid is None:

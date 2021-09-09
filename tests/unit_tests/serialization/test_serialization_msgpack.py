@@ -25,11 +25,12 @@ from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.commands.trading import CancelOrder
 from nautilus_trader.model.commands.trading import ModifyOrder
-from nautilus_trader.model.commands.trading import SubmitBracketOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
@@ -56,6 +57,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import ExecutionId
+from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
@@ -291,63 +293,24 @@ class TestMsgPackSerializer:
         print(serialized)
         print(b64encode(serialized))
 
-    def test_serialize_and_deserialize_submit_bracket_order_no_take_profit_commands(
+    def test_serialize_and_deserialize_submit_order_list_commands(
         self,
     ):
         # Arrange
-        entry_order = self.order_factory.market(
+        bracket = self.order_factory.bracket_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity(100000, precision=0),
-        )
-
-        bracket_order = self.order_factory.bracket(
-            entry_order,
-            stop_loss=Price(0.99900, precision=5),
-            take_profit=Price(1.00100, precision=5),
-        )
-
-        command = SubmitBracketOrder(
-            self.trader_id,
-            StrategyId("SCALPER-001"),
-            bracket_order,
-            UUID4(),
-            0,
-        )
-
-        # Act
-        serialized = self.serializer.serialize(command)
-        deserialized = self.serializer.deserialize(serialized)
-
-        # Assert
-        assert deserialized == command
-        assert deserialized.bracket_order == bracket_order
-        print(b64encode(serialized))
-        print(command)
-
-    def test_serialize_and_deserialize_submit_bracket_order_with_take_profit_commands(
-        self,
-    ):
-        # Arrange
-        entry_order = self.order_factory.limit(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity(100000, precision=0),
-            Price(1.00000, precision=5),
-        )
-
-        bracket_order = self.order_factory.bracket(
-            entry_order,
             stop_loss=Price(0.99900, precision=5),
             take_profit=Price(1.00010, precision=5),
         )
 
-        command = SubmitBracketOrder(
-            self.trader_id,
-            StrategyId("SCALPER-001"),
-            bracket_order,
-            UUID4(),
-            0,
+        command = SubmitOrderList(
+            trader_id=self.trader_id,
+            strategy_id=StrategyId("SCALPER-001"),
+            order_list=bracket,
+            command_id=UUID4(),
+            ts_init=0,
         )
 
         # Act
@@ -356,7 +319,7 @@ class TestMsgPackSerializer:
 
         # Assert
         assert deserialized == command
-        assert deserialized.bracket_order == bracket_order
+        assert deserialized.list == bracket
         print(b64encode(serialized))
         print(command)
 
@@ -486,7 +449,12 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             TimeInForce.FOK,
             options={},
-            tags=None,
+            order_list_id=OrderListId("1"),
+            parent_order_id=ClientOrderId("O-123455"),
+            child_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
+            contingency=ContingencyType.OTO,
+            contingency_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
+            tags="ENTRY",
             event_id=UUID4(),
             ts_init=0,
         )
@@ -518,6 +486,11 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             TimeInForce.DAY,
             options=options,
+            order_list_id=OrderListId("1"),
+            parent_order_id=ClientOrderId("O-123455"),
+            child_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
+            contingency=ContingencyType.OTO,
+            contingency_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             tags=None,
             event_id=UUID4(),
             ts_init=0,
@@ -549,6 +522,11 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             TimeInForce.DAY,
             options=options,
+            order_list_id=OrderListId("1"),
+            parent_order_id=ClientOrderId("O-123455"),
+            child_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
+            contingency=ContingencyType.OTO,
+            contingency_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             tags=None,
             event_id=UUID4(),
             ts_init=0,
@@ -583,6 +561,11 @@ class TestMsgPackSerializer:
             Quantity(100000, precision=0),
             TimeInForce.DAY,
             options=options,
+            order_list_id=OrderListId("1"),
+            parent_order_id=ClientOrderId("O-123455"),
+            child_order_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
+            contingency=ContingencyType.OTO,
+            contingency_ids=[ClientOrderId("O-123457"), ClientOrderId("O-123458")],
             tags="entry,bulk",
             event_id=UUID4(),
             ts_init=0,
