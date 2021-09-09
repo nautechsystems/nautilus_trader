@@ -105,8 +105,7 @@ cdef class OrderFactory:
         Quantity quantity,
         Price stop_loss,
         Price take_profit,
-        TimeInForce sl_tif=*,
-        TimeInForce tp_tif=*,
+        TimeInForce tif_bracket=*,
     )
 
     cpdef OrderList bracket_limit(
@@ -119,6 +118,5 @@ cdef class OrderFactory:
         Price take_profit,
         TimeInForce tif=*,
         datetime expire_time=*,
-        TimeInForce sl_tif=*,
-        TimeInForce tp_tif=*,
+        TimeInForce tif_bracket=*,
     )

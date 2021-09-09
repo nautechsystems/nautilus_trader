@@ -587,7 +587,6 @@ class TestOrders:
             Price.from_str("0.99990"),
             Price.from_str("1.00010"),
             TimeInForce.GTC,
-            TimeInForce.GTC,
         )
 
         # Assert
