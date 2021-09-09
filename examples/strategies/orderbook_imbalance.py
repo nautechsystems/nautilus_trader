@@ -148,8 +148,6 @@ class OrderbookImbalance(TradingStrategy):
                 self.submit_order(order)
 
     def on_stop(self):
-        """
-        Actions to be performed when the strategy is stopped.
-        """
+        """Actions to be performed when the strategy is stopped."""
         self.cancel_all_orders(self.instrument.id)
         self.flatten_all_positions(self.instrument.id)

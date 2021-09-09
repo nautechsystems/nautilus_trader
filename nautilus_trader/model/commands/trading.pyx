@@ -21,12 +21,12 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.unpacker cimport OrderUnpacker
 
 
@@ -194,9 +194,13 @@ cdef class SubmitOrder(TradingCommand):
         return SubmitOrder.to_dict_c(obj)
 
 
-cdef class SubmitBracketOrder(TradingCommand):
+cdef class SubmitOrderList(TradingCommand):
     """
-    Represents a command to submit a bracket order consisting of parent and child orders.
+    Represents a command to submit an order list consisting of bulk or related
+    parent-child contingent orders.
+
+    This command can correspond to a `NewOrderList <E> message` for the FIX
+    protocol.
 
     References
     ----------
@@ -207,12 +211,12 @@ cdef class SubmitBracketOrder(TradingCommand):
         self,
         TraderId trader_id not None,
         StrategyId strategy_id not None,
-        BracketOrder bracket_order not None,
+        OrderList order_list not None,
         UUID4 command_id not None,
         int64_t ts_init,
     ):
         """
-        Initialize a new instance of the ``SubmitBracketOrder`` class.
+        Initialize a new instance of the ``SubmitOrderList`` class.
 
         Parameters
         ----------
@@ -220,8 +224,8 @@ cdef class SubmitBracketOrder(TradingCommand):
             The trader ID for the command.
         strategy_id : StrategyId
             The strategy ID for the command.
-        bracket_order : BracketOrder
-            The bracket order to submit.
+        order_list : OrderList
+            The order list to submit.
         command_id : UUID4
             The command ID.
         ts_init : int64
@@ -231,67 +235,61 @@ cdef class SubmitBracketOrder(TradingCommand):
         super().__init__(
             trader_id=trader_id,
             strategy_id=strategy_id,
-            instrument_id=bracket_order.instrument_id,
+            instrument_id=order_list.instrument_id,
             command_id=command_id,
             ts_init=ts_init,
         )
 
-        self.bracket_order = bracket_order
+        self.list = order_list
 
     def __str__(self) -> str:
         return (f"{type(self).__name__}("
                 f"instrument_id={self.instrument_id.value}, "
-                f"client_order_link_id={self.bracket_order.id.value}, "
-                f"entry={self.bracket_order.entry.info()}, "
-                f"stop_loss={self.bracket_order.stop_loss.info()}, "
-                f"take_profit={self.bracket_order.take_profit.info()})")
+                f"order_list={self.list})")
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
                 f"instrument_id={self.instrument_id.value}, "
-                f"client_order_link_id={self.bracket_order.id.value}, "
-                f"entry={self.bracket_order.entry.info()}, "
-                f"stop_loss={self.bracket_order.stop_loss.info()}, "
-                f"take_profit={self.bracket_order.take_profit.info()}, "
+                f"order_list={self.list}, "
                 f"command_id={self.id.value}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
-    cdef SubmitBracketOrder from_dict_c(dict values):
+    cdef SubmitOrderList from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef BracketOrder bracket_order = BracketOrder(
-            entry=OrderUnpacker.unpack_c(orjson.loads(values["entry"])),
-            stop_loss=OrderUnpacker.unpack_c(orjson.loads(values["stop_loss"])),
-            take_profit=OrderUnpacker.unpack_c(orjson.loads(values["take_profit"])),
+        cdef dict o_dict
+        cdef OrderList order_list = OrderList(
+            list_id=OrderListId(values["order_list_id"]),
+            orders=[OrderUnpacker.unpack_c(o_dict) for o_dict in orjson.loads(values["orders"])],
         )
-        return SubmitBracketOrder(
+        return SubmitOrderList(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
-            bracket_order=bracket_order,
+            order_list=order_list,
             command_id=UUID4(values["command_id"]),
             ts_init=values["ts_init"],
         )
 
     @staticmethod
-    cdef dict to_dict_c(SubmitBracketOrder obj):
+    cdef dict to_dict_c(SubmitOrderList obj):
         Condition.not_none(obj, "obj")
+        cdef Order o
         return {
-            "type": "SubmitBracketOrder",
+            "type": "SubmitOrderList",
             "trader_id": obj.trader_id.value,
             "strategy_id": obj.strategy_id.value,
-            "entry": orjson.dumps(OrderInitialized.to_dict_c(obj.bracket_order.entry.init_event_c())),
-            "stop_loss": orjson.dumps(OrderInitialized.to_dict_c(obj.bracket_order.stop_loss.init_event_c())),
-            "take_profit": orjson.dumps(OrderInitialized.to_dict_c(obj.bracket_order.take_profit.init_event_c())),
+            "order_list_id": obj.list.id.value,
+            "orders": orjson.dumps([OrderInitialized.to_dict_c(o.init_event_c()) for o in obj.list.orders]),
             "command_id": obj.id.value,
             "ts_init": obj.ts_init,
         }
 
     @staticmethod
-    def from_dict(dict values) -> SubmitBracketOrder:
+    def from_dict(dict values) -> SubmitOrderList:
         """
-        Return a submit bracket order command from the given dict values.
+        Return a submit order list command from the given dict values.
 
         Parameters
         ----------
@@ -300,13 +298,13 @@ cdef class SubmitBracketOrder(TradingCommand):
 
         Returns
         -------
-        SubmitBracketOrder
+        SubmitOrderList
 
         """
-        return SubmitBracketOrder.from_dict_c(values)
+        return SubmitOrderList.from_dict_c(values)
 
     @staticmethod
-    def to_dict(SubmitBracketOrder obj):
+    def to_dict(SubmitOrderList obj):
         """
         Return a dictionary representation of this object.
 
@@ -315,7 +313,7 @@ cdef class SubmitBracketOrder(TradingCommand):
         dict[str, object]
 
         """
-        return SubmitBracketOrder.to_dict_c(obj)
+        return SubmitOrderList.to_dict_c(obj)
 
 
 cdef class ModifyOrder(TradingCommand):

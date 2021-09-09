@@ -20,8 +20,8 @@ from nautilus_trader.common.events.system cimport ComponentStateChanged
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
-from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
@@ -59,8 +59,8 @@ from nautilus_trader.model.instruments.option cimport Option
 
 _OBJECT_TO_DICT_MAP = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
-    SubmitBracketOrder.__name__: SubmitBracketOrder.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
+    SubmitOrderList.__name__: SubmitOrderList.to_dict_c,
     ModifyOrder.__name__: ModifyOrder.to_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.to_dict_c,
     TradingStateChanged.__name__: TradingStateChanged.to_dict_c,
@@ -101,8 +101,8 @@ _OBJECT_TO_DICT_MAP = {
 # Default mappings for Nautilus objects
 _OBJECT_FROM_DICT_MAP = {
     CancelOrder.__name__: CancelOrder.from_dict_c,
-    SubmitBracketOrder.__name__: SubmitBracketOrder.from_dict_c,
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
+    SubmitOrderList.__name__: SubmitOrderList.from_dict_c,
     ModifyOrder.__name__: ModifyOrder.from_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.from_dict_c,
     TradingStateChanged.__name__: TradingStateChanged.from_dict_c,

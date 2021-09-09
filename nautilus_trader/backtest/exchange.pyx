@@ -40,8 +40,8 @@ from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
-from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -186,9 +186,6 @@ cdef class SimulatedExchange:
         self._instrument_orders = {}    # type: dict[InstrumentId, dict[ClientOrderId, PassiveOrder]]
         self._working_orders = {}       # type: dict[ClientOrderId, PassiveOrder]
         self._position_index = {}       # type: dict[ClientOrderId, PositionId]
-        self._child_orders = {}         # type: dict[ClientOrderId, list[Order]]
-        self._oco_orders = {}           # type: dict[ClientOrderId, ClientOrderId]
-        self._position_oco_orders = {}  # type: dict[PositionId, list[ClientOrderId]]
         self._symbol_pos_count = {}     # type: dict[InstrumentId, int]
         self._symbol_ord_count = {}     # type: dict[InstrumentId, int]
         self._executions_count = 0
@@ -449,13 +446,6 @@ cdef class SimulatedExchange:
         """
         self._log.debug("Checking residuals...")
 
-        for order_list in self._child_orders.values():
-            for order in order_list:
-                self._log.warning(f"Residual child-order {order}")
-
-        for order_id in self._oco_orders.values():
-            self._log.warning(f"Residual OCO {order_id}")
-
     cpdef void reset(self) except *:
         """
         Reset the simulated exchange.
@@ -473,9 +463,6 @@ cdef class SimulatedExchange:
         self._instrument_orders.clear()
         self._working_orders.clear()
         self._position_index.clear()
-        self._child_orders.clear()
-        self._oco_orders.clear()
-        self._position_oco_orders.clear()
         self._symbol_pos_count.clear()
         self._symbol_ord_count.clear()
         self._executions_count = 0
@@ -493,29 +480,11 @@ cdef class SimulatedExchange:
         self._generate_order_submitted(command.order)
         self._process_order(command.order)
 
-    cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
+    cpdef void handle_submit_order_list(self, SubmitOrderList command) except *:
         Condition.not_none(command, "command")
 
-        self._log.error("bracket orders are currently broken in this version.")
-        cdef PositionId position_id = self._generate_venue_position_id(command.bracket_order.entry.instrument_id)
-
-        cdef list bracket_orders = [command.bracket_order.stop_loss]
-        self._position_oco_orders[position_id] = []
-        if command.bracket_order.take_profit is not None:
-            bracket_orders.append(command.bracket_order.take_profit)
-            self._oco_orders[command.bracket_order.take_profit.client_order_id] = command.bracket_order.stop_loss.client_order_id
-            self._oco_orders[command.bracket_order.stop_loss.client_order_id] = command.bracket_order.take_profit.client_order_id
-            self._position_oco_orders[position_id].append(command.bracket_order.take_profit)
-
-        self._child_orders[command.bracket_order.entry.client_order_id] = bracket_orders
-        self._position_oco_orders[position_id].append(command.bracket_order.stop_loss)
-
-        self._generate_order_submitted(command.bracket_order.entry)
-        self._generate_order_submitted(command.bracket_order.stop_loss)
-        if command.bracket_order.take_profit is not None:
-            self._generate_order_submitted(command.bracket_order.take_profit)
-
-        self._process_order(command.bracket_order.entry)
+        # TODO(cs): Implement
+        raise NotImplementedError("order lists are not implemented in this version.")
 
     cpdef void handle_cancel_order(self, CancelOrder command) except *:
         Condition.not_none(command, "command")
@@ -582,8 +551,6 @@ cdef class SimulatedExchange:
     cdef void _reject_order(self, Order order, str reason) except *:
         # Generate event
         self._generate_order_rejected(order, reason)
-        self._check_oco_order(order.client_order_id)
-        self._clean_up_child_orders(order.client_order_id)
 
     cdef void _update_order(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *:
         # Generate event
@@ -608,23 +575,9 @@ cdef class SimulatedExchange:
 
         self._generate_order_pending_cancel(order)
         self._generate_order_canceled(order)
-        self._check_oco_order(order.client_order_id)
 
     cdef void _expire_order(self, PassiveOrder order) except *:
         self._generate_order_expired(order)
-
-        cdef ClientOrderId first_child_order_id
-        cdef ClientOrderId other_oco_order_id
-        if order.client_order_id in self._child_orders:
-            # Remove any unprocessed OCO child orders
-            first_child_order_id = self._child_orders[order.client_order_id][0].client_order_id
-            if first_child_order_id in self._oco_orders:
-                other_oco_order_id = self._oco_orders[first_child_order_id]
-                del self._oco_orders[first_child_order_id]
-                del self._oco_orders[other_oco_order_id]
-        else:
-            self._check_oco_order(order.client_order_id)
-        self._clean_up_child_orders(order.client_order_id)
 
     cdef void _generate_fresh_account_state(self) except *:
         cdef list balances = [
@@ -1202,71 +1155,3 @@ cdef class SimulatedExchange:
             liquidity_side=liquidity_side,
             ts_event=self._clock.timestamp_ns(),
         )
-
-        self._check_oco_order(order.client_order_id)
-
-        # Work any bracket child orders
-        if order.client_order_id in self._child_orders:
-            for child_order in self._child_orders[order.client_order_id]:
-                if not child_order.is_completed:  # The order may already be canceled or rejected
-                    self._process_order(child_order)
-            del self._child_orders[order.client_order_id]
-
-        # Cancel any linked OCO orders
-        if position and position.is_closed_c():
-            oco_orders = self._position_oco_orders.get(position.id)
-            if oco_orders:
-                for order in self._position_oco_orders[position.id]:
-                    if order.is_working_c():
-                        self._log.debug(f"Cancelling {order.client_order_id} as linked position closed.")
-                        self._cancel_oco_order(order)
-                del self._position_oco_orders[position.id]
-
-    cdef void _check_oco_order(self, ClientOrderId client_order_id) except *:
-        # Check held OCO orders and remove any paired with the given client_order_id
-        cdef ClientOrderId oco_client_order_id = self._oco_orders.pop(client_order_id, None)
-        if oco_client_order_id is None:
-            return  # No linked order
-
-        del self._oco_orders[oco_client_order_id]
-        cdef PassiveOrder oco_order = self._working_orders.pop(oco_client_order_id, None)
-        if oco_order is None:
-            return  # No linked order
-
-        self._delete_order(oco_order)
-
-        # Reject any latent bracket child orders first
-        cdef list child_orders
-        cdef PassiveOrder order
-        for child_orders in self._child_orders.values():
-            for order in child_orders:
-                if oco_order == order and not order.is_working_c():
-                    self._reject_oco_order(order, client_order_id)
-
-        # Cancel working OCO order
-        self._log.debug(f"Cancelling {oco_order.client_order_id} OCO order from {oco_client_order_id}.")
-        self._cancel_oco_order(oco_order)
-
-    cdef void _clean_up_child_orders(self, ClientOrderId client_order_id) except *:
-        # Clean up any residual child orders from the completed order associated
-        # with the given ID.
-        self._child_orders.pop(client_order_id, None)
-
-    cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *:
-        # order is the OCO order to reject
-        # other_oco is the linked ClientOrderId
-        if order.is_completed_c():
-            self._log.debug(f"Cannot reject order: state was already {order.status_string_c()}.")
-            return
-
-        # Generate event
-        self._generate_order_rejected(order, f"OCO order rejected from {other_oco}")
-
-    cdef void _cancel_oco_order(self, PassiveOrder order) except *:
-        # order is the OCO order to cancel
-        if order.is_completed_c():
-            self._log.debug(f"Cannot cancel order: state was already {order.status_string_c()}.")
-            return
-
-        # Generate event
-        self._generate_order_canceled(order)

@@ -348,14 +348,12 @@ class TestContingencyType:
     def test_contingency_type_parser_given_invalid_value_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            ContingencyTypeParser.to_str_py(0)
-
-        with pytest.raises(ValueError):
             ContingencyTypeParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
+            [ContingencyType.NONE, "NONE"],
             [ContingencyType.OTO, "OTO"],
             [ContingencyType.OUO, "OUO"],
             [ContingencyType.OCO, "OCO"],
@@ -372,6 +370,7 @@ class TestContingencyType:
     @pytest.mark.parametrize(
         "string, expected",
         [
+            ["NONE", ContingencyType.NONE],
             ["OTO", ContingencyType.OTO],
             ["OUO", ContingencyType.OUO],
             ["OCO", ContingencyType.OCO],

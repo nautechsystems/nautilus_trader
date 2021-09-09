@@ -18,6 +18,7 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_status cimport OrderStatus
@@ -39,6 +40,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -83,6 +85,16 @@ cdef class Order:
     """The order average fill price.\n\n:returns: `Decimal` or `None`"""
     cdef readonly object slippage
     """The order total price slippage.\n\n:returns: `Decimal`"""
+    cdef readonly OrderListId order_list_id
+    """The order list ID associated with the order.\n\n:returns: `OrderListId` or `None`"""
+    cdef readonly ClientOrderId parent_order_id
+    """The parent client order ID.\n\n:returns: `ClientOrderId` or `None`"""
+    cdef readonly list child_order_ids
+    """The child order ID(s).\n\n:returns: `list[ClientOrderId]` or `None`"""
+    cdef readonly ContingencyType contingency
+    """The orders contingency type.\n\n:returns: `ContingencyType`"""
+    cdef readonly list contingency_ids
+    """The orders contingency type.\n\n:returns: `list[ClientOrderId]` or `None`"""
     cdef readonly str tags
     """The order custom user tags.\n\n:returns: `str` or `None`"""
     cdef readonly UUID4 init_id
@@ -106,6 +118,9 @@ cdef class Order:
     cdef bint is_sell_c(self) except *
     cdef bint is_passive_c(self) except *
     cdef bint is_aggressive_c(self) except *
+    cdef bint is_contingency_c(self) except *
+    cdef bint is_parent_order_c(self) except *
+    cdef bint is_child_order_c(self) except *
     cdef bint is_active_c(self) except *
     cdef bint is_inflight_c(self) except *
     cdef bint is_working_c(self) except *

@@ -42,8 +42,8 @@ from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.c_enums.trading_state cimport TradingStateParser
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
-from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -51,8 +51,8 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
@@ -370,8 +370,8 @@ cdef class RiskEngine(Component):
 
         if isinstance(command, SubmitOrder):
             self._handle_submit_order(command)
-        elif isinstance(command, SubmitBracketOrder):
-            self._handle_submit_bracket_order(command)
+        elif isinstance(command, SubmitOrderList):
+            self._handle_submit_order_list(command)
         elif isinstance(command, ModifyOrder):
             self._handle_modify_order(command)
         elif isinstance(command, CancelOrder):
@@ -426,27 +426,15 @@ cdef class RiskEngine(Component):
 
         self._execution_gateway(instrument, command, order=command.order)
 
-    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *:
-        cdef Order entry = command.bracket_order.entry
-        cdef StopMarketOrder stop_loss = command.bracket_order.stop_loss
-        cdef LimitOrder take_profit = command.bracket_order.take_profit
-
-        # Check IDs for duplicates
-        if not self._check_order_id(entry):
-            self._deny_command(
-                command=command,
-                reason=f"Duplicate {repr(entry.client_order_id)}")
-            return  # Denied
-        if not self._check_order_id(stop_loss):
-            self._deny_command(
-                command=command,
-                reason=f"Duplicate {repr(stop_loss.client_order_id)}")
-            return  # Denied
-        if not self._check_order_id(take_profit):
-            self._deny_command(
-                command=command,
-                reason=f"Duplicate {repr(take_profit.client_order_id)}")
-            return  # Denied
+    cdef void _handle_submit_order_list(self, SubmitOrderList command) except *:
+        cdef Order order
+        for order in command.list.orders:
+            # Check IDs for duplicates
+            if not self._check_order_id(order):
+                self._deny_command(
+                    command=command,
+                    reason=f"Duplicate {repr(order.client_order_id)}")
+                return  # Denied
 
         if self.is_bypassed:
             # Perform no further risk checks or throttling
@@ -465,14 +453,11 @@ cdef class RiskEngine(Component):
         ########################################################################
         # Pre-trade order(s) checks
         ########################################################################
-        if not self._check_order(instrument, entry):
-            return  # Denied
-        if not self._check_order(instrument, stop_loss):
-            return  # Denied
-        if not self._check_order(instrument, take_profit):
-            return  # Denied
+        for order in command.list.orders:
+            if not self._check_order(instrument, order):
+                return  # Denied
 
-        self._execution_gateway(instrument, command, order=entry)
+        self._execution_gateway(instrument, command, order=command.list.first)
 
     cdef void _handle_modify_order(self, ModifyOrder command) except *:
         ########################################################################
@@ -701,8 +686,8 @@ cdef class RiskEngine(Component):
     cdef void _deny_command(self, TradingCommand command, str reason) except *:
         if isinstance(command, SubmitOrder):
             self._deny_order(command.order, reason=reason)
-        elif isinstance(command, SubmitBracketOrder):
-            self._deny_bracket_order(command.bracket_order, reason=reason)
+        elif isinstance(command, SubmitOrderList):
+            self._deny_order_list(command.list, reason=reason)
         elif isinstance(command, ModifyOrder):
             self._log.error(f"ModifyOrder DENIED: {reason}.")
         elif isinstance(command, CancelOrder):
@@ -711,8 +696,8 @@ cdef class RiskEngine(Component):
     cpdef _deny_new_order(self, TradingCommand command):
         if isinstance(command, SubmitOrder):
             self._deny_order(command.order, reason="Exceeded MAX_ORDER_RATE")
-        elif isinstance(command, SubmitBracketOrder):
-            self._deny_bracket_order(command.bracket_order, reason="Exceeded MAX_ORDER_RATE")
+        elif isinstance(command, SubmitOrderList):
+            self._deny_order_list(command.list, reason="Exceeded MAX_ORDER_RATE")
 
     cdef void _deny_order(self, Order order, str reason) except *:
         self._log.error(f"SubmitOrder DENIED: {reason}.")
@@ -741,18 +726,18 @@ cdef class RiskEngine(Component):
 
         self._msgbus.send(endpoint="ExecEngine.process", msg=denied)
 
-    cdef void _deny_bracket_order(self, BracketOrder bracket_order, str reason) except *:
-        self._deny_order(order=bracket_order.entry, reason=reason)
-        self._deny_order(order=bracket_order.stop_loss, reason=reason)
-        self._deny_order(order=bracket_order.take_profit, reason=reason)
+    cdef void _deny_order_list(self, OrderList order_list, str reason) except *:
+        cdef Order order
+        for order in order_list.orders:
+            self._deny_order(order=order, reason=reason)
 
 # -- EGRESS ----------------------------------------------------------------------------------------
 
     cdef void _execution_gateway(self, Instrument instrument, TradingCommand command, Order order):
         # Check TradingState
         if self.trading_state == TradingState.HALTED:
-            self._deny_bracket_order(
-                bracket_order=command.bracket_order,
+            self._deny_order_list(
+                order_list=command.list,
                 reason="TradingState.HALTED",
             )
             return  # Denied

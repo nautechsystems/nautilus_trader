@@ -25,9 +25,8 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
@@ -37,6 +36,7 @@ cdef class OrderFactory:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef ClientOrderIdGenerator _id_generator
+    cdef int _order_list_id
 
     cdef readonly TraderId trader_id
     """The order factories trader ID.\n\n:returns: `TraderId`"""
@@ -98,11 +98,27 @@ cdef class OrderFactory:
         str tags=*,
     )
 
-    cpdef BracketOrder bracket(
+    cpdef OrderList bracket_market(
         self,
-        Order entry,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
         Price stop_loss,
         Price take_profit,
+        TimeInForce sl_tif=*,
+        TimeInForce tp_tif=*,
+    )
+
+    cpdef OrderList bracket_limit(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        Price entry,
+        Price stop_loss,
+        Price take_profit,
+        TimeInForce tif=*,
+        datetime expire_time=*,
         TimeInForce sl_tif=*,
         TimeInForce tp_tif=*,
     )

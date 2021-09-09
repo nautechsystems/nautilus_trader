@@ -19,6 +19,8 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport maybe_nanos_to_unix_dt
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -29,6 +31,7 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
@@ -63,6 +66,11 @@ cdef class StopMarketOrder(PassiveOrder):
         UUID4 init_id not None,
         int64_t ts_init,
         bint reduce_only=False,
+        OrderListId order_list_id=None,
+        ClientOrderId parent_order_id=None,
+        list child_order_ids=None,
+        ContingencyType contingency=ContingencyType.NONE,
+        list contingency_ids=None,
         str tags=None,
     ):
         """
@@ -94,6 +102,16 @@ cdef class StopMarketOrder(PassiveOrder):
             The UNIX timestamp (nanoseconds) when the order was initialized.
         reduce_only : bool, optional
             If the order will only reduce an open position.
+        order_list_id : OrderListId, optional
+            The order list ID associated with the order.
+        parent_order_id : ClientOrderId, optional
+            The orders parent client order ID.
+        child_order_ids : list[ClientOrderId], optional
+            The orders child order ID(s).
+        contingency : ContingencyType
+            The orders contingency type.
+        contingency_ids : list[ClientOrderId], optional
+            The orders contingency IDs.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -118,6 +136,11 @@ cdef class StopMarketOrder(PassiveOrder):
             time_in_force=time_in_force,
             expire_time=expire_time,
             options={"reduce_only": reduce_only},
+            order_list_id=order_list_id,
+            parent_order_id=parent_order_id,
+            child_order_ids=child_order_ids,
+            contingency=contingency,
+            contingency_ids=contingency_ids,
             tags=tags,
             init_id=init_id,
             ts_init=ts_init,
@@ -155,6 +178,11 @@ cdef class StopMarketOrder(PassiveOrder):
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
+            "order_list_id": self.order_list_id,
+            "parent_order_id": self.parent_order_id,
+            "child_order_ids": ",".join([o.value for o in self.child_order_ids]) if self.child_order_ids is not None else None,  # noqa
+            "contingency": ContingencyTypeParser.to_str(self.contingency),
+            "contingency_ids": ",".join([o.value for o in self.contingency_ids]) if self.contingency_ids is not None else None,  # noqa
             "tags": self.tags,
             "ts_last": self.ts_last,
             "ts_init": self.ts_init,
@@ -196,5 +224,10 @@ cdef class StopMarketOrder(PassiveOrder):
             init_id=init.id,
             ts_init=init.ts_init,
             reduce_only=init.options["reduce_only"],
+            order_list_id=init.order_list_id,
+            parent_order_id=init.parent_order_id,
+            child_order_ids=init.child_order_ids,
+            contingency=init.contingency,
+            contingency_ids=init.contingency_ids,
             tags=init.tags,
         )

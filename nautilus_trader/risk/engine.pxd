@@ -23,15 +23,15 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.c_enums.trading_state cimport TradingState
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
-from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.bracket cimport BracketOrder
+from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
@@ -73,7 +73,7 @@ cdef class RiskEngine(Component):
 
     cdef void _execute_command(self, Command command) except *
     cdef void _handle_submit_order(self, SubmitOrder command) except *
-    cdef void _handle_submit_bracket_order(self, SubmitBracketOrder command) except *
+    cdef void _handle_submit_order_list(self, SubmitOrderList command) except *
     cdef void _handle_modify_order(self, ModifyOrder command) except *
     cdef void _handle_cancel_order(self, CancelOrder command) except *
 
@@ -92,7 +92,7 @@ cdef class RiskEngine(Component):
     cdef void _deny_command(self, TradingCommand command, str reason) except *
     cpdef _deny_new_order(self, TradingCommand command)
     cdef void _deny_order(self, Order order, str reason) except *
-    cdef void _deny_bracket_order(self, BracketOrder bracket_order, str reason) except *
+    cdef void _deny_order_list(self, OrderList order_list, str reason) except *
 
 # -- EGRESS ----------------------------------------------------------------------------------------
 

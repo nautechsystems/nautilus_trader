@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -23,6 +24,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -58,6 +60,16 @@ cdef class OrderInitialized(OrderEvent):
     """The order time-in-force.\n\n:returns: `TimeInForce`"""
     cdef readonly dict options
     """The order initialization options.\n\n:returns: `dict`"""
+    cdef readonly OrderListId order_list_id
+    """The order list ID associated with the order.\n\n:returns: `OrderListId` or `None`"""
+    cdef readonly ClientOrderId parent_order_id
+    """The orders parent client order ID.\n\n:returns: `ClientOrderId` or `None`"""
+    cdef readonly list child_order_ids
+    """The orders child client order ID(s).\n\n:returns: `list[ClientOrderId]` or `None`"""
+    cdef readonly ContingencyType contingency
+    """The orders contingency type.\n\n:returns: `ContingencyType`"""
+    cdef readonly list contingency_ids
+    """The orders contingency IDs.\n\n:returns: `list[ClientOrderId]` or `None`"""
     cdef readonly str tags
     """The order custom user tags.\n\n:returns: `str` or `None`"""
 
