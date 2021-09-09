@@ -44,15 +44,12 @@ cdef class OrderList:
             If `orders` is empty.
         ValueError
             If `orders` contains a type other than `Order`.
-        ValueError
-            If `orders` contains orders for different instrument IDs.
 
         """
         Condition.not_empty(orders, "orders")
         Condition.list_type(orders, Order, "orders")
-        cdef Order first = orders[0]
-        Condition(all(first.instrument_id == o.instrument_id for o in orders), "different instrument IDs")
 
+        cdef Order first = orders[0]
         self.id = list_id
         self.instrument_id = first.instrument_id
         self.orders = orders
