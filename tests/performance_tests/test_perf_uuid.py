@@ -34,7 +34,7 @@ class TestUUIDPerformance(PerformanceHarness):
 
     def test_make_builtin_uuid_bench(self):
         PerformanceBench.profile_function(
-            function=uuid.uuid4,
+            target=uuid.uuid4,
             runs=100000,
             iterations=1,
         )
@@ -51,7 +51,7 @@ class TestUUIDPerformance(PerformanceHarness):
 
     def test_make_nautilus_uuid_bench(self):
         PerformanceBench.profile_function(
-            function=UUID4,
+            target=UUID4,
             runs=100000,
             iterations=1,
         )
