@@ -516,7 +516,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        Account or None
+        Account or ``None``
 
         """
         Condition.not_none(venue, "venue")
@@ -543,7 +543,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or None
+        dict[Currency, Money] or ``None``
 
         """
         Condition.not_none(venue, "venue")
@@ -569,7 +569,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or None
+        dict[Currency, Money] or ``None``
 
         """
         Condition.not_none(venue, "venue")
@@ -595,7 +595,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or None
+        dict[Currency, Money] or ``None``
 
         """
         Condition.not_none(venue, "venue")
@@ -635,7 +635,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or None
+        dict[Currency, Money] or ``None``
 
         """
         Condition.not_none(venue, "venue")
@@ -711,7 +711,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -736,7 +736,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         """
         Condition.not_none(instrument_id, "instrument_id")

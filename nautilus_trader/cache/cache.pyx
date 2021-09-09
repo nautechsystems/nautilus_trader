@@ -81,7 +81,7 @@ cdef class Cache(CacheFacade):
         Parameters
         ----------
         database : CacheDatabase, optional
-            The database for the cache. If `None` then will bypass persistence.
+            The database for the cache. If ``None`` then will bypass persistence.
         logger : Logger
             The logger for the cache.
         config : CacheConfig, optional
@@ -779,7 +779,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Account or None
+        Account or ``None``
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -803,7 +803,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Account or None
+        Account or ``None``
 
         """
         Condition.not_none(account_id, "account_id")
@@ -821,7 +821,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Order or None
+        Order or ``None``
 
         """
         Condition.not_none(client_order_id, "client_order_id")
@@ -839,7 +839,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Position or None
+        Position or ``None``
 
         """
         Condition.not_none(position_id, "position_id")
@@ -1509,7 +1509,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Price or None
+        Price or ``None``
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -1534,7 +1534,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        OrderBook or None
+        OrderBook or ``None``
 
         """
         return self._order_books.get(instrument_id)
@@ -1554,8 +1554,8 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Ticker or None
-            If no tickers or no ticker at index then returns None.
+        Ticker or ``None``
+            If no tickers or no ticker at index then returns ``None``.
 
         Notes
         -----
@@ -1588,8 +1588,8 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        QuoteTick or None
-            If no ticks or no tick at index then returns None.
+        QuoteTick or ``None``
+            If no ticks or no tick at index then returns ``None``.
 
         Notes
         -----
@@ -1622,8 +1622,8 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        TradeTick or None
-            If no ticks or no tick at index then returns None.
+        TradeTick or ``None``
+            If no ticks or no tick at index then returns ``None``.
 
         Notes
         -----
@@ -1656,8 +1656,8 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Bar or None
-            If no bars or no bar at index then returns `None`.
+        Bar or ``None``
+            If no bars or no bar at index then returns ``None``.
 
         Notes
         -----
@@ -1920,7 +1920,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Instrument or None
+        Instrument or ``None``
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -1972,7 +1972,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Account or None
+        Account or ``None``
 
         """
         Condition.not_none(account_id, "account_id")
@@ -1990,7 +1990,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Account or None
+        Account or ``None``
 
         """
         Condition.not_none(venue, "venue")
@@ -2011,7 +2011,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        AccountId or None
+        AccountId or ``None``
 
         """
         Condition.not_none(venue, "venue")
@@ -2338,7 +2338,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Order or None
+        Order or ``None``
 
         """
         Condition.not_none(client_order_id, "client_order_id")
@@ -2356,7 +2356,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        ClientOrderId or None
+        ClientOrderId or ``None``
 
         """
         Condition.not_none(venue_order_id, "venue_order_id")
@@ -2369,7 +2369,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        VenueOrderId or None
+        VenueOrderId or ``None``
 
         """
         Condition.not_none(client_order_id, "client_order_id")
@@ -2542,7 +2542,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Position or None
+        Position or ``None``
 
         """
         Condition.not_none(position_id, "position_id")
@@ -2560,7 +2560,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        PositionId or None
+        PositionId or ``None``
 
         """
         Condition.not_none(client_order_id, "client_order_id")
@@ -3016,7 +3016,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        StrategyId or None
+        StrategyId or ``None``
 
         """
         Condition.not_none(client_order_id, "client_order_id")
@@ -3034,7 +3034,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        StrategyId or None
+        StrategyId or ``None``
 
         """
         Condition.not_none(position_id, "position_id")

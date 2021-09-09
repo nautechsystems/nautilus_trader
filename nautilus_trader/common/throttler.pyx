@@ -73,7 +73,7 @@ cdef class Throttler:
             The output handler to send messages from the throttler.
         output_drop : Callable[[Any], None], optional
             The output handler to drop messages from the throttler.
-            If `None` then messages will be buffered.
+            If ``None`` then messages will be buffered.
         clock : Clock
             The clock for the throttler.
         logger : Logger
@@ -90,7 +90,7 @@ cdef class Throttler:
         ValueError
             If output_send is not of type `Callable`.
         ValueError
-            If output_drop is not of type `Callable` or `None`.
+            If output_drop is not of type `Callable` or ``None``.
 
         """
         Condition.valid_string(name, "name")

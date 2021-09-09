@@ -217,7 +217,7 @@ cdef class Ladder:
 
         Returns
         -------
-        Level or None
+        Level or ``None``
 
         """
         cdef list top = self.depth(1)

@@ -143,7 +143,7 @@ cdef class ExecutionReport:
         venue_position_id : PositionId, optional
             The venue position ID associated with the order. If the trading
             venue has assigned a position ID / ticket then pass that here,
-            otherwise pass `None` and the execution engine OMS will handle
+            otherwise pass ``None`` and the execution engine OMS will handle
             position ID resolution.
         execution_id : ExecutionId
             The execution ID for the trade.

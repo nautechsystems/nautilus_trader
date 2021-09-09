@@ -155,7 +155,7 @@ cdef class ExecutionClient(Component):
 
         Returns
         -------
-        Account or None
+        Account or ``None``
 
         """
         # Check account
@@ -730,7 +730,7 @@ cdef class ExecutionClient(Component):
         venue_position_id : PositionId, optional
             The venue position ID associated with the order. If the trading
             venue has assigned a position ID / ticket then pass that here,
-            otherwise pass `None` and the execution engine OMS will handle
+            otherwise pass ``None`` and the execution engine OMS will handle
             position ID resolution.
         order_side : OrderSide
             The execution order side.

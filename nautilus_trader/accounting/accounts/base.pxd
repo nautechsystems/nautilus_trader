@@ -40,7 +40,7 @@ cdef class Account:
     cdef readonly AccountType type
     """The accounts type.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
-    """The accounts base currency (`None` for multi-currency accounts).\n\n:returns: `Currency` or `None`"""
+    """The accounts base currency (``None`` for multi-currency accounts).\n\n:returns: `Currency` or ``None``"""
     cdef readonly bint calculate_account_state
     """If the accounts state should be calculated by Nautilus.\n\n:returns: `bool`"""
 

@@ -406,7 +406,7 @@ cdef class Order:
     @property
     def is_passive(self):
         """
-        If the order is passive (order type **not** ``MARKET``).
+        If the order is passive (`order.type` **not** ``MARKET``).
 
         Returns
         -------
@@ -418,7 +418,7 @@ cdef class Order:
     @property
     def is_aggressive(self):
         """
-        If the order is aggressive (order type is ``MARKET``).
+        If the order is aggressive (`order.type` is ``MARKET``).
 
         Returns
         -------
@@ -430,7 +430,7 @@ cdef class Order:
     @property
     def is_contingency(self):
         """
-        If the order has a contingency (order.contingency is not ``NONE``).
+        If the order has a contingency (`order.contingency` is not ``NONE``).
 
         Returns
         -------
@@ -646,7 +646,7 @@ cdef class Order:
         ValueError
             If self.client_order_id is not equal to event.client_order_id.
         ValueError
-            If self.venue_order_id and event.venue_order_id are both not `None`, and are not equal.
+            If self.venue_order_id and event.venue_order_id are both not ``None``, and are not equal.
         InvalidStateTrigger
             If event is not a valid trigger from the current order.status.
         KeyError

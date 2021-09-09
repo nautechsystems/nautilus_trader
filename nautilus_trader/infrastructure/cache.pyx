@@ -296,7 +296,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         Returns
         -------
-        Currency or None
+        Currency or ``None``
 
         """
         Condition.not_none(code, "code")
@@ -326,7 +326,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         Returns
         -------
-        Instrument or None
+        Instrument or ``None``
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -349,7 +349,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         Returns
         -------
-        Account or None
+        Account or ``None``
 
         """
         Condition.not_none(account_id, "account_id")
@@ -382,7 +382,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         Returns
         -------
-        Order or None
+        Order or ``None``
 
         """
         Condition.not_none(client_order_id, "client_order_id")
@@ -417,7 +417,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         Returns
         -------
-        Position or None
+        Position or ``None``
 
         """
         Condition.not_none(position_id, "position_id")

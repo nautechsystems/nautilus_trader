@@ -55,7 +55,7 @@ cdef class Position:
         ValueError
             If instrument.id is not equal to fill.instrument_id.
         ValueError
-            If event.position_id is `None`.
+            If event.position_id is ``None``.
 
         """
         Condition.equal(instrument.id, fill.instrument_id, "instrument.id", "fill.instrument_id")

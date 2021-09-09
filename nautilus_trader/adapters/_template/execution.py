@@ -95,7 +95,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         """
         Generate an order status report for the given order.
 
-        If an error occurs then logs and returns None.
+        If an error occurs then logs and returns ``None``.
 
         Parameters
         ----------
@@ -104,7 +104,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
         Returns
         -------
-        OrderStatusReport or None
+        OrderStatusReport or ``None``
 
         """
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

@@ -74,7 +74,7 @@ cdef class Position:
     cdef readonly Currency quote_currency
     """The position quote currency.\n\n:returns: `Currency`"""
     cdef readonly Currency base_currency
-    """The position base currency (if applicable).\n\n:returns: `Currency` or `None`"""
+    """The position base currency (if applicable).\n\n:returns: `Currency` or ``None``"""
     cdef readonly Currency cost_currency
     """The position cost currency (for PnL).\n\n:returns: `Currency`"""
     cdef readonly int64_t ts_init
@@ -90,7 +90,7 @@ cdef class Position:
     cdef readonly object avg_px_open
     """The average open price.\n\n:returns: `Decimal`"""
     cdef readonly object avg_px_close
-    """The average close price.\n\n:returns: `Decimal` or `None`"""
+    """The average close price.\n\n:returns: `Decimal` or ``None``"""
     cdef readonly object realized_points
     """The current realized points for the position.\n\n:returns: `Decimal`"""
     cdef readonly object realized_return

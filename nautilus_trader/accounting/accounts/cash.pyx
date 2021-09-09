@@ -171,7 +171,7 @@ cdef class CashAccount(Account):
         Raises
         ------
         ValueError
-            If liquidity_side is NONE.
+            If liquidity_side is ``None``.
 
         """
         Condition.not_none(instrument, "instrument")
@@ -266,7 +266,7 @@ cdef class CashAccount(Account):
 
         Returns
         -------
-        list[Money] or None
+        list[Money] or ``None``
 
         """
         Condition.not_none(instrument, "instrument")

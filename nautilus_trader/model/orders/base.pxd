@@ -68,9 +68,9 @@ cdef class Order:
     cdef readonly PositionId position_id
     """The position ID associated with the order.\n\n:returns: `PositionId`"""
     cdef readonly AccountId account_id
-    """The account ID associated with the order.\n\n:returns: `AccountId` or `None`"""
+    """The account ID associated with the order.\n\n:returns: `AccountId` or ``None``"""
     cdef readonly ExecutionId execution_id
-    """The orders last execution ID.\n\n:returns: `ExecutionId` or `None`"""
+    """The orders last execution ID.\n\n:returns: `ExecutionId` or ``None``"""
     cdef readonly OrderSide side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType type
@@ -82,21 +82,21 @@ cdef class Order:
     cdef readonly Quantity filled_qty
     """The order total filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly object avg_px
-    """The order average fill price.\n\n:returns: `Decimal` or `None`"""
+    """The order average fill price.\n\n:returns: `Decimal` or ``None``"""
     cdef readonly object slippage
     """The order total price slippage.\n\n:returns: `Decimal`"""
     cdef readonly OrderListId order_list_id
-    """The order list ID associated with the order.\n\n:returns: `OrderListId` or `None`"""
+    """The order list ID associated with the order.\n\n:returns: `OrderListId` or ``None``"""
     cdef readonly ClientOrderId parent_order_id
-    """The parent client order ID.\n\n:returns: `ClientOrderId` or `None`"""
+    """The parent client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
     cdef readonly list child_order_ids
-    """The child order ID(s).\n\n:returns: `list[ClientOrderId]` or `None`"""
+    """The child order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
     cdef readonly ContingencyType contingency
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly list contingency_ids
-    """The orders contingency type.\n\n:returns: `list[ClientOrderId]` or `None`"""
+    """The orders contingency type.\n\n:returns: `list[ClientOrderId]` or ``None``"""
     cdef readonly str tags
-    """The order custom user tags.\n\n:returns: `str` or `None`"""
+    """The order custom user tags.\n\n:returns: `str` or ``None``"""
     cdef readonly UUID4 init_id
     """The ID of the `OrderInitialized` event.\n\n:returns: `UUID4`"""
     cdef readonly int64_t ts_last
@@ -156,7 +156,7 @@ cdef class PassiveOrder(Order):
     cdef readonly LiquiditySide liquidity_side
     """The order liquidity side.\n\n:returns: `LiquiditySide`"""
     cdef readonly datetime expire_time
-    """The order expire time.\n\n:returns: `datetime` or `None`"""
+    """The order expire time.\n\n:returns: `datetime` or ``None``"""
     cdef readonly int64_t expire_time_ns
     """The order expire time (nanoseconds), zero for no expire time.\n\n:returns: `int64`"""
 

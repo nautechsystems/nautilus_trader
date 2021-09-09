@@ -106,7 +106,7 @@ cdef class InstrumentProvider:
 
         Returns
         -------
-        Currency or None
+        Currency or ``None``
 
         """
         cdef Currency currency = self._currencies.get(code)
@@ -125,7 +125,7 @@ cdef class InstrumentProvider:
 
         Returns
         -------
-        Instrument or None
+        Instrument or ``None``
 
         """
         return self._instruments.get(instrument_id)

@@ -203,21 +203,21 @@ cdef class Account:
         Parameters
         ----------
         currency : Currency, optional
-            The currency for the query. If `None` then will use the default
+            The currency for the query. If ``None`` then will use the default
             currency (if set).
 
         Returns
         -------
-        AccountBalance or None
+        AccountBalance or ``None``
 
         Raises
         ------
         ValueError
-            If currency is `None` and base_currency is `None`.
+            If currency is None and base_currency is None.
 
         Warnings
         --------
-        Returns `None` if there is no applicable information for the query,
+        Returns ``None`` if there is no applicable information for the query,
         rather than `Money` of zero amount.
 
         """
@@ -236,21 +236,21 @@ cdef class Account:
         Parameters
         ----------
         currency : Currency, optional
-            The currency for the query. If `None` then will use the default
+            The currency for the query. If ``None`` then will use the default
             currency (if set).
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         Raises
         ------
         ValueError
-            If currency is `None` and base_currency is `None`.
+            If currency is ``None`` and base_currency is ``None``.
 
         Warnings
         --------
-        Returns `None` if there is no applicable information for the query,
+        Returns ``None`` if there is no applicable information for the query,
         rather than `Money` of zero amount.
 
         """
@@ -272,21 +272,21 @@ cdef class Account:
         Parameters
         ----------
         currency : Currency, optional
-            The currency for the query. If `None` then will use the default
+            The currency for the query. If ``None`` then will use the default
             currency (if set).
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         Raises
         ------
         ValueError
-            If currency is `None` and base_currency is `None`.
+            If currency is ``None`` and base_currency is ``None``.
 
         Warnings
         --------
-        Returns `None` if there is no applicable information for the query,
+        Returns ``None`` if there is no applicable information for the query,
         rather than `Money` of zero amount.
 
         """
@@ -308,21 +308,21 @@ cdef class Account:
         Parameters
         ----------
         currency : Currency, optional
-            The currency for the query. If `None` then will use the default
+            The currency for the query. If ``None`` then will use the default
             currency (if set).
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         Raises
         ------
         ValueError
-            If currency is `None` and base_currency is `None`.
+            If currency is ``None`` and base_currency is ``None``.
 
         Warnings
         --------
-        Returns `None` if there is no applicable information for the query,
+        Returns ``None`` if there is no applicable information for the query,
         rather than `Money` of zero amount.
 
         """
@@ -346,7 +346,7 @@ cdef class Account:
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         """
         return self._commissions.get(currency)

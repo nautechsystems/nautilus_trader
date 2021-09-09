@@ -989,10 +989,10 @@ cdef class BacktestEngine:
         Parameters
         ----------
         start : datetime, optional
-            The start datetime (UTC) for the backtest run. If `None` engine runs
+            The start datetime (UTC) for the backtest run. If ``None`` engine runs
             from the start of the data.
         stop : datetime, optional
-            The stop datetime (UTC) for the backtest run. If `None` engine runs
+            The stop datetime (UTC) for the backtest run. If ``None`` engine runs
             to the end of the data.
         strategies : list, optional
             The strategies for the backtest run (if None will use previous).

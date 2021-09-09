@@ -160,7 +160,7 @@ cdef class Queue:
 
         Returns
         -------
-        object or None
+        object or ``None``
 
         """
         if self.count == 0:
@@ -173,7 +173,7 @@ cdef class Queue:
 
         Returns
         -------
-        object or None
+        object or ``None``
 
         """
         if self.count == 0:

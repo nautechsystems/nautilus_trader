@@ -406,7 +406,7 @@ cdef class OrderBook:
 
     cpdef best_bid_price(self):
         """
-        Return the best bid price in the book (if no bids then returns None).
+        Return the best bid price in the book (if no bids then returns ``None``).
 
         Returns
         -------
@@ -421,7 +421,7 @@ cdef class OrderBook:
 
     cpdef best_ask_price(self):
         """
-        Return the best ask price in the book (if no asks then returns None).
+        Return the best ask price in the book (if no asks then returns ``None``).
 
         Returns
         -------
@@ -436,7 +436,7 @@ cdef class OrderBook:
 
     cpdef best_bid_qty(self):
         """
-        Return the best bid quantity in the book (if no bids then returns None).
+        Return the best bid quantity in the book (if no bids then returns ``None``).
 
         Returns
         -------
@@ -451,11 +451,11 @@ cdef class OrderBook:
 
     cpdef best_ask_qty(self):
         """
-        Return the best ask quantity in the book (if no asks then returns None).
+        Return the best ask quantity in the book (if no asks then returns ``None``).
 
         Returns
         -------
-        double or None
+        double or ``None``
 
         """
         cdef Level top_ask_level = self.asks.top()
@@ -474,11 +474,11 @@ cdef class OrderBook:
 
     cpdef spread(self):
         """
-        Return the top of book spread (if no bids or asks then returns None).
+        Return the top of book spread (if no bids or asks then returns ``None``).
 
         Returns
         -------
-        double or None
+        double or ``None``
 
         """
         cdef Level top_bid_level = self.bids.top()
@@ -490,11 +490,11 @@ cdef class OrderBook:
 
     cpdef midpoint(self):
         """
-        Return the mid point (if no market exists the returns None).
+        Return the mid point (if no market exists the returns ``None``).
 
         Returns
         -------
-        double or None
+        double or ``None``
 
         """
         cdef Level top_bid_level = self.bids.top()
