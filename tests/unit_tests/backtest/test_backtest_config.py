@@ -252,6 +252,7 @@ def test_backtest_data_config_load(catalog):
 
 
 def test_backtest_config_partial():
+    # Arrange
     config = BacktestRunConfig()
     config.update(
         venues=[
@@ -282,22 +283,26 @@ def test_backtest_config_partial():
 
 
 def test_build_graph_shared_nodes(backtest_configs):
+    # Arrange
     node = BacktestNode()
     graph = node.build_graph(backtest_configs)
     dsk = graph.dask.to_dict()
+
+    # Act - The strategies share the same input data,
     result = sorted([k.split("-")[0] for k in dsk.keys()])
-    # The strategies share the same input data,
+
+    # Assert
     assert result == [
-        "gather",
+        "_gather_delayed",
+        "_run_delayed",
+        "_run_delayed",
         "load",
-        "run_backtest",
-        "run_backtest",
     ]
 
 
 def test_backtest_against_example(catalog):
-    # Replicate examples/fx_ema_cross_audusd_ticks.py backtest result
-
+    """Replicate examples/fx_ema_cross_audusd_ticks.py backtest result."""
+    # Arrange
     config = BacktestRunConfig(
         engine=BacktestEngineConfig(),
         venues=[
@@ -342,35 +347,54 @@ def test_backtest_against_example(catalog):
     )
 
     node = BacktestNode()
-    tasks = node.build_graph(config)
+
+    # Act
+    tasks = node.build_graph([config])
     results = tasks.compute()
     result = results[list(results)[0]]
+
+    # Assert
     assert len(result["account"]) == 193
     assert len(result["positions"]) == 48
     assert len(result["fills"]) == 96
-    expected = b'[{"type":"AccountBalance","currency":"USD","total":"997652.94","locked":"20096.29","free":"977556.65"}]'
     account_result = result["account"]["balances"].iloc[-2]
+    expected = b'[{"type":"AccountBalance","currency":"USD","total":"997652.94","locked":"20096.29","free":"977556.65"}]'
     assert account_result == expected
 
 
 def test_backtest_run_sync(backtest_configs, catalog):
+    # Arrange
     node = BacktestNode()
+
+    # Act
     result = node.run_sync(backtest_configs)
+
+    # Assert
     assert len(result) == 2
 
 
 def test_backtest_build_graph(backtest_configs, catalog):
+    # Arrange
     node = BacktestNode()
     tasks = node.build_graph(backtest_configs)
+
+    # Act
     result = tasks.compute()
+
+    # Assert
     assert len(result) == 2
 
 
 def test_backtest_run_distributed(backtest_configs, catalog):
     from distributed import Client
 
+    # Arrange
     node = BacktestNode()
     with Client(processes=False):
         tasks = node.build_graph(backtest_configs)
+
+        # Act
         result = tasks.compute()
+
+        # Assert
         assert result

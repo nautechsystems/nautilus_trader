@@ -49,7 +49,7 @@ class Partialable:
         return self
 
     def replace(self, **kwargs):
-        """Return a new instance with some attributes replaces."""
+        """Return a new instance with some attributes replaced."""
         return self.__class__(
             **{**{k: getattr(self, k) for k in self.__dataclass_fields__}, **kwargs}
         )
