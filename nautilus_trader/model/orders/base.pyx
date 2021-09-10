@@ -186,7 +186,7 @@ cdef class Order:
         str
 
         """
-        raise NotImplemented("method must be implemented in subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef dict to_dict(self):
         """
@@ -727,7 +727,7 @@ cdef class Order:
 
     cdef void _updated(self, OrderUpdated event) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplemented("method must be implemented in subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef void _canceled(self, OrderCanceled event) except *:
         pass  # Do nothing else
@@ -737,11 +737,11 @@ cdef class Order:
 
     cdef void _triggered(self, OrderTriggered event) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplemented("method must be implemented in subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef void _filled(self, OrderFilled event) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplemented("method must be implemented in subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef object _calculate_avg_px(self, Quantity last_qty, Price last_px):
         if self.avg_px is None:
