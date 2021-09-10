@@ -92,6 +92,8 @@ def check_partition_columns(
 
 def clean_partition_cols(df, mappings: Dict[str, Dict[str, str]]):
     """
+    Clean partition columns.
+
     The values in `partition_cols` may have characters that are illegal in
     filenames. Strip them out and return a dataframe we can write into a parquet
     file.

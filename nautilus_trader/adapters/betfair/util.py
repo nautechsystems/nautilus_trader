@@ -26,12 +26,7 @@ def flatten_tree(y: Dict, **filters):
     """
     Flatten a nested dict into a list of dicts with each nested level combined
     into a single dict.
-
-    :param y: Dict
-    :param filters: Filter keys
-    :return:
     """
-
     results = []
     ignore_keys = ("type", "children")
 
@@ -76,9 +71,6 @@ def hash_json(data):
 
 
 def one(iterable):
-    """
-    Stolen from more_itertools.one()
-    """
     it = iter(iterable)
 
     try:

@@ -53,6 +53,10 @@ except ImportError:  # pragma: no cover
 
 
 class RawFile:
+    """
+    Provides a wrapper of fsspec.OpenFile that processes a raw file and writes to parquet.
+    """
+
     def __init__(
         self,
         open_file: OpenFile,
@@ -61,19 +65,20 @@ class RawFile:
         progress=False,
     ):
         """
-        A wrapper of fsspec.OpenFile that processes a raw file and writes to parquet.
+        Initialize a new instance of the ``RawFile`` class.
 
         Parameters
         ----------
         open_file : OpenFile
-            The fsspec.OpenFile source of this data
+            The fsspec.OpenFile source of this data.
         block_size: int
-            The max block (chunk) size to read from the file
+            The max block (chunk) size to read from the file.
         partition_name_callable: Callable
             A callable taking a two arguments: (`partition_keys`, `df`) that can be used to modify the name of the
             parquet partition filename. Can be used to partition data in a more intelligent way (for example by date)
         progress: bool
-            Show a progress bar while processing this individual file
+            Show a progress bar while processing this individual file.
+
         """
         self.open_file = open_file
         self.block_size = block_size
