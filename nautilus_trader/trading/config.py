@@ -18,7 +18,7 @@ import importlib.util
 import sys
 from importlib.machinery import ModuleSpec
 from types import ModuleType
-from typing import Optional
+from typing import Optional, Union
 
 import pydantic
 
@@ -49,7 +49,7 @@ class StrategyFactory:
         Raises
         ------
         TypeError
-            If callback is not of type `ImportableStrategyConfig`.
+            If config is not of type `ImportableStrategyConfig`.
 
         """
         PyCondition.type(config, ImportableStrategyConfig, "config")
@@ -63,7 +63,6 @@ class StrategyFactory:
             cls = getattr(mod, config.cls)
             assert isinstance(config.config, TradingStrategyConfig)
             return cls(config=config.config)
-        # TODO(cs): Implement importing in various ways
         else:
             spec: ModuleSpec = importlib.util.spec_from_loader(config.module, loader=None)
             module: ModuleType = importlib.util.module_from_spec(spec)
@@ -76,17 +75,17 @@ class ImportableStrategyConfig(pydantic.BaseModel):
     """
     Represents the trading strategy configuration for one specific backtest run.
 
-    name : str
+    path : str, optional
         The fully-qualified name of the module.
-    path : str
-        The path to the source code.
+    source : bytes, optional
+        The strategy source code.
+    config : Union[TradingStrategyConfig, str]
 
     """
 
     path: Optional[str]
     source: Optional[bytes]
-    config: Optional[TradingStrategyConfig]
-    # TODO - We should allow config to be a str path also
+    config: Union[TradingStrategyConfig, str]
 
     def _check_path(self):
         assert self.path, "`path` not set, can't parse module"
