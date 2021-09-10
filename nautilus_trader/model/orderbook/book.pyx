@@ -879,7 +879,7 @@ cdef class L1OrderBook(OrderBook):
         """
         NotImplemented (Use `update(order)` for L1OrderBook).
         """
-        raise NotImplementedError("Use `update(order)` for L1OrderBook")
+        raise NotImplementedError("Use `update(order)` for L1OrderBook")  # pragma: no cover
 
     cpdef void update(self, Order order) except *:
         """

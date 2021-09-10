@@ -43,4 +43,4 @@ def serialize_order_initialized(event: OrderInitialized):
 
 
 def deserialize(data: List[Dict]):
-    raise NotImplementedError
+    raise NotImplementedError()  # pragma: no cover

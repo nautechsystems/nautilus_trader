@@ -119,7 +119,7 @@ class Reader:
         self.buffer = b""
 
     def parse(self, block: bytes) -> Generator:
-        raise NotImplementedError
+        raise NotImplementedError()  # pragma: no cover
 
 
 class ByteReader(Reader):
