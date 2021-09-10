@@ -44,15 +44,15 @@ cdef class Indicator:
 
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError(f"Cannot handle {repr(tick)}: method not implemented in subclass")
+        raise NotImplementedError(f"Cannot handle {repr(tick)}: method not implemented in subclass")  # pragma: no cover
 
     cpdef void handle_trade_tick(self, TradeTick tick) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError(f"Cannot handle {repr(tick)}: method not implemented in subclass")
+        raise NotImplementedError(f"Cannot handle {repr(tick)}: method not implemented in subclass")  # pragma: no cover
 
     cpdef void handle_bar(self, Bar bar) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError(f"Cannot handle {repr(bar)}: method not implemented in subclass")
+        raise NotImplementedError(f"Cannot handle {repr(bar)}: method not implemented in subclass")  # pragma: no cover
 
     cpdef void reset(self) except *:
         """

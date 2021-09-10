@@ -38,4 +38,4 @@ def serialize(event: PositionEvent):
 
 
 def deserialize(_):
-    raise NotImplementedError
+    raise NotImplementedError()  # pragma: no cover
