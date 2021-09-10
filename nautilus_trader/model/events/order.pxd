@@ -69,7 +69,7 @@ cdef class OrderInitialized(OrderEvent):
     cdef readonly ContingencyType contingency
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly list contingency_ids
-    """The orders contingency IDs.\n\n:returns: `list[ClientOrderId]` or ``None``"""
+    """The orders contingency client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
     cdef readonly str tags
     """The order custom user tags.\n\n:returns: `str` or ``None``"""
 

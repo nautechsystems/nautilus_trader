@@ -98,21 +98,21 @@ cdef class LimitOrder(PassiveOrder):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the object was initialized.
         post_only : bool, optional
-            If the order will only make a market.
+            If the order will only provide liquidity (make a market).
         reduce_only : bool, optional
-            If the order will only reduce an open position.
+            If the order carries the 'reduce-only' execution instruction.
         hidden : bool, optional
-            If the order will be hidden from the public book.
+            If the order should be hidden from the public book.
         order_list_id : OrderListId, optional
             The order list ID associated with the order.
         parent_order_id : ClientOrderId, optional
             The orders parent client order ID.
         child_order_ids : list[ClientOrderId], optional
-            The orders child order ID(s).
+            The orders child client order ID(s).
         contingency : ContingencyType
-            The orders contingency type.
+            The orders contingency type. Can be 0/'NONE'.
         contingency_ids : list[ClientOrderId], optional
-            The orders contingency IDs.
+            The orders contingency client order ID(s).
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
