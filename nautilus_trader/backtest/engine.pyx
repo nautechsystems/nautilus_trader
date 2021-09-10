@@ -905,7 +905,7 @@ cdef class BacktestEngine:
         exchange.register_client(exec_client)
         self._exec_engine.register_client(exec_client)
 
-        self._log.info(f"Added {venue} SimulatedExchange.")
+        self._log.info(f"Added {exchange}.")
 
     def reset(self) -> None:
         """
