@@ -106,10 +106,10 @@ cdef class SimpleMovingAverage(MovingAverage):
             The update value.
 
         """
-        self._increment_count()
         self._inputs.append(value)
 
         self.value = fast_mean(np.asarray(self._inputs, dtype=np.float64))
+        self._increment_count()
 
-    cdef void _reset_ma(self) except *:
+    cpdef void _reset_ma(self) except *:
         self._inputs.clear()

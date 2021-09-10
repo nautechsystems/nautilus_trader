@@ -137,6 +137,6 @@ cdef class KeltnerPosition(Indicator):
         else:
             self.value = 0
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._kc.reset()
         self.value = 0

@@ -128,7 +128,7 @@ cdef class DonchianChannel(Indicator):
         self.lower = min(self._lower_prices)
         self.middle = (self.upper + self.lower) / 2
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._upper_prices.clear()
         self._lower_prices.clear()
 

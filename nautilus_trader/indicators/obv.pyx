@@ -100,6 +100,6 @@ cdef class OnBalanceVolume(Indicator):
             if (self.period == 0 and len(self._obv) > 0) or len(self._obv) >= self.period:
                 self._set_initialized(True)
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._obv.clear()
         self.value = 0

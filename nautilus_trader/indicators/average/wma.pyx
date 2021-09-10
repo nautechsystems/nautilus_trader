@@ -126,7 +126,6 @@ cdef class WeightedMovingAverage(MovingAverage):
             The update value.
 
         """
-        self._increment_count()
         self._inputs.append(value)
 
         if self.initialized or self.weights is None:
@@ -134,5 +133,7 @@ cdef class WeightedMovingAverage(MovingAverage):
         else:
             self.value = np.average(self._inputs, weights=self.weights[-len(self._inputs):], axis=0)
 
-    cdef void _reset_ma(self) except *:
+        self._increment_count()
+
+    cpdef void _reset_ma(self) except *:
         self._inputs.clear()

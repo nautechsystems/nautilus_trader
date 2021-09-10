@@ -364,7 +364,7 @@ cdef class FuzzyCandlesticks(Indicator):
 
         return CandleWickSize.LARGE
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._lengths.clear()
         self._body_percents.clear()
         self._upper_wick_percents.clear()

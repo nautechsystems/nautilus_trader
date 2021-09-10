@@ -42,6 +42,9 @@ cdef class Indicator:
     def __repr__(self) -> str:
         return f"{self.name}({self._params_str()})"
 
+    cdef str _params_str(self):
+        return str(self._params)[1:-1].replace("'", '') if self._params else ''
+
     cpdef void handle_quote_tick(self, QuoteTick tick) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError(f"Cannot handle {repr(tick)}: method not implemented in subclass")  # pragma: no cover
@@ -64,15 +67,12 @@ cdef class Indicator:
         self.has_inputs = False
         self.initialized = False
 
-    cdef str _params_str(self):
-        return str(self._params)[1:-1].replace("'", '') if self._params else ''
-
-    cdef void _set_has_inputs(self, bint setting) except *:
+    cpdef void _set_has_inputs(self, bint setting) except *:
         self.has_inputs = setting
 
-    cdef void _set_initialized(self, bint setting) except *:
+    cpdef void _set_initialized(self, bint setting) except *:
         self.initialized = setting
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

@@ -94,7 +94,7 @@ cdef class SpreadAnalyzer(Indicator):
             drop_left=False,
         )
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._spreads.clear()
         self.current = 0
         self.average = 0

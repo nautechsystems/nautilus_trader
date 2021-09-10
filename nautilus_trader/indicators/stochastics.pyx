@@ -124,7 +124,7 @@ cdef class Stochastics(Indicator):
         self.value_k = 100 * ((close - k_min_low) / (k_max_high - k_min_low))
         self.value_d = 100 * (sum(self._c_sub_l) / sum(self._h_sub_l))
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._highs.clear()
         self._lows.clear()
         self._c_sub_l.clear()

@@ -13,23 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.indicators.average.moving_average cimport MovingAverage
-from nautilus_trader.model.c_enums.price_type cimport PriceType
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.indicators.base.indicator import Indicator
+from nautilus_trader.model.c_enums.price_type import PriceType
+from nautilus_trader.model.data.bar import Bar
+from nautilus_trader.model.data.tick import QuoteTick
+from nautilus_trader.model.data.tick import TradeTick
 
 
-cdef class ExponentialMovingAverage(MovingAverage):
+# It's generally recommended to code indicators in Cython as per the built-in
+# indicators found in the `indicators` subpackage. However this is an example
+# demonstrating an equivalent EMA indicator written in pure Python.
+
+# Note: The `MovingAverage` base class has not been used in this example to
+# provide more clarity on how to implement custom indicators. Basically you need
+# to inherit from `Indicator` and override the methods shown below.
+
+
+class PyExponentialMovingAverage(Indicator):
     """
     An indicator which calculates an exponential moving average across a
     rolling window.
     """
 
-    def __init__(self, int period, PriceType price_type=PriceType.LAST):
+    def __init__(self, period: int, price_type: PriceType = PriceType.LAST):
         """
-        Initialize a new instance of the ``ExponentialMovingAverage`` class.
+        Initialize a new instance of the ``PyExponentialMovingAverage`` class.
 
         Parameters
         ----------
@@ -44,13 +53,16 @@ cdef class ExponentialMovingAverage(MovingAverage):
             If period is not positive (> 0).
 
         """
-        Condition.positive_int(period, "period")
-        super().__init__(period, params=[period], price_type=price_type)
+        PyCondition.positive_int(period, "period")
+        super().__init__(params=[period])
 
+        self.period = period
+        self.price_type = price_type
         self.alpha = 2.0 / (period + 1.0)
-        self.value = 0
+        self.value = 0.0  # <-- stateful value
+        self.count = 0  # <-- stateful value
 
-    cpdef void handle_quote_tick(self, QuoteTick tick) except *:
+    def handle_quote_tick(self, tick: QuoteTick):
         """
         Update the indicator with the given quote tick.
 
@@ -60,11 +72,11 @@ cdef class ExponentialMovingAverage(MovingAverage):
             The update tick to handle.
 
         """
-        Condition.not_none(tick, "tick")
+        PyCondition.not_none(tick, "tick")
 
         self.update_raw(tick.extract_price(self.price_type).as_double())
 
-    cpdef void handle_trade_tick(self, TradeTick tick) except *:
+    def handle_trade_tick(self, tick: TradeTick):
         """
         Update the indicator with the given trade tick.
 
@@ -74,11 +86,11 @@ cdef class ExponentialMovingAverage(MovingAverage):
             The update tick to handle.
 
         """
-        Condition.not_none(tick, "tick")
+        PyCondition.not_none(tick, "tick")
 
         self.update_raw(tick.price.as_double())
 
-    cpdef void handle_bar(self, Bar bar) except *:
+    def handle_bar(self, bar: Bar):
         """
         Update the indicator with the given bar.
 
@@ -88,11 +100,11 @@ cdef class ExponentialMovingAverage(MovingAverage):
             The update bar to handle.
 
         """
-        Condition.not_none(bar, "bar")
+        PyCondition.not_none(bar, "bar")
 
         self.update_raw(bar.close.as_double())
 
-    cpdef void update_raw(self, double value) except *:
+    def update_raw(self, value: float):
         """
         Update the indicator with the given raw value.
 
@@ -107,4 +119,16 @@ cdef class ExponentialMovingAverage(MovingAverage):
             self.value = value
 
         self.value = self.alpha * value + ((1.0 - self.alpha) * self.value)
-        self._increment_count()
+        self.count += 1
+
+        # Initialization logic
+        if not self.initialized:
+            self._set_has_inputs(True)
+            if self.count >= self.period:
+                self._set_initialized(True)
+
+    def _reset(self):
+        # Override this method to reset stateful values introduced in the class.
+        # This method will be called by the base when `.reset()` is called.
+        self.count = 0
+        self.value = 0

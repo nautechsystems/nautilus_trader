@@ -141,7 +141,7 @@ cdef class Swings(Indicator):
             else:
                 self.duration = self.since_high
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._high_inputs.clear()
         self._low_inputs.clear()
 

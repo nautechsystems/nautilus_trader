@@ -133,7 +133,6 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         if not self.has_inputs:
             self.value = value
 
-        self._increment_count()
         self._efficiency_ratio.update_raw(value)
         self._prior_value = self.value
 
@@ -143,6 +142,8 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         # Calculate AMA
         self.value = self._prior_value + sc * (value - self._prior_value)
 
-    cdef void _reset_ma(self) except *:
+        self._increment_count()
+
+    cpdef void _reset_ma(self) except *:
         self._efficiency_ratio.reset()
         self._prior_value = 0
