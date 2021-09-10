@@ -162,7 +162,7 @@ cdef class BollingerBands(Indicator):
         self.middle = self._ma.value
         self.lower = self._ma.value - (self.k * std)
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._ma.reset()
         self._prices.clear()
 

@@ -88,6 +88,6 @@ cdef class RateOfChange(Indicator):
         else:
             self.value = (price - self._prices[0]) / self._prices[0]
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._prices.clear()
         self.value = 0

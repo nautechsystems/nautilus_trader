@@ -95,6 +95,6 @@ cdef class LinearRegression(Indicator):
 
         self.value = regression_line[-1]
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._inputs.clear()
         self.value = 0

@@ -131,7 +131,7 @@ cdef class AverageTrueRange(Indicator):
             if self._ma.initialized:
                 self._set_initialized(True)
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._ma.reset()
         self._previous_close = 0
         self.value = 0

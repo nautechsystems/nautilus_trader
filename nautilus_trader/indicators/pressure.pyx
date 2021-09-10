@@ -132,7 +132,7 @@ cdef class Pressure(Indicator):
         self.value = buy_pressure - sell_pressure
         self.value_cumulative += self.value
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._atr.reset()
         self._average_volume.reset()
         self.value = 0
