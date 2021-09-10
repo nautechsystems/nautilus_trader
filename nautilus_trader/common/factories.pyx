@@ -208,9 +208,9 @@ cdef class OrderFactory:
         expire_time : datetime, optional
             The order expire time (for GTD orders).
         post_only : bool, optional
-            If the order will only make a market.
+            If the order will only provide liquidity (make a market).
         reduce_only : bool, optional
-            If the order will only reduce an open position.
+            If the order carries the 'reduce-only' execution instruction.
         hidden : bool, optional
             If the order should be hidden from the public book.
         tags : str, optional
@@ -287,7 +287,7 @@ cdef class OrderFactory:
         expire_time : datetime, optional
             The order expire time (for GTD orders).
         reduce_only : bool,
-            If the order will only reduce an open position.
+            If the order carries the 'reduce-only' execution instruction.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -361,9 +361,9 @@ cdef class OrderFactory:
         expire_time : datetime, optional
             The order expire time (for GTD orders).
         post_only : bool, optional
-            If the order will only make a market.
+            If the order will only provide liquidity (make a market).
         reduce_only : bool, optional
-            If the order will only reduce an open position.
+            If the order carries the 'reduce-only' execution instruction.
         hidden : bool, optional
             If the order should be hidden from the public book.
         tags : str, optional

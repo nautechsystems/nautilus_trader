@@ -24,11 +24,11 @@ cdef class StopLimitOrder(PassiveOrder):
     cdef readonly bint is_triggered
     """If the order has been triggered.\n\n:returns: `bool`"""
     cdef readonly bint is_post_only
-    """If the order will only make liquidity.\n\n:returns: `bool`"""
+    """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
     cdef readonly bint is_reduce_only
-    """If the order will only reduce an open position.\n\n:returns: `bool`"""
+    """If the order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
     cdef readonly bint is_hidden
-    """If the order is hidden from the public book.\n\n:returns: `bool`"""
+    """If the order should be hidden from the public book.\n\n:returns: `bool`"""
 
     @staticmethod
     cdef StopLimitOrder create(OrderInitialized init)

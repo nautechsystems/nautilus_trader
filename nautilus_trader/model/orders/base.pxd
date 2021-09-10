@@ -94,11 +94,11 @@ cdef class Order:
     cdef readonly ContingencyType contingency
     """The orders contingency type.\n\n:returns: `ContingencyType`"""
     cdef readonly list contingency_ids
-    """The orders contingency type.\n\n:returns: `list[ClientOrderId]` or ``None``"""
+    """The orders contingency client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
     cdef readonly str tags
     """The order custom user tags.\n\n:returns: `str` or ``None``"""
     cdef readonly UUID4 init_id
-    """The ID of the `OrderInitialized` event.\n\n:returns: `UUID4`"""
+    """The event ID of the `OrderInitialized` event.\n\n:returns: `UUID4`"""
     cdef readonly int64_t ts_last
     """The UNIX timestamp (nanoseconds) when the last fill occurred (0 for no fill).\n\n:returns: `int64`"""
     cdef readonly int64_t ts_init
