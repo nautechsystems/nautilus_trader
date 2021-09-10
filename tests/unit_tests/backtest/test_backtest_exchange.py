@@ -171,7 +171,10 @@ class TestSimulatedExchange:
 
     def test_repr(self):
         # Arrange, Act, Assert
-        assert repr(self.exchange) == "SimulatedExchange(SIM)"
+        assert (
+            repr(self.exchange)
+            == "SimulatedExchange(id=SIM, venue_type=ECN, oms_type=HEDGING, account_type=MARGIN)"
+        )
 
     def test_check_residuals(self):
         # Arrange, Act
