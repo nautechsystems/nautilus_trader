@@ -50,7 +50,10 @@ for cls in Instrument.__subclasses__():
 
 class BacktestNode:
     """
-    Provides a node for managing backtest runs.
+    Provides a node for orchestrating groups of configurable backtest runs.
+
+    These can be run synchronously, or can be built into a lazily evaluated
+    graph for execution by a dask executor.
     """
 
     def __init__(self):
@@ -62,9 +65,15 @@ class BacktestNode:
         """
         Build a `Delayed` graph from `backtest_configs` which can be passed to a dask executor.
 
+        Parameters
+        ----------
+        run_configs : List[BacktestRunConfig]
+            The backtest run configurations.
+
         Returns
         -------
         Delayed
+            The delayed graph, yet to be computed.
 
         """
         results: List[Tuple[str, Dict[str, Any]]] = []
@@ -93,8 +102,13 @@ class BacktestNode:
 
         Parameters
         ----------
-        run_configs : Union[BacktestRunConfig, List[BacktestRunConfig]]
+        run_configs : List[BacktestRunConfig]
             The backtest run configurations.
+
+        Returns
+        -------
+        Dict[str, Any]
+            The results of the backtest runs.
 
         """
         results: List[Tuple[str, Dict[str, Any]]] = []
