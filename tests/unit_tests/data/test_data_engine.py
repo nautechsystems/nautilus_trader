@@ -1298,13 +1298,13 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         tick = TradeTick(
-            ETHUSDT_BINANCE.id,
-            Price.from_str("1050.00000"),
-            Quantity.from_int(100),
-            AggressorSide.BUY,
-            "123456789",
-            0,
-            0,
+            instrument_id=ETHUSDT_BINANCE.id,
+            price=Price.from_str("1050.00000"),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.BUY,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -1343,13 +1343,13 @@ class TestDataEngine:
         self.data_engine.execute(subscribe2)
 
         tick = TradeTick(
-            ETHUSDT_BINANCE.id,
-            Price.from_str("1050.00000"),
-            Quantity.from_int(100),
-            AggressorSide.BUY,
-            "123456789",
-            0,
-            0,
+            instrument_id=ETHUSDT_BINANCE.id,
+            price=Price.from_str("1050.00000"),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.BUY,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act

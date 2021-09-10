@@ -171,13 +171,13 @@ class TestTradeTick:
     def test_hash_str_and_repr(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Quantity.from_int(50000),
-            AggressorSide.BUY,
-            "123456789",
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(50000),
+            aggressor_side=AggressorSide.BUY,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act, Assert
@@ -188,13 +188,13 @@ class TestTradeTick:
     def test_to_dict_returns_expected_dict(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Quantity.from_int(10000),
-            AggressorSide.BUY,
-            "123456789",
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(10000),
+            aggressor_side=AggressorSide.BUY,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -215,13 +215,13 @@ class TestTradeTick:
     def test_from_dict_returns_expected_tick(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Quantity.from_int(10000),
-            AggressorSide.BUY,
-            "123456789",
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(10000),
+            aggressor_side=AggressorSide.BUY,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act

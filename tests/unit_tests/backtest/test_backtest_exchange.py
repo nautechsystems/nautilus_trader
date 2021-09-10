@@ -22,6 +22,7 @@ from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
@@ -75,7 +76,10 @@ class TestSimulatedExchange:
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+        )
 
         self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
@@ -1598,23 +1602,23 @@ class TestSimulatedExchange:
     def test_process_trade_tick_fills_buy_limit_entry_bracket(self):
         # Arrange: Prepare market
         tick1 = TradeTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Quantity.from_int(100000),
-            AggressorSide.SELL,
-            "123456789",
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.SELL,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
         )
 
         tick2 = TradeTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00001"),
-            Quantity.from_int(100000),
-            AggressorSide.BUY,
-            "123456790",
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1.00001"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUY,
+            match_id="123456790",
+            ts_event=0,
+            ts_init=0,
         )
 
         self.data_engine.process(tick1)
@@ -1639,13 +1643,13 @@ class TestSimulatedExchange:
 
         # Act
         tick3 = TradeTick(
-            AUDUSD_SIM.id,
-            Price.from_str("0.99899"),
-            Quantity.from_int(100000),
-            AggressorSide.BUY,  # Lowers bid price
-            "123456789",
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("0.99899"),
+            size=Quantity.from_int(100000),
+            aggressor_side=AggressorSide.BUY,  # Lowers bid price
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(tick3)
@@ -2299,13 +2303,13 @@ class TestOrderBookExchange:
 
         # Act
         tick1 = TradeTick(
-            USDJPY_SIM.id,
-            Price.from_str("14.0"),
-            Quantity.from_int(1000),
-            OrderSide.SELL,
-            "123456789",
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            price=Price.from_str("14.0"),
+            size=Quantity.from_int(1000),
+            aggressor_side=AggressorSide.SELL,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
         )
         self.exchange.process_tick(tick1)
 
@@ -2313,3 +2317,59 @@ class TestOrderBookExchange:
         assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_str("1000.0")  # No slippage
         assert order.avg_px == Decimal("14.0")
+
+    def test_reduce_only_order_does_not_open_position_on_flip_scenario(self):
+        # Arrange: Prepare market
+        # Market is 10 @ 15
+        snapshot = TestStubs.order_book_snapshot(
+            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
+        )
+        self.data_engine.process(snapshot)
+        self.exchange.process_order_book(snapshot)
+
+        entry = self.strategy.order_factory.market(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(2000),
+        )
+        self.strategy.submit_order(entry)
+
+        exit = self.strategy.order_factory.limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(3000),
+            price=Price.from_str("14"),
+            post_only=True,
+            reduce_only=True,
+        )
+        self.strategy.submit_order(exit)
+
+        tick = TradeTick(
+            instrument_id=USDJPY_SIM.id,
+            price=Price.from_str("15.0"),
+            size=Quantity.from_int(1000),
+            aggressor_side=AggressorSide.SELL,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_tick(tick)
+
+        # self.strategy.submit_order(order)
+        #
+        # # Act
+        # tick1 = TradeTick(
+        #     USDJPY_SIM.id,
+        #     Price.from_str("14.0"),
+        #     Quantity.from_int(1000),
+        #     AggressorSide.SELL,
+        #     "123456789",
+        #     0,
+        #     0,
+        # )
+        # self.exchange.process_tick(tick1)
+        #
+        # # Assert
+        # assert order.status == OrderStatus.PARTIALLY_FILLED
+        # assert order.filled_qty == Quantity.from_str("1000.0")  # No slippage
+        # assert order.avg_px == Decimal("14.0")
