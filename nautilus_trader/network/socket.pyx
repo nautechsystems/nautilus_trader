@@ -58,7 +58,7 @@ cdef class SocketClient:
             The handler to process the raw bytes read.
         ssl : bool
             If SSL should be used for socket connection.
-        encoding : str. optional
+        encoding : str, optional
             The encoding to use when sending messages.
         crlf : bytes, optional
             The carriage return, line feed delimiter on which to split messages.

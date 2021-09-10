@@ -141,9 +141,12 @@ class ByteReader(Reader):
         ----------
         block_parser : Callable
             The handler which takes a blocks of bytes and yields Nautilus objects.
+        instrument_provider : InstrumentProvider, optional
+            The instrument provider for the reader.
         instrument_provider_update : Callable , optional
             An optional hook/callable to update instrument provider before data is passed to `byte_parser`
             (in many cases instruments need to be known ahead of parsing).
+
         """
         super().__init__(
             instrument_provider_update=instrument_provider_update,
@@ -184,10 +187,13 @@ class TextReader(ByteReader):
             before json.loads is called. Nautilus objects are returned to the
             context manager for any post-processing also (for example, setting
             the `ts_init`).
+        instrument_provider : InstrumentProvider, optional
+            The instrument provider for the reader.
         instrument_provider_update : Callable, optional
             An optional hook/callable to update instrument provider before
             data is passed to `line_parser` (in many cases instruments need to
             be known ahead of parsing).
+
         """
         assert line_preprocessor is None or isinstance(line_preprocessor, LinePreprocessor)
         super().__init__(
@@ -240,6 +246,8 @@ class CSVReader(Reader):
         ----------
         block_parser : callable
             The handler which takes byte strings and yields Nautilus objects.
+        instrument_provider : InstrumentProvider, optional
+            The readers instrument provider.
         instrument_provider_update
             Optional hook to call before `parser` for the purpose of loading instruments into an InstrumentProvider
         chunked: bool, default=True
@@ -301,16 +309,20 @@ class ParquetReader(ByteReader):
         self,
         parser: Callable = None,
         instrument_provider: Optional[InstrumentProvider] = None,
-        instrument_provider_update=None,
+        instrument_provider_update: Callable = None,
     ):
         """
         Initialize a new instance of the ``ParquetParser`` class.
 
         Parameters
         ----------
-        instrument_provider_update
-            Optional hook to call before `parser` for the purpose of loading
-            instruments into the InstrumentProvider.
+        parser : Callable
+            The parser.
+        instrument_provider : InstrumentProvider, optional
+            The readers instrument provider.
+        instrument_provider_update : Callable , optional
+            An optional hook/callable to update instrument provider before data is passed to `byte_parser`
+            (in many cases instruments need to be known ahead of parsing).
 
         """
         super().__init__(

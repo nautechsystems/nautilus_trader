@@ -165,7 +165,6 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
     """
     Convert a SubmitOrder command into the data required by BetfairClient
     """
-
     order = make_order(command.order)
 
     place_order = {

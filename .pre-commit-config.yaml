@@ -46,13 +46,13 @@ repos:
       - id: check-xml
       - id: check-yaml
 
-  -   repo: https://github.com/codespell-project/codespell
-      rev: v2.1.0
-      hooks:
-        - id: codespell
-          description: Checks for common misspellings.
-          types_or: [python, cython, rst, markdown]
-          exclude: "nautilus_trader/adapters/betfair/parsing.py"
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.1.0
+    hooks:
+      - id: codespell
+        description: Checks for common misspellings.
+        types_or: [python, cython, rst, markdown]
+        exclude: "nautilus_trader/adapters/betfair/parsing.py"
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v0.910
@@ -119,14 +119,15 @@ repos:
             --ignore=C101 D100 E225 E226 E227 E252 E402 E999 W503,
         ]
 
-#  -   repo: https://github.com/pycqa/pydocstyle
-#      rev: 6.1.1
-#      hooks:
-#        -   id: pydocstyle
-#            args: [
-#                "--ignore=D100,D101,D102,D103,D104,D105,D107,D200,D203,D205,
-#                D212,D213,D400,D415"
-#            ]
+  - repo: https://github.com/pycqa/pydocstyle
+    rev: 6.1.1
+    hooks:
+      - id: pydocstyle
+        files: ^nautilus_trader/
+        args:
+        - "--ignore=D100,D101,D102,D103,D104,D105,D107,D200,D203,D205,D212,D213,D400,D415"
+        additional_dependencies:
+          - toml
 
 # Flake8 ignore justifications
 # ----------------------------
@@ -144,3 +145,8 @@ repos:
 # S101: Use of assert detected (use of assert normal for pytest)
 # S403: Consider possible security implications associated with pickle module (pickle ok!)
 # W503: in error will be amended by flake8 soon (https://www.flake8rules.com/rules/W503.html)
+
+
+# pydocstyle ignore justifications
+# --------------------------------
+# WIP
