@@ -29,6 +29,7 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
+from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
@@ -38,6 +39,7 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
+from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
 from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
@@ -191,7 +193,11 @@ cdef class SimulatedExchange:
         self._executions_count = 0
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}({self.id})"
+        return (f"{type(self).__name__}("
+                f"id={self.id}, "
+                f"venue_type={VenueTypeParser.to_str(self.venue_type)}, "
+                f"oms_type={OMSTypeParser.to_str(self.oms_type)}, "
+                f"account_type={AccountTypeParser.to_str(self.account_type)})")
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id):
         """
