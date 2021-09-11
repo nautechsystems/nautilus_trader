@@ -123,7 +123,7 @@ cdef class StopLimitOrder(PassiveOrder):
         child_order_ids : list[ClientOrderId], optional
             The orders child client order ID(s).
         contingency : ContingencyType
-            The orders contingency type. Can be 0/'NONE'.
+            The orders contingency type.
         contingency_ids : list[ClientOrderId], optional
             The orders contingency client order ID(s).
         tags : str, optional
