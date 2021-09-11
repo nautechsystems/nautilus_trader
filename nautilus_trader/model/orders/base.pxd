@@ -81,6 +81,8 @@ cdef class Order:
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly Quantity filled_qty
     """The order total filled quantity.\n\n:returns: `Quantity`"""
+    cdef readonly Quantity leaves_qty
+    """The order total leaves quantity.\n\n:returns: `Quantity`"""
     cdef readonly object avg_px
     """The order average fill price.\n\n:returns: `Decimal` or ``None``"""
     cdef readonly object slippage
@@ -114,6 +116,7 @@ cdef class Order:
     cdef list execution_ids_c(self)
     cdef int event_count_c(self) except *
     cdef str status_string_c(self)
+    cdef str type_string_c(self)
     cdef bint is_buy_c(self) except *
     cdef bint is_sell_c(self) except *
     cdef bint is_passive_c(self) except *
@@ -159,6 +162,8 @@ cdef class PassiveOrder(Order):
     """The order expire time.\n\n:returns: `datetime` or ``None``"""
     cdef readonly int64_t expire_time_ns
     """The order expire time (nanoseconds), zero for no expire time.\n\n:returns: `int64`"""
+    cdef readonly bint is_reduce_only
+    """If the order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
 
     cpdef dict to_dict(self)
 

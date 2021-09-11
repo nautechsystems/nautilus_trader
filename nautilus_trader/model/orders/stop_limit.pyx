@@ -159,6 +159,7 @@ cdef class StopLimitOrder(PassiveOrder):
                 "reduce_only": reduce_only,
                 "hidden": hidden,
             },
+            reduce_only=reduce_only,
             order_list_id=order_list_id,
             parent_order_id=parent_order_id,
             child_order_ids=child_order_ids,
@@ -172,7 +173,6 @@ cdef class StopLimitOrder(PassiveOrder):
         self.trigger = trigger
         self.is_triggered = False
         self.is_post_only = post_only
-        self.is_reduce_only = reduce_only
         self.is_hidden = hidden
 
     def __repr__(self) -> str:

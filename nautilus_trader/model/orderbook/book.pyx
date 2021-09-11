@@ -942,49 +942,6 @@ cdef class L1OrderBook(OrderBook):
         elif isinstance(tick, TradeTick):
             self._update_trade_tick(tick)
 
-    cdef void _update_quote_tick(self, QuoteTick tick):
-        self._update_bid(tick.bid, tick.bid_size)
-        self._update_ask(tick.ask, tick.ask_size)
-
-    cdef void _update_trade_tick(self, TradeTick tick):
-        if tick.aggressor_side == AggressorSide.SELL:  # TAKER hit the bid
-            self._update_bid(tick.price, tick.size)
-        elif tick.aggressor_side == AggressorSide.BUY:  # TAKER lifted the offer
-            self._update_ask(tick.price, tick.size)
-
-        if self._top_bid is None or self._top_ask is None:
-            return
-
-        cdef double best_bid = self._top_bid.price
-        cdef double best_ask = self._top_ask.price
-        if best_bid > best_ask:
-            # This check allows the book to be momentarily in cross with bid
-            # and ask side prices being equal. This is acceptable only in a
-            # scenario where this method has been calling during a backtest.
-            raise BookIntegrityError(f"Orders in cross [{best_bid} @ {best_ask}]")
-
-    cdef void _update_bid(self, double price, double size):
-        if self._top_bid is None:
-            bid = self._process_order(Order(price, size, OrderSide.BUY))
-            self._add(bid)
-            self._top_bid = bid
-            self._top_bid_level = self.bids.top()
-        else:
-            self._top_bid_level.price = price
-            self._top_bid.update_price(price)
-            self._top_bid.update_size(size)
-
-    cdef void _update_ask(self, double price, double size):
-        if self._top_ask is None:
-            ask = self._process_order(Order(price, size, OrderSide.SELL))
-            self._add(ask)
-            self._top_ask = ask
-            self._top_ask_level = self.asks.top()
-        else:
-            self._top_ask_level.price = price
-            self._top_ask.update_price(price)
-            self._top_ask.update_size(size)
-
     cpdef void delete(self, Order order) except *:
         """
         Delete the given order in the book.
@@ -1022,6 +979,49 @@ cdef class L1OrderBook(OrderBook):
             raise BookIntegrityError(f"Number of bid levels > 1, was {bid_levels}")
         if ask_levels > 1:
             raise BookIntegrityError(f"Number of ask levels > 1, was {ask_levels}")
+
+    cdef void _update_quote_tick(self, QuoteTick tick):
+        self._update_bid(tick.bid, tick.bid_size)
+        self._update_ask(tick.ask, tick.ask_size)
+
+    cdef void _update_trade_tick(self, TradeTick tick):
+        if tick.aggressor_side == AggressorSide.SELL:  # TAKER hit the bid
+            self._update_bid(tick.price, tick.size)
+        elif tick.aggressor_side == AggressorSide.BUY:  # TAKER lifted the offer
+            self._update_ask(tick.price, tick.size)
+
+        if self._top_bid is None or self._top_ask is None:
+            return
+
+        cdef double best_bid = self._top_bid.price
+        cdef double best_ask = self._top_ask.price
+        if best_bid > best_ask:
+            # This check allows the book to momentarily have bid and ask side
+            # prices equal. This is acceptable only in a scenario where this
+            # method has been calling during a backtest.
+            raise BookIntegrityError(f"Orders in cross [{best_bid} @ {best_ask}]")
+
+    cdef void _update_bid(self, double price, double size):
+        if self._top_bid is None:
+            bid = self._process_order(Order(price, size, OrderSide.BUY))
+            self._add(bid)
+            self._top_bid = bid
+            self._top_bid_level = self.bids.top()
+        else:
+            self._top_bid_level.price = price
+            self._top_bid.update_price(price)
+            self._top_bid.update_size(size)
+
+    cdef void _update_ask(self, double price, double size):
+        if self._top_ask is None:
+            ask = self._process_order(Order(price, size, OrderSide.SELL))
+            self._add(ask)
+            self._top_ask = ask
+            self._top_ask_level = self.asks.top()
+        else:
+            self._top_ask_level.price = price
+            self._top_ask.update_price(price)
+            self._top_ask.update_size(size)
 
     cdef Order _process_order(self, Order order):
         # Because a L1OrderBook only has one level per side, we replace the

@@ -25,6 +25,7 @@ from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
@@ -788,7 +789,8 @@ cdef class SimulatedExchange:
 
         # Check for immediate fill
         if not order.is_post_only and self._is_limit_matched(order.instrument_id, order.side, order.price):
-            self._passively_fill_order(order, LiquiditySide.TAKER)  # Fills as liquidity taker
+            # Filling as liquidity taker
+            self._passively_fill_order(order, LiquiditySide.TAKER)
 
     cdef void _process_stop_market_order(self, StopMarketOrder order) except *:
         if self._is_stop_marketable(order.instrument_id, order.side, order.price):
@@ -908,7 +910,7 @@ cdef class SimulatedExchange:
                     self._passively_fill_order(order, LiquiditySide.TAKER)  # Immediate fill as TAKER
                     return  # Filled
 
-        self._generate_order_updated(order, qty, price, trigger)
+        self._generate_order_updated(order, qty, price, trigger or order.trigger)
 
 # -- ORDER MATCHING ENGINE -------------------------------------------------------------------------
 
@@ -964,7 +966,8 @@ cdef class SimulatedExchange:
 
     cdef void _match_stop_market_order(self, StopMarketOrder order) except *:
         if self._is_stop_triggered(order.instrument_id, order.side, order.price):
-            self._aggressively_fill_order(order, LiquiditySide.TAKER)  # Triggered stop places market order
+            # Triggered stop places market order
+            self._aggressively_fill_order(order, LiquiditySide.TAKER)
 
     cdef void _match_stop_limit_order(self, StopLimitOrder order) except *:
         if order.is_triggered:
@@ -1059,21 +1062,78 @@ cdef class SimulatedExchange:
 
 # --------------------------------------------------------------------------------------------------
 
+    cdef PositionId _get_position_id(self, Order order):
+        # Determine position_id
+        cdef PositionId position_id = order.position_id
+        if OMSType.HEDGING and position_id is None:
+            position_id = self.cache.position_id(order.client_order_id)
+            if position_id is None:
+                # Generate a venue position ID
+                position_id = self._generate_venue_position_id(order.instrument_id)
+        elif OMSType.NETTING:
+            # Check for open positions
+            positions_open = self.cache.positions_open(
+                venue=None,  # Faster query filtering
+                instrument_id=order.instrument_id,
+            )
+            if positions_open:
+                return positions_open[0].id
+
+        return position_id
+
     cdef void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *:
+        cdef PositionId position_id = self._get_position_id(order)
+        cdef Position position = None
+
+        if position_id is not None:
+            position = self.cache.position(position_id)
+
+        if order.is_reduce_only and position is None:
+            self._log.warning(f"Cancelling REDUCE_ONLY {order.type_string_c()} as would increase position.")
+            self._cancel_order(order)
+            return
+
         cdef list fills = self._determine_limit_price_and_volume(order)
         if not fills:
             return
+
         cdef Price fill_px
         cdef Quantity fill_qty
         for fill_px, fill_qty in fills:
+            if order.leaves_qty == 0:
+                break  # Done early
+            if order.is_reduce_only and fill_qty > position.quantity:
+                # Adjust fill to honor reduce only execution
+                org_qty: Decimal = fill_qty.as_decimal()
+                adj_qty: Decimal = fill_qty - (fill_qty - position.quantity)
+                fill_qty = Quantity(adj_qty, fill_qty.precision)
+                self._generate_order_updated(
+                    order=order,
+                    qty=Quantity(order.quantity.as_decimal() - (org_qty - adj_qty), fill_qty.precision),  # noqa
+                    price=order.price,
+                    trigger=None,
+                )
             self._fill_order(
                 order=order,
-                last_px=fill_px,
                 last_qty=fill_qty,
+                last_px=fill_px,
                 liquidity_side=liquidity_side,
+                venue_position_id=position_id,
             )
+            if position is None:
+                position = self.cache.position(position_id)
 
     cdef void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *:
+        cdef PositionId position_id = self._get_position_id(order)
+        cdef Position position = None
+        if position_id is not None:
+            position = self.cache.position(position_id)
+
+        if order.is_passive_c() and order.is_reduce_only and position is None:
+            self._log.warning(f"Cancelling REDUCE_ONLY {order.type_string_c()} as would increase position.")
+            self._cancel_order(order)
+            return
+
         cdef list fills = self._determine_market_price_and_volume(order)
         if not fills:
             return
@@ -1090,10 +1150,13 @@ cdef class SimulatedExchange:
                     fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
             self._fill_order(
                 order=order,
-                last_px=fill_px,
                 last_qty=fill_qty,
+                last_px=fill_px,
                 liquidity_side=liquidity_side,
+                venue_position_id=position_id,
             )
+            if position is None:
+                position = self.cache.position(position_id)
 
         # TODO: For L1 fill remaining size at next tick price (temporary)
         if self.exchange_order_book_level == BookLevel.L1 and order.is_working_c():
@@ -1105,42 +1168,22 @@ cdef class SimulatedExchange:
                 fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
             self._fill_order(
                 order=order,
-                last_px=fill_px,
                 last_qty=Quantity(order.quantity - order.filled_qty, instrument.size_precision),
+                last_px=fill_px,
                 liquidity_side=liquidity_side,
+                venue_position_id=position_id,
             )
+            if position is None:
+                position = self.cache.position(position_id)
 
     cdef void _fill_order(
         self,
         Order order,
-        Price last_px,
         Quantity last_qty,
+        Price last_px,
         LiquiditySide liquidity_side,
+        PositionId venue_position_id,
     ) except *:
-        self._delete_order(order)  # Remove order from working orders (if found)
-
-        # Determine position_id
-        cdef PositionId position_id = order.position_id
-        if OMSType.HEDGING and position_id is None:
-            position_id = self.cache.position_id(order.client_order_id)
-            if position_id is None:
-                # Generate a venue position ID
-                position_id = self._generate_venue_position_id(order.instrument_id)
-        elif OMSType.NETTING:
-            # Check for open positions
-            positions_open = self.cache.positions_open(
-                venue=None,  # Faster query filtering
-                instrument_id=order.instrument_id,
-            )
-            if positions_open:
-                position_id = positions_open[0].id
-
-        # Determine any position
-        cdef Position position = None
-        if position_id is not None:
-            position = self.cache.position(position_id)
-        # *** position could be None here ***
-
         # Calculate commission
         cdef Instrument instrument = self.instruments[order.instrument_id]
         cdef Money commission = self.exec_client.get_account().calculate_commission(
@@ -1156,7 +1199,7 @@ cdef class SimulatedExchange:
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id or self._generate_venue_order_id(order.instrument_id),
-            venue_position_id=None if self.oms_type == OMSType.NETTING else position_id,  # noqa
+            venue_position_id=venue_position_id,
             execution_id=self._generate_execution_id(),
             order_side=order.side,
             order_type=order.type,
@@ -1167,3 +1210,7 @@ cdef class SimulatedExchange:
             liquidity_side=liquidity_side,
             ts_event=self._clock.timestamp_ns(),
         )
+
+        if order.leaves_qty == 0:
+            # Remove order from working orders (if found)
+            self._delete_order(order)

@@ -145,6 +145,7 @@ cdef class LimitOrder(PassiveOrder):
                 "reduce_only": reduce_only,
                 "hidden": hidden,
             },
+            reduce_only=reduce_only,
             order_list_id=order_list_id,
             parent_order_id=parent_order_id,
             child_order_ids=child_order_ids,
@@ -156,7 +157,6 @@ cdef class LimitOrder(PassiveOrder):
         )
 
         self.is_post_only = post_only
-        self.is_reduce_only = reduce_only
         self.is_hidden = hidden
 
     cpdef dict to_dict(self):

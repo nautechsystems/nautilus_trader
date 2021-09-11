@@ -955,6 +955,7 @@ class TestOrders:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100000)
+        assert order.leaves_qty == Quantity.zero()
         assert order.avg_px == Decimal("1.00001")
         assert len(order.execution_ids) == 1
         assert not order.is_active
@@ -1036,6 +1037,7 @@ class TestOrders:
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED
         assert order.filled_qty == Quantity.from_int(60000)
+        assert order.leaves_qty == Quantity.from_int(40000)
         assert order.avg_px == Decimal("1.000014")
         assert len(order.execution_ids) == 2
         assert order.is_active

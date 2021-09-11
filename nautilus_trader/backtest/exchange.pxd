@@ -189,6 +189,7 @@ cdef class SimulatedExchange:
 
 # --------------------------------------------------------------------------------------------------
 
+    cdef PositionId _get_position_id(self, Order order)
     cdef void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
     cdef void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *
-    cdef void _fill_order(self, Order order, Price last_px, Quantity last_qty, LiquiditySide liquidity_side) except *
+    cdef void _fill_order(self, Order order, Quantity last_qty, Price last_px, LiquiditySide liquidity_side, PositionId venue_position_id) except *

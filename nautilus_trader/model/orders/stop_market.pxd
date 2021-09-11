@@ -18,8 +18,6 @@ from nautilus_trader.model.orders.base cimport PassiveOrder
 
 
 cdef class StopMarketOrder(PassiveOrder):
-    cdef readonly bint is_reduce_only
-    """If the order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
 
     @staticmethod
     cdef StopMarketOrder create(OrderInitialized init)

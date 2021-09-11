@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -243,6 +245,8 @@ cdef class MarketOrder(Order):
         self.strategy_id = fill.strategy_id
         self._execution_ids.append(fill.execution_id)
         self.execution_id = fill.execution_id
-        self.filled_qty = Quantity(self.filled_qty + fill.last_qty, fill.last_qty.precision)
+        filled_qty: Decimal = self.filled_qty.as_decimal() + fill.last_qty.as_decimal()
+        self.filled_qty = Quantity(filled_qty, fill.last_qty.precision)
+        self.leaves_qty = Quantity(self.quantity.as_decimal() - filled_qty, fill.last_qty.precision)
         self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
