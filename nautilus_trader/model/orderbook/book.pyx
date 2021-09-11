@@ -36,6 +36,13 @@ from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
 
 
+cdef class BookIntegrityError(Exception):
+    """
+    Represents an error condition where the order books integrity has been lost.
+    """
+    pass
+
+
 cdef class OrderBook:
     """
     The base class for all order books.
@@ -285,12 +292,15 @@ cdef class OrderBook:
 
     cpdef void check_integrity(self) except *:
         """
-        Return a value indicating whether the order book integrity test passes.
+        Check order book integrity.
 
-        Returns
-        -------
-        bool
-            True if check passes, else False.
+        For all order books:
+        - The bid side price should not be greater than the ask side price.
+
+        Raises
+        ------
+        BookIntegrityError
+            If any check fails.
 
         """
         self._check_integrity()
@@ -356,11 +366,12 @@ cdef class OrderBook:
         if top_bid_level is None or top_ask_level is None:
             return
 
-        best_bid = top_bid_level.price
-        best_ask = top_ask_level.price
+        cdef double best_bid = top_bid_level.price
+        cdef double best_ask = top_ask_level.price
         if best_bid is None or best_ask is None:
             return
-        assert best_bid < best_ask, f"Orders in cross [{best_bid} @ {best_ask}]"
+        if best_bid >= best_ask:
+            raise BookIntegrityError(f"Orders in cross [{best_bid} @ {best_ask}]")
 
     cpdef int trade_side(self, TradeTick trade):
         """
@@ -799,21 +810,25 @@ cdef class L2OrderBook(OrderBook):
 
     cpdef void check_integrity(self) except *:
         """
-        Return a value indicating whether the order book integrity test passes.
+        Check order book integrity.
 
-        Returns
-        -------
-        bool
-            True if check passes, else False.
+        For a L2 order book:
+        - There should be at most one order per level.
+        - The bid side price should not be greater than the ask side price.
+
+        Raises
+        ------
+        BookIntegrityError
+            If any check fails.
 
         """
-        # For a L2OrderBook, ensure only one order per level in addition to
-        # normal order book checks.
         self._check_integrity()
 
         cdef Level level
         for level in self.bids.levels + self.asks.levels:
-            assert len(level.orders) == 1, f"Number of orders on {level} > 1"
+            num_orders = len(level.orders)
+            if num_orders != 1:
+                raise BookIntegrityError(f"Number of orders on {level} != 1, was {num_orders}")
 
     cdef void _process_order(self, Order order):
         # Because a L2OrderBook only has one order per level, we replace the
@@ -934,14 +949,19 @@ cdef class L1OrderBook(OrderBook):
     cdef void _update_trade_tick(self, TradeTick tick):
         if tick.aggressor_side == AggressorSide.SELL:  # TAKER hit the bid
             self._update_bid(tick.price, tick.size)
-            if self._top_ask and self._top_bid.price >= self._top_ask.price:
-                self._top_ask.price = self._top_bid.price
-                self._top_ask_level.price = self._top_bid.price
         elif tick.aggressor_side == AggressorSide.BUY:  # TAKER lifted the offer
             self._update_ask(tick.price, tick.size)
-            if self._top_bid and self._top_ask.price <= self._top_bid.price:
-                self._top_bid.price = self._top_ask.price
-                self._top_bid_level.price = self._top_ask.price
+
+        if self._top_bid is None or self._top_ask is None:
+            return
+
+        cdef double best_bid = self._top_bid.price
+        cdef double best_ask = self._top_ask.price
+        if best_bid > best_ask:
+            # This check allows the book to be momentarily in cross with bid
+            # and ask side prices being equal. This is acceptable only in a
+            # scenario where this method has been calling during a backtest.
+            raise BookIntegrityError(f"Orders in cross [{best_bid} @ {best_ask}]")
 
     cdef void _update_bid(self, double price, double size):
         if self._top_bid is None:
@@ -981,19 +1001,27 @@ cdef class L1OrderBook(OrderBook):
 
     cpdef void check_integrity(self) except *:
         """
-        Return a value indicating whether the order book integrity test passes.
+        Check order book integrity.
 
-        Returns
-        -------
-        bool
-            True if check passes, else False.
+        For a L1 order book:
+        - There should be at most one level per side.
+        - The bid side price should not be greater than the ask side price.
+
+        Raises
+        ------
+        BookIntegrityError
+            If any check fails.
 
         """
-        # For a L1OrderBook, ensure only one level per side in addition to
-        # normal order book checks.
         self._check_integrity()
-        assert len(self.bids.levels) <= 1, "Number of bid levels > 1"
-        assert len(self.asks.levels) <= 1, "Number of ask levels > 1"
+
+        cdef int bid_levels = len(self.bids.levels)
+        cdef int ask_levels = len(self.asks.levels)
+
+        if bid_levels > 1:
+            raise BookIntegrityError(f"Number of bid levels > 1, was {bid_levels}")
+        if ask_levels > 1:
+            raise BookIntegrityError(f"Number of ask levels > 1, was {ask_levels}")
 
     cdef Order _process_order(self, Order order):
         # Because a L1OrderBook only has one level per side, we replace the

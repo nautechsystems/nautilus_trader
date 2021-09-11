@@ -1887,8 +1887,94 @@ class TestSimulatedExchange:
         assert position_closed.commissions() == [Money(380.02, JPY)]
         assert self.exchange.get_account().balance_total(USD) == Money(1016660.97, USD)
 
+    @pytest.mark.skip(reason="WIP")
+    def test_reduce_only_order_does_not_open_position_on_flip_scenario(self):
+        # Arrange: Prepare market
+        tick = TradeTick(
+            instrument_id=USDJPY_SIM.id,
+            price=Price.from_str("14.0"),
+            size=Quantity.from_int(1000),
+            aggressor_side=AggressorSide.BUY,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_tick(tick)
+        tick = TradeTick(
+            instrument_id=USDJPY_SIM.id,
+            price=Price.from_str("13.0"),
+            size=Quantity.from_int(1000),
+            aggressor_side=AggressorSide.SELL,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_tick(tick)
+        # Market is 1000 @ 13
+
+        entry = self.strategy.order_factory.market(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(2000),
+        )
+        self.strategy.submit_order(entry)
+
+        exit = self.strategy.order_factory.limit(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(3000),
+            price=Price.from_str("14"),
+            post_only=True,
+            reduce_only=True,
+        )
+        self.strategy.submit_order(exit)
+
+        # tick1 = TradeTick(
+        #     instrument_id=USDJPY_SIM.id,
+        #     price=Price.from_str("13.0"),
+        #     size=Quantity.from_int(1000),
+        #     aggressor_side=AggressorSide.SELL,
+        #     match_id="123456789",
+        #     ts_event=0,
+        #     ts_init=0,
+        # )
+        # tick2 = TradeTick(
+        #     instrument_id=USDJPY_SIM.id,
+        #     price=Price.from_str("15.0"),
+        #     size=Quantity.from_int(1000),
+        #     aggressor_side=AggressorSide.BUY,
+        #     match_id="123456789",
+        #     ts_event=0,
+        #     ts_init=0,
+        # )
+        # self.exchange.process_tick(tick1)
+        # self.exchange.process_tick(tick2)
+
+        # self.strategy.submit_order(order)
+        #
+        # # Act
+        # tick1 = TradeTick(
+        #     USDJPY_SIM.id,
+        #     Price.from_str("14.0"),
+        #     Quantity.from_int(1000),
+        #     AggressorSide.SELL,
+        #     "123456789",
+        #     0,
+        #     0,
+        # )
+        # self.exchange.process_tick(tick1)
+        #
+        # # Assert
+        # assert order.status == OrderStatus.PARTIALLY_FILLED
+        # assert order.filled_qty == Quantity.from_str("1000.0")  # No slippage
+        # assert order.avg_px == Decimal("14.0")
+
 
 class TestBitmexExchange:
+    """
+    Various tests which are more specific to market making with maker rebates.
+    """
+
     def setup(self):
         # Fixture Setup
         self.strategies = [MockStrategy(TestStubs.bartype_btcusdt_binance_100tick_last())]
@@ -2038,12 +2124,15 @@ class TestBitmexExchange:
         assert self.strategy.object_storer.get_store()[7].commission == Money(-0.00217552, BTC)
 
 
-class TestOrderBookExchange:
+class TestL2OrderBookExchange:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
         self.uuid_factory = UUIDFactory()
-        self.logger = Logger(self.clock)
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+        )
 
         self.trader_id = TestStubs.trader_id()
         self.account_id = TestStubs.account_id()
@@ -2315,61 +2404,5 @@ class TestOrderBookExchange:
 
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED
-        assert order.filled_qty == Quantity.from_str("1000.0")  # No slippage
+        assert order.filled_qty == Quantity.from_int(1000.0)  # No slippage
         assert order.avg_px == Decimal("14.0")
-
-    def test_reduce_only_order_does_not_open_position_on_flip_scenario(self):
-        # Arrange: Prepare market
-        # Market is 10 @ 15
-        snapshot = TestStubs.order_book_snapshot(
-            instrument_id=USDJPY_SIM.id, bid_volume=1000, ask_volume=1000
-        )
-        self.data_engine.process(snapshot)
-        self.exchange.process_order_book(snapshot)
-
-        entry = self.strategy.order_factory.market(
-            instrument_id=USDJPY_SIM.id,
-            order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(2000),
-        )
-        self.strategy.submit_order(entry)
-
-        exit = self.strategy.order_factory.limit(
-            instrument_id=USDJPY_SIM.id,
-            order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(3000),
-            price=Price.from_str("14"),
-            post_only=True,
-            reduce_only=True,
-        )
-        self.strategy.submit_order(exit)
-
-        tick = TradeTick(
-            instrument_id=USDJPY_SIM.id,
-            price=Price.from_str("15.0"),
-            size=Quantity.from_int(1000),
-            aggressor_side=AggressorSide.SELL,
-            match_id="123456789",
-            ts_event=0,
-            ts_init=0,
-        )
-        self.exchange.process_tick(tick)
-
-        # self.strategy.submit_order(order)
-        #
-        # # Act
-        # tick1 = TradeTick(
-        #     USDJPY_SIM.id,
-        #     Price.from_str("14.0"),
-        #     Quantity.from_int(1000),
-        #     AggressorSide.SELL,
-        #     "123456789",
-        #     0,
-        #     0,
-        # )
-        # self.exchange.process_tick(tick1)
-        #
-        # # Assert
-        # assert order.status == OrderStatus.PARTIALLY_FILLED
-        # assert order.filled_qty == Quantity.from_str("1000.0")  # No slippage
-        # assert order.avg_px == Decimal("14.0")

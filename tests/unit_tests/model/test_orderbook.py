@@ -21,6 +21,7 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.orderbook.book import BookIntegrityError
 from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
@@ -272,9 +273,14 @@ def test_check_integrity_empty(empty_l2_book):
 def test_check_integrity_shallow(empty_l2_book):
     empty_l2_book.add(Order(price=10.0, size=5.0, side=OrderSide.SELL))
     empty_l2_book.check_integrity()
-    empty_l2_book.add(Order(price=20.0, size=5.0, side=OrderSide.BUY))
+    try:
+        # Orders will be in cross
+        empty_l2_book.add(Order(price=20.0, size=5.0, side=OrderSide.BUY))
+    except BookIntegrityError:
+        # Catch the integrity exception and pass to allow the test
+        pass
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(BookIntegrityError):
         empty_l2_book.check_integrity()
 
 
