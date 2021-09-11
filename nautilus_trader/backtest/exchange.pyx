@@ -404,6 +404,9 @@ cdef class SimulatedExchange:
             data.ts_init,
         )
 
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processed {data}")
+
     cpdef void process_tick(self, Tick tick) except *:
         """
         Process the exchanges market for the given tick.
@@ -428,6 +431,9 @@ cdef class SimulatedExchange:
             tick.instrument_id,
             tick.ts_init,
         )
+
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processed {tick}")
 
     cpdef void process_modules(self, int64_t now_ns) except *:
         """

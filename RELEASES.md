@@ -10,14 +10,16 @@ Released on **TBD**
 
 ## Enhancements
 - Added `BacktestNode`.
+- Added `BookIntegrityError` with improved integrity checks for order books.
 - Added order custom user tags.
 - Refined backtest configuration options.
 - Added `Actor.register_warning_event` (also applicable to `TradingStrategy`).
 - Added `Actor.deregister_warning_event` (also applicable to `TradingStrategy`).
 - Added `ContingencyType` enum (for contingency orders in an `OrderList`).
+- Improved efficiency of `UUID4` using the `fastuuid` Rust bindings.
 
 ## Fixes
-- Fixed Redis loss of precision for timestamp int64s (#363).
+- Fixed Redis loss of precision for `int64_t` nanosecond timestamps (#363).
 
 ---
 
