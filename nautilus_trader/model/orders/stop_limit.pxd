@@ -25,8 +25,6 @@ cdef class StopLimitOrder(PassiveOrder):
     """If the order has been triggered.\n\n:returns: `bool`"""
     cdef readonly bint is_post_only
     """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
-    cdef readonly bint is_reduce_only
-    """If the order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
     cdef readonly bint is_hidden
     """If the order should be hidden from the public book.\n\n:returns: `bool`"""
 

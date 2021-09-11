@@ -632,7 +632,7 @@ cdef class RiskEngine(Component):
             if last is None:
                 self._deny_order(
                     order=order,
-                    reason=f"No market to check MAX_NOTIONAL_PER_ORDER",
+                    reason="No market to check MAX_NOTIONAL_PER_ORDER",
                 )
                 return False  # Denied
             if order.side == OrderSide.BUY:

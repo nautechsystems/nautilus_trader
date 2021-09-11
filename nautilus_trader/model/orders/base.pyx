@@ -126,7 +126,7 @@ cdef class Order:
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderStatus.INITIALIZED,
-            trigger_parser=OrderStatusParser.to_str,  # OrderStatusParser.to_str correct here
+            trigger_parser=OrderStatusParser.to_str,  # .to_str correct here
             state_parser=OrderStatusParser.to_str,
         )
         self._rollback_status = OrderStatus.INITIALIZED
@@ -155,6 +155,7 @@ cdef class Order:
 
         # Execution
         self.filled_qty = Quantity.zero_c(precision=0)
+        self.leaves_qty = init.quantity
         self.avg_px = None  # Can be None
         self.slippage = Decimal(0)
 
@@ -219,6 +220,9 @@ cdef class Order:
 
     cdef str status_string_c(self):
         return self._fsm.state_string_c()
+
+    cdef str type_string_c(self):
+        return OrderTypeParser.to_str(self.type)
 
     cdef bint is_buy_c(self) except *:
         return self.side == OrderSide.BUY
@@ -760,6 +764,7 @@ cdef class PassiveOrder(Order):
     --------
     This class should not be used directly, but through a concrete subclass.
     """
+
     def __init__(
         self,
         TraderId trader_id not None,
@@ -773,6 +778,7 @@ cdef class PassiveOrder(Order):
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
         dict options not None,
+        bint reduce_only,
         OrderListId order_list_id,  # Can be None
         ClientOrderId parent_order_id,  # Can be None
         list child_order_ids,  # Can be None
@@ -782,10 +788,6 @@ cdef class PassiveOrder(Order):
         UUID4 init_id not None,
         int64_t ts_init,
     ):
-        """
-        Initialize a new instance of the ``PassiveOrder`` class.
-
-        """
         Condition.positive(quantity, "quantity")
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
@@ -826,6 +828,7 @@ cdef class PassiveOrder(Order):
         self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
         self.expire_time_ns = dt_to_unix_nanos(dt=expire_time) if expire_time else 0
+        self.is_reduce_only = reduce_only
         self.slippage = Decimal(0)
 
     cpdef str info(self):
@@ -875,6 +878,10 @@ cdef class PassiveOrder(Order):
         self.quantity = event.quantity
         self.price = event.price
 
+    cdef void _triggered(self, OrderTriggered event) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
     cdef void _filled(self, OrderFilled fill) except *:
         self.venue_order_id = fill.venue_order_id
         self.position_id = fill.position_id
@@ -882,7 +889,9 @@ cdef class PassiveOrder(Order):
         self._execution_ids.append(fill.execution_id)
         self.execution_id = fill.execution_id
         self.liquidity_side = fill.liquidity_side
-        self.filled_qty = Quantity(self.filled_qty + fill.last_qty, fill.last_qty.precision)
+        filled_qty: Decimal = self.filled_qty.as_decimal() + fill.last_qty.as_decimal()
+        self.filled_qty = Quantity(filled_qty, fill.last_qty.precision)
+        self.leaves_qty = Quantity(self.quantity.as_decimal() - filled_qty, fill.last_qty.precision)
         self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
         self._set_slippage()

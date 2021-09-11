@@ -136,6 +136,7 @@ cdef class StopMarketOrder(PassiveOrder):
             time_in_force=time_in_force,
             expire_time=expire_time,
             options={"reduce_only": reduce_only},
+            reduce_only=reduce_only,
             order_list_id=order_list_id,
             parent_order_id=parent_order_id,
             child_order_ids=child_order_ids,
@@ -145,8 +146,6 @@ cdef class StopMarketOrder(PassiveOrder):
             init_id=init_id,
             ts_init=ts_init,
         )
-
-        self.is_reduce_only = reduce_only
 
     cpdef dict to_dict(self):
         """
