@@ -1,5 +1,13 @@
 repos:
 
+  - repo: https://github.com/psf/black
+    rev: 21.8b0
+    hooks:
+      - id: black
+        args: [
+            --line-length=100,
+        ]
+
   - repo: https://github.com/PyCQA/isort
     rev: 5.9.3
     hooks:
@@ -14,14 +22,6 @@ repos:
             --multi-line=3,
             --lines-after-imports=2,
             --use-parentheses,
-        ]
-
-  - repo: https://github.com/psf/black
-    rev: 21.8b0
-    hooks:
-      - id: black
-        args: [
-            --line-length=100,
         ]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
