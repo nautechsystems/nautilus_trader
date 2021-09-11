@@ -272,10 +272,14 @@ cdef class SimulatedExchange:
                 raise RuntimeError(
                     f"cannot create OrderBook: no instrument for {instrument_id.value}"
                 )
+            # Create order book
             book = OrderBook.create(
                 instrument=instrument,
                 level=self.exchange_order_book_level,
+                simulated=True,
             )
+
+            # Add to books
             self._books[instrument_id] = book
 
         return book
@@ -426,7 +430,7 @@ cdef class SimulatedExchange:
 
         cdef OrderBook book = self.get_book(tick.instrument_id)
         if book.level == BookLevel.L1:
-            book.update_top(tick)
+            book.update_tick(tick)
 
         self._iterate_matching_engine(
             tick.instrument_id,

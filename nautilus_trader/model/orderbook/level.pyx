@@ -13,10 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# TODO - Instead of a Level.orders being a list (python-land) could use structured arrays?
-# https://docs.scipy.org/doc/numpy-1.13.0/user/basics.rec.html
-
-
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.orderbook.data cimport Order
 
@@ -41,7 +37,6 @@ cdef class Level:
         self.price = price
         self.orders = []
 
-    # TODO: Add epsilon based on price precision
     def __eq__(self, Level other) -> bool:
         return self.price == other.price
 
