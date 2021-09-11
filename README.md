@@ -11,6 +11,11 @@
 ![total-lines](https://img.shields.io/tokei/lines/github/nautechsystems/nautilus_trader)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
+|                   |                                |
+|:------------------|:-------------------------------|
+| **Documentation** | https://docs.nautilustrader.io |
+| **Support**       | info@nautechsystems.io         |
+
 ## Introduction
 
 NautilusTrader is an open-source, high-performance, production-grade algorithmic trading platform,
@@ -33,10 +38,6 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data.
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
-
-## Documentation
-
-> https://docs.nautilustrader.io
 
 ## Why NautilusTrader?
 
@@ -99,11 +100,21 @@ Refer to the [integrations](https://docs.nautilustrader.io/integrations) documen
 
 ## Installation
 
-To install the latest binary wheel (or sdist package) from PyPI:
+| Platform          | Supported Pythons |
+|:------------------|:------------------|
+| Linux (x86-64)    | 3.8, 3.9          |
+| macOS (x86-64)    | 3.8, 3.9          |
+| Windows (x86-64)  | 3.8, 3.9          |
+
+To install the latest binary wheel from PyPI:
 
     pip install -U nautilus_trader
 
-Refer to the [Installation Guide](https://docs.nautilustrader.io/getting-started/installation) for further details.
+Refer to the [Installation Guide](https://docs.nautilustrader.io/getting-started/installation) for other options and further details.
+
+## Release schedule
+
+NautilusTrader is currently following a bi-weekly release schedule.
 
 ## Makefile
 
@@ -117,7 +128,9 @@ A `Makefile` is provided to automate most installation and build tasks. It provi
 
 ## Examples
 
-Examples of both backtest and live trading launch scripts are available in the `examples` directory.
+- [indicator](/examples/indicators/) examples.
+- [strategy](/examples/strategies/) examples.
+- [backtest](/examples/backtest/) examples.
 
 ## Development
 
@@ -135,10 +148,6 @@ Refer to the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader
 
 Please make all pull requests to the `develop` branch.
 
-## Release schedule
-
-NautilusTrader is currently following a bi-weekly release schedule.
-
 ## License
 
 NautilusTrader is licensed under the LGPL v3.0 as found in the [LICENSE](https://github.com/nautechsystems/nautilus_trader/blob/master/LICENSE) file.
@@ -150,4 +159,4 @@ Contributors are also required to sign a standard Contributor License Agreement 
 Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
 https://nautechsystems.io
 
-![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ns-logo.png?raw=true "nautechsystems")![cython](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/cython-logo.png?raw=true "cython")
+![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ns-logo.png?raw=true "nautechsystems") ![cython](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/cython-logo.png?raw=true "cython")
