@@ -263,13 +263,13 @@ class TestPortfolio:
 
         # Update the last quote
         last = QuoteTick(
-            BTCUSDT_BINANCE.id,
-            Price.from_str("25001.00"),
-            Price.from_str("25002.00"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=BTCUSDT_BINANCE.id,
+            bid=Price.from_str("25001.00"),
+            ask=Price.from_str("25002.00"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -422,13 +422,13 @@ class TestPortfolio:
 
         # Update the last quote
         last = QuoteTick(
-            BTCUSDT_BINANCE.id,
-            Price.from_str("25001.00"),
-            Price.from_str("25002.00"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=BTCUSDT_BINANCE.id,
+            bid=Price.from_str("25001.00"),
+            ask=Price.from_str("25002.00"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -494,13 +494,13 @@ class TestPortfolio:
         )
 
         last = QuoteTick(
-            BTCUSDT_BINANCE.id,
-            Price.from_str("10510.00"),
-            Price.from_str("10511.00"),
-            Quantity.from_str("1.000000"),
-            Quantity.from_str("1.000000"),
-            0,
-            0,
+            instrument_id=BTCUSDT_BINANCE.id,
+            bid=Price.from_str("10510.00"),
+            ask=Price.from_str("10511.00"),
+            bid_size=Quantity.from_str("1.000000"),
+            ask_size=Quantity.from_str("1.000000"),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.cache.add_quote_tick(last)
@@ -580,13 +580,13 @@ class TestPortfolio:
         )
 
         last = QuoteTick(
-            BTCUSDT_BINANCE.id,
-            Price.from_str("15510.15"),
-            Price.from_str("15510.25"),
-            Quantity.from_str("12.62"),
-            Quantity.from_str("3.1"),
-            0,
-            0,
+            instrument_id=BTCUSDT_BINANCE.id,
+            bid=Price.from_str("15510.15"),
+            ask=Price.from_str("15510.25"),
+            bid_size=Quantity.from_str("12.62"),
+            ask_size=Quantity.from_str("3.1"),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.cache.add_quote_tick(last)
@@ -645,23 +645,23 @@ class TestPortfolio:
         self.portfolio.update_account(state)
 
         last_ethusd = QuoteTick(
-            ETHUSD_BITMEX.id,
-            Price.from_str("376.05"),
-            Price.from_str("377.10"),
-            Quantity.from_str("16"),
-            Quantity.from_str("25"),
-            0,
-            0,
+            instrument_id=ETHUSD_BITMEX.id,
+            bid=Price.from_str("376.05"),
+            ask=Price.from_str("377.10"),
+            bid_size=Quantity.from_str("16"),
+            ask_size=Quantity.from_str("25"),
+            ts_event=0,
+            ts_init=0,
         )
 
         last_btcusd = QuoteTick(
-            BTCUSD_BITMEX.id,
-            Price.from_str("10500.05"),
-            Price.from_str("10501.51"),
-            Quantity.from_str("2.54"),
-            Quantity.from_str("0.91"),
-            0,
-            0,
+            instrument_id=BTCUSD_BITMEX.id,
+            bid=Price.from_str("10500.05"),
+            ask=Price.from_str("10501.51"),
+            bid_size=Quantity.from_str("2.54"),
+            ask_size=Quantity.from_str("0.91"),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.cache.add_quote_tick(last_ethusd)
@@ -799,23 +799,23 @@ class TestPortfolio:
         )
 
         last_ethusd = QuoteTick(
-            ETHUSD_BITMEX.id,
-            Price.from_str("376.05"),
-            Price.from_str("377.10"),
-            Quantity.from_str("16"),
-            Quantity.from_str("25"),
-            0,
-            0,
+            instrument_id=ETHUSD_BITMEX.id,
+            bid=Price.from_str("376.05"),
+            ask=Price.from_str("377.10"),
+            bid_size=Quantity.from_str("16"),
+            ask_size=Quantity.from_str("25"),
+            ts_event=0,
+            ts_init=0,
         )
 
         last_xbtusd = QuoteTick(
-            BTCUSD_BITMEX.id,
-            Price.from_str("50000.00"),
-            Price.from_str("50000.00"),
-            Quantity.from_str("1"),
-            Quantity.from_str("1"),
-            0,
-            0,
+            instrument_id=BTCUSD_BITMEX.id,
+            bid=Price.from_str("50000.00"),
+            ask=Price.from_str("50000.00"),
+            bid_size=Quantity.from_str("1"),
+            ask_size=Quantity.from_str("1"),
+            ts_event=0,
+            ts_init=0,
         )
 
         position = Position(instrument=ETHUSD_BITMEX, fill=fill)
@@ -860,23 +860,23 @@ class TestPortfolio:
         self.portfolio.update_account(state)
 
         last_audusd = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("0.80501"),
-            Price.from_str("0.80505"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("0.80501"),
+            ask=Price.from_str("0.80505"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         last_gbpusd = QuoteTick(
-            GBPUSD_SIM.id,
-            Price.from_str("1.30315"),
-            Price.from_str("1.30317"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=GBPUSD_SIM.id,
+            bid=Price.from_str("1.30315"),
+            ask=Price.from_str("1.30317"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.cache.add_quote_tick(last_audusd)
@@ -976,13 +976,13 @@ class TestPortfolio:
         self.portfolio.update_account(state)
 
         last_audusd = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("0.80501"),
-            Price.from_str("0.80505"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("0.80501"),
+            ask=Price.from_str("0.80505"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.cache.add_quote_tick(last_audusd)
@@ -1208,23 +1208,23 @@ class TestPortfolio:
         position3 = Position(instrument=GBPUSD_SIM, fill=fill3)
 
         last_audusd = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("0.80501"),
-            Price.from_str("0.80505"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("0.80501"),
+            ask=Price.from_str("0.80505"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         last_gbpusd = QuoteTick(
-            GBPUSD_SIM.id,
-            Price.from_str("1.30315"),
-            Price.from_str("1.30317"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=GBPUSD_SIM.id,
+            bid=Price.from_str("1.30315"),
+            ask=Price.from_str("1.30317"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.cache.add_quote_tick(last_audusd)

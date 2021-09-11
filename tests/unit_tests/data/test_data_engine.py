@@ -1170,13 +1170,13 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         tick = QuoteTick(
-            ETHUSDT_BINANCE.id,
-            Price.from_str("100.003"),
-            Price.from_str("100.003"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=ETHUSDT_BINANCE.id,
+            bid=Price.from_str("100.003"),
+            ask=Price.from_str("100.003"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -1216,13 +1216,13 @@ class TestDataEngine:
         self.data_engine.execute(subscribe2)
 
         tick = QuoteTick(
-            ETHUSDT_BINANCE.id,
-            Price.from_str("100.003"),
-            Price.from_str("100.003"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=ETHUSDT_BINANCE.id,
+            bid=Price.from_str("100.003"),
+            ask=Price.from_str("100.003"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act

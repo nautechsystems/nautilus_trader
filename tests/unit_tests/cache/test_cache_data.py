@@ -477,13 +477,13 @@ class TestCache:
         self.cache.add_instrument(USDJPY_SIM)
 
         tick = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("110.80000"),
-            Price.from_str("110.80010"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("110.80000"),
+            ask=Price.from_str("110.80010"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.cache.add_quote_tick(tick)
@@ -506,13 +506,13 @@ class TestCache:
         self.cache.add_instrument(AUDUSD_SIM)
 
         tick = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("0.80000"),
-            Price.from_str("0.80010"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("0.80000"),
+            ask=Price.from_str("0.80010"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.cache.add_quote_tick(tick)

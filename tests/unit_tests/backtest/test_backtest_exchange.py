@@ -241,13 +241,13 @@ class TestSimulatedExchange:
         self.strategy.submit_order_list(bracket2)
 
         tick2 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("89.998"),
-            Price.from_str("89.999"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("89.998"),
+            ask=Price.from_str("89.999"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1188,13 +1188,13 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         tick2 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("96.709"),
-            Price.from_str("96.710"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
-            1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("96.709"),
+            ask=Price.from_str("96.710"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_init=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
         )
 
         # Act
@@ -1225,23 +1225,23 @@ class TestSimulatedExchange:
 
         # Act
         tick2 = QuoteTick(
-            AUDUSD_SIM.id,  # Different market
-            Price.from_str("80.010"),
-            Price.from_str("80.011"),
-            Quantity.from_int(200000),
-            Quantity.from_int(200000),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,  # Different market
+            bid=Price.from_str("80.010"),
+            ask=Price.from_str("80.011"),
+            bid_size=Quantity.from_int(200000),
+            ask_size=Quantity.from_int(200000),
+            ts_event=0,
+            ts_init=0,
         )
 
         tick3 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("96.710"),
-            Price.from_str("96.711"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("96.710"),
+            ask=Price.from_str("96.711"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1275,13 +1275,13 @@ class TestSimulatedExchange:
 
         # Act
         tick2 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("96.710"),
-            Price.from_str("96.712"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("96.710"),
+            ask=Price.from_str("96.712"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1313,13 +1313,13 @@ class TestSimulatedExchange:
 
         # Act
         tick2 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("90.005"),
-            Price.from_str("90.006"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            1_000_000_000,
-            1_000_000_000,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.005"),
+            ask=Price.from_str("90.006"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=1_000_000_000,
+            ts_init=1_000_000_000,
         )
 
         self.exchange.process_tick(tick2)
@@ -1349,24 +1349,24 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order)
 
         tick2 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("90.006"),
-            Price.from_str("90.007"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.006"),
+            ask=Price.from_str("90.007"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
         tick3 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("90.000"),
-            Price.from_str("90.001"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.000"),
+            ask=Price.from_str("90.001"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1397,23 +1397,23 @@ class TestSimulatedExchange:
 
         # Act
         tick2 = QuoteTick(
-            AUDUSD_SIM.id,  # Different market
-            Price.from_str("80.010"),
-            Price.from_str("80.011"),
-            Quantity.from_int(200000),
-            Quantity.from_int(200000),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,  # Different market
+            bid=Price.from_str("80.010"),
+            ask=Price.from_str("80.011"),
+            bid_size=Quantity.from_int(200000),
+            ask_size=Quantity.from_int(200000),
+            ts_event=0,
+            ts_init=0,
         )
 
         tick3 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("90.000"),
-            Price.from_str("90.001"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.000"),
+            ask=Price.from_str("90.001"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1446,13 +1446,13 @@ class TestSimulatedExchange:
 
         # Act
         tick2 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("89.997"),
-            Price.from_str("89.999"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("89.997"),
+            ask=Price.from_str("89.999"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1484,13 +1484,13 @@ class TestSimulatedExchange:
 
         # Act
         tick2 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("90.101"),
-            Price.from_str("90.102"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.101"),
+            ask=Price.from_str("90.102"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1529,13 +1529,13 @@ class TestSimulatedExchange:
 
         # Act
         tick2 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("89.998"),
-            Price.from_str("89.999"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("89.998"),
+            ask=Price.from_str("89.999"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1576,13 +1576,13 @@ class TestSimulatedExchange:
 
         # Act
         tick2 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("91.101"),
-            Price.from_str("91.102"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("91.101"),
+            ask=Price.from_str("91.102"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1687,23 +1687,23 @@ class TestSimulatedExchange:
 
         # Act
         tick2 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("91.101"),
-            Price.from_str("91.102"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("91.101"),
+            ask=Price.from_str("91.102"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
         )
 
         tick3 = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("91.201"),
-            Price.from_str("91.203"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("91.201"),
+            ask=Price.from_str("91.203"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(tick2)
@@ -1762,13 +1762,13 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order_open)
 
         quote = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("100.003"),
-            Price.from_str("100.004"),
-            Quantity.from_int(100000),
-            Quantity.from_int(100000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("100.003"),
+            ask=Price.from_str("100.004"),
+            bid_size=Quantity.from_int(100000),
+            ask_size=Quantity.from_int(100000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(quote)
@@ -1832,13 +1832,13 @@ class TestSimulatedExchange:
     def test_position_flipped_when_reduce_order_exceeds_original_quantity(self):
         # Arrange: Prepare market
         open_quote = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("90.002"),
-            Price.from_str("90.003"),
-            Quantity.from_int(1_000_000),
-            Quantity.from_int(1_000_000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.003"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.data_engine.process(open_quote)
@@ -1854,13 +1854,13 @@ class TestSimulatedExchange:
         self.strategy.submit_order(order_open)
 
         reduce_quote = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("100.003"),
-            Price.from_str("100.004"),
-            Quantity.from_int(1_000_000),
-            Quantity.from_int(1_000_000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("100.003"),
+            ask=Price.from_str("100.004"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(reduce_quote)
@@ -1887,13 +1887,13 @@ class TestSimulatedExchange:
     def test_reduce_only_order_does_not_open_position_on_flip_scenario(self):
         # Arrange: Prepare market
         tick = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("14.0"),
-            Price.from_str("13.0"),
-            Quantity.from_int(1_000_000),
-            Quantity.from_int(1_000_000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("14.0"),
+            ask=Price.from_str("13.0"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
         )
         self.exchange.process_tick(tick)
 
@@ -1915,13 +1915,13 @@ class TestSimulatedExchange:
         self.strategy.submit_order(exit, position_id=PositionId("2-001"))
 
         tick = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("10.0"),
-            Price.from_str("11.0"),
-            Quantity.from_int(1_000_000),
-            Quantity.from_int(1_000_000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("10.0"),
+            ask=Price.from_str("11.0"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
         )
         self.exchange.process_tick(tick)
 
@@ -2036,13 +2036,13 @@ class TestBitmexExchange:
         # Arrange
         # Prepare market
         quote1 = QuoteTick(
-            XBTUSD_BITMEX.id,
-            Price.from_str("11493.0"),
-            Price.from_str("11493.5"),
-            Quantity.from_int(1500000),
-            Quantity.from_int(1500000),
-            0,
-            0,
+            instrument_id=XBTUSD_BITMEX.id,
+            bid=Price.from_str("11493.0"),
+            ask=Price.from_str("11493.5"),
+            bid_size=Quantity.from_int(1500000),
+            ask_size=Quantity.from_int(1500000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.data_engine.process(quote1)
@@ -2066,13 +2066,13 @@ class TestBitmexExchange:
         self.strategy.submit_order(order_limit)
 
         quote2 = QuoteTick(
-            XBTUSD_BITMEX.id,
-            Price.from_str("11491.0"),
-            Price.from_str("11491.5"),
-            Quantity.from_int(1500000),
-            Quantity.from_int(1500000),
-            0,
-            0,
+            instrument_id=XBTUSD_BITMEX.id,
+            bid=Price.from_str("11491.0"),
+            ask=Price.from_str("11491.5"),
+            bid_size=Quantity.from_int(1500000),
+            ask_size=Quantity.from_int(1500000),
+            ts_event=0,
+            ts_init=0,
         )
 
         self.exchange.process_tick(quote2)  # Fill the limit order
@@ -2198,13 +2198,13 @@ class TestL2OrderBookExchange:
         self.cache.add_instrument(USDJPY_SIM)
 
         quote = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("110.000"),
-            Price.from_str("110.010"),
-            Quantity.from_int(1500000),
-            Quantity.from_int(1500000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("110.000"),
+            ask=Price.from_str("110.010"),
+            bid_size=Quantity.from_int(1500000),
+            ask_size=Quantity.from_int(1500000),
+            ts_event=0,
+            ts_init=0,
         )
         self.data_engine.process(quote)
         snapshot = TestStubs.order_book_snapshot(
@@ -2238,13 +2238,13 @@ class TestL2OrderBookExchange:
         self.cache.add_instrument(USDJPY_SIM)
 
         quote = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("110.000"),
-            Price.from_str("110.010"),
-            Quantity.from_int(1500000),
-            Quantity.from_int(1500000),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("110.000"),
+            ask=Price.from_str("110.010"),
+            bid_size=Quantity.from_int(1500000),
+            ask_size=Quantity.from_int(1500000),
+            ts_event=0,
+            ts_init=0,
         )
         self.data_engine.process(quote)
         snapshot = TestStubs.order_book_snapshot(
