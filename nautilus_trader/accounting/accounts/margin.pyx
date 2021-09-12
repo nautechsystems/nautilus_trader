@@ -496,7 +496,7 @@ cdef class MarginAccount(Account):
         OrderFilled fill,
     ):
         """
-        Return the calculated immediate PnL.
+        Return the calculated PnL.
 
         Parameters
         ----------
