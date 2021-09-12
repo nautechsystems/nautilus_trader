@@ -98,4 +98,4 @@ class TestBacktestAcceptanceTestsWithCache:
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 326
         assert self.engine.iteration == 7999
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(997542.89, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(996702.86, USD)

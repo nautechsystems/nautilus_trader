@@ -550,7 +550,7 @@ class TestBacktestWithAddedBars:
         config = EMACrossConfig(
             instrument_id=str(GBPUSD_SIM.id),
             bar_type=str(bar_type),
-            trade_size=Decimal(1_000_000),
+            trade_size=Decimal(100_000),
             fast_ema=10,
             slow_ema=20,
         )
@@ -562,4 +562,4 @@ class TestBacktestWithAddedBars:
         # Assert
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 180701
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(749122.06, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(977151.62, USD)

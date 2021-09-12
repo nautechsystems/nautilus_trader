@@ -358,7 +358,7 @@ def test_backtest_against_example(catalog):
     assert len(result["positions"]) == 48
     assert len(result["fills"]) == 96
     account_result = result["account"]["balances"].iloc[-2]
-    expected = b'[{"type":"AccountBalance","currency":"USD","total":"997652.94","locked":"20096.29","free":"977556.65"}]'
+    expected = b'[{"type":"AccountBalance","currency":"USD","total":"996365.88","locked":"20096.29","free":"976269.59"}]'
     assert account_result == expected
 
 

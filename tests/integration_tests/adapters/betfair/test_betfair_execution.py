@@ -137,14 +137,22 @@ class TestBetfairExecutionClient:
 
         self.msgbus.subscribe("*", listener)
 
-        self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)  # type: ignore
-        self.msgbus.register(endpoint="ExecEngine.execute", handler=handler(self.exec_engine.execute))  # type: ignore
+        self.msgbus.deregister(endpoint="ExecEngine.execute", handler=self.exec_engine.execute)
+        self.msgbus.register(
+            endpoint="ExecEngine.execute", handler=handler(self.exec_engine.execute)
+        )
 
-        self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)  # type: ignore
-        self.msgbus.register(endpoint="ExecEngine.process", handler=handler(self.exec_engine.process))  # type: ignore
+        self.msgbus.deregister(endpoint="ExecEngine.process", handler=self.exec_engine.process)
+        self.msgbus.register(
+            endpoint="ExecEngine.process", handler=handler(self.exec_engine.process)
+        )
 
-        self.msgbus.deregister(endpoint="Portfolio.update_account", handler=self.portfolio.update_account)  # type: ignore
-        self.msgbus.register(endpoint="Portfolio.update_account", handler=handler(self.portfolio.update_account))  # type: ignore
+        self.msgbus.deregister(
+            endpoint="Portfolio.update_account", handler=self.portfolio.update_account
+        )
+        self.msgbus.register(
+            endpoint="Portfolio.update_account", handler=handler(self.portfolio.update_account)
+        )
 
     def _prefill_venue_order_id_to_client_order_id(self, update):
         order_ids = [

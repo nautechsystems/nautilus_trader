@@ -21,7 +21,6 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
@@ -31,8 +30,8 @@ from nautilus_trader.model.position cimport Position
 
 cdef class Account:
     cdef list _events
-    cdef dict _starting_balances
     cdef dict _balances
+    cdef dict _balances_starting
     cdef dict _commissions
 
     cdef readonly AccountId id
@@ -46,6 +45,8 @@ cdef class Account:
 
 # -- QUERIES ---------------------------------------------------------------------------------------
 
+    cdef bint is_cash_account(self) except *
+    cdef bint is_margin_account(self) except *
     cdef AccountState last_event_c(self)
     cdef list events_c(self)
     cdef int event_count_c(self)
@@ -68,11 +69,10 @@ cdef class Account:
     cpdef void apply(self, AccountState event) except *
     cpdef void update_balances(self, list balances) except *
     cpdef void update_commissions(self, Money commission) except *
-    cpdef void update_margin_init(self, InstrumentId instrument_id, Money locked) except *
-    cpdef void clear_margin_init(self, InstrumentId instrument_id) except *
-    cdef void _recalculate_balance(self, Currency currency) except *
 
 # -- CALCULATIONS ----------------------------------------------------------------------------------
+
+    cdef void _recalculate_balance(self, Currency currency) except *
 
     cpdef Money calculate_commission(
         self,
