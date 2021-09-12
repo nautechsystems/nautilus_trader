@@ -11,10 +11,17 @@
 ![total-lines](https://img.shields.io/tokei/lines/github/nautechsystems/nautilus_trader)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-|                   |                                |
-|:------------------|:-------------------------------|
-| **Documentation** | https://docs.nautilustrader.io |
-| **Support**       | info@nautechsystems.io         |
+| Platform          | Python versions |
+|:------------------|:----------------|
+| Linux (x86-64)    | 3.8, 3.9        |
+| macOS (x86-64)    | 3.8, 3.9        |
+| Windows (x86-64)  | 3.8, 3.9        |
+
+##### Documentation
+https://docs.nautilustrader.io
+
+##### Support
+info@nautechsystems.io
 
 ## Introduction
 
@@ -89,7 +96,7 @@ written in Cython, however the libraries can be accessed from both pure Python a
 - Maintainability
 - Deployability
 
-![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/architecture.png?raw=true "")
+*New architectural diagrams pending*.
 
 ## Integrations
 
@@ -99,12 +106,6 @@ publishers and/or trading venues (exchanges/brokers).
 Refer to the [integrations](https://docs.nautilustrader.io/integrations) documentation for further details.
 
 ## Installation
-
-| Platform          | Python versions |
-|:------------------|:----------------|
-| Linux (x86-64)    | 3.8, 3.9        |
-| macOS (x86-64)    | 3.8, 3.9        |
-| Windows (x86-64)  | 3.8, 3.9        |
 
 To install the latest binary wheel from PyPI:
 
