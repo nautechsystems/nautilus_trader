@@ -1942,7 +1942,40 @@ class TestSimulatedExchange:
         assert position_closed.commissions() == [Money(380.02, JPY)]
         assert self.exchange.get_account().balance_total(USD) == Money(1016660.97, USD)
 
-    def test_reduce_only_order_does_not_open_position_on_flip_scenario(self):
+    def test_reduce_only_market_order_does_not_open_position_on_flip_scenario(self):
+        # Arrange: Prepare market
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("14.0"),
+            ask=Price.from_str("13.0"),
+            bid_size=Quantity.from_int(1_000_000),
+            ask_size=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.exchange.process_tick(tick)
+
+        entry = self.strategy.order_factory.market(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.SELL,
+            quantity=Quantity.from_int(200000),
+        )
+        self.strategy.submit_order(entry)
+
+        exit = self.strategy.order_factory.market(
+            instrument_id=USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(300000),  # <-- overfill to attempt flip
+            reduce_only=True,
+        )
+        self.strategy.submit_order(exit, position_id=PositionId("2-001"))
+
+        # Assert
+        assert exit.status == OrderStatus.FILLED
+        assert exit.filled_qty == Quantity.from_int(200000)
+        assert exit.avg_px == Price.from_str("13.000")
+
+    def test_reduce_only_limit_order_does_not_open_position_on_flip_scenario(self):
         # Arrange: Prepare market
         tick = QuoteTick(
             instrument_id=USDJPY_SIM.id,
@@ -1965,7 +1998,7 @@ class TestSimulatedExchange:
         exit = self.strategy.order_factory.limit(
             instrument_id=USDJPY_SIM.id,
             order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(300000),
+            quantity=Quantity.from_int(300000),  # <-- overfill to attempt flip
             price=Price.from_str("11"),
             post_only=False,
             reduce_only=True,

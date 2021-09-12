@@ -121,8 +121,9 @@ cdef class Order:
             The order initialized event.
 
         """
-        self._events = [init]     # type: list[OrderEvent]
-        self._execution_ids = []  # type: list[ExecutionId]
+        self._events = [init]       # type: list[OrderEvent]
+        self._venue_order_ids = []  # type: list[VenueOrderId]
+        self._execution_ids = []    # type: list[ExecutionId]
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderStatus.INITIALIZED,
@@ -737,8 +738,11 @@ cdef class Order:
         self.venue_order_id = event.venue_order_id
 
     cdef void _updated(self, OrderUpdated event) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        if self.venue_order_id != event.venue_order_id:
+            self._venue_order_ids.append(self.venue_order_id)
+            self.venue_order_id = event.venue_order_id
+        if event.quantity is not None:
+            self.quantity = event.quantity
 
     cdef void _canceled(self, OrderCanceled event) except *:
         pass  # Do nothing else
@@ -830,8 +834,6 @@ cdef class PassiveOrder(Order):
 
         super().__init__(init=init)
 
-        self._venue_order_ids = []  # type: list[VenueOrderId]
-
         self.price = price
         self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
@@ -882,8 +884,10 @@ cdef class PassiveOrder(Order):
         if self.venue_order_id != event.venue_order_id:
             self._venue_order_ids.append(self.venue_order_id)
             self.venue_order_id = event.venue_order_id
-        self.quantity = event.quantity
-        self.price = event.price
+        if event.quantity is not None:
+            self.quantity = event.quantity
+        if event.price is not None:
+            self.price = event.price
 
     cdef void _triggered(self, OrderTriggered event) except *:
         """Abstract method (implement in subclass)."""

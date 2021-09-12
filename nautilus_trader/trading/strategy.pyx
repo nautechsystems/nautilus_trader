@@ -718,7 +718,7 @@ cdef class TradingStrategy(Actor):
 
         cdef int count = len(working_orders)
         self.log.info(
-            f"Cancelling {count} working order{'' if count == 1 else 's'}...",
+            f"Canceling {count} working order{'' if count == 1 else 's'}...",
         )
 
         cdef Order order

@@ -36,7 +36,6 @@ from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
-from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
@@ -727,7 +726,7 @@ cdef class SimulatedExchange:
 
     cdef void _generate_order_updated(
         self,
-        PassiveOrder order,
+        Order order,
         Quantity qty,
         Price price,
         Price trigger,
@@ -737,14 +736,15 @@ cdef class SimulatedExchange:
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
+            venue_order_id=order.venue_order_id or self._generate_venue_order_id(order.instrument_id),
             quantity=qty,
             price=price,
             trigger=trigger,
             ts_event=self._clock.timestamp_ns(),
+            venue_order_id_modified=order.venue_order_id is None,
         )
 
-    cdef void _generate_order_canceled(self, PassiveOrder order) except *:
+    cdef void _generate_order_canceled(self, Order order) except *:
         # Generate event
         self.exec_client.generate_order_canceled(
             strategy_id=order.strategy_id,
@@ -1112,24 +1112,23 @@ cdef class SimulatedExchange:
     cdef void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *:
         cdef PositionId position_id = self._get_position_id(order)
         cdef Position position = None
-
-        if position_id is not None:
+        if order.is_reduce_only and position_id is not None:
             position = self.cache.position(position_id)
-
-        if order.is_reduce_only and position is None:
-            self._log.warning(f"Cancelling REDUCE_ONLY {order.type_string_c()} as would increase position.")
-            self._cancel_order(order)
-            return
+            if position is None:
+                self._log.warning(
+                    f"Canceling REDUCE_ONLY {order.type_string_c()} "
+                    f"as would increase position.",
+                )
+                self._cancel_order(order)
+                return  # Order canceled
 
         cdef list fills = self._determine_limit_price_and_volume(order)
         if not fills:
-            return
+            return  # No fills
 
         cdef Price fill_px
         cdef Quantity fill_qty
         for fill_px, fill_qty in fills:
-            if order.leaves_qty == 0:
-                break  # Done early
             if order.is_reduce_only and fill_qty > position.quantity:
                 # Adjust fill to honor reduce only execution
                 org_qty: Decimal = fill_qty.as_decimal()
@@ -1138,7 +1137,7 @@ cdef class SimulatedExchange:
                 self._generate_order_updated(
                     order=order,
                     qty=Quantity(order.quantity.as_decimal() - (org_qty - adj_qty), fill_qty.precision),  # noqa
-                    price=order.price,
+                    price=None,
                     trigger=None,
                 )
             self._fill_order(
@@ -1148,23 +1147,26 @@ cdef class SimulatedExchange:
                 liquidity_side=liquidity_side,
                 venue_position_id=position_id,
             )
-            if position is None:
-                position = self.cache.position(position_id)
+            if order.is_reduce_only and order.leaves_qty == 0:
+                return  # Done early
 
     cdef void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *:
         cdef PositionId position_id = self._get_position_id(order)
         cdef Position position = None
-        if position_id is not None:
+        if order.is_reduce_only and position_id is not None:
             position = self.cache.position(position_id)
-
-        if order.is_passive_c() and order.is_reduce_only and position is None:
-            self._log.warning(f"Cancelling REDUCE_ONLY {order.type_string_c()} as would increase position.")
-            self._cancel_order(order)
-            return
+            if position is None:
+                self._log.warning(
+                    f"Canceling REDUCE_ONLY {order.type_string_c()} "
+                    f"as would increase position.",
+                )
+                self._cancel_order(order)
+                return  # Order canceled
 
         cdef list fills = self._determine_market_price_and_volume(order)
         if not fills:
-            return
+            return  # No fills
+
         cdef Price fill_px
         cdef Quantity fill_qty
         for fill_px, fill_qty in fills:
@@ -1176,6 +1178,17 @@ cdef class SimulatedExchange:
                     fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
                 else:  # => OrderSide.SELL
                     fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
+            if order.is_reduce_only and fill_qty > position.quantity:
+                # Adjust fill to honor reduce only execution
+                org_qty: Decimal = fill_qty.as_decimal()
+                adj_qty: Decimal = fill_qty - (fill_qty - position.quantity)
+                fill_qty = Quantity(adj_qty, fill_qty.precision)
+                self._generate_order_updated(
+                    order=order,
+                    qty=Quantity(order.quantity.as_decimal() - (org_qty - adj_qty), fill_qty.precision),  # noqa
+                    price=None,
+                    trigger=None,
+                )
             self._fill_order(
                 order=order,
                 last_qty=fill_qty,
@@ -1183,8 +1196,8 @@ cdef class SimulatedExchange:
                 liquidity_side=liquidity_side,
                 venue_position_id=position_id,
             )
-            if position is None:
-                position = self.cache.position(position_id)
+            if order.is_reduce_only and order.leaves_qty == 0:
+                return  # Done early
 
         # TODO: For L1 fill remaining size at next tick price (temporary)
         if self.exchange_order_book_level == BookLevel.L1 and order.is_working_c():
@@ -1201,8 +1214,6 @@ cdef class SimulatedExchange:
                 liquidity_side=liquidity_side,
                 venue_position_id=position_id,
             )
-            if position is None:
-                position = self.cache.position(position_id)
 
     cdef void _fill_order(
         self,

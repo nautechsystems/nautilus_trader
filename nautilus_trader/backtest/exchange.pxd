@@ -160,8 +160,8 @@ cdef class SimulatedExchange:
         VenueOrderId venue_order_id,
         str reason,
     ) except *
-    cdef void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *
-    cdef void _generate_order_canceled(self, PassiveOrder order) except *
+    cdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger) except *
+    cdef void _generate_order_canceled(self, Order order) except *
     cdef void _generate_order_triggered(self, StopLimitOrder order) except *
     cdef void _generate_order_expired(self, PassiveOrder order) except *
 

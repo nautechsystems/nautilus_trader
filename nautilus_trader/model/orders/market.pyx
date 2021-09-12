@@ -242,9 +242,6 @@ cdef class MarketOrder(Order):
                 f"{OrderTypeParser.to_str(self.type)} "
                 f"{TimeInForceParser.to_str(self.time_in_force)}")
 
-    cdef void _updated(self, OrderUpdated event) except *:
-        raise NotImplemented("Cannot update a market order")
-
     cdef void _filled(self, OrderFilled fill) except *:
         self.venue_order_id = fill.venue_order_id
         self.position_id = fill.position_id
