@@ -117,8 +117,8 @@ Refer to the [Installation Guide](https://docs.nautilustrader.io/getting-started
 
 Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity is import we recommend Cython).
 The below are some examples of this:
-- [indicator written in Python](/examples/indicators/ema.py) example.
-- [indicators written in Cython](/nautilus_trader/indicators/) examples.
+- [indicator](/examples/indicators/ema.py) example written in Python.
+- [indicators](/nautilus_trader/indicators/) examples written in Cython.
 - [strategy](/examples/strategies/) examples written in both Python and Cython.
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
 
