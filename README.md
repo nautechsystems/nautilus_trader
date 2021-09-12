@@ -62,8 +62,8 @@ platform was designed from the ground up to hold its own in terms of performance
 
 Python has simply caught up in performance (via Cython offering C-level speed) and general tooling,
 making it a suitable language for building a large system such as this. The benefit being that a
-Python native environment can be offered, suitable for professional quantitative traders and hedge
-funds.
+Python native environment can be offered, suitable for professional quantitative traders and trading
+firms.
 
 ## Why Python?
 
@@ -90,8 +90,8 @@ written in Cython, however the libraries can be accessed from both pure Python a
 ## Architecture Quality Attributes
 
 - Reliability
-- Testability
 - Performance
+- Testability
 - Modularity
 - Maintainability
 - Deployability
@@ -115,16 +115,6 @@ To install the latest binary wheel from PyPI:
 
 Refer to the [Installation Guide](https://docs.nautilustrader.io/getting-started/installation) for other options and further details.
 
-## Makefile
-
-A `Makefile` is provided to automate most installation and build tasks. It provides the following targets:
-- `make install` -- Installs the package using poetry.
-- `make build` -- Runs the Cython build script.
-- `make clean` -- Cleans all none source artifacts from the repository.
-- `make clean-build` -- Runs `clean` and then `build`.
-- `make docs` -- Builds the internal documentation HTML using Sphinx.
-- `make pre-commit` -- Runs the pre-commit checks over all files.
-
 ## Examples
 
 Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity is import we recommend Cython).
@@ -145,6 +135,16 @@ NautilusTrader is currently following a bi-weekly release schedule.
 We aim to make the developer experience for this hybrid codebase of Cython and Python
 as pleasant as possible.
 Please refer to the [Developer Guide](https://docs.nautilustrader.io/developer-guide) for helpful information.
+
+## Makefile
+
+A `Makefile` is provided to automate most installation and build tasks. It provides the following targets:
+- `make install` -- Installs the package using poetry.
+- `make build` -- Runs the Cython build script.
+- `make clean` -- Cleans all none source artifacts from the repository.
+- `make clean-build` -- Runs `clean` and then `build`.
+- `make docs` -- Builds the internal documentation HTML using Sphinx.
+- `make pre-commit` -- Runs the pre-commit checks over all files.
 
 ## Contributing
 
