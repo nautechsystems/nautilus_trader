@@ -17,8 +17,8 @@
 | macOS (x86-64)    | 3.8, 3.9        |
 | Windows (x86-64)  | 3.8, 3.9        |
 
-- **Website:** https://nautilustrader.io (coming soon)
-- **Documentation:** https://docs.nautilustrader.io
+- **Website:** https://nautilustrader.io
+- **Docs:** https://docs.nautilustrader.io
 - **Support:** info@nautechsystems.io
 
 ## Introduction
