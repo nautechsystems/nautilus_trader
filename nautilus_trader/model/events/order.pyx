@@ -1877,7 +1877,7 @@ cdef class OrderUpdated(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         Quantity quantity not None,
-        Price price not None,
+        Price price,  # Can be None
         Price trigger,  # Can be None
         UUID4 event_id not None,
         int64_t ts_event,
@@ -1902,7 +1902,7 @@ cdef class OrderUpdated(OrderEvent):
             The venue order ID.
         quantity : Quantity
             The orders current quantity.
-        price : Price
+        price : Price, optional
             The orders current price.
         trigger : Price, optional
             The orders current trigger.
@@ -1959,6 +1959,7 @@ cdef class OrderUpdated(OrderEvent):
     @staticmethod
     cdef OrderUpdated from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str p = values["price"]
         cdef str t = values["trigger"]
         return OrderUpdated(
             trader_id=TraderId(values["trader_id"]),
@@ -1968,7 +1969,7 @@ cdef class OrderUpdated(OrderEvent):
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             quantity=Quantity.from_str_c(values["quantity"]),
-            price=Price.from_str_c(values["price"]),
+            price=Price.from_str_c(p) if p is not None else None,
             trigger=Price.from_str_c(t) if t is not None else None,
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],

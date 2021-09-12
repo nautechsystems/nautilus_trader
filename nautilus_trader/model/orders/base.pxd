@@ -51,6 +51,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class Order:
     cdef list _events
+    cdef list _venue_order_ids
     cdef list _execution_ids
     cdef FiniteStateMachine _fsm
     cdef OrderStatus _rollback_status
@@ -156,8 +157,6 @@ cdef class Order:
 
 
 cdef class PassiveOrder(Order):
-    cdef list _venue_order_ids
-
     cdef readonly Price price
     """The order price (STOP or LIMIT).\n\n:returns: `Price`"""
     cdef readonly LiquiditySide liquidity_side
