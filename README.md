@@ -100,11 +100,11 @@ Refer to the [integrations](https://docs.nautilustrader.io/integrations) documen
 
 ## Installation
 
-| Platform          | Pythons Supported |
-|:------------------|:------------------|
-| Linux (x86-64)    | 3.8, 3.9          |
-| macOS (x86-64)    | 3.8, 3.9          |
-| Windows (x86-64)  | 3.8, 3.9          |
+| Platform          | Python versions |
+|:------------------|:----------------|
+| Linux (x86-64)    | 3.8, 3.9        |
+| macOS (x86-64)    | 3.8, 3.9        |
+| Windows (x86-64)  | 3.8, 3.9        |
 
 To install the latest binary wheel from PyPI:
 
