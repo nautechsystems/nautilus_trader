@@ -1,6 +1,6 @@
 # NautilusTrader 1.129.0 Beta - Release Notes
 
-Released on **TBD**
+Released on 12th, September 2021
 
 ## Breaking Changes
 - Removed CCXT adapter (#428).
@@ -22,6 +22,7 @@ Released on **TBD**
 ## Fixes
 - Fixed Redis loss of precision for `int64_t` nanosecond timestamps (#363).
 - Fixed behavior of `reduce_only` orders for both submission and filling (#437).
+- Fixed PnL calculation for `CASH` accounts when commission negative (#436).
 
 ---
 
