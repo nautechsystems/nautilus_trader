@@ -665,7 +665,7 @@ class RepeatedOrders(TradingStrategy):
     def on_event(self, event: Event):
         if isinstance(event, OrderAccepted):
             order = self.cache.order(event.client_order_id)
-            self.log.info(f"Cancelling order: {order}")
+            self.log.info(f"Canceling order: {order}")
             self.cancel_order(order=order)
         elif isinstance(event, OrderCanceled):
             self.log.info("Got cancel, sending again")

@@ -150,7 +150,7 @@ cdef class LiveDataEngine(DataEngine):
         """
         self._log.warning("Killing engine...")
         if self._run_queues_task:
-            self._log.debug("Cancelling run_queues_task...")
+            self._log.debug("Canceling run_queues_task...")
             self._run_queues_task.cancel()
         if self.is_running:
             self.is_running = False  # Avoids sentinel messages for queues

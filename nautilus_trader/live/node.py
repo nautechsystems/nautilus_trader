@@ -721,7 +721,7 @@ class TradingNode:
             return
 
         for task in to_cancel:
-            self._log.warning(f"Cancelling pending task {task}")
+            self._log.warning(f"Canceling pending task {task}")
             task.cancel()
 
         if self._loop.is_running():
