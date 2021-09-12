@@ -252,7 +252,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         self._log.warning("Killing engine...")
         if self._run_queue_task:
-            self._log.debug("Cancelling run_queue_task...")
+            self._log.debug("Canceling run_queue_task...")
             self._run_queue_task.cancel()
         if self.is_running:
             self.is_running = False  # Avoids sentinel messages for queues
