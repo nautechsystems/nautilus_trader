@@ -100,7 +100,7 @@ Refer to the [integrations](https://docs.nautilustrader.io/integrations) documen
 
 ## Installation
 
-| Platform          | Supported Pythons |
+| Platform          | Pythons Supported |
 |:------------------|:------------------|
 | Linux (x86-64)    | 3.8, 3.9          |
 | macOS (x86-64)    | 3.8, 3.9          |
@@ -111,10 +111,6 @@ To install the latest binary wheel from PyPI:
     pip install -U nautilus_trader
 
 Refer to the [Installation Guide](https://docs.nautilustrader.io/getting-started/installation) for other options and further details.
-
-## Release schedule
-
-NautilusTrader is currently following a bi-weekly release schedule.
 
 ## Makefile
 
@@ -128,9 +124,19 @@ A `Makefile` is provided to automate most installation and build tasks. It provi
 
 ## Examples
 
-- [indicator](/examples/indicators/) examples.
-- [strategy](/examples/strategies/) examples.
+Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity is import we recommend Cython).
+The below are some examples of this:
+- [indicator written in Python](/examples/indicators/ema.py) example.
+- [indicators written in Cython](/nautilus_trader/indicators/) examples.
+- [strategies written in Python ](/examples/strategies/) examples.
+- [strategy written in Cython ](/examples/strategies/ema_cross_cython.pyx) example.
+
+Here are some examples of backtest launch scripts using a `BacktestEngine` directly, and test data contained within the repo.
 - [backtest](/examples/backtest/) examples.
+
+## Release schedule
+
+NautilusTrader is currently following a bi-weekly release schedule.
 
 ## Development
 
