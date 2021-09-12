@@ -1,3 +1,18 @@
+# NautilusTrader 1.130.0 Beta - Release Notes
+
+Released on **TBD**
+
+## Breaking Changes
+None
+
+## Enhancements
+None
+
+## Fixes
+None
+
+---
+
 # NautilusTrader 1.129.0 Beta - Release Notes
 
 Released on 12th, September 2021
