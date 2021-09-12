@@ -54,6 +54,7 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         TimeInForce time_in_force=*,
+        bint reduce_only=*,
         str tags=*,
     )
 

@@ -126,6 +126,7 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         TimeInForce time_in_force=TimeInForce.GTC,
+        bint reduce_only=False,
         str tags=None,
     ):
         """
@@ -141,6 +142,8 @@ cdef class OrderFactory:
             The orders quantity (> 0).
         time_in_force : TimeInForce, optional
             The orders time-in-force. Often not applicable for market orders.
+        reduce_only : bool
+            If the order carries the 'reduce-only' execution instruction.
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -165,6 +168,7 @@ cdef class OrderFactory:
             order_side=order_side,
             quantity=quantity,
             time_in_force=time_in_force,
+            reduce_only=reduce_only,
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
             order_list_id=None,

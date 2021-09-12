@@ -71,6 +71,7 @@ cdef class MarketOrder(Order):
         TimeInForce time_in_force,
         UUID4 init_id not None,
         int64_t ts_init,
+        bint reduce_only=False,
         OrderListId order_list_id=None,
         ClientOrderId parent_order_id=None,
         list child_order_ids=None,
@@ -99,6 +100,8 @@ cdef class MarketOrder(Order):
             The order initialization event ID.
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the object was initialized.
+        reduce_only : bool
+            If the order carries the 'reduce-only' execution instruction.
         order_list_id : OrderListId, optional
             The order list ID associated with the order.
         parent_order_id : ClientOrderId, optional
@@ -133,6 +136,7 @@ cdef class MarketOrder(Order):
             order_type=OrderType.MARKET,
             quantity=quantity,
             time_in_force=time_in_force,
+            reduce_only=reduce_only,
             options={},
             order_list_id=order_list_id,
             parent_order_id=parent_order_id,
@@ -168,6 +172,7 @@ cdef class MarketOrder(Order):
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
+            "reduce_only": self.is_reduce_only,
             "filled_qty": str(self.filled_qty),
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "slippage": str(self.slippage),
@@ -213,6 +218,7 @@ cdef class MarketOrder(Order):
             order_side=init.side,
             quantity=init.quantity,
             time_in_force=init.time_in_force,
+            reduce_only=init.reduce_only,
             init_id=init.id,
             ts_init=init.ts_init,
             order_list_id=init.order_list_id,

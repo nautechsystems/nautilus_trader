@@ -25,7 +25,6 @@ from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
-from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
@@ -264,7 +263,6 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        cdef Instrument instrument
         cdef OrderBook book = self._books.get(instrument_id)
         if book is None:
             instrument = self.instruments.get(instrument_id)
@@ -452,7 +450,7 @@ cdef class SimulatedExchange:
         """
         self._clock.set_time(now_ns)
 
-        # Iterate through modules
+        # Iterate over modules
         cdef SimulationModule module
         for module in self.modules:
             module.process(now_ns)
@@ -534,6 +532,34 @@ cdef class SimulatedExchange:
             self._update_order(order, command.quantity, command.price, command.trigger)
 
 # --------------------------------------------------------------------------------------------------
+
+    cdef PositionId _get_position_id(self, Order order, bint generate=True):
+        cdef PositionId position_id
+        if OMSType.HEDGING:
+            if order.position_id is not None:
+                return order.position_id
+            position_id = self.cache.position_id(order.client_order_id)
+            if position_id is None and generate:
+                # Generate a venue position ID
+                return self._generate_venue_position_id(order.instrument_id)
+        ####################################################################
+        # NETTING (position ID will be the instrument ID)
+        ####################################################################
+        cdef list positions_open = self.cache.positions_open(
+            venue=None,  # Faster query filtering
+            instrument_id=order.instrument_id,
+        )
+        if positions_open:
+            return positions_open[0].id
+        else:
+            return None
+
+    cdef Position _get_position_for_order(self, Order order):
+        cdef PositionId position_id = self._get_position_id(order, generate=False)
+        if position_id is None:
+            return None
+        else:
+            return self.cache.position(position_id)
 
     cdef dict _build_current_bid_rates(self):
         return {
@@ -751,6 +777,23 @@ cdef class SimulatedExchange:
     cdef void _process_order(self, Order order) except *:
         Condition.not_in(order.client_order_id, self._working_orders, "order.client_order_id", "working_orders")
 
+        # Check reduce-only instruction
+        cdef Position position
+        if order.is_reduce_only:
+            position = self._get_position_for_order(order)
+            if (
+                not position
+                or position.is_closed_c()
+                or (order.is_buy_c() and position.is_long_c())
+                or (order.is_sell_c() and position.is_short_c())
+            ):
+                self._reject_order(
+                    order,
+                    f"REDUCE_ONLY {order.type_string_c()} {order.side_string_c()} order "
+                    f"would have increased position.",
+                )
+                return  # Reduce only
+
         if order.type == OrderType.MARKET:
             self._process_market_order(order)
         elif order.type == OrderType.LIMIT:
@@ -780,7 +823,7 @@ cdef class SimulatedExchange:
             if self._is_limit_marketable(order.instrument_id, order.side, order.price):
                 self._reject_order(
                     order,
-                    f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order "
+                    f"POST_ONLY LIMIT {order.side_string_c()} order "
                     f"limit px of {order.price} would have been a TAKER: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -800,7 +843,7 @@ cdef class SimulatedExchange:
         if self._is_stop_marketable(order.instrument_id, order.side, order.price):
             self._reject_order(
                 order,
-                f"STOP {OrderSideParser.to_str(order.side)} order "
+                f"STOP {order.side_string_c()} order "
                 f"stop px of {order.price} was in the market: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
@@ -815,7 +858,7 @@ cdef class SimulatedExchange:
         if self._is_stop_marketable(order.instrument_id, order.side, order.trigger):
             self._reject_order(
                 order,
-                f"STOP_LIMIT {OrderSideParser.to_str(order.side)} order "
+                f"STOP_LIMIT {order.side_string_c()} order "
                 f"trigger stop px of {order.trigger} was in the market: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
@@ -839,7 +882,7 @@ cdef class SimulatedExchange:
                     order.instrument_id,
                     order.client_order_id,
                     order.venue_order_id,
-                    f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order "
+                    f"POST_ONLY LIMIT {order.side_string_c()} order "
                     f"new limit px of {price} would have been a TAKER: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -864,7 +907,7 @@ cdef class SimulatedExchange:
                 order.instrument_id,
                 order.client_order_id,
                 order.venue_order_id,
-                f"STOP {OrderSideParser.to_str(order.side)} order "
+                f"STOP {order.side_string_c()} order "
                 f"new stop px of {price} was in the market: "
                 f"bid={self.best_bid_price(order.instrument_id)}, "
                 f"ask={self.best_ask_price(order.instrument_id)}",
@@ -888,7 +931,7 @@ cdef class SimulatedExchange:
                     order.instrument_id,
                     order.client_order_id,
                     order.venue_order_id,
-                    f"STOP_LIMIT {OrderSideParser.to_str(order.side)} order "
+                    f"STOP_LIMIT {order.side_string_c()} order "
                     f"new trigger stop px of {price} was in the market: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -903,7 +946,7 @@ cdef class SimulatedExchange:
                         order.instrument_id,
                         order.client_order_id,
                         order.venue_order_id,
-                        f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order  "
+                        f"POST_ONLY LIMIT {order.side_string_c()} order  "
                         f"new limit px of {price} would have been a TAKER: "
                         f"bid={self.best_bid_price(order.instrument_id)}, "
                         f"ask={self.best_ask_price(order.instrument_id)}",
@@ -989,7 +1032,7 @@ cdef class SimulatedExchange:
                 self._delete_order(order)  # Remove order from working orders
                 self._reject_order(
                     order,
-                    f"POST_ONLY LIMIT {OrderSideParser.to_str(order.side)} order "
+                    f"POST_ONLY LIMIT {order.side_string_c()} order "
                     f"limit px of {order.price} would have been a TAKER: "
                     f"bid={self.best_bid_price(order.instrument_id)}, "
                     f"ask={self.best_ask_price(order.instrument_id)}",
@@ -1065,25 +1108,6 @@ cdef class SimulatedExchange:
             return book.bids.simulate_order_fills(order=submit_order)
 
 # --------------------------------------------------------------------------------------------------
-
-    cdef PositionId _get_position_id(self, Order order):
-        # Determine position_id
-        cdef PositionId position_id = order.position_id
-        if OMSType.HEDGING and position_id is None:
-            position_id = self.cache.position_id(order.client_order_id)
-            if position_id is None:
-                # Generate a venue position ID
-                position_id = self._generate_venue_position_id(order.instrument_id)
-        elif OMSType.NETTING:
-            # Check for open positions
-            positions_open = self.cache.positions_open(
-                venue=None,  # Faster query filtering
-                instrument_id=order.instrument_id,
-            )
-            if positions_open:
-                return positions_open[0].id
-
-        return position_id
 
     cdef void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *:
         cdef PositionId position_id = self._get_position_id(order)

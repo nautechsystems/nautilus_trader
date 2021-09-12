@@ -52,6 +52,7 @@ from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
+from nautilus_trader.model.position cimport Position
 
 
 cdef class SimulatedExchange:
@@ -122,6 +123,8 @@ cdef class SimulatedExchange:
 
 # --------------------------------------------------------------------------------------------------
 
+    cdef PositionId _get_position_id(self, Order order, bint generate=*)
+    cdef Position _get_position_for_order(self, Order order)
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
     cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id)
@@ -189,7 +192,6 @@ cdef class SimulatedExchange:
 
 # --------------------------------------------------------------------------------------------------
 
-    cdef PositionId _get_position_id(self, Order order)
     cdef void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
     cdef void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *
     cdef void _fill_order(self, Order order, Quantity last_qty, Price last_px, LiquiditySide liquidity_side, PositionId venue_position_id) except *
