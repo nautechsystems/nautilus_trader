@@ -131,10 +131,9 @@ Indicators and strategies can be developed in both Python and Cython (although i
 The below are some examples of this:
 - [indicator written in Python](/examples/indicators/ema.py) example.
 - [indicators written in Cython](/nautilus_trader/indicators/) examples.
-- [strategies written in Python ](/examples/strategies/) examples.
-- [strategy written in Cython ](/examples/strategies/ema_cross_cython.pyx) example.
+- [strategies](/examples/strategies/) examples written in both Python and Cython.
 
-Here are some examples of backtest launch scripts using a `BacktestEngine` directly, and test data contained within the repo.
+Here are some examples of backtest launch scripts using a `BacktestEngine` directly, and test data contained within the repo:
 - [backtest](/examples/backtest/) examples.
 
 ## Release schedule
