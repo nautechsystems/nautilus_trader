@@ -205,7 +205,7 @@ class TradingNode:
                 serializer=MsgPackSerializer(timestamps_as_str=True),
                 config=config.cache_database,
             )
-        else:  # pragma: no cover
+        else:  # pragma: no cover (design-time error)
             raise ValueError(
                 "The cache_db_type in the configuration is unrecognized, "
                 "can one of {{'in-memory', 'redis'}}.",

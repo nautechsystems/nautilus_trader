@@ -617,10 +617,11 @@ cdef class TimeBarAggregator(BarAggregator):
                 seconds=now.second,
                 microseconds=now.microsecond,
             )
-        else:  # pragma: no cover
-            # Design time error
-            raise ValueError(f"Aggregation not a time, "
-                             f"was {BarAggregationParser.to_str(self.bar_type.spec.aggregation)}")
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(
+                f"Aggregation not a time, "
+                f"was {BarAggregationParser.to_str(self.bar_type.spec.aggregation)}",
+            )
 
         return start_time
 
