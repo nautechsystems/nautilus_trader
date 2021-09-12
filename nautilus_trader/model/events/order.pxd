@@ -58,6 +58,8 @@ cdef class OrderInitialized(OrderEvent):
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly TimeInForce time_in_force
     """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    cdef readonly bint reduce_only
+    """If the order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
     cdef readonly dict options
     """The order initialization options.\n\n:returns: `dict`"""
     cdef readonly OrderListId order_list_id

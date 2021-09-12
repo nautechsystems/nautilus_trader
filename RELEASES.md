@@ -4,7 +4,7 @@ Released on **TBD**
 
 ## Breaking Changes
 - Removed CCXT adapter (#428).
-- Backtest configurations.
+- Backtest configuration changes.
 - Renamed `UpdateOrder` to `ModifyOrder` (terminology standardization).
 - Renamed `DeltaType` to `BookAction` (terminology standardization).
 
@@ -12,14 +12,16 @@ Released on **TBD**
 - Added `BacktestNode`.
 - Added `BookIntegrityError` with improved integrity checks for order books.
 - Added order custom user tags.
-- Refined backtest configuration options.
 - Added `Actor.register_warning_event` (also applicable to `TradingStrategy`).
 - Added `Actor.deregister_warning_event` (also applicable to `TradingStrategy`).
 - Added `ContingencyType` enum (for contingency orders in an `OrderList`).
+- All order types can now be `reduce_only` (#437).
+- Refined backtest configuration options.
 - Improved efficiency of `UUID4` using the `fastuuid` Rust bindings.
 
 ## Fixes
 - Fixed Redis loss of precision for `int64_t` nanosecond timestamps (#363).
+- Fixed behavior of `reduce_only` orders for both submission and filling (#437).
 
 ---
 

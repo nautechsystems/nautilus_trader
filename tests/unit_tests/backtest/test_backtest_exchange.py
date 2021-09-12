@@ -701,6 +701,64 @@ class TestSimulatedExchange:
         assert len(self.exchange.get_working_orders()) == 1
         assert entry_order.client_order_id in self.exchange.get_working_orders()
 
+    def test_submit_reduce_only_order_when_no_position_rejects(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order = self.strategy.order_factory.market(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            reduce_only=True,
+        )
+
+        # Act
+        self.strategy.submit_order(order)
+
+        # Assert
+        assert order.status == OrderStatus.REJECTED
+        assert len(self.exchange.get_working_orders()) == 0
+
+    def test_submit_reduce_only_order_when_would_increase_position_rejects(self):
+        # Arrange: Prepare market
+        tick = TestStubs.quote_tick_3decimal(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("90.002"),
+            ask=Price.from_str("90.005"),
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_tick(tick)
+
+        order1 = self.strategy.order_factory.market(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            reduce_only=False,
+        )
+
+        order2 = self.strategy.order_factory.market(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            reduce_only=True,  # <-- reduce only set
+        )
+
+        self.strategy.submit_order(order1)
+
+        # Act
+        self.strategy.submit_order(order2)
+
+        # Assert
+        assert order1.status == OrderStatus.FILLED
+        assert order2.status == OrderStatus.REJECTED
+        assert len(self.exchange.get_working_orders()) == 0
+
     def test_cancel_stop_order(self):
         # Arrange: Prepare market
         tick = TestStubs.quote_tick_3decimal(

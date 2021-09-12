@@ -301,6 +301,7 @@ class TestOrders:
             "side": "BUY",
             "quantity": "100000",
             "time_in_force": "GTC",
+            "reduce_only": False,
             "filled_qty": "0",
             "avg_px": None,
             "slippage": "0",

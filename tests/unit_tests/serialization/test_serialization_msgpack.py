@@ -448,6 +448,7 @@ class TestMsgPackSerializer:
             OrderType.MARKET,
             Quantity(100000, precision=0),
             TimeInForce.FOK,
+            reduce_only=True,
             options={},
             order_list_id=OrderListId("1"),
             parent_order_id=ClientOrderId("O-123455"),
@@ -472,7 +473,6 @@ class TestMsgPackSerializer:
             "ExpireTime": None,
             "Price": "1.0010",
             "PostOnly": True,
-            "ReduceOnly": True,
             "Hidden": False,
         }
 
@@ -485,6 +485,7 @@ class TestMsgPackSerializer:
             OrderType.LIMIT,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
+            reduce_only=False,
             options=options,
             order_list_id=OrderListId("1"),
             parent_order_id=ClientOrderId("O-123455"),
@@ -509,7 +510,6 @@ class TestMsgPackSerializer:
         options = {
             "ExpireTime": None,
             "Price": "1.0005",
-            "ReduceOnly": False,
         }
 
         event = OrderInitialized(
@@ -521,6 +521,7 @@ class TestMsgPackSerializer:
             OrderType.STOP_MARKET,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
+            reduce_only=True,
             options=options,
             order_list_id=OrderListId("1"),
             parent_order_id=ClientOrderId("O-123455"),
@@ -547,7 +548,6 @@ class TestMsgPackSerializer:
             "Price": "1.0005",
             "Trigger": "1.0010",
             "PostOnly": True,
-            "ReduceOnly": False,
             "Hidden": False,
         }
 
@@ -560,6 +560,7 @@ class TestMsgPackSerializer:
             OrderType.STOP_LIMIT,
             Quantity(100000, precision=0),
             TimeInForce.DAY,
+            reduce_only=True,
             options=options,
             order_list_id=OrderListId("1"),
             parent_order_id=ClientOrderId("O-123455"),

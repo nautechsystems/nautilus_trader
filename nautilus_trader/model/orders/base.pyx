@@ -147,6 +147,7 @@ cdef class Order:
         self.type = init.type
         self.quantity = init.quantity
         self.time_in_force = init.time_in_force
+        self.is_reduce_only = init.reduce_only
         self.parent_order_id = init.parent_order_id  # Can be None
         self.child_order_ids = init.child_order_ids  # Can be None
         self.contingency = init.contingency
@@ -223,6 +224,12 @@ cdef class Order:
 
     cdef str type_string_c(self):
         return OrderTypeParser.to_str(self.type)
+
+    cdef str side_string_c(self):
+        return OrderSideParser.to_str(self.side)
+
+    cdef str tif_string_c(self):
+        return TimeInForceParser.to_str(self.time_in_force)
 
     cdef bint is_buy_c(self) except *:
         return self.side == OrderSide.BUY
@@ -777,8 +784,8 @@ cdef class PassiveOrder(Order):
         Price price not None,
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
-        dict options not None,
         bint reduce_only,
+        dict options not None,
         OrderListId order_list_id,  # Can be None
         ClientOrderId parent_order_id,  # Can be None
         list child_order_ids,  # Can be None
@@ -809,6 +816,7 @@ cdef class PassiveOrder(Order):
             order_type=order_type,
             quantity=quantity,
             time_in_force=time_in_force,
+            reduce_only=reduce_only,
             options=options,
             order_list_id=order_list_id,
             parent_order_id=parent_order_id,
@@ -828,7 +836,6 @@ cdef class PassiveOrder(Order):
         self.liquidity_side = LiquiditySide.NONE
         self.expire_time = expire_time
         self.expire_time_ns = dt_to_unix_nanos(dt=expire_time) if expire_time else 0
-        self.is_reduce_only = reduce_only
         self.slippage = Decimal(0)
 
     cpdef str info(self):
