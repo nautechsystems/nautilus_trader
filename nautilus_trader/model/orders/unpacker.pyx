@@ -44,8 +44,7 @@ cdef class OrderUnpacker:
             return StopMarketOrder.create(init=init)
         elif init.type == OrderType.STOP_LIMIT:
             return StopLimitOrder.create(init=init)
-        else:  # pragma: no cover
-            # Design-time error
+        else:  # pragma: no cover (design-time error)
             raise RuntimeError("invalid order type")
 
     @staticmethod
