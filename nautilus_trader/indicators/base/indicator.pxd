@@ -28,12 +28,13 @@ cdef class Indicator:
     cdef readonly bint initialized
     """If the indicator is warmed up and initialized.\n\n:returns: `bool`"""
 
+    cdef str _params_str(self)
+
     cpdef void handle_quote_tick(self, QuoteTick tick) except *
     cpdef void handle_trade_tick(self, TradeTick tick) except *
     cpdef void handle_bar(self, Bar bar) except *
     cpdef void reset(self) except *
 
-    cdef str _params_str(self)
-    cdef void _set_has_inputs(self, bint setting) except *
-    cdef void _set_initialized(self, bint setting) except *
-    cdef void _reset(self) except *
+    cpdef void _set_has_inputs(self, bint setting) except *
+    cpdef void _set_initialized(self, bint setting) except *
+    cpdef void _reset(self) except *

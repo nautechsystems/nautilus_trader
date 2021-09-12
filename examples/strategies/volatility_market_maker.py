@@ -17,14 +17,13 @@ from decimal import Decimal
 from typing import Dict, Optional, Union
 
 from nautilus_trader.common.logging import LogColor
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderFilled
@@ -42,7 +41,7 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 class VolatilityMarketMakerConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``VolatilityMarketMaker`` instances.
+    Configuration for ``VolatilityMarketMaker`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
@@ -68,7 +67,6 @@ class VolatilityMarketMakerConfig(TradingStrategyConfig):
     atr_multiple: float
     order_id_tag: str = "001"
     trade_size: Decimal
-    oms_type: OMSType = OMSType.HEDGING
 
 
 class VolatilityMarketMaker(TradingStrategy):

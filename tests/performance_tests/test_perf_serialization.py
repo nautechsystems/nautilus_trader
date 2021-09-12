@@ -17,14 +17,14 @@ import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.commands.trading import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
 from tests.test_kit.performance import PerformanceHarness
 from tests.test_kit.stubs import TestStubs
 
@@ -56,11 +56,11 @@ class TestSerializationPerformance(PerformanceHarness):
             StrategyId("SCALPER-001"),
             PositionId("P-123456"),
             self.order,
-            uuid4(),
+            UUID4(),
             0,
         )
 
-        self.serializer = MsgPackCommandSerializer()
+        self.serializer = MsgPackSerializer()
 
     @pytest.fixture(autouse=True)
     @pytest.mark.benchmark(disable_gc=True, warmup=True)

@@ -19,16 +19,18 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.generators cimport ClientOrderIdGenerator
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.time_in_force cimport TimeInForce
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.base cimport PassiveOrder
-from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 
 
@@ -74,6 +76,7 @@ cdef class OrderFactory:
         self.trader_id = trader_id
         self.strategy_id = strategy_id
 
+        self._order_list_id = 1  # TODO(cs): Improve this
         self._id_generator = ClientOrderIdGenerator(
             trader_id=trader_id,
             strategy_id=strategy_id,
@@ -123,6 +126,8 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         TimeInForce time_in_force=TimeInForce.GTC,
+        bint reduce_only=False,
+        str tags=None,
     ):
         """
         Create a new market order.
@@ -137,6 +142,11 @@ cdef class OrderFactory:
             The orders quantity (> 0).
         time_in_force : TimeInForce, optional
             The orders time-in-force. Often not applicable for market orders.
+        reduce_only : bool
+            If the order carries the 'reduce-only' execution instruction.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Returns
         -------
@@ -158,8 +168,15 @@ cdef class OrderFactory:
             order_side=order_side,
             quantity=quantity,
             time_in_force=time_in_force,
+            reduce_only=reduce_only,
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
+            order_list_id=None,
+            parent_order_id=None,
+            child_order_ids=None,
+            contingency=ContingencyType.NONE,
+            contingency_ids=None,
+            tags=tags,
         )
 
     cpdef LimitOrder limit(
@@ -173,6 +190,7 @@ cdef class OrderFactory:
         bint post_only=False,
         bint reduce_only=False,
         bint hidden=False,
+        str tags=None,
     ):
         """
         Create a new limit order.
@@ -194,11 +212,14 @@ cdef class OrderFactory:
         expire_time : datetime, optional
             The order expire time (for GTD orders).
         post_only : bool, optional
-            If the order will only make a market.
+            If the order will only provide liquidity (make a market).
         reduce_only : bool, optional
-            If the order will only reduce an open position.
+            If the order carries the 'reduce-only' execution instruction.
         hidden : bool, optional
             If the order should be hidden from the public book.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Returns
         -------
@@ -209,7 +230,7 @@ cdef class OrderFactory:
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is GTD and expire_time is None.
+            If time_in_force is GTD and expire_time is ``None``.
         ValueError
             If post_only and hidden.
         ValueError
@@ -231,6 +252,12 @@ cdef class OrderFactory:
             post_only=post_only,
             reduce_only=reduce_only,
             hidden=hidden,
+            order_list_id=None,
+            parent_order_id=None,
+            child_order_ids=None,
+            contingency=ContingencyType.NONE,
+            contingency_ids=None,
+            tags=tags,
         )
 
     cpdef StopMarketOrder stop_market(
@@ -242,6 +269,7 @@ cdef class OrderFactory:
         TimeInForce time_in_force=TimeInForce.GTC,
         datetime expire_time=None,
         bint reduce_only=False,
+        str tags=None,
     ):
         """
         Create a new stop-market order.
@@ -263,7 +291,10 @@ cdef class OrderFactory:
         expire_time : datetime, optional
             The order expire time (for GTD orders).
         reduce_only : bool,
-            If the order will only reduce an open position.
+            If the order carries the 'reduce-only' execution instruction.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Returns
         -------
@@ -274,7 +305,7 @@ cdef class OrderFactory:
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is GTD and expire_time is None.
+            If time_in_force is GTD and expire_time is ``None``.
 
         """
         return StopMarketOrder(
@@ -290,6 +321,12 @@ cdef class OrderFactory:
             init_id=self._uuid_factory.generate(),
             ts_init=self._clock.timestamp_ns(),
             reduce_only=reduce_only,
+            order_list_id=None,
+            parent_order_id=None,
+            child_order_ids=None,
+            contingency=ContingencyType.NONE,
+            contingency_ids=None,
+            tags=tags,
         )
 
     cpdef StopLimitOrder stop_limit(
@@ -304,6 +341,7 @@ cdef class OrderFactory:
         bint post_only=False,
         bint reduce_only=False,
         bint hidden=False,
+        str tags=None,
     ):
         """
         Create a new stop-limit order.
@@ -327,11 +365,14 @@ cdef class OrderFactory:
         expire_time : datetime, optional
             The order expire time (for GTD orders).
         post_only : bool, optional
-            If the order will only make a market.
+            If the order will only provide liquidity (make a market).
         reduce_only : bool, optional
-            If the order will only reduce an open position.
+            If the order carries the 'reduce-only' execution instruction.
         hidden : bool, optional
             If the order should be hidden from the public book.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Returns
         -------
@@ -342,7 +383,7 @@ cdef class OrderFactory:
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is GTD and expire_time is None.
+            If time_in_force is GTD and expire_time is ``None``.
         ValueError
             If post_only and hidden.
         ValueError
@@ -365,86 +406,279 @@ cdef class OrderFactory:
             post_only=post_only,
             reduce_only=reduce_only,
             hidden=hidden,
+            order_list_id=None,
+            parent_order_id=None,
+            child_order_ids=None,
+            contingency=ContingencyType.NONE,
+            contingency_ids=None,
+            tags=tags,
         )
 
-    cpdef BracketOrder bracket(
+    cpdef OrderList bracket_market(
         self,
-        Order entry_order,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
         Price stop_loss,
         Price take_profit,
-        TimeInForce sl_tif=TimeInForce.GTC,
-        TimeInForce tp_tif=TimeInForce.GTC,
+        TimeInForce tif_bracket=TimeInForce.GTC,
     ):
         """
-        Create a bracket order from the given entry order, stop-loss price and
-        take-profit price.
+        Create a bracket order with a MARKET entry from the given parameters.
 
         Parameters
         ----------
-        entry_order : Order
-            The entry parent order for the bracket.
+        instrument_id : InstrumentId
+            The orders instrument ID.
+        order_side : OrderSide
+            The entry orders side.
+        quantity : Quantity
+            The entry orders quantity (> 0).
         stop_loss : Price
             The stop-loss child order stop price.
         take_profit : Price
             The take-profit child order limit price.
-        sl_tif : TimeInForce, optional
-            The stop-loss orders time-in-force (``DAY`` or ``GTC``).
-        tp_tif : TimeInForce, optional
-            The take-profit orders time-in-force (``DAY`` or ``GTC``).
+        tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
+            The bracket orders time-in-force .
 
         Returns
         -------
-        BracketOrder
+        OrderList
 
         Raises
         ------
         ValueError
-            If sl_tif is not either ``DAY`` or ``GTC``.
+            If `tif_bracket` is not either ``DAY`` or ``GTC``.
         ValueError
-            If tp_tif is not either ``DAY`` or ``GTC``.
+            If `entry_order.side` is ``BUY`` and `entry_order.price` <= `stop_loss.price`.
         ValueError
-            If entry_order.side is ``BUY`` and entry_order.price <= stop_loss.price.
+            If `entry_order.side` is ``BUY`` and `entry_order.price` >= `take_profit.price`.
         ValueError
-            If entry_order.side is ``BUY`` and entry_order.price >= take_profit.price.
+            If `entry_order.side` is ``SELL`` and `entry_order.price` >= `stop_loss.price`.
         ValueError
-            If entry_order.side is ``SELL`` and entry_order.price >= stop_loss.price.
-        ValueError
-            If entry_order.side is ``SELL`` and entry_order.price <= take_profit.price.
+            If `entry_order.side` is ``SELL`` and `entry_order.price` <= `take_profit.price`.
 
         """
-        Condition.true(sl_tif == TimeInForce.DAY or sl_tif == TimeInForce.GTC, "sl_tif is unsupported")
-        Condition.true(tp_tif == TimeInForce.DAY or sl_tif == TimeInForce.GTC, "tp_tif is unsupported")
+        Condition.true(tif_bracket == TimeInForce.DAY or tif_bracket == TimeInForce.GTC, "tif_bracket is unsupported")
 
         # Validate prices
-        if entry_order.side == OrderSide.BUY:
+        if order_side == OrderSide.BUY:
             Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
-            if isinstance(entry_order, PassiveOrder):
-                Condition.true(entry_order.price > stop_loss, "entry_order.price was <= stop_loss")
-                Condition.true(entry_order.price < take_profit, "entry_order.price was > take_profit")
         else:  # entry_order.side == OrderSide.SELL
             Condition.true(stop_loss > take_profit, "stop_loss was <= take_profit")
-            if isinstance(entry_order, PassiveOrder):
-                Condition.true(entry_order.price < stop_loss, "entry_order.price < stop_loss")
-                Condition.true(entry_order.price > take_profit, "entry_order.price > take_profit")
 
-        cdef StopMarketOrder stop_loss_order = self.stop_market(
+        cdef OrderListId order_list_id = OrderListId(str(self._order_list_id))
+        self._order_list_id += 1
+        cdef ClientOrderId entry_client_order_id = self._id_generator.generate()
+        cdef ClientOrderId stop_loss_client_order_id = self._id_generator.generate()
+        cdef ClientOrderId take_profit_client_order_id = self._id_generator.generate()
+
+        cdef MarketOrder entry_order = MarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=entry_client_order_id,
+            order_side=order_side,
+            quantity=quantity,
+            time_in_force=TimeInForce.GTC,
+            init_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+            order_list_id=order_list_id,
+            parent_order_id=None,
+            child_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
+            contingency=ContingencyType.OTO,
+            contingency_ids=[stop_loss_client_order_id, take_profit_client_order_id],
+            tags="ENTRY",
+        )
+
+        cdef StopMarketOrder stop_loss_order = StopMarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
             instrument_id=entry_order.instrument_id,
+            client_order_id=stop_loss_client_order_id,
             order_side=Order.opposite_side_c(entry_order.side),
-            quantity=entry_order.quantity,
+            quantity=quantity,
             price=stop_loss,
-            time_in_force=sl_tif,
+            time_in_force=tif_bracket,
             expire_time=None,
+            init_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
             reduce_only=True,
+            order_list_id=order_list_id,
+            parent_order_id=entry_client_order_id,
+            child_order_ids=None,
+            contingency=ContingencyType.OCO,
+            contingency_ids=[take_profit_client_order_id],
+            tags="STOP_LOSS",
         )
 
-        cdef LimitOrder take_profit_order = self.limit(
+        cdef LimitOrder take_profit_order = LimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
             instrument_id=entry_order.instrument_id,
+            client_order_id=take_profit_client_order_id,
             order_side=Order.opposite_side_c(entry_order.side),
-            quantity=entry_order.quantity,
+            quantity=quantity,
             price=take_profit,
-            time_in_force=tp_tif,
+            time_in_force=tif_bracket,
             expire_time=None,
+            init_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+            post_only=True,
             reduce_only=True,
+            hidden=False,
+            order_list_id=order_list_id,
+            parent_order_id=entry_client_order_id,
+            child_order_ids=None,
+            contingency=ContingencyType.OCO,
+            contingency_ids=[stop_loss_client_order_id],
+            tags="TAKE_PROFIT",
         )
 
-        return BracketOrder(entry_order, stop_loss_order, take_profit_order)
+        return OrderList(
+            list_id=order_list_id,
+            orders=[entry_order, stop_loss_order, take_profit_order],
+        )
+
+    cpdef OrderList bracket_limit(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        Price entry,
+        Price stop_loss,
+        Price take_profit,
+        TimeInForce tif=TimeInForce.GTC,
+        datetime expire_time=None,
+        TimeInForce tif_bracket=TimeInForce.GTC,
+    ):
+        """
+        Create a bracket order with a LIMIT entry from the given parameters.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The orders instrument ID.
+        order_side : OrderSide
+            The entry orders side.
+        quantity : Quantity
+            The entry orders quantity (> 0).
+        entry : Price
+            The entry LIMIT order price.
+        stop_loss : Price
+            The stop-loss child order stop price.
+        take_profit : Price
+            The take-profit child order limit price.
+        tif : TimeInForce {``DAY``, ``GTC``}, optional
+            The entry orders time-in-force .
+        expire_time : datetime, optional
+            The order expire time (for GTD orders).
+        tif_bracket : TimeInForce {``DAY``, ``GTC``}, optional
+            The bracket orders time-in-force.
+
+        Returns
+        -------
+        OrderList
+
+        Raises
+        ------
+        ValueError
+            If `tif` is GTD and `expire_time` is ``None``.
+        ValueError
+            If `tif_bracket` is not either ``DAY`` or ``GTC``.
+        ValueError
+            If `entry_order.side` is ``BUY`` and `entry_order.price` <= `stop_loss.price`.
+        ValueError
+            If `entry_order.side` is ``BUY`` and `entry_order.price` >= `take_profit.price`.
+        ValueError
+            If `entry_order.side` is ``SELL`` and `entry_order.price` >= `stop_loss.price`.
+        ValueError
+            If `entry_order.side` is ``SELL`` and `entry_order.price` <= `take_profit.price`.
+
+        """
+        Condition.true(tif_bracket == TimeInForce.DAY or tif_bracket == TimeInForce.GTC, "tif_bracket is unsupported")
+
+        # Validate prices
+        if order_side == OrderSide.BUY:
+            Condition.true(stop_loss < take_profit, "stop_loss was >= take_profit")
+            Condition.true(entry > stop_loss, "BUY entry was <= stop_loss")
+            Condition.true(entry < take_profit, "BUY entry was >= take_profit")
+        else:  # entry_order.side == OrderSide.SELL
+            Condition.true(stop_loss > take_profit, "stop_loss was <= take_profit")
+            Condition.true(entry < stop_loss, "SELL entry was >= stop_loss")
+            Condition.true(entry > take_profit, "SELL entry was <= take_profit")
+
+        cdef OrderListId order_list_id = OrderListId(str(self._order_list_id))
+        self._order_list_id += 1
+        cdef ClientOrderId entry_client_order_id = self._id_generator.generate()
+        cdef ClientOrderId stop_loss_client_order_id = self._id_generator.generate()
+        cdef ClientOrderId take_profit_client_order_id = self._id_generator.generate()
+
+        cdef LimitOrder entry_order = LimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=entry_client_order_id,
+            order_side=order_side,
+            quantity=quantity,
+            price=entry,
+            time_in_force=tif,
+            expire_time=expire_time,
+            init_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+            order_list_id=order_list_id,
+            parent_order_id=None,
+            child_order_ids=[stop_loss_client_order_id, take_profit_client_order_id],
+            contingency=ContingencyType.OTO,
+            contingency_ids=[stop_loss_client_order_id, take_profit_client_order_id],
+            tags="ENTRY",
+        )
+
+        cdef StopMarketOrder stop_loss_order = StopMarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=entry_order.instrument_id,
+            client_order_id=stop_loss_client_order_id,
+            order_side=Order.opposite_side_c(entry_order.side),
+            quantity=quantity,
+            price=stop_loss,
+            time_in_force=tif_bracket,
+            expire_time=None,
+            init_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+            reduce_only=True,
+            order_list_id=order_list_id,
+            parent_order_id=entry_client_order_id,
+            child_order_ids=None,
+            contingency=ContingencyType.OCO,
+            contingency_ids=[take_profit_client_order_id],
+            tags="STOP_LOSS",
+        )
+
+        cdef LimitOrder take_profit_order = LimitOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.strategy_id,
+            instrument_id=entry_order.instrument_id,
+            client_order_id=take_profit_client_order_id,
+            order_side=Order.opposite_side_c(entry_order.side),
+            quantity=quantity,
+            price=take_profit,
+            time_in_force=tif_bracket,
+            expire_time=None,
+            init_id=self._uuid_factory.generate(),
+            ts_init=self._clock.timestamp_ns(),
+            post_only=True,
+            reduce_only=True,
+            hidden=False,
+            order_list_id=order_list_id,
+            parent_order_id=entry_client_order_id,
+            child_order_ids=None,
+            contingency=ContingencyType.OCO,
+            contingency_ids=[stop_loss_client_order_id],
+            tags="TAKE_PROFIT",
+        )
+
+        return OrderList(
+            list_id=order_list_id,
+            orders=[entry_order, stop_loss_order, take_profit_order],
+        )

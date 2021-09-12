@@ -28,7 +28,7 @@ cdef class Condition:
     A condition is a predicate which must be true just prior to the execution of
     some section of code - for correct behaviour as per the design specification.
 
-    If a check fails an Exception is thrown with a descriptive message.
+    If a check fails, then an Exception is thrown with a descriptive message.
     """
 
     @staticmethod
@@ -92,7 +92,7 @@ cdef class Condition:
     @staticmethod
     cdef void none(object argument, str param, ex_type=None) except *:
         """
-        Check the argument is None.
+        Check the argument is ``None``.
 
         Parameters
         ----------
@@ -106,7 +106,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If argument is not None.
+            If argument is not ``None``.
 
         """
         if argument is None:
@@ -115,13 +115,13 @@ cdef class Condition:
         raise make_exception(
             ex_default=TypeError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' argument was not None",
+            msg=f"The \'{param}\' argument was not ``None``",
         )
 
     @staticmethod
     cdef void not_none(object argument, str param, ex_type=None) except *:
         """
-        Check the argument is not None.
+        Check the argument is not ``None``.
 
         Parameters
         ----------
@@ -135,7 +135,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If argument is None.
+            If argument is ``None``.
 
         """
         if argument is not None:
@@ -191,14 +191,14 @@ cdef class Condition:
         ex_type=None,
     ) except *:
         """
-        Check the argument is of the specified type, or is None.
+        Check the argument is of the specified type, or is ``None``.
 
         Parameters
         ----------
         argument : object
             The object to check.
         expected : object
-            The expected class type (if not None).
+            The expected class type (if not ``None``).
         param : str
             The arguments parameter name.
         ex_type : Exception, optional
@@ -207,7 +207,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If object is not None and not of the expected type.
+            If object is not ``None`` and not of the expected type.
 
         """
         if argument is None:
@@ -218,7 +218,7 @@ cdef class Condition:
     @staticmethod
     cdef void callable(object argument, str param, ex_type=None) except *:
         """
-        Check the object is of type Callable.
+        Check the object is of type `Callable`.
 
         Parameters
         ----------
@@ -232,7 +232,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If argument is not of type Callable.
+            If argument is not of type `Callable`.
 
         """
         if PyCallable_Check(argument):
@@ -247,7 +247,7 @@ cdef class Condition:
     @staticmethod
     cdef void callable_or_none(object argument, str param, ex_type=None) except *:
         """
-        Check the object is of type Callable or None.
+        Check the object is of type `Callable` or ``None``.
 
         Parameters
         ----------
@@ -261,7 +261,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If argument is not None and not of type Callable.
+            If argument is not ``None`` and not of type `Callable`.
 
         """
         if argument is None:
@@ -374,7 +374,7 @@ cdef class Condition:
         Raises
         -------
         TypeError
-             If list is not empty and contains a type other than the expected type.
+             If list is not empty and contains a type other than `expected_type`.
 
         """
         Condition.not_none(argument, param, ex_type)
@@ -416,8 +416,8 @@ cdef class Condition:
         Raises
         -------
         TypeError
-            If dictionary is not empty and contains a key type other than the key_type.
-            If dictionary is not empty and contains a value type other than the value_type.
+            If dictionary is not empty and contains a key type other than `key_type`.
+            If dictionary is not empty and contains a value type other than `value_type`.
 
         """
         Condition.not_none(argument, param, ex_type)
@@ -769,7 +769,7 @@ cdef class Condition:
     @staticmethod
     cdef void valid_string(str argument, str param, ex_type=None) except *:
         """
-        Check the string argument is valid (not None, empty or whitespace).
+        Check the string argument is valid (not ``None``, empty or whitespace).
 
         Parameters
         ----------
@@ -783,7 +783,7 @@ cdef class Condition:
         Raises
         -------
         ValueError
-              If argument is None, empty or whitespace.
+              If argument is ``None``, empty or whitespace.
 
         """
         Condition.not_none(argument, param, ex_type)
@@ -848,7 +848,7 @@ class PyCondition:
     @staticmethod
     def none(argument, str param, ex_type=None):
         """
-        Check the argument is None.
+        Check the argument is ``None``.
 
         Parameters
         ----------
@@ -862,7 +862,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If argument is not None.
+            If argument is not ``None``.
 
         """
         Condition.none(argument, param, ex_type)
@@ -870,7 +870,7 @@ class PyCondition:
     @staticmethod
     def not_none(argument, str param, ex_type=None):
         """
-        Check the argument is not None.
+        Check the argument is not ``None``.
 
         Parameters
         ----------
@@ -884,7 +884,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If argument is None.
+            If argument is ``None``.
 
         """
         Condition.not_none(argument, param, ex_type)
@@ -916,14 +916,14 @@ class PyCondition:
     @staticmethod
     def type_or_none(argument, expected, str param, ex_type=None):
         """
-        Check the argument is of the specified type, or is None.
+        Check the argument is of the specified type, or is ``None``.
 
         Parameters
         ----------
         argument : object
             The object to check.
         expected : object
-            The expected class type (if not None).
+            The expected class type (if not ``None``).
         param : str
             The arguments parameter name.
         ex_type : Exception, optional
@@ -932,7 +932,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If object is not None and not of the expected type.
+            If object is not ``None`` and not of the expected type.
 
         """
         Condition.type_or_none(argument, expected, param, ex_type)
@@ -940,7 +940,7 @@ class PyCondition:
     @staticmethod
     def callable(argument, str param, ex_type=None):
         """
-        Check the object is of type Callable.
+        Check the object is of type `Callable`.
 
         Parameters
         ----------
@@ -954,7 +954,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If argument is not of type Callable.
+            If argument is not of type `Callable`.
 
         """
         Condition.callable(argument, param, ex_type)
@@ -962,7 +962,7 @@ class PyCondition:
     @staticmethod
     def callable_or_none(argument, str param, ex_type=None):
         """
-        Check the object is of type Callable or None.
+        Check the object is of type `Callable` or ``None``.
 
         Parameters
         ----------
@@ -976,7 +976,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If argument is not None and not of type Callable.
+            If argument is not ``None`` and not of type `Callable`.
 
         """
         Condition.callable_or_none(argument, param, ex_type)
@@ -1052,7 +1052,7 @@ class PyCondition:
         Raises
         -------
         TypeError
-             If list is not empty and contains a type other than the expected type.
+             If list is not empty and contains a type other than `expected_type`.
 
         """
         Condition.list_type(argument, expected_type, param, ex_type)
@@ -1078,8 +1078,8 @@ class PyCondition:
         Raises
         -------
         TypeError
-            If dictionary is not empty and contains a key type other than the key_type.
-            If dictionary is not empty and contains a value type other than the value_type.
+            If dictionary is not empty and contains a key type other than `key_type`.
+            If dictionary is not empty and contains a value type other than `value_type`.
 
         """
         Condition.dict_types(argument, key_type, value_type, param, ex_type)
@@ -1323,7 +1323,7 @@ class PyCondition:
     @staticmethod
     def valid_string(str argument, str param, ex_type=None):
         """
-        Check the string argument is valid (not None, empty or whitespace).
+        Check the string argument is valid (not ``None``, empty or whitespace).
 
         Parameters
         ----------
@@ -1337,7 +1337,7 @@ class PyCondition:
         Raises
         -------
         ValueError
-              If argument is None, empty or whitespace.
+              If argument is ``None``, empty or whitespace.
 
         """
         Condition.valid_string(argument, param, ex_type)

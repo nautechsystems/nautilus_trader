@@ -19,6 +19,8 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport maybe_nanos_to_unix_dt
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
@@ -29,6 +31,7 @@ from nautilus_trader.model.c_enums.time_in_force cimport TimeInForceParser
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
@@ -63,6 +66,12 @@ cdef class StopMarketOrder(PassiveOrder):
         UUID4 init_id not None,
         int64_t ts_init,
         bint reduce_only=False,
+        OrderListId order_list_id=None,
+        ClientOrderId parent_order_id=None,
+        list child_order_ids=None,
+        ContingencyType contingency=ContingencyType.NONE,
+        list contingency_ids=None,
+        str tags=None,
     ):
         """
         Initialize a new instance of the ``StopMarketOrder`` class.
@@ -77,8 +86,8 @@ cdef class StopMarketOrder(PassiveOrder):
             The order instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
-        order_side : OrderSide
-            The order side (``BUY`` or ``SELL``).
+        order_side : OrderSide {``BUY``, ``SELL``}
+            The order side.
         quantity : Quantity
             The order quantity (> 0).
         price : Price
@@ -90,16 +99,29 @@ cdef class StopMarketOrder(PassiveOrder):
         init_id : UUID4
             The order initialization event ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the order was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
         reduce_only : bool, optional
-            If the order will only reduce an open position.
+            If the order carries the 'reduce-only' execution instruction.
+        order_list_id : OrderListId, optional
+            The order list ID associated with the order.
+        parent_order_id : ClientOrderId, optional
+            The orders parent client order ID.
+        child_order_ids : list[ClientOrderId], optional
+            The orders child client order ID(s).
+        contingency : ContingencyType
+            The orders contingency type.
+        contingency_ids : list[ClientOrderId], optional
+            The orders contingency client order ID(s).
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Raises
         ------
         ValueError
             If quantity is not positive (> 0).
         ValueError
-            If time_in_force is ``GTD`` and the expire_time is None.
+            If time_in_force is ``GTD`` and the expire_time is ``None``.
 
         """
         super().__init__(
@@ -113,12 +135,17 @@ cdef class StopMarketOrder(PassiveOrder):
             price=price,
             time_in_force=time_in_force,
             expire_time=expire_time,
+            reduce_only=reduce_only,
+            options={},
+            order_list_id=order_list_id,
+            parent_order_id=parent_order_id,
+            child_order_ids=child_order_ids,
+            contingency=contingency,
+            contingency_ids=contingency_ids,
+            tags=tags,
             init_id=init_id,
             ts_init=ts_init,
-            options={"reduce_only": reduce_only},
         )
-
-        self.is_reduce_only = reduce_only
 
     cpdef dict to_dict(self):
         """
@@ -150,8 +177,14 @@ cdef class StopMarketOrder(PassiveOrder):
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
-            "ts_init": self.ts_init,
+            "order_list_id": self.order_list_id,
+            "parent_order_id": self.parent_order_id,
+            "child_order_ids": ",".join([o.value for o in self.child_order_ids]) if self.child_order_ids is not None else None,  # noqa
+            "contingency": ContingencyTypeParser.to_str(self.contingency),
+            "contingency_ids": ",".join([o.value for o in self.contingency_ids]) if self.contingency_ids is not None else None,  # noqa
+            "tags": self.tags,
             "ts_last": self.ts_last,
+            "ts_init": self.ts_init,
         }
 
     @staticmethod
@@ -189,5 +222,11 @@ cdef class StopMarketOrder(PassiveOrder):
             expire_time=maybe_nanos_to_unix_dt(init.options.get("expire_time")),
             init_id=init.id,
             ts_init=init.ts_init,
-            reduce_only=init.options["reduce_only"],
+            reduce_only=init.reduce_only,
+            order_list_id=init.order_list_id,
+            parent_order_id=init.parent_order_id,
+            child_order_ids=init.child_order_ids,
+            contingency=init.contingency,
+            contingency_ids=init.contingency_ids,
+            tags=init.tags,
         )

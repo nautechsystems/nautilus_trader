@@ -52,9 +52,7 @@ from nautilus_trader.live.risk_engine import LiveRiskEngineConfig
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
-from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
-from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
-from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
 from nautilus_trader.trading.trader import Trader
 
 
@@ -63,28 +61,28 @@ try:
 
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
     uvloop_version = uvloop.__version__
-except ImportError:
+except ImportError:  # pragma: no cover
     uvloop_version = None
     warnings.warn("uvloop is not available.")
 
 
 class TradingNodeConfig(pydantic.BaseModel):
     """
-    Provides configuration for ``TradingNode`` instances.
+    Configuration for ``TradingNode`` instances.
 
     trader_id : str, default="TRADER-000"
         The trader ID for the node (must be a name and ID tag separated by a hyphen)
     log_level : str, default="INFO"
         The stdout log level for the node.
-    cache : Optional[CacheConfig]
+    cache : CacheConfig, optional
         The cache configuration.
-    cache_database : Optional[CacheDatabaseConfig]
+    cache_database : CacheDatabaseConfig, optional
         The cache database configuration.
-    data_engine : Optional[LiveDataEngineConfig]
+    data_engine : LiveDataEngineConfig, optional
         The live data engine configuration.
-    risk_engine : Optional[LiveRiskEngineConfig]
+    risk_engine : LiveRiskEngineConfig, optional
         The live risk engine configuration.
-    exec_engine : Optional[LiveExecEngineConfig]
+    exec_engine : LiveExecEngineConfig, optional
         The live execution engine configuration.
     loop_debug : bool, default=False
         If the asyncio event loop should be in debug mode.
@@ -144,7 +142,7 @@ class TradingNode:
         Raises
         ------
         TypeError
-            If config is not of type TradingNodeConfig.
+            If config is not of type `TradingNodeConfig`.
 
         """
         if config is None:
@@ -204,12 +202,10 @@ class TradingNode:
             cache_db = RedisCacheDatabase(
                 trader_id=self.trader_id,
                 logger=self._logger,
-                instrument_serializer=MsgPackInstrumentSerializer(),
-                command_serializer=MsgPackCommandSerializer(),
-                event_serializer=MsgPackEventSerializer(),
+                serializer=MsgPackSerializer(timestamps_as_str=True),
                 config=config.cache_database,
             )
-        else:
+        else:  # pragma: no cover (design-time error)
             raise ValueError(
                 "The cache_db_type in the configuration is unrecognized, "
                 "can one of {{'in-memory', 'redis'}}.",
@@ -725,7 +721,7 @@ class TradingNode:
             return
 
         for task in to_cancel:
-            self._log.warning(f"Cancelling pending task {task}")
+            self._log.warning(f"Canceling pending task {task}")
             task.cancel()
 
         if self._loop.is_running():
@@ -741,7 +737,7 @@ class TradingNode:
 
         self._log.debug(f"{finish_all_tasks}")
 
-        for task in to_cancel:
+        for task in to_cancel:  # pragma: no cover
             if task.cancelled():
                 continue
             if task.exception() is not None:

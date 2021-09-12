@@ -33,10 +33,10 @@ cdef class Subscription:
     """
 
     def __init__(
-            self,
-            str topic,
-            handler not None: Callable[[Any], None],
-            int priority=0,
+        self,
+        str topic,
+        handler not None: Callable[[Any], None],
+        int priority=0,
     ):
         """
         Initialize a new instance of the ``Subscription`` class.
@@ -55,7 +55,7 @@ cdef class Subscription:
         ValueError
             If topic is not a valid string.
         ValueError
-            If handler is not of type Callable.
+            If handler is not of type `Callable`.
         ValueError
             If priority is negative (< 0).
 

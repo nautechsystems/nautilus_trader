@@ -15,21 +15,19 @@
 
 from datetime import timedelta
 
-import pytest
-
 from nautilus_trader.common.timer import TimeEvent
 from nautilus_trader.common.timer import TimeEventHandler
 from nautilus_trader.common.timer import Timer
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 from tests.test_kit.stubs import UNIX_EPOCH
 
 
 class TestTimeEvent:
     def test_equality(self):
         # Arrange
-        event1 = TimeEvent("EVENT_1", uuid4(), UNIX_EPOCH, 0, 0)
-        event2 = TimeEvent("EVENT_1", uuid4(), UNIX_EPOCH, 0, 0)
-        event3 = TimeEvent("EVENT_2", uuid4(), UNIX_EPOCH, 0, 0)
+        event1 = TimeEvent("EVENT_1", UUID4(), UNIX_EPOCH, 0, 0)
+        event2 = TimeEvent("EVENT_1", UUID4(), UNIX_EPOCH, 0, 0)
+        event3 = TimeEvent("EVENT_2", UUID4(), UNIX_EPOCH, 0, 0)
 
         # Act, Assert
         assert event1 == event1
@@ -38,7 +36,7 @@ class TestTimeEvent:
 
     def test_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = TimeEvent("EVENT", uuid, UNIX_EPOCH, 0, 0)
 
         # Act, Assert
@@ -54,11 +52,11 @@ class TestTimeEventHandler:
     def test_comparisons(self):
         # Arrange
         receiver = []
-        event1 = TimeEventHandler(TimeEvent("123", uuid4(), UNIX_EPOCH, 0, 0), receiver.append)
+        event1 = TimeEventHandler(TimeEvent("123", UUID4(), UNIX_EPOCH, 0, 0), receiver.append)
         event2 = TimeEventHandler(
             TimeEvent(
                 "123",
-                uuid4(),
+                UUID4(),
                 UNIX_EPOCH + timedelta(seconds=1),
                 1_000_000_000,
                 0,
@@ -77,7 +75,7 @@ class TestTimeEventHandler:
     def test_str_repr(self):
         # Arrange
         receiver = []
-        uuid = uuid4()
+        uuid = UUID4()
         handler = TimeEventHandler(TimeEvent("123", uuid, UNIX_EPOCH, 0, 0), receiver.append)
 
         print(str(handler))
@@ -94,10 +92,10 @@ class TestTimeEventHandler:
     def test_sort(self):
         # Arrange
         receiver = []
-        event1 = TimeEventHandler(TimeEvent("123", uuid4(), UNIX_EPOCH, 0, 0), receiver.append)
-        event2 = TimeEventHandler(TimeEvent("123", uuid4(), UNIX_EPOCH, 0, 0), receiver.append)
+        event1 = TimeEventHandler(TimeEvent("123", UUID4(), UNIX_EPOCH, 0, 0), receiver.append)
+        event2 = TimeEventHandler(TimeEvent("123", UUID4(), UNIX_EPOCH, 0, 0), receiver.append)
         event3 = TimeEventHandler(
-            TimeEvent("123", uuid4(), UNIX_EPOCH + timedelta(1), 0, 0), receiver.append
+            TimeEvent("123", UUID4(), UNIX_EPOCH + timedelta(1), 0, 0), receiver.append
         )
 
         # Act
@@ -171,17 +169,3 @@ class TestTimer:
         # Act, Assert
         assert isinstance(hash(timer), int)
         assert hash(timer) == hash(timer)
-
-    def test_cancel_when_not_overridden_raises_not_implemented_error(self):
-        # Arrange
-        receiver = []
-        timer = Timer(
-            "TIMER_1",
-            receiver.append,
-            1_000_000_000,
-            0,
-        )
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            timer.cancel()

@@ -55,7 +55,7 @@ cdef class CashAccount(Account):
         Raises
         ------
         ValueError
-            If event.account_type is not equal to ``CASH``.
+            If `event.account_type` is not equal to ``CASH``.
 
         """
         Condition.not_none(event, "event")
@@ -65,21 +65,21 @@ cdef class CashAccount(Account):
 
         self._balances_locked = {}  # type: dict[InstrumentId, Money]
 
-    cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init) except *:
+    cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked) except *:
         """
-        Update the initial (order) margin.
+        Update the balance locked for the given instrument ID.
 
         Parameters
         ----------
         instrument_id : InstrumentId
-            The instrument ID for the margin.
-        margin_init : Money
-            The current initial (order) margin for the currency.
+            The instrument ID for the update.
+        locked : Money
+            The locked balance for the instrument.
 
         Raises
         ------
         ValueError
-            If margin initial is negative (< 0).
+            If margin_init is negative (< 0).
 
         Warnings
         --------
@@ -87,18 +87,15 @@ cdef class CashAccount(Account):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(margin_init, "margin_init")
-        Condition.not_negative(margin_init.as_decimal(), "margin_init")
+        Condition.not_none(locked, "locked")
+        Condition.not_negative(locked.as_decimal(), "locked")
 
-        self._balances_locked[instrument_id] = margin_init
-        self._recalculate_balance(margin_init.currency)
+        self._balances_locked[instrument_id] = locked
+        self._recalculate_balance(locked.currency)
 
-    cpdef void clear_margin_init(self, InstrumentId instrument_id) except *:
+    cpdef void clear_balance_locked(self, InstrumentId instrument_id) except *:
         """
-        Clear the locked balances for the given instrument ID.
-
-        There may be more than one currency if the instrument is being traded
-        in multiple directions.
+        Clear the balance locked for the given instrument ID.
 
         Parameters
         ----------
@@ -111,6 +108,8 @@ cdef class CashAccount(Account):
         cdef Money locked = self._balances_locked.pop(instrument_id, None)
         if locked is not None:
             self._recalculate_balance(locked.currency)
+
+# -- CALCULATIONS ----------------------------------------------------------------------------------
 
     cdef void _recalculate_balance(self, Currency currency) except *:
         cdef AccountBalance current_balance = self._balances.get(currency)
@@ -133,8 +132,6 @@ cdef class CashAccount(Account):
         )
 
         self._balances[currency] = new_balance
-
-# -- CALCULATIONS ----------------------------------------------------------------------------------
 
     cpdef Money calculate_commission(
         self,
@@ -171,7 +168,7 @@ cdef class CashAccount(Account):
         Raises
         ------
         ValueError
-            If liquidity_side is NONE.
+            If `liquidity_side` is ``None``.
 
         """
         Condition.not_none(instrument, "instrument")
@@ -189,7 +186,7 @@ cdef class CashAccount(Account):
             commission: Decimal = notional * instrument.maker_fee
         elif liquidity_side == LiquiditySide.TAKER:
             commission: Decimal = notional * instrument.taker_fee
-        else:
+        else:  # pragma: no cover (design-time error)
             raise ValueError(
                 f"invalid LiquiditySide, was {LiquiditySideParser.to_str(liquidity_side)}"
             )
@@ -199,7 +196,7 @@ cdef class CashAccount(Account):
         else:
             return Money(commission, instrument.quote_currency)
 
-    cpdef Money calculate_margin_init(
+    cpdef Money calculate_balance_locked(
         self,
         Instrument instrument,
         Quantity quantity,
@@ -207,7 +204,7 @@ cdef class CashAccount(Account):
         bint inverse_as_quote=False,
     ):
         """
-        Calculate the initial (order) margin from the given parameters.
+        Calculate the locked balance from the given parameters.
 
         Result will be in quote currency for standard instruments, or base
         currency for inverse instruments.
@@ -238,13 +235,13 @@ cdef class CashAccount(Account):
             inverse_as_quote=inverse_as_quote,
         ).as_decimal()
 
-        margin: Decimal = notional
-        margin += (notional * instrument.taker_fee * 2)
+        locked: Decimal = notional
+        locked += (notional * instrument.taker_fee * 2)
 
         if instrument.is_inverse and not inverse_as_quote:
-            return Money(margin, instrument.base_currency)
+            return Money(locked, instrument.base_currency)
         else:
-            return Money(margin, instrument.quote_currency)
+            return Money(locked, instrument.quote_currency)
 
     cpdef list calculate_pnls(
         self,
@@ -253,7 +250,7 @@ cdef class CashAccount(Account):
         OrderFilled fill,
     ):
         """
-        Return the calculated immediate PnL.
+        Return the calculated PnL.
 
         Parameters
         ----------
@@ -266,13 +263,15 @@ cdef class CashAccount(Account):
 
         Returns
         -------
-        list[Money] or None
+        list[Money] or ``None``
 
         """
         Condition.not_none(instrument, "instrument")
         Condition.not_none(fill, "fill")
 
-        cdef list pnls = []
+        self.update_commissions(fill.commission)
+
+        cdef dict pnls = {}  # type: dict[Currency, Money]
 
         cdef Currency quote_currency = instrument.quote_currency
         cdef Currency base_currency = instrument.get_base_currency()
@@ -282,11 +281,16 @@ cdef class CashAccount(Account):
 
         if fill.order_side == OrderSide.BUY:
             if base_currency:
-                pnls.append(Money(fill_qty, base_currency))
-            pnls.append(Money(-(fill_px * fill_qty), quote_currency))
+                pnls[base_currency] = Money(fill_qty, base_currency)
+            pnls[quote_currency] = Money(-(fill_px * fill_qty), quote_currency)
         else:  # OrderSide.SELL
             if base_currency:
-                pnls.append(Money(-fill_qty, base_currency))
-            pnls.append(Money(fill_px * fill_qty, quote_currency))
+                pnls[base_currency] = Money(-fill_qty, base_currency)
+            pnls[quote_currency] = Money(fill_px * fill_qty, quote_currency)
 
-        return pnls
+        # Add commission PnL
+        cdef Currency currency = fill.commission.currency
+        commissioned_pnl = pnls.get(currency, Decimal(0))
+        pnls[currency] = Money(commissioned_pnl - fill.commission, currency)
+
+        return list(pnls.values())

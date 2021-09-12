@@ -17,11 +17,11 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport InstrumentId
 
@@ -86,7 +86,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_bars(self, BarType bar_type) except *
-    cpdef void subscribe_venue_status_update(self, InstrumentId instrument_id) except *
+    cpdef void subscribe_venue_status_updates(self, InstrumentId instrument_id) except *
     cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void subscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_instruments(self) except *
@@ -97,7 +97,7 @@ cdef class MarketDataClient(DataClient):
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_bars(self, BarType bar_type) except *
-    cpdef void unsubscribe_venue_status_update(self, InstrumentId instrument_id) except *
+    cpdef void unsubscribe_venue_status_updates(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id) except *
     cpdef void unsubscribe_instrument_close_prices(self, InstrumentId instrument_id) except *
 

@@ -49,15 +49,15 @@ cdef class InstrumentProvider:
 
     async def load_all_async(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void load_all(self) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void load(self, InstrumentId instrument_id, dict details) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void add(self, Instrument instrument) except *:
         """
@@ -106,7 +106,7 @@ cdef class InstrumentProvider:
 
         Returns
         -------
-        Currency or None
+        Currency or ``None``
 
         """
         cdef Currency currency = self._currencies.get(code)
@@ -125,7 +125,7 @@ cdef class InstrumentProvider:
 
         Returns
         -------
-        Instrument or None
+        Instrument or ``None``
 
         """
         return self._instruments.get(instrument_id)

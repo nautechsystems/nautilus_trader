@@ -76,7 +76,7 @@ cdef class PositionSizer:
         int units=1,
     ):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef object _calculate_risk_ticks(self, Price entry, Price stop_loss):
         return abs(entry - stop_loss) / self.instrument.price_increment
@@ -157,7 +157,7 @@ cdef class FixedRiskSizer(PositionSizer):
         ValueError
             If the commission_rate is negative (< 0).
         ValueError
-            If hard_limit is not None and is not positive (> 0).
+            If hard_limit is not ``None`` and is not positive (> 0).
         ValueError
             If the unit_batch_size is not positive (> 0).
         ValueError

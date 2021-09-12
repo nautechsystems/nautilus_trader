@@ -13,14 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport int64_t
-
-
-cdef class Data:
-    cdef readonly int64_t ts_event
-    """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `int64`"""
-    cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the data object was initialized.\n\n:returns: `int64`"""
+from nautilus_trader.core.data cimport Data
 
 
 cdef class DataType:

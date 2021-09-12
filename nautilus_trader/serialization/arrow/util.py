@@ -18,8 +18,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from nautilus_trader.core.message import Event
-from nautilus_trader.model.data.base import Data
+from nautilus_trader.core.inspect import is_nautilus_class
 
 
 INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
@@ -29,7 +28,7 @@ GENERIC_DATA_PREFIX = "genericdata_"
 
 def list_dicts_to_dict_lists(dicts, keys=None):
     """
-    Convert a list of dictionaries into a dictionary of lists
+    Convert a list of dictionaries into a dictionary of lists.
     """
     result = {}
     for d in dicts:
@@ -41,11 +40,14 @@ def list_dicts_to_dict_lists(dicts, keys=None):
     return result
 
 
-def identity(x):
+def dict_of_lists_to_list_of_dicts(dict_lists):
     """
-    The identity function
+    Convert a dictionary of lists into a list of dictionaries.
+
+    >>> dict_of_lists_to_list_of_dicts({'a': [1,2], 'b': [3,4]})
+    [{'a': 1, 'b': 3}, {'a': 2, 'b': 4}]
     """
-    return x
+    return [dict(zip(dict_lists, t)) for t in zip(*dict_lists.values())]
 
 
 def maybe_list(obj):
@@ -54,33 +56,15 @@ def maybe_list(obj):
     return obj
 
 
-def is_nautilus_class(cls):
-    """
-    Determine whether a class belongs to nautilus_trader
-    """
-    is_nautilus_paths = cls.__module__.startswith("nautilus_trader.")
-    if not is_nautilus_paths:
-        # This object is defined outside of nautilus, definitely custom
-        return False
-    else:
-        is_data_or_event = issubclass(cls, (Data, Event))
-        is_nautilus_builtin = any(
-            (
-                cls.__module__.startswith(p)
-                for p in ("nautilus_trader.model", "nautilus_trader.adapters")
-            )
-        )
-        return is_data_or_event and is_nautilus_builtin
-
-
 def check_partition_columns(
     df: pd.DataFrame, partition_columns: Optional[List[str]]
 ) -> Dict[str, Dict[str, str]]:
     """
-    When writing a parquet dataset, parquet uses the values in `partition_columns` as part of the filename. The values
-    in `df` could potentially contain illegal characters. This function generates a mapping of {illegal: legal} that is
-    used to "clean" the values before they are written to the filename (and also saving this mapping for reversing the
-    process on reload)
+    When writing a parquet dataset, parquet uses the values in `partition_columns`
+    as part of the filename. The values in `df` could potentially contain illegal
+    characters. This function generates a mapping of {illegal: legal} that is
+    used to "clean" the values before they are written to the filename (and also
+    saving this mapping for reversing the process on reload)
     """
     if partition_columns:
         missing = [c for c in partition_columns if c not in df.columns]
@@ -108,8 +92,11 @@ def check_partition_columns(
 
 def clean_partition_cols(df, mappings: Dict[str, Dict[str, str]]):
     """
-    The values in `partition_cols` may have characters that are illegal in filenames. Strip them out and return a
-    dataframe we can write into a parquet file.
+    Clean partition columns.
+
+    The values in `partition_cols` may have characters that are illegal in
+    filenames. Strip them out and return a dataframe we can write into a parquet
+    file.
     """
     for col, val_map in mappings.items():
         df.loc[:, col] = df[col].map(val_map)
@@ -118,7 +105,7 @@ def clean_partition_cols(df, mappings: Dict[str, Dict[str, str]]):
 
 def clean_key(s):
     """
-    Clean characters that are illegal on windows from the string `s`
+    Clean characters that are illegal on windows from the string `s`.
     """
     for ch in INVALID_WINDOWS_CHARS:
         if ch in s:
@@ -127,10 +114,16 @@ def clean_key(s):
 
 
 def camel_to_snake_case(s):
+    """
+    Convert the given string from camel to snake case.
+    """
     return re.sub(r"((?<=[a-z0-9])[A-Z]|(?!^)[A-Z](?=[a-z]))", r"_\1", s).lower()
 
 
 def class_to_filename(cls):
+    """
+    Convert the given class to a filename.
+    """
     name = f"{camel_to_snake_case(cls.__name__)}"
     if not is_nautilus_class(cls):
         name = f"{GENERIC_DATA_PREFIX}{camel_to_snake_case(cls.__name__)}"

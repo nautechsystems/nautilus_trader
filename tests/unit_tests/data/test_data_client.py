@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
@@ -82,21 +80,6 @@ class TestDataClient:
             clock=self.clock,
             logger=self.logger,
         )
-
-    def test_subscribe_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.subscribe(DataType(str))
-
-    def test_unsubscribe_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.unsubscribe(DataType(str))
-
-    def test_request_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.request(DataType(str), self.uuid_factory.generate())
 
     def test_handle_data_sends_to_data_engine(self):
         # Arrange
@@ -174,86 +157,6 @@ class TestMarketDataClient:
             clock=self.clock,
             logger=self.logger,
         )
-
-    def test_subscribe_instruments_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.subscribe_instruments()
-
-    def test_subscribe_instrument_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.subscribe_instrument(AUDUSD_SIM.id)
-
-    def test_subscribe_order_book_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.subscribe_order_book_snapshots(AUDUSD_SIM.id, 2, 0)
-
-    def test_subscribe_ticker_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.subscribe_ticker(AUDUSD_SIM.id)
-
-    def test_subscribe_quote_ticks_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.subscribe_quote_ticks(AUDUSD_SIM.id)
-
-    def test_subscribe_trade_ticks_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.subscribe_trade_ticks(AUDUSD_SIM.id)
-
-    def test_subscribe_bars_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.subscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
-
-    def test_unsubscribe_instrument_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.unsubscribe_instrument(AUDUSD_SIM.id)
-
-    def test_unsubscribe_order_book_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.unsubscribe_order_book_snapshots(AUDUSD_SIM.id)
-
-    def test_unsubscribe_ticker_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.unsubscribe_ticker(AUDUSD_SIM.id)
-
-    def test_unsubscribe_quote_ticks_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.unsubscribe_quote_ticks(AUDUSD_SIM.id)
-
-    def test_unsubscribe_trade_ticks_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.unsubscribe_trade_ticks(AUDUSD_SIM.id)
-
-    def test_unsubscribe_bars_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.unsubscribe_bars(TestStubs.bartype_gbpusd_1sec_mid())
-
-    def test_request_quote_ticks_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.request_quote_ticks(None, None, None, 0, None)
-
-    def test_request_trade_ticks_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.request_trade_ticks(None, None, None, 0, None)
-
-    def test_request_bars_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.client.request_bars(None, None, None, 0, None)
 
     def test_unavailable_methods_when_none_given_returns_empty_list(self):
         # Arrange, Act

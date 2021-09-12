@@ -17,13 +17,12 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.common.logging cimport LogColor
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.average.ema cimport ExponentialMovingAverage
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -31,6 +30,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.trading.strategy cimport TradingStrategy
+
 from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 
@@ -45,7 +45,7 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 class EMACrossConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``EMACross`` instances.
+    Configuration for ``EMACross`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
@@ -70,8 +70,6 @@ class EMACrossConfig(TradingStrategyConfig):
     fast_ema_period: int = 10
     slow_ema_period: int = 20
     trade_size: Decimal
-    order_id_tag: str = "001"
-    oms_type: OMSType = OMSType.HEDGING
 
 
 cdef class EMACross(TradingStrategy):

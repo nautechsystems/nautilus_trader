@@ -28,4 +28,3 @@ cdef class HullMovingAverage(MovingAverage):
     cdef MovingAverage _ma3
 
     cdef np.ndarray _get_weights(self, int size)
-    cpdef void update_raw(self, double value) except *

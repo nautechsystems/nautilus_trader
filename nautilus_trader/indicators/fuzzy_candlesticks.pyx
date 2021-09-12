@@ -22,8 +22,8 @@ import numpy as np
 cimport numpy as np
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport fast_mean
-from nautilus_trader.core.functions cimport fast_std_with_mean
+from nautilus_trader.core.stats cimport fast_mean
+from nautilus_trader.core.stats cimport fast_std_with_mean
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.indicators.fuzzy_enums.candle_body cimport CandleBodySize
 from nautilus_trader.indicators.fuzzy_enums.candle_direction cimport CandleDirection
@@ -364,7 +364,7 @@ cdef class FuzzyCandlesticks(Indicator):
 
         return CandleWickSize.LARGE
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._lengths.clear()
         self._body_percents.clear()
         self._upper_wick_percents.clear()

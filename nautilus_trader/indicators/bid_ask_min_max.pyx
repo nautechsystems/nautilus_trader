@@ -68,7 +68,7 @@ cdef class BidAskMinMax(Indicator):
         self._set_has_inputs(True)
         self._set_initialized(True)
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         # Reset the windows
         self.bids.reset()
         self.asks.reset()

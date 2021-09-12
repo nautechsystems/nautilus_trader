@@ -18,7 +18,7 @@ This module provides a data producer for backtesting.
 """
 
 import gc
-from bisect import bisect_left
+from nautilus_trader.core.collections cimport bisect_left
 
 import numpy as np
 import pandas as pd
@@ -28,17 +28,16 @@ from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
 
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.core.functions cimport slice_dataframe
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.data.wrangling cimport QuoteTickDataWrangler
 from nautilus_trader.data.wrangling cimport TradeTickDataWrangler
 from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSideParser
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
-from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -54,15 +53,15 @@ cdef class DataProducer:
 
     cpdef list instruments(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void reset(self) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef Data next(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
 cdef class BacktestDataProducer(DataProducer):
@@ -478,24 +477,25 @@ cdef class BacktestDataProducer(DataProducer):
 
         Returns
         -------
-        Data or None
+        Data or ``None``
 
         """
         # Determine next data element
-        cdef int64_t next_timestamp_ns = INT64_MAX
+        cdef int64_t next_ts_init = INT64_MAX
         cdef int choice = 0
 
         if self._next_quote_tick is not None:
-            next_timestamp_ns = self._next_quote_tick.ts_init
+            next_ts_init = self._next_quote_tick.ts_init
             choice = 1
 
         if self._next_trade_tick is not None:
-            if choice == 0 or self._next_trade_tick.ts_init <= next_timestamp_ns:
+            if self._next_trade_tick.ts_init <= next_ts_init:
+                next_ts_init = self._next_trade_tick.ts_init
                 choice = 2
 
         cdef Data next_data = None
         if self._next_data is not None:
-            if choice == 0 or self._next_data.ts_init <= next_timestamp_ns:
+            if self._next_data.ts_init <= next_ts_init:
                 next_data = self._next_data
                 self._iterate_stream()
                 return next_data
@@ -642,7 +642,7 @@ cdef class CachedProducer(DataProducer):
 
         Returns
         -------
-        Data or None
+        Data or ``None``
 
         """
         # Cython does not produce efficient generator code, and so we will
@@ -676,3 +676,12 @@ cdef class CachedProducer(DataProducer):
         self._producer.reset()
         self._producer.clear()
         gc.collect()  # Removes redundant processing artifacts
+
+
+cdef inline object slice_dataframe(dataframe, start, end):
+    # Slice the dataframe with the given start and end.
+    # Method only exists due to cython limitation compiling closures.
+    if dataframe is None:
+        return pd.DataFrame()
+
+    return dataframe[start:end]

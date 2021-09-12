@@ -35,7 +35,7 @@ To contribute, the following steps should be followed;
 
 ### Tips
 - Conform to the established coding practices, see _Coding Standards_ in the
-  [Developer Guide](https://docs.nautilustrader.io/developer_guide/overview.html).
+  [Developer Guide](https://docs.nautilustrader.io/developer-guide).
 
 - Keep PR's small and focused.
 - Reference the related GitHub issue(s) in the PR comment.

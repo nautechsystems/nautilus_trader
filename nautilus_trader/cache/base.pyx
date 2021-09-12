@@ -34,79 +34,79 @@ cdef class CacheFacade:
 
     cpdef list tickers(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list quote_ticks(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list trade_ticks(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list bars(self, BarType bar_type):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef Price price(self, InstrumentId instrument_id, PriceType price_type):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef OrderBook order_book(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef Ticker ticker(self, InstrumentId instrument_id, int index=0):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef QuoteTick quote_tick(self, InstrumentId instrument_id, int index=0):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef TradeTick trade_tick(self, InstrumentId instrument_id, int index=0):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef Bar bar(self, BarType bar_type, int index=0):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int ticker_count(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int quote_tick_count(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int trade_tick_count(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int bar_count(self, BarType bar_type) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint has_order_book(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint has_tickers(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint has_quote_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint has_trade_ticks(self, InstrumentId instrument_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint has_bars(self, BarType bar_type) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef object get_xrate(
         self,
@@ -116,204 +116,204 @@ cdef class CacheFacade:
         PriceType price_type=PriceType.MID,
     ):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 # -- INSTRUMENT QUERIES ----------------------------------------------------------------------------
 
     cpdef Instrument instrument(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list instrument_ids(self, Venue venue=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list instruments(self, Venue venue=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 # -- ACCOUNT QUERIES -------------------------------------------------------------------------------
 
     cpdef Account account(self, AccountId account_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef Account account_for_venue(self, Venue venue):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef AccountId account_id(self, Venue venue):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list accounts(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 # -- IDENTIFIER QUERIES ----------------------------------------------------------------------------
 
     cpdef set client_order_ids(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef set client_order_ids_active(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef set client_order_ids_inflight(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef set client_order_ids_working(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef set client_order_ids_completed(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef set position_ids(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef set position_open_ids(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef set position_closed_ids(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef set strategy_ids(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 # -- ORDER QUERIES ---------------------------------------------------------------------------------
 
     cpdef Order order(self, ClientOrderId client_order_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list orders(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list orders_active(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list orders_inflight(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list orders_working(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list orders_completed(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint order_exists(self, ClientOrderId client_order_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint is_order_active(self, ClientOrderId client_order_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint is_order_inflight(self, ClientOrderId client_order_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint is_order_working(self, ClientOrderId client_order_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint is_order_completed(self, ClientOrderId client_order_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int orders_active_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int orders_inflight_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int orders_working_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int orders_completed_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int orders_total_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 # -- POSITION QUERIES ------------------------------------------------------------------------------
 
     cpdef Position position(self, PositionId position_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef PositionId position_id(self, ClientOrderId client_order_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list positions(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list positions_open(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list positions_closed(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint position_exists(self, PositionId position_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint is_position_open(self, PositionId position_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint is_position_closed(self, PositionId position_id) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int positions_total_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int positions_open_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int positions_closed_count(self, Venue venue=None, InstrumentId instrument_id=None, StrategyId strategy_id=None) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 # -- STRATEGY QUERIES ------------------------------------------------------------------------------
 
     cpdef StrategyId strategy_id_for_order(self, ClientOrderId client_order_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef StrategyId strategy_id_for_position(self, PositionId position_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

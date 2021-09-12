@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
 from unittest.mock import patch
 
@@ -26,7 +27,7 @@ from nautilus_trader.adapters.betfair.parsing import order_submit_to_betfair
 from nautilus_trader.adapters.betfair.parsing import order_update_to_betfair
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -52,7 +53,7 @@ class TestBetfairParsing:
         self.instrument = BetfairTestStubs.betting_instrument()
         self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
         self.provider = BetfairTestStubs.instrument_provider(self.client)
-        self.uuid = uuid4()
+        self.uuid = UUID4()
 
     def test_order_submit_to_betfair(self):
         command = BetfairTestStubs.submit_order_command()
@@ -80,7 +81,7 @@ class TestBetfairParsing:
 
     def test_order_update_to_betfair(self):
         result = order_update_to_betfair(
-            command=BetfairTestStubs.update_order_command(),
+            command=BetfairTestStubs.modify_order_command(),
             side=OrderSide.BUY,
             venue_order_id=VenueOrderId("1"),
             instrument=self.instrument,

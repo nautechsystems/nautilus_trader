@@ -29,9 +29,9 @@ from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelOrder
-from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -52,6 +52,7 @@ from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
+from nautilus_trader.model.position cimport Position
 
 
 cdef class SimulatedExchange:
@@ -75,7 +76,7 @@ cdef class SimulatedExchange:
     cdef readonly AccountType account_type
     """The account base currency.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
-    """The account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or None"""
+    """The account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or ``None``"""
     cdef readonly list starting_balances
     """The account starting balances for each backtest run.\n\n:returns: `bool`"""
     cdef readonly bint is_frozen_account
@@ -92,9 +93,6 @@ cdef class SimulatedExchange:
     cdef dict _instrument_orders
     cdef dict _working_orders
     cdef dict _position_index
-    cdef dict _child_orders
-    cdef dict _oco_orders
-    cdef dict _position_oco_orders
     cdef dict _instrument_indexer
     cdef dict _symbol_pos_count
     cdef dict _symbol_ord_count
@@ -119,12 +117,14 @@ cdef class SimulatedExchange:
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cpdef void handle_submit_order(self, SubmitOrder command) except *
-    cpdef void handle_submit_bracket_order(self, SubmitBracketOrder command) except *
-    cpdef void handle_update_order(self, UpdateOrder command) except *
+    cpdef void handle_submit_order_list(self, SubmitOrderList command) except *
+    cpdef void handle_modify_order(self, ModifyOrder command) except *
     cpdef void handle_cancel_order(self, CancelOrder command) except *
 
 # --------------------------------------------------------------------------------------------------
 
+    cdef PositionId _get_position_id(self, Order order, bint generate=*)
+    cdef Position _get_position_for_order(self, Order order)
     cdef dict _build_current_bid_rates(self)
     cdef dict _build_current_ask_rates(self)
     cdef PositionId _generate_venue_position_id(self, InstrumentId instrument_id)
@@ -144,7 +144,7 @@ cdef class SimulatedExchange:
     cdef void _generate_order_accepted(self, Order order) except *
     cdef void _generate_order_pending_replace(self, Order order) except *
     cdef void _generate_order_pending_cancel(self, Order order) except *
-    cdef void _generate_order_update_rejected(
+    cdef void _generate_order_modify_rejected(
         self,
         StrategyId strategy_id,
         InstrumentId instrument_id,
@@ -160,8 +160,8 @@ cdef class SimulatedExchange:
         VenueOrderId venue_order_id,
         str reason,
     ) except *
-    cdef void _generate_order_updated(self, PassiveOrder order, Quantity qty, Price price, Price trigger) except *
-    cdef void _generate_order_canceled(self, PassiveOrder order) except *
+    cdef void _generate_order_updated(self, Order order, Quantity qty, Price price, Price trigger) except *
+    cdef void _generate_order_canceled(self, Order order) except *
     cdef void _generate_order_triggered(self, StopLimitOrder order) except *
     cdef void _generate_order_expired(self, PassiveOrder order) except *
 
@@ -194,8 +194,4 @@ cdef class SimulatedExchange:
 
     cdef void _passively_fill_order(self, PassiveOrder order, LiquiditySide liquidity_side) except *
     cdef void _aggressively_fill_order(self, Order order, LiquiditySide liquidity_side) except *
-    cdef void _fill_order(self, Order order, Price last_px, Quantity last_qty, LiquiditySide liquidity_side) except *
-    cdef void _clean_up_child_orders(self, ClientOrderId client_order_id) except *
-    cdef void _check_oco_order(self, ClientOrderId client_order_id) except *
-    cdef void _reject_oco_order(self, PassiveOrder order, ClientOrderId other_oco) except *
-    cdef void _cancel_oco_order(self, PassiveOrder order) except *
+    cdef void _fill_order(self, Order order, Quantity last_qty, Price last_px, LiquiditySide liquidity_side, PositionId venue_position_id) except *

@@ -24,7 +24,6 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.live.data_engine import LiveDataEngine
-from nautilus_trader.live.execution_client import LiveExecutionClientFactory
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.commands.trading import SubmitOrder
@@ -51,52 +50,6 @@ from tests.test_kit.stubs import TestStubs
 SIM = Venue("SIM")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
-
-
-class TestLiveExecutionClientFactory:
-    def test_create_when_not_implemented_raises_not_implemented_error(self):
-        # Arrange
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
-        self.clock = LiveClock()
-        self.logger = LiveLogger(self.loop, self.clock)
-
-        self.trader_id = TestStubs.trader_id()
-
-        self.msgbus = MessageBus(
-            trader_id=self.trader_id,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.cache = TestStubs.cache()
-
-        self.portfolio = Portfolio(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exec_engine = LiveExecutionEngine(
-            loop=self.loop,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            LiveExecutionClientFactory.create(
-                name="IB",
-                config={},
-                engine=self.exec_engine,
-                cache=self.cache,
-                clock=self.clock,
-                logger=self.logger,
-            )
 
 
 class TestLiveExecutionClient:

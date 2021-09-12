@@ -16,16 +16,16 @@
 from libc.stdint cimport int64_t
 
 import orjson
+from fastuuid import uuid4
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.uuid cimport uuid4
+from nautilus_trader.core.data cimport Data
+from nautilus_trader.model.c_enums.book_action cimport BookAction
+from nautilus_trader.model.c_enums.book_action cimport BookActionParser
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.book_level cimport BookLevelParser
-from nautilus_trader.model.c_enums.delta_type cimport DeltaType
-from nautilus_trader.model.c_enums.delta_type cimport DeltaTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.data.base cimport Data
 
 
 cdef class OrderBookData(Data):
@@ -281,7 +281,7 @@ cdef class OrderBookDelta(OrderBookData):
         self,
         InstrumentId instrument_id not None,
         BookLevel level,
-        DeltaType delta_type,
+        BookAction action,
         Order order,
         int64_t ts_event,
         int64_t ts_init,
@@ -295,8 +295,8 @@ cdef class OrderBookDelta(OrderBookData):
             The instrument ID.
         level : BookLevel {``L1``, ``L2``, ``L3``}
             The order book level.
-        delta_type : DeltaType {``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``}
-            The type of change.
+        action : BookAction {``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``}
+            The order book delta action.
         order : Order
             The order to apply.
         ts_event: int64
@@ -307,7 +307,7 @@ cdef class OrderBookDelta(OrderBookData):
         """
         super().__init__(instrument_id, level, ts_event, ts_init)
 
-        self.type = delta_type
+        self.action = action
         self.order = order
 
     def __eq__(self, OrderBookDelta other) -> bool:
@@ -320,24 +320,24 @@ cdef class OrderBookDelta(OrderBookData):
         return (f"{type(self).__name__}("
                 f"'{self.instrument_id}', "
                 f"level={BookLevelParser.to_str(self.level)}, "
-                f"delta_type={DeltaTypeParser.to_str(self.type)}, "
+                f"action={BookActionParser.to_str(self.action)}, "
                 f"order={self.order}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
     cdef OrderBookDelta from_dict_c(dict values):
         Condition.not_none(values, "values")
-        cdef DeltaType delta_type = DeltaTypeParser.from_str(values["delta_type"])
+        cdef BookAction action = BookActionParser.from_str(values["action"])
         cdef Order order = Order.from_dict_c({
             "price": values["order_price"],
             "size": values["order_size"],
             "side": values["order_side"],
             "id": values["order_id"],
-        }) if values['delta_type'] != "CLEAR" else None
+        }) if values['action'] != "CLEAR" else None
         return OrderBookDelta(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             level=BookLevelParser.from_str(values["level"]),
-            delta_type=DeltaTypeParser.from_str(values["delta_type"]),
+            action=BookActionParser.from_str(values["action"]),
             order=order,
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -350,7 +350,7 @@ cdef class OrderBookDelta(OrderBookData):
             "type": "OrderBookDelta",
             "instrument_id": obj.instrument_id.value,
             "level": BookLevelParser.to_str(obj.level),
-            "delta_type": DeltaTypeParser.to_str(obj.type),
+            "action": BookActionParser.to_str(obj.action),
             "order_price": obj.order.price if obj.order else None,
             "order_size": obj.order.size if obj.order else None,
             "order_side": OrderSideParser.to_str(obj.order.side) if obj.order else None,

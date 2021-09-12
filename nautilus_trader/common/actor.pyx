@@ -40,6 +40,7 @@ from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
@@ -48,7 +49,6 @@ from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
@@ -83,7 +83,7 @@ cdef class Actor(Component):
         Parameters
         ----------
         component_id : ComponentId, optional
-            The component ID. If None is passed then the identifier will be
+            The component ID. If ``None`` is passed then the identifier will be
             taken from `type(self).__name__`.
 
         """
@@ -94,6 +94,8 @@ cdef class Actor(Component):
             component_id=component_id,
             config=config,
         )
+
+        self._warning_events = set()
 
         self.trader_id = None  # Initialized when registered
         self.msgbus = None     # Initialized when registered
@@ -446,6 +448,38 @@ cdef class Actor(Component):
 
         self.msgbus = msgbus
         self.cache = cache
+
+    cpdef void register_warning_event(self, type event):
+        """
+        Register the given event type for warning log levels.
+
+        Parameters
+        ----------
+        event : type
+            The event class to register.
+
+        """
+        Condition.not_none(event, "event")
+
+        self._warning_events.add(event)
+
+        self._log.debug(f"Registered `{event.__name__}` for warning log levels.")
+
+    cpdef void deregister_warning_event(self, type event):
+        """
+        Deregister the given event type from warning log levels.
+
+        Parameters
+        ----------
+        event : type
+            The event class to deregister.
+
+        """
+        Condition.not_none(event, "event")
+
+        self._warning_events.discard(event)
+
+        self._log.debug(f"Deregistered `{event.__name__}` from warning log levels.")
 
 # -- ACTION IMPLEMENTATIONS ------------------------------------------------------------------------
 
@@ -1224,7 +1258,7 @@ cdef class Actor(Component):
         """
         Request historical quote ticks for the given parameters.
 
-        If datetimes are `None` then will request the most recent data.
+        If datetimes are ``None`` then will request the most recent data.
 
         Parameters
         ----------
@@ -1233,7 +1267,7 @@ cdef class Actor(Component):
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
-            The specified to datetime for the data. If None then will default
+            The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
 
         Notes
@@ -1268,7 +1302,7 @@ cdef class Actor(Component):
         """
         Request historical trade ticks for the given parameters.
 
-        If datetimes are `None` then will request the most recent data.
+        If datetimes are ``None`` then will request the most recent data.
 
         Parameters
         ----------
@@ -1277,7 +1311,7 @@ cdef class Actor(Component):
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
-            The specified to datetime for the data. If None then will default
+            The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
 
         Notes
@@ -1312,7 +1346,7 @@ cdef class Actor(Component):
         """
         Request historical bars for the given parameters.
 
-        If datetimes are `None` then will request the most recent data.
+        If datetimes are ``None`` then will request the most recent data.
 
         Parameters
         ----------
@@ -1321,7 +1355,7 @@ cdef class Actor(Component):
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
-            The specified to datetime for the data. If None then will default
+            The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
 
         Notes

@@ -24,8 +24,8 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.factories import OrderFactory
+from nautilus_trader.model.c_enums.book_action import BookAction
 from nautilus_trader.model.c_enums.book_level import BookLevel
-from nautilus_trader.model.c_enums.delta_type import DeltaType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import PositionId
@@ -110,7 +110,7 @@ class TestParquetSerializer:
         delta = OrderBookDelta(
             instrument_id=TestStubs.audusd_id(),
             level=BookLevel.L2,
-            delta_type=DeltaType.CLEAR,
+            action=BookAction.CLEAR,
             order=None,
             ts_event=0,
             ts_init=0,
@@ -143,7 +143,7 @@ class TestParquetSerializer:
             deltas=[
                 OrderBookDelta.from_dict(
                     {
-                        "delta_type": "ADD",
+                        "action": "ADD",
                         "order_side": "BUY",
                         "order_price": 8.0,
                         "order_size": 30.0,
@@ -153,7 +153,7 @@ class TestParquetSerializer:
                 ),
                 OrderBookDelta.from_dict(
                     {
-                        "delta_type": "ADD",
+                        "action": "ADD",
                         "order_side": "SELL",
                         "order_price": 15.0,
                         "order_size": 10.0,
@@ -182,28 +182,28 @@ class TestParquetSerializer:
         }
         deltas = [
             {
-                "delta_type": "ADD",
+                "action": "ADD",
                 "order_side": "SELL",
                 "order_price": 0.9901,
                 "order_size": 327.25,
                 "order_id": "1",
             },
             {
-                "delta_type": "CLEAR",
+                "action": "CLEAR",
                 "order_side": None,
                 "order_price": None,
                 "order_size": None,
                 "order_id": None,
             },
             {
-                "delta_type": "ADD",
+                "action": "ADD",
                 "order_side": "SELL",
                 "order_price": 0.98039,
                 "order_size": 27.91,
                 "order_id": "2",
             },
             {
-                "delta_type": "ADD",
+                "action": "ADD",
                 "order_side": "SELL",
                 "order_price": 0.97087,
                 "order_size": 14.43,
@@ -224,11 +224,11 @@ class TestParquetSerializer:
         # Assert
         assert deserialized == deltas
         write_chunk(catalog=self.catalog, chunk=[deserialized])
-        assert [d.type for d in deserialized.deltas] == [
-            DeltaType.ADD,
-            DeltaType.CLEAR,
-            DeltaType.ADD,
-            DeltaType.ADD,
+        assert [d.action for d in deserialized.deltas] == [
+            BookAction.ADD,
+            BookAction.CLEAR,
+            BookAction.ADD,
+            BookAction.ADD,
         ]
 
     def test_serialize_and_deserialize_order_book_snapshot(self):

@@ -13,7 +13,7 @@ class PerformanceHarness:
 
 class PerformanceBench:
     @staticmethod
-    def profile_function(function, runs, iterations, print_output=True) -> float:
+    def profile_function(target, runs, iterations, print_output=True) -> float:
         """
         Profile the given function.
         Return the minimum elapsed time in seconds taken to call the given
@@ -24,8 +24,8 @@ class PerformanceBench:
 
         Parameters
         ----------
-        function : callable
-            The function call to profile.
+        target : callable
+            The target to call and profile.
         runs : int
             The number of runs for the test.
         iterations : int
@@ -50,14 +50,14 @@ class PerformanceBench:
         if iterations < 1:
             raise ValueError("iterations cannot be less than 1")
 
-        results = timeit.Timer(function).repeat(repeat=runs, number=iterations)
+        results = timeit.Timer(target).repeat(repeat=runs, number=iterations)
         minimum = min(results)  # In seconds
 
         if print_output:
             result_milli = minimum * 1000  # 1,000ms in 1 second
             result_micro = minimum * 1_000_000  # 1,000,000μs in 1 second
             result_nano = minimum * 1_000_000_000  # 1,000,000,000ns in 1 second
-            print(f"\nPerformance test: {str(inspect.getmembers(function)[4][1])} ")
+            print(f"\nPerformance test: {str(inspect.getmembers(target)[4][1])} ")
             print(
                 f"# ~{result_milli:.1f}ms "
                 f"/ ~{result_micro:.1f}μs "

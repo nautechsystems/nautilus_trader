@@ -56,7 +56,7 @@ cdef class OrderStatusReport:
         filled_qty : Quantity
             The reported filled quantity at the exchange.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the report was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         self.client_order_id = client_order_id
@@ -97,7 +97,7 @@ cdef class PositionStatusReport:
         qty : Quantity
             The reported position quantity at the exchange.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the report was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         self.instrument_id = instrument_id
@@ -143,7 +143,7 @@ cdef class ExecutionReport:
         venue_position_id : PositionId, optional
             The venue position ID associated with the order. If the trading
             venue has assigned a position ID / ticket then pass that here,
-            otherwise pass `None` and the execution engine OMS will handle
+            otherwise pass ``None`` and the execution engine OMS will handle
             position ID resolution.
         execution_id : ExecutionId
             The execution ID for the trade.
@@ -205,7 +205,7 @@ cdef class ExecutionMassStatus:
         account_id : AccountId
             The account ID for the report.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the report was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Raises
         ------

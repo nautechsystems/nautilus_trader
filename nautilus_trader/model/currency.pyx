@@ -127,7 +127,7 @@ cdef class Currency:
 
         Returns
         -------
-        Currency or None
+        Currency or ``None``
 
         """
         return Currency.from_str_c(code)
@@ -151,7 +151,7 @@ cdef class Currency:
     @staticmethod
     def is_fiat(str code):
         """
-        Return a value indicating whether a currency with the given code is Fiat.
+        Return a value indicating whether a currency with the given code is ``FIAT``.
 
         Parameters
         ----------
@@ -161,7 +161,7 @@ cdef class Currency:
         Returns
         -------
         bool
-            True if Fiat, else False.
+            True if ``FIAT``, else False.
 
         Raises
         ------
@@ -176,7 +176,7 @@ cdef class Currency:
     @staticmethod
     def is_crypto(str code):
         """
-        Return a value indicating whether a currency with the given code is Crypto.
+        Return a value indicating whether a currency with the given code is ``CRYPTO``.
 
         Parameters
         ----------
@@ -186,7 +186,7 @@ cdef class Currency:
         Returns
         -------
         bool
-            True if Crypto, else False.
+            True if ``CRYPTO``, else False.
 
         Raises
         ------

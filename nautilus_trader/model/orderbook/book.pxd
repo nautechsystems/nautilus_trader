@@ -17,8 +17,6 @@ from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.data cimport Order
@@ -34,7 +32,7 @@ cdef class OrderBook:
     cdef readonly InstrumentId instrument_id
     """The order book instrument ID.\n\n:returns: `InstrumentId`"""
     cdef readonly BookLevel level
-    """The order book level (``L1``, ``L2``, ``L3``).\n\n:returns: `BookLevel`"""
+    """The order book level {``L1``, ``L2``, ``L3``}.\n\n:returns: `BookLevel`"""
     cdef readonly uint8_t price_precision
     """The order book price precision.\n\n:returns: `uint8`"""
     cdef readonly uint8_t size_precision
@@ -102,9 +100,4 @@ cdef class L1OrderBook(OrderBook):
     cdef Level _top_bid_level
     cdef Level _top_ask_level
 
-    cpdef void update_top(self, Tick tick) except *
-    cdef void _update_quote_tick(self, QuoteTick tick)
-    cdef void _update_trade_tick(self, TradeTick tick)
-    cdef void _update_bid(self, double price, double size)
-    cdef void _update_ask(self, double price, double size)
     cdef Order _process_order(self, Order order)

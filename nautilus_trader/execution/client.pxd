@@ -24,9 +24,9 @@ from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.commands.trading cimport CancelOrder
-from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
@@ -48,7 +48,7 @@ cdef class ExecutionClient(Component):
     cdef Account _account
 
     cdef readonly Venue venue
-    """The clients venue ID (if not multi-venue brokerage).\n\n:returns: `Venue` or None"""
+    """The clients venue ID (if not multi-venue brokerage).\n\n:returns: `Venue` or ``None``"""
     cdef readonly VenueType venue_type
     """The clients venue type.\n\n:returns: `VenueType`"""
     cdef readonly AccountId account_id
@@ -56,7 +56,7 @@ cdef class ExecutionClient(Component):
     cdef readonly AccountType account_type
     """The clients account type.\n\n:returns: `AccountType`"""
     cdef readonly Currency base_currency
-    """The clients account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or None"""
+    """The clients account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or ``None``"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 
@@ -67,8 +67,8 @@ cdef class ExecutionClient(Component):
 # -- COMMAND HANDLERS ------------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command) except *
-    cpdef void submit_bracket_order(self, SubmitBracketOrder command) except *
-    cpdef void update_order(self, UpdateOrder command) except *
+    cpdef void submit_order_list(self, SubmitOrderList command) except *
+    cpdef void modify_order(self, ModifyOrder command) except *
     cpdef void cancel_order(self, CancelOrder command) except *
 
 # -- EVENT HANDLERS --------------------------------------------------------------------------------
@@ -119,7 +119,7 @@ cdef class ExecutionClient(Component):
         VenueOrderId venue_order_id,
         int64_t ts_event,
     ) except *
-    cpdef void generate_order_update_rejected(
+    cpdef void generate_order_modify_rejected(
         self,
         StrategyId strategy_id,
         InstrumentId instrument_id,

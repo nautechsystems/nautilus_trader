@@ -25,19 +25,19 @@ from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Message
 from nautilus_trader.core.message cimport MessageCategory
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
-from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 class LiveDataEngineConfig(DataEngineConfig):
     """
-    Provides configuration for ``LiveDataEngine`` instances.
+    Configuration for ``LiveDataEngine`` instances.
     """
 
     qsize: PositiveInt = 10000
@@ -79,7 +79,7 @@ cdef class LiveDataEngine(DataEngine):
         Raises
         ------
         TypeError
-            If config is not of type LiveExecEngineConfig.
+            If config is not of type `LiveDataEngineConfig`.
 
         """
         if config is None:
@@ -150,7 +150,7 @@ cdef class LiveDataEngine(DataEngine):
         """
         self._log.warning("Killing engine...")
         if self._run_queues_task:
-            self._log.debug("Cancelling run_queues_task...")
+            self._log.debug("Canceling run_queues_task...")
             self._run_queues_task.cancel()
         if self.is_running:
             self.is_running = False  # Avoids sentinel messages for queues

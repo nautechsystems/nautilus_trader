@@ -1,3 +1,18 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 from typing import Callable, Dict, List, Optional, Union
 
 import dask
@@ -33,11 +48,15 @@ from nautilus_trader.serialization.arrow.util import maybe_list
 
 try:
     import distributed
-except ImportError:
+except ImportError:  # pragma: no cover
     distributed = None
 
 
 class RawFile:
+    """
+    Provides a wrapper of fsspec.OpenFile that processes a raw file and writes to parquet.
+    """
+
     def __init__(
         self,
         open_file: OpenFile,
@@ -46,32 +65,35 @@ class RawFile:
         progress=False,
     ):
         """
-        A wrapper of fsspec.OpenFile that processes a raw file and writes to parquet.
+        Initialize a new instance of the ``RawFile`` class.
 
         Parameters
         ----------
         open_file : OpenFile
-            The fsspec.OpenFile source of this data
-        reader: Reader
-            The Reader to parse the raw bytes read from this file
+            The fsspec.OpenFile source of this data.
         block_size: int
-            The max block (chunk) size to read from the file
+            The max block (chunk) size to read from the file.
         partition_name_callable: Callable
             A callable taking a two arguments: (`partition_keys`, `df`) that can be used to modify the name of the
             parquet partition filename. Can be used to partition data in a more intelligent way (for example by date)
         progress: bool
-            Show a progress bar while processing this individual file
+            Show a progress bar while processing this individual file.
+
         """
         self.open_file = open_file
         self.block_size = block_size
         self.partition_name_callable = partition_name_callable
-        if progress:
-            self.iter = read_progress(  # type: ignore
-                self.iter, total=self.open_file.fs.stat(self.open_file.path)["size"]
-            )
+        # TODO - waiting for tqdm support in fsspec https://github.com/intake/filesystem_spec/pulls?q=callback
+        assert not progress, "Progress not yet available, awaiting fsspec feature"
+        self.progress = progress
 
     def iter(self):
         with self.open_file as f:
+            if self.progress:
+                f.read = read_progress(  # type: ignore
+                    f.read, total=self.open_file.fs.stat(self.open_file.path)["size"]
+                )
+
             while True:
                 raw = f.read(self.block_size)
                 if not raw:
@@ -86,6 +108,7 @@ def process_raw_file(catalog: DataCatalog, raw_file: RawFile, reader: Reader):
         dicts = split_and_serialize(objs)
         dataframes = dicts_to_dataframes(dicts)
         n_rows += write_tables(catalog=catalog, tables=dataframes)
+    reader.on_file_complete()
     return n_rows
 
 
@@ -101,7 +124,6 @@ def process_files(
     assert scheduler == "sync" or str(scheduler.__module__) == "distributed.client"
     raw_files = make_raw_files(
         glob_path=glob_path,
-        reader=reader,
         block_size=block_size,
         compression=compression,
         **kw,
@@ -129,7 +151,8 @@ def scan_files(glob_path, compression="infer", **kw) -> List[OpenFile]:
 
 def split_and_serialize(objs: List) -> Dict[type, Dict[str, List]]:
     """
-    Given a list of nautilus `objs`; serialize and split into dictionaries per type / instrument_id.
+    Given a list of Nautilus `objs`; serialize and split into dictionaries per
+    type / instrument ID.
     """
     # Split objects into their respective tables
     values: Dict[type, Dict[str, List]] = {}
@@ -190,7 +213,8 @@ def read_and_clear_existing_data(
     partition_cols: List[str],
 ):
     """
-    Check if any file exists at `path`, reading if it exists and removing the file. It will be rewritten later.
+    Check if any file exists at `path`, reading if it exists and removing the
+    file. It will be rewritten later.
     """
     fs = catalog.fs
     if fs.exists(path) or fs.isdir(path):
@@ -223,7 +247,7 @@ def merge_with_existing_data(
     partition_cols: Optional[List],
 ):
     """
-    Load any exiting data (and clear) and merge to this dataframe `df`
+    Load any exiting data (and clear) and merge to this dataframe `df`.
     """
     existing = read_and_clear_existing_data(
         catalog=catalog,
@@ -333,7 +357,7 @@ def write_chunk(catalog: DataCatalog, chunk: List):
 
 def read_progress(func, total):
     """
-    Wrap a file handle and update progress bar as bytes are read
+    Wrap a file handle and update progress bar as bytes are read.
     """
     progress = tqdm(total=total)
 

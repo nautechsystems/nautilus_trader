@@ -93,7 +93,7 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         self._volume_total += volume
         self.value = self._price_volume / self._volume_total
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._day = 0
         self._price_volume = 0
         self._volume_total = 0

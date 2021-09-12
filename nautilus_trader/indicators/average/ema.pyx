@@ -106,8 +106,5 @@ cdef class ExponentialMovingAverage(MovingAverage):
         if not self.has_inputs:
             self.value = value
 
-        self._increment_count()
         self.value = self.alpha * value + ((1.0 - self.alpha) * self.value)
-
-    cdef void _reset_ma(self) except *:
-        pass  # Nothing else to reset
+        self._increment_count()

@@ -15,12 +15,12 @@
 
 from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageCategory
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.commands.trading import SubmitOrder
 from tests.test_kit.performance import PerformanceHarness
 
 
-MESSAGE = Message(MessageCategory.COMMAND, uuid4(), 0)
+MESSAGE = Message(MessageCategory.COMMAND, UUID4(), 0)
 
 
 class Experiments:

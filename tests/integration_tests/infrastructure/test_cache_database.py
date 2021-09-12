@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import sys
 from decimal import Decimal
 
+import pytest
 import redis
 
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -43,9 +45,7 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.serialization.msgpack.serializer import MsgPackCommandSerializer
-from nautilus_trader.serialization.msgpack.serializer import MsgPackEventSerializer
-from nautilus_trader.serialization.msgpack.serializer import MsgPackInstrumentSerializer
+from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
 from nautilus_trader.trading.strategy import TradingStrategy
 from tests.test_kit.mocks import MockStrategy
 from tests.test_kit.providers import TestDataProvider
@@ -61,6 +61,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 # - A Redis instance listening on the default port 6379
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows.")
 class TestRedisCacheDatabase:
     def setup(self):
         # Fixture Setup
@@ -119,9 +120,7 @@ class TestRedisCacheDatabase:
         self.database = RedisCacheDatabase(
             trader_id=self.trader_id,
             logger=self.logger,
-            instrument_serializer=MsgPackInstrumentSerializer(),
-            command_serializer=MsgPackCommandSerializer(),
-            event_serializer=MsgPackEventSerializer(),
+            serializer=MsgPackSerializer(timestamps_as_str=True),
         )
 
         self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
@@ -214,6 +213,21 @@ class TestRedisCacheDatabase:
 
         # Assert
         assert self.database.load_account(account.id) == account
+
+    def test_update_order_when_not_already_exists_logs(self):
+        # Arrange
+        order = self.strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+        )
+
+        # Act
+        self.database.update_order(order)
+
+        # Assert
+        assert True  # No exceptions raised
 
     def test_update_order_for_working_order(self):
         # Arrange
@@ -332,6 +346,32 @@ class TestRedisCacheDatabase:
         # Assert
         assert self.database.load_position(position.id) == position
 
+    def test_update_position_when_not_already_exists_logs(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        self.database.add_order(order)
+
+        position_id = PositionId("P-1")
+        fill = TestStubs.event_order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+
+        # Act
+        self.database.update_position(position)
+
+        # Assert
+        assert True  # No exception raised
+
     def test_update_strategy(self):
         # Arrange
         strategy = MockStrategy(TestStubs.bartype_btcusdt_binance_100tick_last())
@@ -350,6 +390,62 @@ class TestRedisCacheDatabase:
 
         # Assert
         assert result == {"UserState": b"1"}
+
+    def test_load_currency_when_no_currencies_in_database_returns_none(self):
+        # Arrange, Act
+        result = self.database.load_currency("ONEINCH")
+
+        # Assert
+        assert result is None
+
+    def test_load_currency_when_currency_in_database_returns_expected(self):
+        # Arrange
+        aud = Currency.from_str("AUD")
+        self.database.add_currency(aud)
+
+        # Act
+        result = self.database.load_currency("AUD")
+
+        # Assert
+        assert result == aud
+
+    def test_load_currencies_when_currencies_in_database_returns_expected(self):
+        # Arrange
+        aud = Currency.from_str("AUD")
+        self.database.add_currency(aud)
+
+        # Act
+        result = self.database.load_currencies()
+
+        # Assert
+        assert result == {"AUD": aud}
+
+    def test_load_instrument_when_no_instrument_in_database_returns_none(self):
+        # Arrange, Act
+        result = self.database.load_instrument(AUDUSD_SIM.id)
+
+        # Assert
+        assert result is None
+
+    def test_load_instrument_when_instrument_in_database_returns_expected(self):
+        # Arrange
+        self.database.add_instrument(AUDUSD_SIM)
+
+        # Act
+        result = self.database.load_instrument(AUDUSD_SIM.id)
+
+        # Assert
+        assert result == AUDUSD_SIM
+
+    def test_load_instruments_when_instrument_in_database_returns_expected(self):
+        # Arrange
+        self.database.add_instrument(AUDUSD_SIM)
+
+        # Act
+        result = self.database.load_instruments()
+
+        # Assert
+        assert result == {AUDUSD_SIM.id: AUDUSD_SIM}
 
     def test_load_account_when_no_account_in_database_returns_none(self):
         # Arrange
@@ -462,6 +558,33 @@ class TestRedisCacheDatabase:
 
         # Act
         result = self.database.load_position(position_id)
+
+        # Assert
+        assert result is None
+
+    def test_load_position_when_instrument_in_database_returns_none(self):
+        # Arrange
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+        )
+
+        self.database.add_order(order)
+
+        position_id = PositionId("P-1")
+        fill = TestStubs.event_order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            position_id=position_id,
+            last_px=Price.from_str("1.00000"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+        self.database.add_position(position)
+
+        # Act
+        result = self.database.load_position(position.id)
 
         # Assert
         assert result is None
@@ -630,6 +753,7 @@ class TestRedisCacheDatabase:
         assert self.database.load_position(position1.id) is None
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Redis not available on windows.")
 class TestExecutionCacheWithRedisDatabaseTests:
     def setup(self):
         # Fixture Setup

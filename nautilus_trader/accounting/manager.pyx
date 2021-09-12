@@ -16,6 +16,7 @@
 from decimal import Decimal
 from typing import Optional
 
+from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
@@ -61,9 +62,170 @@ cdef class AccountsManager:
         self._log = log
         self._cache = cache
 
-    cdef AccountState update_margin_init(
+    cdef AccountState update_balances(
         self,
         Account account,
+        Instrument instrument,
+        OrderFilled fill,
+    ):
+        """
+        Update the maintenance (position) margin.
+
+        Will return ``None`` if operation fails.
+
+        Parameters
+        ----------
+        account : Account
+            The account to update.
+        instrument : Instrument
+            The instrument for the update.
+        fill : OrderFilled
+            The order filled event for the update
+
+        Returns
+        -------
+        AccountState or ``None``
+
+        """
+        Condition.not_none(account, "account")
+        Condition.not_none(instrument, "instrument")
+        Condition.not_none(fill, "fill")
+
+        # Determine any position
+        cdef PositionId position_id = fill.position_id
+        if fill.position_id is None:
+            # Check for open positions
+            positions_open = self._cache.positions_open(
+                venue=None,  # Faster query filtering
+                instrument_id=fill.instrument_id,
+            )
+            if positions_open:
+                position_id = positions_open[0].id
+
+        # Determine any position
+        cdef Position position = self._cache.position(position_id)
+        # *** position could still be None here ***
+
+        cdef list pnls = account.calculate_pnls(instrument, position, fill)
+
+        # Calculate final PnL
+        if account.base_currency is not None:
+            # Check single-currency PnLs
+            assert len(pnls) == 1, f"{pnls[0]} {pnls[1]}"
+            self._update_balance_single_currency(
+                account=account,
+                fill=fill,
+                pnl=pnls[0],
+            )
+        else:
+            self._update_balance_multi_currency(
+                account=account,
+                fill=fill,
+                pnls=pnls,
+            )
+
+        return self._generate_account_state(
+            account=account,
+            ts_event=fill.ts_event,
+        )
+
+    cdef AccountState update_orders(
+        self,
+        Account account,
+        Instrument instrument,
+        list passive_orders_working,
+        int64_t ts_event,
+    ):
+        Condition.not_none(account, "account")
+        Condition.not_none(instrument, "instrument")
+        Condition.not_none(passive_orders_working, "orders_working")
+
+        if account.is_cash_account():
+            return self._update_balance_locked(
+                account,
+                instrument,
+                passive_orders_working,
+                ts_event,
+            )
+        elif account.is_margin_account():
+            return self._update_margin_init(
+                account,
+                instrument,
+                passive_orders_working,
+                ts_event,
+            )
+        else:  # pragma: no cover (design-time error)
+            raise RuntimeError("invalid account type")
+
+    cdef AccountState _update_balance_locked(
+        self,
+        CashAccount account,
+        Instrument instrument,
+        list passive_orders_working,
+        int64_t ts_event,
+    ):
+        if not passive_orders_working:
+            account.clear_balance_locked(instrument.id)
+            return self._generate_account_state(
+                account=account,
+                ts_event=ts_event,
+            )
+
+        total_locked: Decimal = Decimal(0)
+        base_xrate: Optional[Decimal] = None
+
+        cdef Currency currency = instrument.get_cost_currency()
+        cdef PassiveOrder order
+        for order in passive_orders_working:
+            assert order.instrument_id == instrument.id
+            assert order.is_working_c()
+
+            # Calculate balance locked
+            locked: Decimal = account.calculate_balance_locked(
+                instrument,
+                order.quantity,
+                order.price,
+            ).as_decimal()
+
+            if account.base_currency is not None:
+                if base_xrate is not None:
+                    locked *= base_xrate
+                    return
+
+                currency = account.base_currency
+                xrate: Decimal = self._calculate_xrate_to_base(
+                    instrument=instrument,
+                    account=account,
+                    side=order.side,
+                )
+
+                if xrate == 0:
+                    self._log.debug(
+                        f"Cannot calculate balance locked: "
+                        f"insufficient data for "
+                        f"{instrument.get_cost_currency()}/{account.base_currency}."
+                    )
+                    return None  # Cannot calculate
+
+                base_xrate = xrate  # Cache xrate
+                locked *= base_xrate  # Apply xrate
+
+            # Increment total locked
+            total_locked += locked
+
+        cdef Money locked_money = Money(total_locked, currency)
+        account.update_balance_locked(instrument.id, locked_money)
+
+        self._log.info(f"{instrument.id} balance_locked={locked_money.to_str()}")
+
+        return self._generate_account_state(
+            account=account,
+            ts_event=ts_event,
+        )
+
+    cdef AccountState _update_margin_init(
+        self,
+        MarginAccount account,
         Instrument instrument,
         list passive_orders_working,
         int64_t ts_event,
@@ -76,7 +238,7 @@ cdef class AccountsManager:
 
         Parameters
         ----------
-        account : Account
+        account : MarginAccount
             The account to update.
         instrument : Instrument
             The instrument for the update.
@@ -87,7 +249,7 @@ cdef class AccountsManager:
 
         Returns
         -------
-        AccountState or None
+        AccountState or ``None``
 
         """
         Condition.not_none(account, "account")
@@ -153,7 +315,7 @@ cdef class AccountsManager:
             ts_event=ts_event,
         )
 
-    cdef AccountState update_margin_maint(
+    cdef AccountState update_positions(
         self,
         MarginAccount account,
         Instrument instrument,
@@ -178,7 +340,7 @@ cdef class AccountsManager:
 
         Returns
         -------
-        AccountState or None
+        AccountState or ``None``
 
         """
         Condition.not_none(account, "account")
@@ -243,75 +405,6 @@ cdef class AccountsManager:
         return self._generate_account_state(
             account=account,
             ts_event=ts_event,
-        )
-
-    cdef AccountState update_balances(
-        self,
-        Account account,
-        Instrument instrument,
-        OrderFilled fill,
-    ):
-        """
-        Update the maintenance (position) margin.
-
-        Will return ``None`` if operation fails.
-
-        Parameters
-        ----------
-        account : Account
-            The account to update.
-        instrument : Instrument
-            The instrument for the update.
-        fill : OrderFilled
-            The order filled event for the update
-
-        Returns
-        -------
-        AccountState or None
-
-        """
-        Condition.not_none(account, "account")
-        Condition.not_none(instrument, "instrument")
-        Condition.not_none(fill, "fill")
-
-        # Determine any position
-        cdef PositionId position_id = fill.position_id
-        if fill.position_id is None:
-            # Check for open positions
-            positions_open = self._cache.positions_open(
-                venue=None,  # Faster query filtering
-                instrument_id=fill.instrument_id,
-            )
-            if positions_open:
-                position_id = positions_open[0].id
-
-        # Determine any position
-        cdef Position position = self._cache.position(position_id)
-        # *** position could still be None here ***
-
-        cdef list pnls = account.calculate_pnls(instrument, position, fill)
-
-        # Calculate final PnL
-        if account.base_currency is not None:
-            # Check single-currency PnLs
-            assert len(pnls) == 1
-            self._update_balance_single_currency(
-                account=account,
-                fill=fill,
-                pnl=pnls[0],
-            )
-        else:
-            self._update_balance_multi_currency(
-                account=account,
-                fill=fill,
-                pnls=pnls,
-            )
-
-        account.update_commissions(fill.commission)
-
-        return self._generate_account_state(
-            account=account,
-            ts_event=fill.ts_event,
         )
 
     cdef void _update_balance_single_currency(
@@ -388,7 +481,7 @@ cdef class AccountsManager:
         cdef Money pnl
         for pnl in pnls:
             currency = pnl.currency
-            if commission.currency != currency and commission.as_decimal() > 0:
+            if commission.currency != currency and commission.as_decimal() != 0:
                 balance = account.balance(commission.currency)
                 if balance is None:
                     self._log.error(

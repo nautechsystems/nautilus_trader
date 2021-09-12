@@ -166,7 +166,7 @@ if __name__ == "__main__":
             import multiprocessing
 
             multiprocessing.set_start_method("fork", force=True)
-        except ImportError:
+        except ImportError:  # pragma: no cover
             print("multiprocessing not available")
 
     # Note: On macOS (and perhaps other platforms), executable files may be

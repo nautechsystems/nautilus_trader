@@ -28,7 +28,9 @@ messages.
 Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
 """
+
 import pydantic
+
 from libc.stdint cimport int64_t
 
 from decimal import Decimal
@@ -53,9 +55,9 @@ from nautilus_trader.model.c_enums.position_side cimport PositionSide
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.c_enums.venue_type cimport VenueTypeParser
 from nautilus_trader.model.commands.trading cimport CancelOrder
-from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.position cimport PositionChanged
@@ -77,7 +79,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 class ExecEngineConfig(pydantic.BaseModel):
     """
-    Provides configuration for ``ExecutionEngine`` instances.
+    Configuration for ``ExecutionEngine`` instances.
     """
 
     pass  # No configuration currently
@@ -117,7 +119,7 @@ cdef class ExecutionEngine(Component):
         Raises
         ------
         TypeError
-            If config is not of type ExecEngineConfig.
+            If config is not of type `ExecEngineConfig`.
 
         """
         if config is None:
@@ -522,10 +524,10 @@ cdef class ExecutionEngine(Component):
 
         if isinstance(command, SubmitOrder):
             self._handle_submit_order(client, command)
-        elif isinstance(command, SubmitBracketOrder):
-            self._handle_submit_bracket_order(client, command)
-        elif isinstance(command, UpdateOrder):
-            self._handle_update_order(client, command)
+        elif isinstance(command, SubmitOrderList):
+            self._handle_submit_order_list(client, command)
+        elif isinstance(command, ModifyOrder):
+            self._handle_modify_order(client, command)
         elif isinstance(command, CancelOrder):
             self._handle_cancel_order(client, command)
         else:
@@ -538,17 +540,17 @@ cdef class ExecutionEngine(Component):
         # Send to execution client
         client.submit_order(command)
 
-    cdef void _handle_submit_bracket_order(self, ExecutionClient client, SubmitBracketOrder command) except *:
+    cdef void _handle_submit_order_list(self, ExecutionClient client, SubmitOrderList command) except *:
         # Cache all orders
-        self._cache.add_order(command.bracket_order.entry, position_id=None)
-        self._cache.add_order(command.bracket_order.stop_loss, position_id=None)
-        self._cache.add_order(command.bracket_order.take_profit, position_id=None)
+        cdef Order order
+        for order in command.list.orders:
+            self._cache.add_order(order, position_id=None)
 
         # Send to execution client
-        client.submit_bracket_order(command)
+        client.submit_order_list(command)
 
-    cdef void _handle_update_order(self, ExecutionClient client, UpdateOrder command) except *:
-        client.update_order(command)
+    cdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command) except *:
+        client.modify_order(command)
 
     cdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command) except *:
         client.cancel_order(command)

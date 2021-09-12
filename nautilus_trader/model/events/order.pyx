@@ -20,6 +20,7 @@ from libc.stdint cimport int64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySideParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
@@ -82,7 +83,7 @@ cdef class OrderEvent(Event):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(event_id, ts_event, ts_init)
@@ -115,9 +116,16 @@ cdef class OrderInitialized(OrderEvent):
         OrderType order_type,
         Quantity quantity not None,
         TimeInForce time_in_force,
+        bint reduce_only,
+        dict options not None,
+        OrderListId order_list_id,  # Can be None
+        ClientOrderId parent_order_id,  # Can be None
+        list child_order_ids,  # Can be None
+        ContingencyType contingency,
+        list contingency_ids,  # Can be None
+        str tags,  # Can be None
         UUID4 event_id not None,
         int64_t ts_init,
-        dict options not None,
     ):
         """
         Initialize a new instance of the ``OrderInitialized`` class.
@@ -140,13 +148,28 @@ cdef class OrderInitialized(OrderEvent):
             The order quantity.
         time_in_force : TimeInForce
             The order time-in-force.
-        event_id : UUID4
-            The event ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+        reduce_only : bool
+            If the order carries the 'reduce-only' execution instruction.
         options : dict[str, str]
             The order initialization options. Contains mappings for specific
             order parameters.
+        order_list_id : OrderListId, optional
+            The order list ID associated with the order.
+        parent_order_id : ClientOrderId, optional
+            The orders parent client order ID.
+        child_order_ids : list[ClientOrderId], optional
+            The orders child client order ID(s).
+        contingency : ContingencyType
+            The orders contingency type.
+        contingency_ids : list[ClientOrderId], optional
+            The orders contingency client order ID(s).
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
+        event_id : UUID4
+            The event ID.
+        ts_init : int64
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -165,18 +188,47 @@ cdef class OrderInitialized(OrderEvent):
         self.type = order_type
         self.quantity = quantity
         self.time_in_force = time_in_force
+        self.reduce_only = reduce_only
         self.options = options
+        self.order_list_id = order_list_id
+        self.parent_order_id = parent_order_id
+        self.child_order_ids = child_order_ids
+        self.contingency = contingency
+        self.contingency_ids = contingency_ids
+        self.tags = tags
 
     def __str__(self) -> str:
+        cdef ClientOrderId o
+        cdef str child_order_ids = "None"
+        if self.child_order_ids:
+            child_order_ids = str([o.value for o in self.child_order_ids])
+        cdef str contingency_ids = "None"
+        if self.contingency_ids:
+            contingency_ids = str([o.value for o in self.contingency_ids])
         return (f"{type(self).__name__}("
                 f"instrument_id={self.instrument_id.value}, "
                 f"client_order_id={self.client_order_id.value}, "
                 f"side={OrderSideParser.to_str(self.side)}, "
                 f"type={OrderTypeParser.to_str(self.type)}, "
                 f"quantity={self.quantity.to_str()}, "
-                f"options={self.options})")
+                f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
+                f"reduce_only={self.reduce_only}, "
+                f"options={self.options}, "
+                f"order_list_id={self.order_list_id}, "
+                f"parent_order_id={self.parent_order_id}, "
+                f"child_order_ids={child_order_ids}, "
+                f"contingency={ContingencyTypeParser.to_str(self.contingency)}, "
+                f"contingency_ids={contingency_ids}, "
+                f"tags={self.tags})")
 
     def __repr__(self) -> str:
+        cdef ClientOrderId o
+        cdef str child_order_ids = "None"
+        if self.child_order_ids:
+            child_order_ids = str([o.value for o in self.child_order_ids])
+        cdef str contingency_ids = "None"
+        if self.contingency_ids:
+            contingency_ids = str([o.value for o in self.contingency_ids])
         return (f"{type(self).__name__}("
                 f"trader_id={self.trader_id.value}, "
                 f"strategy_id={self.strategy_id.value}, "
@@ -185,13 +237,26 @@ cdef class OrderInitialized(OrderEvent):
                 f"side={OrderSideParser.to_str(self.side)}, "
                 f"type={OrderTypeParser.to_str(self.type)}, "
                 f"quantity={self.quantity.to_str()}, "
+                f"time_in_force={TimeInForceParser.to_str(self.time_in_force)}, "
+                f"reduce_only={self.reduce_only}, "
                 f"options={self.options}, "
+                f"order_list_id={self.order_list_id}, "
+                f"parent_order_id={self.parent_order_id}, "
+                f"child_order_ids={child_order_ids}, "
+                f"contingency={ContingencyTypeParser.to_str(self.contingency)}, "
+                f"contingency_ids={contingency_ids}, "
+                f"tags={self.tags}, "
                 f"event_id={self.id}, "
                 f"ts_init={self.ts_init})")
 
     @staticmethod
     cdef OrderInitialized from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str order_list_id_str = values["order_list_id"]
+        cdef str parent_order_id_str = values["parent_order_id"]
+        cdef str child_order_ids_str = values["child_order_ids"]
+        cdef str contingency_ids_str = values["contingency_ids"]
+        cdef str o_str
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -201,14 +266,22 @@ cdef class OrderInitialized(OrderEvent):
             order_type=OrderTypeParser.from_str(values["order_type"]),
             quantity=Quantity.from_str_c(values["quantity"]),
             time_in_force=TimeInForceParser.from_str(values["time_in_force"]),
+            reduce_only=values["reduce_only"],
+            options=orjson.loads(values["options"]),
+            order_list_id=OrderListId(order_list_id_str) if order_list_id_str else None,
+            parent_order_id=ClientOrderId(parent_order_id_str) if parent_order_id_str else None,
+            child_order_ids=[ClientOrderId(o_str) for o_str in child_order_ids_str.split(",")] if child_order_ids_str is not None else None,
+            contingency=ContingencyTypeParser.from_str(values["contingency"]),
+            contingency_ids=[ClientOrderId(o_str) for o_str in contingency_ids_str.split(",")] if contingency_ids_str is not None else None,
+            tags=values["tags"],
             event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
-            options=orjson.loads(values["options"]),
         )
 
     @staticmethod
     cdef dict to_dict_c(OrderInitialized obj):
         Condition.not_none(obj, "obj")
+        cdef ClientOrderId o
         return {
             "type": "OrderInitialized",
             "trader_id": obj.trader_id.value,
@@ -219,9 +292,16 @@ cdef class OrderInitialized(OrderEvent):
             "order_type": OrderTypeParser.to_str(obj.type),
             "quantity": str(obj.quantity),
             "time_in_force": TimeInForceParser.to_str(obj.time_in_force),
+            "reduce_only": obj.reduce_only,
+            "options": orjson.dumps(obj.options).decode(),
+            "order_list_id": obj.order_list_id.value if obj.order_list_id is not None else None,
+            "parent_order_id": obj.parent_order_id.value if obj.parent_order_id is not None else None,
+            "child_order_ids": ",".join([o.value for o in obj.child_order_ids]) if obj.child_order_ids is not None else None,  # noqa
+            "contingency": ContingencyTypeParser.to_str(obj.contingency),
+            "contingency_ids": ",".join([o.value for o in obj.contingency_ids]) if obj.contingency_ids is not None else None,  # noqa
+            "tags": obj.tags,
             "event_id": obj.id.value,
             "ts_init": obj.ts_init,
-            "options": orjson.dumps(obj.options).decode(),
         }
 
     @staticmethod
@@ -290,7 +370,7 @@ cdef class OrderDenied(OrderEvent):
         event_id : UUID4
             The event ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Raises
         ------
@@ -423,7 +503,7 @@ cdef class OrderSubmitted(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order submitted event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -563,7 +643,7 @@ cdef class OrderAccepted(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order accepted event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -698,7 +778,7 @@ cdef class OrderRejected(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order rejected event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialization.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Raises
         ------
@@ -841,7 +921,7 @@ cdef class OrderCanceled(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when order canceled event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -976,7 +1056,7 @@ cdef class OrderExpired(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order expired event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -1111,7 +1191,7 @@ cdef class OrderTriggered(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order triggered event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -1211,7 +1291,7 @@ cdef class OrderTriggered(OrderEvent):
 
 cdef class OrderPendingUpdate(OrderEvent):
     """
-    Represents an event where an `UpdateOrder` command has been sent to the
+    Represents an event where an `ModifyOrder` command has been sent to the
     trading venue.
     """
 
@@ -1249,7 +1329,7 @@ cdef class OrderPendingUpdate(OrderEvent):
         ts_event : datetime
             The UNIX timestamp (nanoseconds) when the order pending update event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -1385,7 +1465,7 @@ cdef class OrderPendingCancel(OrderEvent):
         ts_event : datetime
             The UNIX timestamp (nanoseconds) when the order pending cancel event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -1481,9 +1561,9 @@ cdef class OrderPendingCancel(OrderEvent):
         return OrderPendingCancel.to_dict_c(obj)
 
 
-cdef class OrderUpdateRejected(OrderEvent):
+cdef class OrderModifyRejected(OrderEvent):
     """
-    Represents an event where an `UpdateOrder` command has been rejected by the
+    Represents an event where a `ModifyOrder` command has been rejected by the
     trading venue.
     """
 
@@ -1501,7 +1581,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         int64_t ts_init,
     ):
         """
-        Initialize a new instance of the ``OrderUpdateRejected`` class.
+        Initialize a new instance of the ``OrderModifyRejected`` class.
 
         Parameters
         ----------
@@ -1524,7 +1604,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         ts_event : datetime
             The UNIX timestamp (nanoseconds) when the order update rejected event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Raises
         ------
@@ -1570,9 +1650,9 @@ cdef class OrderUpdateRejected(OrderEvent):
                 f"ts_init={self.ts_init})")
 
     @staticmethod
-    cdef OrderUpdateRejected from_dict_c(dict values):
+    cdef OrderModifyRejected from_dict_c(dict values):
         Condition.not_none(values, "values")
-        return OrderUpdateRejected(
+        return OrderModifyRejected(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
             account_id=AccountId.from_str_c(values["account_id"]),
@@ -1586,10 +1666,10 @@ cdef class OrderUpdateRejected(OrderEvent):
         )
 
     @staticmethod
-    cdef dict to_dict_c(OrderUpdateRejected obj):
+    cdef dict to_dict_c(OrderModifyRejected obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "OrderUpdateRejected",
+            "type": "OrderModifyRejected",
             "trader_id": obj.trader_id.value,
             "account_id": obj.account_id.value,
             "strategy_id": obj.strategy_id.value,
@@ -1603,7 +1683,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         }
 
     @staticmethod
-    def from_dict(dict values) -> OrderUpdateRejected:
+    def from_dict(dict values) -> OrderModifyRejected:
         """
         Return an order update rejected event from the given dict values.
 
@@ -1614,13 +1694,13 @@ cdef class OrderUpdateRejected(OrderEvent):
 
         Returns
         -------
-        OrderUpdateRejected
+        OrderModifyRejected
 
         """
-        return OrderUpdateRejected.from_dict_c(values)
+        return OrderModifyRejected.from_dict_c(values)
 
     @staticmethod
-    def to_dict(OrderUpdateRejected obj):
+    def to_dict(OrderModifyRejected obj):
         """
         Return a dictionary representation of this object.
 
@@ -1629,7 +1709,7 @@ cdef class OrderUpdateRejected(OrderEvent):
         dict[str, object]
 
         """
-        return OrderUpdateRejected.to_dict_c(obj)
+        return OrderModifyRejected.to_dict_c(obj)
 
 
 cdef class OrderCancelRejected(OrderEvent):
@@ -1675,7 +1755,7 @@ cdef class OrderCancelRejected(OrderEvent):
         ts_event : datetime
             The UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Raises
         ------
@@ -1797,7 +1877,7 @@ cdef class OrderUpdated(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id not None,
         Quantity quantity not None,
-        Price price not None,
+        Price price,  # Can be None
         Price trigger,  # Can be None
         UUID4 event_id not None,
         int64_t ts_event,
@@ -1822,7 +1902,7 @@ cdef class OrderUpdated(OrderEvent):
             The venue order ID.
         quantity : Quantity
             The orders current quantity.
-        price : Price
+        price : Price, optional
             The orders current price.
         trigger : Price, optional
             The orders current trigger.
@@ -1831,7 +1911,7 @@ cdef class OrderUpdated(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order updated event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(
@@ -1879,6 +1959,7 @@ cdef class OrderUpdated(OrderEvent):
     @staticmethod
     cdef OrderUpdated from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str p = values["price"]
         cdef str t = values["trigger"]
         return OrderUpdated(
             trader_id=TraderId(values["trader_id"]),
@@ -1888,7 +1969,7 @@ cdef class OrderUpdated(OrderEvent):
             client_order_id=ClientOrderId(values["client_order_id"]),
             venue_order_id=VenueOrderId(values["venue_order_id"]),
             quantity=Quantity.from_str_c(values["quantity"]),
-            price=Price.from_str_c(values["price"]),
+            price=Price.from_str_c(p) if p is not None else None,
             trigger=Price.from_str_c(t) if t is not None else None,
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
@@ -2011,7 +2092,7 @@ cdef class OrderFilled(OrderEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the order filled event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
         info : dict[str, object], optional
             The additional fill information.
 

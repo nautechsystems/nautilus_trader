@@ -17,10 +17,11 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookLevel
-from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.orderbook.book import BookIntegrityError
 from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
@@ -244,15 +245,6 @@ def test_add(empty_l2_book):
     assert empty_l2_book.bids.top().price == 10.0
 
 
-def test_add_l1_fails():
-    book = OrderBook.create(
-        instrument=AUDUSD_SIM,
-        level=BookLevel.L1,
-    )
-    with pytest.raises(NotImplementedError):
-        book.add(TestStubs.order(price=10.0, side=OrderSide.BUY))
-
-
 def test_delete_l1():
     book = OrderBook.create(
         instrument=AUDUSD_SIM,
@@ -281,9 +273,14 @@ def test_check_integrity_empty(empty_l2_book):
 def test_check_integrity_shallow(empty_l2_book):
     empty_l2_book.add(Order(price=10.0, size=5.0, side=OrderSide.SELL))
     empty_l2_book.check_integrity()
-    empty_l2_book.add(Order(price=20.0, size=5.0, side=OrderSide.BUY))
+    try:
+        # Orders will be in cross
+        empty_l2_book.add(Order(price=20.0, size=5.0, side=OrderSide.BUY))
+    except BookIntegrityError:
+        # Catch the integrity exception and pass to allow the test
+        pass
 
-    with pytest.raises(AssertionError):
+    with pytest.raises(BookIntegrityError):
         empty_l2_book.check_integrity()
 
 
@@ -311,7 +308,7 @@ def test_orderbook_operation_update(empty_l2_book, clock):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
         level=BookLevel.L2,
-        delta_type=DeltaType.UPDATE,
+        action=BookAction.UPDATE,
         order=Order(
             0.5814,
             672.45,
@@ -329,7 +326,7 @@ def test_orderbook_operation_add(empty_l2_book, clock):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
         level=BookLevel.L2,
-        delta_type=DeltaType.ADD,
+        action=BookAction.ADD,
         order=Order(
             0.5900,
             672.45,
@@ -347,7 +344,7 @@ def test_orderbook_operations(empty_l2_book):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
         level=BookLevel.L2,
-        delta_type=DeltaType.UPDATE,
+        action=BookAction.UPDATE,
         order=Order(
             0.5814,
             672.45,
@@ -382,7 +379,7 @@ def test_apply(empty_l2_book, clock):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
         level=BookLevel.L2,
-        delta_type=DeltaType.ADD,
+        action=BookAction.ADD,
         order=Order(
             155.0,
             672.45,
@@ -408,7 +405,7 @@ def test_timestamp_ns(empty_l2_book, clock):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
         level=BookLevel.L2,
-        delta_type=DeltaType.ADD,
+        action=BookAction.ADD,
         order=Order(
             0.5900,
             672.45,

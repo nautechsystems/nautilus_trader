@@ -17,9 +17,9 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.model.commands.trading import CancelOrder
-from nautilus_trader.model.commands.trading import SubmitBracketOrder
+from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import UpdateOrder
+from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -84,42 +84,38 @@ class TestCommands:
         # Arrange
         uuid = self.uuid_factory.generate()
 
-        entry = self.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100000),
-        )
-
-        bracket = self.order_factory.bracket(
-            entry_order=entry,
+        bracket = self.order_factory.bracket_market(
+            instrument_id=AUDUSD_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(100000),
             stop_loss=Price.from_str("1.00000"),
             take_profit=Price.from_str("1.00100"),
         )
 
-        command = SubmitBracketOrder(
+        command = SubmitOrderList(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("S-001"),
-            bracket_order=bracket,
+            order_list=bracket,
             command_id=uuid,
             ts_init=self.clock.timestamp_ns(),
         )
 
         # Act, Assert
-        assert SubmitBracketOrder.from_dict(SubmitBracketOrder.to_dict(command)) == command
+        assert SubmitOrderList.from_dict(SubmitOrderList.to_dict(command)) == command
         assert (
             str(command)
-            == "SubmitBracketOrder(instrument_id=AUD/USD.SIM, client_order_link_id=BO-19700101-000000-000-001-1, entry=BUY 100_000 AUD/USD.SIM MARKET GTC, stop_loss=SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, take_profit=SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC)"  # noqa
+            == "SubmitOrderList(instrument_id=AUD/USD.SIM, order_list=OrderList(id=1, instrument_id=AUD/USD.SIM, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-2, venue_order_id=None, tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-3, venue_order_id=None, tags=TAKE_PROFIT)]))"  # noqa
         )
         assert (
             repr(command)
-            == f"SubmitBracketOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_link_id=BO-19700101-000000-000-001-1, entry=BUY 100_000 AUD/USD.SIM MARKET GTC, stop_loss=SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, take_profit=SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC, command_id={uuid}, ts_init=0)"  # noqa
+            == f"SubmitOrderList(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, order_list=OrderList(id=1, instrument_id=AUD/USD.SIM, orders=[MarketOrder(BUY 100_000 AUD/USD.SIM MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, tags=ENTRY), StopMarketOrder(SELL 100_000 AUD/USD.SIM STOP_MARKET @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-2, venue_order_id=None, tags=STOP_LOSS), LimitOrder(SELL 100_000 AUD/USD.SIM LIMIT @ 1.00100 GTC, status=INITIALIZED, client_order_id=O-19700101-000000-000-001-3, venue_order_id=None, tags=TAKE_PROFIT)]), command_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_update_order_command_to_from_dict_and_str_repr(self):
         # Arrange
         uuid = self.uuid_factory.generate()
 
-        command = UpdateOrder(
+        command = ModifyOrder(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("S-001"),
             instrument_id=AUDUSD_SIM.id,
@@ -133,14 +129,14 @@ class TestCommands:
         )
 
         # Act, Assert
-        assert UpdateOrder.from_dict(UpdateOrder.to_dict(command)) == command
+        assert ModifyOrder.from_dict(ModifyOrder.to_dict(command)) == command
         assert (
             str(command)
-            == "UpdateOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010)"  # noqa
+            == "ModifyOrder(instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010)"  # noqa
         )
         assert (
             repr(command)
-            == f"UpdateOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010, command_id={uuid}, ts_init=0)"  # noqa
+            == f"ModifyOrder(trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=001, quantity=100_000, price=1.00000, trigger=1.00010, command_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_cancel_order_command_to_from_dict_and_str_repr(self):

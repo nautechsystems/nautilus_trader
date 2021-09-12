@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.data.bar cimport Bar
 
 
 cdef class RelativeStrengthIndex(Indicator):
@@ -112,7 +112,7 @@ cdef class RelativeStrengthIndex(Indicator):
         self.value = self._rsi_max - (self._rsi_max / (1 + rs))
         self._last_value = value
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._average_gain.reset()
         self._average_loss.reset()
         self._last_value = 0

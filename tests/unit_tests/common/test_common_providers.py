@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.model.identifiers import Venue
 from tests.test_kit.stubs import TestStubs
@@ -28,22 +26,6 @@ class TestInstrumentProvider:
     def setup(self):
         # Fixture Setup
         self.provider = InstrumentProvider()
-
-    @pytest.mark.asyncio
-    async def test_load_all_async_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            await self.provider.load_all_async()
-
-    def test_load_all_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.provider.load_all()
-
-    def test_load_when_not_implemented_raises_exception(self):
-        # Arrange, Act, Assert
-        with pytest.raises(NotImplementedError):
-            self.provider.load(AUDUSD, {})
 
     def test_get_all_when_no_instruments_returns_empty_dict(self):
         # Arrange, Act

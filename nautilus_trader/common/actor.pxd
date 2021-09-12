@@ -19,6 +19,7 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
@@ -26,7 +27,6 @@ from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
@@ -46,8 +46,10 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class Actor(Component):
+    cdef set _warning_events
+
     cdef readonly MessageBus msgbus
-    """The message bus for the actor (if registered).\n\n:returns: `MessageBus` or None"""
+    """The message bus for the actor (if registered).\n\n:returns: `MessageBus` or ``None``"""
     cdef readonly CacheFacade cache
     """The read-only cache for the actor.\n\n:returns: `CacheFacade`"""
 
@@ -83,6 +85,9 @@ cdef class Actor(Component):
         Clock clock,
         Logger logger,
     ) except *
+
+    cpdef void register_warning_event(self, type event)
+    cpdef void deregister_warning_event(self, type event)
 
 # -- SUBSCRIPTIONS ---------------------------------------------------------------------------------
 

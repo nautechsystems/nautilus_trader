@@ -13,25 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.message cimport Command
-from nautilus_trader.core.message cimport Event
-from nautilus_trader.model.instruments.base cimport Instrument
-
-
 cdef dict _OBJECT_TO_DICT_MAP
 cdef dict _OBJECT_FROM_DICT_MAP
 
 
-cdef class InstrumentSerializer:
-    cpdef bytes serialize(self, Instrument instrument)
-    cpdef Instrument deserialize(self, bytes instrument_bytes)
-
-
-cdef class CommandSerializer:
-    cpdef bytes serialize(self, Command command)
-    cpdef Command deserialize(self, bytes command_bytes)
-
-
-cdef class EventSerializer:
-    cpdef bytes serialize(self, Event event)
-    cpdef Event deserialize(self, bytes event_bytes)
+cdef class Serializer:
+    cpdef bytes serialize(self, object obj)
+    cpdef object deserialize(self, bytes obj_bytes)

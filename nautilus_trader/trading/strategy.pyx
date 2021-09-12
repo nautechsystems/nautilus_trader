@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-The `TradingStrategy` class allows traders to implement their own customized trading strategies.
+This module defines a trading strategy class which allows users to implement
+their own customized trading strategies
 
 A user can inherit from `TradingStrategy` and optionally override any of the
 "on" named event methods. The class is not entirely initialized in a stand-alone
@@ -40,23 +41,23 @@ from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.c_enums.oms_type cimport OMSType
+from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
 from nautilus_trader.model.commands.trading cimport CancelOrder
-from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderRejected
-from nautilus_trader.model.events.order cimport OrderUpdateRejected
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -65,19 +66,10 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
-from nautilus_trader.model.orders.bracket cimport BracketOrder
+from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
-
-
-# Events for WRN log level
-cdef tuple _WARNING_EVENTS = (
-    OrderDenied,
-    OrderRejected,
-    OrderCancelRejected,
-    OrderUpdateRejected,
-)
 
 
 class TradingStrategyConfig(pydantic.BaseModel):
@@ -93,13 +85,14 @@ class TradingStrategyConfig(pydantic.BaseModel):
     """
 
     order_id_tag: str = "000"
-    oms_type: OMSType = OMSType.HEDGING
+    oms_type: str = "HEDGING"
 
 
 cdef class TradingStrategy(Actor):
     """
     The abstract base class for all trading strategies.
 
+    This class allows traders to implement their own customized trading strategies.
     A trading strategy can configure its own order management system type, which
     determines how positions are handled by the `ExecutionEngine`.
 
@@ -126,14 +119,14 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         TypeError
-            If config is not of type TradingStrategyConfig.
+            If config is not of type `TradingStrategyConfig`.
 
         """
         if config is None:
             config = TradingStrategyConfig()
         Condition.type(config, TradingStrategyConfig, "config")
 
-        self.oms_type = config.oms_type
+        self.oms_type = OMSTypeParser.from_str(config.oms_type)
 
         # Assign strategy ID
         strategy_id = StrategyId(f"{type(self).__name__}-{config.order_id_tag}")
@@ -153,8 +146,11 @@ cdef class TradingStrategy(Actor):
         self.portfolio = None      # Initialized when registered
         self.order_factory = None  # Initialized when registered
 
-    def __eq__(self, TradingStrategy other) -> bool:
-        return self.id.value == other.id.value
+        # Register warning events
+        self.register_warning_event(OrderDenied)
+        self.register_warning_event(OrderRejected)
+        self.register_warning_event(OrderCancelRejected)
+        self.register_warning_event(OrderModifyRejected)
 
     @property
     def registered_indicators(self):
@@ -517,47 +513,41 @@ cdef class TradingStrategy(Actor):
 
         self._send_exec_cmd(command)
 
-    cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *:
+    cpdef void submit_order_list(self, OrderList order_list) except *:
         """
-        Submit the given bracket order with optional routing instructions.
+        Submit the given order list.
 
-        A `SubmitBracketOrder` command with be created and sent to the
+        A `SubmitOrderList` command with be created and sent to the
         `ExecutionEngine`.
 
         Parameters
         ----------
-        bracket_order : BracketOrder
-            The bracket order to submit.
+        order_list : OrderList
+            The order list to submit.
 
         """
-        Condition.not_none(bracket_order, "bracket_order")
+        Condition.not_none(order_list, "order_list")
         Condition.not_none(self.trader_id, "self.trader_id")
 
         # Publish initialized events
-        self._msgbus.publish_c(
-            topic=f"events.order.{bracket_order.entry.strategy_id.value}",
-            msg=bracket_order.entry.init_event_c(),
-        )
-        self._msgbus.publish_c(
-            topic=f"events.order.{bracket_order.stop_loss.strategy_id.value}",
-            msg=bracket_order.stop_loss.init_event_c(),
-        )
-        self._msgbus.publish_c(
-            topic=f"events.order.{bracket_order.take_profit.strategy_id.value}",
-            msg=bracket_order.take_profit.init_event_c(),
-        )
+        cdef Order order
+        for order in order_list.orders:
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.value}",
+                msg=order.init_event_c(),
+            )
 
-        cdef SubmitBracketOrder command = SubmitBracketOrder(
+        cdef SubmitOrderList command = SubmitOrderList(
             self.trader_id,
             self.id,
-            bracket_order,
+            order_list,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
 
         self._send_exec_cmd(command)
 
-    cpdef void update_order(
+    cpdef void modify_order(
         self,
         PassiveOrder order,
         Quantity quantity=None,
@@ -565,9 +555,9 @@ cdef class TradingStrategy(Actor):
         Price trigger=None,
     ) except *:
         """
-        Update the given order with optional parameters and routing instructions.
+        Modify the given order with optional parameters and routing instructions.
 
-        An `UpdateOrder` command is created and then sent to the
+        An `ModifyOrder` command is created and then sent to the
         `ExecutionEngine`. Either one or both values must differ from the
         original order for the command to be valid.
 
@@ -590,7 +580,7 @@ cdef class TradingStrategy(Actor):
         Raises
         ------
         ValueError
-            If trigger is not None and order.type != ``STOP_LIMIT``.
+            If trigger is not ``None`` and order.type != ``STOP_LIMIT``.
 
         References
         ----------
@@ -613,7 +603,7 @@ cdef class TradingStrategy(Actor):
         if trigger is not None:
             if order.is_triggered_c():
                 self.log.warning(
-                    f"Cannot create command UpdateOrder: "
+                    f"Cannot create command ModifyOrder: "
                     f"Order with {repr(order.client_order_id)} already triggered.",
                 )
                 return
@@ -622,14 +612,14 @@ cdef class TradingStrategy(Actor):
 
         if not updating:
             self.log.error(
-                "Cannot create command UpdateOrder: "
+                "Cannot create command ModifyOrder: "
                 "quantity, price and trigger were either None or the same as existing values.",
             )
             return
 
         if order.account_id is None:
             self.log.error(
-                f"Cannot create command UpdateOrder: "
+                f"Cannot create command ModifyOrder: "
                 f"no account assigned to order yet, {order}.",
             )
             return  # Cannot send command
@@ -640,11 +630,11 @@ cdef class TradingStrategy(Actor):
             or order.is_pending_cancel_c()
         ):
             self.log.warning(
-                f"Cannot create command UpdateOrder: state is {order.status_string_c()}, {order}.",
+                f"Cannot create command ModifyOrder: state is {order.status_string_c()}, {order}.",
             )
             return  # Cannot send command
 
-        cdef UpdateOrder command = UpdateOrder(
+        cdef ModifyOrder command = ModifyOrder(
             self.trader_id,
             self.id,
             order.instrument_id,
@@ -728,7 +718,7 @@ cdef class TradingStrategy(Actor):
 
         cdef int count = len(working_orders)
         self.log.info(
-            f"Cancelling {count} working order{'' if count == 1 else 's'}...",
+            f"Canceling {count} working order{'' if count == 1 else 's'}...",
         )
 
         cdef Order order
@@ -947,7 +937,7 @@ cdef class TradingStrategy(Actor):
         """
         Condition.not_none(event, "event")
 
-        if isinstance(event, _WARNING_EVENTS):
+        if type(event) in self._warning_events:
             self.log.warning(f"{RECV}{EVT} {event}.")
         else:
             self.log.info(f"{RECV}{EVT} {event}.")

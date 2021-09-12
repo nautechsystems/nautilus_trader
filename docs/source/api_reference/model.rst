@@ -121,10 +121,10 @@ Stop-Limit Order
    :members:
    :member-order: bysource
 
-Bracket Order
--------------
+Order List
+----------
 
-.. automodule:: nautilus_trader.model.orders.bracket
+.. automodule:: nautilus_trader.model.orders.list
    :show-inheritance:
    :inherited-members:
    :members:

@@ -31,13 +31,13 @@ class TestQuoteTick:
     def test_tick_hash_str_and_repr(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Price.from_str("1.00001"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("1.00000"),
+            ask=Price.from_str("1.00001"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act, Assert
@@ -48,13 +48,13 @@ class TestQuoteTick:
     def test_extract_price_with_invalid_price_raises_value_error(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Price.from_str("1.00001"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("1.00000"),
+            ask=Price.from_str("1.00001"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act, Assert
@@ -64,13 +64,13 @@ class TestQuoteTick:
     def test_extract_price_with_various_price_types_returns_expected_values(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Price.from_str("1.00001"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("1.00000"),
+            ask=Price.from_str("1.00001"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -86,13 +86,13 @@ class TestQuoteTick:
     def test_extract_volume_with_invalid_price_raises_value_error(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Price.from_str("1.00001"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("1.00000"),
+            ask=Price.from_str("1.00001"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act, Assert
@@ -102,13 +102,13 @@ class TestQuoteTick:
     def test_extract_volume_with_various_price_types_returns_expected_values(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Price.from_str("1.00001"),
-            Quantity.from_int(500000),
-            Quantity.from_int(800000),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("1.00000"),
+            ask=Price.from_str("1.00001"),
+            bid_size=Quantity.from_int(500000),
+            ask_size=Quantity.from_int(800000),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -124,13 +124,13 @@ class TestQuoteTick:
     def test_to_dict_returns_expected_dict(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Price.from_str("1.00001"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("1.00000"),
+            ask=Price.from_str("1.00001"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -151,13 +151,13 @@ class TestQuoteTick:
     def test_from_dict_returns_expected_tick(self):
         # Arrange
         tick = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Price.from_str("1.00001"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("1.00000"),
+            ask=Price.from_str("1.00001"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -171,13 +171,13 @@ class TestTradeTick:
     def test_hash_str_and_repr(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Quantity.from_int(50000),
-            AggressorSide.BUY,
-            "123456789",
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(50000),
+            aggressor_side=AggressorSide.BUY,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act, Assert
@@ -188,13 +188,13 @@ class TestTradeTick:
     def test_to_dict_returns_expected_dict(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Quantity.from_int(10000),
-            AggressorSide.BUY,
-            "123456789",
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(10000),
+            aggressor_side=AggressorSide.BUY,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -215,13 +215,13 @@ class TestTradeTick:
     def test_from_dict_returns_expected_tick(self):
         # Arrange
         tick = TradeTick(
-            AUDUSD_SIM.id,
-            Price.from_str("1.00000"),
-            Quantity.from_int(10000),
-            AggressorSide.BUY,
-            "123456789",
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            price=Price.from_str("1.00000"),
+            size=Quantity.from_int(10000),
+            aggressor_side=AggressorSide.BUY,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act

@@ -14,14 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-
-from cpython.datetime cimport datetime
-from cpython.datetime cimport timedelta
+from typing import Optional
 
 from pydantic import PositiveInt
 
-from nautilus_trader.execution.engine import ExecEngineConfig
-from nautilus_trader.execution.engine import Optional
+from cpython.datetime cimport datetime
+from cpython.datetime cimport timedelta
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport LiveClock
@@ -43,10 +41,12 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.msgbus.bus cimport MessageBus
 
+from nautilus_trader.execution.engine import ExecEngineConfig
+
 
 class LiveExecEngineConfig(ExecEngineConfig):
     """
-    Provides configuration for ``LiveExecEngine`` instances.
+    Configuration for ``LiveExecEngine`` instances.
     """
 
     qsize: PositiveInt = 10000
@@ -88,7 +88,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         Raises
         ------
         TypeError
-            If config is not of type LiveExecEngineConfig.
+            If config is not of type `LiveExecEngineConfig`.
 
         """
         if config is None:
@@ -252,7 +252,7 @@ cdef class LiveExecutionEngine(ExecutionEngine):
         """
         self._log.warning("Killing engine...")
         if self._run_queue_task:
-            self._log.debug("Cancelling run_queue_task...")
+            self._log.debug("Canceling run_queue_task...")
             self._run_queue_task.cancel()
         if self.is_running:
             self.is_running = False  # Avoids sentinel messages for queues

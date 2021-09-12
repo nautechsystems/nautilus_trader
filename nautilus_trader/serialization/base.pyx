@@ -18,12 +18,10 @@ from typing import Any, Callable, Dict
 from nautilus_trader.common.events.risk cimport TradingStateChanged
 from nautilus_trader.common.events.system cimport ComponentStateChanged
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport Command
-from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.commands.trading cimport CancelOrder
-from nautilus_trader.model.commands.trading cimport SubmitBracketOrder
+from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport UpdateOrder
+from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
@@ -38,13 +36,13 @@ from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
-from nautilus_trader.model.events.order cimport OrderUpdateRejected
 from nautilus_trader.model.events.position cimport PositionChanged
 from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionOpened
@@ -61,9 +59,9 @@ from nautilus_trader.model.instruments.option cimport Option
 
 _OBJECT_TO_DICT_MAP = {
     CancelOrder.__name__: CancelOrder.to_dict_c,
-    SubmitBracketOrder.__name__: SubmitBracketOrder.to_dict_c,
     SubmitOrder.__name__: SubmitOrder.to_dict_c,
-    UpdateOrder.__name__: UpdateOrder.to_dict_c,
+    SubmitOrderList.__name__: SubmitOrderList.to_dict_c,
+    ModifyOrder.__name__: ModifyOrder.to_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.to_dict_c,
     TradingStateChanged.__name__: TradingStateChanged.to_dict_c,
     AccountState.__name__: AccountState.to_dict_c,
@@ -79,7 +77,7 @@ _OBJECT_TO_DICT_MAP = {
     OrderRejected.__name__: OrderRejected.to_dict_c,
     OrderSubmitted.__name__: OrderSubmitted.to_dict_c,
     OrderTriggered.__name__: OrderTriggered.to_dict_c,
-    OrderUpdateRejected.__name__: OrderUpdateRejected.to_dict_c,
+    OrderModifyRejected.__name__: OrderModifyRejected.to_dict_c,
     OrderUpdated.__name__: OrderUpdated.to_dict_c,
     PositionOpened.__name__: PositionOpened.to_dict_c,
     PositionChanged.__name__: PositionChanged.to_dict_c,
@@ -103,9 +101,9 @@ _OBJECT_TO_DICT_MAP = {
 # Default mappings for Nautilus objects
 _OBJECT_FROM_DICT_MAP = {
     CancelOrder.__name__: CancelOrder.from_dict_c,
-    SubmitBracketOrder.__name__: SubmitBracketOrder.from_dict_c,
     SubmitOrder.__name__: SubmitOrder.from_dict_c,
-    UpdateOrder.__name__: UpdateOrder.from_dict_c,
+    SubmitOrderList.__name__: SubmitOrderList.from_dict_c,
+    ModifyOrder.__name__: ModifyOrder.from_dict_c,
     ComponentStateChanged.__name__: ComponentStateChanged.from_dict_c,
     TradingStateChanged.__name__: TradingStateChanged.from_dict_c,
     AccountState.__name__: AccountState.from_dict_c,
@@ -121,7 +119,7 @@ _OBJECT_FROM_DICT_MAP = {
     OrderRejected.__name__: OrderRejected.from_dict_c,
     OrderSubmitted.__name__: OrderSubmitted.from_dict_c,
     OrderTriggered.__name__: OrderTriggered.from_dict_c,
-    OrderUpdateRejected.__name__: OrderUpdateRejected.from_dict_c,
+    OrderModifyRejected.__name__: OrderModifyRejected.from_dict_c,
     OrderUpdated.__name__: OrderUpdated.from_dict_c,
     PositionOpened.__name__: PositionOpened.from_dict_c,
     PositionChanged.__name__: PositionChanged.from_dict_c,
@@ -142,7 +140,7 @@ _OBJECT_FROM_DICT_MAP = {
 }
 
 
-cpdef inline void register_serializable_object(
+cpdef void register_serializable_object(
     object obj,
     to_dict: Callable[[Any], Dict[str, Any]],
     from_dict: Callable[[Dict[str, Any]], Any],
@@ -162,7 +160,7 @@ cpdef inline void register_serializable_object(
     Raises
     ------
     TypeError
-        If `to_dict` or `from_dict` are not of type Callable.
+        If `to_dict` or `from_dict` are not of type `Callable`.
     KeyError
         If obj already registered with the global object maps.
 
@@ -176,9 +174,9 @@ cpdef inline void register_serializable_object(
     _OBJECT_FROM_DICT_MAP[obj.__name__] = from_dict
 
 
-cdef class InstrumentSerializer:
+cdef class Serializer:
     """
-    The abstract base class for all instrument serializers.
+    The abstract base class for all serializers.
 
     Warnings
     --------
@@ -187,63 +185,15 @@ cdef class InstrumentSerializer:
 
     def __init__(self):
         """
-        Initialize a new instance of the ``InstrumentSerializer`` class.
+        Initialize a new instance of the ``Serializer`` class.
 
         """
         super().__init__()
 
-    cpdef bytes serialize(self, Instrument instrument):
+    cpdef bytes serialize(self, object obj):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef Instrument deserialize(self, bytes instrument_bytes):
+    cpdef object deserialize(self, bytes obj_bytes):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-
-cdef class CommandSerializer:
-    """
-    The abstract base class for all command serializers.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the ``CommandSerializer`` class.
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, Command command):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef Command deserialize(self, bytes command_bytes):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-
-cdef class EventSerializer:
-    """
-    The abstract base class for all event serializers.
-
-    Warnings
-    --------
-    This class should not be used directly, but through a concrete subclass.
-    """
-
-    def __init__(self):
-        """
-        Initialize a new instance of the ``EventSerializer`` class.
-        """
-        super().__init__()
-
-    cpdef bytes serialize(self, Event event):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef Event deserialize(self, bytes event_bytes):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

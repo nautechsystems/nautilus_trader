@@ -153,7 +153,7 @@ cdef class HilbertPeriod(Indicator):
         self._quadrature.append(
             feedback2 - (self._q_mult * feedback1) + (self._q_mult * quadrature2))
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._inputs.clear()
         self._detrended_prices.clear()
         self._in_phase = deque([0.0] * self.period, maxlen=self.period)

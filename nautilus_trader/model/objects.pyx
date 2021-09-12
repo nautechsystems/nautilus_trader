@@ -26,7 +26,7 @@ from cpython.object cimport PyObject_RichCompareBool
 from libc.stdint cimport uint8_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport precision_from_str
+from nautilus_trader.core.text cimport precision_from_str
 from nautilus_trader.model.currency cimport Currency
 
 

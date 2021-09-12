@@ -27,12 +27,14 @@ from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import AssetTypeParser
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BarAggregationParser
+from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import BookActionParser
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import BookLevelParser
+from nautilus_trader.model.enums import ContingencyType
+from nautilus_trader.model.enums import ContingencyTypeParser
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import CurrencyTypeParser
-from nautilus_trader.model.enums import DeltaType
-from nautilus_trader.model.enums import DeltaTypeParser
 from nautilus_trader.model.enums import DepthType
 from nautilus_trader.model.enums import DepthTypeParser
 from nautilus_trader.model.enums import InstrumentCloseType
@@ -99,6 +101,9 @@ class TestAccountType:
 
         # Assert
         assert expected == result
+
+    def test_instantiate_from_string(self):
+        assert AccountType["CASH"] == AccountType.CASH
 
 
 class TestAggregationSource:
@@ -334,6 +339,47 @@ class TestBarAggregation:
     def test_bar_aggregation_from_str(self, string, expected):
         # Arrange, Act
         result = BarAggregationParser.from_str_py(string)
+
+        # Assert
+        assert expected == result
+
+
+class TestContingencyType:
+    def test_contingency_type_parser_given_invalid_value_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            ContingencyTypeParser.from_str_py("")
+
+    @pytest.mark.parametrize(
+        "enum, expected",
+        [
+            [ContingencyType.NONE, "NONE"],
+            [ContingencyType.OTO, "OTO"],
+            [ContingencyType.OUO, "OUO"],
+            [ContingencyType.OCO, "OCO"],
+            [ContingencyType.OCA, "OCA"],
+        ],
+    )
+    def test_contingency_type_to_str(self, enum, expected):
+        # Arrange, Act
+        result = ContingencyTypeParser.to_str_py(enum)
+
+        # Assert
+        assert expected == result
+
+    @pytest.mark.parametrize(
+        "string, expected",
+        [
+            ["NONE", ContingencyType.NONE],
+            ["OTO", ContingencyType.OTO],
+            ["OUO", ContingencyType.OUO],
+            ["OCO", ContingencyType.OCO],
+            ["OCA", ContingencyType.OCA],
+        ],
+    )
+    def test_contingency_type_from_str(self, string, expected):
+        # Arrange, Act
+        result = ContingencyTypeParser.from_str_py(string)
 
         # Assert
         assert expected == result
@@ -761,23 +807,23 @@ class TestDeltaType:
     def test_delta_type_parser_given_invalid_value_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            DeltaTypeParser.to_str_py(0)
+            BookActionParser.to_str_py(0)
 
         with pytest.raises(ValueError):
-            DeltaTypeParser.from_str_py("")
+            BookActionParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [DeltaType.ADD, "ADD"],
-            [DeltaType.UPDATE, "UPDATE"],
-            [DeltaType.DELETE, "DELETE"],
-            [DeltaType.CLEAR, "CLEAR"],
+            [BookAction.ADD, "ADD"],
+            [BookAction.UPDATE, "UPDATE"],
+            [BookAction.DELETE, "DELETE"],
+            [BookAction.CLEAR, "CLEAR"],
         ],
     )
     def test_delta_type_to_str(self, enum, expected):
         # Arrange, Act
-        result = DeltaTypeParser.to_str_py(enum)
+        result = BookActionParser.to_str_py(enum)
 
         # Assert
         assert expected == result
@@ -786,10 +832,10 @@ class TestDeltaType:
         "string, expected",
         [
             ["", None],
-            ["ADD", DeltaType.ADD],
-            ["UPDATE", DeltaType.UPDATE],
-            ["DELETE", DeltaType.DELETE],
-            ["CLEAR", DeltaType.CLEAR],
+            ["ADD", BookAction.ADD],
+            ["UPDATE", BookAction.UPDATE],
+            ["DELETE", BookAction.DELETE],
+            ["CLEAR", BookAction.CLEAR],
         ],
     )
     def test_delta_type_from_str(self, string, expected):
@@ -797,7 +843,7 @@ class TestDeltaType:
         if expected is None:
             return
 
-        result = DeltaTypeParser.from_str_py(string)
+        result = BookActionParser.from_str_py(string)
 
         # Assert
         assert expected == result

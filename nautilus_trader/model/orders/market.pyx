@@ -13,10 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -28,6 +32,7 @@ from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Quantity
@@ -66,6 +71,13 @@ cdef class MarketOrder(Order):
         TimeInForce time_in_force,
         UUID4 init_id not None,
         int64_t ts_init,
+        bint reduce_only=False,
+        OrderListId order_list_id=None,
+        ClientOrderId parent_order_id=None,
+        list child_order_ids=None,
+        ContingencyType contingency=ContingencyType.NONE,
+        list contingency_ids=None,
+        str tags=None,
     ):
         """
         Initialize a new instance of the ``MarketOrder`` class.
@@ -80,14 +92,29 @@ cdef class MarketOrder(Order):
             The order instrument ID.
         client_order_id : ClientOrderId
             The client order ID.
-        order_side : OrderSide
-            The order side (``BUY`` or ``SELL``).
+        order_side : OrderSide {``BUY``, ``SELL``}
+            The order side.
         quantity : Quantity
             The order quantity (> 0).
         init_id : UUID4
             The order initialization event ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the order was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
+        reduce_only : bool
+            If the order carries the 'reduce-only' execution instruction.
+        order_list_id : OrderListId, optional
+            The order list ID associated with the order.
+        parent_order_id : ClientOrderId, optional
+            The orders parent client order ID.
+        child_order_ids : list[ClientOrderId], optional
+            The orders child client order ID(s).
+        contingency : ContingencyType
+            The orders contingency type.
+        contingency_ids : list[ClientOrderId], optional
+            The orders contingency client order ID(s).
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Raises
         ------
@@ -109,9 +136,16 @@ cdef class MarketOrder(Order):
             order_type=OrderType.MARKET,
             quantity=quantity,
             time_in_force=time_in_force,
+            reduce_only=reduce_only,
+            options={},
+            order_list_id=order_list_id,
+            parent_order_id=parent_order_id,
+            child_order_ids=child_order_ids,
+            contingency=contingency,
+            contingency_ids=contingency_ids,
+            tags=tags,
             event_id=init_id,
             ts_init=ts_init,
-            options={},
         )
 
         super().__init__(init=init)
@@ -138,10 +172,17 @@ cdef class MarketOrder(Order):
             "side": OrderSideParser.to_str(self.side),
             "quantity": str(self.quantity),
             "time_in_force": TimeInForceParser.to_str(self.time_in_force),
+            "reduce_only": self.is_reduce_only,
             "filled_qty": str(self.filled_qty),
             "avg_px": str(self.avg_px) if self.avg_px else None,
             "slippage": str(self.slippage),
             "status": self._fsm.state_string_c(),
+            "order_list_id": self.order_list_id,
+            "parent_order_id": self.parent_order_id,
+            "child_order_ids": ",".join([o.value for o in self.child_order_ids]) if self.child_order_ids is not None else None,  # noqa
+            "contingency": ContingencyTypeParser.to_str(self.contingency),
+            "contingency_ids": ",".join([o.value for o in self.contingency_ids]) if self.contingency_ids is not None else None,  # noqa
+            "tags": self.tags,
             "ts_last": self.ts_last,
             "ts_init": self.ts_init,
         }
@@ -177,8 +218,15 @@ cdef class MarketOrder(Order):
             order_side=init.side,
             quantity=init.quantity,
             time_in_force=init.time_in_force,
+            reduce_only=init.reduce_only,
             init_id=init.id,
             ts_init=init.ts_init,
+            order_list_id=init.order_list_id,
+            parent_order_id=init.parent_order_id,
+            child_order_ids=init.child_order_ids,
+            contingency=init.contingency,
+            contingency_ids=init.contingency_ids,
+            tags=init.tags,
         )
 
     cpdef str info(self):
@@ -194,15 +242,14 @@ cdef class MarketOrder(Order):
                 f"{OrderTypeParser.to_str(self.type)} "
                 f"{TimeInForceParser.to_str(self.time_in_force)}")
 
-    cdef void _updated(self, OrderUpdated event) except *:
-        raise NotImplemented("Cannot update a market order")
-
     cdef void _filled(self, OrderFilled fill) except *:
         self.venue_order_id = fill.venue_order_id
         self.position_id = fill.position_id
         self.strategy_id = fill.strategy_id
         self._execution_ids.append(fill.execution_id)
         self.execution_id = fill.execution_id
-        self.filled_qty = Quantity(self.filled_qty + fill.last_qty, fill.last_qty.precision)
+        filled_qty: Decimal = self.filled_qty.as_decimal() + fill.last_qty.as_decimal()
+        self.filled_qty = Quantity(filled_qty, fill.last_qty.precision)
+        self.leaves_qty = Quantity(self.quantity.as_decimal() - filled_qty, fill.last_qty.precision)
         self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)

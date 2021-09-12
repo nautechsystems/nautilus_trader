@@ -57,7 +57,7 @@ cdef class TimeEvent(Event):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the time event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         Condition.valid_string(name, "name")
@@ -156,7 +156,7 @@ cdef class Timer:
         ValueError
             If name is not a valid string.
         TypeError
-            If callback is not of type Callable.
+            If callback is not of type `Callable`.
 
         """
         Condition.valid_string(name, "name")
@@ -198,7 +198,7 @@ cdef class Timer:
         event_id : UUID4
             The ID for the time event.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the time event object was initialization.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -231,7 +231,7 @@ cdef class Timer:
 
     cpdef void cancel(self) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
 cdef class TestTimer(Timer):
@@ -370,7 +370,7 @@ cdef class LiveTimer(Timer):
         Raises
         ------
         TypeError
-            If callback is not of type Callable.
+            If callback is not of type `Callable`.
 
         """
         Condition.valid_string(name, "name")
@@ -404,7 +404,7 @@ cdef class LiveTimer(Timer):
 
     cdef object _start_timer(self, int64_t now_ns):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
 cdef class ThreadTimer(LiveTimer):
@@ -442,7 +442,7 @@ cdef class ThreadTimer(LiveTimer):
         Raises
         ------
         TypeError
-            If callback is not of type Callable.
+            If callback is not of type `Callable`.
 
         """
         super().__init__(
@@ -504,7 +504,7 @@ cdef class LoopTimer(LiveTimer):
         Raises
         ------
         TypeError
-            If callback is not of type Callable.
+            If callback is not of type `Callable`.
 
         """
         Condition.valid_string(name, "name")

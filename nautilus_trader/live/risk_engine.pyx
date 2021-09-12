@@ -35,7 +35,7 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 class LiveRiskEngineConfig(RiskEngineConfig):
     """
-    Provides configuration for ``LiveRiskEngine`` instances.
+    Configuration for ``LiveRiskEngine`` instances.
     """
 
     qsize: PositiveInt = 10000
@@ -79,7 +79,7 @@ cdef class LiveRiskEngine(RiskEngine):
         Raises
         ------
         TypeError
-            If config is not of type LiveRiskEngineConfig.
+            If config is not of type `LiveRiskEngineConfig`.
 
         """
         if config is None:
@@ -141,7 +141,7 @@ cdef class LiveRiskEngine(RiskEngine):
         """
         self._log.warning("Killing engine...")
         if self._run_queue_task:
-            self._log.debug("Cancelling run_queue_task...")
+            self._log.debug("Canceling run_queue_task...")
             self._run_queue_task.cancel()
         if self.is_running:
             self.is_running = False  # Avoids sentinel messages for queues

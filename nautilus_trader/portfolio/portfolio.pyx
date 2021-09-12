@@ -49,6 +49,7 @@ from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
@@ -64,6 +65,7 @@ cdef tuple _UPDATE_ORDER_EVENTS = (
     OrderAccepted,
     OrderCanceled,
     OrderRejected,
+    OrderUpdated,
     OrderFilled,
 )
 
@@ -164,7 +166,7 @@ cdef class Portfolio(PortfolioFacade):
                 instrument_id=instrument.id,
             )
 
-            result = self._accounts.update_margin_init(
+            result = self._accounts.update_orders(
                 account=account,
                 instrument=instrument,
                 passive_orders_working=[o for o in orders_working if o.is_passive_c()],
@@ -229,7 +231,7 @@ cdef class Portfolio(PortfolioFacade):
                 initialized = False
                 break
 
-            result = self._accounts.update_margin_maint(
+            result = self._accounts.update_positions(
                 account=account,
                 instrument=instrument,
                 positions_open=self._cache.positions_open(
@@ -263,59 +265,66 @@ cdef class Portfolio(PortfolioFacade):
 
         self._unrealized_pnls.pop(tick.instrument_id, None)
 
+        if self.initialized:
+            return
+
+        if tick.instrument_id not in self._pending_calcs:
+            return
+
+        cdef Account account = self._cache.account_for_venue(tick.instrument_id.venue)
+        if account is None:
+            self._log.error(
+                f"Cannot update tick: "
+                f"no account registered for {tick.instrument_id.venue}."
+            )
+            return  # No account registered
+
+        cdef Instrument instrument = self._cache.instrument(tick.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot update tick: "
+                f"no instrument found for {tick.instrument_id}"
+            )
+            return  # No instrument found
+
+        cdef list orders_working = self._cache.orders_working(
+            venue=None,  # Faster query filtering
+            instrument_id=tick.instrument_id,
+        )
+
         cdef:
             Order o
-        if not self.initialized and tick.instrument_id in self._pending_calcs:
-            account = self._cache.account_for_venue(tick.instrument_id.venue)
-            if account is None:
-                self._log.error(
-                    f"Cannot update tick: "
-                    f"no account registered for {tick.instrument_id.venue}."
-                )
-                return  # No account registered
+        # Initialize initial (order) margin
+        cdef AccountState result_init = self._accounts.update_orders(
+            account=account,
+            instrument=instrument,
+            passive_orders_working=[o for o in orders_working if o.is_passive_c()],
+            ts_event=account.last_event_c().ts_event,
+        )
 
-            instrument = self._cache.instrument(tick.instrument_id)
-            if instrument is None:
-                self._log.error(
-                    f"Cannot update tick: "
-                    f"no instrument found for {tick.instrument_id}"
-                )
-                return  # No instrument found
-
-            orders_working = self._cache.orders_working(
-                venue=None,  # Faster query filtering
-                instrument_id=tick.instrument_id,
-            )
-
-            # Initialize initial (order) margin
-            result_init = self._accounts.update_margin_init(
-                account=account,
-                instrument=instrument,
-                passive_orders_working=[o for o in orders_working if o.is_passive_c()],
-                ts_event=account.last_event_c().ts_event,
-            )
-
+        result_maint = None
+        if account.is_margin_account():
             positions_open = self._cache.positions_open(
                 venue=None,  # Faster query filtering
                 instrument_id=tick.instrument_id,
             )
 
             # Initialize maintenance (position) margin
-            result_maint = self._accounts.update_margin_maint(
+            result_maint = self._accounts.update_positions(
                 account=account,
                 instrument=instrument,
                 positions_open=positions_open,
                 ts_event=account.last_event_c().ts_event,
             )
 
-            # Calculate unrealized PnL
-            result_unrealized_pnl = self._calculate_unrealized_pnl(tick.instrument_id)
+        # Calculate unrealized PnL
+        cdef Money result_unrealized_pnl = self._calculate_unrealized_pnl(tick.instrument_id)
 
-            # Check portfolio initialization
-            if result_init is not None and result_maint is not None and result_unrealized_pnl:
-                self._pending_calcs.discard(tick.instrument_id)
-                if not self._pending_calcs:
-                    self.initialized = True
+        # Check portfolio initialization
+        if result_init is not None and (account.is_cash_account() or (result_maint is not None and result_unrealized_pnl)):
+            self._pending_calcs.discard(tick.instrument_id)
+            if not self._pending_calcs:
+                self.initialized = True
 
     cpdef void update_account(self, AccountState event) except *:
         """
@@ -403,7 +412,7 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef:
             Order o
-        account_state = self._accounts.update_margin_init(
+        account_state = self._accounts.update_orders(
             account=account,
             instrument=instrument,
             passive_orders_working=[o for o in orders_working if o.is_passive_c()],
@@ -465,7 +474,7 @@ cdef class Portfolio(PortfolioFacade):
             )
             return  # No instrument found
 
-        cdef AccountState account_state = self._accounts.update_margin_maint(
+        cdef AccountState account_state = self._accounts.update_positions(
             account=account,
             instrument=instrument,
             positions_open=positions_open,
@@ -511,7 +520,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        Account or None
+        Account or ``None``
 
         """
         Condition.not_none(venue, "venue")
@@ -538,7 +547,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or None
+        dict[Currency, Money] or ``None``
 
         """
         Condition.not_none(venue, "venue")
@@ -549,6 +558,9 @@ cdef class Portfolio(PortfolioFacade):
                 f"Cannot calculate order margin: "
                 f"no account registered for {venue}."
             )
+            return None
+
+        if account.is_cash_account():
             return None
 
         return account.margins_init()
@@ -564,7 +576,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or None
+        dict[Currency, Money] or ``None``
 
         """
         Condition.not_none(venue, "venue")
@@ -575,6 +587,9 @@ cdef class Portfolio(PortfolioFacade):
                 f"Cannot calculate position margin: "
                 f"no account registered for {venue}."
             )
+            return None
+
+        if account.is_cash_account():
             return None
 
         return account.margins_maint()
@@ -590,7 +605,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or None
+        dict[Currency, Money] or ``None``
 
         """
         Condition.not_none(venue, "venue")
@@ -600,8 +615,6 @@ cdef class Portfolio(PortfolioFacade):
             return {}  # Nothing to calculate
 
         cdef set instrument_ids = {p.instrument_id for p in positions_open}
-        if not instrument_ids:
-            return {}  # Nothing to calculate
 
         cdef dict unrealized_pnls = {}  # type: dict[Currency, Decimal]
 
@@ -632,7 +645,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        dict[Currency, Money] or None
+        dict[Currency, Money] or ``None``
 
         """
         Condition.not_none(venue, "venue")
@@ -708,7 +721,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -733,7 +746,7 @@ cdef class Portfolio(PortfolioFacade):
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -754,7 +767,10 @@ cdef class Portfolio(PortfolioFacade):
             )
             return None  # Cannot calculate
 
-        cdef list positions_open = self._cache.positions_open(instrument_id.venue)
+        cdef list positions_open = self._cache.positions_open(
+            venue=None,  # Faster query filtering
+            instrument_id=instrument_id,
+        )
         if not positions_open:
             return Money(0, instrument.get_cost_currency())
 
@@ -763,9 +779,6 @@ cdef class Portfolio(PortfolioFacade):
         cdef Position position
         cdef Price last
         for position in positions_open:
-            if position.instrument_id != instrument_id:
-                continue
-
             last = self._get_last_price(position)
             if last is None:
                 self._log.error(
@@ -997,7 +1010,7 @@ cdef class Portfolio(PortfolioFacade):
                 return quote_tick.bid
             elif position.side == PositionSide.SHORT:
                 return quote_tick.ask
-            else:
+            else:  # pragma: no cover (design-time error)
                 raise RuntimeError(
                     f"invalid PositionSide, was {PositionSideParser.to_str(position.side)}",
                 )

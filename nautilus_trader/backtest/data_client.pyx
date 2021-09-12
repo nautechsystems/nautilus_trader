@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 """
-This module provides a data producer for backtesting.
+This module provides a data client for backtesting.
 """
 
 from cpython.datetime cimport datetime
@@ -521,7 +521,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
-            The specified to datetime for the data. If None then will default
+            The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
         limit : int
             The limit for the number of returned ticks.
@@ -552,7 +552,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
-            The specified to datetime for the data. If None then will default
+            The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
         limit : int
             The limit for the number of returned ticks.
@@ -584,7 +584,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         from_datetime : datetime, optional
             The specified from datetime for the data.
         to_datetime : datetime, optional
-            The specified to datetime for the data. If None then will default
+            The specified to datetime for the data. If ``None`` then will default
             to the current datetime.
         limit : int
             The limit for the number of returned bars.

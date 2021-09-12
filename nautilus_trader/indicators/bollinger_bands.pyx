@@ -17,16 +17,15 @@ from collections import deque
 
 import numpy as np
 
+from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
+from nautilus_trader.indicators.average.ma_factory import MovingAverageType
+
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.stats cimport fast_std_with_mean
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-
-from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
-from nautilus_trader.indicators.average.ma_factory import MovingAverageType
-
-from nautilus_trader.core.functions cimport fast_std_with_mean
 
 
 cdef class BollingerBands(Indicator):
@@ -163,7 +162,7 @@ cdef class BollingerBands(Indicator):
         self.middle = self._ma.value
         self.lower = self._ma.value - (self.k * std)
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._ma.reset()
         self._prices.clear()
 

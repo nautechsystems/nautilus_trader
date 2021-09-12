@@ -15,8 +15,6 @@
 
 from decimal import Decimal
 
-import pytest
-
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -39,20 +37,6 @@ class TestPositionSizer:
 
         # Assert
         assert True  # No exceptions raised
-
-    def test_calculate_raises_not_implemented_exception(self):
-        # Arrange
-        sizer = PositionSizer(USDJPY)
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            sizer.calculate(
-                Price.from_str("110.001"),
-                Price.from_str("110.000"),
-                Money(1_000_000, USD),
-                Decimal("0.001"),
-                Decimal(1000),
-            )
 
 
 class TestFixedRiskSizer:

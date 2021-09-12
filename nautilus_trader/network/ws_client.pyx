@@ -25,7 +25,7 @@ from nautilus_trader.core.correctness cimport Condition
 
 cdef class WebSocketClient:
     """
-    Provides a low level web socket base client.
+    Provides a low-level web socket base client.
     """
 
     def __init__(
@@ -49,7 +49,7 @@ cdef class WebSocketClient:
             The logger adapter for the client.
         loop : asyncio.AbstractEventLoop, optional
             The event loop for the client.
-        kwargs : Optional[Dict]
+        kwargs : dict, optional
             The additional kwargs to pass to aiohttp.ClientSession._ws_connect().
 
         Raises

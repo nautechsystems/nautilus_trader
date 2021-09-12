@@ -25,9 +25,8 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.bracket cimport BracketOrder
 from nautilus_trader.model.orders.limit cimport LimitOrder
+from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.orders.stop_limit cimport StopLimitOrder
 from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
@@ -37,6 +36,7 @@ cdef class OrderFactory:
     cdef Clock _clock
     cdef UUIDFactory _uuid_factory
     cdef ClientOrderIdGenerator _id_generator
+    cdef int _order_list_id
 
     cdef readonly TraderId trader_id
     """The order factories trader ID.\n\n:returns: `TraderId`"""
@@ -54,6 +54,8 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         TimeInForce time_in_force=*,
+        bint reduce_only=*,
+        str tags=*,
     )
 
     cpdef LimitOrder limit(
@@ -67,6 +69,7 @@ cdef class OrderFactory:
         bint post_only=*,
         bint reduce_only=*,
         bint hidden=*,
+        str tags=*,
     )
 
     cpdef StopMarketOrder stop_market(
@@ -78,6 +81,7 @@ cdef class OrderFactory:
         TimeInForce time_in_force=*,
         datetime expire_time=*,
         bint reduce_only=*,
+        str tags=*,
     )
 
     cpdef StopLimitOrder stop_limit(
@@ -92,13 +96,28 @@ cdef class OrderFactory:
         bint post_only=*,
         bint reduce_only=*,
         bint hidden=*,
+        str tags=*,
     )
 
-    cpdef BracketOrder bracket(
+    cpdef OrderList bracket_market(
         self,
-        Order entry,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
         Price stop_loss,
         Price take_profit,
-        TimeInForce sl_tif=*,
-        TimeInForce tp_tif=*,
+        TimeInForce tif_bracket=*,
+    )
+
+    cpdef OrderList bracket_limit(
+        self,
+        InstrumentId instrument_id,
+        OrderSide order_side,
+        Quantity quantity,
+        Price entry,
+        Price stop_loss,
+        Price take_profit,
+        TimeInForce tif=*,
+        datetime expire_time=*,
+        TimeInForce tif_bracket=*,
     )
