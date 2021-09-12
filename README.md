@@ -17,10 +17,10 @@
 | macOS (x86-64)    | 3.8, 3.9        |
 | Windows (x86-64)  | 3.8, 3.9        |
 
-#### Documentation
+### Documentation
 https://docs.nautilustrader.io
 
-#### Support
+### Support
 info@nautechsystems.io
 
 ## Introduction

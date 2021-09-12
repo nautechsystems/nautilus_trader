@@ -1170,7 +1170,7 @@ cdef class DataEngine(Component):
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(
                 f"Cannot start aggregator, "
-                f"BarAggregation.{BarAggregationParser.to_str(bar_type.spec.aggregation)} "
+                f"BarAggregation.{bar_type.spec.aggregation_string_c()} "
                 f"not currently supported in this version"
             )
 
