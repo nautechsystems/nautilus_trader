@@ -30,6 +30,8 @@ cdef class BarSpecification:
     cdef readonly PriceType price_type
     """The specified price type for bar aggregation.\n\n:returns: `PriceType`"""
 
+    cdef str aggregation_string_c(self)
+
     @staticmethod
     cdef bint check_time_aggregated_c(BarAggregation aggregation)
 

@@ -78,6 +78,9 @@ cdef class BarSpecification:
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
 
+    cdef str aggregation_string_c(self):
+        return BarAggregationParser.to_str(self.aggregation)
+
     @staticmethod
     cdef bint check_time_aggregated_c(BarAggregation aggregation):
         if (
