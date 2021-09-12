@@ -481,7 +481,7 @@ cdef class AccountsManager:
         cdef Money pnl
         for pnl in pnls:
             currency = pnl.currency
-            if commission.currency != currency and commission.as_decimal() > 0:
+            if commission.currency != currency and commission.as_decimal() != 0:
                 balance = account.balance(commission.currency)
                 if balance is None:
                     self._log.error(
