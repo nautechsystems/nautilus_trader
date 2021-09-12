@@ -4,15 +4,6 @@ Accounting
 .. automodule:: nautilus_trader.accounting
 
 
-Base Account
-------------
-
-.. automodule:: nautilus_trader.accounting.accounts.base
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Cash Account
 ------------
 
