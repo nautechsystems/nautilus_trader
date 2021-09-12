@@ -107,6 +107,8 @@ Refer to the [integrations](https://docs.nautilustrader.io/integrations) documen
 
 ## Installation
 
+We recommend running the platform with the latest stable version of Python, and in a virtual environment to isolate the dependencies.
+
 To install the latest binary wheel from PyPI:
 
     pip install -U nautilus_trader
