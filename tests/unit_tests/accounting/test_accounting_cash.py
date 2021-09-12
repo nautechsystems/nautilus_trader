@@ -341,31 +341,54 @@ class TestCashAccount:
 
         account = CashAccount(event)
 
-        order = self.order_factory.market(
+        order1 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.SELL,
             Quantity.from_str("0.50000000"),
         )
 
-        fill = TestStubs.event_order_filled(
-            order,
+        fill1 = TestStubs.event_order_filled(
+            order1,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("45500.00"),
         )
 
-        position = Position(BTCUSDT_BINANCE, fill)
+        position = Position(BTCUSDT_BINANCE, fill1)
 
         # Act
-        result = account.calculate_pnls(
+        result1 = account.calculate_pnls(
             instrument=BTCUSDT_BINANCE,
             position=position,
-            fill=fill,
+            fill=fill1,
+        )
+
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("0.50000000"),
+        )
+
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("45500.00"),
+        )
+
+        position.apply(fill2)
+
+        result2 = account.calculate_pnls(
+            instrument=BTCUSDT_BINANCE,
+            position=position,
+            fill=fill2,
         )
 
         # Assert
-        assert result == [Money(-0.50000000, BTC), Money(22727.25000000, USDT)]
+        assert result1 == [Money(-0.50000000, BTC), Money(22727.25000000, USDT)]
+        assert result2 == [Money(0.50000000, BTC), Money(-22772.75000000, USDT)]
 
     def test_calculate_pnls_for_multi_currency_cash_account_adabtc(self):
         # Arrange

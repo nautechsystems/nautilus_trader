@@ -250,7 +250,7 @@ cdef class CashAccount(Account):
         OrderFilled fill,
     ):
         """
-        Return the calculated immediate PnL.
+        Return the calculated PnL.
 
         Parameters
         ----------
