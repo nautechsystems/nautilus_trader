@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -25,7 +26,12 @@ cdef class CashAccount(Account):
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
-    cpdef Money calculate_margin_init(
+    cpdef void update_balance_locked(self, InstrumentId instrument_id, Money locked) except *
+    cpdef void clear_balance_locked(self, InstrumentId instrument_id) except *
+
+# -- CALCULATIONS ----------------------------------------------------------------------------------
+
+    cpdef Money calculate_balance_locked(
         self,
         Instrument instrument,
         Quantity quantity,
