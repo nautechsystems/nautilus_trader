@@ -17,7 +17,6 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.model.enums import BookLevel
-from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -33,7 +32,7 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 class OrderbookImbalanceConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``OrderbookImbalance`` instances.
+    Configuration for ``OrderbookImbalance`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
@@ -58,8 +57,6 @@ class OrderbookImbalanceConfig(TradingStrategyConfig):
     max_trade_size: Decimal
     trigger_min_size = 100.0
     trigger_imbalance_ratio = 0.20
-    order_id_tag: str = "001"
-    oms_type: OMSType = OMSType.HEDGING
 
 
 class OrderbookImbalance(TradingStrategy):
@@ -151,8 +148,6 @@ class OrderbookImbalance(TradingStrategy):
                 self.submit_order(order)
 
     def on_stop(self):
-        """
-        Actions to be performed when the strategy is stopped.
-        """
+        """Actions to be performed when the strategy is stopped."""
         self.cancel_all_orders(self.instrument.id)
         self.flatten_all_positions(self.instrument.id)

@@ -163,12 +163,12 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        pd.Series or None
+        pd.Series or ``None``
 
         Raises
         ------
         ValueError
-            If currency is None when analyzing multi-currency portfolios.
+            If currency is ``None`` when analyzing multi-currency portfolios.
 
         """
         if not self._realized_pnls:
@@ -197,7 +197,7 @@ cdef class PerformanceAnalyzer:
         Raises
         ------
         ValueError
-            If currency is None when analyzing multi-currency portfolios.
+            If currency is ``None`` when analyzing multi-currency portfolios.
         ValueError
             If currency is not contained in the tracked account balances.
 
@@ -235,7 +235,7 @@ cdef class PerformanceAnalyzer:
         Raises
         ------
         ValueError
-            If currency is None when analyzing multi-currency portfolios.
+            If currency is ``None`` when analyzing multi-currency portfolios.
         ValueError
             If currency is not contained in the tracked account balances.
 
@@ -301,7 +301,11 @@ cdef class PerformanceAnalyzer:
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
 
-        return min(realized_pnls)
+        cdef list losers = [x for x in realized_pnls if x < 0.0]
+        if realized_pnls is None or not losers:
+            return 0.0
+
+        return min(np.asarray(losers, dtype=np.float64))
 
     cpdef double min_winner(self, Currency currency=None) except *:
         """

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Callable
+
 import cython
 import numpy as np
 import pytz
@@ -20,7 +22,6 @@ import pytz
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
-from typing import Callable
 from libc.stdint cimport int64_t
 
 from nautilus_trader.common.timer cimport LoopTimer
@@ -32,10 +33,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport nanos_to_secs
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
+from nautilus_trader.core.datetime cimport timedelta_to_nanos
 from nautilus_trader.core.time cimport unix_timestamp
 from nautilus_trader.core.time cimport unix_timestamp_ns
-
-from nautilus_trader.core.datetime import timedelta_to_nanos
 
 
 cdef class Clock:
@@ -77,7 +77,7 @@ cdef class Clock:
         https://en.wikipedia.org/wiki/Unix_time
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef int64_t timestamp_ns(self) except *:
         """
@@ -92,7 +92,7 @@ cdef class Clock:
         https://en.wikipedia.org/wiki/Unix_time
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef datetime utc_now(self):
         """
@@ -104,7 +104,7 @@ cdef class Clock:
             The current tz-aware UTC time of the clock.
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef datetime local_now(self, tzinfo tz=None):
         """
@@ -165,7 +165,7 @@ cdef class Clock:
 
         Returns
         -------
-        Timer or None
+        Timer or ``None``
             The timer with the given name (if found).
 
         Raises
@@ -188,7 +188,7 @@ cdef class Clock:
         Raises
         ------
         TypeError
-            If handler is not of type Callable.
+            If handler is not of type `Callable`.
 
         """
         Condition.callable(handler, "handler")
@@ -225,9 +225,9 @@ cdef class Clock:
         ValueError
             If alert_time is not >= the clocks current time.
         TypeError
-            If handler is not of type Callable or None.
+            If handler is not of type `Callable` or ``None``.
         ValueError
-            If handler is None and no default handler is registered.
+            If handler is ``None`` and no default handler is registered.
 
         """
         Condition.not_none(name, "name")
@@ -288,13 +288,13 @@ cdef class Clock:
         ValueError
             If interval is not positive (> 0).
         ValueError
-            If stop_time is not None and stop_time < time_now.
+            If stop_time is not ``None`` and stop_time < time_now.
         ValueError
-            If stop_time is not None and start_time + interval > stop_time.
+            If stop_time is not ``None`` and start_time + interval > stop_time.
         TypeError
-            If handler is not of type Callable or None.
+            If handler is not of type `Callable` or ``None``.
         ValueError
-            If handler is None and no default handler is registered.
+            If handler is ``None`` and no default handler is registered.
 
         """
         cdef datetime now = self.utc_now()  # Call here for greater accuracy
@@ -373,7 +373,7 @@ cdef class Clock:
         int64_t stop_time_ns,
     ):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef void _add_timer(self, Timer timer, handler: Callable[[TimeEvent], None]) except *:
         self._timers[timer.name] = timer
@@ -566,7 +566,7 @@ cdef class LiveClock(Clock):
         """
         Initialize a new instance of the ``LiveClock`` class.
 
-        If loop is None then threads will be used for timers.
+        If loop is ``None`` then threads will be used for timers.
 
         Parameters
         ----------

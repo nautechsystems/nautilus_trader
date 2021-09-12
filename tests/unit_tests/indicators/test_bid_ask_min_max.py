@@ -46,25 +46,25 @@ class TestBidAskMinMax:
         # Act
         indicator.handle_quote_tick(
             QuoteTick(
-                self.instrument_id,
-                Price.from_str("1.0"),
-                Price.from_str("2.0"),
-                Quantity.from_int(1),
-                Quantity.from_int(1),
-                0,
-                0,
+                instrument_id=self.instrument_id,
+                bid=Price.from_str("1.0"),
+                ask=Price.from_str("2.0"),
+                bid_size=Quantity.from_int(1),
+                ask_size=Quantity.from_int(1),
+                ts_event=0,
+                ts_init=0,
             )
         )
         # 5 min later (still in the window)
         indicator.handle_quote_tick(
             QuoteTick(
-                self.instrument_id,
-                Price.from_str("0.9"),
-                Price.from_str("2.1"),
-                Quantity.from_int(1),
-                Quantity.from_int(1),
-                3e11,
-                3e11,
+                instrument_id=self.instrument_id,
+                bid=Price.from_str("0.9"),
+                ask=Price.from_str("2.1"),
+                bid_size=Quantity.from_int(1),
+                ask_size=Quantity.from_int(1),
+                ts_event=3e11,
+                ts_init=3e11,
             )
         )
 
@@ -80,13 +80,13 @@ class TestBidAskMinMax:
 
         indicator.handle_quote_tick(
             QuoteTick(
-                self.instrument_id,
-                Price.from_str("0.9"),
-                Price.from_str("2.1"),
-                Quantity.from_int(1),
-                Quantity.from_int(1),
-                0,
-                0,
+                instrument_id=self.instrument_id,
+                bid=Price.from_str("0.9"),
+                ask=Price.from_str("2.1"),
+                bid_size=Quantity.from_int(1),
+                ask_size=Quantity.from_int(1),
+                ts_event=0,
+                ts_init=0,
             )
         )
 

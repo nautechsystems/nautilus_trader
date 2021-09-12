@@ -19,7 +19,7 @@ import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
@@ -378,7 +378,7 @@ class TestPosition:
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.TAKER,
-            uuid4(),
+            UUID4(),
             2_000_000_000,
             0,
         )
@@ -748,7 +748,7 @@ class TestPosition:
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.TAKER,
-            uuid4(),
+            UUID4(),
             2_000_000_000,
             0,
         )
@@ -771,7 +771,7 @@ class TestPosition:
             AUDUSD_SIM.quote_currency,
             Money(0, USD),
             LiquiditySide.TAKER,
-            uuid4(),
+            UUID4(),
             3_000_000_000,
             0,
         )

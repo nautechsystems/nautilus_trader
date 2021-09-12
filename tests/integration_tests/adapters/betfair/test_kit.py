@@ -41,8 +41,8 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderAccepted
@@ -397,14 +397,14 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def update_order_command(
+    def modify_order_command(
         instrument_id: Optional[InstrumentId] = None,
         client_order_id: Optional[ClientOrderId] = None,
         venue_order_id: Optional[VenueOrderId] = None,
     ):
         if instrument_id is None:
             instrument_id = BetfairTestStubs.instrument_id()
-        return UpdateOrder(
+        return ModifyOrder(
             trader_id=TestStubs.trader_id(),
             strategy_id=TestStubs.strategy_id(),
             instrument_id=instrument_id,
@@ -840,10 +840,10 @@ class BetfairDataProvider:
         )
 
     @staticmethod
-    def update_order_command(instrument_id=None, client_order_id=None):
+    def modify_order_command(instrument_id=None, client_order_id=None):
         if instrument_id is None:
             instrument_id = BetfairTestStubs.instrument_id()
-        return UpdateOrder(
+        return ModifyOrder(
             trader_id=TestStubs.trader_id(),
             strategy_id=TestStubs.strategy_id(),
             instrument_id=instrument_id,

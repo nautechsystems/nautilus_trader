@@ -20,27 +20,30 @@ from operator import itemgetter
 import pandas as pd
 from tabulate import tabulate
 
+from nautilus_trader.model.orderbook.error import BookIntegrityError
+
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.c_enums.aggressor_side cimport AggressorSide
+from nautilus_trader.model.c_enums.book_action cimport BookAction
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
-from nautilus_trader.model.c_enums.delta_type cimport DeltaType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.orderbook.data cimport Order
 from nautilus_trader.model.orderbook.data cimport OrderBookSnapshot
 from nautilus_trader.model.orderbook.ladder cimport Ladder
 from nautilus_trader.model.orderbook.level cimport Level
+from nautilus_trader.model.orderbook.simulated cimport SimulatedL1OrderBook
+from nautilus_trader.model.orderbook.simulated cimport SimulatedL2OrderBook
+from nautilus_trader.model.orderbook.simulated cimport SimulatedL3OrderBook
 
 
 cdef class OrderBook:
     """
     The base class for all order books.
 
-    Provides a L1/L2/L3 order book as a `L3OrderBook` can be proxied to
+    Provides a L1/L2/L3 order book as an `L3OrderBook` which can be proxied to
     `L2OrderBook` or `L1OrderBook` classes.
     """
 
@@ -51,31 +54,7 @@ cdef class OrderBook:
         uint8_t price_precision,
         uint8_t size_precision,
     ):
-        """
-        Initialize a new instance of the ``OrderBook`` class.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for the book.
-        level : BookLevel {``L1``, ``L2``, ``L3``}
-            The order book level.
-        price_precision : int
-            The price precision of the books orders.
-        size_precision : int
-            The size precision of the books orders.
-
-        Raises
-        ------
-        OverflowError
-            If price_precision is negative (< 0).
-        OverflowError
-            If size_precision is negative (< 0).
-        ValueError
-            If initializing type is not a subclass of `OrderBook`.
-
-        """
-        if self.__class__.__name__ == OrderBook.__name__:
+        if self.__class__.__name__ == OrderBook.__name__:  # pragma: no cover
             raise RuntimeError("cannot instantiate OrderBook directly: use OrderBook.create()")
 
         self.instrument_id = instrument_id
@@ -98,6 +77,7 @@ cdef class OrderBook:
     def create(
         Instrument instrument,
         BookLevel level,
+        bint simulated=False,
     ):
         """
         Create a new order book with the given parameters.
@@ -108,6 +88,8 @@ cdef class OrderBook:
             The instrument for the book.
         level : BookLevel {``L1``, ``L2``, ``L3``}
             The order book level.
+        simulated : bool
+            If the order book should be simulated (for backtesting only).
 
         Returns
         -------
@@ -118,23 +100,44 @@ cdef class OrderBook:
         Condition.in_range_int(level, 1, 3, "level")
 
         if level == BookLevel.L1:
-            return L1OrderBook(
-                instrument_id=instrument.id,
-                price_precision=instrument.price_precision,
-                size_precision=instrument.size_precision,
-            )
+            if simulated:
+                return SimulatedL1OrderBook(
+                    instrument_id=instrument.id,
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
+                )
+            else:
+                return L1OrderBook(
+                    instrument_id=instrument.id,
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
+                )
         elif level == BookLevel.L2:
-            return L2OrderBook(
-                instrument_id=instrument.id,
-                price_precision=instrument.price_precision,
-                size_precision=instrument.size_precision,
-            )
+            if simulated:
+                return SimulatedL2OrderBook(
+                    instrument_id=instrument.id,
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
+                )
+            else:
+                return L2OrderBook(
+                    instrument_id=instrument.id,
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
+                )
         elif level == BookLevel.L3:
-            return L3OrderBook(
-                instrument_id=instrument.id,
-                price_precision=instrument.price_precision,
-                size_precision=instrument.size_precision,
-            )
+            if simulated:
+                return SimulatedL3OrderBook(
+                    instrument_id=instrument.id,
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
+                )
+            else:
+                return L3OrderBook(
+                    instrument_id=instrument.id,
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
+                )
 
     cpdef void add(self, Order order) except *:
         """
@@ -285,12 +288,15 @@ cdef class OrderBook:
 
     cpdef void check_integrity(self) except *:
         """
-        Return a value indicating whether the order book integrity test passes.
+        Check order book integrity.
 
-        Returns
-        -------
-        bool
-            True if check passes, else False.
+        For all order books:
+        - The bid side price should not be greater than the ask side price.
+
+        Raises
+        ------
+        BookIntegrityError
+            If any check fails.
 
         """
         self._check_integrity()
@@ -323,11 +329,11 @@ cdef class OrderBook:
         self.clear_asks()
 
     cdef void _apply_delta(self, OrderBookDelta delta) except *:
-        if delta.type == DeltaType.ADD:
+        if delta.action == BookAction.ADD:
             self.add(order=delta.order)
-        elif delta.type == DeltaType.UPDATE:
+        elif delta.action == BookAction.UPDATE:
             self.update(order=delta.order)
-        elif delta.type == DeltaType.DELETE:
+        elif delta.action == BookAction.DELETE:
             self.delete(order=delta.order)
 
         self.ts_last = delta.ts_init
@@ -356,11 +362,12 @@ cdef class OrderBook:
         if top_bid_level is None or top_ask_level is None:
             return
 
-        best_bid = top_bid_level.price
-        best_ask = top_ask_level.price
+        cdef double best_bid = top_bid_level.price
+        cdef double best_ask = top_ask_level.price
         if best_bid is None or best_ask is None:
             return
-        assert best_bid < best_ask, f"Orders in cross [{best_bid} @ {best_ask}]"
+        if best_bid >= best_ask:
+            raise BookIntegrityError(f"Orders in cross [{best_bid} @ {best_ask}]")
 
     cpdef int trade_side(self, TradeTick trade):
         """
@@ -406,7 +413,7 @@ cdef class OrderBook:
 
     cpdef best_bid_price(self):
         """
-        Return the best bid price in the book (if no bids then returns None).
+        Return the best bid price in the book (if no bids then returns ``None``).
 
         Returns
         -------
@@ -421,7 +428,7 @@ cdef class OrderBook:
 
     cpdef best_ask_price(self):
         """
-        Return the best ask price in the book (if no asks then returns None).
+        Return the best ask price in the book (if no asks then returns ``None``).
 
         Returns
         -------
@@ -436,7 +443,7 @@ cdef class OrderBook:
 
     cpdef best_bid_qty(self):
         """
-        Return the best bid quantity in the book (if no bids then returns None).
+        Return the best bid quantity in the book (if no bids then returns ``None``).
 
         Returns
         -------
@@ -451,11 +458,11 @@ cdef class OrderBook:
 
     cpdef best_ask_qty(self):
         """
-        Return the best ask quantity in the book (if no asks then returns None).
+        Return the best ask quantity in the book (if no asks then returns ``None``).
 
         Returns
         -------
-        double or None
+        double or ``None``
 
         """
         cdef Level top_ask_level = self.asks.top()
@@ -474,11 +481,11 @@ cdef class OrderBook:
 
     cpdef spread(self):
         """
-        Return the top of book spread (if no bids or asks then returns None).
+        Return the top of book spread (if no bids or asks then returns ``None``).
 
         Returns
         -------
-        double or None
+        double or ``None``
 
         """
         cdef Level top_bid_level = self.bids.top()
@@ -490,11 +497,11 @@ cdef class OrderBook:
 
     cpdef midpoint(self):
         """
-        Return the mid point (if no market exists the returns None).
+        Return the mid point (if no market exists the returns ``None``).
 
         Returns
         -------
-        double or None
+        double or ``None``
 
         """
         cdef Level top_bid_level = self.bids.top()
@@ -554,8 +561,7 @@ cdef class OrderBook:
     cdef double get_price_for_volume_c(self, bint is_buy, double volume):
         cdef:
             Level level
-            list levels = self.asks.levels \
-                if is_buy else self.bids.levels
+            list levels = self.asks.levels if is_buy else self.bids.levels
             double cumulative_volume = 0.0
             double target_price = 0.0
 
@@ -569,8 +575,7 @@ cdef class OrderBook:
     cdef double get_price_for_quote_volume_c(self, bint is_buy, double quote_volume):
         cdef:
             Level level
-            list levels = self.asks.levels \
-                if is_buy else self.bids.levels
+            list levels = self.asks.levels if is_buy else self.bids.levels
             double cumulative_volume = 0.0
             double target_price = 0.0
 
@@ -636,8 +641,7 @@ cdef class OrderBook:
     cdef double get_vwap_for_volume_c(self, bint is_buy, double volume):
         cdef:
             Level level
-            list levels = self.asks.levels \
-                if is_buy else self.bids.levels
+            list levels = self.asks.levels if is_buy else self.bids.levels
             double total_cost = 0.0
             double cumulative_volume = 0.0
             double target_vwap = 0.0
@@ -674,7 +678,7 @@ cdef class L3OrderBook(OrderBook):
     Provides an L3 order book.
 
     A level 3 order books `Levels` can be made up of multiple orders.
-    This class maps directly to functionality of the `OrderBook` base class.
+    This class maps directly to the functionality of the base class.
     """
 
     def __init__(
@@ -799,21 +803,25 @@ cdef class L2OrderBook(OrderBook):
 
     cpdef void check_integrity(self) except *:
         """
-        Return a value indicating whether the order book integrity test passes.
+        Check order book integrity.
 
-        Returns
-        -------
-        bool
-            True if check passes, else False.
+        For a L2 order book:
+        - There should be at most one order per level.
+        - The bid side price should not be greater than the ask side price.
+
+        Raises
+        ------
+        BookIntegrityError
+            If any check fails.
 
         """
-        # For a L2OrderBook, ensure only one order per level in addition to
-        # normal order book checks.
         self._check_integrity()
 
         cdef Level level
         for level in self.bids.levels + self.asks.levels:
-            assert len(level.orders) == 1, f"Number of orders on {level} > 1"
+            num_orders = len(level.orders)
+            if num_orders != 1:
+                raise BookIntegrityError(f"Number of orders on {level} != 1, was {num_orders}")
 
     cdef void _process_order(self, Order order):
         # Because a L2OrderBook only has one order per level, we replace the
@@ -832,7 +840,7 @@ cdef class L2OrderBook(OrderBook):
 
 cdef class L1OrderBook(OrderBook):
     """
-    Provides an L1 order book.
+    Provides a L1 order book.
 
     A level 1 order book has a single (top) `Level`.
     """
@@ -879,7 +887,7 @@ cdef class L1OrderBook(OrderBook):
         """
         NotImplemented (Use `update(order)` for L1OrderBook).
         """
-        raise NotImplementedError("Use `update(order)` for L1OrderBook")
+        raise NotImplementedError("Use `update(order)` for L1OrderBook")  # pragma: no cover
 
     cpdef void update(self, Order order) except *:
         """
@@ -897,7 +905,7 @@ cdef class L1OrderBook(OrderBook):
         # and ask updates at the same time), its quite probable that the last
         # bid is now the ask price we are trying to insert (or vice versa). We
         # just need to add some extra protection against this if we are calling
-        # `check_integrity` on each individual update.
+        # `check_integrity()` on each individual update.
         if (
             order.side == OrderSide.BUY
             and self.best_ask_level()
@@ -911,59 +919,6 @@ cdef class L1OrderBook(OrderBook):
         ):
             self.clear_bids()
         self._update(order=self._process_order(order=order))
-
-    cpdef void update_top(self, Tick tick) except *:
-        """
-        Update the order book with the given tick.
-
-        Parameters
-        ----------
-        tick : Tick
-            The tick to update with.
-
-        """
-        if isinstance(tick, QuoteTick):
-            self._update_quote_tick(tick)
-        elif isinstance(tick, TradeTick):
-            self._update_trade_tick(tick)
-
-    cdef void _update_quote_tick(self, QuoteTick tick):
-        self._update_bid(tick.bid, tick.bid_size)
-        self._update_ask(tick.ask, tick.ask_size)
-
-    cdef void _update_trade_tick(self, TradeTick tick):
-        if tick.aggressor_side == AggressorSide.SELL:  # TAKER hit the bid
-            self._update_bid(tick.price, tick.size)
-            if self._top_ask and self._top_bid.price >= self._top_ask.price:
-                self._top_ask.price == self._top_bid.price
-                self._top_ask_level.price == self._top_bid.price
-        elif tick.aggressor_side == AggressorSide.BUY:  # TAKER lifted the offer
-            self._update_ask(tick.price, tick.size)
-            if self._top_bid and self._top_ask.price <= self._top_bid.price:
-                self._top_bid.price == self._top_ask.price
-                self._top_bid_level.price == self._top_ask.price
-
-    cdef void _update_bid(self, double price, double size):
-        if self._top_bid is None:
-            bid = self._process_order(Order(price, size, OrderSide.BUY))
-            self._add(bid)
-            self._top_bid = bid
-            self._top_bid_level = self.bids.top()
-        else:
-            self._top_bid_level.price = price
-            self._top_bid.update_price(price)
-            self._top_bid.update_size(size)
-
-    cdef void _update_ask(self, double price, double size):
-        if self._top_ask is None:
-            ask = self._process_order(Order(price, size, OrderSide.SELL))
-            self._add(ask)
-            self._top_ask = ask
-            self._top_ask_level = self.asks.top()
-        else:
-            self._top_ask_level.price = price
-            self._top_ask.update_price(price)
-            self._top_ask.update_size(size)
 
     cpdef void delete(self, Order order) except *:
         """
@@ -981,23 +936,31 @@ cdef class L1OrderBook(OrderBook):
 
     cpdef void check_integrity(self) except *:
         """
-        Return a value indicating whether the order book integrity test passes.
+        Check order book integrity.
 
-        Returns
-        -------
-        bool
-            True if check passes, else False.
+        For a L1 order book:
+        - There should be at most one level per side.
+        - The bid side price should not be greater than the ask side price.
+
+        Raises
+        ------
+        BookIntegrityError
+            If any check fails.
 
         """
-        # For a L1OrderBook, ensure only one level per side in addition to
-        # normal order book checks.
         self._check_integrity()
-        assert len(self.bids.levels) <= 1, "Number of bid levels > 1"
-        assert len(self.asks.levels) <= 1, "Number of ask levels > 1"
+
+        cdef int bid_levels = len(self.bids.levels)
+        cdef int ask_levels = len(self.asks.levels)
+
+        if bid_levels > 1:
+            raise BookIntegrityError(f"Number of bid levels > 1, was {bid_levels}")
+        if ask_levels > 1:
+            raise BookIntegrityError(f"Number of ask levels > 1, was {ask_levels}")
 
     cdef Order _process_order(self, Order order):
-        # Because a L1OrderBook only has one level per side, we replace the
-        # order.id with the name of the side, which will let us easily process
+        # Because an `L1OrderBook` only has one level per side, we replace the
+        # `order.id` with the name of the side, which will let us easily process
         # the order.
         order.id = OrderSideParser.to_str(order.side)
         return order

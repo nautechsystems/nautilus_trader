@@ -29,7 +29,7 @@ from cpython.unicode cimport PyUnicode_Contains
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport lround
+from nautilus_trader.core.math cimport lround
 
 
 # UNIX epoch is the UTC time at 00:00:00 on 1/1/1970
@@ -163,7 +163,7 @@ cpdef int64_t dt_to_unix_millis(datetime dt) except *:
     Raises
     ------
     TypeError
-        If timestamp is None.
+        If timestamp is ``None``.
 
     """
     # If timestamp is None then `-` unsupported operand for `NoneType` and `timedelta`
@@ -186,7 +186,7 @@ cpdef int64_t dt_to_unix_micros(datetime dt) except *:
     Raises
     ------
     TypeError
-        If timestamp is None.
+        If timestamp is ``None``.
 
     """
     # If timestamp is None then `-` unsupported operand for `NoneType` and `timedelta`
@@ -209,7 +209,7 @@ cpdef int64_t dt_to_unix_nanos(datetime dt) except *:
     Raises
     ------
     TypeError
-        If timestamp is None.
+        If timestamp is ``None``.
 
     Warnings
     --------
@@ -283,18 +283,18 @@ cpdef datetime nanos_to_unix_dt(double nanos):
 
 cpdef maybe_dt_to_unix_nanos(datetime dt):
     """
-    Return the UNIX time (nanoseconds) from the given datetime, or None.
+    Return the UNIX time (nanoseconds) from the given datetime, or ``None``.
 
-    If dt is None, then will return None.
+    If dt is ``None``, then will return None.
 
     Parameters
     ----------
-    dt : datetime or None
+    dt : datetime, optional
         The datetime for the timestamp.
 
     Returns
     -------
-    int64 or None
+    int64 or ``None``
 
     """
     if dt is None:
@@ -305,18 +305,18 @@ cpdef maybe_dt_to_unix_nanos(datetime dt):
 
 cpdef maybe_nanos_to_unix_dt(nanos):
     """
-    Return the datetime in UTC from the given UNIX time (nanoseconds), or None.
+    Return the datetime in UTC from the given UNIX time (nanoseconds), or ``None``.
 
-    If nanos is None, then will return None.
+    If nanos is ``None``, then will return None.
 
     Parameters
     ----------
-    nanos : int64 or None
+    nanos : int64, optional
         The UNIX time (nanoseconds) to convert.
 
     Returns
     -------
-    int64 or None
+    int64 or ``None``
 
     """
     if nanos is None:
@@ -423,7 +423,7 @@ cpdef object as_utc_index(data: pd.DataFrame):
 
     Returns
     -------
-    pd.Series, pd.DataFrame or None
+    pd.Series, pd.DataFrame or ``None``
 
     """
     Condition.not_none(data, "data")

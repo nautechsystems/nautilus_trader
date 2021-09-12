@@ -27,7 +27,7 @@ BETFAIR_VENUE = Venue("BETFAIR")
 
 # -- MAPPINGS -------------------------------
 """
-Mappings between nautilus and betfair.
+Mappings between Nautilus and betfair.
 
 Prefixes:
     N2B = {NAUTILUS: BETFAIR}

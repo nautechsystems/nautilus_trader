@@ -26,14 +26,14 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.logging import LiveLogger
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.data import Data
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.c_enums.account_type import AccountType
 from nautilus_trader.model.c_enums.book_level import BookLevel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
@@ -406,7 +406,7 @@ class TestStubs:
             component_type="MyActor",
             state=ComponentState.RUNNING,
             config={"do_something": True},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -417,7 +417,7 @@ class TestStubs:
             trader_id=TestStubs.trader_id(),
             state=TradingState.HALTED,
             config={"max_order_rate": "100/00:00:01"},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -441,7 +441,7 @@ class TestStubs:
                 )
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -465,7 +465,7 @@ class TestStubs:
                 )
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -479,7 +479,7 @@ class TestStubs:
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             ts_event=0,
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_init=0,
         )
 
@@ -495,7 +495,7 @@ class TestStubs:
             client_order_id=order.client_order_id,
             venue_order_id=venue_order_id,
             ts_event=0,
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_init=0,
         )
 
@@ -509,7 +509,7 @@ class TestStubs:
             client_order_id=order.client_order_id,
             reason="ORDER_REJECTED",
             ts_event=0,
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_init=0,
         )
 
@@ -523,7 +523,7 @@ class TestStubs:
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_init=0,
         )
 
@@ -537,7 +537,7 @@ class TestStubs:
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_init=0,
         )
 
@@ -599,7 +599,7 @@ class TestStubs:
             commission=commission,
             liquidity_side=liquidity_side,
             ts_event=ts_filled_ns,
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_init=0,
         )
 
@@ -613,7 +613,7 @@ class TestStubs:
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_init=0,
         )
 
@@ -627,7 +627,7 @@ class TestStubs:
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_init=0,
         )
 
@@ -641,7 +641,7 @@ class TestStubs:
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
             ts_event=0,
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_init=0,
         )
 
@@ -650,7 +650,7 @@ class TestStubs:
         return PositionOpened.create(
             position=position,
             fill=position.last_event,
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_init=0,
         )
 
@@ -659,7 +659,7 @@ class TestStubs:
         return PositionChanged.create(
             position=position,
             fill=position.last_event,
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_init=0,
         )
 
@@ -668,7 +668,7 @@ class TestStubs:
         return PositionClosed.create(
             position=position,
             fill=position.last_event,
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_init=0,
         )
 

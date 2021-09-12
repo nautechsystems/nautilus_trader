@@ -31,7 +31,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.base cimport PassiveOrder
-from nautilus_trader.model.orders.bracket cimport BracketOrder
+from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
@@ -86,8 +86,8 @@ cdef class TradingStrategy(Actor):
 # -- TRADING COMMANDS ------------------------------------------------------------------------------
 
     cpdef void submit_order(self, Order order, PositionId position_id=*) except *
-    cpdef void submit_bracket_order(self, BracketOrder bracket_order) except *
-    cpdef void update_order(
+    cpdef void submit_order_list(self, OrderList order_list) except *
+    cpdef void modify_order(
         self,
         PassiveOrder order,
         Quantity quantity=*,

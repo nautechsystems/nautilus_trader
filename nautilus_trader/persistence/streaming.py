@@ -21,6 +21,7 @@ import fsspec
 import pyarrow as pa
 from pyarrow import RecordBatchStreamWriter
 
+from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
@@ -29,14 +30,17 @@ from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
 from nautilus_trader.serialization.arrow.serializer import list_schemas
-from nautilus_trader.serialization.arrow.util import is_nautilus_class
 from nautilus_trader.serialization.arrow.util import list_dicts_to_dict_lists
 
 
 class FeatherWriter:
+    """
+    Provides a stream writer of Nautilus objects into feather files.
+    """
+
     def __init__(self, path: str, fs_protocol: str = "file", flush_interval=None):
         """
-        Write a stream of nautilus objects into feather files under `path`.
+        Initialize a new instance of the ``FeatherWriter`` class.
         """
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.path = self._check_path(path)

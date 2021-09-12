@@ -458,7 +458,7 @@ cdef class EconomicNewsEventFilter:
 
         Returns
         -------
-        NewsEvent or None
+        NewsEvent or ``None``
             The next news event in the filtered data if any.
 
         Raises
@@ -508,7 +508,7 @@ cdef class EconomicNewsEventFilter:
 
         Returns
         -------
-        NewsEvent or None
+        NewsEvent or ``None``
             The previous news event in the filtered data if any.
 
         Raises

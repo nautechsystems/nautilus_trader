@@ -15,14 +15,10 @@
 
 import asyncio
 
-import pytest
-
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.live.data_client import LiveDataClient
-from nautilus_trader.live.data_client import LiveDataClientFactory
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.model.identifiers import ClientId
@@ -38,52 +34,6 @@ BINANCE = Venue("BINANCE")
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
-
-
-class TestLiveDataClientFactory:
-    def test_create_when_not_implemented_raises_not_implemented_error(self):
-        # Arrange
-        self.loop = asyncio.get_event_loop()
-        self.loop.set_debug(True)
-
-        self.clock = LiveClock()
-        self.logger = LiveLogger(self.loop, self.clock)
-
-        self.trader_id = TestStubs.trader_id()
-
-        self.msgbus = MessageBus(
-            trader_id=self.trader_id,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.cache = TestStubs.cache()
-
-        self.portfolio = Portfolio(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.data_engine = LiveDataEngine(
-            loop=self.loop,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            LiveDataClientFactory.create(
-                name="IB",
-                config={},
-                msgbus=self.msgbus,
-                cache=self.cache,
-                clock=self.clock,
-                logger=self.logger,
-            )
 
 
 class TestLiveDataClientTests:

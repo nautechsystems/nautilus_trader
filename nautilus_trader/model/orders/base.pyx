@@ -44,16 +44,17 @@ from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
-from nautilus_trader.model.events.order cimport OrderUpdateRejected
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -120,12 +121,13 @@ cdef class Order:
             The order initialized event.
 
         """
-        self._events = [init]     # type: list[OrderEvent]
-        self._execution_ids = []  # type: list[ExecutionId]
+        self._events = [init]       # type: list[OrderEvent]
+        self._venue_order_ids = []  # type: list[VenueOrderId]
+        self._execution_ids = []    # type: list[ExecutionId]
         self._fsm = FiniteStateMachine(
             state_transition_table=_ORDER_STATE_TABLE,
             initial_state=OrderStatus.INITIALIZED,
-            trigger_parser=OrderStatusParser.to_str,  # OrderStatusParser.to_str correct here
+            trigger_parser=OrderStatusParser.to_str,  # .to_str correct here
             state_parser=OrderStatusParser.to_str,
         )
         self._rollback_status = OrderStatus.INITIALIZED
@@ -135,18 +137,31 @@ cdef class Order:
         self.strategy_id = init.strategy_id
         self.instrument_id = init.instrument_id
         self.client_order_id = init.client_order_id
+        self.order_list_id = init.order_list_id
         self.venue_order_id = None  # Can be None
         self.position_id = None  # Can be None
         self.account_id = None  # Can be None
         self.execution_id = None  # Can be None
 
+        # Properties
         self.side = init.side
         self.type = init.type
         self.quantity = init.quantity
         self.time_in_force = init.time_in_force
+        self.is_reduce_only = init.reduce_only
+        self.parent_order_id = init.parent_order_id  # Can be None
+        self.child_order_ids = init.child_order_ids  # Can be None
+        self.contingency = init.contingency
+        self.contingency_ids = init.contingency_ids  # Can be None
+        self.tags = init.tags
+
+        # Execution
         self.filled_qty = Quantity.zero_c(precision=0)
+        self.leaves_qty = init.quantity
         self.avg_px = None  # Can be None
         self.slippage = Decimal(0)
+
+        # Timestamps
         self.init_id = init.id
         self.ts_last = 0  # No fills yet
         self.ts_init = init.ts_init
@@ -162,7 +177,8 @@ cdef class Order:
                 f"{self.info()}, "
                 f"status={self._fsm.state_string_c()}, "
                 f"client_order_id={self.client_order_id.value}, "
-                f"venue_order_id={self.venue_order_id})")
+                f"venue_order_id={self.venue_order_id}, "
+                f"tags={self.tags})")
 
     cpdef str info(self):
         """
@@ -173,7 +189,7 @@ cdef class Order:
         str
 
         """
-        raise NotImplemented("method must be implemented in subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef dict to_dict(self):
         """
@@ -184,7 +200,7 @@ cdef class Order:
         dict[str, object]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef OrderStatus status_c(self) except *:
         return <OrderStatus>self._fsm.state
@@ -207,6 +223,15 @@ cdef class Order:
     cdef str status_string_c(self):
         return self._fsm.state_string_c()
 
+    cdef str type_string_c(self):
+        return OrderTypeParser.to_str(self.type)
+
+    cdef str side_string_c(self):
+        return OrderSideParser.to_str(self.side)
+
+    cdef str tif_string_c(self):
+        return TimeInForceParser.to_str(self.time_in_force)
+
     cdef bint is_buy_c(self) except *:
         return self.side == OrderSide.BUY
 
@@ -218,6 +243,15 @@ cdef class Order:
 
     cdef bint is_aggressive_c(self) except *:
         return self.type == OrderType.MARKET
+
+    cdef bint is_contingency_c(self) except *:
+        return self.contingency != ContingencyType.NONE
+
+    cdef bint is_parent_order_c(self) except *:
+        return self.child_order_ids is not None
+
+    cdef bint is_child_order_c(self) except *:
+        return self.parent_order_id is not None
 
     cdef bint is_active_c(self) except *:
         return (
@@ -384,7 +418,7 @@ cdef class Order:
     @property
     def is_passive(self):
         """
-        If the order is passive (order type **not** ``MARKET``).
+        If the order is passive (`order.type` **not** ``MARKET``).
 
         Returns
         -------
@@ -396,7 +430,7 @@ cdef class Order:
     @property
     def is_aggressive(self):
         """
-        If the order is aggressive (order type is ``MARKET``).
+        If the order is aggressive (`order.type` is ``MARKET``).
 
         Returns
         -------
@@ -404,6 +438,42 @@ cdef class Order:
 
         """
         return self.is_aggressive_c()
+
+    @property
+    def is_contingency(self):
+        """
+        If the order has a contingency (`order.contingency` is not ``NONE``).
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_contingency_c()
+
+    @property
+    def is_parent_order(self):
+        """
+        If the order has **at least** one child order.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_parent_order_c()
+
+    @property
+    def is_child_order(self):
+        """
+        If the order has a parent order.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_child_order_c()
 
     @property
     def is_active(self):
@@ -588,7 +658,7 @@ cdef class Order:
         ValueError
             If self.client_order_id is not equal to event.client_order_id.
         ValueError
-            If self.venue_order_id and event.venue_order_id are both not None, and are not equal.
+            If self.venue_order_id and event.venue_order_id are both not ``None``, and are not equal.
         InvalidStateTrigger
             If event is not a valid trigger from the current order.status.
         KeyError
@@ -619,7 +689,7 @@ cdef class Order:
         elif isinstance(event, OrderPendingCancel):
             self._rollback_status = <OrderStatus>self._fsm.state
             self._fsm.trigger(OrderStatus.PENDING_CANCEL)
-        elif isinstance(event, OrderUpdateRejected):
+        elif isinstance(event, OrderModifyRejected):
             if self._fsm.state == OrderStatus.PENDING_UPDATE:
                 self._fsm.trigger(self._rollback_status)
         elif isinstance(event, OrderCancelRejected):
@@ -668,8 +738,11 @@ cdef class Order:
         self.venue_order_id = event.venue_order_id
 
     cdef void _updated(self, OrderUpdated event) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplemented("method must be implemented in subclass")
+        if self.venue_order_id != event.venue_order_id:
+            self._venue_order_ids.append(self.venue_order_id)
+            self.venue_order_id = event.venue_order_id
+        if event.quantity is not None:
+            self.quantity = event.quantity
 
     cdef void _canceled(self, OrderCanceled event) except *:
         pass  # Do nothing else
@@ -679,11 +752,11 @@ cdef class Order:
 
     cdef void _triggered(self, OrderTriggered event) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplemented("method must be implemented in subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef void _filled(self, OrderFilled event) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplemented("method must be implemented in subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef object _calculate_avg_px(self, Quantity last_qty, Price last_px):
         if self.avg_px is None:
@@ -702,6 +775,7 @@ cdef class PassiveOrder(Order):
     --------
     This class should not be used directly, but through a concrete subclass.
     """
+
     def __init__(
         self,
         TraderId trader_id not None,
@@ -714,50 +788,17 @@ cdef class PassiveOrder(Order):
         Price price not None,
         TimeInForce time_in_force,
         datetime expire_time,  # Can be None
+        bint reduce_only,
+        dict options not None,
+        OrderListId order_list_id,  # Can be None
+        ClientOrderId parent_order_id,  # Can be None
+        list child_order_ids,  # Can be None
+        ContingencyType contingency,
+        list contingency_ids,  # Can be None
+        str tags,  # Can be None
         UUID4 init_id not None,
         int64_t ts_init,
-        dict options not None,
     ):
-        """
-        Initialize a new instance of the ``PassiveOrder`` class.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID associated with the order.
-        strategy_id : StrategyId
-            The strategy ID associated with the order.
-        instrument_id : InstrumentId
-            The order instrument ID.
-        client_order_id : ClientOrderId
-            The client order ID.
-        order_side : OrderSide
-            The order side (``BUY`` or ``SELL``).
-        order_type : OrderType
-            The order type.
-        quantity : Quantity
-            The order quantity (> 0).
-        price : Price
-            The order price.
-        time_in_force : TimeInForce
-            The order time-in-force.
-        expire_time : datetime, optional
-            The order expiry time - applicable to ``GTD`` orders only.
-        init_id : UUID4
-            The order initialization event ID.
-        ts_init : int64
-            The UNIX timestamp (nanoseconds) when the order was initialized.
-        options : dict
-            The order options.
-
-        Raises
-        ------
-        ValueError
-            If quantity is not positive (> 0).
-        ValueError
-            If time_in_force is ``GTD`` and the expire_time is None.
-
-        """
         Condition.positive(quantity, "quantity")
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
@@ -779,14 +820,19 @@ cdef class PassiveOrder(Order):
             order_type=order_type,
             quantity=quantity,
             time_in_force=time_in_force,
+            reduce_only=reduce_only,
+            options=options,
+            order_list_id=order_list_id,
+            parent_order_id=parent_order_id,
+            child_order_ids=child_order_ids,
+            contingency=contingency,
+            contingency_ids=contingency_ids,
+            tags=tags,
             event_id=init_id,
             ts_init=ts_init,
-            options=options,
         )
 
         super().__init__(init=init)
-
-        self._venue_order_ids = []  # type: list[VenueOrderId]
 
         self.price = price
         self.liquidity_side = LiquiditySide.NONE
@@ -817,7 +863,7 @@ cdef class PassiveOrder(Order):
         dict[str, object]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef list venue_order_ids_c(self):
         return self._venue_order_ids.copy()
@@ -838,8 +884,14 @@ cdef class PassiveOrder(Order):
         if self.venue_order_id != event.venue_order_id:
             self._venue_order_ids.append(self.venue_order_id)
             self.venue_order_id = event.venue_order_id
-        self.quantity = event.quantity
-        self.price = event.price
+        if event.quantity is not None:
+            self.quantity = event.quantity
+        if event.price is not None:
+            self.price = event.price
+
+    cdef void _triggered(self, OrderTriggered event) except *:
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef void _filled(self, OrderFilled fill) except *:
         self.venue_order_id = fill.venue_order_id
@@ -848,7 +900,9 @@ cdef class PassiveOrder(Order):
         self._execution_ids.append(fill.execution_id)
         self.execution_id = fill.execution_id
         self.liquidity_side = fill.liquidity_side
-        self.filled_qty = Quantity(self.filled_qty + fill.last_qty, fill.last_qty.precision)
+        filled_qty: Decimal = self.filled_qty.as_decimal() + fill.last_qty.as_decimal()
+        self.filled_qty = Quantity(filled_qty, fill.last_qty.precision)
+        self.leaves_qty = Quantity(self.quantity.as_decimal() - filled_qty, fill.last_qty.precision)
         self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty, fill.last_px)
         self._set_slippage()

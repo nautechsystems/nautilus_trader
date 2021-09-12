@@ -20,13 +20,13 @@ from nautilus_trader.core.message import Message
 from nautilus_trader.core.message import MessageCategory
 from nautilus_trader.core.message import MessageCategoryParser
 from nautilus_trader.core.message import Response
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 
 
 class TestMessage:
     def test_message_equality(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
 
         message1 = Message(
             category=MessageCategory.COMMAND,
@@ -48,7 +48,7 @@ class TestMessage:
 
         message4 = Message(
             category=MessageCategory.DOCUMENT,
-            message_id=uuid4(),  # Different UUID4
+            message_id=UUID4(),  # Different UUID4
             ts_init=0,
         )
 
@@ -61,7 +61,7 @@ class TestMessage:
     def test_message_hash(self):
         # Arrange
         message = Document(
-            document_id=uuid4(),
+            document_id=UUID4(),
             ts_init=0,
         )
 
@@ -70,7 +70,7 @@ class TestMessage:
 
     def test_message_str_and_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         message = Document(
             document_id=uuid,
             ts_init=0,
@@ -82,8 +82,8 @@ class TestMessage:
 
     def test_response_message_str_and_repr(self):
         # Arrange
-        uuid_id = uuid4()
-        uuid_corr = uuid4()
+        uuid_id = UUID4()
+        uuid_corr = UUID4()
         message = Response(
             correlation_id=uuid_corr,
             response_id=uuid_id,

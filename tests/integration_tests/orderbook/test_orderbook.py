@@ -17,6 +17,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook.book import L1OrderBook
 from nautilus_trader.model.orderbook.book import L2OrderBook
 from nautilus_trader.model.orderbook.book import L3OrderBook
+from nautilus_trader.model.orderbook.error import BookIntegrityError
 from tests.test_kit.providers import TestDataProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -36,7 +37,7 @@ def test_l3_feed():
             book.update(order=m["order"])
             try:
                 book.check_integrity()
-            except AssertionError:
+            except BookIntegrityError:
                 book.delete(order=m["order"])
                 skip_deletes.append(m["order"].id)
         elif m["op"] == "delete" and m["order"].id not in skip_deletes:

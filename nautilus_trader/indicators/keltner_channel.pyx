@@ -13,13 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.indicators.base.indicator cimport Indicator
-
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.ma_factory import MovingAverageType
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.atr cimport AverageTrueRange
+from nautilus_trader.indicators.base.indicator cimport Indicator
 
 
 cdef class KeltnerChannel(Indicator):
@@ -132,7 +131,7 @@ cdef class KeltnerChannel(Indicator):
             if self._ma.initialized:
                 self._set_initialized(True)
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         """
         Reset the indicator.
 

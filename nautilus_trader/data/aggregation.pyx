@@ -306,7 +306,7 @@ cdef class BarAggregator:
         )
 
     cdef void _apply_update(self, Price price, Quantity size, int64_t ts_event) except *:
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cdef void _build_now_and_send(self) except *:
         cdef Bar bar = self._builder.build_now()
@@ -617,10 +617,11 @@ cdef class TimeBarAggregator(BarAggregator):
                 seconds=now.second,
                 microseconds=now.microsecond,
             )
-        else:
-            # Design time error
-            raise ValueError(f"Aggregation not a time, "
-                             f"was {BarAggregationParser.to_str(self.bar_type.spec.aggregation)}")
+        else:  # pragma: no cover (design-time error)
+            raise ValueError(
+                f"Aggregation not a time, "
+                f"was {BarAggregationParser.to_str(self.bar_type.spec.aggregation)}",
+            )
 
         return start_time
 
@@ -756,7 +757,7 @@ cdef class BulkTickBarBuilder:
         Raises
         ------
         ValueError
-            If callback is not of type Callable.
+            If callback is not of type `Callable`.
         ValueError
             If instrument.id != bar_type.instrument_id.
 

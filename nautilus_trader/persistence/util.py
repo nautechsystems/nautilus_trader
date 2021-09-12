@@ -14,10 +14,22 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
+from typing import Dict
+
+
+def freeze_dict(dict_like: Dict):
+    return tuple(sorted(dict_like.items()))
+
+
+def check_value(v):
+    if isinstance(v, dict):
+        return freeze_dict(dict_like=v)
+    return v
 
 
 def resolve_kwargs(func, *args, **kwargs):
-    return inspect.getcallargs(func, *args, **kwargs)
+    kw = inspect.getcallargs(func, *args, **kwargs)
+    return {k: check_value(v) for k, v in kw.items()}
 
 
 class Singleton(type):

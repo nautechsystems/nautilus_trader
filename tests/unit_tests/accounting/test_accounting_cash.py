@@ -21,7 +21,7 @@ from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import AUD
@@ -119,7 +119,7 @@ class TestCashAccount:
                 ),
             ],
             info={},
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -161,7 +161,7 @@ class TestCashAccount:
                 ),
             ],
             info={},  # No default currency set
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -216,7 +216,7 @@ class TestCashAccount:
                 ),
             ],
             info={},  # No default currency set
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -244,7 +244,7 @@ class TestCashAccount:
                 ),
             ],
             info={},  # No default currency set
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -279,7 +279,7 @@ class TestCashAccount:
                 ),
             ],
             info={},  # No default currency set
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -310,7 +310,7 @@ class TestCashAccount:
         )
 
         # Assert
-        assert result == [Money(1000000.00, AUD), Money(-800000.00, USD)]
+        assert result == [Money(1000000.00, AUD), Money(-800016.00, USD)]
 
     def test_calculate_pnls_for_multi_currency_cash_account_btcusdt(self):
         # Arrange
@@ -334,38 +334,61 @@ class TestCashAccount:
                 ),
             ],
             info={},  # No default currency set
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
 
         account = CashAccount(event)
 
-        order = self.order_factory.market(
+        order1 = self.order_factory.market(
             BTCUSDT_BINANCE.id,
             OrderSide.SELL,
             Quantity.from_str("0.50000000"),
         )
 
-        fill = TestStubs.event_order_filled(
-            order,
+        fill1 = TestStubs.event_order_filled(
+            order1,
             instrument=BTCUSDT_BINANCE,
             position_id=PositionId("P-123456"),
             strategy_id=StrategyId("S-001"),
             last_px=Price.from_str("45500.00"),
         )
 
-        position = Position(BTCUSDT_BINANCE, fill)
+        position = Position(BTCUSDT_BINANCE, fill1)
 
         # Act
-        result = account.calculate_pnls(
+        result1 = account.calculate_pnls(
             instrument=BTCUSDT_BINANCE,
             position=position,
-            fill=fill,
+            fill=fill1,
+        )
+
+        order2 = self.order_factory.market(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("0.50000000"),
+        )
+
+        fill2 = TestStubs.event_order_filled(
+            order2,
+            instrument=BTCUSDT_BINANCE,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("45500.00"),
+        )
+
+        position.apply(fill2)
+
+        result2 = account.calculate_pnls(
+            instrument=BTCUSDT_BINANCE,
+            position=position,
+            fill=fill2,
         )
 
         # Assert
-        assert result == [Money(-0.50000000, BTC), Money(22750.00000000, USDT)]
+        assert result1 == [Money(-0.50000000, BTC), Money(22727.25000000, USDT)]
+        assert result2 == [Money(0.50000000, BTC), Money(-22772.75000000, USDT)]
 
     def test_calculate_pnls_for_multi_currency_cash_account_adabtc(self):
         # Arrange
@@ -389,7 +412,7 @@ class TestCashAccount:
                 ),
             ],
             info={},  # No default currency set
-            event_id=uuid4(),
+            event_id=UUID4(),
             ts_event=0,
             ts_init=0,
         )
@@ -420,7 +443,7 @@ class TestCashAccount:
         )
 
         # Assert
-        assert result == [Money(100.000000, ADA), Money(-0.00410000, BTC)]
+        assert result == [Money(100.000000, ADA), Money(-0.00410410, BTC)]
 
     def test_calculate_commission_when_given_liquidity_side_none_raises_value_error(
         self,

@@ -40,7 +40,7 @@ cdef class OrderStatusReport:
     cdef readonly Quantity filled_qty
     """The reported filled quantity.\n\n:returns: `Quantity`"""
     cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the report was initialized.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
 
 
 cdef class PositionStatusReport:
@@ -51,7 +51,7 @@ cdef class PositionStatusReport:
     cdef readonly Quantity qty
     """The reported position quantity at the exchange.\n\n:returns: `Quantity`"""
     cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the report was initialized.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
 
 
 cdef class ExecutionReport:
@@ -60,7 +60,7 @@ cdef class ExecutionReport:
     cdef readonly VenueOrderId venue_order_id
     """The reported venue order ID.\n\n:returns: `VenueOrderId`"""
     cdef readonly PositionId venue_position_id
-    """The reported venue position ID.\n\n:returns: `PositionId` or None"""
+    """The reported venue position ID.\n\n:returns: `PositionId` or ``None``"""
     cdef readonly ExecutionId id
     """The reported execution ID.\n\n:returns: `ExecutionId`"""
     cdef readonly Quantity last_qty
@@ -74,7 +74,7 @@ cdef class ExecutionReport:
     cdef readonly int64_t ts_event
     """The UNIX timestamp (nanoseconds) when the execution event occurred.\n\n:returns: `LiquiditySide`"""
     cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the report was initialized.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
 
 
 cdef class ExecutionMassStatus:
@@ -87,7 +87,7 @@ cdef class ExecutionMassStatus:
     cdef readonly AccountId account_id
     """The account ID for the report.\n\n:returns: `AccountId`"""
     cdef readonly int64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the report was initialized.\n\n:returns: `int64`"""
+    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `int64`"""
 
     cpdef dict order_reports(self)
     cpdef dict exec_reports(self)

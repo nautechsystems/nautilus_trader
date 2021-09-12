@@ -93,7 +93,7 @@ cdef class AccountFactory:
             return CashAccount(event, calculated)
         elif event.account_type == AccountType.MARGIN:
             return MarginAccount(event, calculated)
-        else:
+        else:  # pragma: no cover (design-time error)
             raise RuntimeError("invalid account type")
 
     @staticmethod

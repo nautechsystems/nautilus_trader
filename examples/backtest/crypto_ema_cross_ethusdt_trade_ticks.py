@@ -18,7 +18,6 @@ import os
 import sys
 from decimal import Decimal
 
-import ccxt
 import pandas as pd
 
 
@@ -28,7 +27,6 @@ sys.path.insert(
 
 from examples.strategies.ema_cross_simple import EMACross
 from examples.strategies.ema_cross_simple import EMACrossConfig
-from nautilus_trader.adapters.ccxt.providers import CCXTInstrumentProvider
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
@@ -42,15 +40,10 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from tests.test_kit.providers import TestDataProvider
+from tests.test_kit.providers import TestInstrumentProvider
 
 
 if __name__ == "__main__":
-    # Setup trading instruments
-    # Requires an internet connection for the instrument loader
-    # Alternatively use the TestInstrumentProvider in the test kit
-    print("Loading instruments...")
-    instruments = CCXTInstrumentProvider(client=ccxt.binance(), load_all=True)
-
     # Configure backtest engine
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
@@ -61,7 +54,7 @@ if __name__ == "__main__":
 
     BINANCE = Venue("BINANCE")
     instrument_id = InstrumentId(symbol=Symbol("ETH/USDT"), venue=BINANCE)
-    ETHUSDT_BINANCE = instruments.find(instrument_id)
+    ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
     # Setup data
     engine.add_instrument(ETHUSDT_BINANCE)

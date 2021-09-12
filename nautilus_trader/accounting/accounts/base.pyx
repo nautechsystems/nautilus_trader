@@ -16,6 +16,7 @@
 from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -27,27 +28,7 @@ cdef class Account:
     The base class for all trading accounts.
     """
 
-    def __init__(
-        self,
-        AccountState event,
-        bint calculate_account_state,
-    ):
-        """
-        Initialize a new instance of the ``Account`` class.
-
-        Parameters
-        ----------
-        event : AccountState
-            The initial account state event.
-        calculate_account_state : bool
-            If the account state should be calculated from order fills.
-
-        Raises
-        ------
-        ValueError
-            If account_type is not equal to event.account_type.
-
-        """
+    def __init__(self, AccountState event, bint calculate_account_state):
         Condition.not_none(event, "event")
 
         self.id = event.account_id
@@ -55,10 +36,10 @@ cdef class Account:
         self.base_currency = event.base_currency
         self.calculate_account_state = calculate_account_state
 
-        self._starting_balances = {b.currency: b.total for b in event.balances}
-        self._events = [event]  # type: list[AccountState]
-        self._balances = {}     # type: dict[Currency, AccountBalance]
-        self._commissions = {}  # type: dict[Currency, Money]
+        self._events = [event]      # type: list[AccountState]
+        self._commissions = {}      # type: dict[Currency, Money]
+        self._balances = {}         # type: dict[Currency, AccountBalance]
+        self._balances_starting = {b.currency: b.total for b in event.balances}
 
         self.update_balances(event.balances)
 
@@ -76,6 +57,12 @@ cdef class Account:
                 f"base={base_str})")
 
 # -- QUERIES ---------------------------------------------------------------------------------------
+
+    cdef bint is_cash_account(self) except *:
+        return self.type == AccountType.CASH
+
+    cdef bint is_margin_account(self) except *:
+        return self.type == AccountType.MARGIN
 
     cdef AccountState last_event_c(self):
         return self._events[-1]  # Always at least one event
@@ -142,7 +129,7 @@ cdef class Account:
         dict[Currency, Money]
 
         """
-        return self._starting_balances.copy()
+        return self._balances_starting.copy()
 
     cpdef dict balances(self):
         """
@@ -164,6 +151,7 @@ cdef class Account:
         dict[Currency, Money]
 
         """
+        cdef AccountBalance b
         return {c: b.total for c, b in self._balances.items()}
 
     cpdef dict balances_free(self):
@@ -175,6 +163,7 @@ cdef class Account:
         dict[Currency, Money]
 
         """
+        cdef AccountBalance b
         return {c: b.free for c, b in self._balances.items()}
 
     cpdef dict balances_locked(self):
@@ -186,6 +175,7 @@ cdef class Account:
         dict[Currency, Money]
 
         """
+        cdef AccountBalance b
         return {c: b.locked for c, b in self._balances.items()}
 
     cpdef dict commissions(self):
@@ -203,21 +193,21 @@ cdef class Account:
         Parameters
         ----------
         currency : Currency, optional
-            The currency for the query. If None then will use the default
+            The currency for the query. If ``None`` then will use the default
             currency (if set).
 
         Returns
         -------
-        AccountBalance or None
+        AccountBalance or ``None``
 
         Raises
         ------
         ValueError
-            If currency is None and base_currency is None.
+            If `currency` is ``None`` and `base_currency` is ``None``.
 
         Warnings
         --------
-        Returns `None` if there is no applicable information for the query,
+        Returns ``None`` if there is no applicable information for the query,
         rather than `Money` of zero amount.
 
         """
@@ -236,21 +226,21 @@ cdef class Account:
         Parameters
         ----------
         currency : Currency, optional
-            The currency for the query. If None then will use the default
+            The currency for the query. If ``None`` then will use the default
             currency (if set).
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         Raises
         ------
         ValueError
-            If currency is None and base_currency is None.
+            If `currency` is ``None`` and `base_currency` is ``None``.
 
         Warnings
         --------
-        Returns `None` if there is no applicable information for the query,
+        Returns ``None`` if there is no applicable information for the query,
         rather than `Money` of zero amount.
 
         """
@@ -272,21 +262,21 @@ cdef class Account:
         Parameters
         ----------
         currency : Currency, optional
-            The currency for the query. If None then will use the default
+            The currency for the query. If ``None`` then will use the default
             currency (if set).
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         Raises
         ------
         ValueError
-            If currency is None and base_currency is None.
+            If `currency` is ``None`` and `base_currency` is ``None``.
 
         Warnings
         --------
-        Returns `None` if there is no applicable information for the query,
+        Returns ``None`` if there is no applicable information for the query,
         rather than `Money` of zero amount.
 
         """
@@ -308,21 +298,21 @@ cdef class Account:
         Parameters
         ----------
         currency : Currency, optional
-            The currency for the query. If None then will use the default
+            The currency for the query. If ``None`` then will use the default
             currency (if set).
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         Raises
         ------
         ValueError
-            If currency is None and base_currency is None.
+            If `currency` is ``None`` and `base_currency` is ``None``.
 
         Warnings
         --------
-        Returns `None` if there is no applicable information for the query,
+        Returns ``None`` if there is no applicable information for the query,
         rather than `Money` of zero amount.
 
         """
@@ -346,9 +336,11 @@ cdef class Account:
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         """
+        Condition.not_none(currency, "currency")
+
         return self._commissions.get(currency)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
@@ -362,12 +354,22 @@ cdef class Account:
         event : AccountState
             The account event to apply.
 
+        Raises
+        ------
+        ValueError
+            If `event.account_type` is not equal to `self.type`.
+        ValueError
+            If `event.account_id` is not equal to `self.id`.
+        ValueError
+            If `event.base_currency` is not equal to `self.base_currency`.
+
         Warnings
         --------
         System method (not intended to be called by user code).
 
         """
         Condition.not_none(event, "event")
+        Condition.equal(event.account_type, self.type, "event.account_type", "self.type")
         Condition.equal(event.account_id, self.id, "self.id", "event.account_id")
         Condition.equal(event.base_currency, self.base_currency, "self.base_currency", "event.base_currency")
 
@@ -390,12 +392,19 @@ cdef class Account:
         ----------
         balances : list[AccountBalance]
 
+        Raises
+        ------
+        ValueError
+            If `balances` is empty.
+
         """
         Condition.not_none(balances, "balances")
         Condition.not_empty(balances, "balances")
 
         cdef AccountBalance balance
         for balance in balances:
+            if balance.total.as_decimal() <= 0:
+                raise RuntimeError("Account blow up (balance zero).")
             self._balances[balance.currency] = balance
 
     cpdef void update_commissions(self, Money commission) except *:
@@ -424,18 +433,10 @@ cdef class Account:
         total_commissions: Decimal = self._commissions.get(currency, Decimal(0))
         self._commissions[currency] = Money(total_commissions + commission, currency)
 
-    cpdef void update_margin_init(self, InstrumentId instrument_id, Money margin_init) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
-
-    cpdef void clear_margin_init(self, InstrumentId instrument_id) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+# -- CALCULATIONS ----------------------------------------------------------------------------------
 
     cdef void _recalculate_balance(self, Currency currency) except *:
-        raise NotImplementedError("method must be implemented in the subclass")
-
-# -- CALCULATIONS ----------------------------------------------------------------------------------
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef Money calculate_commission(
         self,
@@ -446,7 +447,7 @@ cdef class Account:
         bint inverse_as_quote=False,
     ):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef list calculate_pnls(
         self,
@@ -455,4 +456,4 @@ cdef class Account:
         OrderFilled fill,
     ):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

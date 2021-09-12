@@ -25,7 +25,7 @@ from nautilus_trader.accounting.calculators cimport RolloverInterestCalculator
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.core.functions cimport pad_string
+from nautilus_trader.core.text cimport pad_string
 from nautilus_trader.model.c_enums.asset_class cimport AssetClass
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.currency cimport Currency
@@ -71,15 +71,15 @@ cdef class SimulationModule:
 
     cpdef void process(self, int64_t now_ns) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void log_diagnostics(self, LoggerAdapter log) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void reset(self) except *:
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
 
 _TZ_US_EAST = pytz.timezone("US/Eastern")
@@ -158,7 +158,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
                     mid = book.best_bid_price()
                 if mid is None:
                     mid = book.best_ask_price()
-                if mid is None:
+                if mid is None:  # pragma: no cover
                     raise RuntimeError("cannot apply rollover interest, no market prices")
                 mid_prices[instrument.id] = Price(mid, precision=instrument.price_precision)
 

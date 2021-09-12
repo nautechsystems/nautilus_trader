@@ -15,10 +15,11 @@
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.core.uuid import uuid4
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
@@ -31,13 +32,13 @@ from nautilus_trader.model.events.order import OrderDenied
 from nautilus_trader.model.events.order import OrderExpired
 from nautilus_trader.model.events.order import OrderFilled
 from nautilus_trader.model.events.order import OrderInitialized
+from nautilus_trader.model.events.order import OrderModifyRejected
 from nautilus_trader.model.events.order import OrderPendingCancel
 from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderTriggered
 from nautilus_trader.model.events.order import OrderUpdated
-from nautilus_trader.model.events.order import OrderUpdateRejected
 from nautilus_trader.model.events.position import PositionChanged
 from nautilus_trader.model.events.position import PositionClosed
 from nautilus_trader.model.events.position import PositionOpened
@@ -45,6 +46,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import ExecutionId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
@@ -66,7 +68,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 class TestModelEvents:
     def test_account_state_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         balance = AccountBalance(
             currency=USD,
             total=Money(1525000, USD),
@@ -98,7 +100,7 @@ class TestModelEvents:
 
     def test_order_initialized_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderInitialized(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -108,25 +110,32 @@ class TestModelEvents:
             order_type=OrderType.LIMIT,
             quantity=Quantity.from_str("0.561000"),
             time_in_force=TimeInForce.DAY,
+            reduce_only=True,
+            options={"price": "15200.10"},
+            order_list_id=OrderListId("1"),
+            parent_order_id=None,
+            child_order_ids=[ClientOrderId("O-2020872378424")],
+            contingency=ContingencyType.OTO,
+            contingency_ids=[ClientOrderId("O-2020872378424")],
+            tags="ENTRY",
             event_id=uuid,
             ts_init=0,
-            options={"price": "15200.10"},
         )
 
         # Act, Assert
         assert OrderInitialized.from_dict(OrderInitialized.to_dict(event)) == event
         assert (
             str(event)
-            == f"OrderInitialized(instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, options={{'price': '15200.10'}})"  # noqa
+            == f"OrderInitialized(instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, time_in_force=DAY, reduce_only=True, options={{'price': '15200.10'}}, order_list_id=1, parent_order_id=None, child_order_ids=['O-2020872378424'], contingency=OTO, contingency_ids=['O-2020872378424'], tags=ENTRY)"  # noqa
         )
         assert (
             repr(event)
-            == f"OrderInitialized(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, options={{'price': '15200.10'}}, event_id={uuid}, ts_init=0)"  # noqa
+            == f"OrderInitialized(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, side=BUY, type=LIMIT, quantity=0.561000, time_in_force=DAY, reduce_only=True, options={{'price': '15200.10'}}, order_list_id=1, parent_order_id=None, child_order_ids=['O-2020872378424'], contingency=OTO, contingency_ids=['O-2020872378424'], tags=ENTRY, event_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_order_denied_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderDenied(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -150,7 +159,7 @@ class TestModelEvents:
 
     def test_order_submitted_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderSubmitted(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -175,7 +184,7 @@ class TestModelEvents:
 
     def test_order_accepted_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderAccepted(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -201,7 +210,7 @@ class TestModelEvents:
 
     def test_order_rejected_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderRejected(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -227,7 +236,7 @@ class TestModelEvents:
 
     def test_order_canceled_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderCanceled(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -253,7 +262,7 @@ class TestModelEvents:
 
     def test_order_expired_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderExpired(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -279,7 +288,7 @@ class TestModelEvents:
 
     def test_order_triggered_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderTriggered(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -305,7 +314,7 @@ class TestModelEvents:
 
     def test_order_pending_update_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderPendingUpdate(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -331,7 +340,7 @@ class TestModelEvents:
 
     def test_order_pending_cancel_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderPendingCancel(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -357,8 +366,8 @@ class TestModelEvents:
 
     def test_order_update_rejected_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
-        event = OrderUpdateRejected(
+        uuid = UUID4()
+        event = OrderModifyRejected(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
             account_id=AccountId("SIM", "000"),
@@ -372,19 +381,19 @@ class TestModelEvents:
         )
 
         # Act, Assert
-        assert OrderUpdateRejected.from_dict(OrderUpdateRejected.to_dict(event)) == event
+        assert OrderModifyRejected.from_dict(OrderModifyRejected.to_dict(event)) == event
         assert (
             str(event)
-            == "OrderUpdateRejected(account_id=SIM-000, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, reason=ORDER_DOES_NOT_EXIST, ts_event=0)"  # noqa
+            == "OrderModifyRejected(account_id=SIM-000, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, reason=ORDER_DOES_NOT_EXIST, ts_event=0)"  # noqa
         )
         assert (
             repr(event)
-            == f"OrderUpdateRejected(trader_id=TRADER-001, strategy_id=SCALPER-001, account_id=SIM-000, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, reason=ORDER_DOES_NOT_EXIST, event_id={uuid}, ts_event=0, ts_init=0)"  # noqa
+            == f"OrderModifyRejected(trader_id=TRADER-001, strategy_id=SCALPER-001, account_id=SIM-000, instrument_id=BTC/USDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, reason=ORDER_DOES_NOT_EXIST, event_id={uuid}, ts_event=0, ts_init=0)"  # noqa
         )
 
     def test_order_cancel_rejected_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderCancelRejected(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -411,7 +420,7 @@ class TestModelEvents:
 
     def test_order_updated_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderUpdated(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -440,7 +449,7 @@ class TestModelEvents:
 
     def test_order_filled_event_to_from_dict_and_str_repr(self):
         # Arrange
-        uuid = uuid4()
+        uuid = UUID4()
         event = OrderFilled(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("SCALPER-001"),
@@ -503,18 +512,18 @@ class TestPositionEvents:
 
         position = Position(instrument=AUDUSD_SIM, fill=fill)
 
-        uuid = uuid4()
+        uuid = UUID4()
         event = PositionOpened.create(position, fill, uuid, 0)
 
         # Act, Assert
         assert PositionOpened.from_dict(PositionOpened.to_dict(event)) == event
         assert (
             str(event)
-            == "PositionOpened(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=100000, quantity=100_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=None, realized_points=0, realized_return=0.00000, realized_pnl=-2.00, unrealized_pnl=0.00, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0)"  # noqa
+            == "PositionOpened(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=100000, quantity=100_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=None, realized_points=0, realized_return=0.00000, realized_pnl=-2.00 USD, unrealized_pnl=0.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0)"  # noqa
         )
         assert (
             repr(event)
-            == f"PositionOpened(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=100000, quantity=100_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=None, realized_points=0, realized_return=0.00000, realized_pnl=-2.00, unrealized_pnl=0.00, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0, event_id={uuid})"  # noqa
+            == f"PositionOpened(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=100000, quantity=100_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=None, realized_points=0, realized_return=0.00000, realized_pnl=-2.00 USD, unrealized_pnl=0.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0, event_id={uuid})"  # noqa
         )
 
     def test_position_changed_event_to_from_dict_and_str_repr(self):
@@ -550,18 +559,18 @@ class TestPositionEvents:
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
         position.apply(fill2)
 
-        uuid = uuid4()
+        uuid = UUID4()
         event = PositionChanged.create(position, fill2, uuid, 0)
 
         # Act, Assert
         assert PositionChanged.from_dict(PositionChanged.to_dict(event)) == event
         assert (
             str(event)
-            == "PositionChanged(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00, unrealized_pnl=5.00, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0)"  # noqa
+            == "PositionChanged(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00 USD, unrealized_pnl=5.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0)"  # noqa
         )
         assert (
             repr(event)
-            == f"PositionChanged(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00, unrealized_pnl=5.00, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0, event_id={uuid})"  # noqa
+            == f"PositionChanged(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=LONG, net_qty=50000, quantity=50_000, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=2.00 USD, unrealized_pnl=5.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0, event_id={uuid})"  # noqa
         )
 
     def test_position_closed_event_to_from_dict_and_str_repr(self):
@@ -597,16 +606,16 @@ class TestPositionEvents:
         position = Position(instrument=AUDUSD_SIM, fill=fill1)
         position.apply(fill2)
 
-        uuid = uuid4()
+        uuid = UUID4()
         event = PositionClosed.create(position, fill2, uuid, 0)
 
         # Act, Assert
         assert PositionClosed.from_dict(PositionClosed.to_dict(event)) == event
         assert (
             str(event)
-            == "PositionClosed(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=FLAT, net_qty=0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=6.00, unrealized_pnl=0.00, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0)"  # noqa
+            == "PositionClosed(instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=FLAT, net_qty=0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=6.00 USD, unrealized_pnl=0.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0)"  # noqa
         )
         assert (
             repr(event)
-            == f"PositionClosed(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=FLAT, net_qty=0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=6.00, unrealized_pnl=0.00, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0, event_id={uuid})"  # noqa
+            == f"PositionClosed(trader_id=TESTER-000, strategy_id=S-001, instrument_id=AUD/USD.SIM, position_id=P-123456, account_id=SIM-000, from_order=O-19700101-000000-000-001-1, strategy_id=S-001, entry=BUY, side=FLAT, net_qty=0, quantity=0, peak_qty=100_000, currency=USD, avg_px_open=1.00001, avg_px_close=1.00011, realized_points=0.00010, realized_return=0.00010, realized_pnl=6.00 USD, unrealized_pnl=0.00 USD, ts_opened=0, ts_last=0, ts_closed=0, duration_ns=0, event_id={uuid})"  # noqa
         )

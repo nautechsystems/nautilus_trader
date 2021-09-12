@@ -20,6 +20,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.fsm import InvalidStateTrigger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.messages import DataCommand
@@ -30,7 +31,6 @@ from nautilus_trader.data.messages import Unsubscribe
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -686,7 +686,6 @@ class TestDataEngine:
         assert handler1 == [ETHUSDT_BINANCE]
         assert handler2 == [ETHUSDT_BINANCE]
 
-    @pytest.mark.skip
     def test_execute_subscribe_order_book_snapshots_then_adds_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
@@ -711,9 +710,8 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         # Assert
-        assert self.data_engine.subscribed_order_book_snapshots == [ETHUSDT_BINANCE.id]
+        assert self.data_engine.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
 
-    @pytest.mark.skip
     def test_execute_subscribe_order_book_deltas_then_adds_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
@@ -738,9 +736,8 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         # Assert
-        # assert self.data_engine.subscribed_order_book_deltas == [ETHUSDT_BINANCE.id]
+        assert self.data_engine.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
 
-    @pytest.mark.skip(reason="WIP")
     def test_execute_subscribe_order_book_intervals_then_adds_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
@@ -765,7 +762,7 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         # Assert
-        assert self.data_engine.subscribed_order_book_snapshots() == [ETHUSDT_BINANCE.id]
+        assert self.data_engine.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
 
     def test_execute_unsubscribe_order_book_stream_then_removes_handler(self):
         # Arrange
@@ -1173,13 +1170,13 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         tick = QuoteTick(
-            ETHUSDT_BINANCE.id,
-            Price.from_str("100.003"),
-            Price.from_str("100.003"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=ETHUSDT_BINANCE.id,
+            bid=Price.from_str("100.003"),
+            ask=Price.from_str("100.003"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -1219,13 +1216,13 @@ class TestDataEngine:
         self.data_engine.execute(subscribe2)
 
         tick = QuoteTick(
-            ETHUSDT_BINANCE.id,
-            Price.from_str("100.003"),
-            Price.from_str("100.003"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=ETHUSDT_BINANCE.id,
+            bid=Price.from_str("100.003"),
+            ask=Price.from_str("100.003"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -1301,13 +1298,13 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         tick = TradeTick(
-            ETHUSDT_BINANCE.id,
-            Price.from_str("1050.00000"),
-            Quantity.from_int(100),
-            AggressorSide.BUY,
-            "123456789",
-            0,
-            0,
+            instrument_id=ETHUSDT_BINANCE.id,
+            price=Price.from_str("1050.00000"),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.BUY,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act
@@ -1346,13 +1343,13 @@ class TestDataEngine:
         self.data_engine.execute(subscribe2)
 
         tick = TradeTick(
-            ETHUSDT_BINANCE.id,
-            Price.from_str("1050.00000"),
-            Quantity.from_int(100),
-            AggressorSide.BUY,
-            "123456789",
-            0,
-            0,
+            instrument_id=ETHUSDT_BINANCE.id,
+            price=Price.from_str("1050.00000"),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.BUY,
+            match_id="123456789",
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act

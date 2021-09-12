@@ -13,14 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.data.bar cimport Bar
-
 from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
 from nautilus_trader.indicators.average.moving_average import MovingAverageType
 
+from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.atr cimport AverageTrueRange
 from nautilus_trader.indicators.base.indicator cimport Indicator
+from nautilus_trader.model.data.bar cimport Bar
 
 
 cdef class Pressure(Indicator):
@@ -133,7 +132,7 @@ cdef class Pressure(Indicator):
         self.value = buy_pressure - sell_pressure
         self.value_cumulative += self.value
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._atr.reset()
         self._average_volume.reset()
         self.value = 0

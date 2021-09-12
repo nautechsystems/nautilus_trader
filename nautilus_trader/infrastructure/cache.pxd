@@ -14,9 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.cache.database cimport CacheDatabase
-from nautilus_trader.serialization.base cimport CommandSerializer
-from nautilus_trader.serialization.base cimport EventSerializer
-from nautilus_trader.serialization.base cimport InstrumentSerializer
+from nautilus_trader.serialization.base cimport Serializer
 
 
 cdef class RedisCacheDatabase(CacheDatabase):
@@ -28,7 +26,5 @@ cdef class RedisCacheDatabase(CacheDatabase):
     cdef str _key_positions
     cdef str _key_strategies
 
-    cdef InstrumentSerializer _instrument_serializer
-    cdef CommandSerializer _command_serializer
-    cdef EventSerializer _event_serializer
+    cdef Serializer _serializer
     cdef object _redis

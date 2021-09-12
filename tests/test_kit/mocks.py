@@ -484,11 +484,11 @@ class MockExecutionClient(ExecutionClient):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    def submit_bracket_order(self, command) -> None:
+    def submit_order_list(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    def update_order(self, command) -> None:
+    def modify_order(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
@@ -587,11 +587,11 @@ class MockLiveExecutionClient(LiveExecutionClient):
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    def submit_bracket_order(self, command) -> None:
+    def submit_order_list(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 
-    def update_order(self, command) -> None:
+    def modify_order(self, command) -> None:
         self.calls.append(inspect.currentframe().f_code.co_name)
         self.commands.append(command)
 

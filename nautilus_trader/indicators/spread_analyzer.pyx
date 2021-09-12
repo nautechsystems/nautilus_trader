@@ -18,7 +18,7 @@ from collections import deque
 import numpy as np
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.functions cimport fast_mean_iterated
+from nautilus_trader.core.stats cimport fast_mean_iterated
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -94,7 +94,7 @@ cdef class SpreadAnalyzer(Indicator):
             drop_left=False,
         )
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._spreads.clear()
         self.current = 0
         self.average = 0

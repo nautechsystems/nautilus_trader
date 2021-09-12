@@ -16,13 +16,13 @@
 from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseType
 from nautilus_trader.model.c_enums.instrument_close_type cimport InstrumentCloseTypeParser
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatus
 from nautilus_trader.model.c_enums.instrument_status cimport InstrumentStatusParser
 from nautilus_trader.model.c_enums.venue_status cimport VenueStatus
 from nautilus_trader.model.c_enums.venue_status cimport VenueStatusParser
-from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
@@ -50,7 +50,7 @@ cdef class StatusUpdate(Data):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the status update event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(ts_event, ts_init)
@@ -78,7 +78,7 @@ cdef class VenueStatusUpdate(StatusUpdate):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the status update event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(ts_event, ts_init)
@@ -169,7 +169,7 @@ cdef class InstrumentStatusUpdate(StatusUpdate):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the status update event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(ts_event, ts_init,)
@@ -263,7 +263,7 @@ cdef class InstrumentClosePrice(Data):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the close price event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(ts_event, ts_init,)

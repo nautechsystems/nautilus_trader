@@ -23,12 +23,6 @@ import pytz
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
-from nautilus_trader.cache.cache import CacheConfig
-from nautilus_trader.data.engine import DataEngineConfig
-from nautilus_trader.execution.engine import ExecEngineConfig
-from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
-from nautilus_trader.risk.engine import RiskEngineConfig
-
 from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
@@ -50,10 +44,11 @@ from nautilus_trader.common.logging cimport nautilus_header
 from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport as_utc_timestamp
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
-from nautilus_trader.core.functions cimport pad_string
+from nautilus_trader.core.text cimport pad_string
 from nautilus_trader.data.wrangling cimport BarDataWrangler
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
@@ -69,7 +64,6 @@ from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarSpecification
 from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.base cimport Data
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport Tick
@@ -84,29 +78,33 @@ from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.orderbook.data cimport OrderBookData
 from nautilus_trader.portfolio.portfolio cimport Portfolio
 from nautilus_trader.risk.engine cimport RiskEngine
-from nautilus_trader.serialization.msgpack.serializer cimport MsgPackCommandSerializer
-from nautilus_trader.serialization.msgpack.serializer cimport MsgPackEventSerializer
-from nautilus_trader.serialization.msgpack.serializer cimport MsgPackInstrumentSerializer
+from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
+
+from nautilus_trader.cache.cache import CacheConfig
+from nautilus_trader.data.engine import DataEngineConfig
+from nautilus_trader.execution.engine import ExecEngineConfig
+from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
+from nautilus_trader.risk.engine import RiskEngineConfig
 
 
 class BacktestEngineConfig(pydantic.BaseModel):
     """
-    Provides configuration for ``BacktestEngine`` instances.
+    Configuration for ``BacktestEngine`` instances.
 
     trader_id : str, default="BACKTESTER-000"
         The trader ID.
     log_level : str, default="INFO"
         The minimum log level for logging messages to stdout.
-    cache : Optional[CacheConfig]
+    cache : CacheConfig, optional
         The configuration for the cache.
-    cache_database : Optional[CacheDatabaseConfig]
+    cache_database : CacheDatabaseConfig, optional
         The configuration for the cache database.
-    data_engine : Optional[DataEngineConfig]
+    data_engine : DataEngineConfig, optional
         The configuration for the data engine.
-    risk_engine : Optional[RiskEngineConfig]
+    risk_engine : RiskEngineConfig, optional
         The configuration for the risk engine.
-    exec_engine : Optional[ExecEngineConfig]
+    exec_engine : ExecEngineConfig, optional
         The configuration for the execution engine.
     use_data_cache : bool, default=False
         If use cache for DataProducer (increased performance with repeated backtests on same data).
@@ -146,7 +144,7 @@ cdef class BacktestEngine:
         Raises
         ------
         TypeError
-            If config is not of type BacktestEngineConfig.
+            If config is not of type `BacktestEngineConfig`.
 
         """
         if config is None:
@@ -211,9 +209,7 @@ cdef class BacktestEngine:
             cache_db = RedisCacheDatabase(
                 trader_id=self.trader_id,
                 logger=self._test_logger,
-                instrument_serializer=MsgPackInstrumentSerializer(),
-                command_serializer=MsgPackCommandSerializer(),
-                event_serializer=MsgPackEventSerializer(),
+                serializer=MsgPackSerializer(timestamps_as_str=True),
                 config=config.cache_database,
             )
         else:
@@ -466,7 +462,6 @@ cdef class BacktestEngine:
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(data, "data")
         Condition.type(data, pd.DataFrame, "data")
         Condition.false(data.empty, "data was empty")
         Condition.true(
@@ -542,7 +537,6 @@ cdef class BacktestEngine:
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(data, "data")
         Condition.type(data, pd.DataFrame, "data")
         Condition.false(data.empty, "data was empty")
         Condition.true(
@@ -841,8 +835,8 @@ cdef class BacktestEngine:
         venue_type : VenueType
             The type of venue (will determine venue -> client_id mapping).
         oms_type : OMSType {``HEDGING``, ``NETTING``}
-            The order management system type for the exchange. If ``HEDGING`` and
-            no position_id for an order then will generate a new position_id.
+            The order management system type for the exchange. If ``HEDGING`` will
+            generate new position IDs.
         account_type : AccountType
             The account type for the client.
         base_currency : Currency, optional
@@ -911,7 +905,7 @@ cdef class BacktestEngine:
         exchange.register_client(exec_client)
         self._exec_engine.register_client(exec_client)
 
-        self._log.info(f"Added {venue} SimulatedExchange.")
+        self._log.info(f"Added {exchange}.")
 
     def reset(self) -> None:
         """
@@ -995,10 +989,10 @@ cdef class BacktestEngine:
         Parameters
         ----------
         start : datetime, optional
-            The start datetime (UTC) for the backtest run. If None engine runs
+            The start datetime (UTC) for the backtest run. If ``None`` engine runs
             from the start of the data.
         stop : datetime, optional
-            The stop datetime (UTC) for the backtest run. If None engine runs
+            The stop datetime (UTC) for the backtest run. If ``None`` engine runs
             to the end of the data.
         strategies : list, optional
             The strategies for the backtest run (if None will use previous).

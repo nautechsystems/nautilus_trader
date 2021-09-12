@@ -52,7 +52,7 @@ cdef class MarginAccount(Account):
         Raises
         ------
         ValueError
-            If event.account_type is not equal to ``MARGIN``.
+            If `event.account_type` is not equal to ``MARGIN``.
 
         """
         Condition.not_none(event, "event")
@@ -113,9 +113,11 @@ cdef class MarginAccount(Account):
 
         Returns
         -------
-        Decimal or None
+        Decimal or ``None``
 
         """
+        Condition.not_none(instrument_id, "instrument_id")
+
         return self._leverages.get(instrument_id)
 
     cpdef Money margin_init(self, InstrumentId instrument_id):
@@ -131,11 +133,11 @@ cdef class MarginAccount(Account):
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         Warnings
         --------
-        Returns `None` if there is no applicable information for the query,
+        Returns ``None`` if there is no applicable information for the query,
         rather than `Money` of zero amount.
 
         """
@@ -156,11 +158,11 @@ cdef class MarginAccount(Account):
 
         Returns
         -------
-        Money or None
+        Money or ``None``
 
         Warnings
         --------
-        Returns `None` if there is no applicable information for the query,
+        Returns ``None`` if there is no applicable information for the query,
         rather than `Money` of zero amount.
 
         """
@@ -184,7 +186,7 @@ cdef class MarginAccount(Account):
         Returns
         -------
         TypeError
-            If leverage is not of type Decimal.
+            If leverage is not of type `Decimal`.
         ValueError
             If leverage is not >= 1.
 
@@ -283,6 +285,8 @@ cdef class MarginAccount(Account):
         if margin_maint is not None:
             self._recalculate_balance(margin_maint.currency)
 
+# -- CALCULATIONS ----------------------------------------------------------------------------------
+
     cdef void _recalculate_balance(self, Currency currency) except *:
         cdef AccountBalance current_balance = self._balances.get(currency)
         if current_balance is None:
@@ -310,8 +314,6 @@ cdef class MarginAccount(Account):
         )
 
         self._balances[currency] = new_balance
-
-# -- CALCULATIONS ----------------------------------------------------------------------------------
 
     cpdef Money calculate_commission(
         self,
@@ -494,7 +496,7 @@ cdef class MarginAccount(Account):
         OrderFilled fill,
     ):
         """
-        Return the calculated immediate PnL.
+        Return the calculated PnL.
 
         Parameters
         ----------
@@ -507,18 +509,29 @@ cdef class MarginAccount(Account):
 
         Returns
         -------
-        list[Money] or None
+        list[Money] or ``None``
 
         """
         Condition.not_none(instrument, "instrument")
         Condition.not_none(fill, "fill")
 
+        self.update_commissions(fill.commission)
+
+        cdef dict pnls = {}  # type: dict[Currency, Money]
+
+        cdef Money pnl
         if position and position.entry != fill.order_side:
-            # Calculate positional PnL
-            return [position.calculate_pnl(
+            # Calculate and add PnL
+            pnl = position.calculate_pnl(
                 avg_px_open=position.avg_px_open,
                 avg_px_close=fill.last_px,
                 quantity=fill.last_qty,
-            )]
-        else:
-            return [Money(0, instrument.get_cost_currency())]
+            )
+            pnls[pnl.currency] = pnl
+
+        # Add commission PnL
+        cdef Currency currency = fill.commission.currency
+        pnl_existing = pnls.get(currency, Decimal(0))
+        pnls[currency] = Money(pnl_existing - fill.commission, currency)
+
+        return list(pnls.values())

@@ -66,10 +66,22 @@ cdef class MovingAverage(Indicator):
 
         self.period = period
         self.price_type = price_type
-        self.count = 0
         self.value = 0
+        self.count = 0
 
-    cdef void _increment_count(self) except *:
+    cpdef void update_raw(self, double value) except *:
+        """
+        Update the indicator with the given raw value.
+
+        Parameters
+        ----------
+        value : double
+            The update value.
+
+        """
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void _increment_count(self) except *:
         self.count += 1
 
         # Initialization logic
@@ -78,17 +90,10 @@ cdef class MovingAverage(Indicator):
             if self.count >= self.period:
                 self._set_initialized(True)
 
-    cdef void _reset(self) except *:
-        """
-        Reset the indicator.
-
-        All stateful fields are reset to their initial value.
-
-        """
+    cpdef void _reset(self) except *:
         self._reset_ma()
         self.count = 0
         self.value = 0
 
-    cdef void _reset_ma(self) except *:
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")
+    cpdef void _reset_ma(self) except *:
+        pass  # Optionally override if additional values to reset

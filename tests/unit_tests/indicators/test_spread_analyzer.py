@@ -54,13 +54,13 @@ class TestSpreadAnalyzer:
         # Arrange
         analyzer = SpreadAnalyzer(AUDUSD_SIM.id, 1000)
         tick = QuoteTick(
-            USDJPY_SIM.id,
-            Price.from_str("117.80000"),
-            Price.from_str("117.80010"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("117.80000"),
+            ask=Price.from_str("117.80010"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
         # Act, Assert
         with pytest.raises(ValueError):
@@ -70,23 +70,23 @@ class TestSpreadAnalyzer:
         # Arrange
         analyzer = SpreadAnalyzer(AUDUSD_SIM.id, 1000)
         tick1 = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("0.80000"),
-            Price.from_str("0.80010"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("0.80000"),
+            ask=Price.from_str("0.80010"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         tick2 = QuoteTick(
-            AUDUSD_SIM.id,
-            Price.from_str("0.80002"),
-            Price.from_str("0.80008"),
-            Quantity.from_int(1),
-            Quantity.from_int(1),
-            0,
-            0,
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("0.80002"),
+            ask=Price.from_str("0.80008"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
         )
 
         # Act

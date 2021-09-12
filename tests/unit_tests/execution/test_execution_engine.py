@@ -23,10 +23,10 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.commands.trading import CancelOrder
-from nautilus_trader.model.commands.trading import SubmitBracketOrder
+from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
+from nautilus_trader.model.commands.trading import SubmitOrderList
 from nautilus_trader.model.commands.trading import TradingCommand
-from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OrderSide
@@ -37,13 +37,14 @@ from nautilus_trader.model.events.order import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import OrderListId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders.bracket import BracketOrder
+from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -452,7 +453,7 @@ class TestExecutionEngine:
         # Assert (does not send to strategy)
         assert order.status == OrderStatus.FILLED
 
-    def test_submit_bracket_order_with_all_duplicate_client_order_id_logs_does_not_submit(
+    def test_submit_bracket_order_list_with_all_duplicate_client_order_id_logs_does_not_submit(
         self,
     ):
         # Arrange
@@ -488,26 +489,25 @@ class TestExecutionEngine:
             Price.from_str("1.00000"),
         )
 
-        bracket = BracketOrder(
-            entry=entry,
-            stop_loss=stop_loss,
-            take_profit=take_profit,
+        bracket1 = OrderList(
+            list_id=OrderListId("1"),
+            orders=[entry, stop_loss, take_profit],
         )
 
-        submit_bracket = SubmitBracketOrder(
+        submit_order_list = SubmitOrderList(
             self.trader_id,
             strategy.id,
-            bracket,
+            bracket1,
             self.uuid_factory.generate(),
             self.clock.timestamp_ns(),
         )
 
         # Act
-        self.risk_engine.execute(submit_bracket)
+        self.risk_engine.execute(submit_order_list)
         self.exec_engine.process(TestStubs.event_order_submitted(entry))
         self.exec_engine.process(TestStubs.event_order_submitted(stop_loss))
         self.exec_engine.process(TestStubs.event_order_submitted(take_profit))
-        self.risk_engine.execute(submit_bracket)  # <-- Duplicate command
+        self.risk_engine.execute(submit_order_list)  # <-- Duplicate command
 
         # Assert
         assert entry.status == OrderStatus.SUBMITTED  # Did not invalidate originals
@@ -515,7 +515,7 @@ class TestExecutionEngine:
         assert take_profit.status == OrderStatus.SUBMITTED  # Did not invalidate originals
         assert self.exec_engine.command_count == 1
 
-    def test_submit_bracket_order_with_duplicate_take_profit_client_order_id_logs_does_not_submit(
+    def test_submit_order_list_with_duplicate_take_profit_client_order_id_logs_does_not_submit(
         self,
     ):
         # Arrange
@@ -551,13 +551,12 @@ class TestExecutionEngine:
             Price.from_str("1.00000"),
         )
 
-        bracket1 = BracketOrder(
-            entry=entry1,
-            stop_loss=stop_loss1,
-            take_profit=take_profit1,
+        bracket1 = OrderList(
+            list_id=OrderListId("1"),
+            orders=[entry1, stop_loss1, take_profit1],
         )
 
-        submit_bracket1 = SubmitBracketOrder(
+        submit_order_list1 = SubmitOrderList(
             self.trader_id,
             strategy.id,
             bracket1,
@@ -578,13 +577,16 @@ class TestExecutionEngine:
             Price.from_str("0.50000"),
         )
 
-        bracket2 = BracketOrder(
-            entry=entry2,
-            stop_loss=stop_loss2,
-            take_profit=take_profit1,  # Duplicate
+        bracket2 = OrderList(
+            list_id=OrderListId("2"),
+            orders=[
+                entry2,
+                stop_loss2,
+                take_profit1,  # Duplicate
+            ],
         )
 
-        submit_bracket2 = SubmitBracketOrder(
+        submit_bracket2 = SubmitOrderList(
             self.trader_id,
             strategy.id,
             bracket2,
@@ -593,7 +595,7 @@ class TestExecutionEngine:
         )
 
         # Act
-        self.risk_engine.execute(submit_bracket1)
+        self.risk_engine.execute(submit_order_list1)
         self.exec_engine.process(TestStubs.event_order_submitted(entry1))
         self.exec_engine.process(TestStubs.event_order_accepted(entry1))
         self.exec_engine.process(TestStubs.event_order_submitted(stop_loss1))
@@ -645,13 +647,12 @@ class TestExecutionEngine:
             Price.from_str("1.00000"),
         )
 
-        bracket1 = BracketOrder(
-            entry=entry1,
-            stop_loss=stop_loss1,
-            take_profit=take_profit1,
+        bracket1 = OrderList(
+            list_id=OrderListId("1"),
+            orders=[entry1, stop_loss1, take_profit1],
         )
 
-        submit_bracket1 = SubmitBracketOrder(
+        submit_bracket1 = SubmitOrderList(
             self.trader_id,
             strategy.id,
             bracket1,
@@ -672,13 +673,16 @@ class TestExecutionEngine:
             Price.from_str("1.00000"),
         )
 
-        bracket2 = BracketOrder(
-            entry=entry2,
-            stop_loss=stop_loss1,  # Duplicate
-            take_profit=take_profit2,
+        bracket2 = OrderList(
+            list_id=OrderListId("1"),
+            orders=[
+                entry2,
+                stop_loss1,  # Duplicate
+                take_profit2,
+            ],
         )
 
-        submit_bracket2 = SubmitBracketOrder(
+        submit_bracket2 = SubmitOrderList(
             self.trader_id,
             strategy.id,
             bracket2,
@@ -926,7 +930,7 @@ class TestExecutionEngine:
         self.exec_engine.process(TestStubs.event_order_accepted(order))
         self.exec_engine.process(TestStubs.event_order_filled(order, AUDUSD_SIM))
 
-        update_order = UpdateOrder(
+        modify = ModifyOrder(
             self.trader_id,
             order.strategy_id,
             order.instrument_id,
@@ -940,7 +944,7 @@ class TestExecutionEngine:
         )
 
         # Act
-        self.exec_engine.execute(update_order)
+        self.exec_engine.execute(modify)
 
         # Assert
         assert order.status == OrderStatus.FILLED

@@ -23,7 +23,7 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.orders.bracket cimport BracketOrder
+from nautilus_trader.model.orders.list cimport OrderList
 
 
 cdef class TradingCommand(Command):
@@ -48,34 +48,34 @@ cdef class SubmitOrder(TradingCommand):
     cdef dict to_dict_c(SubmitOrder obj)
 
 
-cdef class SubmitBracketOrder(TradingCommand):
-    cdef readonly BracketOrder bracket_order
-    """The bracket order to submit.\n\n:returns: `BracketOrder`"""
+cdef class SubmitOrderList(TradingCommand):
+    cdef readonly OrderList list
+    """The order list for submission.\n\n:returns: `OrderList`"""
 
     @staticmethod
-    cdef SubmitBracketOrder from_dict_c(dict values)
+    cdef SubmitOrderList from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(SubmitBracketOrder obj)
+    cdef dict to_dict_c(SubmitOrderList obj)
 
 
-cdef class UpdateOrder(TradingCommand):
+cdef class ModifyOrder(TradingCommand):
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the command.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
     """The venue order ID associated with the command.\n\n:returns: `VenueOrderId`"""
     cdef readonly Quantity quantity
-    """The updated quantity for the command.\n\n:returns: `Quantity` or None"""
+    """The updated quantity for the command.\n\n:returns: `Quantity` or ``None``"""
     cdef readonly Price price
-    """The updated price for the command.\n\n:returns: `Price` or None"""
+    """The updated price for the command.\n\n:returns: `Price` or ``None``"""
     cdef readonly Price trigger
-    """The updated trigger price for the command.\n\n:returns: `Price` or None"""
+    """The updated trigger price for the command.\n\n:returns: `Price` or ``None``"""
 
     @staticmethod
-    cdef UpdateOrder from_dict_c(dict values)
+    cdef ModifyOrder from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(UpdateOrder obj)
+    cdef dict to_dict_c(ModifyOrder obj)
 
 
 cdef class CancelOrder(TradingCommand):

@@ -15,12 +15,11 @@
 
 from typing import Dict
 
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -29,7 +28,7 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 class MyStrategyConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``MyStrategy`` instances.
+    Configuration for ``MyStrategy`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
@@ -42,8 +41,6 @@ class MyStrategyConfig(TradingStrategyConfig):
     """
 
     instrument_id: str
-    order_id_tag: str = "001"
-    oms_type: OMSType = OMSType.HEDGING
 
 
 class MyStrategy(TradingStrategy):

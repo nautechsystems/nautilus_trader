@@ -42,16 +42,16 @@ from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
 from nautilus_trader.model.commands.trading import CancelOrder
+from nautilus_trader.model.commands.trading import ModifyOrder
 from nautilus_trader.model.commands.trading import SubmitOrder
-from nautilus_trader.model.commands.trading import UpdateOrder
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookLevel
-from nautilus_trader.model.enums import DeltaType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
@@ -165,7 +165,6 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
     """
     Convert a SubmitOrder command into the data required by BetfairClient
     """
-
     order = make_order(command.order)
 
     place_order = {
@@ -192,13 +191,13 @@ def order_submit_to_betfair(command: SubmitOrder, instrument: BettingInstrument)
 
 
 def order_update_to_betfair(
-    command: UpdateOrder,
+    command: ModifyOrder,
     venue_order_id: VenueOrderId,
     side: OrderSide,
     instrument: BettingInstrument,
 ):
     """
-    Convert an UpdateOrder command into the data required by BetfairClient
+    Convert an ModifyOrder command into the data required by BetfairClient
     """
     return {
         "market_id": instrument.market_id,
@@ -353,7 +352,7 @@ def _handle_bsp_updates(runner, instrument, ts_event, ts_init):
             delta = BSPOrderBookDelta(
                 instrument_id=instrument.id,
                 level=BookLevel.L2,
-                delta_type=DeltaType.DELETE if volume == 0 else DeltaType.UPDATE,
+                action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                 order=Order(
                     price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
                     size=Quantity(volume, precision=8),
@@ -379,7 +378,7 @@ def _handle_book_updates(runner, instrument, ts_event, ts_init):
                 OrderBookDelta(
                     instrument_id=instrument.id,
                     level=BookLevel.L2,
-                    delta_type=DeltaType.DELETE if volume == 0 else DeltaType.UPDATE,
+                    action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                     order=Order(
                         price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
                         size=Quantity(volume, precision=8),

@@ -31,7 +31,6 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookLevel
-from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.position import PositionChanged
@@ -104,7 +103,7 @@ class TickTock(TradingStrategy):
 
 class EMACrossConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``EMACross`` instances.
+    Configuration for ``EMACross`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
@@ -123,8 +122,6 @@ class EMACrossConfig(TradingStrategyConfig):
     trade_size: Decimal
     fast_ema_period: int = 10
     slow_ema_period: int = 20
-    order_id_tag: str = "001"
-    oms_type: OMSType = OMSType.HEDGING
 
 
 class EMACross(TradingStrategy):
@@ -355,7 +352,7 @@ class EMACross(TradingStrategy):
 
 class OrderBookImbalanceStrategyConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``OrderBookImbalance`` instances.
+    Configuration for ``OrderBookImbalance`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
@@ -365,7 +362,7 @@ class OrderBookImbalanceStrategyConfig(TradingStrategyConfig):
 
     instrument_id: str
     trade_size: Decimal
-    oms_type: OMSType = OMSType.NETTING
+    oms_type: str = "NETTING"
 
 
 class OrderBookImbalanceStrategy(TradingStrategy):
@@ -587,7 +584,7 @@ class MarketMaker(TradingStrategy):
 
 class RepeatedOrdersConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``RepeatedOrders`` instances.
+    Configuration for ``RepeatedOrders`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
@@ -668,7 +665,7 @@ class RepeatedOrders(TradingStrategy):
     def on_event(self, event: Event):
         if isinstance(event, OrderAccepted):
             order = self.cache.order(event.client_order_id)
-            self.log.info(f"Cancelling order: {order}")
+            self.log.info(f"Canceling order: {order}")
             self.cancel_order(order=order)
         elif isinstance(event, OrderCanceled):
             self.log.info("Got cancel, sending again")

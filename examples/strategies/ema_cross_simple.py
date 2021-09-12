@@ -17,14 +17,13 @@ from decimal import Decimal
 from typing import Dict, Optional
 
 from nautilus_trader.common.logging import LogColor
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
-from nautilus_trader.model.data.base import Data
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -40,7 +39,7 @@ from nautilus_trader.trading.strategy import TradingStrategyConfig
 
 class EMACrossConfig(TradingStrategyConfig):
     """
-    Provides configuration for ``EMACross`` instances.
+    Configuration for ``EMACross`` instances.
 
     instrument_id : InstrumentId
         The instrument ID for the strategy.
@@ -65,8 +64,6 @@ class EMACrossConfig(TradingStrategyConfig):
     fast_ema_period: int = 10
     slow_ema_period: int = 20
     trade_size: Decimal
-    order_id_tag: str = "001"
-    oms_type: OMSType = OMSType.HEDGING
 
 
 class EMACross(TradingStrategy):

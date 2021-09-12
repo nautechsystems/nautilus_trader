@@ -352,7 +352,7 @@ cdef class Instrument(Data):
 
         Returns
         -------
-        Currency or None
+        Currency or ``None``
 
         """
         return None

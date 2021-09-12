@@ -13,19 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
-
-from nautilus_trader.core.uuid import uuid4
-from nautilus_trader.data.messages import Subscribe
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.serialization.base import CommandSerializer
-from nautilus_trader.serialization.base import EventSerializer
-from nautilus_trader.serialization.base import InstrumentSerializer
 from nautilus_trader.serialization.base import register_serializable_object
 from tests.test_kit.providers import TestInstrumentProvider
-from tests.test_kit.stubs import TestStubs
 
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -54,44 +43,3 @@ class TestSerializationBase:
         register_serializable_object(TestObject, TestObject.to_dict, TestObject.from_dict)
 
         # Does not raise exception
-
-    def test_instrument_serializer_methods_raise_not_implemented_error(self):
-        # Arrange
-        serializer = InstrumentSerializer()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            serializer.serialize(AUDUSD_SIM)
-
-        with pytest.raises(NotImplementedError):
-            serializer.deserialize(bytes())
-
-    def test_command_serializer_methods_raise_not_implemented_error(self):
-        # Arrange
-        command = Subscribe(
-            client_id=ClientId("SIM"),
-            data_type=DataType(QuoteTick),
-            command_id=uuid4(),
-            ts_init=0,
-        )
-
-        serializer = CommandSerializer()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            serializer.serialize(command)
-
-        with pytest.raises(NotImplementedError):
-            serializer.deserialize(bytes())
-
-    def test_event_serializer_methods_raise_not_implemented_error(self):
-        # Arrange
-        event = TestStubs.event_cash_account_state()
-        serializer = EventSerializer()
-
-        # Act, Assert
-        with pytest.raises(NotImplementedError):
-            serializer.serialize(event)
-
-        with pytest.raises(NotImplementedError):
-            serializer.deserialize(bytes())

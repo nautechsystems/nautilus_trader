@@ -85,7 +85,7 @@ cdef class Message:
         message_id : UUID4
             The message ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the message object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         self.category = category
@@ -124,7 +124,7 @@ cdef class Command(Message):
         command_id : UUID4
             The command ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the command object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(MessageCategory.COMMAND, command_id, ts_init)
@@ -152,7 +152,7 @@ cdef class Document(Message):
         document_id : UUID4
             The document ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the document object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(MessageCategory.DOCUMENT, document_id, ts_init)
@@ -183,7 +183,7 @@ cdef class Event(Message):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(MessageCategory.EVENT, event_id, ts_init)
@@ -216,7 +216,7 @@ cdef class Request(Message):
         request_id : UUID4
             The request ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the request object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(MessageCategory.REQUEST, request_id, ts_init)
@@ -249,7 +249,7 @@ cdef class Response(Message):
         response_id : UUID4
             The response ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the response object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(MessageCategory.RESPONSE, response_id, ts_init)

@@ -109,7 +109,7 @@ cdef class PositionEvent(Event):
             The position quote currency.
         avg_px_open : Decimal
             The average open price.
-        avg_px_close : Optional[Decimal]
+        avg_px_close : Decimal, optional
             The average close price.
         realized_points : Decimal
             The realized points for the position.
@@ -130,7 +130,7 @@ cdef class PositionEvent(Event):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         super().__init__(event_id, ts_event, ts_init)
@@ -176,8 +176,8 @@ cdef class PositionEvent(Event):
                 f"avg_px_close={self.avg_px_close}, "
                 f"realized_points={self.realized_points}, "
                 f"realized_return={self.realized_return:.5f}, "
-                f"realized_pnl={self.realized_pnl}, "
-                f"unrealized_pnl={self.unrealized_pnl}, "
+                f"realized_pnl={self.realized_pnl.to_str()}, "
+                f"unrealized_pnl={self.unrealized_pnl.to_str()}, "
                 f"ts_opened={self.ts_opened}, "
                 f"ts_last={self.ts_event}, "
                 f"ts_closed={self.ts_closed}, "
@@ -202,8 +202,8 @@ cdef class PositionEvent(Event):
                 f"avg_px_close={self.avg_px_close}, "
                 f"realized_points={self.realized_points}, "
                 f"realized_return={self.realized_return:.5f}, "
-                f"realized_pnl={self.realized_pnl}, "
-                f"unrealized_pnl={self.unrealized_pnl}, "
+                f"realized_pnl={self.realized_pnl.to_str()}, "
+                f"unrealized_pnl={self.unrealized_pnl.to_str()}, "
                 f"ts_opened={self.ts_opened}, "
                 f"ts_last={self.ts_event}, "
                 f"ts_closed={self.ts_closed}, "
@@ -282,7 +282,7 @@ cdef class PositionOpened(PositionEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the position opened event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         assert side != PositionSide.FLAT  # Design-time check: position side matches event
@@ -419,7 +419,7 @@ cdef class PositionOpened(PositionEvent):
         event_id : UUID4
             The event ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -527,7 +527,7 @@ cdef class PositionChanged(PositionEvent):
             The position quote currency.
         avg_px_open : Decimal
             The average open price.
-        avg_px_close : Optional[Decimal]
+        avg_px_close : Decimal, optional
             The average close price.
         realized_points : Decimal
             The realized points for the position.
@@ -544,7 +544,7 @@ cdef class PositionChanged(PositionEvent):
         ts_event : int64
             The UNIX timestamp (nanoseconds) when the position changed event occurred.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         assert side != PositionSide.FLAT  # Design-time check: position side matches event
@@ -697,7 +697,7 @@ cdef class PositionChanged(PositionEvent):
         event_id : UUID4
             The event ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -822,7 +822,7 @@ cdef class PositionClosed(PositionEvent):
         duration_ns : int64
             The total open duration (nanoseconds).
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         """
         assert side == PositionSide.FLAT  # Design-time check: position side matches event
@@ -973,7 +973,7 @@ cdef class PositionClosed(PositionEvent):
         event_id : UUID4
             The event ID.
         ts_init : int64
-            The UNIX timestamp (nanoseconds) when the event object was initialized.
+            The UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------

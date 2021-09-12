@@ -13,12 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
+from nautilus_trader.indicators.average.ma_factory import MovingAverageType
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
-
-from nautilus_trader.indicators.average.ma_factory import MovingAverageFactory
-from nautilus_trader.indicators.average.ma_factory import MovingAverageType
 
 
 cdef class AverageTrueRange(Indicator):
@@ -131,7 +131,7 @@ cdef class AverageTrueRange(Indicator):
             if self._ma.initialized:
                 self._set_initialized(True)
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._ma.reset()
         self._previous_close = 0
         self.value = 0

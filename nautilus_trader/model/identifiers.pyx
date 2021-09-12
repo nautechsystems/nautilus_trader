@@ -411,6 +411,8 @@ cdef class ClientOrderLinkId(Identifier):
 
     The ID value must be unique for a trading venue.
 
+    Can correspond to the `ClOrdLinkID <583> field` of the FIX protocol.
+
     Permits order originators to tie together groups of orders in which trades
     resulting from orders are associated for a specific purpose, for example the
     calculation of average execution price for a customer or to associate lists
@@ -452,6 +454,29 @@ cdef class VenueOrderId(Identifier):
         ----------
         value : str
             The venue assigned order ID value.
+
+        Raises
+        ------
+        ValueError
+            If value is not a valid string.
+
+        """
+        super().__init__(value)
+
+
+cdef class OrderListId(Identifier):
+    """
+    Represents a valid order list ID (assigned by the Nautilus system).
+    """
+
+    def __init__(self, str value):
+        """
+        Initialize a new instance of the ``OrderListId`` class.
+
+        Parameters
+        ----------
+        value : str
+            The order list ID value.
 
         Raises
         ------

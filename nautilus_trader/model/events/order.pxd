@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.model.c_enums.contingency_type cimport ContingencyType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_type cimport OrderType
@@ -23,6 +24,7 @@ from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -38,13 +40,13 @@ cdef class OrderEvent(Event):
     cdef readonly StrategyId strategy_id
     """The strategy ID associated with the event.\n\n:returns: `StrategyId`"""
     cdef readonly AccountId account_id
-    """The account ID associated with the event.\n\n:returns: `AccountId` or None"""
+    """The account ID associated with the event.\n\n:returns: `AccountId` or ``None``"""
     cdef readonly InstrumentId instrument_id
     """The instrument ID associated with the event.\n\n:returns: `InstrumentId`"""
     cdef readonly ClientOrderId client_order_id
     """The client order ID associated with the event.\n\n:returns: `ClientOrderId`"""
     cdef readonly VenueOrderId venue_order_id
-    """The venue order ID associated with the event.\n\n:returns: `VenueOrderId` or None"""
+    """The venue order ID associated with the event.\n\n:returns: `VenueOrderId` or ``None``"""
 
 
 cdef class OrderInitialized(OrderEvent):
@@ -56,8 +58,22 @@ cdef class OrderInitialized(OrderEvent):
     """The order quantity.\n\n:returns: `Quantity`"""
     cdef readonly TimeInForce time_in_force
     """The order time-in-force.\n\n:returns: `TimeInForce`"""
+    cdef readonly bint reduce_only
+    """If the order carries the 'reduce-only' execution instruction.\n\n:returns: `bool`"""
     cdef readonly dict options
     """The order initialization options.\n\n:returns: `dict`"""
+    cdef readonly OrderListId order_list_id
+    """The order list ID associated with the order.\n\n:returns: `OrderListId` or ``None``"""
+    cdef readonly ClientOrderId parent_order_id
+    """The orders parent client order ID.\n\n:returns: `ClientOrderId` or ``None``"""
+    cdef readonly list child_order_ids
+    """The orders child client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
+    cdef readonly ContingencyType contingency
+    """The orders contingency type.\n\n:returns: `ContingencyType`"""
+    cdef readonly list contingency_ids
+    """The orders contingency client order ID(s).\n\n:returns: `list[ClientOrderId]` or ``None``"""
+    cdef readonly str tags
+    """The order custom user tags.\n\n:returns: `str` or ``None``"""
 
     @staticmethod
     cdef OrderInitialized from_dict_c(dict values)
@@ -151,15 +167,15 @@ cdef class OrderPendingCancel(OrderEvent):
     cdef dict to_dict_c(OrderPendingCancel obj)
 
 
-cdef class OrderUpdateRejected(OrderEvent):
+cdef class OrderModifyRejected(OrderEvent):
     cdef readonly str reason
-    """The reason for order update rejection.\n\n:returns: `str`"""
+    """The reason for modify order rejection.\n\n:returns: `str`"""
 
     @staticmethod
-    cdef OrderUpdateRejected from_dict_c(dict values)
+    cdef OrderModifyRejected from_dict_c(dict values)
 
     @staticmethod
-    cdef dict to_dict_c(OrderUpdateRejected obj)
+    cdef dict to_dict_c(OrderModifyRejected obj)
 
 
 cdef class OrderCancelRejected(OrderEvent):
@@ -179,7 +195,7 @@ cdef class OrderUpdated(OrderEvent):
     cdef readonly Price price
     """The orders current price.\n\n:returns: `Price`"""
     cdef readonly Price trigger
-    """The orders current trigger price.\n\n:returns: `Price` or None"""
+    """The orders current trigger price.\n\n:returns: `Price` or ``None``"""
 
     @staticmethod
     cdef OrderUpdated from_dict_c(dict values)
@@ -192,7 +208,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly ExecutionId execution_id
     """The execution ID associated with the event.\n\n:returns: `ExecutionId`"""
     cdef readonly PositionId position_id
-    """The position ID associated with the event.\n\n:returns: `PositionId` or None"""
+    """The position ID associated with the event.\n\n:returns: `PositionId` or ``None``"""
     cdef readonly OrderSide order_side
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType order_type
@@ -206,7 +222,7 @@ cdef class OrderFilled(OrderEvent):
     cdef readonly Money commission
     """The commission generated from the fill.\n\n:returns: `Money`"""
     cdef readonly LiquiditySide liquidity_side
-    """The liquidity side of the event (``MAKER`` or ``TAKER``).\n\n:returns: `LiquiditySide`"""
+    """The liquidity side of the event {``MAKER``, ``TAKER``}.\n\n:returns: `LiquiditySide`"""
     cdef readonly dict info
     """The additional fill information.\n\n:returns: `dict[str, object]`"""
 

@@ -34,7 +34,7 @@ jobs:
       # Test pip installation
       - name: Test pip installation
         if: runner.os != 'Windows'
-        run: pip install .[ccxt,docs,ib]
+        run: pip install .[distributed,docs]
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
@@ -51,11 +51,6 @@ jobs:
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
       # Install and run database dependencies
-      - name: Install Memurai (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          choco install memurai-developer.install
-
       - name: Install Redis (macOS)
         if: runner.os == 'macOS'
         run: |

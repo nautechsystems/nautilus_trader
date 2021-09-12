@@ -96,7 +96,7 @@ cdef class EfficiencyRatio(Indicator):
         else:
             self.value = 0
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._inputs.clear()
         self._deltas.clear()
         self.value = 0

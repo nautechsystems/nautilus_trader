@@ -13,9 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-
 from collections import deque
+
+from cpython.datetime cimport datetime
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
@@ -141,7 +141,7 @@ cdef class Swings(Indicator):
             else:
                 self.duration = self.since_high
 
-    cdef void _reset(self) except *:
+    cpdef void _reset(self) except *:
         self._high_inputs.clear()
         self._low_inputs.clear()
 
