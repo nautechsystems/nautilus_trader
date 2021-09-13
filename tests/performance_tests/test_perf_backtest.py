@@ -60,7 +60,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
                 data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
             )
-            quote_wrangler.pre_process(0)
+            quote_wrangler.pre_process()
             engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
             engine.add_venue(
@@ -95,7 +95,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
                 data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
             )
-            quote_wrangler.pre_process(0)
+            quote_wrangler.pre_process()
             engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
             engine.add_venue(
@@ -139,7 +139,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
                 data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
             )
-            quote_wrangler.pre_process(0)
+            quote_wrangler.pre_process()
             engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
             interest_rate_data = pd.read_csv(

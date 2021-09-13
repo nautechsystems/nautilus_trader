@@ -168,7 +168,7 @@ class TestPersistenceParsers:
                 instrument=TestInstrumentProvider.default_fx_ccy("AUD/USD"),
                 data_quotes=data.set_index("timestamp"),
             )
-            wrangler.pre_process(0)
+            wrangler.pre_process()
             yield from wrangler.build_ticks()
 
         reader = CSVReader(block_parser=parser, as_dataframe=True)
@@ -204,7 +204,7 @@ class TestPersistenceParsers:
                 instrument=TestInstrumentProvider.default_fx_ccy("AUD/USD"),
                 data_quotes=data,
             )
-            wrangler.pre_process(0)
+            wrangler.pre_process()
             yield from wrangler.build_ticks()
 
         reader = ParquetReader(parser=parser)

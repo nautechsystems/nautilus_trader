@@ -54,7 +54,7 @@ class TestQuoteTickDataWrangler:
         )
 
         # Act
-        self.tick_builder.pre_process(0, 42)
+        self.tick_builder.pre_process(42)
         ticks = self.tick_builder.processed_data
 
         # Assert
@@ -74,7 +74,7 @@ class TestQuoteTickDataWrangler:
         )
 
         # Act
-        self.tick_builder.pre_process(0, 42)
+        self.tick_builder.pre_process(42)
         tick_data = self.tick_builder.processed_data
 
         # Assert
@@ -84,7 +84,6 @@ class TestQuoteTickDataWrangler:
         assert tick_data.iloc[1].name == Timestamp("2013-01-31 23:59:59.800000+0000", tz="UTC")
         assert tick_data.iloc[2].name == Timestamp("2013-01-31 23:59:59.900000+0000", tz="UTC")
         assert tick_data.iloc[3].name == Timestamp("2013-02-01 00:00:00+0000", tz="UTC")
-        assert tick_data.iloc[0]["instrument_id"] == 0
         assert tick_data.iloc[0]["bid_size"] == "1000000"
         assert tick_data.iloc[0]["ask_size"] == "1000000"
         assert tick_data.iloc[1]["bid_size"] == "1000000"
@@ -105,7 +104,7 @@ class TestQuoteTickDataWrangler:
         )
 
         # Act
-        self.tick_builder.pre_process(0)
+        self.tick_builder.pre_process()
         ticks = self.tick_builder.build_ticks()
 
         # Assert
@@ -129,7 +128,7 @@ class TestQuoteTickDataWrangler:
         )
 
         # Act
-        self.tick_builder.pre_process(0)
+        self.tick_builder.pre_process()
         ticks = self.tick_builder.build_ticks()
 
         # Assert
@@ -162,7 +161,7 @@ class TestTradeTickDataWrangler:
         )
 
         # Act
-        self.tick_builder.pre_process(0)
+        self.tick_builder.pre_process()
         ticks = self.tick_builder.processed_data
 
         # Assert
@@ -178,7 +177,7 @@ class TestTradeTickDataWrangler:
         )
 
         # Act
-        self.tick_builder.pre_process(0)
+        self.tick_builder.pre_process()
         ticks = self.tick_builder.build_ticks()
 
         # Assert
@@ -261,7 +260,7 @@ class TestTardisQuoteDataWrangler:
         )
 
         # Act
-        self.tick_builder.pre_process(0)
+        self.tick_builder.pre_process()
         ticks = self.tick_builder.processed_data
 
         # Assert
@@ -272,9 +271,7 @@ class TestTardisQuoteDataWrangler:
         assert ticks.ask_size[0] == "0.840000"
         assert ticks.bid[0] == "9681.92"
         assert ticks.ask[0] == "9682.00"
-        assert sorted(ticks.columns) == sorted(
-            ["ask", "ask_size", "bid", "bid_size", "instrument_id", "symbol"]
-        )
+        assert sorted(ticks.columns) == sorted(["ask", "ask_size", "bid", "bid_size", "symbol"])
 
 
 class TestTardisTradeDataWrangler:
@@ -298,7 +295,7 @@ class TestTardisTradeDataWrangler:
         )
 
         # Act
-        self.tick_builder.pre_process(0)
+        self.tick_builder.pre_process()
         ticks = self.tick_builder.processed_data
 
         # Assert
@@ -314,7 +311,7 @@ class TestTardisTradeDataWrangler:
         )
 
         # Act
-        self.tick_builder.pre_process(0)
+        self.tick_builder.pre_process()
         ticks = self.tick_builder.build_ticks()
 
         # Assert

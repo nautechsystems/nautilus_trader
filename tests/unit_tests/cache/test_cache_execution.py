@@ -1022,7 +1022,7 @@ class TestExecutionCacheIntegrityCheck:
             data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()[:2000]},
             data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()[:2000]},
         )
-        quote_wrangler.pre_process(0)
+        quote_wrangler.pre_process()
         self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
         self.engine.add_venue(

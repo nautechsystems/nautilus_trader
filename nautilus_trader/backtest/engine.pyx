@@ -662,7 +662,7 @@ cdef class BacktestEngine:
         datetime start=None,
         datetime stop=None,
         list strategies=None,
-        bint reset=True,
+        bint streaming=False,
     ) -> None:
         """
         Run a backtest from the start datetime to the stop datetime.
@@ -677,8 +677,8 @@ cdef class BacktestEngine:
             to the end of the data.
         strategies : list, optional
             The strategies for the backtest run (if None will use previous).
-        reset : bool, default = True
-            If the engine should be reset prior to the run.
+        streaming : bool, default = False
+            If the engine in being run in streaming mode.
 
         Raises
         ------
@@ -714,7 +714,7 @@ cdef class BacktestEngine:
         self._test_clock.set_time(start_ns)
         self._test_logger.change_clock_c(self._test_clock)
 
-        if reset:
+        if not streaming:
             for exchange in self._exchanges.values():
                 exchange.initialize_account()
 
@@ -730,9 +730,10 @@ cdef class BacktestEngine:
             strategy.clock.set_time(start_ns)
 
         # Start main components
-        self._data_engine.start()
-        self._exec_engine.start()
-        self.trader.start()
+        if not streaming:
+            self._data_engine.start()
+            self._exec_engine.start()
+            self.trader.start()
 
         # Set data stream length
         self._data_len = len(self._data)
@@ -758,13 +759,14 @@ cdef class BacktestEngine:
             data = self._next()
         # ---------------------------------------------------------------------#
 
-        self.trader.stop()
-        self._post_run(
-            run_started=run_started,
-            run_finished=self._clock.utc_now(),
-            start=start,
-            stop=stop,
-        )
+        if not streaming:
+            self.trader.stop()
+            self._post_run(
+                run_started=run_started,
+                run_finished=self._clock.utc_now(),
+                start=start,
+                stop=stop,
+            )
 
     cdef Data _next(self):
         cdef int64_t cursor = self._index
@@ -788,12 +790,12 @@ cdef class BacktestEngine:
         for exchange in self._exchanges.values():
             exchange.process_modules(now_ns)
 
-    cdef void _pre_run(
+    def _pre_run(
         self,
         datetime run_started,
         datetime start,
         datetime stop,
-    ) except *:
+    ):
         log_memory(self._log)
         self._log.info("=================================================================")
         self._log.info(" BACKTEST RUN")
@@ -814,13 +816,13 @@ cdef class BacktestEngine:
                 balances = ', '.join([b.to_str() for b in exchange.starting_balances])
                 self._log.info(f"Account balances (starting): {balances}")
 
-    cdef void _post_run(
+    def _post_run(
         self,
         datetime run_started,
         datetime run_finished,
         datetime start,
         datetime stop,
-    ) except *:
+    ):
         self._log.info("=================================================================")
         self._log.info(" BACKTEST DIAGNOSTICS")
         self._log.info("=================================================================")

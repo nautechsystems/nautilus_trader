@@ -63,7 +63,7 @@ if __name__ == "__main__":
         instrument=ETHUSDT_BINANCE,
         data=TestDataProvider.ethusdt_trades(),
     )
-    trade_wrangler.pre_process(0)
+    trade_wrangler.pre_process()
     engine.add_trade_ticks(data=trade_wrangler.build_ticks())
 
     # Create a fill model (optional)

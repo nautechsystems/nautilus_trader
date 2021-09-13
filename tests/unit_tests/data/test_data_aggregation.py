@@ -442,7 +442,7 @@ class TestTickBarAggregator:
             data_quotes=TestDataProvider.audusd_ticks()[:1000],
         )
 
-        wrangler.pre_process(instrument_indexer=0)
+        wrangler.pre_process()
         ticks = wrangler.build_ticks()
 
         # Act
@@ -477,7 +477,7 @@ class TestTickBarAggregator:
             data=TestDataProvider.ethusdt_trades()[:10000],
         )
 
-        wrangler.pre_process(0)
+        wrangler.pre_process()
         ticks = wrangler.build_ticks()
 
         # Act
@@ -822,7 +822,7 @@ class TestVolumeBarAggregator:
             data_quotes=TestDataProvider.audusd_ticks()[:10000],
         )
 
-        wrangler.pre_process(instrument_indexer=0, default_volume=1)
+        wrangler.pre_process(default_volume=1)
         ticks = wrangler.build_ticks()
 
         # Act
@@ -857,7 +857,7 @@ class TestVolumeBarAggregator:
             data=TestDataProvider.ethusdt_trades()[:10000],
         )
 
-        wrangler.pre_process(instrument_indexer=0)
+        wrangler.pre_process()
         ticks = wrangler.build_ticks()
 
         # Act
@@ -1077,7 +1077,7 @@ class TestTestValueBarAggregator:
             data_quotes=TestDataProvider.audusd_ticks()[:10000],
         )
 
-        wrangler.pre_process(instrument_indexer=0, default_volume=1)
+        wrangler.pre_process(default_volume=1)
         ticks = wrangler.build_ticks()
 
         # Act
@@ -1111,7 +1111,7 @@ class TestTestValueBarAggregator:
             data=TestDataProvider.ethusdt_trades()[:1000],
         )
 
-        wrangler.pre_process(0)
+        wrangler.pre_process()
         ticks = wrangler.build_ticks()
 
         # Act
@@ -1263,7 +1263,7 @@ class TestBulkTickBarBuilder:
             data_bars_bid={BarAggregation.MINUTE: bid_data},
             data_bars_ask={BarAggregation.MINUTE: ask_data},
         )
-        self.wrangler.pre_process(0)
+        self.wrangler.pre_process()
 
         bar_store = ObjectStorer()
         handler = bar_store.store

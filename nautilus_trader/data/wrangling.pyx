@@ -89,7 +89,6 @@ cdef class QuoteTickDataWrangler:
 
     def pre_process(
         self,
-        int instrument_indexer,
         random_seed=None,
         default_volume=Decimal(1_000_000),
     ):
@@ -98,8 +97,6 @@ cdef class QuoteTickDataWrangler:
 
         Parameters
         ----------
-        instrument_indexer : int
-            The instrument ID indexer for the built ticks.
         random_seed : int, optional
             The random seed for shuffling order of high and low ticks from bar
             data. If random_seed is ``None`` then won't shuffle.
@@ -128,7 +125,6 @@ cdef class QuoteTickDataWrangler:
             size_cols = ["bid_size", "ask_size"]
             self._data_quotes[size_cols] = self._data_quotes[size_cols].applymap(lambda x: f'{x:.{self.instrument.size_precision}f}')
 
-            self.processed_data["instrument_id"] = instrument_indexer
             self.resolution = BarAggregation.TICK
             return
 
@@ -236,7 +232,6 @@ cdef class QuoteTickDataWrangler:
                     df_ticks_final.iloc[i + 2] = high
 
         self.processed_data = df_ticks_final
-        self.processed_data["instrument_id"] = instrument_indexer
 
     def build_ticks(self):
         """
@@ -291,22 +286,15 @@ cdef class TradeTickDataWrangler:
 
         self.processed_data = []
 
-    def pre_process(self, int instrument_indexer):
+    def pre_process(self):
         """
         Pre-process the tick data in preparation for building ticks.
-
-        Parameters
-        ----------
-        instrument_indexer : int
-            The instrument ID indexer for the built ticks.
-
         """
         processed_trades = pd.DataFrame(index=self._data_trades.index)
         processed_trades["price"] = self._data_trades["price"].apply(lambda x: f'{x:.{self.instrument.price_precision}f}')
         processed_trades["quantity"] = self._data_trades["quantity"].apply(lambda x: f'{x:.{self.instrument.size_precision}f}')
         processed_trades["aggressor_side"] = self._create_side_if_not_exist()
         processed_trades["match_id"] = self._data_trades["trade_id"].apply(str)
-        processed_trades["instrument_id"] = instrument_indexer
         self.processed_data = processed_trades
 
     def _create_side_if_not_exist(self):

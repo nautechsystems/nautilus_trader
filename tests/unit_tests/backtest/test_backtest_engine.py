@@ -255,7 +255,7 @@ class TestBacktestEngineData:
             instrument=AUDUSD_SIM,
             data_quotes=TestDataProvider.audusd_ticks(),
         )
-        quote_wrangler.pre_process(0)
+        quote_wrangler.pre_process()
 
         # Act
         engine.add_quote_ticks(data=quote_wrangler.build_ticks())
@@ -274,7 +274,7 @@ class TestBacktestEngineData:
             instrument=ETHUSDT_BINANCE,
             data=TestDataProvider.ethusdt_trades(),
         )
-        trade_wrangler.pre_process(0)
+        trade_wrangler.pre_process()
 
         # Act
         engine.add_trade_ticks(data=trade_wrangler.build_ticks())
@@ -330,7 +330,7 @@ class TestBacktestEngine:
             data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()[:2000]},
             data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()[:2000]},
         )
-        quote_wrangler.pre_process(0)
+        quote_wrangler.pre_process()
 
         # Setup data
         self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
@@ -440,7 +440,7 @@ class TestBacktestWithAddedBars:
             data_bars_bid={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_bid()},
             data_bars_ask={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_ask()},
         )
-        quote_wrangler.pre_process(0)
+        quote_wrangler.pre_process()
 
         self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
