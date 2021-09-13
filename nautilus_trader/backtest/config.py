@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import dataclasses
+import typing
 from typing import List, Optional
 
 import pydantic
@@ -27,20 +28,36 @@ class Partialable:
     The abstract base class for all partialable configurations.
     """
 
+    def fields(self) -> typing.Dict[str, dataclasses.Field]:
+        return {field.name: field for field in dataclasses.fields(self)}
+
     def missing(self):
-        return [x for x in self.__dataclass_fields__ if getattr(self, x) is None]
+        return [x for x in self.fields() if getattr(self, x) is None]
+
+    def optional_fields(self):
+        for field in self.fields().values():
+            if (
+                hasattr(field.type, "__args__")
+                and len(field.type.__args__) == 2
+                and field.type.__args__[-1] is type(None)  # noqa: E721
+            ):
+                # Check if exactly two arguments exists and one of them are None type
+                yield field.name
 
     def is_partial(self):
         return any(self.missing())
 
     def check(self, ignore=None):
-        missing = [m for m in self.missing() if m not in (ignore or {})]
+        optional = tuple(self.optional_fields())
+        missing = [
+            name for name in self.missing() if not (name in (ignore or {}) or name in optional)
+        ]
         if missing:
             raise AssertionError(f"Missing fields: {missing}")
 
     def _check_kwargs(self, kw):
         for k in kw:
-            assert k in self.__dataclass_fields__, f"Unknown kwarg: {k}"
+            assert k in self.fields(), f"Unknown kwarg: {k}"
 
     def update(self, **kwargs):
         """Update attributes on this instance."""
@@ -50,13 +67,11 @@ class Partialable:
 
     def replace(self, **kwargs):
         """Return a new instance with some attributes replaced."""
-        return self.__class__(
-            **{**{k: getattr(self, k) for k in self.__dataclass_fields__}, **kwargs}
-        )
+        return self.__class__(**{**{k: getattr(self, k) for k in self.fields()}, **kwargs})
 
     def __repr__(self):
         dataclass_repr_func = dataclasses._repr_fn(
-            fields=list(self.__dataclass_fields__.values()), globals=self.__dict__
+            fields=list(self.fields().values()), globals=self.__dict__
         )
         r = dataclass_repr_func(self)
         if self.missing():

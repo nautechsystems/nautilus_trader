@@ -41,7 +41,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import process_files
-from nautilus_trader.persistence.external.parsers import CSVReader
+from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests.test_kit import PACKAGE_ROOT
 from tests.test_kit.mocks import data_catalog_setup
@@ -170,8 +170,8 @@ def backtest_configs(backtest_config):
 
 @dataclasses.dataclass(repr=False)
 class Test(Partialable):
-    a: Optional[int] = None
-    b: Optional[int] = None
+    a: int = None
+    b: int = None
     c: Optional[str] = None
 
 
@@ -210,9 +210,16 @@ def test_partialable_check():
     test = Test().replace(a=5)
     with pytest.raises(AssertionError):
         test.check()
-    test = test.replace(b=1)
+    test = test.replace(b=1, c=1)
+    assert test.check() is None
+
+
+def test_partialable_optional_check():
+    test = Test().replace(a=5)
     with pytest.raises(AssertionError):
         test.check()
+    test = test.replace(b=1)
+    assert test.check() is None
 
 
 def test_backtest_config_pickle(backtest_config):

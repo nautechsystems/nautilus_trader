@@ -33,7 +33,7 @@ from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.metadata import _glob_path_to_fs
 from nautilus_trader.persistence.external.metadata import load_processed_raw_files
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
-from nautilus_trader.persistence.external.parsers import Reader
+from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.external.synchronization import named_lock
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table

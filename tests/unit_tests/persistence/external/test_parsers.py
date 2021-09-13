@@ -30,11 +30,11 @@ from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.core import process_raw_file
-from nautilus_trader.persistence.external.parsers import ByteReader
-from nautilus_trader.persistence.external.parsers import CSVReader
-from nautilus_trader.persistence.external.parsers import LinePreprocessor
-from nautilus_trader.persistence.external.parsers import ParquetReader
-from nautilus_trader.persistence.external.parsers import TextReader
+from nautilus_trader.persistence.external.readers import ByteReader
+from nautilus_trader.persistence.external.readers import CSVReader
+from nautilus_trader.persistence.external.readers import LinePreprocessor
+from nautilus_trader.persistence.external.readers import ParquetReader
+from nautilus_trader.persistence.external.readers import TextReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
