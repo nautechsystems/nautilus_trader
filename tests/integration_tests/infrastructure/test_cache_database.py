@@ -24,6 +24,7 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase
@@ -34,7 +35,6 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Venue
@@ -758,7 +758,7 @@ class TestExecutionCacheWithRedisDatabaseTests:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
-            bypass_logging=True,
+            bypass_logging=False,
             run_analysis=False,
             cache_database=CacheDatabaseConfig(),  # default redis
             cache_db_flush=False,
@@ -769,18 +769,13 @@ class TestExecutionCacheWithRedisDatabaseTests:
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_bars_as_ticks(
-            self.usdjpy.id,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-            TestDataProvider.usdjpy_1min_bid(),
+        quote_wrangler = QuoteTickDataWrangler(
+            instrument=self.usdjpy,
+            data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
+            data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
         )
-        self.engine.add_bars_as_ticks(
-            self.usdjpy.id,
-            BarAggregation.MINUTE,
-            PriceType.ASK,
-            TestDataProvider.usdjpy_1min_ask(),
-        )
+        quote_wrangler.pre_process(0)
+        self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
         self.engine.add_venue(
             venue=Venue("SIM"),
@@ -814,6 +809,7 @@ class TestExecutionCacheWithRedisDatabaseTests:
 
         # Reset engine
         self.engine.reset()
+        self.engine.add_instrument(self.usdjpy)
 
         # Act
         self.engine.run()

@@ -109,7 +109,7 @@ cdef class Logger:
         self,
         Clock clock not None,
         TraderId trader_id=None,
-        str host_id=None,
+        str machine_id=None,
         UUID4 instance_id=None,
         LogLevel level_stdout=LogLevel.INFO,
         bint bypass=False,
@@ -123,8 +123,8 @@ cdef class Logger:
             The clock for the logger.
         trader_id : TraderId, optional
             The trader ID for the logger.
-        host_id : str, optional
-            The host ID.
+        machine_id : str, optional
+            The machine ID.
         instance_id : UUID4, optional
             The instance ID.
         level_stdout : LogLevel
@@ -137,15 +137,15 @@ cdef class Logger:
             trader_id = TraderId("TRADER-000")
         if instance_id is None:
             instance_id = UUIDFactory().generate()
-        if host_id is None:
-            host_id = socket.gethostname()
+        if machine_id is None:
+            machine_id = socket.gethostname()
 
         self._clock = clock
         self._log_level_stdout = level_stdout
         self._sinks = []
 
         self.trader_id = trader_id
-        self.host_id = host_id
+        self.machine_id = machine_id
         self.instance_id = instance_id
         self.is_bypassed = bypass
 
@@ -208,7 +208,7 @@ cdef class Logger:
             "level": LogLevelParser.to_str(level),
             "color": color,
             "trader_id": self.trader_id.value,
-            "host_id": self.host_id,
+            "machine_id": self.machine_id,
             "instance_id": self.instance_id.value,
             "component": component,
             "msg": msg,
@@ -284,7 +284,7 @@ cdef class LoggerAdapter:
 
         self._logger = logger
         self.trader_id = logger.trader_id
-        self.host_id = logger.host_id
+        self.machine_id = logger.machine_id
         self.instance_id = logger.instance_id
         self.component = component_name
         self.is_bypassed = logger.is_bypassed
@@ -536,7 +536,7 @@ cpdef void nautilus_header(LoggerAdapter logger) except *:
     logger.info(" IDENTIFIERS")
     logger.info("=================================================================")
     logger.info(f"trader_id: {logger.trader_id.value}")
-    logger.info(f"host_id: {logger.host_id}")
+    logger.info(f"machine_id: {logger.machine_id}")
     logger.info(f"instance_id: {logger.instance_id.value}")
     logger.info("=================================================================")
     logger.info(" VERSIONING")
@@ -575,7 +575,7 @@ cdef class LiveLogger(Logger):
         loop not None,
         LiveClock clock not None,
         TraderId trader_id=None,
-        str host_id=None,
+        str machine_id=None,
         UUID4 instance_id=None,
         LogLevel level_stdout=LogLevel.INFO,
         bint bypass=False,
@@ -592,8 +592,8 @@ cdef class LiveLogger(Logger):
             The clock for the logger.
         trader_id : TraderId, optional
             The trader ID for the logger.
-        host_id : str, optional
-            The systems unique instantiation ID.
+        machine_id : str, optional
+            The machine ID for the logger.
         instance_id : UUID4, optional
             The systems unique instantiation ID.
         level_stdout : LogLevel
@@ -607,7 +607,7 @@ cdef class LiveLogger(Logger):
         super().__init__(
             clock=clock,
             trader_id=trader_id,
-            host_id=host_id,
+            machine_id=machine_id,
             instance_id=instance_id,
             level_stdout=level_stdout,
             bypass=bypass,

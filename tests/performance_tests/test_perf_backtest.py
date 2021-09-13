@@ -24,11 +24,11 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -53,19 +53,15 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             config = BacktestEngineConfig(bypass_logging=True)
             engine = BacktestEngine(config=config)
 
+            # Setup data
             engine.add_instrument(USDJPY_SIM)
-            engine.add_bars_as_ticks(
-                USDJPY_SIM.id,
-                BarAggregation.MINUTE,
-                PriceType.BID,
-                TestDataProvider.usdjpy_1min_bid(),
+            quote_wrangler = QuoteTickDataWrangler(
+                instrument=USDJPY_SIM,
+                data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
+                data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
             )
-            engine.add_bars_as_ticks(
-                USDJPY_SIM.id,
-                BarAggregation.MINUTE,
-                PriceType.ASK,
-                TestDataProvider.usdjpy_1min_ask(),
-            )
+            quote_wrangler.pre_process(0)
+            engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
             engine.add_venue(
                 venue=Venue("SIM"),
@@ -92,19 +88,15 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             config = BacktestEngineConfig(bypass_logging=True)
             engine = BacktestEngine(config=config)
 
+            # Setup data
             engine.add_instrument(USDJPY_SIM)
-            engine.add_bars_as_ticks(
-                USDJPY_SIM.id,
-                BarAggregation.MINUTE,
-                PriceType.BID,
-                TestDataProvider.usdjpy_1min_bid(),
+            quote_wrangler = QuoteTickDataWrangler(
+                instrument=USDJPY_SIM,
+                data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
+                data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
             )
-            engine.add_bars_as_ticks(
-                USDJPY_SIM.id,
-                BarAggregation.MINUTE,
-                PriceType.ASK,
-                TestDataProvider.usdjpy_1min_ask(),
-            )
+            quote_wrangler.pre_process(0)
+            engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
             engine.add_venue(
                 venue=Venue("SIM"),
@@ -140,19 +132,15 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             config = BacktestEngineConfig(bypass_logging=True)
             engine = BacktestEngine(config=config)
 
+            # Setup data
             engine.add_instrument(USDJPY_SIM)
-            engine.add_bars_as_ticks(
-                USDJPY_SIM.id,
-                BarAggregation.MINUTE,
-                PriceType.BID,
-                TestDataProvider.usdjpy_1min_bid(),
+            quote_wrangler = QuoteTickDataWrangler(
+                instrument=USDJPY_SIM,
+                data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
+                data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
             )
-            engine.add_bars_as_ticks(
-                USDJPY_SIM.id,
-                BarAggregation.MINUTE,
-                PriceType.ASK,
-                TestDataProvider.usdjpy_1min_ask(),
-            )
+            quote_wrangler.pre_process(0)
+            engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
             interest_rate_data = pd.read_csv(
                 os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")

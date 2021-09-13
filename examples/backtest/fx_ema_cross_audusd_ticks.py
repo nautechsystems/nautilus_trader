@@ -31,6 +31,7 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OMSType
@@ -57,10 +58,11 @@ if __name__ == "__main__":
 
     # Setup data
     engine.add_instrument(AUDUSD_SIM)
-    engine.add_quote_ticks(
-        instrument_id=AUDUSD_SIM.id,
-        data=TestDataProvider.audusd_ticks(),  # Stub data from the test kit
+    quote_wrangler = QuoteTickDataWrangler(
+        instrument=AUDUSD_SIM, data_quotes=TestDataProvider.audusd_ticks()
     )
+    quote_wrangler.pre_process(0)
+    engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
     # Create a fill model (optional)
     fill_model = FillModel(

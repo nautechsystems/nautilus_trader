@@ -347,6 +347,12 @@ cdef class SimulatedExchange:
 
         self._log.info("Changed fill model.")
 
+    cpdef void initialize_account(self) except *:
+        """
+        Initialize the account to the starting balances.
+        """
+        self._generate_fresh_account_state()
+
     cpdef void adjust_account(self, Money adjustment) except *:
         """
         Adjust the account at the exchange with the given adjustment.

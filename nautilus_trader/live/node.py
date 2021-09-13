@@ -167,7 +167,7 @@ class TradingNode:
 
         # Identifiers
         self.trader_id = TraderId(config.trader_id)
-        self.host_id = socket.gethostname()
+        self.machine_id = socket.gethostname()
         self.instance_id = self._uuid_factory.generate()
 
         # Setup logging
@@ -175,7 +175,7 @@ class TradingNode:
             loop=self._loop,
             clock=self._clock,
             trader_id=self.trader_id,
-            host_id=self.host_id,
+            machine_id=self.machine_id,
             instance_id=self.instance_id,
             level_stdout=LogLevelParser.from_str_py(config.log_level.upper()),
         )
