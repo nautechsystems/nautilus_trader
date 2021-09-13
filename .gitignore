@@ -41,3 +41,4 @@ PERF.JSON
 *dask-worker-space*
 output.json
 .ipynb_checkpoints
+examples/backtest/notebooks/catalog

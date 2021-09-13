@@ -38,7 +38,7 @@ from nautilus_trader.persistence.external.core import process_raw_file
 from nautilus_trader.persistence.external.core import read_and_clear_existing_data
 from nautilus_trader.persistence.external.core import scan_files
 from nautilus_trader.persistence.external.core import split_and_serialize
-from nautilus_trader.persistence.external.core import write_chunk
+from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_parquet
 from nautilus_trader.persistence.external.core import write_tables
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -430,7 +430,7 @@ class TestPersistenceCore:
             TestInstrumentProvider.es_future(),
             TestInstrumentProvider.aapl_option(),
         ]
-        write_chunk(catalog=self.catalog, chunk=instruments)
+        write_objects(catalog=self.catalog, chunk=instruments)
 
         # Act
         instruments = self.catalog.instruments(as_nautilus=True)
@@ -445,7 +445,7 @@ class TestPersistenceCore:
             TestInstrumentProvider.es_future(),
             TestInstrumentProvider.aapl_option(),
         ]
-        write_chunk(catalog=self.catalog, chunk=instruments)
+        write_objects(catalog=self.catalog, chunk=instruments)
 
         # Act
         instrument_ids = [instrument.id.value for instrument in instruments]

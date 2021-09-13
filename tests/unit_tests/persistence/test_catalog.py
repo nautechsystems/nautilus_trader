@@ -32,7 +32,7 @@ from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import split_and_serialize
-from nautilus_trader.persistence.external.core import write_chunk
+from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_tables
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
@@ -80,7 +80,7 @@ class TestPersistenceCatalog:
         # Arrange
         catalog = DataCatalog.from_env()
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
-        write_chunk(catalog=catalog, chunk=[instrument])
+        write_objects(catalog=catalog, chunk=[instrument])
 
         # Act
         instrument = catalog.instruments(instrument_ids=["AUD/USD.SIM"], as_nautilus=True)[0]
@@ -101,7 +101,7 @@ class TestPersistenceCatalog:
             ts_event=0,
             ts_init=0,
         )
-        write_chunk(catalog=catalog, chunk=[instrument, trade_tick])
+        write_objects(catalog=catalog, chunk=[instrument, trade_tick])
 
         # Act
         instrument = catalog.instruments(instrument_ids=["AUD/USD.SIM"], as_nautilus=True)[0]

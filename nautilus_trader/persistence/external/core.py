@@ -349,7 +349,7 @@ def write_parquet(
         write_partition_column_mappings(fs=fs, path=path, mappings=mappings)
 
 
-def write_chunk(catalog: DataCatalog, chunk: List):
+def write_objects(catalog: DataCatalog, chunk: List):
     serialized = split_and_serialize(objs=chunk)
     tables = dicts_to_dataframes(serialized)
     write_tables(catalog=catalog, tables=tables)

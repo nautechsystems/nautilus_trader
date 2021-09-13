@@ -17,7 +17,6 @@ from functools import partial
 from typing import Any, Dict, List, Tuple
 
 import dask
-import pandas as pd
 from dask.base import normalize_token
 from dask.base import tokenize
 from dask.delayed import Delayed
@@ -27,6 +26,8 @@ from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
+from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.backtest.results import BacktestRunResults
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
@@ -96,7 +97,7 @@ class BacktestNode:
             )
         return self._gather_delayed(results)
 
-    def run_sync(self, run_configs: List[BacktestRunConfig]) -> Dict[str, Any]:
+    def run_sync(self, run_configs: List[BacktestRunConfig]) -> BacktestRunResults:
         """
         Run a list of backtest configs synchronously.
 
@@ -111,7 +112,7 @@ class BacktestNode:
             The results of the backtest runs.
 
         """
-        results: List[Tuple[str, Dict[str, Any]]] = []
+        results: List[BacktestResult] = []
         for config in run_configs:
             config.check(ignore=("name",))  # check all values set
             input_data = []
@@ -155,16 +156,17 @@ class BacktestNode:
             strategy_configs=strategy_configs,
         )
 
-    def _run(self, name, venue_configs, input_data, strategy_configs) -> Tuple[str, Dict[str, Any]]:
+    def _run(self, name, venue_configs, input_data, strategy_configs) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
             venue_configs=venue_configs,
             input_data=input_data,
         )
-        results: Dict[str, Any] = self._run_engine(
+        results: BacktestResult = self._run_engine(
+            name=name,
             engine=engine,
             strategy_configs=strategy_configs,
         )
-        return name, results
+        return results
 
     def _create_engine(
         self,
@@ -208,34 +210,29 @@ class BacktestNode:
 
     def _run_engine(
         self,
+        name: str,
         engine: BacktestEngine,
         strategy_configs: List[ImportableStrategyConfig],
-    ) -> Dict[str, Any]:
+    ) -> BacktestResult:
+        """
+        Actual execution of a backtest instance. Creates strategies and runs the engine
+        """
         # Create strategies
         strategies: List[TradingStrategy] = [
             StrategyFactory.create(config) for config in strategy_configs
         ]
 
-        # Run backtest
         engine.run(strategies=strategies)
 
-        # Collect results
-        data = {
-            "account": pd.concat(
-                [
-                    engine.trader.generate_account_report(venue).assign(venue=venue)
-                    for venue in engine.list_venues()
-                ]
-            ),
-            "fills": engine.trader.generate_order_fills_report(),
-            "positions": engine.trader.generate_positions_report(),
-        }
+        result = BacktestResult.from_engine(backtest_id=name, engine=engine)
+
         engine.dispose()
-        return data
+
+        return result
 
     @dask.delayed
     def _gather_delayed(self, *results):
         return self._gather(*results)
 
-    def _gather(self, *results):
-        return {k: v for r in results for k, v in r}
+    def _gather(self, *results) -> BacktestRunResults:
+        return BacktestRunResults(sum(results, list()))
