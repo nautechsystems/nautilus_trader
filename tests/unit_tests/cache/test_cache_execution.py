@@ -21,6 +21,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
+from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
@@ -29,7 +30,6 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -1015,19 +1015,15 @@ class TestExecutionCacheIntegrityCheck:
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
+        # Setup data
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_bars_as_ticks(
-            self.usdjpy.id,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-            TestDataProvider.usdjpy_1min_bid()[:2000],
+        quote_wrangler = QuoteTickDataWrangler(
+            instrument=self.usdjpy,
+            data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()[:2000]},
+            data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()[:2000]},
         )
-        self.engine.add_bars_as_ticks(
-            self.usdjpy.id,
-            BarAggregation.MINUTE,
-            PriceType.ASK,
-            TestDataProvider.usdjpy_1min_ask()[:2000],
-        )
+        quote_wrangler.pre_process()
+        self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
         self.engine.add_venue(
             venue=Venue("SIM"),

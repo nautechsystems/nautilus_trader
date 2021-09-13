@@ -188,9 +188,9 @@ class BacktestNode:
                 engine.add_instrument(instrument)
 
             if d["type"] == QuoteTick:
-                engine.add_quote_ticks_objects(data=d["data"], instrument_id=d["instrument"].id)
+                engine.add_quote_ticks(data=d["data"])
             elif d["type"] == TradeTick:
-                engine.add_trade_tick_objects(data=d["data"], instrument_id=d["instrument"].id)
+                engine.add_trade_ticks(data=d["data"])
             elif d["type"] == OrderBookDelta:
                 engine.add_order_book_data(data=d["data"])
             else:

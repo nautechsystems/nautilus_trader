@@ -12,15 +12,6 @@ Data Client
    :members:
    :member-order: bysource
 
-Data Producer
--------------
-
-.. automodule:: nautilus_trader.backtest.data_producer
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-
 Engine
 ------
 

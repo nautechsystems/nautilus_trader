@@ -22,8 +22,9 @@ import pytest
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.data.wrangling import QuoteTickDataWrangler
+from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.currencies import AUD
-from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
@@ -32,7 +33,6 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
@@ -62,19 +62,15 @@ class TestBacktestAcceptanceTestsUSDJPY:
         self.venue = Venue("SIM")
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
+        # Setup data
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_bars_as_ticks(
-            self.usdjpy.id,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-            TestDataProvider.usdjpy_1min_bid(),
+        quote_wrangler = QuoteTickDataWrangler(
+            instrument=self.usdjpy,
+            data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
+            data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
         )
-        self.engine.add_bars_as_ticks(
-            self.usdjpy.id,
-            BarAggregation.MINUTE,
-            PriceType.ASK,
-            TestDataProvider.usdjpy_1min_ask(),
-        )
+        quote_wrangler.pre_process()
+        self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -110,7 +106,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 2689
-        assert self.engine.iteration == 115043
+        assert self.engine.iteration == 115044
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.26, USD)
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
@@ -129,6 +125,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         # Act
         self.engine.reset()
+        self.engine.add_instrument(self.usdjpy)  # TODO(cs): Having to replace instrument
         self.engine.run()
         result2 = self.engine.analyzer.get_performance_stats_pnls()
 
@@ -167,7 +164,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Assert
         assert strategy1.fast_ema.count == 2689
         assert strategy2.fast_ema.count == 2689
-        assert self.engine.iteration == 115043
+        assert self.engine.iteration == 115044
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.26, USD)
 
 
@@ -183,19 +180,15 @@ class TestBacktestAcceptanceTestsGBPUSD:
         self.venue = Venue("SIM")
         self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
+        # Setup data
         self.engine.add_instrument(self.gbpusd)
-        self.engine.add_bars_as_ticks(
-            self.gbpusd.id,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-            TestDataProvider.gbpusd_1min_bid(),
+        quote_wrangler = QuoteTickDataWrangler(
+            instrument=self.gbpusd,
+            data_bars_bid={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_bid()},
+            data_bars_ask={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_ask()},
         )
-        self.engine.add_bars_as_ticks(
-            self.gbpusd.id,
-            BarAggregation.MINUTE,
-            PriceType.ASK,
-            TestDataProvider.gbpusd_1min_ask(),
-        )
+        quote_wrangler.pre_process()
+        self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -231,7 +224,7 @@ class TestBacktestAcceptanceTestsGBPUSD:
 
         # Assert
         assert strategy.fast_ema.count == 8353
-        assert self.engine.iteration == 120467
+        assert self.engine.iteration == 120468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(931346.81, GBP)
 
 
@@ -247,8 +240,14 @@ class TestBacktestAcceptanceTestsAUDUSD:
         self.venue = Venue("SIM")
         self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
+        # Setup data
         self.engine.add_instrument(self.audusd)
-        self.engine.add_quote_ticks(self.audusd.id, TestDataProvider.audusd_ticks())
+        quote_wrangler = QuoteTickDataWrangler(
+            instrument=self.audusd,
+            data_quotes=TestDataProvider.audusd_ticks(),
+        )
+        quote_wrangler.pre_process()
+        self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -284,7 +283,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
 
         # Assert
         assert strategy.fast_ema.count == 1771
-        assert self.engine.iteration == 99999
+        assert self.engine.iteration == 100000
         assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(987920.04, AUD)
 
     def test_run_ema_cross_with_tick_bar_spec(self):
@@ -302,9 +301,9 @@ class TestBacktestAcceptanceTestsAUDUSD:
         self.engine.run(strategies=[strategy])
 
         # Assert
-        assert strategy.fast_ema.count == 999
-        assert self.engine.iteration == 99999
-        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(993431.86, AUD)
+        assert strategy.fast_ema.count == 1000
+        assert self.engine.iteration == 100000
+        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(994441.60, AUD)
 
 
 class TestBacktestAcceptanceTestsETHUSDT:
@@ -319,8 +318,15 @@ class TestBacktestAcceptanceTestsETHUSDT:
         self.venue = Venue("BINANCE")
         self.ethusdt = TestInstrumentProvider.ethusdt_binance()
 
+        # Setup data
         self.engine.add_instrument(self.ethusdt)
-        self.engine.add_trade_ticks(self.ethusdt.id, TestDataProvider.ethusdt_trades())
+        trade_wrangler = TradeTickDataWrangler(
+            instrument=self.ethusdt,
+            data=TestDataProvider.ethusdt_trades(),
+        )
+        trade_wrangler.pre_process()
+        self.engine.add_trade_ticks(data=trade_wrangler.build_ticks())
+
         self.engine.add_venue(
             venue=self.venue,
             venue_type=VenueType.EXCHANGE,
@@ -355,55 +361,6 @@ class TestBacktestAcceptanceTestsETHUSDT:
         )
 
 
-class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes:
-    def setup(self):
-        # Fixture Setup
-        config = BacktestEngineConfig(
-            bypass_logging=True,
-            run_analysis=False,
-        )
-        self.engine = BacktestEngine(config=config)
-
-        self.venue = Venue("BINANCE")
-        self.btcusdt = TestInstrumentProvider.btcusdt_binance()
-
-        self.engine.add_instrument(self.btcusdt)
-        self.engine.add_trade_ticks(self.btcusdt.id, TestDataProvider.tardis_trades())
-        self.engine.add_quote_ticks(self.btcusdt.id, TestDataProvider.tardis_quotes())
-        self.engine.add_venue(
-            venue=self.venue,
-            venue_type=VenueType.EXCHANGE,
-            oms_type=OMSType.NETTING,
-            account_type=AccountType.MARGIN,
-            base_currency=None,  # Multi-currency account
-            starting_balances=[Money(1_000_000, USDT), Money(10, BTC)],
-        )
-
-    def teardown(self):
-        self.engine.dispose()
-
-    def test_run_ema_cross_with_tick_bar_spec(self):
-        # Arrange
-        config = EMACrossConfig(
-            instrument_id=str(self.btcusdt.id),
-            bar_type="BTC/USDT.BINANCE-250-TICK-LAST-INTERNAL",
-            trade_size=Decimal(1),
-            fast_ema=10,
-            slow_ema=20,
-        )
-        strategy = EMACross(config=config)
-
-        # Act
-        self.engine.run(strategies=[strategy])
-
-        # Assert
-        assert strategy.fast_ema.count == 39
-        assert self.engine.iteration == 19998
-        assert self.engine.portfolio.account(self.venue).balance_total(USDT) == Money(
-            999843.41688000, USDT
-        )
-
-
 class TestBacktestAcceptanceTestsOrderBookImbalance:
     def setup(self):
         # Fixture Setup
@@ -430,7 +387,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             order_book_deltas = [
                 d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
             ]
-            self.engine.add_trade_tick_objects(instrument.id, trade_ticks)
+            self.engine.add_trade_ticks(trade_ticks)
             self.engine.add_order_book_data(order_book_deltas)
             self.instrument = instrument
         self.engine.add_venue(
@@ -457,7 +414,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         self.engine.run(strategies=[strategy])
 
         # Assert
-        assert self.engine.iteration in (8825, 9319)
+        assert self.engine.iteration in (8199, 7812)
 
 
 @pytest.mark.skip(reason="bm to fix")
@@ -487,7 +444,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             order_book_deltas = [
                 d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
             ]
-            self.engine.add_trade_tick_objects(instrument.id, trade_ticks)
+            self.engine.add_trade_ticks(trade_ticks)
             self.engine.add_order_book_data(order_book_deltas)
             self.instrument = instrument
         self.engine.add_venue(

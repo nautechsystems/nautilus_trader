@@ -20,6 +20,7 @@ import pytest
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.c_enums.contingency_type import ContingencyType
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -579,7 +580,7 @@ class TestOrders:
         assert bracket1 == bracket1
         assert bracket1 != bracket2
 
-    def test_initialize_order_list(self):
+    def test_bracket_market_order_list(self):
         # Arrange, Act
         bracket = self.order_factory.bracket_market(
             AUDUSD_SIM.id,
@@ -594,6 +595,9 @@ class TestOrders:
         assert bracket.id == OrderListId("1")
         assert bracket.instrument_id == AUDUSD_SIM.id
         assert len(bracket.orders) == 3
+        assert bracket.orders[0].type == OrderType.MARKET
+        assert bracket.orders[1].type == OrderType.STOP_MARKET
+        assert bracket.orders[2].type == OrderType.LIMIT
         assert bracket.orders[0].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[1].instrument_id == AUDUSD_SIM.id
         assert bracket.orders[2].instrument_id == AUDUSD_SIM.id
@@ -612,6 +616,75 @@ class TestOrders:
         assert bracket.orders[2].time_in_force == TimeInForce.GTC
         assert bracket.orders[1].expire_time is None
         assert bracket.orders[2].expire_time is None
+        assert bracket.orders[0].contingency == ContingencyType.OTO
+        assert bracket.orders[1].contingency == ContingencyType.OCO
+        assert bracket.orders[2].contingency == ContingencyType.OCO
+        assert bracket.orders[0].contingency_ids == [
+            ClientOrderId("O-19700101-000000-000-001-2"),
+            ClientOrderId("O-19700101-000000-000-001-3"),
+        ]
+        assert bracket.orders[1].contingency_ids == [ClientOrderId("O-19700101-000000-000-001-3")]
+        assert bracket.orders[2].contingency_ids == [ClientOrderId("O-19700101-000000-000-001-2")]
+        assert bracket.orders[0].child_order_ids == [
+            ClientOrderId("O-19700101-000000-000-001-2"),
+            ClientOrderId("O-19700101-000000-000-001-3"),
+        ]
+        assert bracket.orders[1].parent_order_id == ClientOrderId("O-19700101-000000-000-001-1")
+        assert bracket.orders[2].parent_order_id == ClientOrderId("O-19700101-000000-000-001-1")
+        assert bracket.ts_init == 0
+
+    def test_bracket_limit_order_list(self):
+        # Arrange, Act
+        bracket = self.order_factory.bracket_limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100000),
+            Price.from_str("1.00000"),
+            Price.from_str("0.99990"),
+            Price.from_str("1.00010"),
+            TimeInForce.GTC,
+        )
+
+        # Assert
+        assert bracket.id == OrderListId("1")
+        assert bracket.instrument_id == AUDUSD_SIM.id
+        assert len(bracket.orders) == 3
+        assert bracket.orders[0].type == OrderType.LIMIT
+        assert bracket.orders[1].type == OrderType.STOP_MARKET
+        assert bracket.orders[2].type == OrderType.LIMIT
+        assert bracket.orders[0].instrument_id == AUDUSD_SIM.id
+        assert bracket.orders[1].instrument_id == AUDUSD_SIM.id
+        assert bracket.orders[2].instrument_id == AUDUSD_SIM.id
+        assert bracket.orders[0].client_order_id == ClientOrderId("O-19700101-000000-000-001-1")
+        assert bracket.orders[1].client_order_id == ClientOrderId("O-19700101-000000-000-001-2")
+        assert bracket.orders[2].client_order_id == ClientOrderId("O-19700101-000000-000-001-3")
+        assert bracket.orders[0].side == OrderSide.BUY
+        assert bracket.orders[1].side == OrderSide.SELL
+        assert bracket.orders[2].side == OrderSide.SELL
+        assert bracket.orders[0].quantity == Quantity.from_int(100000)
+        assert bracket.orders[1].quantity == Quantity.from_int(100000)
+        assert bracket.orders[2].quantity == Quantity.from_int(100000)
+        assert bracket.orders[1].price == Price.from_str("0.99990")
+        assert bracket.orders[2].price == Price.from_str("1.00010")
+        assert bracket.orders[1].time_in_force == TimeInForce.GTC
+        assert bracket.orders[2].time_in_force == TimeInForce.GTC
+        assert bracket.orders[1].expire_time is None
+        assert bracket.orders[2].expire_time is None
+        assert bracket.orders[0].contingency == ContingencyType.OTO
+        assert bracket.orders[1].contingency == ContingencyType.OCO
+        assert bracket.orders[2].contingency == ContingencyType.OCO
+        assert bracket.orders[0].contingency_ids == [
+            ClientOrderId("O-19700101-000000-000-001-2"),
+            ClientOrderId("O-19700101-000000-000-001-3"),
+        ]
+        assert bracket.orders[1].contingency_ids == [ClientOrderId("O-19700101-000000-000-001-3")]
+        assert bracket.orders[2].contingency_ids == [ClientOrderId("O-19700101-000000-000-001-2")]
+        assert bracket.orders[0].child_order_ids == [
+            ClientOrderId("O-19700101-000000-000-001-2"),
+            ClientOrderId("O-19700101-000000-000-001-3"),
+        ]
+        assert bracket.orders[1].parent_order_id == ClientOrderId("O-19700101-000000-000-001-1")
+        assert bracket.orders[2].parent_order_id == ClientOrderId("O-19700101-000000-000-001-1")
         assert bracket.ts_init == 0
 
     def test_order_list_str_and_repr(self):

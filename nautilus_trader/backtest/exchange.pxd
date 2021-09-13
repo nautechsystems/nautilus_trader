@@ -107,6 +107,7 @@ cdef class SimulatedExchange:
 
     cpdef void register_client(self, BacktestExecClient client) except *
     cpdef void set_fill_model(self, FillModel fill_model) except *
+    cpdef void initialize_account(self) except *
     cpdef void adjust_account(self, Money adjustment) except *
     cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_tick(self, Tick tick) except *
