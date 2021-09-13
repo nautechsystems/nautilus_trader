@@ -155,7 +155,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the ``BacktestDataProducer`` class.
+        Initialize a new instance of the ``BacktestMarketDataClient`` class.
 
         Parameters
         ----------

@@ -173,7 +173,7 @@ class TestLoggerTests:
         # Assert
         assert sink[0] == {
             "component": "TEST_LOGGER",
-            "host_id": socket.gethostname(),
+            "machine_id": socket.gethostname(),
             "level": "INF",
             "msg": "A log event",
             "instance_id": f"{logger.instance_id.value}",

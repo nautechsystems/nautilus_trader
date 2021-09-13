@@ -398,7 +398,6 @@ cdef class Account:
             If `balances` is empty.
 
         """
-        Condition.not_none(balances, "balances")
         Condition.not_empty(balances, "balances")
 
         cdef AccountBalance balance

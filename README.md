@@ -40,9 +40,11 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Reliable:** Type safety through Cython. Redis backed performant state persistence.
 - **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker.
 - **Integrated:** Modular adapters mean any REST/FIX/WebSocket API can be integrated.
-- **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data.
+- **Advanced:** Time-in-force options `GTD`, `IOC`, `FOK` etc, advanced order types and triggers, `post-only`, `reduce-only`, `hidden` execution instructions. Contingency order lists including `OCO`, `OTO` etc.
+- **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
+- **Distributed:** Run backtests synchronously or as a graph distributed across a `dask` cluster.
 
 ## Why NautilusTrader?
 
@@ -117,8 +119,8 @@ Refer to the [Installation Guide](https://docs.nautilustrader.io/getting-started
 
 Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity is import we recommend Cython).
 The below are some examples of this:
-- [indicator written in Python](/examples/indicators/ema.py) example.
-- [indicators written in Cython](/nautilus_trader/indicators/) examples.
+- [indicator](/examples/indicators/ema.py) example written in Python.
+- [indicators](/nautilus_trader/indicators/) examples written in Cython.
 - [strategy](/examples/strategies/) examples written in both Python and Cython.
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
 
