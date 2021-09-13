@@ -69,7 +69,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
             data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
             data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
         )
-        quote_wrangler.pre_process(0)
+        quote_wrangler.pre_process()
         self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
         interest_rate_data = pd.read_csv(
@@ -187,7 +187,7 @@ class TestBacktestAcceptanceTestsGBPUSD:
             data_bars_bid={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_bid()},
             data_bars_ask={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_ask()},
         )
-        quote_wrangler.pre_process(0)
+        quote_wrangler.pre_process()
         self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
         interest_rate_data = pd.read_csv(
@@ -246,7 +246,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
             instrument=self.audusd,
             data_quotes=TestDataProvider.audusd_ticks(),
         )
-        quote_wrangler.pre_process(0)
+        quote_wrangler.pre_process()
         self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
 
         interest_rate_data = pd.read_csv(
@@ -324,7 +324,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
             instrument=self.ethusdt,
             data=TestDataProvider.ethusdt_trades(),
         )
-        trade_wrangler.pre_process(0)
+        trade_wrangler.pre_process()
         self.engine.add_trade_ticks(data=trade_wrangler.build_ticks())
 
         self.engine.add_venue(
