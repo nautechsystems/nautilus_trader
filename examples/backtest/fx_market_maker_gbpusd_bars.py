@@ -28,11 +28,11 @@ sys.path.insert(
 
 from examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
-from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BarAggregation

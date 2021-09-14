@@ -19,12 +19,12 @@ from decimal import Decimal
 import pytest
 import redis
 
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
-from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.infrastructure.cache import RedisCacheDatabase

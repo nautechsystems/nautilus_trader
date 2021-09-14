@@ -19,6 +19,8 @@ from decimal import Decimal
 import pytest
 import pytz
 
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
+from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -28,8 +30,6 @@ from nautilus_trader.data.aggregation import TickBarAggregator
 from nautilus_trader.data.aggregation import TimeBarAggregator
 from nautilus_trader.data.aggregation import ValueBarAggregator
 from nautilus_trader.data.aggregation import VolumeBarAggregator
-from nautilus_trader.data.wrangling import QuoteTickDataWrangler
-from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType

@@ -24,8 +24,8 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import make_raw_files

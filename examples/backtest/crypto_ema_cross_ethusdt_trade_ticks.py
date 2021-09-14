@@ -27,10 +27,10 @@ sys.path.insert(
 
 from examples.strategies.ema_cross_simple import EMACross
 from examples.strategies.ema_cross_simple import EMACrossConfig
+from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
-from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType

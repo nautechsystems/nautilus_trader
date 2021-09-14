@@ -19,11 +19,11 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
+from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
-from nautilus_trader.data.wrangling import QuoteTickDataWrangler
-from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
