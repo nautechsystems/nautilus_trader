@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -22,15 +21,9 @@ from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class QuoteTickDataWrangler:
-    cdef object _data_quotes
-    cdef dict _data_bars_ask
-    cdef dict _data_bars_bid
-
     cdef readonly Instrument instrument
-    cdef readonly processed_data
-    cdef readonly BarAggregation resolution
 
-    cpdef QuoteTick _build_tick_from_values(self, str[:] values, double timestamp)
+    cpdef QuoteTick _build_tick_from_values(self, double[:] values, double timestamp)
 
 
 cdef class TradeTickDataWrangler:

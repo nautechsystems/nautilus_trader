@@ -31,7 +31,6 @@ from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
@@ -768,14 +767,13 @@ class TestExecutionCacheWithRedisDatabaseTests:
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
-        self.engine.add_instrument(self.usdjpy)
-        quote_wrangler = QuoteTickDataWrangler(
-            instrument=self.usdjpy,
-            data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
-            data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
+        wrangler = QuoteTickDataWrangler(self.usdjpy)
+        ticks = wrangler.process_bar_data(
+            bid_data=TestDataProvider.usdjpy_1min_bid(),
+            ask_data=TestDataProvider.usdjpy_1min_ask(),
         )
-        quote_wrangler.pre_process()
-        self.engine.add_ticks(data=quote_wrangler.build_ticks())
+        self.engine.add_instrument(self.usdjpy)
+        self.engine.add_ticks(ticks)
 
         self.engine.add_venue(
             venue=Venue("SIM"),

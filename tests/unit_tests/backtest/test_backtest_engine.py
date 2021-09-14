@@ -251,14 +251,11 @@ class TestBacktestEngineData:
 
         # Setup data
         engine.add_instrument(AUDUSD_SIM)
-        quote_wrangler = QuoteTickDataWrangler(
-            instrument=AUDUSD_SIM,
-            data_quotes=TestDataProvider.audusd_ticks(),
-        )
-        quote_wrangler.pre_process()
+        wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
+        ticks = wrangler.process_tick_data(TestDataProvider.audusd_ticks())
 
         # Act
-        engine.add_ticks(data=quote_wrangler.build_ticks())
+        engine.add_ticks(ticks)
 
         # Assert
         log = "".join(capsys.readouterr())
@@ -267,17 +264,13 @@ class TestBacktestEngineData:
     def test_add_trade_ticks_adds_to_engine(self, capsys):
         # Arrange
         engine = BacktestEngine()
-
-        # Setup data
         engine.add_instrument(ETHUSDT_BINANCE)
-        trade_wrangler = TradeTickDataWrangler(
-            instrument=ETHUSDT_BINANCE,
-            data=TestDataProvider.ethusdt_trades(),
-        )
-        trade_wrangler.pre_process()
+
+        wrangler = TradeTickDataWrangler(ETHUSDT_BINANCE)
+        ticks = wrangler.process(TestDataProvider.ethusdt_trades())
 
         # Act
-        engine.add_ticks(data=trade_wrangler.build_ticks())
+        engine.add_ticks(ticks)
 
         # Assert
         log = "".join(capsys.readouterr())
@@ -324,16 +317,13 @@ class TestBacktestEngine:
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
         # Setup data
-        self.engine.add_instrument(self.usdjpy)
-        quote_wrangler = QuoteTickDataWrangler(
-            instrument=self.usdjpy,
-            data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()[:2000]},
-            data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()[:2000]},
+        wrangler = QuoteTickDataWrangler(self.usdjpy)
+        ticks = wrangler.process_bar_data(
+            bid_data=TestDataProvider.usdjpy_1min_bid()[:2000],
+            ask_data=TestDataProvider.usdjpy_1min_ask()[:2000],
         )
-        quote_wrangler.pre_process()
-
-        # Setup data
-        self.engine.add_ticks(data=quote_wrangler.build_ticks())
+        self.engine.add_instrument(USDJPY_SIM)
+        self.engine.add_ticks(ticks)
 
         self.engine.add_venue(
             venue=Venue("SIM"),
@@ -435,14 +425,14 @@ class TestBacktestWithAddedBars:
         self.engine.add_bars(data=bid_bar_wrangler.build_bars_all())
         self.engine.add_bars(data=ask_bar_wrangler.build_bars_all())
 
-        quote_wrangler = QuoteTickDataWrangler(
-            instrument=GBPUSD_SIM,
-            data_bars_bid={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_bid()},
-            data_bars_ask={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_ask()},
+        # Setup data
+        wrangler = QuoteTickDataWrangler(GBPUSD_SIM)
+        ticks = wrangler.process_bar_data(
+            bid_data=TestDataProvider.gbpusd_1min_bid(),
+            ask_data=TestDataProvider.gbpusd_1min_ask(),
         )
-        quote_wrangler.pre_process()
-
-        self.engine.add_ticks(data=quote_wrangler.build_ticks())
+        self.engine.add_instrument(GBPUSD_SIM)
+        self.engine.add_ticks(ticks)
 
         self.engine.add_venue(
             venue=self.venue,

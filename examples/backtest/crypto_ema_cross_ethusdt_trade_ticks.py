@@ -58,13 +58,10 @@ if __name__ == "__main__":
     ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
     # Setup data
+    wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
+    ticks = wrangler.process(TestDataProvider.ethusdt_trades())
     engine.add_instrument(ETHUSDT_BINANCE)
-    trade_wrangler = TradeTickDataWrangler(
-        instrument=ETHUSDT_BINANCE,
-        data=TestDataProvider.ethusdt_trades(),
-    )
-    trade_wrangler.pre_process()
-    engine.add_ticks(data=trade_wrangler.build_ticks())
+    engine.add_ticks(ticks)
 
     # Create a fill model (optional)
     fill_model = FillModel(

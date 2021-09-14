@@ -27,7 +27,6 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
@@ -54,14 +53,13 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             engine = BacktestEngine(config=config)
 
             # Setup data
-            engine.add_instrument(USDJPY_SIM)
-            quote_wrangler = QuoteTickDataWrangler(
-                instrument=USDJPY_SIM,
-                data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
-                data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
+            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+            ticks = wrangler.process_bar_data(
+                bid_data=TestDataProvider.usdjpy_1min_bid(),
+                ask_data=TestDataProvider.usdjpy_1min_ask(),
             )
-            quote_wrangler.pre_process()
-            engine.add_ticks(data=quote_wrangler.build_ticks())
+            engine.add_instrument(USDJPY_SIM)
+            engine.add_ticks(ticks)
 
             engine.add_venue(
                 venue=Venue("SIM"),
@@ -89,14 +87,13 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             engine = BacktestEngine(config=config)
 
             # Setup data
-            engine.add_instrument(USDJPY_SIM)
-            quote_wrangler = QuoteTickDataWrangler(
-                instrument=USDJPY_SIM,
-                data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
-                data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
+            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+            ticks = wrangler.process_bar_data(
+                bid_data=TestDataProvider.usdjpy_1min_bid(),
+                ask_data=TestDataProvider.usdjpy_1min_ask(),
             )
-            quote_wrangler.pre_process()
-            engine.add_ticks(data=quote_wrangler.build_ticks())
+            engine.add_instrument(USDJPY_SIM)
+            engine.add_ticks(ticks)
 
             engine.add_venue(
                 venue=Venue("SIM"),
@@ -133,14 +130,13 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             engine = BacktestEngine(config=config)
 
             # Setup data
-            engine.add_instrument(USDJPY_SIM)
-            quote_wrangler = QuoteTickDataWrangler(
-                instrument=USDJPY_SIM,
-                data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
-                data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
+            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+            ticks = wrangler.process_bar_data(
+                bid_data=TestDataProvider.usdjpy_1min_bid(),
+                ask_data=TestDataProvider.usdjpy_1min_ask(),
             )
-            quote_wrangler.pre_process()
-            engine.add_ticks(data=quote_wrangler.build_ticks())
+            engine.add_instrument(USDJPY_SIM)
+            engine.add_ticks(ticks)
 
             interest_rate_data = pd.read_csv(
                 os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
