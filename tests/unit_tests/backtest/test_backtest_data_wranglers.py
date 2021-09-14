@@ -15,10 +15,10 @@
 
 from pandas import Timestamp
 
+from nautilus_trader.backtest.data.wranglers import BarDataWrangler
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
+from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.data.wrangling import BarDataWrangler
-from nautilus_trader.data.wrangling import QuoteTickDataWrangler
-from nautilus_trader.data.wrangling import TradeTickDataWrangler
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.objects import Price
