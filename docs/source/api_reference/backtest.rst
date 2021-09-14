@@ -33,7 +33,7 @@ Exchange
 Execution
 ---------
 
-.. automodule:: nautilus_trader.backtest.execution
+.. automodule:: nautilus_trader.backtest.execution_client
    :show-inheritance:
    :inherited-members:
    :members:
@@ -42,7 +42,7 @@ Execution
 Loaders
 -------
 
-.. automodule:: nautilus_trader.backtest.loaders
+.. automodule:: nautilus_trader.backtest.data.loaders
    :show-inheritance:
    :inherited-members:
    :members:
@@ -61,6 +61,15 @@ Modules
 -------
 
 .. automodule:: nautilus_trader.backtest.modules
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+
+Wranglers
+---------
+
+.. automodule:: nautilus_trader.data.wranglers
    :show-inheritance:
    :inherited-members:
    :members:
