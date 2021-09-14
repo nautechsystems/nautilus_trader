@@ -42,16 +42,50 @@ class BacktestResult:
             positions=engine.trader.generate_positions_report(),
         )
 
-    def final_balance(self):
-        return self.account_balances
+    def final_balances(self):
+        return self.account_balances.groupby(["venue", "currency"])["total"].last()
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({self.id=}, {self.final_balance()}"
+        def repr_balance():
+            items = [
+                (venue, currency, balance)
+                for (venue, currency), balance in self.final_balances().items()
+            ]
+            return ",".join([f"{v.value}[{c}]={b}" for (v, c, b) in items])
+
+        return f"{self.__class__.__name__}({self.id}, {repr_balance()})"
+
+
+def ensure_plotting(func):
+    """
+    Decorate a function that require a plotting library
+
+    Ensures library is installed and providers a better error about how to install if not found
+    """
+
+    def inner(*args, **kwargs):
+        try:
+            import hvplot.pandas
+
+            assert hvplot.pandas
+        except ImportError:
+            raise ImportError(
+                "Failed to import plotting library - install in notebook via `%pip install hvplot`"
+            )
+        return func(*args, **kwargs)
+
+    return inner
 
 
 @dataclass()
 class BacktestRunResults:
     results: List[BacktestResult]
 
+    def final_balances(self):
+        return pd.concat(r.final_balances().to_frame().assign(id=r.id) for r in self.results)
+
+    @ensure_plotting
     def plot_balances(self):
-        pass
+        df = self.final_balances()
+        df = df.reset_index().set_index("id").astype({"venue": str, "total": float})
+        return df.hvplot.bar(y="total", rot=45, by=["venue", "currency"])

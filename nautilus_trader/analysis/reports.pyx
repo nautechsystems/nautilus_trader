@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import orjson
 import pandas as pd
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -143,11 +144,14 @@ cdef class ReportProvider:
             return pd.DataFrame()
 
         cdef list account_states = [AccountState.to_dict_c(s) for s in states]
+        cdef list balances = [
+            {**balance, **state} for state in account_states for balance in orjson.loads(state.pop('balances', "[]"))
+        ]
 
         if not account_states:
             return pd.DataFrame()
 
-        report = pd.DataFrame(data=account_states).set_index("ts_event").sort_index()
+        report = pd.DataFrame(data=balances).set_index("ts_event").sort_index()
         report.index = [nanos_to_unix_dt(row) for row in report.index]
         del report["ts_init"]
         del report["type"]

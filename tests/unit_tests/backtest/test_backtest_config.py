@@ -33,6 +33,7 @@ from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.config import Partialable
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.backtest.results import BacktestRunResults
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.model.data.tick import QuoteTick
@@ -377,7 +378,7 @@ def test_backtest_run_sync(backtest_configs, catalog):
     result = node.run_sync(backtest_configs)
 
     # Assert
-    assert len(result) == 2
+    assert len(result.results) == 2
 
 
 def test_backtest_build_graph(backtest_configs, catalog):
@@ -386,10 +387,10 @@ def test_backtest_build_graph(backtest_configs, catalog):
     tasks = node.build_graph(backtest_configs)
 
     # Act
-    result = tasks.compute()
+    result: BacktestRunResults = tasks.compute()
 
     # Assert
-    assert len(result) == 2
+    assert len(result.results) == 2
 
 
 def test_backtest_run_distributed(backtest_configs, catalog):
@@ -405,3 +406,19 @@ def test_backtest_run_distributed(backtest_configs, catalog):
 
         # Assert
         assert result
+
+
+def test_backtest_run_results(backtest_configs, catalog):
+    # Arrange
+    node = BacktestNode()
+
+    # Act
+    result = node.run_sync(backtest_configs)
+
+    # Assert
+    assert isinstance(result, BacktestRunResults)
+    assert len(result.results) == 2
+    assert (
+        str(result.results[0])
+        == "BacktestResult(backtest-b1ef309864a73cc9368352274d7534fc, balances=SIM[USD]=1000000.00)"
+    )
