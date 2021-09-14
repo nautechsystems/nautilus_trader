@@ -46,7 +46,7 @@ from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.external.parsers import Reader
+from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.util import clear_singleton_instances
 from nautilus_trader.trading.strategy import TradingStrategy
 

@@ -40,3 +40,5 @@ tests/test_kit/data/catalog/
 PERF.JSON
 *dask-worker-space*
 output.json
+.ipynb_checkpoints
+examples/backtest/notebooks/catalog
