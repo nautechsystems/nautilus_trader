@@ -35,7 +35,6 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
@@ -59,14 +58,13 @@ if __name__ == "__main__":
     GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
 
     # Setup data
-    engine.add_instrument(GBPUSD_SIM)
-    quote_wrangler = QuoteTickDataWrangler(
-        instrument=GBPUSD_SIM,
-        data_bars_bid={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_bid()},
-        data_bars_ask={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_ask()},
+    wrangler = QuoteTickDataWrangler(GBPUSD_SIM)
+    ticks = wrangler.process_bar_data(
+        bid_data=TestDataProvider.gbpusd_1min_bid(),
+        ask_data=TestDataProvider.gbpusd_1min_ask(),
     )
-    quote_wrangler.pre_process()
-    engine.add_ticks(instrument_id=GBPUSD_SIM.id, data=quote_wrangler.build_ticks())
+    engine.add_instrument(GBPUSD_SIM)
+    engine.add_ticks(ticks)
 
     # Create a fill model (optional)
     fill_model = FillModel(

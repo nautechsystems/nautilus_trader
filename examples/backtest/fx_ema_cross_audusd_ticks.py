@@ -57,12 +57,10 @@ if __name__ == "__main__":
     AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
 
     # Setup data
+    wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
+    ticks = wrangler.process_tick_data(TestDataProvider.audusd_ticks())
     engine.add_instrument(AUDUSD_SIM)
-    quote_wrangler = QuoteTickDataWrangler(
-        instrument=AUDUSD_SIM, data_quotes=TestDataProvider.audusd_ticks()
-    )
-    quote_wrangler.pre_process()
-    engine.add_ticks(data=quote_wrangler.build_ticks())
+    engine.add_ticks(ticks)
 
     # Create a fill model (optional)
     fill_model = FillModel(

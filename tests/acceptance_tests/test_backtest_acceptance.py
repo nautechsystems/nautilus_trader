@@ -30,7 +30,6 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookLevel
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
@@ -63,14 +62,13 @@ class TestBacktestAcceptanceTestsUSDJPY:
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
         # Setup data
-        self.engine.add_instrument(self.usdjpy)
-        quote_wrangler = QuoteTickDataWrangler(
-            instrument=self.usdjpy,
-            data_bars_bid={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_bid()},
-            data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
+        wrangler = QuoteTickDataWrangler(instrument=self.usdjpy)
+        ticks = wrangler.process_bar_data(
+            bid_data=TestDataProvider.usdjpy_1min_bid(),
+            ask_data=TestDataProvider.usdjpy_1min_ask(),
         )
-        quote_wrangler.pre_process()
-        self.engine.add_ticks(data=quote_wrangler.build_ticks())
+        self.engine.add_instrument(self.usdjpy)
+        self.engine.add_ticks(ticks)
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -181,14 +179,13 @@ class TestBacktestAcceptanceTestsGBPUSD:
         self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
         # Setup data
-        self.engine.add_instrument(self.gbpusd)
-        quote_wrangler = QuoteTickDataWrangler(
-            instrument=self.gbpusd,
-            data_bars_bid={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_bid()},
-            data_bars_ask={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_ask()},
+        wrangler = QuoteTickDataWrangler(self.gbpusd)
+        ticks = wrangler.process_bar_data(
+            bid_data=TestDataProvider.gbpusd_1min_bid(),
+            ask_data=TestDataProvider.gbpusd_1min_ask(),
         )
-        quote_wrangler.pre_process()
-        self.engine.add_ticks(data=quote_wrangler.build_ticks())
+        self.engine.add_instrument(self.gbpusd)
+        self.engine.add_ticks(ticks)
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -241,13 +238,10 @@ class TestBacktestAcceptanceTestsAUDUSD:
         self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
         # Setup data
+        wrangler = QuoteTickDataWrangler(self.audusd)
+        ticks = wrangler.process_tick_data(TestDataProvider.audusd_ticks())
         self.engine.add_instrument(self.audusd)
-        quote_wrangler = QuoteTickDataWrangler(
-            instrument=self.audusd,
-            data_quotes=TestDataProvider.audusd_ticks(),
-        )
-        quote_wrangler.pre_process()
-        self.engine.add_ticks(data=quote_wrangler.build_ticks())
+        self.engine.add_ticks(ticks)
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -319,13 +313,10 @@ class TestBacktestAcceptanceTestsETHUSDT:
         self.ethusdt = TestInstrumentProvider.ethusdt_binance()
 
         # Setup data
+        wrangler = TradeTickDataWrangler(instrument=self.ethusdt)
+        ticks = wrangler.process(TestDataProvider.ethusdt_trades())
         self.engine.add_instrument(self.ethusdt)
-        trade_wrangler = TradeTickDataWrangler(
-            instrument=self.ethusdt,
-            data=TestDataProvider.ethusdt_trades(),
-        )
-        trade_wrangler.pre_process()
-        self.engine.add_ticks(data=trade_wrangler.build_ticks())
+        self.engine.add_ticks(ticks)
 
         self.engine.add_venue(
             venue=self.venue,
@@ -380,13 +371,13 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
 
         for instrument in instruments[:1]:
-            self.engine.add_instrument(instrument)
             trade_ticks = [
                 d for d in data if isinstance(d, TradeTick) and d.instrument_id == instrument.id
             ]
             order_book_deltas = [
                 d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
             ]
+            self.engine.add_instrument(instrument)
             self.engine.add_ticks(trade_ticks)
             self.engine.add_order_book_data(order_book_deltas)
             self.instrument = instrument
@@ -437,13 +428,13 @@ class TestBacktestAcceptanceTestsMarketMaking:
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
 
         for instrument in instruments[:1]:
-            self.engine.add_instrument(instrument)
             trade_ticks = [
                 d for d in data if isinstance(d, TradeTick) and d.instrument_id == instrument.id
             ]
             order_book_deltas = [
                 d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
             ]
+            self.engine.add_instrument(instrument)
             self.engine.add_ticks(trade_ticks)
             self.engine.add_order_book_data(order_book_deltas)
             self.instrument = instrument

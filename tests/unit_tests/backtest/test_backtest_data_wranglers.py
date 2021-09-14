@@ -13,14 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from pandas import Timestamp
+import pytest
 
 from nautilus_trader.backtest.data.wranglers import BarDataWrangler
 from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.test_kit.providers import TestDataProvider
@@ -43,101 +42,50 @@ class TestQuoteTickDataWrangler:
         # Assert
         assert len(ticks) == 1000
 
-    def test_pre_process_with_tick_data(self):
+    def test_process_tick_data(self):
         # Arrange
-        tick_data = TestDataProvider.usdjpy_ticks()
-        self.tick_builder = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy("USD/JPY"),
-            data_quotes=tick_data,
-            data_bars_bid=None,
-            data_bars_ask=None,
-        )
+        usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+
+        wrangler = QuoteTickDataWrangler(instrument=usdjpy)
 
         # Act
-        self.tick_builder.pre_process(42)
-        ticks = self.tick_builder.processed_data
+        ticks = wrangler.process_tick_data(
+            data=TestDataProvider.usdjpy_ticks(),
+            default_volume=1000000,
+        )
 
         # Assert
-        assert self.tick_builder.resolution == BarAggregation.TICK
         assert len(ticks) == 1000
-        assert ticks.iloc[1].name == Timestamp("2013-01-01 22:02:35.907000", tz="UTC")
+        assert ticks[0].instrument_id == usdjpy.id
+        assert ticks[0].bid == Price.from_str("86.655")
+        assert ticks[0].ask == Price.from_str("86.728")
+        assert ticks[0].bid_size == Quantity.from_int(1000000)
+        assert ticks[0].ask_size == Quantity.from_int(1000000)
+        assert ticks[0].ts_event == 1357077600295000064
 
     def test_pre_process_with_bar_data(self):
         # Arrange
+        usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         bid_data = TestDataProvider.usdjpy_1min_bid()[:100]
         ask_data = TestDataProvider.usdjpy_1min_ask()[:100]
-        self.tick_builder = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy("USD/JPY"),
-            data_quotes=None,
-            data_bars_bid={BarAggregation.MINUTE: bid_data},
-            data_bars_ask={BarAggregation.MINUTE: ask_data},
-        )
+
+        wrangler = QuoteTickDataWrangler(instrument=usdjpy)
 
         # Act
-        self.tick_builder.pre_process(42)
-        tick_data = self.tick_builder.processed_data
-
-        # Assert
-        assert self.tick_builder.resolution == BarAggregation.MINUTE
-        assert len(tick_data) == 400
-        assert tick_data.iloc[0].name == Timestamp("2013-01-31 23:59:59.700000+0000", tz="UTC")
-        assert tick_data.iloc[1].name == Timestamp("2013-01-31 23:59:59.800000+0000", tz="UTC")
-        assert tick_data.iloc[2].name == Timestamp("2013-01-31 23:59:59.900000+0000", tz="UTC")
-        assert tick_data.iloc[3].name == Timestamp("2013-02-01 00:00:00+0000", tz="UTC")
-        assert tick_data.iloc[0]["bid_size"] == "1000000"
-        assert tick_data.iloc[0]["ask_size"] == "1000000"
-        assert tick_data.iloc[1]["bid_size"] == "1000000"
-        assert tick_data.iloc[1]["ask_size"] == "1000000"
-        assert tick_data.iloc[2]["bid_size"] == "1000000"
-        assert tick_data.iloc[2]["ask_size"] == "1000000"
-        assert tick_data.iloc[3]["bid_size"] == "1000000"
-        assert tick_data.iloc[3]["ask_size"] == "1000000"
-
-    def test_build_ticks_with_tick_data(self):
-        # Arrange
-        tick_data = TestDataProvider.audusd_ticks()[:100]
-        self.tick_builder = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy("AUD/USD"),
-            data_quotes=tick_data,
-            data_bars_bid=None,
-            data_bars_ask=None,
+        ticks = wrangler.process_bar_data(
+            bid_data=bid_data,
+            ask_data=ask_data,
+            default_volume=1000000,
         )
-
-        # Act
-        self.tick_builder.pre_process()
-        ticks = self.tick_builder.build_ticks()
-
-        # Assert
-        assert len(ticks) == 100
-        assert ticks[0].bid == Price.from_str("0.67067")
-        assert ticks[0].ask == Price.from_str("0.67070")
-        assert ticks[0].bid_size == Quantity.from_str("1000000")
-        assert ticks[0].ask_size == Quantity.from_str("1000000")
-        assert ticks[0].ts_init == 1580398089820000000
-        assert ticks[99].ts_init == 1580398145130000128
-
-    def test_build_ticks_with_bar_data(self):
-        # Arrange
-        bid_data = TestDataProvider.usdjpy_1min_bid()[:100]
-        ask_data = TestDataProvider.usdjpy_1min_ask()[:100]
-        self.tick_builder = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy("USD/JPY"),
-            data_quotes=None,
-            data_bars_bid={BarAggregation.MINUTE: bid_data},
-            data_bars_ask={BarAggregation.MINUTE: ask_data},
-        )
-
-        # Act
-        self.tick_builder.pre_process()
-        ticks = self.tick_builder.build_ticks()
 
         # Assert
         assert len(ticks) == 400
+        assert ticks[0].instrument_id == usdjpy.id
         assert ticks[0].bid == Price.from_str("91.715")
         assert ticks[0].ask == Price.from_str("91.717")
-        assert ticks[0].bid_size == Quantity.from_str("1000000")
-        assert ticks[0].ask_size == Quantity.from_str("1000000")
-        assert ticks[0].ts_init == 1359676799700000000
+        assert ticks[0].bid_size == Quantity.from_int(1000000)
+        assert ticks[0].ask_size == Quantity.from_int(1000000)
+        assert ticks[0].ts_event == 1359676799700000000
 
 
 class TestTradeTickDataWrangler:
@@ -154,31 +102,11 @@ class TestTradeTickDataWrangler:
 
     def test_process(self):
         # Arrange
-        tick_data = TestDataProvider.ethusdt_trades()[:100]
-        self.tick_builder = TradeTickDataWrangler(
-            instrument=TestInstrumentProvider.default_fx_ccy("USD/JPY"),
-            data=tick_data,
-        )
+        ethusdt = TestInstrumentProvider.ethusdt_binance()
+        wrangler = TradeTickDataWrangler(instrument=ethusdt)
 
         # Act
-        self.tick_builder.pre_process()
-        ticks = self.tick_builder.processed_data
-
-        # Assert
-        assert len(ticks) == 100
-        assert ticks.iloc[0].name == Timestamp("2020-08-14 10:00:00.223000+0000", tz="UTC")
-
-    def test_build_ticks(self):
-        # Arrange
-        tick_data = TestDataProvider.ethusdt_trades()[:100]
-        self.tick_builder = TradeTickDataWrangler(
-            instrument=TestInstrumentProvider.ethusdt_binance(),
-            data=tick_data,
-        )
-
-        # Act
-        self.tick_builder.pre_process()
-        ticks = self.tick_builder.build_ticks()
+        ticks = wrangler.process(TestDataProvider.ethusdt_trades()[:100])
 
         # Assert
         assert len(ticks) == 100
@@ -237,6 +165,7 @@ class TestBarDataWrangler:
         assert len(bars) == 500
 
 
+@pytest.mark.skip(reason="WIP")
 class TestTardisQuoteDataWrangler:
     def setup(self):
         # Fixture Setup
@@ -251,26 +180,19 @@ class TestTardisQuoteDataWrangler:
 
     def test_pre_process_with_tick_data(self):
         # Arrange
-        tick_data = TestDataProvider.tardis_quotes()
-        self.tick_builder = QuoteTickDataWrangler(
-            instrument=TestInstrumentProvider.btcusdt_binance(),
-            data_quotes=tick_data,
-            data_bars_bid=None,
-            data_bars_ask=None,
-        )
+        instrument = TestInstrumentProvider.btcusdt_binance()
+        wrangler = QuoteTickDataWrangler(instrument=instrument)
 
         # Act
-        self.tick_builder.pre_process()
-        ticks = self.tick_builder.processed_data
+        ticks = wrangler.process_tick_data(TestDataProvider.tardis_quotes())
 
         # Assert
-        assert self.tick_builder.resolution == BarAggregation.TICK
         assert len(ticks) == 9999
-        assert ticks.iloc[1].name == Timestamp("2020-02-22 00:00:03.522418+0000", tz="UTC")
-        assert ticks.bid_size[0] == "0.670000"
-        assert ticks.ask_size[0] == "0.840000"
-        assert ticks.bid[0] == "9681.92"
-        assert ticks.ask[0] == "9682.00"
+        assert ticks[0].ts_event == 0
+        assert ticks[0].bid_size == "0.670000"
+        assert ticks[0].ask_size == "0.840000"
+        assert ticks[0].bid == "9681.92"
+        assert ticks[0].ask == "9682.00"
         assert sorted(ticks.columns) == sorted(["ask", "ask_size", "bid", "bid_size", "symbol"])
 
 
@@ -288,31 +210,11 @@ class TestTardisTradeDataWrangler:
 
     def test_process(self):
         # Arrange
-        tick_data = TestDataProvider.tardis_trades()
-        self.tick_builder = TradeTickDataWrangler(
-            instrument=TestInstrumentProvider.btcusdt_binance(),
-            data=tick_data,
-        )
+        instrument = TestInstrumentProvider.btcusdt_binance()
+        wrangler = TradeTickDataWrangler(instrument=instrument)
 
         # Act
-        self.tick_builder.pre_process()
-        ticks = self.tick_builder.processed_data
-
-        # Assert
-        assert len(ticks) == 9999
-        assert ticks.iloc[0].name == Timestamp("2020-02-22 00:00:02.418379+0000", tz="UTC")
-
-    def test_build_ticks(self):
-        # Arrange
-        tick_data = TestDataProvider.tardis_trades()
-        self.tick_builder = TradeTickDataWrangler(
-            instrument=TestInstrumentProvider.btcusdt_binance(),
-            data=tick_data,
-        )
-
-        # Act
-        self.tick_builder.pre_process()
-        ticks = self.tick_builder.build_ticks()
+        ticks = wrangler.process(TestDataProvider.tardis_trades())
 
         # Assert
         assert len(ticks) == 9999

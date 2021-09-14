@@ -164,12 +164,10 @@ class TestPersistenceParsers:
             if data is None:
                 return
             data.loc[:, "timestamp"] = pd.to_datetime(data["timestamp"])
-            wrangler = QuoteTickDataWrangler(
-                instrument=TestInstrumentProvider.default_fx_ccy("AUD/USD"),
-                data_quotes=data.set_index("timestamp"),
-            )
-            wrangler.pre_process()
-            yield from wrangler.build_ticks()
+            instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+            wrangler = QuoteTickDataWrangler(instrument)
+            ticks = wrangler.process_tick_data(data.set_index("timestamp"))
+            yield from ticks
 
         reader = CSVReader(block_parser=parser, as_dataframe=True)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/truefx-audusd-ticks.csv")[0]
@@ -200,12 +198,10 @@ class TestPersistenceParsers:
                 return
             data.loc[:, "timestamp"] = pd.to_datetime(data["timestamp"])
             data = data.set_index("timestamp")[["bid", "ask", "bid_size", "ask_size"]]
-            wrangler = QuoteTickDataWrangler(
-                instrument=TestInstrumentProvider.default_fx_ccy("AUD/USD"),
-                data_quotes=data,
-            )
-            wrangler.pre_process()
-            yield from wrangler.build_ticks()
+            instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+            wrangler = QuoteTickDataWrangler(instrument)
+            ticks = wrangler.process_tick_data(data)
+            yield from ticks
 
         reader = ParquetReader(parser=parser)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/binance-btcusdt-quotes.parquet")[0]

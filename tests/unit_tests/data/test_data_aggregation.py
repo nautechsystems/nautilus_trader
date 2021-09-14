@@ -437,13 +437,9 @@ class TestTickBarAggregator:
             Logger(TestClock()),
         )
 
-        wrangler = QuoteTickDataWrangler(
-            instrument=instrument,
-            data_quotes=TestDataProvider.audusd_ticks()[:1000],
-        )
-
-        wrangler.pre_process()
-        ticks = wrangler.build_ticks()
+        # Setup data
+        wrangler = QuoteTickDataWrangler(instrument)
+        ticks = wrangler.process_tick_data(TestDataProvider.audusd_ticks()[:1000])
 
         # Act
         for tick in ticks:
@@ -472,13 +468,8 @@ class TestTickBarAggregator:
             Logger(TestClock()),
         )
 
-        wrangler = TradeTickDataWrangler(
-            instrument=instrument,
-            data=TestDataProvider.ethusdt_trades()[:10000],
-        )
-
-        wrangler.pre_process()
-        ticks = wrangler.build_ticks()
+        wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
+        ticks = wrangler.process(TestDataProvider.ethusdt_trades()[:10000])
 
         # Act
         for tick in ticks:
@@ -817,13 +808,12 @@ class TestVolumeBarAggregator:
             Logger(TestClock()),
         )
 
-        wrangler = QuoteTickDataWrangler(
-            instrument=instrument,
-            data_quotes=TestDataProvider.audusd_ticks()[:10000],
+        # Setup data
+        wrangler = QuoteTickDataWrangler(instrument)
+        ticks = wrangler.process_tick_data(
+            data=TestDataProvider.audusd_ticks()[:10000],
+            default_volume=1,
         )
-
-        wrangler.pre_process(default_volume=1)
-        ticks = wrangler.build_ticks()
 
         # Act
         for tick in ticks:
@@ -852,13 +842,8 @@ class TestVolumeBarAggregator:
             Logger(TestClock()),
         )
 
-        wrangler = TradeTickDataWrangler(
-            instrument=instrument,
-            data=TestDataProvider.ethusdt_trades()[:10000],
-        )
-
-        wrangler.pre_process()
-        ticks = wrangler.build_ticks()
+        wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
+        ticks = wrangler.process(TestDataProvider.ethusdt_trades()[:10000])
 
         # Act
         for tick in ticks:
@@ -1072,13 +1057,12 @@ class TestTestValueBarAggregator:
             Logger(TestClock()),
         )
 
-        wrangler = QuoteTickDataWrangler(
-            instrument=AUDUSD_SIM,
-            data_quotes=TestDataProvider.audusd_ticks()[:10000],
+        # Setup data
+        wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
+        ticks = wrangler.process_tick_data(
+            data=TestDataProvider.audusd_ticks()[:10000],
+            default_volume=1,
         )
-
-        wrangler.pre_process(default_volume=1)
-        ticks = wrangler.build_ticks()
 
         # Act
         for tick in ticks:
@@ -1106,13 +1090,8 @@ class TestTestValueBarAggregator:
             Logger(TestClock()),
         )
 
-        wrangler = TradeTickDataWrangler(
-            instrument=ETHUSDT_BINANCE,
-            data=TestDataProvider.ethusdt_trades()[:1000],
-        )
-
-        wrangler.pre_process()
-        ticks = wrangler.build_ticks()
+        wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
+        ticks = wrangler.process(TestDataProvider.ethusdt_trades()[:1000])
 
         # Act
         for tick in ticks:
@@ -1253,17 +1232,9 @@ class TestTimeBarAggregator:
 class TestBulkTickBarBuilder:
     def test_given_list_of_ticks_aggregates_tick_bars(self):
         # Arrange
-        tick_data = TestDataProvider.usdjpy_ticks()
-        bid_data = TestDataProvider.usdjpy_1min_bid()
-        ask_data = TestDataProvider.usdjpy_1min_ask()
         instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY")
-        self.wrangler = QuoteTickDataWrangler(
-            instrument=instrument,
-            data_quotes=tick_data,
-            data_bars_bid={BarAggregation.MINUTE: bid_data},
-            data_bars_ask={BarAggregation.MINUTE: ask_data},
-        )
-        self.wrangler.pre_process()
+        wrangler = QuoteTickDataWrangler(instrument)
+        ticks = wrangler.process_tick_data(TestDataProvider.usdjpy_ticks())
 
         bar_store = ObjectStorer()
         handler = bar_store.store
@@ -1274,7 +1245,6 @@ class TestBulkTickBarBuilder:
         clock = TestClock()
         logger = Logger(clock)
 
-        ticks = self.wrangler.build_ticks()
         builder = BulkTickBarBuilder(instrument, bar_type, logger, handler)
 
         # Act
