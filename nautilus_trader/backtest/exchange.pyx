@@ -20,7 +20,7 @@ from libc.limits cimport INT_MIN
 from libc.stdint cimport int64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.backtest.execution cimport BacktestExecClient
+from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
