@@ -258,11 +258,11 @@ class TestBacktestEngineData:
         quote_wrangler.pre_process()
 
         # Act
-        engine.add_quote_ticks(data=quote_wrangler.build_ticks())
+        engine.add_ticks(data=quote_wrangler.build_ticks())
 
         # Assert
         log = "".join(capsys.readouterr())
-        assert "Added 100,000 AUD/USD.SIM QuoteTick data elements." in log
+        assert "Added 100,000 AUD/USD.SIM QuoteTick elements." in log
 
     def test_add_trade_ticks_adds_to_engine(self, capsys):
         # Arrange
@@ -277,11 +277,11 @@ class TestBacktestEngineData:
         trade_wrangler.pre_process()
 
         # Act
-        engine.add_trade_ticks(data=trade_wrangler.build_ticks())
+        engine.add_ticks(data=trade_wrangler.build_ticks())
 
         # Assert
         log = "".join(capsys.readouterr())
-        assert "Added 69,806 ETH/USDT.BINANCE TradeTick data elements." in log
+        assert "Added 69,806 ETH/USDT.BINANCE TradeTick elements." in log
 
     def test_add_bars_adds_to_engine(self, capsys):
         # Arrange
@@ -313,7 +313,7 @@ class TestBacktestEngineData:
         # Assert
         log = "".join(capsys.readouterr())
         assert "Added USD/JPY.SIM Instrument." in log
-        assert "Added 2,000 USD/JPY.SIM-1-MINUTE-BID-EXTERNAL bar elements." in log
+        assert "Added 2,000 USD/JPY.SIM-1-MINUTE-BID-EXTERNAL Bar elements." in log
 
 
 class TestBacktestEngine:
@@ -333,7 +333,7 @@ class TestBacktestEngine:
         quote_wrangler.pre_process()
 
         # Setup data
-        self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
+        self.engine.add_ticks(data=quote_wrangler.build_ticks())
 
         self.engine.add_venue(
             venue=Venue("SIM"),
@@ -442,7 +442,7 @@ class TestBacktestWithAddedBars:
         )
         quote_wrangler.pre_process()
 
-        self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
+        self.engine.add_ticks(data=quote_wrangler.build_ticks())
 
         self.engine.add_venue(
             venue=self.venue,

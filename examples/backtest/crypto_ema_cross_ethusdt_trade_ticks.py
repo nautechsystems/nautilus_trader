@@ -64,7 +64,7 @@ if __name__ == "__main__":
         data=TestDataProvider.ethusdt_trades(),
     )
     trade_wrangler.pre_process()
-    engine.add_trade_ticks(data=trade_wrangler.build_ticks())
+    engine.add_ticks(data=trade_wrangler.build_ticks())
 
     # Create a fill model (optional)
     fill_model = FillModel(

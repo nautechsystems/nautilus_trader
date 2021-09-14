@@ -62,7 +62,7 @@ if __name__ == "__main__":
         instrument=AUDUSD_SIM, data_quotes=TestDataProvider.audusd_ticks()
     )
     quote_wrangler.pre_process()
-    engine.add_quote_ticks(data=quote_wrangler.build_ticks())
+    engine.add_ticks(data=quote_wrangler.build_ticks())
 
     # Create a fill model (optional)
     fill_model = FillModel(

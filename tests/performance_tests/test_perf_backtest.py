@@ -61,7 +61,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
             )
             quote_wrangler.pre_process()
-            engine.add_quote_ticks(data=quote_wrangler.build_ticks())
+            engine.add_ticks(data=quote_wrangler.build_ticks())
 
             engine.add_venue(
                 venue=Venue("SIM"),
@@ -96,7 +96,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
             )
             quote_wrangler.pre_process()
-            engine.add_quote_ticks(data=quote_wrangler.build_ticks())
+            engine.add_ticks(data=quote_wrangler.build_ticks())
 
             engine.add_venue(
                 venue=Venue("SIM"),
@@ -140,7 +140,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
                 data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
             )
             quote_wrangler.pre_process()
-            engine.add_quote_ticks(data=quote_wrangler.build_ticks())
+            engine.add_ticks(data=quote_wrangler.build_ticks())
 
             interest_rate_data = pd.read_csv(
                 os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")

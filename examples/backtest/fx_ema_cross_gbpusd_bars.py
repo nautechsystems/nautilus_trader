@@ -70,7 +70,7 @@ if __name__ == "__main__":
         data_bars_ask={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_ask()},
     )
     quote_wrangler.pre_process()
-    engine.add_quote_ticks(data=quote_wrangler.build_ticks())
+    engine.add_ticks(data=quote_wrangler.build_ticks())
 
     # Create a fill model (optional)
     fill_model = FillModel(
