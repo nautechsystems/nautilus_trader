@@ -54,14 +54,10 @@ from nautilus_trader.model.c_enums.book_level cimport BookLevel
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport GenericData
-from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport Tick
-from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -135,7 +131,7 @@ cdef class BacktestEngine:
         Raises
         ------
         TypeError
-            If config is not of type `BacktestEngineConfig`.
+            If `config` is not of type `BacktestEngineConfig`.
 
         """
         if config is None:
@@ -273,7 +269,9 @@ cdef class BacktestEngine:
         self.iteration = 0
 
         self.time_to_initialize = self._clock.delta(self.created_time)
-        self._log.info(f"Initialized in {int(self.time_to_initialize.total_seconds() * 1000)}ms.")
+        self._log.info(
+            f"Initialized in {int(self.time_to_initialize.total_seconds() * 1000)}ms.",
+        )
 
     def list_venues(self):
         """
@@ -311,7 +309,7 @@ cdef class BacktestEngine:
         Raises
         ------
         ValueError
-            If data is empty.
+            If `data` is empty.
 
         """
         Condition.not_none(client_id, "client_id")
@@ -359,91 +357,63 @@ cdef class BacktestEngine:
         Raises
         ------
         ValueError
-            If data is empty.
+            If `data` is empty.
         ValueError
-            If instrument_id is not found in the cache.
+            If `instrument_id` is not found in the cache.
 
         """
         Condition.not_empty(data, "data")
         Condition.list_type(data, OrderBookData, "data")
-        cdef InstrumentId instrument_id = data[0].instrument_id
+        cdef OrderBookData first = data[0]
         Condition.true(
-            data[0].instrument_id in self._cache.instrument_ids(),
+            first.instrument_id in self._cache.instrument_ids(),
             "Instrument for given data not found in the cache. "
             "Please call `add_instrument()` before adding related data.",
         )
 
         # Check client has been registered
-        self._add_market_data_client_if_not_exists(instrument_id.venue)
+        self._add_market_data_client_if_not_exists(first.instrument_id.venue)
 
         # Add data
         self._data = sorted(self._data + data, key=lambda x: x.ts_init)
 
-        self._log.info(f"Added {len(data):,} {instrument_id} OrderBookData elements.")
+        self._log.info(
+            f"Added {len(data):,} {first.instrument_id} OrderBookData elements.",
+        )
 
-    def add_quote_ticks(self, list data) -> None:
+    def add_ticks(self, list data) -> None:
         """
-        Add the built quote tick data to the backtest engine.
+        Add the tick data to the backtest engine.
 
         Parameters
         ----------
-        data : list[QuoteTick]
-            The quote tick data to add.
+        data : list[Tick]
+            The tick data to add.
 
         Raises
         ------
         ValueError
-            If data is empty.
+            If `data` is empty.
 
         """
         Condition.not_empty(data, "data")
-        Condition.list_type(data, QuoteTick, "data")
-        cdef InstrumentId instrument_id = data[0].instrument_id
+        Condition.list_type(data, Tick, "data")
+        cdef Tick first = data[0]
         Condition.true(
-            data[0].instrument_id in self._cache.instrument_ids(),
+            first.instrument_id in self._cache.instrument_ids(),
             "Instrument for given data not found in the cache. "
             "Please call `add_instrument()` before adding related data.",
         )
 
         # Check client has been registered
-        self._add_market_data_client_if_not_exists(instrument_id.venue)
+        self._add_market_data_client_if_not_exists(first.instrument_id.venue)
 
         # Add data
         self._data = sorted(self._data + data, key=lambda x: x.ts_init)
 
-        self._log.info(f"Added {len(data):,} {instrument_id} QuoteTick data elements.")
-
-    def add_trade_ticks(self, list data) -> None:
-        """
-        Add the built trade tick data to the backtest engine.
-
-        Parameters
-        ----------
-        data : list[TradeTick]
-            The trade tick data to add.
-
-        Raises
-        ------
-        ValueError
-            If data is empty.
-
-        """
-        Condition.not_empty(data, "data")
-        Condition.list_type(data, TradeTick, "data")
-        cdef InstrumentId instrument_id = data[0].instrument_id
-        Condition.true(
-            data[0].instrument_id in self._cache.instrument_ids(),
-            "Instrument for given data not found in the cache. "
-            "Please call `add_instrument()` before adding related data.",
+        self._log.info(
+            f"Added {len(data):,} {first.instrument_id} {type(first).__name__} elements.",
         )
-
-        # Check client has been registered
-        self._add_market_data_client_if_not_exists(instrument_id.venue)
-
-        # Add data
-        self._data = sorted(self._data + data, key=lambda x: x.ts_init)
-
-        self._log.info(f"Added {len(data):,} {instrument_id} TradeTick data elements.")
 
     def add_bars(self, list data) -> None:
         """
@@ -459,11 +429,11 @@ cdef class BacktestEngine:
         Raises
         ------
         ValueError
-            If bar_type.aggregation_source is not equal to ``EXTERNAL``.
+            If `bar_type.aggregation_source` is not equal to ``EXTERNAL``.
         ValueError
-            If bars is empty.
+            If `data` is empty.
         ValueError
-            If instrument_id is not found in the cache.
+            If `instrument_id` is not found in the cache.
 
         """
         Condition.not_empty(data, "data")
@@ -474,7 +444,12 @@ cdef class BacktestEngine:
             "Instrument for given data not found in the cache. "
             "Please call `add_instrument()` before adding related data.",
         )
-        Condition.equal(first.type.aggregation_source, AggregationSource.EXTERNAL, "bar_type.aggregation_source", "required source")
+        Condition.equal(
+            first.type.aggregation_source,
+            AggregationSource.EXTERNAL,
+            "bar_type.aggregation_source",
+            "required source",
+        )
 
         # Check client has been registered
         self._add_market_data_client_if_not_exists(first.type.instrument_id.venue)
@@ -482,7 +457,7 @@ cdef class BacktestEngine:
         # Add data
         self._data = sorted(self._data + data, key=lambda x: x.ts_init)
 
-        self._log.info(f"Added {len(data):,} {first.type} bar elements.")
+        self._log.info(f"Added {len(data):,} {first.type} Bar elements.")
 
     def add_venue(
         self,
@@ -527,7 +502,7 @@ cdef class BacktestEngine:
         Raises
         ------
         ValueError
-            If an exchange of venue is already registered with the engine.
+            If an exchange of `venue` is already registered with the engine.
 
         """
         if modules is None:
@@ -688,11 +663,13 @@ cdef class BacktestEngine:
             If the `start` is >= the `stop` datetime.
 
         """
-        # Preconditions check and set start and stop times
+        # Precondition checks
         Condition.not_empty(self._data, "data")
         if start is None:
+            # Set start to start of data
             start = nanos_to_unix_dt(self._data[0].ts_init)
         if stop is None:
+            # Set stop to end of data
             stop = nanos_to_unix_dt(self._data[-1].ts_init)
         Condition.equal(start.tzinfo, pytz.utc, "start.tzinfo", "UTC")
         Condition.equal(stop.tzinfo, pytz.utc, "stop.tzinfo", "UTC")

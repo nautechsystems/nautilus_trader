@@ -66,7 +66,7 @@ if __name__ == "__main__":
         data_bars_ask={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_ask()},
     )
     quote_wrangler.pre_process()
-    engine.add_quote_ticks(instrument_id=GBPUSD_SIM.id, data=quote_wrangler.build_ticks())
+    engine.add_ticks(instrument_id=GBPUSD_SIM.id, data=quote_wrangler.build_ticks())
 
     # Create a fill model (optional)
     fill_model = FillModel(

@@ -70,7 +70,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
             data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
         )
         quote_wrangler.pre_process()
-        self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
+        self.engine.add_ticks(data=quote_wrangler.build_ticks())
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -188,7 +188,7 @@ class TestBacktestAcceptanceTestsGBPUSD:
             data_bars_ask={BarAggregation.MINUTE: TestDataProvider.gbpusd_1min_ask()},
         )
         quote_wrangler.pre_process()
-        self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
+        self.engine.add_ticks(data=quote_wrangler.build_ticks())
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -247,7 +247,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
             data_quotes=TestDataProvider.audusd_ticks(),
         )
         quote_wrangler.pre_process()
-        self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
+        self.engine.add_ticks(data=quote_wrangler.build_ticks())
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -325,7 +325,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
             data=TestDataProvider.ethusdt_trades(),
         )
         trade_wrangler.pre_process()
-        self.engine.add_trade_ticks(data=trade_wrangler.build_ticks())
+        self.engine.add_ticks(data=trade_wrangler.build_ticks())
 
         self.engine.add_venue(
             venue=self.venue,
@@ -387,7 +387,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             order_book_deltas = [
                 d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
             ]
-            self.engine.add_trade_ticks(trade_ticks)
+            self.engine.add_ticks(trade_ticks)
             self.engine.add_order_book_data(order_book_deltas)
             self.instrument = instrument
         self.engine.add_venue(
@@ -444,7 +444,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             order_book_deltas = [
                 d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
             ]
-            self.engine.add_trade_ticks(trade_ticks)
+            self.engine.add_ticks(trade_ticks)
             self.engine.add_order_book_data(order_book_deltas)
             self.instrument = instrument
         self.engine.add_venue(

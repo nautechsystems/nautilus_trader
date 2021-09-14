@@ -775,7 +775,7 @@ class TestExecutionCacheWithRedisDatabaseTests:
             data_bars_ask={BarAggregation.MINUTE: TestDataProvider.usdjpy_1min_ask()},
         )
         quote_wrangler.pre_process()
-        self.engine.add_quote_ticks(data=quote_wrangler.build_ticks())
+        self.engine.add_ticks(data=quote_wrangler.build_ticks())
 
         self.engine.add_venue(
             venue=Venue("SIM"),
