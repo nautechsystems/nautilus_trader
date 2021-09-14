@@ -38,7 +38,7 @@ from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
 from nautilus_trader.model.position import Position
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.external.core import write_chunk
+from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import class_to_filename
 from tests.test_kit.providers import TestInstrumentProvider
@@ -104,7 +104,7 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == [tick]
-        write_chunk(catalog=self.catalog, chunk=[tick])
+        write_objects(catalog=self.catalog, chunk=[tick])
 
     def test_serialize_and_deserialize_order_book_delta(self):
         delta = OrderBookDelta(
@@ -128,7 +128,7 @@ class TestParquetSerializer:
             ts_init=0,
         )
         assert deserialized == expected
-        write_chunk(catalog=self.catalog, chunk=[delta])
+        write_objects(catalog=self.catalog, chunk=[delta])
 
     def test_serialize_and_deserialize_order_book_deltas(self):
         kw = {
@@ -171,7 +171,7 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == [deltas]
-        write_chunk(catalog=self.catalog, chunk=[deltas])
+        write_objects(catalog=self.catalog, chunk=[deltas])
 
     def test_serialize_and_deserialize_order_book_deltas_grouped(self):
         kw = {
@@ -223,7 +223,7 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == deltas
-        write_chunk(catalog=self.catalog, chunk=[deserialized])
+        write_objects(catalog=self.catalog, chunk=[deserialized])
         assert [d.action for d in deserialized.deltas] == [
             BookAction.ADD,
             BookAction.CLEAR,
@@ -239,7 +239,7 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == [book]
-        write_chunk(catalog=self.catalog, chunk=[book])
+        write_objects(catalog=self.catalog, chunk=[book])
 
     def test_serialize_and_deserialize_component_state_changed(self):
         event = TestStubs.event_component_state_changed()
@@ -252,7 +252,7 @@ class TestParquetSerializer:
         # Assert
         assert deserialized == event
 
-        write_chunk(catalog=self.catalog, chunk=[event])
+        write_objects(catalog=self.catalog, chunk=[event])
 
     def test_serialize_and_deserialize_trading_state_changed(self):
         event = TestStubs.event_trading_state_changed()
@@ -263,7 +263,7 @@ class TestParquetSerializer:
         # Assert
         assert deserialized == event
 
-        write_chunk(catalog=self.catalog, chunk=[event])
+        write_objects(catalog=self.catalog, chunk=[event])
 
     def test_serialize_and_deserialize_account_state(self):
         event = TestStubs.event_cash_account_state()
@@ -274,7 +274,7 @@ class TestParquetSerializer:
         # Assert
         assert deserialized == event
 
-        write_chunk(catalog=self.catalog, chunk=[event])
+        write_objects(catalog=self.catalog, chunk=[event])
 
     @pytest.mark.parametrize(
         "event_func",
@@ -295,7 +295,7 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == [event]
-        write_chunk(catalog=self.catalog, chunk=[event])
+        write_objects(catalog=self.catalog, chunk=[event])
         df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
         assert len(df) == 1
 
@@ -319,7 +319,7 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == [event]
-        write_chunk(catalog=self.catalog, chunk=[event])
+        write_objects(catalog=self.catalog, chunk=[event])
         df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
         assert len(df) == 1
 
@@ -341,7 +341,7 @@ class TestParquetSerializer:
 
         # Assert
         # assert deserialized == [event]
-        write_chunk(catalog=self.catalog, chunk=[event])
+        write_objects(catalog=self.catalog, chunk=[event])
         df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
         assert len(df) == 1
 
@@ -380,7 +380,7 @@ class TestParquetSerializer:
 
         # Assert
         # assert deserialized == [event]
-        write_chunk(catalog=self.catalog, chunk=[event])
+        write_objects(catalog=self.catalog, chunk=[event])
         df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
         assert len(df) == 1
 
@@ -431,7 +431,7 @@ class TestParquetSerializer:
 
         # Assert
         # assert deserialized == [event]
-        write_chunk(catalog=self.catalog, chunk=[event])
+        write_objects(catalog=self.catalog, chunk=[event])
         df = self.catalog._query(path=f"data/{class_to_filename(cls)}.parquet")
         assert len(df) == 1
 
@@ -451,6 +451,6 @@ class TestParquetSerializer:
 
         # Assert
         assert deserialized == [instrument]
-        write_chunk(catalog=self.catalog, chunk=[instrument])
+        write_objects(catalog=self.catalog, chunk=[instrument])
         df = self.catalog.instruments()
         assert len(df) == 1

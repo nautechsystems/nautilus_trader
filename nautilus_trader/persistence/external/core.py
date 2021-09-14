@@ -33,7 +33,7 @@ from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.metadata import _glob_path_to_fs
 from nautilus_trader.persistence.external.metadata import load_processed_raw_files
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
-from nautilus_trader.persistence.external.parsers import Reader
+from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.external.synchronization import named_lock
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.serializer import get_cls_table
@@ -349,7 +349,7 @@ def write_parquet(
         write_partition_column_mappings(fs=fs, path=path, mappings=mappings)
 
 
-def write_chunk(catalog: DataCatalog, chunk: List):
+def write_objects(catalog: DataCatalog, chunk: List):
     serialized = split_and_serialize(objs=chunk)
     tables = dicts_to_dataframes(serialized)
     write_tables(catalog=catalog, tables=tables)
