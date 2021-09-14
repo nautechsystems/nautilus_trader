@@ -13,9 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
 from functools import partial
 from typing import Any, Dict, List, Tuple
 
+import cloudpickle
 import dask
 from dask.base import normalize_token
 from dask.base import tokenize
@@ -42,11 +44,6 @@ from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
 from nautilus_trader.trading.strategy import TradingStrategy
-
-
-# Register tokenization methods with dask
-for cls in Instrument.__subclasses__():
-    normalize_token.register(cls, func=cls.to_dict)
 
 
 class BacktestNode:
@@ -236,3 +233,23 @@ class BacktestNode:
 
     def _gather(self, *results) -> BacktestRunResults:
         return BacktestRunResults(sum(results, list()))
+
+
+# Register tokenization methods with dask
+for cls in Instrument.__subclasses__():
+    normalize_token.register(cls, func=cls.to_dict)
+
+
+@normalize_token.register(object)
+def nautilus_tokenize(o: object):
+    return cloudpickle.dumps(o, protocol=pickle.DEFAULT_PROTOCOL)
+
+
+@normalize_token.register(ImportableStrategyConfig)
+def tokenize_strategy_config(config: ImportableStrategyConfig):
+    return config.dict()
+
+
+@normalize_token.register(BacktestRunConfig)
+def tokenize_backtest_run_config(config: BacktestRunConfig):
+    return config.__dict__

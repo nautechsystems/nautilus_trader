@@ -33,6 +33,7 @@ from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.config import Partialable
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
+from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.backtest.results import BacktestRunResults
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_nanos
@@ -227,16 +228,30 @@ def test_backtest_config_pickle(backtest_config):
     pickle.loads(pickle.dumps(backtest_config))  # noqa: S301
 
 
-def test_tokenization(backtest_config):
+@pytest.mark.parametrize(
+    "key, token",
+    [
+        ("venues", "820d33524245a874a50b05468e93bd5c"),
+        ("data", "20fb687f4136b3f3858bae5529422698"),
+        ("engine", "dfbec4bd64a46e522a590ffd1de19607"),
+        ("strategies", "8c9f081a88f539969f3dff99d6e05e36"),
+    ],
+)
+def test_tokenization_attributes(backtest_config: BacktestRunConfig, key, token):
     # All inputs to dask delayed functions must be deterministically tokenizable
-    required = [
-        (backtest_config.venues, "80f12df18a4e3472036e6a39dba9291e"),
-    ]
-    for inputs, value in required:
-        # Generate many tokens to ensure determinism
-        result = tokenize(inputs)
-        assert result == value
-        # assert all(x == tokens[0] for x in tokens), f"Tokens do not much for {r}"
+    # Arrange, Act
+    result = tokenize(getattr(backtest_config, key))
+
+    # Assert
+    assert result == token
+
+
+def test_tokenization_config(backtest_config: BacktestRunConfig):
+    # Arrange, Act
+    result = tokenize(backtest_config)
+
+    # Assert
+    assert result == "da51dbca807fed69908173718dafee32"
 
 
 def test_backtest_data_config_load(catalog):
@@ -358,15 +373,26 @@ def test_backtest_against_example(catalog):
 
     # Act
     tasks = node.build_graph([config])
-    results = tasks.compute()
-    result = results[list(results)[0]]
+    results: BacktestRunResults = tasks.compute()
+    result: BacktestResult = results.results[0]
 
     # Assert
-    assert len(result["account"]) == 193
-    assert len(result["positions"]) == 48
-    assert len(result["fills"]) == 96
-    account_result = result["account"]["balances"].iloc[-2]
-    expected = b'[{"type":"AccountBalance","currency":"USD","total":"996365.88","locked":"20096.29","free":"976269.59"}]'
+    assert len(result.account_balances) == 193
+    assert len(result.positions) == 48
+    assert len(result.fill_report) == 96
+    account_result = result.account_balances.iloc[-2].to_dict()
+    expected = {
+        "account_id": "SIM-001",
+        "account_type": "MARGIN",
+        "base_currency": "USD",
+        "currency": "USD",
+        "free": "976269.59",
+        "info": b"{}",  # noqa: P103
+        "locked": "20096.29",
+        "reported": False,
+        "total": "996365.88",
+        "venue": Venue("SIM"),
+    }
     assert account_result == expected
 
 
@@ -420,5 +446,5 @@ def test_backtest_run_results(backtest_configs, catalog):
     assert len(result.results) == 2
     assert (
         str(result.results[0])
-        == "BacktestResult(backtest-b1ef309864a73cc9368352274d7534fc, balances=SIM[USD]=1000000.00)"
+        == "BacktestResult(backtest-b8a76bdbf6b0b8b8b295d05449fe1393, SIM[USD]=1000000.00)"
     )
