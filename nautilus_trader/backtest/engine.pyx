@@ -14,8 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import socket
-from typing import Optional
+from typing import List, Optional, Union
 
+import pandas as pd
 import pydantic
 import pytz
 
@@ -634,20 +635,20 @@ cdef class BacktestEngine:
 
     def run(
         self,
-        datetime start=None,
-        datetime stop=None,
-        list strategies=None,
-        bint streaming=False,
+        start: Union[datetime, str, int]=None,
+        stop: Union[datetime, str, int]=None,
+        strategies: Optional[List[TradingStrategy]]=None,
+        streaming: bool=False,
     ) -> None:
         """
         Run a backtest from the start datetime to the stop datetime.
 
         Parameters
         ----------
-        start : datetime, optional
+        start : Union[datetime, str, int], optional
             The start datetime (UTC) for the backtest run. If ``None`` engine runs
             from the start of the data.
-        stop : datetime, optional
+        stop : Union[datetime, str, int], optional
             The stop datetime (UTC) for the backtest run. If ``None`` engine runs
             to the end of the data.
         strategies : list, optional
@@ -668,9 +669,13 @@ cdef class BacktestEngine:
         if start is None:
             # Set start to start of data
             start = nanos_to_unix_dt(self._data[0].ts_init)
+        else:
+            start = pd.to_datetime(start, utc=True)
         if stop is None:
             # Set stop to end of data
             stop = nanos_to_unix_dt(self._data[-1].ts_init)
+        else:
+            stop = pd.to_datetime(stop, utc=True)
         Condition.equal(start.tzinfo, pytz.utc, "start.tzinfo", "UTC")
         Condition.equal(stop.tzinfo, pytz.utc, "stop.tzinfo", "UTC")
         Condition.true(start < stop, "start was >= stop")

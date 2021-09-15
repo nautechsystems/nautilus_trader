@@ -18,6 +18,7 @@ import dataclasses
 import pathlib
 import pickle
 import sys
+from datetime import datetime
 from decimal import Decimal
 from functools import partial
 from typing import Optional
@@ -25,6 +26,7 @@ from typing import Optional
 import dask
 import pandas as pd
 import pytest
+import pytz
 from dask.base import tokenize
 
 from nautilus_trader.backtest.config import BacktestDataConfig
@@ -232,7 +234,7 @@ def test_backtest_config_pickle(backtest_config):
     "key, token",
     [
         ("venues", "820d33524245a874a50b05468e93bd5c"),
-        ("data", "20fb687f4136b3f3858bae5529422698"),
+        ("data", "800360abf6c2f1f4f11aab02184a381a"),
         ("engine", "dfbec4bd64a46e522a590ffd1de19607"),
         ("strategies", "8c9f081a88f539969f3dff99d6e05e36"),
     ],
@@ -251,7 +253,7 @@ def test_tokenization_config(backtest_config: BacktestRunConfig):
     result = tokenize(backtest_config)
 
     # Assert
-    assert result == "da51dbca807fed69908173718dafee32"
+    assert result == "25360adf9ee75e688928cab09cbfe1ef"
 
 
 def test_backtest_data_config_load(catalog):
@@ -269,8 +271,8 @@ def test_backtest_data_config_load(catalog):
         "as_nautilus": True,
         "cls": QuoteTick,
         "instrument_ids": ["AUD/USD.SIM"],
-        "start": 1580398089820000000,
-        "end": 1580504394501000000,
+        "start": datetime(2020, 1, 30, 15, 28, 9, 820000, tzinfo=pytz.utc),
+        "end": datetime(2020, 1, 31, 20, 59, 54, 501000, tzinfo=pytz.utc),
     }
 
 
@@ -446,5 +448,5 @@ def test_backtest_run_results(backtest_configs, catalog):
     assert len(result.results) == 2
     assert (
         str(result.results[0])
-        == "BacktestResult(backtest-b8a76bdbf6b0b8b8b295d05449fe1393, SIM[USD]=1000000.00)"
+        == "BacktestResult(backtest-c2c5a31261ee3c438a03f8bc3a7746f5, SIM[USD]=1000000.00)"
     )

@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import dataclasses
-import typing
-from typing import List, Optional
+from datetime import datetime
+from typing import Dict, List, Optional, Union
 
 import pydantic
 
@@ -28,7 +28,7 @@ class Partialable:
     The abstract base class for all partialable configurations.
     """
 
-    def fields(self) -> typing.Dict[str, dataclasses.Field]:
+    def fields(self) -> Dict[str, dataclasses.Field]:
         return {field.name: field for field in dataclasses.fields(self)}
 
     def missing(self):
@@ -117,8 +117,8 @@ class BacktestDataConfig(Partialable):
     data_type: type
     catalog_fs_protocol: str = None
     instrument_id: Optional[str] = None
-    start_time: Optional[int] = None
-    end_time: Optional[int] = None
+    start_time: Optional[Union[datetime, str, int]] = None
+    end_time: Optional[Union[datetime, str, int]] = None
     filters: Optional[dict] = None
     client_id: Optional[str] = None
 
