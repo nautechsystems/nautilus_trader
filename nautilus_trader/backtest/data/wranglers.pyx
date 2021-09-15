@@ -32,8 +32,7 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class QuoteTickDataWrangler:
     """
-    Provides a means of building lists of ticks from the given Pandas DataFrames
-    of bid and ask data. Provided data can either be tick data or bar data.
+    Provides a means of building lists of Nautilus `QuoteTick` objects.
     """
 
     def __init__(self, Instrument instrument not None):
@@ -48,13 +47,17 @@ cdef class QuoteTickDataWrangler:
         """
         self.instrument = instrument
 
-    def process_tick_data(
+    def process(
         self,
         data: pd.DataFrame,
-        default_volume=Decimal(1_000_000),
+        default_volume=1_000_000,
     ):
         """
-        Process the give tick dataset into built quote tick objects.
+        Process the give tick dataset into Nautilus `QuoteTick` objects.
+
+        Expects columns ['bid', 'ask'] with 'timestamp' index.
+        Note: The 'bid_size' and 'ask_size' columns are optional, will then use
+        the `default_volume`.
 
         Parameters
         ----------
@@ -74,12 +77,15 @@ cdef class QuoteTickDataWrangler:
         as_utc_index(data)
 
         if "bid_size" not in data.columns:
-            data["bid_size"] = <double>float(default_volume)
+            data["bid_size"] = float(default_volume)
         if "ask_size" not in data.columns:
-            data["ask_size"] = <double>float(default_volume)
+            data["ask_size"] = float(default_volume)
+
+        data["bid"] = data["bid"].values
+        data["ask"] = data["ask"].astype(float)
 
         return list(map(
-            self._build_tick_from_values,
+            self._build_tick,
             data.values,
             [<double>dt.timestamp() for dt in data.index],
         ))
@@ -88,11 +94,14 @@ cdef class QuoteTickDataWrangler:
         self,
         bid_data: pd.DataFrame,
         ask_data: pd.DataFrame,
-        default_volume: Decimal=Decimal(1_000_000),
+        default_volume=1_000_000,
         random_seed=None,
     ):
         """
-        Process the given bar datasets into built quote tick objects.
+        Process the given bar datasets into Nautilus `QuoteTick` objects.
+
+        Expects columns ['open', 'high', 'low', 'close', 'volume'] with 'timestamp' index.
+        Note: The 'volume' column is optional, will then use the `default_volume`.
 
         Parameters
         ----------
@@ -107,8 +116,10 @@ cdef class QuoteTickDataWrangler:
             data. If random_seed is ``None`` then won't shuffle.
 
         """
-        Condition.false(bid_data.empty, "bid_data")
-        Condition.false(ask_data.empty, "ask_data")
+        Condition.not_none(bid_data, "bid_data")
+        Condition.not_none(ask_data, "ask_data")
+        Condition.false(bid_data.empty, "bid_data.empty")
+        Condition.false(ask_data.empty, "ask_data.empty")
         Condition.not_none(default_volume, "default_volume")
         if random_seed is not None:
             Condition.type(random_seed, int, "random_seed")
@@ -118,37 +129,37 @@ cdef class QuoteTickDataWrangler:
         ask_data = as_utc_index(ask_data)
 
         if "volume" not in bid_data:
-            bid_data["volume"] = <double>float(default_volume * 4)
+            bid_data["volume"] = float(default_volume * 4)
 
         if "volume" not in ask_data:
-            ask_data["volume"] = <double>float(default_volume * 4)
+            ask_data["volume"] = float(default_volume * 4)
 
         cdef dict data_open = {
-            "bid": bid_data["open"],
-            "ask": ask_data["open"],
-            "bid_size": bid_data["volume"] / 4,
-            "ask_size": ask_data["volume"] / 4,
+            "bid": bid_data["open"].astype(float),
+            "ask": ask_data["open"].astype(float),
+            "bid_size": bid_data["volume"].astype(float) / 4,
+            "ask_size": ask_data["volume"].astype(float) / 4,
         }
 
         cdef dict data_high = {
-            "bid": bid_data["high"],
-            "ask": ask_data["high"],
-            "bid_size": bid_data["volume"] / 4,
-            "ask_size": ask_data["volume"] / 4,
+            "bid": bid_data["high"].astype(float),
+            "ask": ask_data["high"].astype(float),
+            "bid_size": bid_data["volume"].astype(float) / 4,
+            "ask_size": ask_data["volume"].astype(float) / 4,
         }
 
         cdef dict data_low = {
-            "bid": bid_data["low"],
-            "ask": ask_data["low"],
-            "bid_size": bid_data["volume"] / 4,
-            "ask_size": ask_data["volume"] / 4,
+            "bid": bid_data["low"].astype(float),
+            "ask": ask_data["low"].astype(float),
+            "bid_size": bid_data["volume"].astype(float) / 4,
+            "ask_size": ask_data["volume"].astype(float) / 4,
         }
 
         cdef dict data_close = {
-            "bid": bid_data["close"],
-            "ask": ask_data["close"],
-            "bid_size": bid_data["volume"] / 4,
-            "ask_size": ask_data["volume"] / 4,
+            "bid": bid_data["close"].astype(float),
+            "ask": ask_data["close"].astype(float),
+            "bid_size": bid_data["volume"].astype(float) / 4,
+            "ask_size": ask_data["volume"].astype(float) / 4,
         }
 
         df_ticks_o = pd.DataFrame(data=data_open)
@@ -177,13 +188,13 @@ cdef class QuoteTickDataWrangler:
                     df_ticks_final.iloc[i + 2] = high
 
         return list(map(
-            self._build_tick_from_values,
+            self._build_tick,
             df_ticks_final.values,
             [dt.timestamp() for dt in df_ticks_final.index],
         ))
 
     # cpdef method for Python wrap() (called with map)
-    cpdef QuoteTick _build_tick_from_values(self, double[:] values, double timestamp):
+    cpdef QuoteTick _build_tick(self, double[:] values, double timestamp):
         # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return QuoteTick(
@@ -199,8 +210,7 @@ cdef class QuoteTickDataWrangler:
 
 cdef class TradeTickDataWrangler:
     """
-    Provides a means of building lists of trade ticks from the given DataFrame
-    of data.
+    Provides a means of building lists of Nautilus `TradeTick` objects.
     """
 
     def __init__(self, Instrument instrument not None):
@@ -216,6 +226,25 @@ cdef class TradeTickDataWrangler:
         self.instrument = instrument
 
     def process(self, data: pd.DataFrame):
+        """
+        Process the given trade tick dataset into Nautilus `TradeTick` objects.
+
+        Parameters
+        ----------
+        data : pd.DataFrame
+            The data to process.
+
+        Raises
+        ------
+        ValueError
+            If data is empty.
+
+        """
+        Condition.not_none(data, "data")
+        Condition.false(data.empty, "data.empty")
+
+        data = as_utc_index(data)
+
         processed = pd.DataFrame(index=data.index)
         processed["price"] = data["price"].apply(lambda x: f'{x:.{self.instrument.price_precision}f}')
         processed["quantity"] = data["quantity"].apply(lambda x: f'{x:.{self.instrument.size_precision}f}')
@@ -223,9 +252,10 @@ cdef class TradeTickDataWrangler:
         processed["match_id"] = data["trade_id"].apply(str)
 
         return list(map(
-            self._build_tick_from_values,
+            self._build_tick,
             processed.values,
-            [dt.timestamp() for dt in data.index]))
+            [dt.timestamp() for dt in data.index],
+        ))
 
     def _create_side_if_not_exist(self, data):
         if "side" in data.columns:
@@ -233,7 +263,8 @@ cdef class TradeTickDataWrangler:
         else:
             return data["buyer_maker"].apply(lambda x: "SELL" if x is True else "BUY")
 
-    cpdef TradeTick _build_tick_from_values(self, str[:] values, double timestamp):
+    # cpdef method for Python wrap() (called with map)
+    cpdef TradeTick _build_tick(self, str[:] values, double timestamp):
         # Build a quote tick from the given values. The function expects the values to
         # be an ndarray with 4 elements [bid, ask, bid_size, ask_size] of type double.
         return TradeTick(
@@ -249,16 +280,13 @@ cdef class TradeTickDataWrangler:
 
 cdef class BarDataWrangler:
     """
-    Provides a means of building lists of bars from a given Pandas DataFrame of
-    the correct specification.
+    Provides a means of building lists of Nautilus `Bar` objects.
     """
 
     def __init__(
         self,
-        BarType bar_type,
-        int price_precision,
-        int size_precision,
-        data: pd.DataFrame=None,
+        BarType bar_type not None,
+        Instrument instrument not None,
     ):
         """
         Initialize a new instance of the ``BarDataWrangler`` class.
@@ -267,89 +295,75 @@ cdef class BarDataWrangler:
         ----------
         bar_type : BarType
             The bar type for the wrangler.
-        price_precision : int
-            The decimal precision for bar prices (>= 0).
-        size_precision : int
-            The decimal precision for bar volumes (>= 0).
+        instrument : Instrument
+            The instrument for the wrangler.
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+        Condition.not_none(instrument, "instrument")
+
+        self.bar_type = bar_type
+        self.instrument = instrument
+
+    def process(
+        self,
+        data: pd.DataFrame,
+        default_volume=Decimal(1_000_000),
+    ):
+        """
+        Process the given bar dataset into Nautilus `Bar` objects.
+
+        Expects columns ['open', 'high', 'low', 'close', 'volume'] with 'timestamp' index.
+        Note: The 'volume' column is optional, will then use the `default_volume`.
+
+        Parameters
+        ----------
         data : pd.DataFrame
-            The the bars market data.
+            The data to process.
+        default_volume : int, float or Decimal
+            The default volume for each bar (if not provided).
+
+        Returns
+        -------
+        list[Bar]
 
         Raises
         ------
         ValueError
-            If price_precision is negative (< 0).
-        ValueError
-            If size_precision is negative (< 0).
-        ValueError
-            If data not type DataFrame.
+            If data is empty.
 
         """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_negative_int(price_precision, "price_precision")
-        Condition.not_negative_int(size_precision, "size_precision")
-        Condition.type(data, pd.DataFrame, "data")
+        Condition.not_none(data, "data")
+        Condition.false(data.empty, "data.empty")
+        Condition.not_none(default_volume, "default_volume")
 
-        self._bar_type = bar_type
-        self._price_precision = price_precision
-        self._size_precision = size_precision
-        self._data = as_utc_index(data)
+        data = as_utc_index(data)
 
-        if "volume" not in self._data:
-            self._data["volume"] = 1_000_000
+        if "volume" not in data:
+            data["volume"] = float(default_volume)
 
-    def build_bars_all(self):
-        """
-        Build bars from all data.
+        data["open"] = data["open"].astype(float)
+        data["high"] = data["high"].astype(float)
+        data["low"] = data["low"].astype(float)
+        data["close"] = data["close"].astype(float)
 
-        Returns
-        -------
-        list[Bar]
+        return list(map(
+            self._build_bar,
+            data.values,
+            [<double>dt.timestamp() for dt in data.index],
+        ))
 
-        """
-        return list(map(self._build_bar,
-                        self._data.values,
-                        [dt.timestamp() for dt in self._data.index]))
-
-    def build_bars_from(self, int index=0):
-        """
-        Build bars from the given index (>= 0).
-
-        Returns
-        -------
-        list[Bar]
-
-        """
-        Condition.not_negative_int(index, "index")
-
-        return list(map(self._build_bar,
-                        self._data.iloc[index:].values,
-                        [dt.timestamp() for dt in self._data.iloc[index:].index]))
-
-    def build_bars_range(self, int start=0, int end=-1):
-        """
-        Build bars within the given range.
-
-        Returns
-        -------
-        list[Bar]
-
-        """
-        Condition.not_negative_int(start, "start")
-
-        return list(map(self._build_bar,
-                        self._data.iloc[start:end].values,
-                        [dt.timestamp() for dt in self._data.iloc[start:end].index]))
-
+    # cpdef method for Python wrap() (called with map)
     cpdef Bar _build_bar(self, double[:] values, double timestamp):
         # Build a bar from the given index and values. The function expects the
         # values to be an ndarray with 5 elements [open, high, low, close, volume].
         return Bar(
-            bar_type=self._bar_type,
-            open=Price(values[0], self._price_precision),
-            high=Price(values[1], self._price_precision),
-            low=Price(values[2], self._price_precision),
-            close=Price(values[3], self._price_precision),
-            volume=Quantity(values[4], self._size_precision),
+            bar_type=self.bar_type,
+            open=Price(values[0], self.instrument.price_precision),
+            high=Price(values[1], self.instrument.price_precision),
+            low=Price(values[2], self.instrument.price_precision),
+            close=Price(values[3], self.instrument.price_precision),
+            volume=Quantity(values[4], self.instrument.size_precision),
             ts_event=secs_to_nanos(timestamp),  # TODO(cs): Hardcoded identical for now
             ts_init=secs_to_nanos(timestamp),
         )

@@ -58,7 +58,7 @@ if __name__ == "__main__":
 
     # Setup data
     wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
-    ticks = wrangler.process_tick_data(TestDataProvider.audusd_ticks())
+    ticks = wrangler.process(TestDataProvider.audusd_ticks())
     engine.add_instrument(AUDUSD_SIM)
     engine.add_ticks(ticks)
 

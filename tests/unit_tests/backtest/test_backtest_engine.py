@@ -252,7 +252,7 @@ class TestBacktestEngineData:
         # Setup data
         engine.add_instrument(AUDUSD_SIM)
         wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
-        ticks = wrangler.process_tick_data(TestDataProvider.audusd_ticks())
+        ticks = wrangler.process(TestDataProvider.audusd_ticks())
 
         # Act
         engine.add_ticks(ticks)
@@ -279,7 +279,6 @@ class TestBacktestEngineData:
     def test_add_bars_adds_to_engine(self, capsys):
         # Arrange
         engine = BacktestEngine()
-        engine.add_instrument(USDJPY_SIM)
 
         bar_spec = BarSpecification(
             step=1,
@@ -293,15 +292,15 @@ class TestBacktestEngineData:
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
 
-        bar_wrangler = BarDataWrangler(
+        wrangler = BarDataWrangler(
             bar_type=bar_type,
-            price_precision=USDJPY_SIM.price_precision,
-            size_precision=USDJPY_SIM.size_precision,
-            data=TestDataProvider.usdjpy_1min_bid()[:2000],
+            instrument=USDJPY_SIM,
         )
+        bars = wrangler.process(TestDataProvider.usdjpy_1min_bid()[:2000])
 
         # Act
-        engine.add_bars(data=bar_wrangler.build_bars_all())
+        engine.add_instrument(USDJPY_SIM)
+        engine.add_bars(data=bars)
 
         # Assert
         log = "".join(capsys.readouterr())
@@ -390,12 +389,9 @@ class TestBacktestWithAddedBars:
             run_analysis=False,
         )
         self.engine = BacktestEngine(config=config)
-
         self.venue = Venue("SIM")
 
         # Setup data
-        self.engine.add_instrument(GBPUSD_SIM)
-
         bid_bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
             bar_spec=TestStubs.bar_spec_1min_bid(),
@@ -408,22 +404,22 @@ class TestBacktestWithAddedBars:
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
 
-        bid_bar_wrangler = BarDataWrangler(
+        bid_wrangler = BarDataWrangler(
             bar_type=bid_bar_type,
-            price_precision=GBPUSD_SIM.price_precision,
-            size_precision=GBPUSD_SIM.size_precision,
-            data=TestDataProvider.gbpusd_1min_bid(),
+            instrument=GBPUSD_SIM,
         )
 
-        ask_bar_wrangler = BarDataWrangler(
+        ask_wrangler = BarDataWrangler(
             bar_type=ask_bar_type,
-            price_precision=GBPUSD_SIM.price_precision,
-            size_precision=GBPUSD_SIM.size_precision,
-            data=TestDataProvider.gbpusd_1min_ask(),
+            instrument=GBPUSD_SIM,
         )
 
-        self.engine.add_bars(data=bid_bar_wrangler.build_bars_all())
-        self.engine.add_bars(data=ask_bar_wrangler.build_bars_all())
+        bid_bars = bid_wrangler.process(TestDataProvider.gbpusd_1min_bid())
+        ask_bars = ask_wrangler.process(TestDataProvider.gbpusd_1min_ask())
+
+        self.engine.add_instrument(GBPUSD_SIM)
+        self.engine.add_bars(bid_bars)
+        self.engine.add_bars(ask_bars)
 
         # Setup data
         wrangler = QuoteTickDataWrangler(GBPUSD_SIM)
