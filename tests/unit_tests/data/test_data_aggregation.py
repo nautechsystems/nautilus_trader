@@ -439,7 +439,7 @@ class TestTickBarAggregator:
 
         # Setup data
         wrangler = QuoteTickDataWrangler(instrument)
-        ticks = wrangler.process_tick_data(TestDataProvider.audusd_ticks()[:1000])
+        ticks = wrangler.process(TestDataProvider.audusd_ticks()[:1000])
 
         # Act
         for tick in ticks:
@@ -810,7 +810,7 @@ class TestVolumeBarAggregator:
 
         # Setup data
         wrangler = QuoteTickDataWrangler(instrument)
-        ticks = wrangler.process_tick_data(
+        ticks = wrangler.process(
             data=TestDataProvider.audusd_ticks()[:10000],
             default_volume=1,
         )
@@ -1059,7 +1059,7 @@ class TestTestValueBarAggregator:
 
         # Setup data
         wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
-        ticks = wrangler.process_tick_data(
+        ticks = wrangler.process(
             data=TestDataProvider.audusd_ticks()[:10000],
             default_volume=1,
         )
@@ -1234,7 +1234,7 @@ class TestBulkTickBarBuilder:
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         wrangler = QuoteTickDataWrangler(instrument)
-        ticks = wrangler.process_tick_data(TestDataProvider.usdjpy_ticks())
+        ticks = wrangler.process(TestDataProvider.usdjpy_ticks())
 
         bar_store = ObjectStorer()
         handler = bar_store.store

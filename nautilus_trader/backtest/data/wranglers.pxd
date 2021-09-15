@@ -23,22 +23,18 @@ from nautilus_trader.model.instruments.base cimport Instrument
 cdef class QuoteTickDataWrangler:
     cdef readonly Instrument instrument
 
-    cpdef QuoteTick _build_tick_from_values(self, double[:] values, double timestamp)
+    cpdef QuoteTick _build_tick(self, double[:] values, double timestamp)
 
 
 cdef class TradeTickDataWrangler:
-    cdef object _data_trades
-
     cdef readonly Instrument instrument
     cdef readonly processed_data
 
-    cpdef TradeTick _build_tick_from_values(self, str[:] values, double timestamp)
+    cpdef TradeTick _build_tick(self, str[:] values, double timestamp)
 
 
 cdef class BarDataWrangler:
-    cdef BarType _bar_type
-    cdef int _price_precision
-    cdef int _size_precision
-    cdef object _data
+    cdef readonly BarType bar_type
+    cdef readonly Instrument instrument
 
     cpdef Bar _build_bar(self, double[:] values, double timestamp)

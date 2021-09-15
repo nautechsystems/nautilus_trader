@@ -49,7 +49,7 @@ class TestQuoteTickDataWrangler:
         wrangler = QuoteTickDataWrangler(instrument=usdjpy)
 
         # Act
-        ticks = wrangler.process_tick_data(
+        ticks = wrangler.process(
             data=TestDataProvider.usdjpy_ticks(),
             default_volume=1000000,
         )
@@ -120,49 +120,39 @@ class TestTradeTickDataWrangler:
 class TestBarDataWrangler:
     def setup(self):
         # Fixture Setup
-        data = TestDataProvider.gbpusd_1min_bid()[:1000]
+        instrument = TestInstrumentProvider.default_fx_ccy("GBP/USD")
         bar_type = TestStubs.bartype_gbpusd_1min_bid()
-        self.bar_builder = BarDataWrangler(
+        self.wrangler = BarDataWrangler(
             bar_type=bar_type,
-            price_precision=5,
-            size_precision=1,
-            data=data,
+            instrument=instrument,
         )
 
-    def test_build_bars_all(self):
+    def test_process(self):
         # Arrange, Act
-        bars = self.bar_builder.build_bars_all()
+        bars = self.wrangler.process(TestDataProvider.gbpusd_1min_bid()[:1000])
 
         # Assert
         assert len(bars) == 1000
+        assert bars[0].open == Price.from_str("1.57597")
+        assert bars[0].high == Price.from_str("1.57606")
+        assert bars[0].low == Price.from_str("1.57576")
+        assert bars[0].close == Price.from_str("1.57576")
+        assert bars[0].volume == Quantity.from_int(1000000)
 
-    def test_build_bars_range_with_defaults(self):
+    def test_process_with_default_volume(self):
         # Arrange, Act
-        bars = self.bar_builder.build_bars_range()
-
-        # Assert
-        assert len(bars) == 999
-
-    def test_build_bars_range_with_param(self):
-        # Arrange, Act
-        bars = self.bar_builder.build_bars_range(start=500)
-
-        # Assert
-        assert len(bars) == 499
-
-    def test_build_bars_from_with_defaults(self):
-        # Arrange, Act
-        bars = self.bar_builder.build_bars_from()
+        bars = self.wrangler.process(
+            data=TestDataProvider.gbpusd_1min_bid()[:1000],
+            default_volume=10,
+        )
 
         # Assert
         assert len(bars) == 1000
-
-    def test_build_bars_from_with_param(self):
-        # Arrange, Act
-        bars = self.bar_builder.build_bars_from(index=500)
-
-        # Assert
-        assert len(bars) == 500
+        assert bars[0].open == Price.from_str("1.57597")
+        assert bars[0].high == Price.from_str("1.57606")
+        assert bars[0].low == Price.from_str("1.57576")
+        assert bars[0].close == Price.from_str("1.57576")
+        assert bars[0].volume == Quantity.from_int(10)  # <-- default volume
 
 
 @pytest.mark.skip(reason="WIP")
@@ -183,17 +173,17 @@ class TestTardisQuoteDataWrangler:
         instrument = TestInstrumentProvider.btcusdt_binance()
         wrangler = QuoteTickDataWrangler(instrument=instrument)
 
+        print(TestDataProvider.tardis_quotes())
         # Act
-        ticks = wrangler.process_tick_data(TestDataProvider.tardis_quotes())
+        ticks = wrangler.process(TestDataProvider.tardis_quotes())
 
         # Assert
         assert len(ticks) == 9999
-        assert ticks[0].ts_event == 0
-        assert ticks[0].bid_size == "0.670000"
-        assert ticks[0].ask_size == "0.840000"
-        assert ticks[0].bid == "9681.92"
-        assert ticks[0].ask == "9682.00"
-        assert sorted(ticks.columns) == sorted(["ask", "ask_size", "bid", "bid_size", "symbol"])
+        # assert ticks[0].ts_event == 0
+        # assert ticks[0].bid_size == "0.670000"
+        # assert ticks[0].ask_size == "0.840000"
+        # assert ticks[0].bid == "9681.92"
+        # assert ticks[0].ask == "9682.00"
 
 
 class TestTardisTradeDataWrangler:

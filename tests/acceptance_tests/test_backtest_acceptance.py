@@ -239,7 +239,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
 
         # Setup data
         wrangler = QuoteTickDataWrangler(self.audusd)
-        ticks = wrangler.process_tick_data(TestDataProvider.audusd_ticks())
+        ticks = wrangler.process(TestDataProvider.audusd_ticks())
         self.engine.add_instrument(self.audusd)
         self.engine.add_ticks(ticks)
 
