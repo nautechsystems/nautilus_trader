@@ -81,9 +81,6 @@ cdef class QuoteTickDataWrangler:
         if "ask_size" not in data.columns:
             data["ask_size"] = float(default_volume)
 
-        data["bid"] = data["bid"].values
-        data["ask"] = data["ask"].astype(float)
-
         return list(map(
             self._build_tick,
             data.values,
@@ -135,31 +132,31 @@ cdef class QuoteTickDataWrangler:
             ask_data["volume"] = float(default_volume * 4)
 
         cdef dict data_open = {
-            "bid": bid_data["open"].astype(float),
-            "ask": ask_data["open"].astype(float),
-            "bid_size": bid_data["volume"].astype(float) / 4,
-            "ask_size": ask_data["volume"].astype(float) / 4,
+            "bid": bid_data["open"],
+            "ask": ask_data["open"],
+            "bid_size": bid_data["volume"] / 4,
+            "ask_size": ask_data["volume"] / 4,
         }
 
         cdef dict data_high = {
-            "bid": bid_data["high"].astype(float),
-            "ask": ask_data["high"].astype(float),
-            "bid_size": bid_data["volume"].astype(float) / 4,
-            "ask_size": ask_data["volume"].astype(float) / 4,
+            "bid": bid_data["high"],
+            "ask": ask_data["high"],
+            "bid_size": bid_data["volume"] / 4,
+            "ask_size": ask_data["volume"] / 4,
         }
 
         cdef dict data_low = {
-            "bid": bid_data["low"].astype(float),
-            "ask": ask_data["low"].astype(float),
-            "bid_size": bid_data["volume"].astype(float) / 4,
-            "ask_size": ask_data["volume"].astype(float) / 4,
+            "bid": bid_data["low"],
+            "ask": ask_data["low"],
+            "bid_size": bid_data["volume"] / 4,
+            "ask_size": ask_data["volume"] / 4,
         }
 
         cdef dict data_close = {
-            "bid": bid_data["close"].astype(float),
-            "ask": ask_data["close"].astype(float),
-            "bid_size": bid_data["volume"].astype(float) / 4,
-            "ask_size": ask_data["volume"].astype(float) / 4,
+            "bid": bid_data["close"],
+            "ask": ask_data["close"],
+            "bid_size": bid_data["volume"] / 4,
+            "ask_size": ask_data["volume"] / 4,
         }
 
         df_ticks_o = pd.DataFrame(data=data_open)
@@ -341,11 +338,6 @@ cdef class BarDataWrangler:
 
         if "volume" not in data:
             data["volume"] = float(default_volume)
-
-        data["open"] = data["open"].astype(float)
-        data["high"] = data["high"].astype(float)
-        data["low"] = data["low"].astype(float)
-        data["close"] = data["close"].astype(float)
 
         return list(map(
             self._build_bar,
