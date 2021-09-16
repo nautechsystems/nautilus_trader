@@ -1,0 +1,5 @@
+[package]
+name = "nautilus-core"
+version = "0.1.0"
+authors = ["Nautech Systems <info@nautechsystems.io>"]
+edition = "2018"
