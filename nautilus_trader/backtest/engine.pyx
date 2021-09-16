@@ -142,6 +142,8 @@ cdef class BacktestEngine:
         # Configuration
         self._config = config
 
+        self._exchanges = {}
+
         # Data
         self._data = []
         self._data_len = 0
@@ -264,8 +266,6 @@ cdef class BacktestEngine:
         )
 
         self.analyzer = PerformanceAnalyzer()
-
-        self._exchanges = {}
 
         self.iteration = 0
 
@@ -585,9 +585,16 @@ cdef class BacktestEngine:
             exchange.reset()
 
         self.iteration = 0
-        self._index = 0
 
         self._log.info("Reset.")
+
+    def clear_data(self):
+        """
+        Clear the engines internal data stream.
+        """
+        self._data.clear()
+        self._data_len = 0
+        self._index = 0
 
     def dispose(self) -> None:
         """
@@ -624,14 +631,6 @@ cdef class BacktestEngine:
         Condition.is_in(venue, self._exchanges, "venue", "self._exchanges")
 
         self._exchanges[venue].set_fill_model(model)
-
-    def clear_data(self):
-        """
-        Clear the engines internal data stream.
-        """
-        self._data = []
-        self._data_len = 0
-        self._index = 0
 
     def run(
         self,
@@ -785,8 +784,6 @@ cdef class BacktestEngine:
         self._log.info(f"Run started:    {format_iso8601(run_started)}")
         self._log.info(f"Backtest start: {format_iso8601(start)}")
         self._log.info(f"Backtest stop:  {format_iso8601(stop)}")
-        # for resolution in self._data_producer.execution_resolutions:  # TODO(cs): Replace
-        #     self._log.info(f"Execution resolution: {resolution}")
 
         for exchange in self._exchanges.values():
             self._log.info("=================================================================")
