@@ -347,7 +347,7 @@ cdef class Portfolio(PortfolioFacade):
         else:
             account.apply(event)
 
-        self._log.debug(f"Updated {event}.")
+        self._log.debug(f"Updated with {event}.")
 
     cpdef void update_order(self, OrderEvent event) except *:
         """
@@ -428,7 +428,7 @@ cdef class Portfolio(PortfolioFacade):
                 msg=account_state,
             )
 
-        self._log.debug(f"Updated {event}.")
+        self._log.debug(f"Updated with {event}.")
 
     cpdef void update_position(self, PositionEvent event) except *:
         """
@@ -490,7 +490,7 @@ cdef class Portfolio(PortfolioFacade):
                 msg=account_state,
             )
 
-        self._log.debug(f"Updated {event}.")
+        self._log.debug(f"Updated with {event}.")
 
     cpdef void reset(self) except *:
         """
