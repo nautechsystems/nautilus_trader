@@ -904,7 +904,7 @@ cdef class L1OrderBook(OrderBook):
         # Because of the way we typically get updates from a L1 order book (bid
         # and ask updates at the same time), its quite probable that the last
         # bid is now the ask price we are trying to insert (or vice versa). We
-        # just need to add some extra protection against this if we are calling
+        # just need to add some extra protection against this if we aren't calling
         # `check_integrity()` on each individual update.
         if (
             order.side == OrderSide.BUY
