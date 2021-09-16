@@ -33,6 +33,7 @@ from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -111,6 +112,7 @@ cdef class SimulatedExchange:
     cpdef void adjust_account(self, Money adjustment) except *
     cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_tick(self, Tick tick) except *
+    cpdef void process_bar(self, Bar bar) except *
     cpdef void process_modules(self, int64_t now_ns) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *

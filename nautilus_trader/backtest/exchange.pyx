@@ -443,6 +443,35 @@ cdef class SimulatedExchange:
         if not self._log.is_bypassed:
             self._log.debug(f"Processed {tick}")
 
+    cpdef void process_bar(self, Bar bar) except *:
+        """
+        Process the exchanges market for the given bar.
+
+        Market dynamics are simulated by auctioning working orders.
+
+        Parameters
+        ----------
+        bar : Bar
+            The tick to process.
+
+        """
+        Condition.not_none(bar, "bar")
+
+        self._clock.set_time(bar.ts_init)
+
+        # TODO(cs): Implement simulated order book bar processing
+        # cdef OrderBook book = self.get_book(bar.type.instrument_id)
+        # if book.level == BookLevel.L1:
+        #     book.update_tick(tick)
+        #
+        # self._iterate_matching_engine(
+        #     tick.instrument_id,
+        #     tick.ts_init,
+        # )
+
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processed {bar}")
+
     cpdef void process_modules(self, int64_t now_ns) except *:
         """
         Process the simulation modules by advancing their time.
@@ -991,14 +1020,13 @@ cdef class SimulatedExchange:
         for order in working_orders.copy().values():  # Copy dict for safe loop
             if not order.is_working_c():
                 continue  # Orders state has changed since the loop started
+            elif order.expire_time and timestamp_ns >= order.expire_time_ns:
+                self._delete_order(order)
+                self._expire_order(order)
+                return
 
             # Check for order match
             self._match_order(order)
-
-            # Check for order expiry (if expire time then compare nanoseconds)
-            if order.expire_time and timestamp_ns >= order.expire_time_ns:
-                self._delete_order(order)
-                self._expire_order(order)
 
     cdef void _match_order(self, PassiveOrder order) except *:
         if order.type == OrderType.LIMIT:
