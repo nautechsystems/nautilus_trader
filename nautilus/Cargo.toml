@@ -2,13 +2,18 @@
 resolver = "2"
 
 members = [
-    "src/core",
-    "src/model",
+    "core",
+    "model",
 ]
 
 # Debug symbols end up chewing up several GB of disk space, so better to just
 # disable them.
 [profile.dev]
 debug = false
+
 [profile.test]
 debug = false
+
+[profile.release]
+debug = false
+panic = "abort"

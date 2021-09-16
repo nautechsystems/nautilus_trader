@@ -1,4 +1,4 @@
-# Nautilus
+# Nautilus (experimental)
 
 The base layer for Nautilus system implementations written in Rust.
 
@@ -11,5 +11,6 @@ Contributors are also required to sign a standard Contributor License Agreement 
 ---
 
 Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+https://nautechsystems.io
 
-> https://nautechsystems.io
+![nautechsystems](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/artwork/ns-logo.png?raw=true "nautechsystems")

@@ -12,3 +12,23 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+use uuid::Uuid;
+
+fn uuid4() -> String {
+    // UUID version 4
+    Uuid::new_v4().to_string()
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_uuid4() {
+        let uuid_str = uuid4();
+
+        assert_eq!(uuid_str.len(), 36);
+    }
+}

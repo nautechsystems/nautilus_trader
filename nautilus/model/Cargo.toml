@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 edition = "2018"
 
+[lib]
+name = "nautilus_model"
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 chrono = "0.4.19"
 rust_decimal = "1.10.2"
