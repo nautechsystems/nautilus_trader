@@ -1,15 +1,19 @@
 [package]
-name = "nautilus-model"
+name = "nautilus_model"
 version = "0.1.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 edition = "2018"
 
 [lib]
 name = "nautilus_model"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib", "staticlib"]
 
 [dependencies]
+cbindgen = "0.17.0"
 chrono = "0.4.19"
-rust_decimal = "1.10.2"
+rust_decimal = "1.16.0"
 
-nautilus-core = { path = "../core" }
+nautilus_core = { path = "../core" }
+
+[build-dependencies]
+cbindgen = "0.17.0"

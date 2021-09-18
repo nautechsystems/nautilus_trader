@@ -789,6 +789,15 @@ class TestLiveClockWithLoopTimer:
     def teardown(self):
         self.clock.cancel_timers()
 
+    def test_utc_now(self):
+        # Arrange, Act
+        result = self.clock.utc_now()
+
+        # Assert
+        assert isinstance(result, datetime)
+        assert result.tzinfo == pytz.utc
+        assert result.timestamp() > 0
+
     def test_unix_timestamp(self):
         # Arrange, Act
         result = self.clock.timestamp()

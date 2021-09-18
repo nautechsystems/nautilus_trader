@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import glob
 import itertools
 import os
 import platform
@@ -17,7 +18,7 @@ from setuptools import Distribution
 from setuptools import Extension
 
 
-# If DEBUG mode is enabled, skip compiler optimizations (TODO: implement)
+# If DEBUG mode is enabled, skip compiler optimizations
 DEBUG_MODE = bool(os.getenv("DEBUG_MODE", ""))
 # If PROFILING mode is enabled, include traces necessary for coverage and profiling
 PROFILING_MODE = bool(os.getenv("PROFILING_MODE", ""))
@@ -50,34 +51,34 @@ CYTHON_COMPILER_DIRECTIVES = {
     "profile": PROFILING_MODE,  # If we're profiling, turn on line tracing
     "linetrace": PROFILING_MODE,
     "warn.maybe_uninitialized": True,
-    # "warn.unused_result": True,  # TODO(cs): Picks up legitimate unused variables
-    # "warn.unused": True,  # TODO(cs): Fails on unused entry 'genexpr'
 }
 
 
 ##########################
 #       Rust build       #
 ##########################
-
-RUST_LIBRARIES = {
-    "nautilus-core": "nautilus/target/release/libnautilus_core.a",
-    "nautilus-model": "nautilus/target/release/libnautilus_model.a",
+RUST_LIBS = {
+    "nautilus_core": "nautilus/target/release/libnautilus_core.a",
+    "nautilus_model": "nautilus/target/release/libnautilus_model.a",
 }
 
-STATIC_LINK_MAP = {
-    "nautilus_trader/core/uuid.pyx": [RUST_LIBRARIES["nautilus-core"]],
-    "nautilus_trader/common/clock.pyx": [RUST_LIBRARIES["nautilus-core"]],
-    "nautilus_trader/model/order_book.pyx": [RUST_LIBRARIES["nautilus-model"]],
+RUST_LINK_MAP = {
+    "nautilus_trader/core/uuid.pyx": [RUST_LIBS["nautilus_core"]],
+    "nautilus_trader/common/clock.pyx": [RUST_LIBS["nautilus_core"]],
+    # "nautilus_trader/model/order_book.pyx": [RUST_LIBS["nautilus-model"]],
 }
+
+# Directories with headers to include
+RUST_INCLUDES = glob.glob("nautilus/*/")
+CARGO_MODE = "" if DEBUG_MODE else " --release"
 
 
 def _build_rust_libs() -> None:
     # Build the Rust libraries using Cargo
-    print("Building rust libs...")
+    print("Compiling rust libs...")
 
-    cmd = "(cd nautilus; cargo build --release)"
-    print(cmd)
-    # os.system(cmd)
+    os.system("rustc --version")  # noqa
+    os.system(f"(cd nautilus && cargo build{CARGO_MODE})")  # noqa
 
 
 def _build_extensions() -> List[Extension]:
@@ -102,9 +103,10 @@ def _build_extensions() -> List[Extension]:
         Extension(
             name=str(pyx.relative_to(".")).replace(os.path.sep, ".")[:-4],
             sources=[str(pyx)],
-            include_dirs=[".", np.get_include()],
+            include_dirs=[".", np.get_include()] + RUST_INCLUDES,
             define_macros=define_macros,
             language="c",
+            extra_link_args=RUST_LINK_MAP.get(str(pyx)),
             extra_compile_args=extra_compile_args,
         )
         for pyx in itertools.chain(
@@ -158,7 +160,6 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
 
 
 def build(setup_kwargs):
-    """Construct the extensions and distribution."""
     _build_rust_libs()
 
     extensions = _build_extensions()

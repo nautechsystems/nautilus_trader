@@ -16,10 +16,10 @@
 from libc.stdint cimport int64_t
 
 import orjson
-from fastuuid import uuid4
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.c_enums.book_action cimport BookAction
 from nautilus_trader.model.c_enums.book_action cimport BookActionParser
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
@@ -419,7 +419,7 @@ cdef class Order:
         self.price = price
         self.size = size
         self.side = side
-        self.id = id or str(uuid4())
+        self.id = id or UUID4().value
 
     def __eq__(self, Order other) -> bool:
         return self.id == other.id

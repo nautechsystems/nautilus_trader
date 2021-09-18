@@ -154,7 +154,7 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
 [[package]]
 name = "charset-normalizer"
-version = "2.0.5"
+version = "2.0.6"
 description = "The Real First Universal Charset Detector. Open, modern and actively maintained alternative to Chardet."
 category = "main"
 optional = false
@@ -320,14 +320,6 @@ python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
 [package.extras]
 testing = ["pre-commit"]
-
-[[package]]
-name = "fastuuid"
-version = "0.7.0"
-description = "Python bindings to Rust's UUID library."
-category = "main"
-optional = false
-python-versions = ">=3.6"
 
 [[package]]
 name = "filelock"
@@ -1198,7 +1190,7 @@ ib = ["ib_insync"]
 [metadata]
 lock-version = "1.1"
 python-versions = ">=3.8,<3.10"
-content-hash = "0d5f6cc8de91f5d68d7a1cf8728b2f2289d91ef6768dcabf04d28ef9ea170794"
+content-hash = "3bb14a5ff3a8256be8c98afd73c8ef9cd875ec487f1df9e5d62c74161681a15d"
 
 [metadata.files]
 aiodns = [
@@ -1331,8 +1323,8 @@ chardet = [
     {file = "chardet-4.0.0.tar.gz", hash = "sha256:0d6f53a15db4120f2b08c94f11e7d93d2c911ee118b6b30a04ec3ee8310179fa"},
 ]
 charset-normalizer = [
-    {file = "charset-normalizer-2.0.5.tar.gz", hash = "sha256:7098e7e862f6370a2a8d1a6398cd359815c45d12626267652c3f13dec58e2367"},
-    {file = "charset_normalizer-2.0.5-py3-none-any.whl", hash = "sha256:fa471a601dfea0f492e4f4fca035cd82155e65dc45c9b83bf4322dfab63755dd"},
+    {file = "charset-normalizer-2.0.6.tar.gz", hash = "sha256:5ec46d183433dcbd0ab716f2d7f29d8dee50505b3fdb40c6b985c7c4f5a3591f"},
+    {file = "charset_normalizer-2.0.6-py3-none-any.whl", hash = "sha256:5d209c0a931f215cee683b6445e2d77677e7e75e159f78def0db09d68fafcaa6"},
 ]
 click = [
     {file = "click-8.0.1-py3-none-any.whl", hash = "sha256:fba402a4a47334742d782209a7c79bc448911afe1149d07bdabdf480b3e2f4b6"},
@@ -1451,17 +1443,6 @@ eventkit = [
 execnet = [
     {file = "execnet-1.9.0-py2.py3-none-any.whl", hash = "sha256:a295f7cc774947aac58dde7fdc85f4aa00c42adf5d8f5468fc630c1acf30a142"},
     {file = "execnet-1.9.0.tar.gz", hash = "sha256:8f694f3ba9cc92cab508b152dcfe322153975c29bda272e2fd7f3f00f36e47c5"},
-]
-fastuuid = [
-    {file = "fastuuid-0.7.0-cp36-cp36m-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:269dc57b1499b893f346f8b3de818ac9b679f83dcf2c3e4c533eb0446dcfaffb"},
-    {file = "fastuuid-0.7.0-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:36202f4a62a8b837cb6ceca47c150db71dbcaaa2e5470e1a128f1a26edcae637"},
-    {file = "fastuuid-0.7.0-cp37-cp37m-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:80784f90c03de4e4a1bf1669d2d47c3994e5bfb1f54fd356844e4899fc55580c"},
-    {file = "fastuuid-0.7.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fdd91f4ed267a369d29db95eed8b01aa4a3076ba1ec48fc82136e582e00d2b75"},
-    {file = "fastuuid-0.7.0-cp38-cp38-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:cc628e11d87b59990fb8d87915923d42c0be4e4debfae4aac6893e12b4542752"},
-    {file = "fastuuid-0.7.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ab90aa6fb5fa7abbbfad60686b6145b9ae9c21c7d55de642d0271ff7e43d9361"},
-    {file = "fastuuid-0.7.0-cp39-cp39-manylinux_2_12_x86_64.manylinux2010_x86_64.whl", hash = "sha256:362b4a7c2e1ab4be632f1f287aab23013811312bf57609f8d46d06e12682fbeb"},
-    {file = "fastuuid-0.7.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d8651dd444f8f48d5292bf7008e18fdd9daebf704c5c5cd7c7f185839fcae085"},
-    {file = "fastuuid-0.7.0.tar.gz", hash = "sha256:3c3e28c616c70452e3eb0f000c94f8f6f256b839e4df24f76bb20304c276419d"},
 ]
 filelock = [
     {file = "filelock-3.0.12-py3-none-any.whl", hash = "sha256:929b7d63ec5b7d6b71b0fa5ac14e030b3f70b75747cef1b10da9b879fef15836"},

@@ -29,12 +29,10 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
 """
 
-import pydantic
-
-from libc.stdint cimport int64_t
-
 from decimal import Decimal
 from typing import Optional
+
+import pydantic
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
@@ -47,7 +45,6 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
-from nautilus_trader.core.time cimport unix_timestamp_ms
 from nautilus_trader.execution.client cimport ExecutionClient
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.oms_type cimport OMSTypeParser
@@ -429,7 +426,7 @@ cdef class ExecutionEngine(Component):
         """
         Load the cache up from the execution database.
         """
-        cdef int64_t ts = unix_timestamp_ms()
+        ts = self._clock.timestamp()
 
         self._cache.cache_currencies()
         self._cache.cache_instruments()
@@ -440,7 +437,7 @@ cdef class ExecutionEngine(Component):
         self._cache.check_integrity()
         self._set_position_id_counts()
 
-        self._log.info(f"Loaded cache in {(unix_timestamp_ms() - ts)}ms.")
+        self._log.info(f"Loaded cache in {int((self._clock.timestamp() - ts) * 1000)}ms.")
 
     cpdef void execute(self, TradingCommand command) except *:
         """

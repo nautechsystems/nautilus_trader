@@ -13,22 +13,40 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::ffi::CString;
+use std::os::raw::c_char;
 use uuid::Uuid;
 
-fn uuid4() -> String {
-    // UUID version 4
-    Uuid::new_v4().to_string()
+#[no_mangle]
+pub extern "C" fn uuid_chars_new() -> *mut c_char {
+    return CString::new(Uuid::new_v4().to_string()).unwrap().into_raw();
 }
 
+#[no_mangle]
+pub extern "C" fn uuid_chars_free(s: *mut c_char) {
+    unsafe {
+        if s.is_null() {
+            return;
+        }
+        CString::from_raw(s) // Frees memory here
+    };
+}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::uuid;
 
     #[test]
-    fn test_uuid4() {
-        let uuid_str = uuid4();
+    fn uuid_chars_new_returns_none_null_ptr() {
+        let uuid_chars = uuid::uuid_chars_new();
+        assert!(!uuid_chars.is_null());
+    }
 
-        assert_eq!(uuid_str.len(), 36);
+    #[test]
+    fn uuid_chars_free_returns_none_null_ptr() {
+        let uuid_chars = uuid::uuid_chars_new();
+        uuid::uuid_chars_free(uuid_chars)
+
+        // TODO(cs): Check uuid_chars is freed
     }
 }

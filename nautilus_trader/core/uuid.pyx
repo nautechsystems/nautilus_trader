@@ -15,8 +15,7 @@
 
 import re
 
-from fastuuid import uuid4
-
+from nautilus.core cimport nautilus_core
 from nautilus_trader.core.correctness cimport Condition
 
 
@@ -54,10 +53,13 @@ cdef class UUID4:
         """
         if value is not None:
             Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
-        else:
-            value = str(uuid4())
+            self.value = value
+            return
 
-        self.value = value
+        cdef char *chars = nautilus_core.uuid_chars_new()  # Owned from rust
+        cdef bytes char_bytes = <bytes>chars
+        self.value = char_bytes.decode()
+        nautilus_core.uuid_chars_free(chars)  # Freed in rust
 
     def __eq__(self, UUID4 other) -> bool:
         return self.value == other.value

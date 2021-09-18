@@ -1,31 +1,7 @@
 repos:
 
-  - repo: https://github.com/psf/black
-    rev: 21.8b0
-    hooks:
-      - id: black
-        args: [
-            --line-length=100,
-        ]
-
-  - repo: https://github.com/PyCQA/isort
-    rev: 5.9.3
-    hooks:
-      - id: isort
-        args: [
-            --combine-as,
-            --line-length=100,
-            --ensure-newline-before-comments,
-            --force-single-line-imports,
-            --single-line-exclusions=typing,
-            --trailing-comma,
-            --multi-line=3,
-            --lines-after-imports=2,
-            --use-parentheses,
-        ]
-
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v3.4.0
+    rev: v4.0.1
     hooks:
       - id: forbid-new-submodules
       - id: fix-encoding-pragma
@@ -53,6 +29,38 @@ repos:
         description: Checks for common misspellings.
         types_or: [python, cython, rst, markdown]
         exclude: "nautilus_trader/adapters/betfair/parsing.py"
+
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+#      - id: fmt
+#        args: ["--manifest-path", "nautilus/Cargo.toml"]
+      - id: cargo-check
+        args: ["--manifest-path", "nautilus/Cargo.toml"]
+
+  - repo: https://github.com/psf/black
+    rev: 21.9b0
+    hooks:
+      - id: black
+        args: [
+            --line-length=100,
+        ]
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.9.3
+    hooks:
+      - id: isort
+        args: [
+            --combine-as,
+            --line-length=100,
+            --ensure-newline-before-comments,
+            --force-single-line-imports,
+            --single-line-exclusions=typing,
+            --trailing-comma,
+            --multi-line=3,
+            --lines-after-imports=2,
+            --use-parentheses,
+        ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v0.910

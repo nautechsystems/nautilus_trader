@@ -20,6 +20,7 @@ use crate::objects::Quantity;
 use crate::objects::UnixNanos;
 
 /// Represents a single quote tick in a financial market.
+#[repr(C)]
 pub struct QuoteTick {
     pub instrument_id: InstrumentId,
     pub bid: Price,
@@ -31,6 +32,7 @@ pub struct QuoteTick {
 }
 
 /// Represents a single trade tick in a financial market.
+#[repr(C)]
 pub struct TradeTick {
     pub instrument_id: InstrumentId,
     pub price: Price,

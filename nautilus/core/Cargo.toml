@@ -1,14 +1,16 @@
 [package]
-name = "nautilus-core"
+name = "nautilus_core"
 version = "0.1.0"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 edition = "2018"
 
 [lib]
 name = "nautilus_core"
-crate-type = ["rlib", "cdylib"]
+crate-type = ["rlib", "staticlib"]
 
 [dependencies]
+cbindgen = "0.17.0"
 uuid = { version = "0.8.2", features = ["v4"] }
-rust_decimal = "1.10.2"
-pyo3 = { version = "^0.14.5", default_features = false, features = ["extension-module"]}
+
+[build-dependencies]
+cbindgen = "0.17.0"

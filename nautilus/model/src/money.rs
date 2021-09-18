@@ -24,8 +24,6 @@ pub struct Currency {
     pub currency_type: CurrencyType,
 }
 
-
-
 pub struct Money {
     pub amount: Decimal,
     pub currency: Currency,
@@ -69,7 +67,6 @@ impl fmt::Display for AccountBalance {
         )
     }
 }
-
 
 #[cfg(test)]
 mod tests {

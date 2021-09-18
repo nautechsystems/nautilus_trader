@@ -11,11 +11,11 @@
 ![total-lines](https://img.shields.io/tokei/lines/github/nautechsystems/nautilus_trader)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-| Platform          | Python versions |
-|:------------------|:----------------|
-| Linux (x86-64)    | 3.8, 3.9        |
-| macOS (x86-64)    | 3.8, 3.9        |
-| Windows (x86-64)  | 3.8, 3.9        |
+| Platform          | Rust  | Python |
+|:------------------|:------|:-------|
+| Linux (x86-64)    | 1.55+ | 3.8+   |
+| macOS (x86-64)    | 1.55+ | 3.8+   |
+| Windows (x86-64)  | 1.55+ | 3.8+   |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
