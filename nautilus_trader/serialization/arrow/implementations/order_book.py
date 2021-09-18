@@ -21,11 +21,11 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookLevelParser
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.orderbook.data import Order
 from nautilus_trader.model.orderbook.data import OrderBookData
 from nautilus_trader.model.orderbook.data import OrderBookDelta
 from nautilus_trader.model.orderbook.data import OrderBookDeltas
 from nautilus_trader.model.orderbook.data import OrderBookSnapshot
+from nautilus_trader.model.orderbook.order import Order
 
 
 def _parse_delta(delta: OrderBookDelta, cls):

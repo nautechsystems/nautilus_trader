@@ -13,14 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[derive(Copy, Clone, Debug, Hash, PartialEq)]
-pub enum CurrencyType {
-    Crypto,
-    Fiat,
-}
-
-#[derive(Copy, Clone, Debug, Hash, PartialEq)]
-pub enum OrderSide {
-    Buy,
-    Sell,
-}
+pub mod order;

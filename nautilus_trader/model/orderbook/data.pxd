@@ -16,8 +16,8 @@
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.c_enums.book_action cimport BookAction
 from nautilus_trader.model.c_enums.book_level cimport BookLevel
-from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.orderbook.order cimport Order
 
 
 cdef class OrderBookData(Data):
@@ -62,26 +62,3 @@ cdef class OrderBookDelta(OrderBookData):
 
     @staticmethod
     cdef dict to_dict_c(OrderBookDelta obj)
-
-
-cdef class Order:
-    cdef readonly double price
-    """The orders price.\n\n:returns: `double`"""
-    cdef readonly double size
-    """The orders size.\n\n:returns: `double`"""
-    cdef readonly OrderSide side
-    """The orders side.\n\n:returns: `OrderSide`"""
-    cdef readonly str id
-    """The orders ID.\n\n:returns: `str`"""
-
-    cpdef void update_price(self, double price) except *
-    cpdef void update_size(self, double size) except *
-    cpdef void update_id(self, str value) except *
-    cpdef double exposure(self)
-    cpdef double signed_size(self)
-
-    @staticmethod
-    cdef Order from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(Order obj)
