@@ -13,14 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq)]
 pub enum CurrencyType {
     Crypto,
     Fiat,
 }
 
+#[repr(C)]
 #[derive(Copy, Clone, Debug, Hash, PartialEq)]
 pub enum OrderSide {
-    Buy,
-    Sell,
+    Buy = 1,
+    Sell = 2,
 }

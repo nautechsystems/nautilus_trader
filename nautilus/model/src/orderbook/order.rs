@@ -18,16 +18,17 @@ use crate::objects::price::Price;
 use crate::objects::quantity::Quantity;
 
 
+#[repr(C)]
 #[derive(Debug, Hash)]
 pub struct Order {
     pub price: Price,
     pub size: Quantity,
     pub side: OrderSide,
-    pub id: String,
+    pub id: i64,
 }
 
 impl Order {
-    pub fn new(price: Price, size: Quantity, side: OrderSide, id: String) -> Self {
+    pub fn new(price: Price, size: Quantity, side: OrderSide, id: i64) -> Self {
         Order {
             price,
             size,
@@ -46,7 +47,7 @@ impl Order {
                 "S" => OrderSide::Sell,
                 _ => panic!("Cannot parse side, was {}", input_vec[2]),
             },
-            id: String::from(input_vec[3]),
+            id: 0,
         }
     }
 }
@@ -64,5 +65,5 @@ fn order_from_str_vec() {
     assert_eq!(order.price, Price::new(1.0, 0));
     assert_eq!(order.size, Quantity::new(100.0, 0));
     assert_eq!(order.side, OrderSide::Buy);
-    assert_eq!(order.id, String::from("123"));
+    assert_eq!(order.id, 0);
 }

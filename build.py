@@ -65,7 +65,6 @@ RUST_LIBS = {
 RUST_LINK_MAP = {
     "nautilus_trader/core/uuid.pyx": [RUST_LIBS["nautilus_core"]],
     "nautilus_trader/common/clock.pyx": [RUST_LIBS["nautilus_core"]],
-    # "nautilus_trader/model/order_book.pyx": [RUST_LIBS["nautilus-model"]],
 }
 
 # Directories with headers to include

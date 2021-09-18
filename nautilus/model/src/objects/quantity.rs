@@ -24,11 +24,11 @@ const FIXED_PREC: f64 = 0.000000001;
 #[derive(Copy, Clone, Debug, Default, Hash)]
 pub struct Quantity {
     pub value: u64,
-    pub prec: usize,
+    pub prec: u8,
 }
 
 impl Quantity {
-    pub fn new(value: f64, prec: usize) -> Self {
+    pub fn new(value: f64, prec: u8) -> Self {
         Quantity {
             value: (value / FIXED_PREC).round() as u64,
             prec,
@@ -49,11 +49,11 @@ impl Quantity {
     }
 
     pub fn as_string(self) -> String {
-        format!("{:.*}", self.prec, self.as_f64())
+        format!("{:.*}", self.prec as usize, self.as_f64())
     }
 
     #[no_mangle]
-    pub extern "C" fn new_qty(value: f64, prec: usize) -> Self {
+    pub extern "C" fn new_qty(value: f64, prec: u8) -> Self {
         Quantity::new(value, prec)
     }
 }
@@ -122,7 +122,7 @@ impl Mul<u64> for Quantity {
 
 impl Display for Quantity {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{:.*}", self.prec, self.as_f64())
+        write!(f, "{:.*}", self.prec as usize, self.as_f64())
     }
 }
 
@@ -158,14 +158,14 @@ mod tests {
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 1));
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 2));
         assert_ne!(Quantity::new(1.1, 1), Quantity::new(1.0, 1));
-        assert_eq!(Quantity::new(1.0, 1) > Quantity::new(1.0, 2), false);
-        assert_eq!(Quantity::new(1.1, 1) > Quantity::new(1.0, 1), true);
-        assert_eq!(Quantity::new(1.0, 1) >= Quantity::new(1.0, 1), true);
-        assert_eq!(Quantity::new(1.0, 1) >= Quantity::new(1.0, 2), true);
-        assert_eq!(Quantity::new(1.0, 1) < Quantity::new(1.0, 2), false);
-        assert_eq!(Quantity::new(0.9, 1) < Quantity::new(1.0, 1), true);
-        assert_eq!(Quantity::new(0.9, 1) <= Quantity::new(1.0, 2), true);
-        assert_eq!(Quantity::new(0.9, 1) <= Quantity::new(1.0, 1), true);
+        assert!(!(Quantity::new(1.0, 1) > Quantity::new(1.0, 2)));
+        assert!(Quantity::new(1.1, 1) > Quantity::new(1.0, 1));
+        assert!(Quantity::new(1.0, 1) >= Quantity::new(1.0, 1));
+        assert!(Quantity::new(1.0, 1) >= Quantity::new(1.0, 2));
+        assert!(!(Quantity::new(1.0, 1) < Quantity::new(1.0, 2)));
+        assert!(Quantity::new(0.9, 1) < Quantity::new(1.0, 1));
+        assert!(Quantity::new(0.9, 1) <= Quantity::new(1.0, 2));
+        assert!(Quantity::new(0.9, 1) <= Quantity::new(1.0, 1));
     }
 
     #[test]

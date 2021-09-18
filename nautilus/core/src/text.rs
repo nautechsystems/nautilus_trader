@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub fn prec_from_str(input: &str) -> usize {
+pub fn prec_from_str(input: &str) -> u8 {
     let lower_input = input.to_lowercase();
     if lower_input.find(".").is_none() {
         return 0;
     }
-    return lower_input.split(".").last().unwrap().len();
+    return lower_input.split(".").last().unwrap().len() as u8;
     // TODO(cs): Implement scientific notation parsing
 }
 

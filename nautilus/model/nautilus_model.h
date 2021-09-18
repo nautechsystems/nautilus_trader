@@ -7,16 +7,16 @@
 
 typedef struct Price {
   int64_t value;
-  uintptr_t prec;
+  uint8_t prec;
 } Price;
 
 typedef struct Quantity {
   uint64_t value;
-  uintptr_t prec;
+  uint8_t prec;
 } Quantity;
 
-struct Price new_price(double value, uintptr_t prec);
+struct Price new_price(double value, uint8_t prec);
 
-struct Quantity new_qty(double value, uintptr_t prec);
+struct Quantity new_qty(double value, uint8_t prec);
 
 #endif /* add_h */
