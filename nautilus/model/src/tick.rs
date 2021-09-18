@@ -14,10 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use crate::enums::OrderSide;
-use crate::identifiers::{InstrumentId, TradeMatchId};
-use crate::objects::Price;
-use crate::objects::Quantity;
-use crate::objects::UnixNanos;
+use crate::identifiers::InstrumentId;
+use crate::objects::price::Price;
+use crate::objects::quantity::Quantity;
+use crate::objects::timestamp::UnixNanos;
 
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
@@ -38,7 +38,7 @@ pub struct TradeTick {
     pub price: Price,
     pub size: Quantity,
     pub side: OrderSide,
-    pub match_id: TradeMatchId,
+    pub match_id: String,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
 }

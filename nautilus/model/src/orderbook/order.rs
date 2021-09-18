@@ -13,7 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod enums;
-pub mod identifiers;
-pub mod objects;
-pub mod tick;
+#[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq, PartialOrd, Ord)]
+pub struct Order {
+    pub price: Price,
+    pub size: i64,
+    pub side: OrderSide,
+    pub id: u64,
+    pub timestamp: UnixNanos,
+}
+
+

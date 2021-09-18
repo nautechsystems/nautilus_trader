@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod enums;
-pub mod identifiers;
-pub mod objects;
-pub mod tick;
+pub mod money;
+pub mod price;
+pub mod quantity;
+pub mod timestamp;

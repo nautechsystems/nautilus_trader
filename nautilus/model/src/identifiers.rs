@@ -18,7 +18,6 @@ use std::fmt;
 pub type Symbol = String;
 pub type Venue = String;
 pub type TraderId = String;
-pub type TradeMatchId = String;
 pub type StrategyId = String;
 pub type PositionId = String;
 pub type ClientOrderId = String;

@@ -5,4 +5,11 @@
 
 #include <stdint.h>
 
+typedef struct Price {
+  int64_t value;
+  uintptr_t prec;
+} Price;
+
+struct Price new(double value, uintptr_t prec);
+
 #endif /* add_h */

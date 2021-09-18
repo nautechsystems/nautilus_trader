@@ -13,8 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use rust_decimal::Decimal;
+// use std::fmt::{Display, Formatter, Result};
+// use std::ops::{AddAssign, Mul, MulAssign};
+// use nautilus_core::text::prec_from_str;
 
-pub type Price = Decimal;
-pub type Quantity = Decimal;
-pub type UnixNanos = i64;
+// const FIXED_PREC: f64 = 0.000000001;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq, PartialOrd, Ord)]
+pub struct Quantity {
+    pub value: u64,
+    pub prec: usize,
+}

@@ -13,7 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod enums;
-pub mod identifiers;
-pub mod objects;
-pub mod tick;
+pub fn prec_from_str(input: &str) -> usize {
+    let lower_input = input.to_lowercase();
+    if lower_input.find(".").is_none() {
+        return 0;
+    }
+    return lower_input.split(".").last().unwrap().len();
+    // TODO(cs): Implement scientific notation parsing
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::text::prec_from_str;
+
+    #[test]
+    fn test_prec_from_str() {
+        assert_eq!(prec_from_str("1"), 0);
+        assert_eq!(prec_from_str("2.1"), 1);
+        assert_eq!(prec_from_str("2.204622"), 6);
+    }
+}
