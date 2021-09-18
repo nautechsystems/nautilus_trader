@@ -13,22 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::text::prec_from_str;
+use std::cmp::Ordering;
 use std::fmt::{Display, Formatter, Result};
 use std::ops::{AddAssign, Mul, MulAssign};
-use nautilus_core::text::prec_from_str;
 
 const FIXED_PREC: f64 = 0.000000001;
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, Eq, Hash, PartialEq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, Default, Hash)]
 pub struct Price {
     pub value: i64,
     pub prec: usize,
 }
 
 impl Price {
-    #[no_mangle]
-    pub extern "C" fn new(value: f64, prec: usize) -> Self {
+    pub fn new(value: f64, prec: usize) -> Self {
         Price {
             value: (value / FIXED_PREC).round() as i64,
             prec,
@@ -50,6 +50,51 @@ impl Price {
 
     pub fn as_string(self) -> String {
         format!("{:.*}", self.prec, self.as_f64())
+    }
+
+    #[no_mangle]
+    pub extern "C" fn new_price(value: f64, prec: usize) -> Self {
+        Price::new(value, prec)
+    }
+}
+
+impl PartialEq for Price {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+
+    fn ne(&self, other: &Self) -> bool {
+        self.value != other.value
+    }
+}
+
+impl Eq for Price {}
+
+impl PartialOrd for Price {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.value.partial_cmp(&other.value)
+    }
+
+    fn lt(&self, other: &Self) -> bool {
+        self.value.lt(&other.value)
+    }
+
+    fn le(&self, other: &Self) -> bool {
+        self.value.le(&other.value)
+    }
+
+    fn gt(&self, other: &Self) -> bool {
+        self.value.gt(&other.value)
+    }
+
+    fn ge(&self, other: &Self) -> bool {
+        self.value.ge(&other.value)
+    }
+}
+
+impl Ord for Price {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.value.cmp(&other.value)
     }
 }
 
@@ -109,7 +154,22 @@ mod tests {
     }
 
     #[test]
-    fn display_works() {
+    fn price_equality() {
+        assert_eq!(Price::new(1.0, 1), Price::new(1.0, 1));
+        assert_eq!(Price::new(1.0, 1), Price::new(1.0, 2));
+        assert_ne!(Price::new(1.1, 1), Price::new(1.0, 1));
+        assert_eq!(Price::new(1.0, 1) > Price::new(1.0, 2), false);
+        assert_eq!(Price::new(1.1, 1) > Price::new(1.0, 1), true);
+        assert_eq!(Price::new(1.0, 1) >= Price::new(1.0, 1), true);
+        assert_eq!(Price::new(1.0, 1) >= Price::new(1.0, 2), true);
+        assert_eq!(Price::new(1.0, 1) < Price::new(1.0, 2), false);
+        assert_eq!(Price::new(0.9, 1) < Price::new(1.0, 1), true);
+        assert_eq!(Price::new(0.9, 1) <= Price::new(1.0, 2), true);
+        assert_eq!(Price::new(0.9, 1) <= Price::new(1.0, 1), true);
+    }
+
+    #[test]
+    fn price_display_works() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.12";
         let price = Price::new_from_str(&input_string);
@@ -127,5 +187,6 @@ mod tests {
 
         assert_eq!(price.value, 44123456000);
         assert_eq!(price.as_f64(), 44.123456000000004);
+        assert_eq!(price.as_string(), "44.123456");
     }
 }

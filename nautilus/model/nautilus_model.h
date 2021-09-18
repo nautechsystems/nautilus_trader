@@ -10,6 +10,13 @@ typedef struct Price {
   uintptr_t prec;
 } Price;
 
-struct Price new(double value, uintptr_t prec);
+typedef struct Quantity {
+  uint64_t value;
+  uintptr_t prec;
+} Quantity;
+
+struct Price new_price(double value, uintptr_t prec);
+
+struct Quantity new_qty(double value, uintptr_t prec);
 
 #endif /* add_h */
