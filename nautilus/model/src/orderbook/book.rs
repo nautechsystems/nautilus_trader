@@ -12,3 +12,24 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
+use crate::enums::BookLevel;
+use crate::identifiers::instrument_id::InstrumentId;
+
+#[repr(C)]
+#[derive(Debug, Hash)]
+pub struct OrderBook {
+    pub instrument_id: InstrumentId,
+    pub book_level: BookLevel,
+    // bids: usize,
+    // asks: usize,
+}
+
+impl OrderBook {
+    pub fn new(instrument_id: InstrumentId, book_level: BookLevel) -> Self {
+        OrderBook {
+            instrument_id,
+            book_level,
+        }
+    }
+}

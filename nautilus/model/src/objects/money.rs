@@ -20,7 +20,7 @@ use std::str::FromStr;
 
 pub struct Currency {
     pub code: String,
-    pub precision: usize,
+    pub precision: u8,
     pub currency_type: CurrencyType,
 }
 
@@ -32,7 +32,8 @@ pub struct Money {
 impl Money {
     pub fn new(amount: Decimal, currency: Currency) -> Money {
         Money {
-            amount: Decimal::from_str(&format!("{:.*}", currency.precision, amount)).unwrap(),
+            amount: Decimal::from_str(&format!("{:.*}", currency.precision as usize, amount))
+                .unwrap(),
             currency,
         }
     }
@@ -43,7 +44,7 @@ impl fmt::Display for Money {
         write!(
             f,
             "{:.*} {}",
-            self.currency.precision, self.amount, self.currency.code
+            self.currency.precision as usize, self.amount, self.currency.code
         )
     }
 }

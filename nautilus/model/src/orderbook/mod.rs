@@ -13,5 +13,5 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod order;
 pub mod book;
+pub mod order;

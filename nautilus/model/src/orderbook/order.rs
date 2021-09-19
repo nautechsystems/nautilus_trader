@@ -17,7 +17,6 @@ use crate::enums::OrderSide;
 use crate::objects::price::Price;
 use crate::objects::quantity::Quantity;
 
-
 #[repr(C)]
 #[derive(Debug, Hash)]
 pub struct Order {
@@ -54,12 +53,7 @@ impl Order {
 
 #[test]
 fn order_from_str_vec() {
-    let input = vec![
-        "1.00000",
-        "100",
-        "B",
-        "123"
-    ];
+    let input = vec!["1.00000", "100", "B", "123"];
     let order = Order::from_str_vec(input);
 
     assert_eq!(order.price, Price::new(1.0, 0));

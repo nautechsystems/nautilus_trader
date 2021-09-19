@@ -26,3 +26,27 @@ pub enum OrderSide {
     Buy = 1,
     Sell = 2,
 }
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
+pub enum BookLevel {
+    L1 = 1,
+    L2 = 2,
+    L3 = 3,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
+pub enum BookAction {
+    Add = 1,
+    Update = 2,
+    Delete = 3,
+    Clear = 4,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq)]
+pub enum DepthType {
+    Volume = 1,
+    Exposure = 2,
+}

@@ -5,6 +5,16 @@
 
 #include <stdint.h>
 
+typedef struct Symbol {
+  char *value;
+  uint8_t len;
+} Symbol;
+
+typedef struct Venue {
+  char *value;
+  uint8_t len;
+} Venue;
+
 typedef struct Price {
   int64_t value;
   uint8_t prec;
@@ -14,6 +24,12 @@ typedef struct Quantity {
   uint64_t value;
   uint8_t prec;
 } Quantity;
+
+struct Symbol new_instrument_id(char *value);
+
+struct Symbol new_symbol(char *value);
+
+struct Venue new_venue(char *value);
 
 struct Price new_price(double value, uint8_t prec);
 
