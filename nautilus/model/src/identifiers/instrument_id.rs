@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::CString;
-use std::os::raw::c_char;
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
+use std::ffi::CString;
+use std::os::raw::c_char;
 
 #[repr(C)]
 #[derive(Copy, Clone, Hash, PartialEq, Debug)]
@@ -52,14 +52,14 @@ impl InstrumentId {
 
     pub unsafe fn to_string(self) -> String {
         let mut output = self.symbol.to_string();
-        output.push_str(".");  // Delimiter
+        output.push_str("."); // Delimiter
         output.push_str(&self.venue.to_string());
         output
     }
 
     pub unsafe fn to_cstring(self) -> CString {
         let mut output = self.symbol.to_string();
-        output.push_str(".");  // Delimiter
+        output.push_str("."); // Delimiter
         output.push_str(&self.venue.to_string());
         CString::new(output).unwrap()
     }
@@ -69,7 +69,6 @@ impl InstrumentId {
         Symbol::from_raw(value)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
