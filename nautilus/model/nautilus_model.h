@@ -11,10 +11,7 @@ typedef enum BookLevel {
   L3 = 3,
 } BookLevel;
 
-typedef enum OrderSide {
-  Buy = 1,
-  Sell = 2,
-} OrderSide;
+typedef struct Vec_Level Vec_Level;
 
 typedef struct Symbol {
   char *value;
@@ -41,29 +38,11 @@ typedef struct InstrumentId {
   struct Venue venue;
 } InstrumentId;
 
-typedef struct Order {
-  struct Price price;
-  struct Quantity size;
-  enum OrderSide side;
-  int64_t id;
-} Order;
-
-typedef struct Level {
-  struct Price price;
-  struct Order *orders;
-  uintptr_t len;
-  uintptr_t cap;
-} Level;
-
 typedef struct OrderBook {
   struct InstrumentId instrument_id;
   enum BookLevel book_level;
-  struct Level *bids;
-  struct Level *asks;
-  uintptr_t bids_len;
-  uintptr_t asks_len;
-  uintptr_t bids_cap;
-  uintptr_t asks_cap;
+  struct Vec_Level *bids;
+  struct Vec_Level *asks;
 } OrderBook;
 
 struct Symbol new_instrument_id(char *value);

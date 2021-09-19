@@ -21,81 +21,63 @@ use std::cmp::Ordering;
 #[derive(Debug, Hash)]
 pub struct Level {
     pub price: Price,
-    pub orders: *mut Order,
-    pub len: usize,
-    cap: usize,
+    pub orders: Box<Vec<Order>>,
 }
 
 impl Level {
-    pub fn new(price: Price, orders: Vec<Order>) -> Self {
-        let (ptr, len, cap) = orders.into_raw_parts();
+    pub fn new(price: Price) -> Self {
         Level {
             price,
-            orders: ptr,
-            len,
-            cap,
+            orders: Box::new(vec![]),
         }
     }
 
-    unsafe fn _update_orders(&mut self, orders: Vec<Order>) {
-        let (ptr, len, cap) = orders.into_raw_parts();
-        self.orders = ptr;
-        self.len = len;
-        self.cap = cap;
+    pub fn len(&self) -> usize {
+        self.orders.len()
     }
 
-    pub unsafe fn as_vec(&self) -> Vec<Order> {
-        Vec::from_raw_parts(self.orders, self.len, self.cap)
-    }
-
-    pub unsafe fn add(&mut self, order: Order) {
+    pub fn add(&mut self, order: Order) {
         assert_eq!(order.price, self.price); // Confirm order for this level
-        let mut orders = self.as_vec();
-        orders.push(order);
-        self._update_orders(orders);
+        self.orders.push(order);
     }
 
-    pub unsafe fn update(&mut self, order: Order) {
+    pub fn update(&mut self, order: Order) {
         assert_eq!(order.price, self.price); // Confirm order for this level
 
         if order.size.value == 0 {
             self.delete(order)
         } else {
-            let mut orders = self.as_vec();
-            let index = orders
+            let index = self
+                .orders
                 .iter()
                 .position(|o| o.id == order.id)
                 .expect("Cannot update order: order not found");
-            orders[index] = order;
-            self._update_orders(orders);
+            self.orders[index] = order;
         }
     }
 
-    pub unsafe fn delete(&mut self, order: Order) {
+    pub fn delete(&mut self, order: Order) {
         assert_eq!(order.price, self.price); // Confirm order for this level
 
-        let mut orders = self.as_vec();
-        let index = orders
+        let index = self
+            .orders
             .iter()
             .position(|o| o.id == order.id)
             .expect("Cannot delete order: order not found");
-        orders.remove(index);
-        self._update_orders(orders);
+        self.orders.swap_remove(index);
     }
 
-    pub unsafe fn volume(&self) -> f64 {
-        let orders = self.as_vec();
+    pub fn volume(&self) -> f64 {
         let mut sum: f64 = 0.0;
-        for o in orders {
+        for o in self.orders.iter() {
             sum += o.size.as_f64()
         }
         sum
     }
 
-    pub unsafe fn exposure(&self) -> f64 {
-        let orders = self.as_vec();
+    pub fn exposure(&self) -> f64 {
         let mut sum: f64 = 0.0;
-        for o in orders {
+        for o in self.orders.iter() {
             sum += o.price.as_f64() * o.size.as_f64()
         }
         sum
@@ -152,8 +134,8 @@ mod tests {
 
     #[test]
     fn level_equality() {
-        let level0 = Level::new(Price::new(1.00, 2), vec![]);
-        let level1 = Level::new(Price::new(1.01, 2), vec![]);
+        let level0 = Level::new(Price::new(1.00, 2));
+        let level1 = Level::new(Price::new(1.01, 2));
 
         assert_eq!(level0, level0);
         assert!(level0 <= level0);
@@ -162,7 +144,7 @@ mod tests {
 
     #[test]
     fn level_add_one_order() {
-        let mut level = Level::new(Price::new(1.00, 2), vec![]);
+        let mut level = Level::new(Price::new(1.00, 2));
         let order = Order::new(
             Price::new(1.00, 2),
             Quantity::new(10.0, 0),
@@ -170,16 +152,15 @@ mod tests {
             0,
         );
 
-        unsafe { level.add(order) };
+        level.add(order);
 
-        assert_eq!(level.len, 1);
-        assert_eq!(level.cap, 4);
-        unsafe { assert_eq!(level.volume(), 10.0) }
+        assert_eq!(level.len(), 1);
+        assert_eq!(level.volume(), 10.0);
     }
 
     #[test]
     fn level_add_multiple_orders() {
-        let mut level = Level::new(Price::new(1.00, 2), vec![]);
+        let mut level = Level::new(Price::new(1.00, 2));
         let order1 = Order::new(
             Price::new(1.00, 2),
             Quantity::new(10.0, 0),
@@ -193,16 +174,17 @@ mod tests {
             0,
         );
 
-        unsafe { level.add(order1) };
-        unsafe { level.add(order2) };
+        level.add(order1);
+        level.add(order2);
 
-        assert_eq!(level.len, 2);
-        unsafe { assert_eq!(level.volume(), 20.0) }
+        assert_eq!(level.len(), 2);
+        assert_eq!(level.volume(), 20.0);
+        assert_eq!(level.exposure(), 20.0);
     }
 
     #[test]
     fn level_update_order() {
-        let mut level = Level::new(Price::new(1.00, 2), vec![]);
+        let mut level = Level::new(Price::new(1.00, 2));
         let order1 = Order::new(
             Price::new(1.00, 2),
             Quantity::new(10.0, 0),
@@ -216,16 +198,17 @@ mod tests {
             0,
         );
 
-        unsafe { level.add(order1) };
-        unsafe { level.update(order2) };
+        level.add(order1);
+        level.update(order2);
 
-        assert_eq!(level.len, 1);
-        unsafe { assert_eq!(level.volume(), 20.0) }
+        assert_eq!(level.len(), 1);
+        assert_eq!(level.volume(), 20.0);
+        assert_eq!(level.exposure(), 20.0);
     }
 
     #[test]
     fn level_update_order_with_zero_size_deletes() {
-        let mut level = Level::new(Price::new(1.00, 2), vec![]);
+        let mut level = Level::new(Price::new(1.00, 2));
         let order1 = Order::new(
             Price::new(1.00, 2),
             Quantity::new(10.0, 0),
@@ -239,10 +222,11 @@ mod tests {
             0,
         );
 
-        unsafe { level.add(order1) };
-        unsafe { level.update(order2) };
+        level.add(order1);
+        level.update(order2);
 
-        assert_eq!(level.len, 0);
-        unsafe { assert_eq!(level.volume(), 0.0) }
+        assert_eq!(level.len(), 0);
+        assert_eq!(level.volume(), 0.0);
+        assert_eq!(level.exposure(), 0.0);
     }
 }

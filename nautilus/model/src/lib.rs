@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![feature(vec_into_raw_parts)]
-
 pub mod data;
 pub mod enums;
 pub mod identifiers;

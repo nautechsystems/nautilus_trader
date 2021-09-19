@@ -22,32 +22,17 @@ use crate::orderbook::level::Level;
 pub struct OrderBook {
     pub instrument_id: InstrumentId,
     pub book_level: BookLevel,
-    pub bids: *mut Level,
-    pub asks: *mut Level,
-    pub bids_len: usize,
-    pub asks_len: usize,
-    bids_cap: usize,
-    asks_cap: usize,
+    bids: Box<Vec<Level>>,
+    asks: Box<Vec<Level>>,
 }
 
 impl OrderBook {
-    pub fn new(
-        instrument_id: InstrumentId,
-        book_level: BookLevel,
-        bids: Vec<Level>,
-        asks: Vec<Level>,
-    ) -> Self {
-        let (bids_ptr, bids_len, bids_cap) = bids.into_raw_parts();
-        let (asks_ptr, asks_len, asks_cap) = asks.into_raw_parts();
+    pub fn new(instrument_id: InstrumentId, book_level: BookLevel) -> Self {
         OrderBook {
             instrument_id,
             book_level,
-            bids: bids_ptr,
-            bids_len,
-            bids_cap,
-            asks: asks_ptr,
-            asks_len,
-            asks_cap,
+            bids: Box::new(vec![]),
+            asks: Box::new(vec![]),
         }
     }
 
@@ -56,20 +41,6 @@ impl OrderBook {
         instrument_id: InstrumentId,
         book_level: BookLevel,
     ) -> OrderBook {
-        OrderBook::new(instrument_id, book_level, vec![], vec![])
-    }
-
-    unsafe fn _update_bids(&mut self, bids: Vec<Level>) {
-        let (ptr, len, cap) = bids.into_raw_parts();
-        self.bids = ptr;
-        self.bids_len = len;
-        self.bids_cap = cap;
-    }
-
-    unsafe fn _update_asks(&mut self, asks: Vec<Level>) {
-        let (ptr, len, cap) = asks.into_raw_parts();
-        self.asks = ptr;
-        self.asks_len = len;
-        self.asks_cap = cap;
+        OrderBook::new(instrument_id, book_level)
     }
 }
