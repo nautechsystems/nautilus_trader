@@ -23,11 +23,11 @@ pub struct Order {
     pub price: Price,
     pub size: Quantity,
     pub side: OrderSide,
-    pub id: i64,
+    pub id: u64,
 }
 
 impl Order {
-    pub fn new(price: Price, size: Quantity, side: OrderSide, id: i64) -> Self {
+    pub fn new(price: Price, size: Quantity, side: OrderSide, id: u64) -> Self {
         Order {
             price,
             size,

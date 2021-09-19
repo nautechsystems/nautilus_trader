@@ -13,17 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::enums::BookLevel;
+use crate::enums::{BookLevel, OrderSide};
 use crate::identifiers::instrument_id::InstrumentId;
-use crate::orderbook::level::Level;
+use crate::orderbook::ladder::Ladder;
+use crate::orderbook::order::Order;
 
 #[repr(C)]
-#[derive(Debug, Hash)]
+#[derive(Debug)]
 pub struct OrderBook {
     pub instrument_id: InstrumentId,
     pub book_level: BookLevel,
-    bids: Box<Vec<Level>>,
-    asks: Box<Vec<Level>>,
+    bids: Ladder,
+    asks: Ladder,
 }
 
 impl OrderBook {
@@ -31,8 +32,8 @@ impl OrderBook {
         OrderBook {
             instrument_id,
             book_level,
-            bids: Box::new(vec![]),
-            asks: Box::new(vec![]),
+            bids: Ladder::new(OrderSide::Buy),
+            asks: Ladder::new(OrderSide::Sell),
         }
     }
 
@@ -42,5 +43,12 @@ impl OrderBook {
         book_level: BookLevel,
     ) -> OrderBook {
         OrderBook::new(instrument_id, book_level)
+    }
+
+    pub fn _add(&mut self, order: Order) {
+        match order.side {
+            OrderSide::Buy => self.bids.add(order),
+            OrderSide::Sell => self.asks.add(order),
+        }
     }
 }

@@ -32,6 +32,15 @@ impl Level {
         }
     }
 
+    pub fn from_order(order: Order) -> Self {
+        let mut level = Level {
+            price: order.price,
+            orders: Box::new(vec![]),
+        };
+        level.add(order);
+        level
+    }
+
     pub fn len(&self) -> usize {
         self.orders.len()
     }

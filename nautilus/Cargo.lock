@@ -160,6 +160,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "min-max-heap"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2687e6cf9c00f48e9284cf9fd15f2ef341d03cc7743abf9df4c5f07fdee50b18"
+
+[[package]]
 name = "nautilus_core"
 version = "0.1.0"
 dependencies = [
@@ -173,6 +179,7 @@ version = "0.1.0"
 dependencies = [
  "cbindgen",
  "chrono",
+ "min-max-heap",
  "nautilus_core",
  "rust_decimal",
 ]
