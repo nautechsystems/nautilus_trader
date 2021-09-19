@@ -5,6 +5,17 @@
 
 #include <stdint.h>
 
+typedef enum BookLevel {
+  L1 = 1,
+  L2 = 2,
+  L3 = 3,
+} BookLevel;
+
+typedef enum OrderSide {
+  Buy = 1,
+  Sell = 2,
+} OrderSide;
+
 typedef struct Symbol {
   char *value;
   uint8_t len;
@@ -25,6 +36,36 @@ typedef struct Quantity {
   uint8_t prec;
 } Quantity;
 
+typedef struct InstrumentId {
+  struct Symbol symbol;
+  struct Venue venue;
+} InstrumentId;
+
+typedef struct Order {
+  struct Price price;
+  struct Quantity size;
+  enum OrderSide side;
+  int64_t id;
+} Order;
+
+typedef struct Level {
+  struct Price price;
+  struct Order *orders;
+  uintptr_t len;
+  uintptr_t cap;
+} Level;
+
+typedef struct OrderBook {
+  struct InstrumentId instrument_id;
+  enum BookLevel book_level;
+  struct Level *bids;
+  struct Level *asks;
+  uintptr_t bids_len;
+  uintptr_t asks_len;
+  uintptr_t bids_cap;
+  uintptr_t asks_cap;
+} OrderBook;
+
 struct Symbol new_instrument_id(char *value);
 
 struct Symbol new_symbol(char *value);
@@ -34,5 +75,7 @@ struct Venue new_venue(char *value);
 struct Price new_price(double value, uint8_t prec);
 
 struct Quantity new_qty(double value, uint8_t prec);
+
+struct OrderBook new_order_book(struct InstrumentId instrument_id, enum BookLevel book_level);
 
 #endif /* add_h */

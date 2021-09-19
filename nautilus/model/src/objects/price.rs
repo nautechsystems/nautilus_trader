@@ -44,11 +44,11 @@ impl Price {
         Price::new(float_res, prec_from_str(input))
     }
 
-    pub fn as_f64(self) -> f64 {
+    pub fn as_f64(&self) -> f64 {
         (self.value) as f64 * FIXED_PREC
     }
 
-    pub fn as_string(self) -> String {
+    pub fn as_string(&self) -> String {
         format!("{:.*}", self.prec as usize, self.as_f64())
     }
 

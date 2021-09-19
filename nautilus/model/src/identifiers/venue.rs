@@ -32,6 +32,7 @@ impl Venue {
     }
 
     pub unsafe fn from_raw(value: *mut c_char) -> Venue {
+        // Here we always check `value` can be parsed into a valid C string
         let s = CString::from_raw(value)
             .into_string()
             .expect("Cannot parse `value` Venue");
@@ -61,11 +62,12 @@ mod tests {
 
     #[test]
     fn venue_from_str() {
-        let symbol1 = Venue::from_str("XRD/USD");
-        let symbol2 = Venue::from_str("BTC/USD");
+        let venue1 = Venue::from_str("XRD/USD");
+        let venue2 = Venue::from_str("BTC/USD");
 
-        assert_eq!(symbol1, symbol1);
-        assert_ne!(symbol1, symbol2);
-        assert_eq!(symbol1.len, 7);
+        assert_eq!(venue1, venue1);
+        assert_ne!(venue1, venue2);
+        assert_eq!(venue1.len, 7);
+        unsafe { assert_eq!(venue1.to_string(), "XRD/USD") }
     }
 }

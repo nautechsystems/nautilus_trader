@@ -19,7 +19,7 @@ use std::os::raw::c_char;
 #[repr(C)]
 #[derive(Copy, Clone, Hash, PartialEq, Debug)]
 pub struct Symbol {
-    pub value: *mut c_char,
+    value: *mut c_char,
     pub len: u8,
 }
 
@@ -32,6 +32,7 @@ impl Symbol {
     }
 
     pub unsafe fn from_raw(value: *mut c_char) -> Symbol {
+        // Here we always check `value` can be parsed into a valid C string
         let s = CString::from_raw(value)
             .into_string()
             .expect("Cannot parse `value` Symbol");
@@ -67,5 +68,6 @@ mod tests {
         assert_eq!(symbol1, symbol1);
         assert_ne!(symbol1, symbol2);
         assert_eq!(symbol1.len, 7);
+        unsafe { assert_eq!(symbol1.to_string(), "XRD/USD") }
     }
 }
