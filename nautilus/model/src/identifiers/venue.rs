@@ -13,46 +13,47 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
+use std::fmt::{Debug, Display, Formatter, Result};
 use std::os::raw::c_char;
 
 #[repr(C)]
-#[derive(Copy, Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq)]
 pub struct Venue {
-    pub value: *mut c_char,
-    pub len: u8,
+    pub value: Box<String>,
 }
 
 impl Venue {
-    pub fn from_str(value: &str) -> Venue {
+    pub fn from_str(s: &str) -> Venue {
         Venue {
-            value: CString::new(value).unwrap().into_raw(),
-            len: value.len() as u8,
+            value: Box::new(s.to_string()),
         }
-    }
-
-    pub unsafe fn from_raw(value: *mut c_char) -> Venue {
-        // Here we always check `value` can be parsed into a valid C string
-        let s = CString::from_raw(value)
-            .into_string()
-            .expect("Cannot parse `value` Venue");
-        Venue {
-            value,
-            len: s.len() as u8,
-        }
-    }
-
-    pub unsafe fn to_string(self) -> String {
-        String::from_raw_parts(self.value as *mut u8, self.len as usize, self.len as usize)
-    }
-
-    pub unsafe fn to_cstring(self) -> CString {
-        CString::from_raw(self.value)
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn new_venue(value: *mut c_char) -> Venue {
-        Venue::from_raw(value)
+    pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
+        // SAFETY: checks `ptr` can be parsed into a valid C string
+        let s = CStr::from_ptr(ptr);
+        Venue {
+            value: Box::new(s.to_str().expect("invalid UTF-8 string").to_string()),
+        }
+    }
+
+    #[no_mangle]
+    pub extern "C" fn venue_as_bytes(self) -> *const c_char {
+        CString::new(self.value.to_string()).unwrap().into_raw()
+    }
+}
+
+impl Debug for Venue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+impl Display for Venue {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.value)
     }
 }
 
@@ -67,7 +68,7 @@ mod tests {
 
         assert_eq!(venue1, venue1);
         assert_ne!(venue1, venue2);
-        assert_eq!(venue1.len, 7);
-        unsafe { assert_eq!(venue1.to_string(), "XRD/USD") }
+        assert_eq!(venue1.value.len(), 7);
+        assert_eq!(venue1.to_string(), "XRD/USD")
     }
 }

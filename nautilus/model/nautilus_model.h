@@ -5,6 +5,8 @@
 
 #include <stdint.h>
 
+#define FIXED_PREC 0.000000001
+
 typedef enum BookLevel {
   L1 = 1,
   L2 = 2,
@@ -16,16 +18,16 @@ typedef enum OrderSide {
   Sell = 2,
 } OrderSide;
 
+typedef struct String String;
+
 typedef struct Vec_Order Vec_Order;
 
 typedef struct Symbol {
-  char *value;
-  uint8_t len;
+  struct String *value;
 } Symbol;
 
 typedef struct Venue {
-  char *value;
-  uint8_t len;
+  struct String *value;
 } Venue;
 
 typedef struct Price {
@@ -60,11 +62,13 @@ typedef struct OrderBook {
   struct Ladder asks;
 } OrderBook;
 
-struct Symbol new_instrument_id(char *value);
+struct Symbol symbol_new(const char *ptr);
 
-struct Symbol new_symbol(char *value);
+const char *symbol_as_bytes(struct Symbol self);
 
-struct Venue new_venue(char *value);
+struct Venue venue_new(const char *ptr);
+
+const char *venue_as_bytes(struct Venue self);
 
 struct Price new_price(double value, uint8_t prec);
 

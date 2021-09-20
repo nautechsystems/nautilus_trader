@@ -16,3 +16,5 @@
 pub mod money;
 pub mod price;
 pub mod quantity;
+
+pub const FIXED_PREC: f64 = 0.000000001;

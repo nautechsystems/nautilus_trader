@@ -13,16 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint8_t
-
-
 cdef extern from "nautilus_model.h":
     cdef enum OrderSide:
         Buy,
         Sell,
 
     cdef struct Symbol:
-        char *value
-        uint8_t len
+        pass
 
-    cdef Symbol new_symbol(char *value)
+    cdef struct Venue:
+        pass
+
+    cdef Symbol symbol_new(char *ptr)
+    char *symbol_as_bytes(Symbol *ptr)
+
+    cdef Venue venue_new(char *ptr)
+    char *venue_as_bytes(Venue *ptr)

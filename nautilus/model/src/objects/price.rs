@@ -13,15 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use crate::objects::FIXED_PREC;
 use nautilus_core::text::prec_from_str;
 use std::cmp::Ordering;
-use std::fmt::{Display, Formatter, Result};
+use std::fmt::{Debug, Display, Formatter, Result};
 use std::ops::{AddAssign, Mul, MulAssign};
 
-const FIXED_PREC: f64 = 0.000000001;
-
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, Hash)]
+#[derive(Copy, Clone, Default, Hash)]
 pub struct Price {
     pub value: i64,
     pub prec: u8,
@@ -117,6 +116,12 @@ impl Mul<i64> for Price {
             value: self.value * rhs,
             prec: self.prec,
         }
+    }
+}
+
+impl Debug for Price {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{:.*}", self.prec as usize, self.as_f64())
     }
 }
 

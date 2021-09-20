@@ -5,28 +5,43 @@
 
 #include <stdint.h>
 
+typedef struct UUID4 {
+  uint8_t value[36];
+} UUID4;
+
 /**
- * Return the current seconds since the Unix epoch.
+ * Returns the current seconds since the Unix epoch.
  */
 double unix_timestamp(void);
 
 /**
- * Return the current milliseconds since the Unix epoch.
+ * Returns the current milliseconds since the Unix epoch.
  */
 int64_t unix_timestamp_ms(void);
 
 /**
- * Return the current microseconds since the Unix epoch.
+ * Returns the current microseconds since the Unix epoch.
  */
 int64_t unix_timestamp_us(void);
 
 /**
- * Return the current nanoseconds since the Unix epoch.
+ * Returns the current nanoseconds since the Unix epoch.
  */
 int64_t unix_timestamp_ns(void);
 
-char *uuid_chars_new(void);
+/**
+ * Initializes a new instance of the UUID4 struct.
+ */
+struct UUID4 uuid_new(void);
 
-void uuid_chars_free(char *s);
+/**
+ * Initializes a new instance of the UUID4 struct.
+ */
+struct UUID4 uuid_from_raw(const char *ptr);
+
+/**
+ * Returns a UTF-8 encoded bytes representation of the UUID value.
+ */
+const uint8_t (*uuid_to_bytes(const struct UUID4 *self))[36];
 
 #endif /* add_h */

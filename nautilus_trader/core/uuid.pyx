@@ -27,10 +27,6 @@ cdef class UUID4:
     Represents a pseudo-random UUID (universally unique identifier) version 4
     based on a 128-bit label as specified in RFC 4122.
 
-    Implemented under the hood with the `fastuuid` library which provides
-    CPython bindings to Rusts UUID library. Benched ~3x faster to instantiate
-    this class vs the Python standard `uuid.uuid4()` function.
-
     References
     ----------
     https://en.wikipedia.org/wiki/Universally_unique_identifier
@@ -51,15 +47,14 @@ cdef class UUID4:
             If value is not ``None`` and not a valid UUID.
 
         """
-        if value is not None:
-            Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
-            self.value = value
+        if value is None:
+            # Create a new UUID4 from rust
+            self._value = nautilus_core.uuid_new()
             return
 
-        cdef char *chars = nautilus_core.uuid_chars_new()  # Owned from rust
-        cdef bytes char_bytes = <bytes>chars
-        self.value = char_bytes.decode()
-        nautilus_core.uuid_chars_free(chars)  # Freed in rust
+        Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
+        cdef bytes value_bytes = value.encode("utf-8")
+        self._value = nautilus_core.uuid_from_raw(<char *>value_bytes)
 
     def __eq__(self, UUID4 other) -> bool:
         return self.value == other.value
@@ -67,8 +62,14 @@ cdef class UUID4:
     def __hash__(self) -> int:
         return hash(self.value)
 
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}('{self.value}')"
-
     def __str__(self) -> str:
         return self.value
+
+    def __repr__(self) -> str:
+        cdef bytes encoded = <bytes>nautilus_core.uuid_to_bytes(&self._value)
+        return f"{type(self).__name__}('{encoded.decode()}')"
+
+    @property
+    def value(self) -> str:
+        cdef bytes encoded = <bytes>nautilus_core.uuid_to_bytes(&self._value)
+        return encoded.decode()

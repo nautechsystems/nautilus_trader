@@ -13,23 +13,72 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::CString;
+use std::convert::TryFrom;
+use std::ffi::CStr;
+use std::fmt::{Debug, Display, Formatter, Result};
 use std::os::raw::c_char;
 use uuid::Uuid;
 
-#[no_mangle]
-pub extern "C" fn uuid_chars_new() -> *mut c_char {
-    return CString::new(Uuid::new_v4().to_string()).unwrap().into_raw();
+#[repr(C)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq)]
+pub struct UUID4 {
+    value: [u8; 36], // UTF-8 encoded bytes
 }
 
-#[no_mangle]
-pub extern "C" fn uuid_chars_free(s: *mut c_char) {
-    unsafe {
-        if s.is_null() {
-            return;
+impl UUID4 {
+    pub fn new() -> UUID4 {
+        UUID4 {
+            value: <[u8; 36]>::try_from(Uuid::new_v4().to_string().as_bytes()).unwrap(),
         }
-        CString::from_raw(s) // Frees memory here
-    };
+    }
+
+    pub fn from_str(s: &str) -> UUID4 {
+        UUID4 {
+            value: <[u8; 36]>::try_from(
+                Uuid::parse_str(s)
+                    .expect("Invalid `value` not UUID4 specification.")
+                    .to_string()
+                    .as_bytes(),
+            ) // Uuid::parse_str now guarantees a valid UUID
+            .unwrap(),
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        // self.value expected to be valid
+        String::from_utf8(Vec::from(self.value)).unwrap()
+    }
+
+    /// Initializes a new instance of the UUID4 struct.
+    #[no_mangle]
+    pub extern "C" fn uuid_new() -> UUID4 {
+        UUID4::new()
+    }
+
+    /// Initializes a new instance of the UUID4 struct.
+    #[no_mangle]
+    pub unsafe extern "C" fn uuid_from_raw(ptr: *const c_char) -> UUID4 {
+        let s = CStr::from_ptr(ptr);
+        UUID4::from_str(s.to_str().expect("Not a valid UTF-8 string"))
+    }
+
+    /// Returns a UTF-8 encoded bytes representation of the UUID value.
+    #[no_mangle]
+    pub extern "C" fn uuid_to_bytes(&self) -> &[u8; 36] {
+        &self.value
+    }
+}
+
+impl Debug for UUID4 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+impl Display for UUID4 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}", self.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -37,16 +86,33 @@ mod tests {
     use crate::uuid;
 
     #[test]
-    fn uuid_chars_new_returns_none_null_ptr() {
-        let uuid_chars = uuid::uuid_chars_new();
-        assert!(!uuid_chars.is_null());
+    fn new_produces_correct_length_bytes() {
+        let uuid = uuid::UUID4::new();
+
+        assert_eq!(uuid.value.len(), 36);
+        println!("{}", uuid.to_string())
     }
 
     #[test]
-    fn uuid_chars_free_returns_none_null_ptr() {
-        let uuid_chars = uuid::uuid_chars_new();
-        uuid::uuid_chars_free(uuid_chars)
+    fn new_to_string() {
+        let uuid = uuid::UUID4::new();
 
-        // TODO(cs): Check uuid_chars is freed
+        assert_eq!(uuid.to_string().len(), 36);
+        println!("{}", uuid.to_string())
+    }
+
+    #[test]
+    fn from_str() {
+        let uuid = uuid::UUID4::from_str("2d89666b-1a1e-4a75-b193-4eb3b454c757");
+
+        assert_eq!(uuid.to_string().len(), 36);
+        assert_eq!(uuid.to_string(), "2d89666b-1a1e-4a75-b193-4eb3b454c757");
+    }
+
+    #[test]
+    fn uuid_to_bytes() {
+        let uuid = uuid::UUID4::new();
+
+        assert_eq!(uuid.uuid_to_bytes().len(), 36);
     }
 }

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus.core.nautilus_core cimport UUID4 as UUID4_C
+
+
 cdef class UUID4:
-    cdef readonly str value
-    """The UUID string value.\n\n:returns: `str`"""
+    cdef UUID4_C _value

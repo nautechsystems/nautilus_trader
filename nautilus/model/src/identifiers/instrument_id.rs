@@ -15,11 +15,12 @@
 
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
-use std::ffi::CString;
+use std::ffi::CStr;
+use std::fmt::{Debug, Display, Formatter, Result};
 use std::os::raw::c_char;
 
 #[repr(C)]
-#[derive(Copy, Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Hash, PartialEq)]
 pub struct InstrumentId {
     pub symbol: Symbol,
     pub venue: Venue,
@@ -39,11 +40,9 @@ impl InstrumentId {
         }
     }
 
-    pub unsafe fn from_raw(value: *mut c_char) -> InstrumentId {
-        // Here we always check `value` can be parsed into a valid C string
-        let s = CString::from_raw(value)
-            .into_string()
-            .expect("Cannot parse `value` to InstrumentId");
+    pub unsafe fn from_raw(ptr: *const c_char) -> InstrumentId {
+        // SAFETY: checks `ptr` can be parsed into a valid C string
+        let s = CStr::from_ptr(ptr).to_str().expect("invalid UTF-8 string");
         let pieces: Vec<&str> = s.split(".").collect();
         assert!(pieces.len() >= 2);
         InstrumentId {
@@ -52,16 +51,23 @@ impl InstrumentId {
         }
     }
 
-    pub unsafe fn to_string(self) -> String {
-        let mut output = self.symbol.to_string();
+    pub fn to_string(self) -> String {
+        let mut output = self.symbol.value.to_string();
         output.push_str("."); // Delimiter
         output.push_str(&self.venue.to_string());
         output
     }
+}
 
-    #[no_mangle]
-    pub unsafe extern "C" fn new_instrument_id(value: *mut c_char) -> Symbol {
-        Symbol::from_raw(value)
+impl Debug for InstrumentId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}.{}", self.symbol.value, self.venue.value)
+    }
+}
+
+impl Display for InstrumentId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "{}.{}", self.symbol.value, self.venue.value)
     }
 }
 
@@ -76,8 +82,8 @@ mod tests {
 
         assert_eq!(instrument_id1, instrument_id1);
         assert_ne!(instrument_id1, instrument_id2);
-        assert_eq!(instrument_id1.symbol.len, 8);
-        assert_eq!(instrument_id1.venue.len, 7);
-        unsafe { assert_eq!(instrument_id1.to_string(), "ETH/USDT.BINANCE") }
+        assert_eq!(instrument_id1.symbol.value.len(), 8);
+        assert_eq!(instrument_id1.venue.value.len(), 7);
+        assert_eq!(instrument_id1.to_string(), "ETH/USDT.BINANCE")
     }
 }
