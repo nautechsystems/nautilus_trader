@@ -17,4 +17,4 @@ from nautilus.api.nautilus_core cimport UUID4 as UUID4_C
 
 
 cdef class UUID4:
-    cdef UUID4_C _value
+    cdef UUID4_C _uuid4

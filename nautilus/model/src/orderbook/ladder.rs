@@ -16,20 +16,22 @@
 use crate::enums::OrderSide;
 use crate::orderbook::level::Level;
 use crate::orderbook::order::Order;
-use min_max_heap::MinMaxHeap;
+use std::collections::HashMap;
 
 #[repr(C)]
 #[derive(Debug)]
 pub struct Ladder {
     pub side: OrderSide,
-    pub levels: Box<MinMaxHeap<Level>>,
+    pub levels: Box<Vec<Level>>,
+    pub cache: Box<HashMap<u64, usize>>,
 }
 
 impl Ladder {
     pub fn new(side: OrderSide) -> Self {
         Ladder {
             side,
-            levels: Box::new(MinMaxHeap::new()),
+            levels: Box::new(Vec::new()),
+            cache: Box::new(HashMap::new()),
         }
     }
 
@@ -37,32 +39,348 @@ impl Ladder {
         self.levels.len()
     }
 
+    pub fn add_bulk(&mut self, orders: Vec<Order>) {
+        for order in orders {
+            self.add(order)
+        }
+    }
+
     pub fn add(&mut self, order: Order) {
-        match self.find_level_for_order(&order) {
+        match self
+            .levels
+            .iter().position(|l| order.price == l.price)  // TODO(cs): Make binary search
+        {
             None => {
-                self.levels.push(Level::from_order(order));
+                let order_id = order.id.clone();  // TODO(cs): Optimize
+                let price = order.price.clone();  // TODO(cs): Optimize
+                let level = Level::from_order(order);
+                self.levels.push(level);
+                self._sort_levels();
+                let idx = self.levels.iter().position(|l| price == l.price).unwrap();
+                self.cache.insert(order_id, idx);
             }
-            Some(mut level) => {
-                level.add(order);
+            Some(idx) => {
+                self.levels[idx].add(order);
             }
         }
     }
 
     pub fn update(&mut self, order: Order) {
-        match self.find_level_for_order(&order) {
-            None => {
-                self.levels.push(Level::from_order(order));
-            }
-            Some(mut level) => {
-                level.update(order);
+        match self.cache.get(&order.id) {
+            None => panic!("No order with ID {}", &order.id),
+            Some(idx) => {
+                let mut level = self.levels.remove(*idx);
+                if order.price == level.price {
+                    // This update contains a volume update
+                    level.update(order);
+                    if level.len() > 0 {
+                        self.levels.push(level);
+                        self._sort_levels();
+                    }
+                } else {
+                    let order_id = order.id.clone(); // TODO(cs): Optimize
+                    let price = order.price.clone(); // TODO(cs): Optimize
+                                                     // New price for this order, delete and insert
+                    level.delete(&order);
+                    self.add(order);
+                    let idx = self.levels.iter().position(|l| price == l.price).unwrap();
+                    self.cache.insert(order_id, idx);
+                }
             }
         }
     }
 
-    pub fn find_level_for_order(&mut self, order: &Order) -> Option<Level> {
-        match self.side {
-            OrderSide::Buy => self.levels.drain_desc().find(|l| l.price == order.price),
-            OrderSide::Sell => self.levels.drain_asc().find(|l| l.price == order.price),
+    pub fn delete(&mut self, order: Order) {
+        match self.cache.remove(&order.id) {
+            None => panic!("No order with ID {}", &order.id),
+            Some(idx) => {
+                let mut level = self.levels.remove(idx);
+                level.delete(&order);
+            }
         }
+    }
+
+    pub fn volumes(&self) -> f64 {
+        return self.levels.iter().map(|l| l.volume()).sum();
+    }
+
+    pub fn exposures(&self) -> f64 {
+        return self.levels.iter().map(|l| l.exposure()).sum();
+    }
+
+    pub fn top(&self) -> Option<&Level> {
+        self.levels.first()
+    }
+
+    fn _sort_levels(&mut self) {
+        match self.side {
+            OrderSide::Buy => {
+                self.levels.sort_by(|a, b| b.cmp(a));
+            }
+            OrderSide::Sell => {
+                self.levels.sort();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::enums::OrderSide;
+    use crate::objects::price::Price;
+    use crate::objects::quantity::Quantity;
+    use crate::orderbook::ladder::Ladder;
+    use crate::orderbook::order::Order;
+
+    #[test]
+    fn ladder_add_single_order() {
+        let mut ladder = Ladder::new(OrderSide::Buy);
+        let order = Order::new(
+            Price::new(10.00, 2),
+            Quantity::new(20.0, 0),
+            OrderSide::Buy,
+            0,
+        );
+
+        ladder.add(order);
+
+        assert_eq!(ladder.len(), 1);
+        assert_eq!(ladder.volumes(), 20.0);
+        assert_eq!(ladder.exposures(), 200.0);
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 10.0)
+    }
+
+    #[test]
+    fn ladder_add_multiple_buy_orders() {
+        let mut ladder = Ladder::new(OrderSide::Buy);
+        let order1 = Order::new(
+            Price::new(10.00, 2),
+            Quantity::new(20.0, 0),
+            OrderSide::Buy,
+            0,
+        );
+        let order2 = Order::new(
+            Price::new(9.00, 2),
+            Quantity::new(30.0, 0),
+            OrderSide::Buy,
+            0,
+        );
+        let order3 = Order::new(
+            Price::new(9.00, 2),
+            Quantity::new(50.0, 0),
+            OrderSide::Buy,
+            0,
+        );
+        let order4 = Order::new(
+            Price::new(8.00, 2),
+            Quantity::new(200.0, 0),
+            OrderSide::Buy,
+            0,
+        );
+
+        ladder.add_bulk(vec![order1, order2, order3, order4]);
+
+        assert_eq!(ladder.len(), 3);
+        assert_eq!(ladder.volumes(), 300.0);
+        assert_eq!(ladder.exposures(), 2520.0);
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 10.0)
+    }
+
+    #[test]
+    fn ladder_add_multiple_sell_orders() {
+        let mut ladder = Ladder::new(OrderSide::Sell);
+        let order1 = Order::new(
+            Price::new(11.00, 2),
+            Quantity::new(20.0, 0),
+            OrderSide::Sell,
+            0,
+        );
+        let order2 = Order::new(
+            Price::new(12.00, 2),
+            Quantity::new(30.0, 0),
+            OrderSide::Sell,
+            0,
+        );
+        let order3 = Order::new(
+            Price::new(12.00, 2),
+            Quantity::new(50.0, 0),
+            OrderSide::Sell,
+            0,
+        );
+        let order4 = Order::new(
+            Price::new(13.00, 2),
+            Quantity::new(200.0, 0),
+            OrderSide::Sell,
+            0,
+        );
+
+        ladder.add_bulk(vec![order1, order2, order3, order4]);
+
+        assert_eq!(ladder.len(), 3);
+        assert_eq!(ladder.volumes(), 300.0);
+        assert_eq!(ladder.exposures(), 3780.0);
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.0)
+    }
+
+    #[test]
+    fn ladder_update_buy_order_price() {
+        let mut ladder = Ladder::new(OrderSide::Buy);
+        let order = Order::new(
+            Price::new(11.00, 2),
+            Quantity::new(20.0, 0),
+            OrderSide::Buy,
+            1,
+        );
+
+        ladder.add(order);
+
+        let order = Order::new(
+            Price::new(11.10, 2),
+            Quantity::new(20.0, 0),
+            OrderSide::Buy,
+            1,
+        );
+
+        ladder.update(order);
+
+        assert_eq!(ladder.len(), 1);
+        assert_eq!(ladder.volumes(), 20.0);
+        assert_eq!(ladder.exposures(), 222.00000000000003);
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.100000000000001)
+    }
+
+    #[test]
+    fn ladder_update_sell_order_price() {
+        let mut ladder = Ladder::new(OrderSide::Sell);
+        let order = Order::new(
+            Price::new(11.00, 2),
+            Quantity::new(20.0, 0),
+            OrderSide::Sell,
+            1,
+        );
+
+        ladder.add(order);
+
+        let order = Order::new(
+            Price::new(11.10, 2),
+            Quantity::new(20.0, 0),
+            OrderSide::Sell,
+            1,
+        );
+
+        ladder.update(order);
+
+        assert_eq!(ladder.len(), 1);
+        assert_eq!(ladder.volumes(), 20.0);
+        assert_eq!(ladder.exposures(), 222.00000000000003);
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.100000000000001)
+    }
+
+    #[test]
+    fn ladder_update_buy_order_size() {
+        let mut ladder = Ladder::new(OrderSide::Buy);
+        let order = Order::new(
+            Price::new(11.00, 2),
+            Quantity::new(20.0, 0),
+            OrderSide::Buy,
+            1,
+        );
+
+        ladder.add(order);
+
+        let order = Order::new(
+            Price::new(11.00, 2),
+            Quantity::new(10.0, 0),
+            OrderSide::Buy,
+            1,
+        );
+
+        ladder.update(order);
+
+        assert_eq!(ladder.len(), 1);
+        assert_eq!(ladder.volumes(), 10.0);
+        assert_eq!(ladder.exposures(), 110.0);
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.0)
+    }
+
+    #[test]
+    fn ladder_update_sell_order_size() {
+        let mut ladder = Ladder::new(OrderSide::Sell);
+        let order = Order::new(
+            Price::new(11.00, 2),
+            Quantity::new(20.0, 0),
+            OrderSide::Sell,
+            1,
+        );
+
+        ladder.add(order);
+
+        let order = Order::new(
+            Price::new(11.00, 2),
+            Quantity::new(10.0, 0),
+            OrderSide::Sell,
+            1,
+        );
+
+        ladder.update(order);
+
+        assert_eq!(ladder.len(), 1);
+        assert_eq!(ladder.volumes(), 10.0);
+        assert_eq!(ladder.exposures(), 110.0);
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.0)
+    }
+
+    #[test]
+    fn ladder_delete_buy_order() {
+        let mut ladder = Ladder::new(OrderSide::Buy);
+        let order = Order::new(
+            Price::new(11.00, 2),
+            Quantity::new(20.0, 0),
+            OrderSide::Buy,
+            1,
+        );
+
+        ladder.add(order);
+
+        let order = Order::new(
+            Price::new(11.00, 2),
+            Quantity::new(10.0, 0),
+            OrderSide::Buy,
+            1,
+        );
+
+        ladder.delete(order);
+
+        assert_eq!(ladder.len(), 0);
+        assert_eq!(ladder.volumes(), 0.0);
+        assert_eq!(ladder.exposures(), 0.0);
+        assert_eq!(ladder.top(), None)
+    }
+
+    #[test]
+    fn ladder_delete_sell_order() {
+        let mut ladder = Ladder::new(OrderSide::Sell);
+        let order = Order::new(
+            Price::new(10.00, 2),
+            Quantity::new(10.0, 0),
+            OrderSide::Sell,
+            1,
+        );
+
+        ladder.add(order);
+
+        let order = Order::new(
+            Price::new(10.00, 2),
+            Quantity::new(10.0, 0),
+            OrderSide::Sell,
+            1,
+        );
+
+        ladder.delete(order);
+
+        assert_eq!(ladder.len(), 0);
+        assert_eq!(ladder.volumes(), 0.0);
+        assert_eq!(ladder.exposures(), 0.0);
+        assert_eq!(ladder.top(), None)
     }
 }

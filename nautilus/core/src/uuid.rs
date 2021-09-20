@@ -57,6 +57,12 @@ impl UUID4 {
 
     /// Initializes a new instance of the UUID4 struct.
     #[no_mangle]
+    pub extern "C" fn uuid_free(uuid: UUID4) -> UUID4 {
+        uuid // Memory freed here
+    }
+
+    /// Initializes a new instance of the UUID4 struct.
+    #[no_mangle]
     pub unsafe extern "C" fn uuid_from_raw(ptr: *const c_char) -> UUID4 {
         let s = CStr::from_ptr(ptr);
         UUID4::from_str(s.to_str().expect("Not a valid UTF-8 string"))

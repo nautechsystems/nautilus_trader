@@ -37,6 +37,11 @@ struct UUID4 uuid_new(void);
 /**
  * Initializes a new instance of the UUID4 struct.
  */
+struct UUID4 uuid_free(struct UUID4 uuid);
+
+/**
+ * Initializes a new instance of the UUID4 struct.
+ */
 struct UUID4 uuid_from_raw(const char *ptr);
 
 /**

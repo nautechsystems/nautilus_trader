@@ -49,12 +49,12 @@ cdef class UUID4:
         """
         if value is None:
             # Create a new UUID4 from rust
-            self._value = nautilus_core.uuid_new()
+            self._uuid4 = nautilus_core.uuid_new()
             return
 
         Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
         cdef bytes value_bytes = value.encode("utf-8")
-        self._value = nautilus_core.uuid_from_raw(<char *>value_bytes)
+        self._uuid4 = nautilus_core.uuid_from_raw(<char *>value_bytes)
 
     def __eq__(self, UUID4 other) -> bool:
         return self.value == other.value
@@ -66,10 +66,14 @@ cdef class UUID4:
         return self.value
 
     def __repr__(self) -> str:
-        cdef bytes encoded = <bytes> nautilus_core.uuid_to_bytes(&self._value)
+        cdef bytes encoded = <bytes> nautilus_core.uuid_to_bytes(&self._uuid4)
         return f"{type(self).__name__}('{encoded.decode()}')"
+
+    def __del__(self) -> None:
+        # Free memory allocated by rust
+        nautilus_core.uuid_free(self._uuid4)
 
     @property
     def value(self) -> str:
-        cdef bytes encoded = <bytes> nautilus_core.uuid_to_bytes(&self._value)
+        cdef bytes encoded = <bytes> nautilus_core.uuid_to_bytes(&self._uuid4)
         return encoded.decode()

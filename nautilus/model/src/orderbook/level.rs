@@ -16,9 +16,9 @@
 use crate::objects::price::Price;
 use crate::orderbook::order::Order;
 use std::cmp::Ordering;
+use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
-#[derive(Debug, Hash)]
 pub struct Level {
     pub price: Price,
     pub orders: Box<Vec<Order>>,
@@ -45,6 +45,12 @@ impl Level {
         self.orders.len()
     }
 
+    pub fn add_bulk(&mut self, orders: Vec<Order>) {
+        for order in orders {
+            self.add(order)
+        }
+    }
+
     pub fn add(&mut self, order: Order) {
         assert_eq!(order.price, self.price); // Confirm order for this level
         self.orders.push(order);
@@ -54,7 +60,7 @@ impl Level {
         assert_eq!(order.price, self.price); // Confirm order for this level
 
         if order.size.value == 0 {
-            self.delete(order)
+            self.delete(&order)
         } else {
             let index = self
                 .orders
@@ -65,15 +71,13 @@ impl Level {
         }
     }
 
-    pub fn delete(&mut self, order: Order) {
-        assert_eq!(order.price, self.price); // Confirm order for this level
-
+    pub fn delete(&mut self, order: &Order) {
         let index = self
             .orders
             .iter()
             .position(|o| o.id == order.id)
             .expect("Cannot delete order: order not found");
-        self.orders.swap_remove(index);
+        self.orders.remove(index);
     }
 
     pub fn volume(&self) -> f64 {
@@ -133,6 +137,18 @@ impl Ord for Level {
     }
 }
 
+impl Debug for Level {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "Level(price={})", self.price)
+    }
+}
+
+impl Display for Level {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "Level(price={})", self.price)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::enums::OrderSide;
@@ -169,26 +185,26 @@ mod tests {
 
     #[test]
     fn level_add_multiple_orders() {
-        let mut level = Level::new(Price::new(1.00, 2));
+        let mut level = Level::new(Price::new(2.00, 2));
         let order1 = Order::new(
-            Price::new(1.00, 2),
+            Price::new(2.00, 2),
             Quantity::new(10.0, 0),
             OrderSide::Buy,
             0,
         );
         let order2 = Order::new(
-            Price::new(1.00, 2),
-            Quantity::new(10.0, 0),
+            Price::new(2.00, 2),
+            Quantity::new(20.0, 0),
             OrderSide::Buy,
-            0,
+            1,
         );
 
         level.add(order1);
         level.add(order2);
 
         assert_eq!(level.len(), 2);
-        assert_eq!(level.volume(), 20.0);
-        assert_eq!(level.exposure(), 20.0);
+        assert_eq!(level.volume(), 30.0);
+        assert_eq!(level.exposure(), 60.0);
     }
 
     #[test]

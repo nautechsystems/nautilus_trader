@@ -18,9 +18,11 @@ typedef enum OrderSide {
   Sell = 2,
 } OrderSide;
 
+typedef struct HashMap_u64__usize HashMap_u64__usize;
+
 typedef struct String String;
 
-typedef struct Vec_Order Vec_Order;
+typedef struct Vec_Level Vec_Level;
 
 typedef struct Symbol {
   struct String *value;
@@ -40,26 +42,24 @@ typedef struct Quantity {
   uint8_t prec;
 } Quantity;
 
+typedef struct Ladder {
+  enum OrderSide side;
+  struct Vec_Level *levels;
+  struct HashMap_u64__usize *cache;
+} Ladder;
+
 typedef struct InstrumentId {
   struct Symbol symbol;
   struct Venue venue;
 } InstrumentId;
 
-typedef struct Level {
-  struct Price price;
-  struct Vec_Order *orders;
-} Level;
-
-typedef struct Ladder {
-  enum OrderSide side;
-  MinMaxHeap<Level> *levels;
-} Ladder;
-
 typedef struct OrderBook {
-  struct InstrumentId instrument_id;
-  enum BookLevel book_level;
   struct Ladder bids;
   struct Ladder asks;
+  struct InstrumentId instrument_id;
+  enum BookLevel book_level;
+  enum OrderSide last_action_side;
+  int64_t last_action_ts;
 } OrderBook;
 
 struct Symbol symbol_new(const char *ptr);

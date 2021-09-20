@@ -27,5 +27,6 @@ cdef extern from "nautilus_core.h":
     int64_t unix_timestamp_ns()
 
     UUID4 uuid_new()
+    UUID4 uuid_free(UUID4 uuid)
     UUID4 uuid_from_raw(char *ptr)
     uint8_t[36] uuid_to_bytes(UUID4 *ptr)

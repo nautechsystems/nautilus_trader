@@ -21,19 +21,32 @@ use crate::orderbook::order::Order;
 #[repr(C)]
 #[derive(Debug)]
 pub struct OrderBook {
-    pub instrument_id: InstrumentId,
-    pub book_level: BookLevel,
     bids: Ladder,
     asks: Ladder,
+    pub instrument_id: InstrumentId,
+    pub book_level: BookLevel,
+    pub last_action_side: OrderSide,
+    pub last_action_ts: i64,
 }
 
 impl OrderBook {
     pub fn new(instrument_id: InstrumentId, book_level: BookLevel) -> Self {
         OrderBook {
-            instrument_id,
-            book_level,
             bids: Ladder::new(OrderSide::Buy),
             asks: Ladder::new(OrderSide::Sell),
+            instrument_id,
+            book_level,
+            last_action_side: OrderSide::Buy,
+            last_action_ts: 0,
+        }
+    }
+
+    pub fn add(&mut self, order: Order, ts_event: i64) {
+        self.last_action_side = order.side;
+        self.last_action_ts = ts_event;
+        match order.side {
+            OrderSide::Buy => self.bids.add(order),
+            OrderSide::Sell => self.asks.add(order),
         }
     }
 
@@ -43,12 +56,5 @@ impl OrderBook {
         book_level: BookLevel,
     ) -> OrderBook {
         OrderBook::new(instrument_id, book_level)
-    }
-
-    pub fn _add(&mut self, order: Order) {
-        match order.side {
-            OrderSide::Buy => self.bids.add(order),
-            OrderSide::Sell => self.asks.add(order),
-        }
     }
 }
