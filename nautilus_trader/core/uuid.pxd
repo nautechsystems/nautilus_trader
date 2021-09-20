@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus.core.nautilus_core cimport UUID4 as UUID4_C
+from nautilus.api.nautilus_core cimport UUID4 as UUID4_C
 
 
 cdef class UUID4:

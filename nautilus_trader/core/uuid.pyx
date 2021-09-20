@@ -15,7 +15,7 @@
 
 import re
 
-from nautilus.core cimport nautilus_core
+from nautilus.api cimport nautilus_core
 from nautilus_trader.core.correctness cimport Condition
 
 
@@ -66,10 +66,10 @@ cdef class UUID4:
         return self.value
 
     def __repr__(self) -> str:
-        cdef bytes encoded = <bytes>nautilus_core.uuid_to_bytes(&self._value)
+        cdef bytes encoded = <bytes> nautilus_core.uuid_to_bytes(&self._value)
         return f"{type(self).__name__}('{encoded.decode()}')"
 
     @property
     def value(self) -> str:
-        cdef bytes encoded = <bytes>nautilus_core.uuid_to_bytes(&self._value)
+        cdef bytes encoded = <bytes> nautilus_core.uuid_to_bytes(&self._value)
         return encoded.decode()
