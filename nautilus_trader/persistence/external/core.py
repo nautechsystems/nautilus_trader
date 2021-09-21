@@ -31,6 +31,7 @@ from fsspec.core import OpenFile
 from tqdm import tqdm
 
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
@@ -195,6 +196,21 @@ def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[List
     return None
 
 
+def merge_existing_data(catalog: DataCatalog, cls: type, df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Handle existing data for instrument subclasses; instruments all live in a single file, so merge with existing data.
+    For all other classes, simply return data unchanged.
+    """
+    if cls not in Instrument.__subclasses__():
+        return df
+    else:
+        try:
+            existing = catalog.instruments(instrument_type=cls)
+            return existing.append(df.drop(["type"], axis=1)).drop_duplicates()
+        except pa.lib.ArrowInvalid:
+            return df
+
+
 def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]], **kwargs):
     """
     Write tables to catalog.
@@ -217,11 +233,12 @@ def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame
         partition_cols = determine_partition_cols(cls=cls, instrument_id=instrument_id)
         name = f"{class_to_filename(cls)}.parquet"
         path = f"{catalog.path}/data/{name}"
+        merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
         with named_lock(name):
             write_parquet(
                 fs=catalog.fs,
                 path=path,
-                df=df,
+                df=merged,
                 partition_cols=partition_cols,
                 schema=schema,
                 **kwargs,

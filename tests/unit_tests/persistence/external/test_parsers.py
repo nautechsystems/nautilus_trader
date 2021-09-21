@@ -16,9 +16,7 @@
 import pathlib
 import sys
 from functools import partial
-from unittest.mock import Mock
 
-import fsspec.implementations.memory
 import orjson
 import pandas as pd
 import pytest
@@ -54,15 +52,7 @@ class TestPersistenceParsers:
         data_catalog_setup()
         self.catalog = DataCatalog.from_env()
         self.reader = MockReader()
-        self.mock_catalog = self._mock_catalog()
         self.line_preprocessor = TestLineProcessor()
-
-    @staticmethod
-    def _mock_catalog():
-        mock_catalog = Mock(spec=DataCatalog)
-        mock_catalog.path = "/root"
-        mock_catalog.fs = fsspec.implementations.memory.MemoryFileSystem()
-        return mock_catalog
 
     def test_line_preprocessor_preprocess(self):
         line = b'2021-06-29T06:04:11.943000 - {"op":"mcm","id":1,"clk":"AOkiAKEMAL4P","pt":1624946651810}\n'
@@ -155,7 +145,7 @@ class TestPersistenceParsers:
 
         reader = TextReader(line_parser=parser)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/binance-btcusdt-instrument.txt")[0]
-        result = process_raw_file(catalog=self.mock_catalog, raw_file=raw_file, reader=reader)
+        result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         expected = 1
         assert result == expected
 
@@ -171,14 +161,14 @@ class TestPersistenceParsers:
 
         reader = CSVReader(block_parser=parser, as_dataframe=True)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/truefx-audusd-ticks.csv")[0]
-        result = process_raw_file(catalog=self.mock_catalog, raw_file=raw_file, reader=reader)
+        result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         assert result == 100000
 
     def test_text_reader(self):
         provider = BetfairInstrumentProvider.from_instruments([])
         reader = BetfairTestStubs.betfair_reader(provider)  # type: TextReader
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/betfair/1.166811431.bz2")[0]
-        result = process_raw_file(catalog=self.mock_catalog, raw_file=raw_file, reader=reader)
+        result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         assert result == 22692
 
     def test_byte_json_parser(self):
@@ -189,7 +179,7 @@ class TestPersistenceParsers:
 
         reader = ByteReader(block_parser=parser)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/crypto*.json")[0]
-        result = process_raw_file(catalog=self.mock_catalog, raw_file=raw_file, reader=reader)
+        result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         assert result == 6
 
     def test_parquet_reader(self):
@@ -205,7 +195,7 @@ class TestPersistenceParsers:
 
         reader = ParquetReader(parser=parser)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/binance-btcusdt-quotes.parquet")[0]
-        result = process_raw_file(catalog=self.mock_catalog, raw_file=raw_file, reader=reader)
+        result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         assert result == 451
 
 
