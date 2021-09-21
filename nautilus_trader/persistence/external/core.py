@@ -319,7 +319,7 @@ def _parse_file_start_by_filename(
 def _parse_start_from_data(fn: str, fs: fsspec.AbstractFileSystem, timestamp_column="ts_init"):
     f = pq.ParquetFile(fs.open(fn))
     first_row = f.read_row_group(0).slice(length=1).to_pandas()
-    return first_row[timestamp_column]
+    return first_row.iloc[0][timestamp_column]
 
 
 def _parse_file_start(
