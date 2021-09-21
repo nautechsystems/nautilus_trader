@@ -28,7 +28,7 @@ impl Level {
     pub fn new(price: Price) -> Self {
         Level {
             price,
-            orders: Box::new(vec![]),
+            orders: Box::new(Vec::new()),
         }
     }
 
@@ -53,21 +53,22 @@ impl Level {
 
     pub fn add(&mut self, order: Order) {
         assert_eq!(order.price, self.price); // Confirm order for this level
+
         self.orders.push(order);
     }
 
     pub fn update(&mut self, order: Order) {
         assert_eq!(order.price, self.price); // Confirm order for this level
 
-        if order.size.mantissa == 0 {
+        if order.size.is_zero() {
             self.delete(&order)
         } else {
-            let index = self
+            let idx = self
                 .orders
                 .iter()
                 .position(|o| o.id == order.id)
                 .expect("Cannot update order: order not found");
-            self.orders[index] = order;
+            self.orders[idx] = order;
         }
     }
 

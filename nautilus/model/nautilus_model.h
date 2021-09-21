@@ -20,11 +20,11 @@ typedef enum OrderSide {
   Sell = 2,
 } OrderSide;
 
-typedef struct HashMap_u64__usize HashMap_u64__usize;
+typedef struct BTreeMap_Price__Level BTreeMap_Price__Level;
+
+typedef struct HashMap_u64__Price HashMap_u64__Price;
 
 typedef struct String String;
-
-typedef struct Vec_Level Vec_Level;
 
 typedef struct Symbol {
   struct String *value;
@@ -46,8 +46,8 @@ typedef struct Quantity {
 
 typedef struct Ladder {
   enum OrderSide side;
-  struct Vec_Level *levels;
-  struct HashMap_u64__usize *cache;
+  struct BTreeMap_Price__Level *levels;
+  struct HashMap_u64__Price *cache;
 } Ladder;
 
 typedef struct InstrumentId {

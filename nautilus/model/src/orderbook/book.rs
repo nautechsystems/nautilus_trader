@@ -50,6 +50,28 @@ impl OrderBook {
         }
     }
 
+    pub fn update(&mut self, order: Order, ts_event: i64) {
+        self.last_side = order.side;
+        self.ts_last = ts_event;
+        if order.size.is_zero() {
+            self.delete(order, ts_event);
+        } else {
+            match order.side {
+                OrderSide::Buy => self.bids.update(order),
+                OrderSide::Sell => self.asks.update(order),
+            }
+        }
+    }
+
+    pub fn delete(&mut self, order: Order, ts_event: i64) {
+        self.last_side = order.side;
+        self.ts_last = ts_event;
+        match order.side {
+            OrderSide::Buy => self.bids.delete(order),
+            OrderSide::Sell => self.asks.delete(order),
+        }
+    }
+
     //##########################################################################
     // C API
     //##########################################################################

@@ -31,7 +31,8 @@ impl Quantity {
         assert!(precision <= 9);
         let diff = FIXED_EXPONENT - precision;
         Quantity {
-            mantissa: (value * 10_i32.pow(precision as u32) as f64) as u64 * 10_u64.pow(diff as u32),
+            mantissa: (value * 10_i32.pow(precision as u32) as f64) as u64
+                * 10_u64.pow(diff as u32),
             precision,
         }
     }
@@ -45,6 +46,9 @@ impl Quantity {
         Quantity::new(float_res, prec_from_str(input))
     }
 
+    pub fn is_zero(&self) -> bool {
+        self.mantissa == 0
+    }
     pub fn as_f64(&self) -> f64 {
         (self.mantissa) as f64 * FIXED_PRECISION
     }
