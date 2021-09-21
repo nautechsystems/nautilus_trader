@@ -16,6 +16,7 @@
 use crate::enums::OrderSide;
 use crate::objects::price::Price;
 use crate::objects::quantity::Quantity;
+use crate::orderbook::ladder::BookPrice;
 
 #[repr(C)]
 #[derive(Debug, Hash)]
@@ -34,6 +35,10 @@ impl Order {
             side,
             id,
         }
+    }
+
+    pub fn to_book_price(&self) -> BookPrice {
+        BookPrice::new(self.price, self.side)
     }
 
     pub fn from_vec(vec: Vec<&str>) -> Self {

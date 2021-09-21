@@ -36,8 +36,8 @@ impl BookPrice {
 impl PartialOrd for BookPrice {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match self.side {
-            OrderSide::Buy => Some(self.cmp(other).reverse()),
-            OrderSide::Sell => Some(self.cmp(other)),
+            OrderSide::Buy => Some(other.value.cmp(&self.value)),
+            OrderSide::Sell => Some(self.value.cmp(&other.value)),
         }
     }
 }
@@ -51,7 +51,7 @@ impl PartialEq for BookPrice {
 impl Ord for BookPrice {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.side {
-            OrderSide::Buy => self.value.cmp(&other.value).reverse(),
+            OrderSide::Buy => other.value.cmp(&self.value),
             OrderSide::Sell => self.value.cmp(&other.value),
         }
     }
@@ -140,12 +140,12 @@ impl Ladder {
         return self.levels.iter().map(|(_, l)| l.exposure()).sum();
     }
 
-    // pub fn top(&self) -> Option<&Level> {
-    //     match self.levels.into_values().next() {
-    //         None => Option::None,
-    //         Some(l) => Option::Some(l)
-    //     }
-    // }
+    pub fn top(&self) -> Option<&Level> {
+        match self.levels.iter().next() {
+            None => Option::None,
+            Some((_, l)) => Option::Some(l),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -199,7 +199,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 20.0);
         assert_eq!(ladder.exposures(), 200.0);
-        //assert_eq!(ladder.top().unwrap().price.as_f64(), 10.0)
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 10.0)
     }
 
     #[test]
@@ -235,7 +235,7 @@ mod tests {
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.volumes(), 300.0);
         assert_eq!(ladder.exposures(), 2520.0);
-        // assert_eq!(ladder.top().unwrap().price.as_f64(), 10.0)
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 10.0)
     }
 
     #[test]
@@ -271,7 +271,7 @@ mod tests {
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.volumes(), 300.0);
         assert_eq!(ladder.exposures(), 3780.0);
-        // assert_eq!(ladder.top().unwrap().price.as_f64(), 11.0)
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.0)
     }
 
     #[test]
@@ -298,7 +298,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 20.0);
         assert_eq!(ladder.exposures(), 222.00000000000003);
-        // assert_eq!(ladder.top().unwrap().price.as_f64(), 11.100000000000001)
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.100000000000001)
     }
 
     #[test]
@@ -325,7 +325,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 20.0);
         assert_eq!(ladder.exposures(), 222.00000000000003);
-        // assert_eq!(ladder.top().unwrap().price.as_f64(), 11.100000000000001)
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.100000000000001)
     }
 
     #[test]
@@ -352,7 +352,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
-        // assert_eq!(ladder.top().unwrap().price.as_f64(), 11.0)
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.0)
     }
 
     #[test]
@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
-        // assert_eq!(ladder.top().unwrap().price.as_f64(), 11.0)
+        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.0)
     }
 
     #[test]
@@ -406,7 +406,7 @@ mod tests {
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.volumes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
-        // assert_eq!(ladder.top(), None)
+        assert_eq!(ladder.top(), None)
     }
 
     #[test]
@@ -433,6 +433,6 @@ mod tests {
         assert_eq!(ladder.len(), 0);
         assert_eq!(ladder.volumes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
-        // assert_eq!(ladder.top(), None)
+        assert_eq!(ladder.top(), None)
     }
 }
