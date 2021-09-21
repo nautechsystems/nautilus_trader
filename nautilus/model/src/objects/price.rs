@@ -211,6 +211,7 @@ mod tests {
         let price = Price::new_from_str(&input_string);
 
         assert_eq!(price.mantissa, 44123456000);
+        assert_eq!(price.precision, 6);
         assert_eq!(price.as_f64(), 44.123456000000004);
         assert_eq!(price.to_string(), "44.123456");
     }

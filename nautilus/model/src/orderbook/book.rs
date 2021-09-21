@@ -19,7 +19,6 @@ use crate::orderbook::ladder::Ladder;
 use crate::orderbook::order::Order;
 
 #[repr(C)]
-#[derive(Debug)]
 pub struct OrderBook {
     bids: Ladder,
     asks: Ladder,

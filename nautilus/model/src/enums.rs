@@ -14,21 +14,30 @@
 // -------------------------------------------------------------------------------------------------
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum CurrencyType {
     Crypto,
     Fiat,
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum OrderSide {
     Buy = 1,
     Sell = 2,
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub enum PriceType {
+    Bid = 1,
+    Ask = 2,
+    Mid = 3,
+    Last = 4,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum BookLevel {
     L1 = 1,
     L2 = 2,
@@ -36,7 +45,7 @@ pub enum BookLevel {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum BookAction {
     Add = 1,
     Update = 2,
@@ -45,7 +54,7 @@ pub enum BookAction {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
 pub enum DepthType {
     Volume = 1,
     Exposure = 2,

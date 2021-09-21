@@ -17,14 +17,51 @@ use crate::enums::OrderSide;
 use crate::objects::price::Price;
 use crate::orderbook::level::Level;
 use crate::orderbook::order::Order;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Copy, Clone, Hash, Eq)]
+pub struct BookPrice {
+    pub value: Price,
+    pub side: OrderSide,
+}
+
+impl BookPrice {
+    pub fn new(value: Price, side: OrderSide) -> Self {
+        BookPrice { value, side }
+    }
+}
+
+impl PartialOrd for BookPrice {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match self.side {
+            OrderSide::Buy => Some(self.cmp(other).reverse()),
+            OrderSide::Sell => Some(self.cmp(other)),
+        }
+    }
+}
+
+impl PartialEq for BookPrice {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl Ord for BookPrice {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.side {
+            OrderSide::Buy => self.value.cmp(&other.value).reverse(),
+            OrderSide::Sell => self.value.cmp(&other.value),
+        }
+    }
+}
+
+#[repr(C)]
 pub struct Ladder {
     pub side: OrderSide,
-    pub levels: Box<BTreeMap<Price, Level>>,
-    pub cache: Box<HashMap<u64, Price>>,
+    pub levels: Box<BTreeMap<BookPrice, Level>>,
+    pub cache: Box<HashMap<u64, BookPrice>>,
 }
 
 impl Ladder {
@@ -47,13 +84,14 @@ impl Ladder {
     }
 
     pub fn add(&mut self, order: Order) {
-        match self.levels.get_mut(&order.price) {
+        // TODO(cs): Temporarily creating wrapper on every add (optimize)
+        let book_price = BookPrice::new(order.price.clone(), self.side);
+        match self.levels.get_mut(&book_price) {
             None => {
                 let order_id = order.id.clone();
-                let price = order.price.clone();
                 let level = Level::from_order(order);
-                self.cache.insert(order_id, price);
-                self.levels.insert(price, level);
+                self.cache.insert(order_id, book_price.clone());
+                self.levels.insert(book_price, level);
             }
             Some(level) => {
                 level.add(order);
@@ -103,8 +141,10 @@ impl Ladder {
     }
 
     // pub fn top(&self) -> Option<&Level> {
-    //     match self.side
-    //     self.levels.first()
+    //     match self.levels.into_values().next() {
+    //         None => Option::None,
+    //         Some(l) => Option::Some(l)
+    //     }
     // }
 }
 
@@ -113,8 +153,36 @@ mod tests {
     use crate::enums::OrderSide;
     use crate::objects::price::Price;
     use crate::objects::quantity::Quantity;
-    use crate::orderbook::ladder::Ladder;
+    use crate::orderbook::ladder::{BookPrice, Ladder};
     use crate::orderbook::order::Order;
+
+    #[test]
+    fn book_price_bid_sorting() {
+        let mut bid_prices = vec![
+            BookPrice::new(Price::new(2.0, 0), OrderSide::Buy),
+            BookPrice::new(Price::new(4.0, 0), OrderSide::Buy),
+            BookPrice::new(Price::new(1.0, 0), OrderSide::Buy),
+            BookPrice::new(Price::new(3.0, 0), OrderSide::Buy),
+        ];
+
+        bid_prices.sort();
+
+        assert_eq!(bid_prices[0].value.as_f64(), 4.0);
+    }
+
+    #[test]
+    fn book_price_ask_sorting() {
+        let mut ask_prices = vec![
+            BookPrice::new(Price::new(2.0, 0), OrderSide::Sell),
+            BookPrice::new(Price::new(4.0, 0), OrderSide::Sell),
+            BookPrice::new(Price::new(1.0, 0), OrderSide::Sell),
+            BookPrice::new(Price::new(3.0, 0), OrderSide::Sell),
+        ];
+
+        ask_prices.sort();
+
+        assert_eq!(ask_prices[0].value.as_f64(), 1.0);
+    }
 
     #[test]
     fn ladder_add_single_order() {
@@ -131,7 +199,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 20.0);
         assert_eq!(ladder.exposures(), 200.0);
-        // assert_eq!(ladder.top().unwrap().price.as_f64(), 10.0)
+        //assert_eq!(ladder.top().unwrap().price.as_f64(), 10.0)
     }
 
     #[test]
