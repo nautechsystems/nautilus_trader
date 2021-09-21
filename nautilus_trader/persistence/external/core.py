@@ -316,9 +316,7 @@ def read_progress(func, total):
     return inner
 
 
-def _parse_file_start_by_filename(
-    fn: str, fs: fsspec.AbstractFileSystem, timestamp_column="ts_init"
-):
+def _parse_file_start_by_filename(fn: str):
     """
     Parse start time by filename
 
@@ -333,36 +331,23 @@ def _parse_file_start_by_filename(
         return int(match.groups()[0])
 
 
-def _parse_start_from_data(fn: str, fs: fsspec.AbstractFileSystem, timestamp_column="ts_init"):
-    f = pq.ParquetFile(fs.open(fn))
-    first_row = f.read_row_group(0).slice(length=1).to_pandas()
-    return first_row.iloc[0][timestamp_column]
-
-
-def _parse_file_start(
-    fn: str, fs: fsspec.AbstractFileSystem, timestamp_column="ts_init"
-) -> Tuple[str, pd.Timestamp]:
-
+def _parse_file_start(fn: str) -> Optional[Tuple[str, pd.Timestamp]]:
     instrument_id = re.findall(r"instrument_id\=(.*)\/", fn)[0] if "instrument_id" in fn else None
-    for method in (_parse_file_start_by_filename, _parse_start_from_data):
-        start: int = method(fn=fn, fs=fs, timestamp_column=timestamp_column)
-        if start is not None:
-            start = pd.Timestamp(start)
-            return instrument_id, start
-    raise ValueError(f"Unable to parse filename: {fn}")
+    start = _parse_file_start_by_filename(fn=fn)
+    if start is not None:
+        start = pd.Timestamp(start)
+        return instrument_id, start
+    return None
 
 
-def _validate_dataset(
-    catalog: DataCatalog, path: str, new_partition_format="%Y%m%d", timestamp_column="ts_init"
-):
+def _validate_dataset(catalog: DataCatalog, path: str, new_partition_format="%Y%m%d"):
     """
     Repartition dataset into sorted time chunks (default dates) and drop duplicates.
     """
     fs = catalog.fs
     dataset = ds.dataset(path, filesystem=fs)
     fn_to_start = [
-        (fn, _parse_file_start(fn=fn, fs=fs, timestamp_column=timestamp_column))
-        for fn in dataset.files
+        (fn, _parse_file_start(fn=fn)) for fn in dataset.files if _parse_file_start(fn=fn)
     ]
 
     sort_key = lambda x: (x[1][0], x[1][1].strftime(new_partition_format))  # noqa: E731
@@ -370,6 +355,7 @@ def _validate_dataset(
     for part, values_iter in groupby(sorted(fn_to_start, key=sort_key), key=sort_key):
         values = list(values_iter)
         filenames = [v[0] for v in values]
+
         # Read files, drop duplicates
         df: pd.DataFrame = ds.dataset(filenames, filesystem=fs).to_table().to_pandas()
         df = df.drop_duplicates(ignore_index=True, keep="last")
