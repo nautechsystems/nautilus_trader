@@ -27,17 +27,19 @@ import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import make_betfair_reader
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import RawFile
+from nautilus_trader.persistence.external.core import _validate_dataset
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import process_raw_file
-from nautilus_trader.persistence.external.core import read_and_clear_existing_data
 from nautilus_trader.persistence.external.core import scan_files
 from nautilus_trader.persistence.external.core import split_and_serialize
+from nautilus_trader.persistence.external.core import validate_data_catalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_parquet
 from nautilus_trader.persistence.external.core import write_tables
@@ -189,21 +191,6 @@ class TestPersistenceCore:
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/*jpy*.csv")
         assert len(files) == 3
 
-    @patch("nautilus_trader.persistence.external.core.load_processed_raw_files")
-    def test_scan_processed(self, mock_load_processed_raw_files):
-        # Arrange
-        mock_load_processed_raw_files.return_value = [
-            TEST_DATA_DIR + "/truefx-audusd-ticks.csv",
-            TEST_DATA_DIR + "/news_events.csv",
-            TEST_DATA_DIR + "/tardis_trades.csv",
-        ]
-
-        # Act
-        files = scan_files(glob_path=f"{TEST_DATA_DIR}/*.csv")
-
-        # Assert
-        assert len(files) == 8
-
     def test_nautilus_chunk_to_dataframes(self):
         # Arrange, Act
         data = self._loaded_data_into_catalog()
@@ -301,61 +288,6 @@ class TestPersistenceCore:
         expected = "/root/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
         assert expected in files
 
-    def test_read_and_clear_existing_data_single_partition(
-        self,
-    ):
-        # Arrange
-        catalog = DataCatalog.from_env()
-        path = f"{catalog.path}/sample.parquet"
-        df = pd.DataFrame(
-            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
-        )
-        write_parquet(
-            fs=self.fs,
-            path=path,
-            df=df,
-            schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
-            partition_cols=["instrument_id"],
-        )
-
-        # Act
-        result = read_and_clear_existing_data(
-            catalog=self.catalog, path=path, instrument_id="a", partition_cols=["instrument_id"]
-        )
-        dataset = ds.dataset(path, filesystem=self.fs)
-
-        # Assert
-        expected = df[df["instrument_id"] == "a"]
-        assert result.equals(expected)
-        assert len(dataset.files) == 1
-        assert dataset.files[0].startswith("/root/sample.parquet/instrument_id=b/")
-
-    def test_read_and_clear_existing_data_invalid_partition_column_raises(
-        self,
-    ):
-        # Arrange
-        catalog = DataCatalog.from_env()
-        fs = catalog.fs
-        path = f"{catalog.path}/sample.parquet"
-        df = pd.DataFrame(
-            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
-        )
-
-        # Act
-        write_parquet(
-            fs=fs,
-            path=path,
-            df=df,
-            schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
-            partition_cols=["instrument_id"],
-        )
-
-        # Assert
-        with pytest.raises(AssertionError):
-            read_and_clear_existing_data(
-                catalog=self.catalog, path=path, instrument_id="a", partition_cols=["value"]
-            )
-
     def test_load_text_betfair(self):
         # Arrange
         instrument_provider = BetfairInstrumentProvider.from_instruments([])
@@ -391,10 +323,6 @@ class TestPersistenceCore:
     def test_data_catalog_metadata(self):
         # Arrange, Act, Assert
         self._loaded_data_into_catalog()
-        assert ds.parquet_dataset(
-            f"{self.catalog.path}/data/trade_tick.parquet/_metadata",
-            filesystem=self.fs,
-        )
         assert ds.parquet_dataset(
             f"{self.catalog.path}/data/trade_tick.parquet/_common_metadata",
             filesystem=self.fs,
@@ -474,3 +402,75 @@ class TestPersistenceCore:
         # Assert
         expected = {TEST_DATA + "/1.166564490.bz2": 2908}
         assert results == expected
+
+    def test_repartition_dataset(self):
+        # Arrange
+        catalog = DataCatalog.from_env()
+        fs = catalog.fs
+        root = catalog.path
+        path = "sample.parquet"
+
+        # Write some out of order, overlapping
+        for start_date in ("2020-01-01", "2020-01-8", "2020-01-04"):
+            df = pd.DataFrame(
+                {
+                    "value": np.arange(5),
+                    "instrument_id": ["a", "a", "a", "b", "b"],
+                    "ts_init": [
+                        dt_to_unix_nanos(ts)
+                        for ts in pd.date_range(start_date, periods=5, tz="UTC")
+                    ],
+                }
+            )
+            write_parquet(
+                fs=fs,
+                path=f"{root}/{path}",
+                df=df,
+                schema=pa.schema(
+                    {"value": pa.float64(), "instrument_id": pa.string(), "ts_init": pa.int64()}
+                ),
+                partition_cols=["instrument_id"],
+            )
+
+        original_partitions = fs.glob(f"{root}/{path}/**/*.parquet")
+
+        # Act
+        _validate_dataset(catalog=catalog, path=f"{root}/{path}")
+        new_partitions = fs.glob(f"{root}/{path}/**/*.parquet")
+
+        # Assert
+        assert len(original_partitions) == 6
+        expected = [
+            "/root/sample.parquet/instrument_id=a/20200101.parquet",
+            "/root/sample.parquet/instrument_id=a/20200104.parquet",
+            "/root/sample.parquet/instrument_id=a/20200108.parquet",
+            "/root/sample.parquet/instrument_id=b/20200101.parquet",
+            "/root/sample.parquet/instrument_id=b/20200104.parquet",
+            "/root/sample.parquet/instrument_id=b/20200108.parquet",
+        ]
+        assert new_partitions == expected
+
+    def test_validate_data_catalog(self):
+        # Arrange
+        self._loaded_data_into_catalog()
+
+        # Act
+        validate_data_catalog(catalog=self.catalog)
+
+        # Assert
+        new_partitions = [
+            f for f in self.fs.glob(f"{self.catalog.path}/**/*.parquet") if self.fs.isfile(f)
+        ]
+        ins1, ins2 = self.catalog.instruments()["id"].tolist()
+        expected = [
+            f"/root/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/root/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
+            "/root/data/betting_instrument.parquet/20210921.parquet",
+            f"/root/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/root/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/root/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/root/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/root/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/root/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
+        ]
+        assert new_partitions == expected

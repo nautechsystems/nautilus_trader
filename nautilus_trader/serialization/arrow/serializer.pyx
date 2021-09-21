@@ -78,7 +78,6 @@ def register_parquet(
     serializer: Optional[Callable] = None,
     deserializer: Optional[Callable] = None,
     schema: Optional[pa.Schema] = None,
-    tuple partition_keys=None,
     bint chunk=False,
     type table=None,
     **kwargs,
@@ -98,8 +97,6 @@ def register_parquet(
     schema : pa.Schema, optional
         If the schema cannot be correctly inferred from a subset of the data
         (i.e. if certain values may be missing in the first chunk).
-    partition_keys : tuple, optional
-        The partition key for data written to parquet (typically an ID).
     chunk : bool, optional
         Whether to group objects by timestamp and operate together (Used for
         complex objects where we write each object as multiple rows in parquet,
@@ -114,7 +111,6 @@ def register_parquet(
     Condition.type_or_none(serializer, Callable, "serializer")
     Condition.type_or_none(deserializer, Callable, "deserializer")
     Condition.type_or_none(schema, pa.Schema, "schema")
-    Condition.type_or_none(partition_keys, tuple, "partition_keys")
     Condition.type_or_none(table, type, "table")
 
     # secret kwarg that allows overriding an existing (de)serialization method.
@@ -132,8 +128,6 @@ def register_parquet(
         _PARQUET_TO_DICT_MAP[cls] = serializer
     if deserializer is not None:
         _PARQUET_FROM_DICT_MAP[cls] = deserializer
-    if partition_keys is not None:
-        _PARTITION_KEYS[cls] = partition_keys
     if schema is not None:
         _SCHEMAS[table or cls] = schema
     if chunk:

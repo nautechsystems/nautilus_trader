@@ -13,14 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Dict, List
+from typing import Dict
 
 import fsspec
 import orjson
 from fsspec.utils import infer_storage_options
 
 
-PROCESSED_FILES_FN = ".processed_raw_files.json"
 PARTITION_MAPPINGS_FN = "_partition_mappings.json"
 
 
@@ -34,22 +33,6 @@ def load_mappings(fs, path) -> Dict:
 def write_partition_column_mappings(fs, path, mappings) -> None:
     with fs.open(f"{path}/{PARTITION_MAPPINGS_FN}", "wb") as f:
         f.write(orjson.dumps(mappings))
-
-
-# TODO(bm): We should save a hash of the contents alongside the filename to check for changes
-def save_processed_raw_files(fs: fsspec.AbstractFileSystem, root: str, files: List[str]):
-    existing = load_processed_raw_files(fs=fs)
-    new = set(files + existing)
-    with fs.open(f"{root}/{PROCESSED_FILES_FN}", "wb") as f:
-        return f.write(orjson.dumps(sorted(new)))
-
-
-def load_processed_raw_files(fs):
-    if fs.exists(PROCESSED_FILES_FN):
-        with fs.open(PROCESSED_FILES_FN, "rb") as f:
-            return orjson.loads(f.read())
-    else:
-        return []
 
 
 def _glob_path_to_fs(glob_path):

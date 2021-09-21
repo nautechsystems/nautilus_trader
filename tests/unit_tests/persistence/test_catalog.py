@@ -60,6 +60,17 @@ class TestPersistenceCatalog:
             catalog=self.catalog,
         )
 
+    def test_list_data_types(self):
+        data_types = self.catalog.list_data_types()
+        expected = [
+            "betfair_ticker",
+            "betting_instrument",
+            "instrument_status_update",
+            "order_book_data",
+            "trade_tick",
+        ]
+        assert data_types == expected
+
     def test_data_catalog_instruments_df(self):
         instruments = self.catalog.instruments()
         assert len(instruments) == 2
