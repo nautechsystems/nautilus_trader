@@ -299,22 +299,3 @@ def read_progress(func, total):
             yield data
 
     return inner
-
-
-# def _validate_dataset(catalog: DataCatalog, path: str, timestamp_columns: str = "ts_init"):
-#     """
-#     Repartition, drop duplicates and validate a dataset.
-#     """
-#     new_part = ds.partitioning(pa.schema([("c", pa.int16())]), flavor=None)
-#
-#     # new_partitioning =
-#     dataset = ds.dataset(path, filesystem=catalog.fs)
-#     scanner = dataset.scanner()
-#     ds.write_dataset(scanner, new_root, format="parquet", partitioning=new_part)
-#
-#
-# def validate_data_catalog(
-#     catalog: DataCatalog,
-# ):
-#     for cls in (None,):
-#         pass
