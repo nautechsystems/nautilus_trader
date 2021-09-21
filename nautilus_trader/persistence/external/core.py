@@ -185,7 +185,7 @@ def dicts_to_dataframes(dicts) -> Dict[type, Dict[str, pd.DataFrame]]:
     return tables
 
 
-def determine_partition_cols(cls: type, instrument_id: str = None) -> Optional[List]:
+def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[List, None]:
     """
     Determine partition columns (if any) for this type `cls`
     """
@@ -194,8 +194,7 @@ def determine_partition_cols(cls: type, instrument_id: str = None) -> Optional[L
         return list(partition_keys)
     elif instrument_id is not None:
         return ["instrument_id"]
-    else:
-        raise ValueError
+    return None
 
 
 def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]], **kwargs):
@@ -252,9 +251,6 @@ def write_parquet(
     # Dataframe -> pyarrow Table
     table = pa.Table.from_pandas(df, schema=schema)
 
-    # Object passed to `write_to_dataset` that collects metadata about written data
-    metadata_collector: List[pq.FileMetaData] = []
-
     if "basename_template" not in kwargs and "ts_init" in df.columns:
         kwargs["basename_template"] = (
             f"{df['ts_init'].iloc[0]}-{df['ts_init'].iloc[-1]}" + "-{i}.parquet"
@@ -275,19 +271,10 @@ def write_parquet(
         filesystem=fs,
         partitioning=partitions,
         format="parquet",
-        file_visitor=lambda x: metadata_collector.append(x.metadata),
         **kwargs,
     )
     # Write the ``_common_metadata`` parquet file without row groups statistics
     pq.write_metadata(table.schema, f"{path}/_common_metadata", version="2.0", filesystem=fs)
-
-    # Write the ``_metadata`` parquet file with row groups statistics of all files
-    pq.write_metadata(
-        table.schema,
-        where=fs.open(f"{path}/_metadata", "wb"),
-        version="2.0",
-        metadata_collector=metadata_collector,
-    )
 
     # Write out any partition columns we had to modify due to filesystem requirements
     if mappings:

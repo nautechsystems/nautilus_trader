@@ -336,10 +336,6 @@ class TestPersistenceCore:
         # Arrange, Act, Assert
         self._loaded_data_into_catalog()
         assert ds.parquet_dataset(
-            f"{self.catalog.path}/data/trade_tick.parquet/_metadata",
-            filesystem=self.fs,
-        )
-        assert ds.parquet_dataset(
             f"{self.catalog.path}/data/trade_tick.parquet/_common_metadata",
             filesystem=self.fs,
         )
