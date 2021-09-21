@@ -27,16 +27,19 @@ import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.util import make_betfair_reader
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import RawFile
+from nautilus_trader.persistence.external.core import _validate_dataset
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import process_raw_file
 from nautilus_trader.persistence.external.core import scan_files
 from nautilus_trader.persistence.external.core import split_and_serialize
+from nautilus_trader.persistence.external.core import validate_data_catalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_parquet
 from nautilus_trader.persistence.external.core import write_tables
@@ -414,3 +417,75 @@ class TestPersistenceCore:
         # Assert
         expected = {TEST_DATA + "/1.166564490.bz2": 2908}
         assert results == expected
+
+    def test_repartition_dataset(self):
+        # Arrange
+        catalog = DataCatalog.from_env()
+        fs = catalog.fs
+        root = catalog.path
+        path = "sample.parquet"
+
+        # Write some out of order, overlapping
+        for start_date in ("2020-01-01", "2020-01-8", "2020-01-04"):
+            df = pd.DataFrame(
+                {
+                    "value": np.arange(5),
+                    "instrument_id": ["a", "a", "a", "b", "b"],
+                    "ts_init": [
+                        dt_to_unix_nanos(ts)
+                        for ts in pd.date_range(start_date, periods=5, tz="UTC")
+                    ],
+                }
+            )
+            write_parquet(
+                fs=fs,
+                path=f"{root}/{path}",
+                df=df,
+                schema=pa.schema(
+                    {"value": pa.float64(), "instrument_id": pa.string(), "ts_init": pa.int64()}
+                ),
+                partition_cols=["instrument_id"],
+            )
+
+        original_partitions = fs.glob(f"{root}/{path}/**/*.parquet")
+
+        # Act
+        _validate_dataset(catalog=catalog, path=f"{root}/{path}")
+        new_partitions = fs.glob(f"{root}/{path}/**/*.parquet")
+
+        # Assert
+        assert len(original_partitions) == 6
+        expected = [
+            "/root/sample.parquet/instrument_id=a/20200101.parquet",
+            "/root/sample.parquet/instrument_id=a/20200104.parquet",
+            "/root/sample.parquet/instrument_id=a/20200108.parquet",
+            "/root/sample.parquet/instrument_id=b/20200101.parquet",
+            "/root/sample.parquet/instrument_id=b/20200104.parquet",
+            "/root/sample.parquet/instrument_id=b/20200108.parquet",
+        ]
+        assert new_partitions == expected
+
+    def test_validate_data_catalog(self):
+        # Arrange
+        self._loaded_data_into_catalog()
+
+        # Act
+        validate_data_catalog(catalog=self.catalog)
+
+        # Assert
+        new_partitions = [
+            f for f in self.fs.glob(f"{self.catalog.path}/**/*.parquet") if self.fs.isfile(f)
+        ]
+        ins1, ins2 = self.catalog.instruments()["id"].tolist()
+        expected = [
+            f"/root/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/root/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
+            "/root/data/betting_instrument.parquet/20210921.parquet",
+            f"/root/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/root/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/root/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/root/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
+            f"/root/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
+            f"/root/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
+        ]
+        assert new_partitions == expected

@@ -12,8 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from typing import Dict, List, Optional, Union
+import pathlib
+import re
+from itertools import groupby
+from typing import Dict, List, Optional, Tuple, Union
 
 import dask
 import fsspec
@@ -30,8 +32,6 @@ from tqdm import tqdm
 
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.external.metadata import _glob_path_to_fs
-from nautilus_trader.persistence.external.metadata import load_processed_raw_files
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.external.synchronization import named_lock
@@ -137,10 +137,8 @@ def make_raw_files(glob_path, block_size="128mb", compression="infer", **kw) -> 
 
 
 def scan_files(glob_path, compression="infer", **kw) -> List[OpenFile]:
-    fs = _glob_path_to_fs(glob_path)
-    processed = load_processed_raw_files(fs=fs)
     open_files = fsspec.open_files(glob_path, compression=compression, **kw)
-    return [of for of in open_files if of.path not in processed]
+    return [of for of in open_files]
 
 
 def split_and_serialize(objs: List) -> Dict[type, Dict[str, List]]:
@@ -299,3 +297,77 @@ def read_progress(func, total):
             yield data
 
     return inner
+
+
+def _parse_file_start_by_filename(
+    fn: str, fs: fsspec.AbstractFileSystem, timestamp_column="ts_init"
+):
+    """
+    Parse start time by filename
+
+    >>> _parse_file_start_by_filename('/data/test/sample.parquet/instrument_id=a/1577836800000000000-1578182400000000000-0.parquet')
+    '1577836800000000000'
+
+    >>> _parse_file_start_by_filename('/data/test/sample.parquet/instrument_id=a/0648140b1fd7491a97983c0c6ece8d57.parquet')
+
+    """
+    match = re.match(r"(?P<start>\d{19})\-\d{19}\-\d", pathlib.Path(fn).stem)
+    if match:
+        return int(match.groups()[0])
+
+
+def _parse_start_from_data(fn: str, fs: fsspec.AbstractFileSystem, timestamp_column="ts_init"):
+    f = pq.ParquetFile(fs.open(fn))
+    first_row = f.read_row_group(0).slice(length=1).to_pandas()
+    return first_row[timestamp_column]
+
+
+def _parse_file_start(
+    fn: str, fs: fsspec.AbstractFileSystem, timestamp_column="ts_init"
+) -> Tuple[str, pd.Timestamp]:
+
+    instrument_id = re.findall(r"instrument_id\=(.*)\/", fn)[0] if "instrument_id" in fn else None
+    for method in (_parse_file_start_by_filename, _parse_start_from_data):
+        start: int = method(fn=fn, fs=fs, timestamp_column=timestamp_column)
+        if start is not None:
+            start = pd.Timestamp(start)
+            return instrument_id, start
+    raise ValueError(f"Unable to parse filename: {fn}")
+
+
+def _validate_dataset(
+    catalog: DataCatalog, path: str, new_partition_format="%Y%m%d", timestamp_column="ts_init"
+):
+    """
+    Repartition dataset into sorted time chunks (default dates) and drop duplicates.
+    """
+    fs = catalog.fs
+    dataset = ds.dataset(path, filesystem=fs)
+    fn_to_start = [
+        (fn, _parse_file_start(fn=fn, fs=fs, timestamp_column=timestamp_column))
+        for fn in dataset.files
+    ]
+
+    sort_key = lambda x: (x[1][0], x[1][1].strftime(new_partition_format))  # noqa: E731
+
+    for part, values_iter in groupby(sorted(fn_to_start, key=sort_key), key=sort_key):
+        values = list(values_iter)
+        filenames = [v[0] for v in values]
+        # Read files, drop duplicates
+        df: pd.DataFrame = ds.dataset(filenames, filesystem=fs).to_table().to_pandas()
+        df = df.drop_duplicates(ignore_index=True, keep="last")
+
+        # Write new file
+        table = pa.Table.from_pandas(df, schema=dataset.schema)
+        new_fn = filenames[0].replace(pathlib.Path(filenames[0]).stem, part[1])
+        pq.write_table(table=table, where=fs.open(new_fn, "wb"))
+
+        # Remove old files
+        for fn in filenames:
+            fs.rm(fn)
+
+
+def validate_data_catalog(catalog: DataCatalog, **kwargs):
+    for cls in catalog.list_data_types():
+        path = f"{catalog.path}/data/{cls}.parquet"
+        _validate_dataset(catalog=catalog, path=path, **kwargs)
