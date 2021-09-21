@@ -35,7 +35,6 @@ from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import process_raw_file
-from nautilus_trader.persistence.external.core import read_and_clear_existing_data
 from nautilus_trader.persistence.external.core import scan_files
 from nautilus_trader.persistence.external.core import split_and_serialize
 from nautilus_trader.persistence.external.core import write_objects
@@ -301,61 +300,6 @@ class TestPersistenceCore:
         expected = "/root/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
         assert expected in files
 
-    def test_read_and_clear_existing_data_single_partition(
-        self,
-    ):
-        # Arrange
-        catalog = DataCatalog.from_env()
-        path = f"{catalog.path}/sample.parquet"
-        df = pd.DataFrame(
-            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
-        )
-        write_parquet(
-            fs=self.fs,
-            path=path,
-            df=df,
-            schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
-            partition_cols=["instrument_id"],
-        )
-
-        # Act
-        result = read_and_clear_existing_data(
-            catalog=self.catalog, path=path, instrument_id="a", partition_cols=["instrument_id"]
-        )
-        dataset = ds.dataset(path, filesystem=self.fs)
-
-        # Assert
-        expected = df[df["instrument_id"] == "a"]
-        assert result.equals(expected)
-        assert len(dataset.files) == 1
-        assert dataset.files[0].startswith("/root/sample.parquet/instrument_id=b/")
-
-    def test_read_and_clear_existing_data_invalid_partition_column_raises(
-        self,
-    ):
-        # Arrange
-        catalog = DataCatalog.from_env()
-        fs = catalog.fs
-        path = f"{catalog.path}/sample.parquet"
-        df = pd.DataFrame(
-            {"value": np.random.random(5), "instrument_id": ["a", "a", "a", "b", "b"]}
-        )
-
-        # Act
-        write_parquet(
-            fs=fs,
-            path=path,
-            df=df,
-            schema=pa.schema({"value": pa.float64(), "instrument_id": pa.string()}),
-            partition_cols=["instrument_id"],
-        )
-
-        # Assert
-        with pytest.raises(AssertionError):
-            read_and_clear_existing_data(
-                catalog=self.catalog, path=path, instrument_id="a", partition_cols=["value"]
-            )
-
     def test_load_text_betfair(self):
         # Arrange
         instrument_provider = BetfairInstrumentProvider.from_instruments([])
@@ -474,3 +418,40 @@ class TestPersistenceCore:
         # Assert
         expected = {TEST_DATA + "/1.166564490.bz2": 2908}
         assert results == expected
+
+    # def test_repartition_dataset(self):
+    #     # Arrange
+    #     catalog = DataCatalog.from_env()
+    #     fs = catalog.fs
+    #     root = catalog.path
+    #     path = "sample.parquet"
+    #
+    #     # Write some out of order, overlapping
+    #     for start_date in ("2020-01-01", "2020-01-8", "2020-01-04"):
+    #         df = pd.DataFrame(
+    #             {
+    #                 "value": np.arange(5),
+    #                 "instrument_id": ["a", "a", "a", "b", "b"],
+    #                 "ts_init": [
+    #                     dt_to_unix_nanos(ts)
+    #                     for ts in pd.date_range(start_date, periods=5, tz="UTC")
+    #                 ],
+    #             }
+    #         )
+    #         write_parquet(
+    #             fs=fs,
+    #             path=f"{root}/{path}",
+    #             df=df,
+    #             schema=pa.schema(
+    #                 {"value": pa.float64(), "instrument_id": pa.string(), "ts_init": pa.int64()}
+    #             ),
+    #             partition_cols=["instrument_id"],
+    #         )
+    #
+    #     original_partitions = fs.glob(f"{root}/{path}/**/*.parquet")
+    #
+    #     # Act
+    #     _validate_dataset(catalog=catalog, path=f"{root}/{path}")
+    #
+    #     # Assert
+    #     assert len(original_partitions) == 6
