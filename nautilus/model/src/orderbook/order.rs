@@ -21,7 +21,7 @@ use crate::orderbook::ladder::BookPrice;
 #[repr(C)]
 #[derive(Debug, Hash)]
 pub struct Order {
-    pub price: BookPrice,
+    pub price: Price,
     pub size: Quantity,
     pub side: OrderSide,
     pub id: u64,
@@ -30,11 +30,15 @@ pub struct Order {
 impl Order {
     pub fn new(price: Price, size: Quantity, side: OrderSide, id: u64) -> Self {
         Order {
-            price: BookPrice::new(price, side),
+            price,
             size,
             side,
             id,
         }
+    }
+
+    pub fn to_book_price(&self) -> BookPrice {
+        BookPrice::new(self.price, self.side)
     }
 
     pub fn from_vec(vec: Vec<&str>) -> Self {
@@ -55,10 +59,7 @@ fn order_from_str_vec() {
     let input = vec!["1.00000", "100", "B", "123"];
     let order = Order::from_vec(input);
 
-    assert_eq!(
-        order.price,
-        BookPrice::new(Price::new(1.0, 0), OrderSide::Buy)
-    );
+    assert_eq!(order.price, Price::new(1.0, 0));
     assert_eq!(order.size, Quantity::new(100.0, 0));
     assert_eq!(order.side, OrderSide::Buy);
     assert_eq!(order.id, 0);

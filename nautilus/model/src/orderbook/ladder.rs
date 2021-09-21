@@ -84,10 +84,10 @@ impl Ladder {
     }
 
     pub fn add(&mut self, order: Order) {
-        match self.levels.get_mut(&order.price) {
+        let book_price = order.to_book_price();
+        match self.levels.get_mut(&book_price) {
             None => {
                 let order_id = order.id.clone();
-                let book_price = order.price.clone();
                 let level = Level::from_order(order);
                 self.cache.insert(order_id, book_price);
                 self.levels.insert(book_price, level);
@@ -103,7 +103,7 @@ impl Ladder {
             None => panic!("No order with ID {}", &order.id),
             Some(price) => {
                 let level = self.levels.get_mut(price).unwrap();
-                if order.price == level.price {
+                if order.price == level.price.value {
                     // Size update for this level
                     level.update(order);
                 } else {

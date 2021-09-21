@@ -34,7 +34,7 @@ impl Level {
 
     pub fn from_order(order: Order) -> Self {
         let mut level = Level {
-            price: order.price,
+            price: order.to_book_price(),
             orders: Box::new(vec![]),
         };
         level.add(order);
@@ -52,13 +52,13 @@ impl Level {
     }
 
     pub fn add(&mut self, order: Order) {
-        assert_eq!(order.price, self.price); // Confirm order for this level
+        assert_eq!(order.price, self.price.value); // Confirm order for this level
 
         self.orders.push(order);
     }
 
     pub fn update(&mut self, order: Order) {
-        assert_eq!(order.price, self.price); // Confirm order for this level
+        assert_eq!(order.price, self.price.value); // Confirm order for this level
 
         if order.size.is_zero() {
             self.delete(&order)
@@ -92,7 +92,7 @@ impl Level {
     pub fn exposure(&self) -> f64 {
         let mut sum: f64 = 0.0;
         for o in self.orders.iter() {
-            sum += o.price.value.as_f64() * o.size.as_f64()
+            sum += o.price.as_f64() * o.size.as_f64()
         }
         sum
     }
