@@ -191,21 +191,6 @@ class TestPersistenceCore:
         files = scan_files(glob_path=f"{TEST_DATA_DIR}/*jpy*.csv")
         assert len(files) == 3
 
-    @patch("nautilus_trader.persistence.external.core.load_processed_raw_files")
-    def test_scan_processed(self, mock_load_processed_raw_files):
-        # Arrange
-        mock_load_processed_raw_files.return_value = [
-            TEST_DATA_DIR + "/truefx-audusd-ticks.csv",
-            TEST_DATA_DIR + "/news_events.csv",
-            TEST_DATA_DIR + "/tardis_trades.csv",
-        ]
-
-        # Act
-        files = scan_files(glob_path=f"{TEST_DATA_DIR}/*.csv")
-
-        # Assert
-        assert len(files) == 8
-
     def test_nautilus_chunk_to_dataframes(self):
         # Arrange, Act
         data = self._loaded_data_into_catalog()
