@@ -21,7 +21,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 
 #[repr(C)]
-#[derive(Copy, Clone, Hash, Eq)]
+#[derive(Copy, Clone, Debug, Hash, Eq)]
 pub struct BookPrice {
     pub value: Price,
     pub side: OrderSide,
@@ -84,13 +84,12 @@ impl Ladder {
     }
 
     pub fn add(&mut self, order: Order) {
-        // TODO(cs): Temporarily creating wrapper on every add (optimize)
-        let book_price = BookPrice::new(order.price.clone(), self.side);
-        match self.levels.get_mut(&book_price) {
+        match self.levels.get_mut(&order.price) {
             None => {
                 let order_id = order.id.clone();
+                let book_price = order.price.clone();
                 let level = Level::from_order(order);
-                self.cache.insert(order_id, book_price.clone());
+                self.cache.insert(order_id, book_price);
                 self.levels.insert(book_price, level);
             }
             Some(level) => {
@@ -199,7 +198,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 20.0);
         assert_eq!(ladder.exposures(), 200.0);
-        assert_eq!(ladder.top().unwrap().price.as_f64(), 10.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0)
     }
 
     #[test]
@@ -235,7 +234,7 @@ mod tests {
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.volumes(), 300.0);
         assert_eq!(ladder.exposures(), 2520.0);
-        assert_eq!(ladder.top().unwrap().price.as_f64(), 10.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0)
     }
 
     #[test]
@@ -271,7 +270,7 @@ mod tests {
         assert_eq!(ladder.len(), 3);
         assert_eq!(ladder.volumes(), 300.0);
         assert_eq!(ladder.exposures(), 3780.0);
-        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
     }
 
     #[test]
@@ -298,7 +297,10 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 20.0);
         assert_eq!(ladder.exposures(), 222.00000000000003);
-        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.100000000000001)
+        assert_eq!(
+            ladder.top().unwrap().price.value.as_f64(),
+            11.100000000000001
+        )
     }
 
     #[test]
@@ -325,7 +327,10 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 20.0);
         assert_eq!(ladder.exposures(), 222.00000000000003);
-        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.100000000000001)
+        assert_eq!(
+            ladder.top().unwrap().price.value.as_f64(),
+            11.100000000000001
+        )
     }
 
     #[test]
@@ -352,7 +357,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
-        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
     }
 
     #[test]
@@ -379,7 +384,7 @@ mod tests {
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.volumes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
-        assert_eq!(ladder.top().unwrap().price.as_f64(), 11.0)
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
     }
 
     #[test]

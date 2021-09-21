@@ -13,19 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::objects::price::Price;
+use crate::orderbook::ladder::BookPrice;
 use crate::orderbook::order::Order;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
 
 #[repr(C)]
 pub struct Level {
-    pub price: Price,
+    pub price: BookPrice,
     pub orders: Box<Vec<Order>>,
 }
 
 impl Level {
-    pub fn new(price: Price) -> Self {
+    pub fn new(price: BookPrice) -> Self {
         Level {
             price,
             orders: Box::new(Vec::new()),
@@ -92,7 +92,7 @@ impl Level {
     pub fn exposure(&self) -> f64 {
         let mut sum: f64 = 0.0;
         for o in self.orders.iter() {
-            sum += o.price.as_f64() * o.size.as_f64()
+            sum += o.price.value.as_f64() * o.size.as_f64()
         }
         sum
     }
@@ -140,13 +140,13 @@ impl Ord for Level {
 
 impl Debug for Level {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "Level(price={})", self.price)
+        write!(f, "Level(price={})", self.price.value)
     }
 }
 
 impl Display for Level {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "Level(price={})", self.price)
+        write!(f, "Level(price={})", self.price.value)
     }
 }
 
@@ -155,22 +155,31 @@ mod tests {
     use crate::enums::OrderSide;
     use crate::objects::price::Price;
     use crate::objects::quantity::Quantity;
+    use crate::orderbook::ladder::BookPrice;
     use crate::orderbook::level::Level;
     use crate::orderbook::order::Order;
 
     #[test]
-    fn level_equality() {
-        let level0 = Level::new(Price::new(1.00, 2));
-        let level1 = Level::new(Price::new(1.01, 2));
+    fn level_comparisons_bid_side() {
+        let level0 = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
+        let level1 = Level::new(BookPrice::new(Price::new(1.01, 2), OrderSide::Buy));
 
         assert_eq!(level0, level0);
-        assert!(level0 <= level0);
+        assert!(level0 > level1);
+    }
+
+    #[test]
+    fn level_comparisons_ask_side() {
+        let level0 = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Sell));
+        let level1 = Level::new(BookPrice::new(Price::new(1.01, 2), OrderSide::Sell));
+
+        assert_eq!(level0, level0);
         assert!(level0 < level1);
     }
 
     #[test]
     fn level_add_one_order() {
-        let mut level = Level::new(Price::new(1.00, 2));
+        let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
         let order = Order::new(
             Price::new(1.00, 2),
             Quantity::new(10.0, 0),
@@ -186,7 +195,7 @@ mod tests {
 
     #[test]
     fn level_add_multiple_orders() {
-        let mut level = Level::new(Price::new(2.00, 2));
+        let mut level = Level::new(BookPrice::new(Price::new(2.00, 2), OrderSide::Buy));
         let order1 = Order::new(
             Price::new(2.00, 2),
             Quantity::new(10.0, 0),
@@ -210,7 +219,7 @@ mod tests {
 
     #[test]
     fn level_update_order() {
-        let mut level = Level::new(Price::new(1.00, 2));
+        let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
         let order1 = Order::new(
             Price::new(1.00, 2),
             Quantity::new(10.0, 0),
@@ -234,7 +243,7 @@ mod tests {
 
     #[test]
     fn level_update_order_with_zero_size_deletes() {
-        let mut level = Level::new(Price::new(1.00, 2));
+        let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
         let order1 = Order::new(
             Price::new(1.00, 2),
             Quantity::new(10.0, 0),

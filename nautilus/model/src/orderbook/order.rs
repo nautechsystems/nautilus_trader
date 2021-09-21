@@ -21,7 +21,7 @@ use crate::orderbook::ladder::BookPrice;
 #[repr(C)]
 #[derive(Debug, Hash)]
 pub struct Order {
-    pub price: Price,
+    pub price: BookPrice,
     pub size: Quantity,
     pub side: OrderSide,
     pub id: u64,
@@ -30,29 +30,23 @@ pub struct Order {
 impl Order {
     pub fn new(price: Price, size: Quantity, side: OrderSide, id: u64) -> Self {
         Order {
-            price,
+            price: BookPrice::new(price, side),
             size,
             side,
             id,
         }
     }
 
-    pub fn to_book_price(&self) -> BookPrice {
-        BookPrice::new(self.price, self.side)
-    }
-
     pub fn from_vec(vec: Vec<&str>) -> Self {
         assert_eq!(vec.len(), 4);
-        Order {
-            price: Price::new_from_str(&vec[0]),
-            size: Quantity::new_from_str(&vec[1]),
-            side: match vec[2] {
-                "B" => OrderSide::Buy,
-                "S" => OrderSide::Sell,
-                _ => panic!("Cannot parse side, was {}", vec[2]),
-            },
-            id: 0,
-        }
+        let price = Price::new_from_str(&vec[0]);
+        let size = Quantity::new_from_str(&vec[1]);
+        let side = match vec[2] {
+            "B" => OrderSide::Buy,
+            "S" => OrderSide::Sell,
+            _ => panic!("Cannot parse side, was {}", vec[2]),
+        };
+        Order::new(price, size, side, 0)
     }
 }
 
@@ -61,7 +55,10 @@ fn order_from_str_vec() {
     let input = vec!["1.00000", "100", "B", "123"];
     let order = Order::from_vec(input);
 
-    assert_eq!(order.price, Price::new(1.0, 0));
+    assert_eq!(
+        order.price,
+        BookPrice::new(Price::new(1.0, 0), OrderSide::Buy)
+    );
     assert_eq!(order.size, Quantity::new(100.0, 0));
     assert_eq!(order.side, OrderSide::Buy);
     assert_eq!(order.id, 0);
