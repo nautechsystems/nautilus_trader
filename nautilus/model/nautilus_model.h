@@ -5,7 +5,9 @@
 
 #include <stdint.h>
 
-#define FIXED_PREC 0.000000001
+#define FIXED_EXPONENT 9
+
+#define FIXED_PRECISION 0.000000001
 
 typedef enum BookLevel {
   L1 = 1,
@@ -33,13 +35,13 @@ typedef struct Venue {
 } Venue;
 
 typedef struct Price {
-  int64_t value;
-  uint8_t prec;
+  int64_t mantissa;
+  uint8_t precision;
 } Price;
 
 typedef struct Quantity {
-  uint64_t value;
-  uint8_t prec;
+  uint64_t mantissa;
+  uint8_t precision;
 } Quantity;
 
 typedef struct Ladder {
@@ -70,9 +72,9 @@ struct Venue venue_new(const char *ptr);
 
 const char *venue_as_bytes(struct Venue self);
 
-struct Price new_price(double value, uint8_t prec);
+struct Price price_new(double value, uint8_t precision);
 
-struct Quantity new_qty(double value, uint8_t prec);
+struct Quantity quantity_new(double value, uint8_t precision);
 
 struct OrderBook order_book_new(struct InstrumentId instrument_id, enum BookLevel book_level);
 

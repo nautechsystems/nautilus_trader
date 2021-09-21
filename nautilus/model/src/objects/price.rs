@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::objects::FIXED_PREC;
+use crate::objects::{FIXED_EXPONENT, FIXED_PRECISION};
 use nautilus_core::text::prec_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
@@ -22,15 +22,17 @@ use std::ops::{AddAssign, Mul, MulAssign};
 #[repr(C)]
 #[derive(Copy, Clone, Default, Hash)]
 pub struct Price {
-    pub value: i64,
-    pub prec: u8,
+    pub mantissa: i64,
+    pub precision: u8,
 }
 
 impl Price {
-    pub fn new(value: f64, prec: u8) -> Self {
+    pub fn new(value: f64, precision: u8) -> Self {
+        assert!(precision <= 9);
+        let diff = FIXED_EXPONENT - precision;
         Price {
-            value: (value / FIXED_PREC).round() as i64,
-            prec,
+            mantissa: (value * 10_i32.pow(precision as u32) as f64) as i64 * 10_i64.pow(diff as u32),
+            precision,
         }
     }
 
@@ -44,26 +46,25 @@ impl Price {
     }
 
     pub fn as_f64(&self) -> f64 {
-        (self.value) as f64 * FIXED_PREC
+        (self.mantissa) as f64 * FIXED_PRECISION
     }
 
-    pub fn as_string(&self) -> String {
-        format!("{:.*}", self.prec as usize, self.as_f64())
-    }
-
+    //##########################################################################
+    // C API
+    //##########################################################################
     #[no_mangle]
-    pub extern "C" fn new_price(value: f64, prec: u8) -> Self {
-        Price::new(value, prec)
+    pub extern "C" fn price_new(value: f64, precision: u8) -> Self {
+        Price::new(value, precision)
     }
 }
 
 impl PartialEq for Price {
     fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
+        self.mantissa == other.mantissa
     }
 
     fn ne(&self, other: &Self) -> bool {
-        self.value != other.value
+        self.mantissa != other.mantissa
     }
 }
 
@@ -71,41 +72,41 @@ impl Eq for Price {}
 
 impl PartialOrd for Price {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.value.partial_cmp(&other.value)
+        self.mantissa.partial_cmp(&other.mantissa)
     }
 
     fn lt(&self, other: &Self) -> bool {
-        self.value.lt(&other.value)
+        self.mantissa.lt(&other.mantissa)
     }
 
     fn le(&self, other: &Self) -> bool {
-        self.value.le(&other.value)
+        self.mantissa.le(&other.mantissa)
     }
 
     fn gt(&self, other: &Self) -> bool {
-        self.value.gt(&other.value)
+        self.mantissa.gt(&other.mantissa)
     }
 
     fn ge(&self, other: &Self) -> bool {
-        self.value.ge(&other.value)
+        self.mantissa.ge(&other.mantissa)
     }
 }
 
 impl Ord for Price {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.value.cmp(&other.value)
+        self.mantissa.cmp(&other.mantissa)
     }
 }
 
 impl AddAssign for Price {
     fn add_assign(&mut self, other: Self) {
-        self.value += other.value;
+        self.mantissa += other.mantissa;
     }
 }
 
 impl MulAssign<i64> for Price {
     fn mul_assign(&mut self, multiplier: i64) {
-        self.value *= multiplier;
+        self.mantissa *= multiplier;
     }
 }
 
@@ -113,21 +114,21 @@ impl Mul<i64> for Price {
     type Output = Self;
     fn mul(self, rhs: i64) -> Self {
         Price {
-            value: self.value * rhs,
-            prec: self.prec,
+            mantissa: self.mantissa * rhs,
+            precision: self.precision,
         }
     }
 }
 
 impl Debug for Price {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{:.*}", self.prec as usize, self.as_f64())
+        write!(f, "{:.*}", self.precision as usize, self.as_f64())
     }
 }
 
 impl Display for Price {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        write!(f, "{:.*}", self.prec as usize, self.as_f64())
+        write!(f, "{:.*}", self.precision as usize, self.as_f64())
     }
 }
 
@@ -141,10 +142,25 @@ mod tests {
         let price = Price::new(0.00812, 8);
 
         assert_eq!(price, price);
-        assert_eq!(price.value, 8120000);
-        assert_eq!(price.prec, 8);
+        assert_eq!(price.mantissa, 8120000);
+        assert_eq!(price.precision, 8);
         assert_eq!(price.as_f64(), 0.00812);
-        assert_eq!(price.as_string(), "0.00812000");
+        assert_eq!(price.to_string(), "0.00812000");
+    }
+
+    #[test]
+    fn price_minimum() {
+        let price = Price::new(0.000000001, 9);
+
+        assert_eq!(price.mantissa, 1);
+        assert_eq!(price.to_string(), "0.000000001");
+    }
+    #[test]
+    fn price_precision() {
+        let price = Price::new(1.001, 2);
+
+        assert_eq!(price.mantissa, 1000000000);
+        assert_eq!(price.to_string(), "1.00");
     }
 
     #[test]
@@ -152,10 +168,10 @@ mod tests {
         let price = Price::new_from_str("0.00812000");
 
         assert_eq!(price, price);
-        assert_eq!(price.value, 8120000);
-        assert_eq!(price.prec, 8);
+        assert_eq!(price.mantissa, 8120000);
+        assert_eq!(price.precision, 8);
         assert_eq!(price.as_f64(), 0.00812);
-        assert_eq!(price.as_string(), "0.00812000");
+        assert_eq!(price.to_string(), "0.00812000");
     }
 
     #[test]
@@ -190,8 +206,8 @@ mod tests {
         let input_string = "44.123456";
         let price = Price::new_from_str(&input_string);
 
-        assert_eq!(price.value, 44123456000);
+        assert_eq!(price.mantissa, 44123456000);
         assert_eq!(price.as_f64(), 44.123456000000004);
-        assert_eq!(price.as_string(), "44.123456");
+        assert_eq!(price.to_string(), "44.123456");
     }
 }

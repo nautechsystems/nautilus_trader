@@ -59,7 +59,7 @@ impl Level {
     pub fn update(&mut self, order: Order) {
         assert_eq!(order.price, self.price); // Confirm order for this level
 
-        if order.size.value == 0 {
+        if order.size.mantissa == 0 {
             self.delete(&order)
         } else {
             let index = self

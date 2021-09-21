@@ -17,4 +17,5 @@ pub mod money;
 pub mod price;
 pub mod quantity;
 
-pub const FIXED_PREC: f64 = 0.000000001;
+pub const FIXED_EXPONENT: u8 = 9;
+pub const FIXED_PRECISION: f64 = 0.000000001;

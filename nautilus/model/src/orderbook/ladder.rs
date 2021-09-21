@@ -80,7 +80,7 @@ impl Ladder {
                 } else {
                     let order_id = order.id.clone(); // TODO(cs): Optimize
                     let price = order.price.clone(); // TODO(cs): Optimize
-                                                     // New price for this order, delete and insert
+                    // New price for this order, delete and insert
                     level.delete(&order);
                     self.add(order);
                     let idx = self.levels.iter().position(|l| price == l.price).unwrap();
