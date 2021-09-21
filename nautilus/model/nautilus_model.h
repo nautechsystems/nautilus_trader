@@ -58,8 +58,8 @@ typedef struct OrderBook {
   struct Ladder asks;
   struct InstrumentId instrument_id;
   enum BookLevel book_level;
-  enum OrderSide last_action_side;
-  int64_t last_action_ts;
+  enum OrderSide last_side;
+  int64_t ts_last;
 } OrderBook;
 
 struct Symbol symbol_new(const char *ptr);
@@ -74,6 +74,6 @@ struct Price new_price(double value, uint8_t prec);
 
 struct Quantity new_qty(double value, uint8_t prec);
 
-struct OrderBook new_order_book(struct InstrumentId instrument_id, enum BookLevel book_level);
+struct OrderBook order_book_new(struct InstrumentId instrument_id, enum BookLevel book_level);
 
 #endif /* add_h */

@@ -30,6 +30,9 @@ impl Venue {
         }
     }
 
+    //##########################################################################
+    // C API
+    //##########################################################################
     #[no_mangle]
     pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
         // SAFETY: checks `ptr` can be parsed into a valid C string

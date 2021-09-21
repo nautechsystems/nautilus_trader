@@ -40,7 +40,17 @@ impl InstrumentId {
         }
     }
 
-    pub unsafe fn from_raw(ptr: *const c_char) -> InstrumentId {
+    pub fn to_string(self) -> String {
+        let mut output = self.symbol.value.to_string();
+        output.push_str("."); // Delimiter
+        output.push_str(&self.venue.to_string());
+        output
+    }
+
+    //##########################################################################
+    // C API
+    //##########################################################################
+    pub unsafe fn instrument_id_from_raw(ptr: *const c_char) -> InstrumentId {
         // SAFETY: checks `ptr` can be parsed into a valid C string
         let s = CStr::from_ptr(ptr).to_str().expect("invalid UTF-8 string");
         let pieces: Vec<&str> = s.split(".").collect();
@@ -49,13 +59,6 @@ impl InstrumentId {
             symbol: Symbol::from_str(&String::from(pieces[0])),
             venue: Venue::from_str(&String::from(pieces[1])),
         }
-    }
-
-    pub fn to_string(self) -> String {
-        let mut output = self.symbol.value.to_string();
-        output.push_str("."); // Delimiter
-        output.push_str(&self.venue.to_string());
-        output
     }
 }
 

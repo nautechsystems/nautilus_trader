@@ -32,21 +32,21 @@ int64_t unix_timestamp_ns(void);
 /**
  * Initializes a new instance of the UUID4 struct.
  */
-struct UUID4 uuid_new(void);
+struct UUID4 uuid4_new(void);
 
 /**
  * Initializes a new instance of the UUID4 struct.
  */
-struct UUID4 uuid_free(struct UUID4 uuid);
-
-/**
- * Initializes a new instance of the UUID4 struct.
- */
-struct UUID4 uuid_from_raw(const char *ptr);
+struct UUID4 uuid4_free(struct UUID4 uuid);
 
 /**
  * Returns a UTF-8 encoded bytes representation of the UUID value.
  */
-const uint8_t (*uuid_to_bytes(const struct UUID4 *self))[36];
+const uint8_t (*uuid4_to_bytes(const struct UUID4 *self))[36];
+
+/**
+ * Initializes a new instance of the UUID4 struct.
+ */
+struct UUID4 uuid4_from_raw(const char *ptr);
 
 #endif /* add_h */

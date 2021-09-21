@@ -25,8 +25,8 @@ pub struct OrderBook {
     asks: Ladder,
     pub instrument_id: InstrumentId,
     pub book_level: BookLevel,
-    pub last_action_side: OrderSide,
-    pub last_action_ts: i64,
+    pub last_side: OrderSide,
+    pub ts_last: i64,
 }
 
 impl OrderBook {
@@ -36,22 +36,25 @@ impl OrderBook {
             asks: Ladder::new(OrderSide::Sell),
             instrument_id,
             book_level,
-            last_action_side: OrderSide::Buy,
-            last_action_ts: 0,
+            last_side: OrderSide::Buy,
+            ts_last: 0,
         }
     }
 
     pub fn add(&mut self, order: Order, ts_event: i64) {
-        self.last_action_side = order.side;
-        self.last_action_ts = ts_event;
+        self.last_side = order.side;
+        self.ts_last = ts_event;
         match order.side {
             OrderSide::Buy => self.bids.add(order),
             OrderSide::Sell => self.asks.add(order),
         }
     }
 
+    //##########################################################################
+    // C API
+    //##########################################################################
     #[no_mangle]
-    pub extern "C" fn new_order_book(
+    pub extern "C" fn order_book_new(
         instrument_id: InstrumentId,
         book_level: BookLevel,
     ) -> OrderBook {

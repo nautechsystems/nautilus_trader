@@ -24,7 +24,8 @@ from cpython.datetime cimport timedelta
 from cpython.datetime cimport tzinfo
 from libc.stdint cimport int64_t
 
-from nautilus.api cimport nautilus_core
+from nautilus.api.core cimport unix_timestamp
+from nautilus.api.core cimport unix_timestamp_ns
 from nautilus_trader.common.timer cimport LoopTimer
 from nautilus_trader.common.timer cimport TestTimer
 from nautilus_trader.common.timer cimport ThreadTimer
@@ -591,7 +592,7 @@ cdef class LiveClock(Clock):
         https://en.wikipedia.org/wiki/Unix_time
 
         """
-        return nautilus_core.unix_timestamp()
+        return unix_timestamp()
 
     cpdef int64_t timestamp_ns(self) except *:
         """
@@ -606,7 +607,7 @@ cdef class LiveClock(Clock):
         https://en.wikipedia.org/wiki/Unix_time
 
         """
-        return nautilus_core.unix_timestamp_ns()
+        return unix_timestamp_ns()
 
     cpdef datetime utc_now(self):
         """

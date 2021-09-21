@@ -49,29 +49,35 @@ impl UUID4 {
         String::from_utf8(Vec::from(self.value)).unwrap()
     }
 
+    //##########################################################################
+    // C API
+    //##########################################################################
     /// Initializes a new instance of the UUID4 struct.
     #[no_mangle]
-    pub extern "C" fn uuid_new() -> UUID4 {
+    pub extern "C" fn uuid4_new() -> UUID4 {
         UUID4::new()
     }
 
     /// Initializes a new instance of the UUID4 struct.
     #[no_mangle]
-    pub extern "C" fn uuid_free(uuid: UUID4) -> UUID4 {
+    pub extern "C" fn uuid4_free(uuid: UUID4) -> UUID4 {
         uuid // Memory freed here
-    }
-
-    /// Initializes a new instance of the UUID4 struct.
-    #[no_mangle]
-    pub unsafe extern "C" fn uuid_from_raw(ptr: *const c_char) -> UUID4 {
-        let s = CStr::from_ptr(ptr);
-        UUID4::from_str(s.to_str().expect("Not a valid UTF-8 string"))
     }
 
     /// Returns a UTF-8 encoded bytes representation of the UUID value.
     #[no_mangle]
-    pub extern "C" fn uuid_to_bytes(&self) -> &[u8; 36] {
+    pub extern "C" fn uuid4_to_bytes(&self) -> &[u8; 36] {
         &self.value
+    }
+
+    //##########################################################################
+    // C API (unsafe)
+    //##########################################################################
+    /// Initializes a new instance of the UUID4 struct.
+    #[no_mangle]
+    pub unsafe extern "C" fn uuid4_from_raw(ptr: *const c_char) -> UUID4 {
+        let s = CStr::from_ptr(ptr);
+        UUID4::from_str(s.to_str().expect("Not a valid UTF-8 string"))
     }
 }
 
@@ -119,6 +125,6 @@ mod tests {
     fn uuid_to_bytes() {
         let uuid = uuid::UUID4::new();
 
-        assert_eq!(uuid.uuid_to_bytes().len(), 36);
+        assert_eq!(uuid.uuid4_to_bytes().len(), 36);
     }
 }

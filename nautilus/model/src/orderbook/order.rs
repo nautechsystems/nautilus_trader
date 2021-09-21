@@ -36,15 +36,15 @@ impl Order {
         }
     }
 
-    pub fn from_str_vec(input_vec: Vec<&str>) -> Self {
-        assert_eq!(input_vec.len(), 4);
+    pub fn from_vec(vec: Vec<&str>) -> Self {
+        assert_eq!(vec.len(), 4);
         Order {
-            price: Price::new_from_str(&input_vec[0]),
-            size: Quantity::new_from_str(&input_vec[1]),
-            side: match input_vec[2] {
+            price: Price::new_from_str(&vec[0]),
+            size: Quantity::new_from_str(&vec[1]),
+            side: match vec[2] {
                 "B" => OrderSide::Buy,
                 "S" => OrderSide::Sell,
-                _ => panic!("Cannot parse side, was {}", input_vec[2]),
+                _ => panic!("Cannot parse side, was {}", vec[2]),
             },
             id: 0,
         }
@@ -54,7 +54,7 @@ impl Order {
 #[test]
 fn order_from_str_vec() {
     let input = vec!["1.00000", "100", "B", "123"];
-    let order = Order::from_str_vec(input);
+    let order = Order::from_vec(input);
 
     assert_eq!(order.price, Price::new(1.0, 0));
     assert_eq!(order.size, Quantity::new(100.0, 0));

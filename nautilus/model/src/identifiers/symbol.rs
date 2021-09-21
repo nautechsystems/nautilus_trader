@@ -30,6 +30,9 @@ impl Symbol {
         }
     }
 
+    //##########################################################################
+    // C API
+    //##########################################################################
     #[no_mangle]
     pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
         // SAFETY: checks `ptr` can be parsed into a valid C string
