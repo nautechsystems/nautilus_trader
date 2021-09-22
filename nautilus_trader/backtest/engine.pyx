@@ -323,7 +323,10 @@ cdef class BacktestEngine:
         # Add data
         self._data = sorted(self._data + data, key=lambda x: x.ts_init)
 
-        self._log.info(f"Added {len(data)} GenericData elements.")
+        self._log.info(
+            f"Added {len(data)} {type(data[0].data).__name__} "
+            f"GenericData element{'' if len(data) == 1 else 's'}.",
+        )
 
     def add_instrument(self, Instrument instrument) -> None:
         """
@@ -379,7 +382,8 @@ cdef class BacktestEngine:
         self._data = sorted(self._data + data, key=lambda x: x.ts_init)
 
         self._log.info(
-            f"Added {len(data):,} {first.instrument_id} OrderBookData elements.",
+            f"Added {len(data):,} {first.instrument_id} "
+            f"OrderBookData element{'' if len(data) == 1 else 's'}.",
         )
 
     def add_ticks(self, list data) -> None:
@@ -413,7 +417,8 @@ cdef class BacktestEngine:
         self._data = sorted(self._data + data, key=lambda x: x.ts_init)
 
         self._log.info(
-            f"Added {len(data):,} {first.instrument_id} {type(first).__name__} elements.",
+            f"Added {len(data):,} {first.instrument_id} "
+            f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
         )
 
     def add_bars(self, list data) -> None:
@@ -458,7 +463,10 @@ cdef class BacktestEngine:
         # Add data
         self._data = sorted(self._data + data, key=lambda x: x.ts_init)
 
-        self._log.info(f"Added {len(data):,} {first.type} Bar elements.")
+        self._log.info(
+            f"Added {len(data):,} {first.type} "
+            f"Bar element{'' if len(data) == 1 else 's'}.",
+        )
 
     def add_venue(
         self,
