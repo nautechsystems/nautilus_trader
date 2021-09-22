@@ -97,8 +97,8 @@ class TestBacktestEngineData:
 
         # Assert
         log = "".join(capsys.readouterr())
-        assert "Added 4 GenericData elements." in log
-        assert "Added 1 GenericData elements." in log
+        assert "Added 4 MyData GenericData elements." in log
+        assert "Added 1 MyData GenericData element." in log
 
     def test_add_instrument_adds_to_engine(self, capsys):
         # Arrange
