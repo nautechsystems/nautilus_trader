@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from decimal import Decimal
 
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
@@ -93,6 +94,8 @@ class TestTrader:
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
+            default_leverage=Decimal(50),
+            leverages={},
             is_frozen_account=False,
             cache=self.cache,
             instruments=[USDJPY_SIM],

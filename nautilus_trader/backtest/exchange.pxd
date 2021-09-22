@@ -80,6 +80,10 @@ cdef class SimulatedExchange:
     """The account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or ``None``"""
     cdef readonly list starting_balances
     """The account starting balances for each backtest run.\n\n:returns: `bool`"""
+    cdef readonly default_leverage
+    """The accounts default leverage.\n\n:returns: `Decimal`"""
+    cdef readonly dict leverages
+    """The accounts instrument specific leverage configuration.\n\n:returns: `dict[InstrumentId, Decimal]`"""
     cdef readonly bint is_frozen_account
     """If the account for the exchange is frozen.\n\n:returns: `bool`"""
     cdef readonly bint fill_limit_at_price  # TODO(cs): Temporary flag

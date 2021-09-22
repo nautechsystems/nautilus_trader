@@ -15,6 +15,7 @@
 
 from datetime import datetime
 from datetime import timedelta
+from decimal import Decimal
 
 import pytest
 import pytz
@@ -119,6 +120,8 @@ class TestTradingStrategy:
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
+            default_leverage=Decimal(50),
+            leverages={},
             is_frozen_account=False,
             cache=self.cache,
             instruments=[USDJPY_SIM],

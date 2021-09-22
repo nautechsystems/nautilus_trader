@@ -88,6 +88,18 @@ class TestMarginAccount:
         assert isinstance(hash(account), int)
         assert account == account
         assert not account != account
+        assert account.default_leverage == Decimal(1)
+
+    def test_set_default_leverage(self):
+        # Arrange
+        account = TestStubs.margin_account()
+
+        # Act
+        account.set_default_leverage(Decimal(100))
+
+        # Assert
+        assert account.default_leverage == Decimal(100)
+        assert account.leverages() == {}
 
     def test_set_leverage(self):
         # Arrange
@@ -138,6 +150,21 @@ class TestMarginAccount:
 
         # Assert
         assert result == Money(48.06, USD)
+
+    def test_calculate_margin_init_with_default_leverage(self):
+        # Arrange
+        account = TestStubs.margin_account()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        account.set_default_leverage(Decimal(10))
+
+        result = account.calculate_margin_init(
+            instrument=instrument,
+            quantity=Quantity.from_int(100000),
+            price=Price.from_str("0.80000"),
+        )
+
+        # Assert
+        assert result == Money(240.32, USD)
 
     @pytest.mark.parametrize(
         "inverse_as_quote, expected",
