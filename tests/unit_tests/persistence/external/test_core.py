@@ -465,7 +465,7 @@ class TestPersistenceCore:
         expected = [
             f"/root/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
             f"/root/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
-            "/root/data/betting_instrument.parquet/20210921.parquet",
+            "/root/data/betting_instrument.parquet/20210922.parquet",
             f"/root/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
             f"/root/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
             f"/root/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",

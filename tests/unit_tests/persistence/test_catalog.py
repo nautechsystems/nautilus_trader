@@ -81,6 +81,13 @@ class TestPersistenceCatalog:
         instruments = self.catalog.instruments()
         assert len(instruments) == 2
 
+    def test_writing_instruments_doesnt_overwrite(self):
+        instruments = self.catalog.instruments(as_nautilus=True)
+        write_objects(catalog=self.catalog, chunk=[instruments[0]])
+        write_objects(catalog=self.catalog, chunk=[instruments[1]])
+        instruments = self.catalog.instruments(as_nautilus=True)
+        assert len(instruments) == 2
+
     def test_data_catalog_instruments_filtered_df(self):
         instrument_id = (
             "Basketball,,29628709,20191221-001000,ODDS,MATCH_ODDS,1.166564490,237491,0.0.BETFAIR"
