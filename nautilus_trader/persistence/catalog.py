@@ -12,18 +12,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import datetime
 import os
 import pathlib
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import fsspec
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
+from dask.utils import parse_bytes
 from pyarrow import ArrowInvalid
 
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
@@ -344,6 +347,35 @@ class DataCatalog(metaclass=Singleton):
             partitions[level.name] = level.keys
         return partitions
 
+    def calc_streaming_chunks(
+        self,
+        instrument_ids: List[str],
+        data_types: List[type],
+        start_time: Union[str, datetime.datetime, pd.Timestamp],
+        end_time: Union[str, datetime.datetime, pd.Timestamp],
+        target_size=parse_bytes("100mib"),  # noqa: B008
+    ):
+        """
+        Calculate the chunks of data to load for a backtest, given a target chunk size
+        """
+        from scipy.optimize import minimize
+
+        start_nanos: int = make_unix_ns(start_time)
+        end_nanos: int = make_unix_ns(end_time)
+
+        target_func = search_data_size_timestamp(
+            root_path=str(self.path),
+            fs=self.fs,
+            instrument_ids=instrument_ids,
+            data_types=data_types,
+            start_time=start_time,
+            target_size=target_size,
+        )
+        result = minimize(
+            fun=target_func, x0=np.asarray([start_nanos]), bounds=((start_nanos, end_nanos),)
+        )
+        return result
+
 
 def combine_filters(*filters):
     filters = tuple(x for x in filters if x is not None)
@@ -356,3 +388,82 @@ def combine_filters(*filters):
         for f in filters[1:]:
             expr = expr & f
         return expr
+
+
+def make_unix_ns(value: Union[str, datetime.datetime, pd.Timestamp]) -> int:
+    ts = pd.Timestamp(value)  # type: ignore
+    if not ts.tz:
+        ts = ts.tz_localize("UTC")
+    return dt_to_unix_nanos(ts)
+
+
+def _calculate_instrument_data_type_size(
+    root_path: str,
+    fs: fsspec.AbstractFileSystem,
+    instrument_id: str,
+    data_type: type,
+    start_time: int,
+    end_time: int,
+):
+    fp = f"{root_path}/data/{class_to_filename(data_type)}.parquet/instrument_id={instrument_id}"
+    try:
+        dataset = ds.dataset(fp, filesystem=fs)
+    except FileNotFoundError:
+        return 0
+    filters = (ds.field("ts_init") >= start_time) & (ds.field("ts_init") <= end_time)
+    table = dataset.to_table(filter=filters)
+    return table.nbytes
+
+
+def _calculate_data_type_size(
+    root_path: str,
+    fs: fsspec.AbstractFileSystem,
+    instrument_ids: List[str],
+    data_type: type,
+    start_time: int,
+    end_time: int,
+):
+    return sum(
+        _calculate_instrument_data_type_size(
+            root_path, fs, instrument_id, data_type, start_time, end_time
+        )
+        for instrument_id in instrument_ids
+    )
+
+
+def calculate_data_size(
+    root_path: str,
+    fs: fsspec.AbstractFileSystem,
+    instrument_ids: List[str],
+    data_types: List[type],
+    start_time: int,
+    end_time: int,
+):
+    return sum(
+        _calculate_data_type_size(root_path, fs, instrument_ids, data_type, start_time, end_time)
+        for data_type in data_types
+    )
+
+
+def search_data_size_timestamp(
+    root_path: str,
+    fs: fsspec.AbstractFileSystem,
+    instrument_ids,
+    data_types,
+    start_time,
+    target_size=10485760,
+):
+    def inner(end_time):
+        return abs(
+            target_size
+            - calculate_data_size(
+                root_path=root_path,
+                fs=fs,
+                instrument_ids=instrument_ids,
+                data_types=data_types,
+                start_time=start_time,
+                end_time=int(end_time[0]),
+            )
+        )
+
+    return inner

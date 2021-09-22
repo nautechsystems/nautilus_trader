@@ -14,11 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
+import functools
 import sys
 
 import fsspec
 import pyarrow.dataset as ds
 import pytest
+from dask.utils import parse_bytes
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.model.data.tick import QuoteTick
@@ -29,6 +31,9 @@ from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.catalog import calculate_data_size
+from nautilus_trader.persistence.catalog import make_unix_ns
+from nautilus_trader.persistence.catalog import search_data_size_timestamp
 from nautilus_trader.persistence.external.core import dicts_to_dataframes
 from nautilus_trader.persistence.external.core import process_files
 from nautilus_trader.persistence.external.core import split_and_serialize
@@ -179,3 +184,50 @@ class TestPersistenceCatalog:
 
         filtered_deltas = self.catalog.order_book_deltas(filter_expr=ds.field("action") == "DELETE")
         assert len(filtered_deltas) == 351
+
+    def test_calculate_data_size(self):
+        # Arrange
+        instrument_ids = self.catalog.instruments()["id"].tolist()
+        func = functools.partial(
+            calculate_data_size,
+            root_path=self.catalog.path,
+            fs=self.catalog.fs,
+            instrument_ids=instrument_ids,
+            data_types=[TradeTick],
+            start_time=1576840503572000000,
+        )
+
+        # Act
+        results = [
+            func(end_time=make_unix_ns("2019-12-20 11:30:00")),
+            func(end_time=make_unix_ns("2019-12-20 15:00:00")),
+            func(end_time=make_unix_ns("2019-12-20 18:00:00")),
+            func(end_time=make_unix_ns("2019-12-20 22:00:00")),
+        ]
+
+        # Assert
+        expected = [1138, 7019, 12459, 34749]
+        assert results == expected
+
+    def test_search_data_size_timestamp(self):
+        instrument_ids = self.catalog.instruments()["id"].tolist()
+        target_func = search_data_size_timestamp(
+            root_path=self.catalog.path,
+            fs=self.catalog.fs,
+            instrument_ids=instrument_ids,
+            data_types=[TradeTick],
+            start_time=1576840503572000000,
+            target_size=parse_bytes("1mib"),
+        )
+        result = target_func([1576878597067000000])
+        assert result == 1013827
+
+    def test_calc_streaming_chunks(self):
+        instrument_ids = self.catalog.instruments()["id"].tolist()
+        chunks = self.catalog.calc_streaming_chunks(
+            instrument_ids=instrument_ids,
+            data_types=[TradeTick],
+            start_time=1576840503572000000,
+            target_size=parse_bytes("100mib"),
+        )
+        assert chunks
