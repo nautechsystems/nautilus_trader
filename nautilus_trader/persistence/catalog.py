@@ -324,7 +324,7 @@ class DataCatalog(metaclass=Singleton):
         return data
 
     def list_data_types(self):
-        return [p.stem for p in self.path.glob("*.parquet")]
+        return [pathlib.Path(p).stem for p in self.fs.glob(f"{self.path}/data/*.parquet")]
 
     def list_generic_data_types(self):
         data_types = self.list_data_types()

@@ -12,13 +12,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from typing import Callable, Dict, List, Optional, Union
+import pathlib
+import re
+from itertools import groupby
+from typing import Dict, List, Optional, Tuple, Union
 
 import dask
 import fsspec
 import pandas as pd
 import pyarrow as pa
+import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 from dask import compute
 from dask import delayed
@@ -30,8 +33,6 @@ from tqdm import tqdm
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.external.metadata import _glob_path_to_fs
-from nautilus_trader.persistence.external.metadata import load_processed_raw_files
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.external.synchronization import named_lock
@@ -41,7 +42,6 @@ from nautilus_trader.serialization.arrow.serializer import get_partition_keys
 from nautilus_trader.serialization.arrow.serializer import get_schema
 from nautilus_trader.serialization.arrow.util import check_partition_columns
 from nautilus_trader.serialization.arrow.util import class_to_filename
-from nautilus_trader.serialization.arrow.util import clean_key
 from nautilus_trader.serialization.arrow.util import clean_partition_cols
 from nautilus_trader.serialization.arrow.util import maybe_list
 
@@ -61,7 +61,6 @@ class RawFile:
         self,
         open_file: OpenFile,
         block_size: Optional[int] = None,
-        partition_name_callable: Optional[Callable] = None,
         progress=False,
     ):
         """
@@ -73,16 +72,12 @@ class RawFile:
             The fsspec.OpenFile source of this data.
         block_size: int
             The max block (chunk) size to read from the file.
-        partition_name_callable: Callable
-            A callable taking a two arguments: (`partition_keys`, `df`) that can be used to modify the name of the
-            parquet partition filename. Can be used to partition data in a more intelligent way (for example by date)
         progress: bool
             Show a progress bar while processing this individual file.
 
         """
         self.open_file = open_file
         self.block_size = block_size
-        self.partition_name_callable = partition_name_callable
         # TODO - waiting for tqdm support in fsspec https://github.com/intake/filesystem_spec/pulls?q=callback
         assert not progress, "Progress not yet available, awaiting fsspec feature"
         self.progress = progress
@@ -143,10 +138,8 @@ def make_raw_files(glob_path, block_size="128mb", compression="infer", **kw) -> 
 
 
 def scan_files(glob_path, compression="infer", **kw) -> List[OpenFile]:
-    fs = _glob_path_to_fs(glob_path)
-    processed = load_processed_raw_files(fs=fs)
     open_files = fsspec.open_files(glob_path, compression=compression, **kw)
-    return [of for of in open_files if of.path not in processed]
+    return [of for of in open_files]
 
 
 def split_and_serialize(objs: List) -> Dict[type, Dict[str, List]]:
@@ -191,77 +184,34 @@ def dicts_to_dataframes(dicts) -> Dict[type, Dict[str, pd.DataFrame]]:
     return tables
 
 
-def determine_partition_cols(cls: type, instrument_id: str = None):
+def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[List, None]:
     """
     Determine partition columns (if any) for this type `cls`
     """
-    if cls in Instrument.__subclasses__():
-        # No partitioning for instrument tables
-        return None
     partition_keys = get_partition_keys(cls)
     if partition_keys:
         return list(partition_keys)
     elif instrument_id is not None:
         return ["instrument_id"]
-    return
+    return None
 
 
-def read_and_clear_existing_data(
-    catalog: DataCatalog,
-    path: str,
-    instrument_id: Optional[str],
-    partition_cols: List[str],
-):
+def merge_existing_data(catalog: DataCatalog, cls: type, df: pd.DataFrame) -> pd.DataFrame:
     """
-    Check if any file exists at `path`, reading if it exists and removing the
-    file. It will be rewritten later.
+    Handle existing data for instrument subclasses; instruments all live in a single file, so merge with existing data.
+    For all other classes, simply return data unchanged.
     """
-    fs = catalog.fs
-    if fs.exists(path) or fs.isdir(path):
-        existing = catalog._query(
-            path=path,
-            instrument_ids=instrument_id,
-            ts_column="ts_init",
-            raise_on_empty=False,
-        )
-        if not existing.empty:
-            # Remove this file/partition, will be written again
-            if partition_cols:
-                assert partition_cols == [
-                    "instrument_id"
-                ], "Only support appending to instrument_id partitions"
-                # We only want to remove this partition
-                partition_path = f"instrument_id={clean_key(instrument_id)}"
-                fs.rm(f"{path}/{partition_path}", recursive=True)
-            else:
-                fs.rm(path, recursive=True)
-
-            return existing
+    if cls not in Instrument.__subclasses__():
+        return df
+    else:
+        try:
+            existing = catalog.instruments(instrument_type=cls)
+            return existing.append(df.drop(["type"], axis=1)).drop_duplicates()
+        except pa.lib.ArrowInvalid:
+            return df
 
 
-def merge_with_existing_data(
-    df: pd.DataFrame,
-    catalog: DataCatalog,
-    path: str,
-    instrument_id: Optional[str],
-    partition_cols: Optional[List],
-):
-    """
-    Load any exiting data (and clear) and merge to this dataframe `df`.
-    """
-    existing = read_and_clear_existing_data(
-        catalog=catalog,
-        path=path,
-        instrument_id=instrument_id,
-        partition_cols=partition_cols,
-    )
-    if existing is not None:
-        assert isinstance(existing, pd.DataFrame)
-        df = existing.append(df).drop_duplicates().sort_values("ts_init")
-    return df
-
-
-def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]]):
+def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]], **kwargs):
     """
     Write tables to catalog.
 
@@ -283,20 +233,15 @@ def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame
         partition_cols = determine_partition_cols(cls=cls, instrument_id=instrument_id)
         name = f"{class_to_filename(cls)}.parquet"
         path = f"{catalog.path}/data/{name}"
+        merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
         with named_lock(name):
-            data = merge_with_existing_data(
-                df=df,
-                catalog=catalog,
-                path=path,
-                instrument_id=instrument_id if partition_cols else None,
-                partition_cols=partition_cols,
-            )
             write_parquet(
                 fs=catalog.fs,
                 path=path,
-                df=data,
+                df=merged,
                 partition_cols=partition_cols,
                 schema=schema,
+                **kwargs,
             )
         rows_written += len(df)
 
@@ -309,8 +254,7 @@ def write_parquet(
     df: pd.DataFrame,
     partition_cols: Optional[List[str]],
     schema: pa.Schema,
-    partition_name_callable: Optional[Callable] = None,
-    **parquet_dataset_kwargs,
+    **kwargs,
 ):
     """
     Write a single dataframe to parquet.
@@ -322,37 +266,40 @@ def write_parquet(
     # Dataframe -> pyarrow Table
     table = pa.Table.from_pandas(df, schema=schema)
 
-    # Object passed to `write_to_dataset` that collects metadata about written data
-    metadata_collector: List[pq.FileMetaData] = []
+    if "basename_template" not in kwargs and "ts_init" in df.columns:
+        kwargs["basename_template"] = (
+            f"{df['ts_init'].iloc[0]}-{df['ts_init'].iloc[-1]}" + "-{i}.parquet"
+        )
 
     # Write the actual file
-    pq.write_to_dataset(
-        table=table,
-        root_path=path,
-        filesystem=fs,
-        partition_cols=partition_cols,
-        # use_legacy_dataset=True,
-        version="2.0",
-        metadata_collector=metadata_collector,
-        partition_filename_cb=partition_name_callable,
-        **parquet_dataset_kwargs,
+    partitions = (
+        ds.partitioning(
+            schema=pa.schema(fields=[table.schema.field(c) for c in (partition_cols)]),
+            flavor="hive",
+        )
+        if partition_cols
+        else None
     )
-
+    ds.write_dataset(
+        data=table,
+        base_dir=path,
+        filesystem=fs,
+        partitioning=partitions,
+        format="parquet",
+        **kwargs,
+    )
     # Write the ``_common_metadata`` parquet file without row groups statistics
     pq.write_metadata(table.schema, f"{path}/_common_metadata", version="2.0", filesystem=fs)
-
-    # Write the ``_metadata`` parquet file with row groups statistics of all files
-    pq.write_metadata(table.schema, f"{path}/_metadata", version="2.0", filesystem=fs)
 
     # Write out any partition columns we had to modify due to filesystem requirements
     if mappings:
         write_partition_column_mappings(fs=fs, path=path, mappings=mappings)
 
 
-def write_objects(catalog: DataCatalog, chunk: List):
+def write_objects(catalog: DataCatalog, chunk: List, **kwargs):
     serialized = split_and_serialize(objs=chunk)
     tables = dicts_to_dataframes(serialized)
-    write_tables(catalog=catalog, tables=tables)
+    write_tables(catalog=catalog, tables=tables, **kwargs)
 
 
 def read_progress(func, total):
@@ -367,3 +314,63 @@ def read_progress(func, total):
             yield data
 
     return inner
+
+
+def _parse_file_start_by_filename(fn: str):
+    """
+    Parse start time by filename
+
+    >>> _parse_file_start_by_filename('/data/test/sample.parquet/instrument_id=a/1577836800000000000-1578182400000000000-0.parquet')
+    '1577836800000000000'
+
+    >>> _parse_file_start_by_filename('/data/test/sample.parquet/instrument_id=a/0648140b1fd7491a97983c0c6ece8d57.parquet')
+
+    """
+    match = re.match(r"(?P<start>\d{19})\-\d{19}\-\d", pathlib.Path(fn).stem)
+    if match:
+        return int(match.groups()[0])
+
+
+def _parse_file_start(fn: str) -> Optional[Tuple[str, pd.Timestamp]]:
+    instrument_id = re.findall(r"instrument_id\=(.*)\/", fn)[0] if "instrument_id" in fn else None
+    start = _parse_file_start_by_filename(fn=fn)
+    if start is not None:
+        start = pd.Timestamp(start)
+        return instrument_id, start
+    return None
+
+
+def _validate_dataset(catalog: DataCatalog, path: str, new_partition_format="%Y%m%d"):
+    """
+    Repartition dataset into sorted time chunks (default dates) and drop duplicates.
+    """
+    fs = catalog.fs
+    dataset = ds.dataset(path, filesystem=fs)
+    fn_to_start = [
+        (fn, _parse_file_start(fn=fn)) for fn in dataset.files if _parse_file_start(fn=fn)
+    ]
+
+    sort_key = lambda x: (x[1][0], x[1][1].strftime(new_partition_format))  # noqa: E731
+
+    for part, values_iter in groupby(sorted(fn_to_start, key=sort_key), key=sort_key):
+        values = list(values_iter)
+        filenames = [v[0] for v in values]
+
+        # Read files, drop duplicates
+        df: pd.DataFrame = ds.dataset(filenames, filesystem=fs).to_table().to_pandas()
+        df = df.drop_duplicates(ignore_index=True, keep="last")
+
+        # Write new file
+        table = pa.Table.from_pandas(df, schema=dataset.schema)
+        new_fn = filenames[0].replace(pathlib.Path(filenames[0]).stem, part[1])
+        pq.write_table(table=table, where=fs.open(new_fn, "wb"))
+
+        # Remove old files
+        for fn in filenames:
+            fs.rm(fn)
+
+
+def validate_data_catalog(catalog: DataCatalog, **kwargs):
+    for cls in catalog.list_data_types():
+        path = f"{catalog.path}/data/{cls}.parquet"
+        _validate_dataset(catalog=catalog, path=path, **kwargs)
