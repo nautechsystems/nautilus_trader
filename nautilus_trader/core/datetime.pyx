@@ -434,7 +434,7 @@ cpdef object as_utc_index(data: pd.DataFrame):
     if data.index.tzinfo is None:  # tz-naive
         return data.tz_localize(pytz.utc)
     elif data.index.tzinfo != pytz.utc:
-        return pytz.utc.localize(data)
+        return pytz.utc.localize(data.index)
     else:
         return data  # Already UTC
 
