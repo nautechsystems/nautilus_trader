@@ -354,6 +354,7 @@ class DataCatalog(metaclass=Singleton):
         start_time: Union[str, datetime.datetime, pd.Timestamp],
         end_time: Union[str, datetime.datetime, pd.Timestamp],
         target_size=parse_bytes("100mib"),  # noqa: B008
+        debug=False,
     ):
         """
         Calculate the chunks of data to load for a backtest, given a target chunk size
@@ -362,19 +363,32 @@ class DataCatalog(metaclass=Singleton):
 
         start_nanos: int = make_unix_ns(start_time)
         end_nanos: int = make_unix_ns(end_time)
-
-        target_func = search_data_size_timestamp(
-            root_path=str(self.path),
-            fs=self.fs,
-            instrument_ids=instrument_ids,
-            data_types=data_types,
-            start_time=start_time,
-            target_size=target_size,
-        )
-        result = minimize(
-            fun=target_func, x0=np.asarray([start_nanos]), bounds=((start_nanos, end_nanos),)
-        )
-        return result
+        options = {"disp": True} if debug else {}
+        last = None
+        while True:
+            target_func = search_data_size_timestamp(
+                root_path=str(self.path),
+                fs=self.fs,
+                instrument_ids=instrument_ids,
+                data_types=data_types,
+                start_time=start_nanos,
+                target_size=target_size,
+            )
+            result = minimize(
+                fun=target_func,
+                x0=np.asarray([(start_nanos + end_nanos) / 2]),
+                method="Powell",
+                bounds=((start_nanos, end_nanos),),
+                options=options,
+            )
+            end_nanos = int(result.x[0])
+            print(start_nanos, end_nanos)
+            if (start_nanos, end_nanos) == last:
+                break
+            yield start_nanos, end_nanos
+            last = (start_nanos, end_nanos)
+            start_nanos = end_nanos
+            end_nanos = make_unix_ns(end_time)
 
 
 def combine_filters(*filters):
@@ -423,12 +437,13 @@ def _calculate_data_type_size(
     start_time: int,
     end_time: int,
 ):
-    return sum(
+    size = sum(
         _calculate_instrument_data_type_size(
             root_path, fs, instrument_id, data_type, start_time, end_time
         )
         for instrument_id in instrument_ids
     )
+    return size
 
 
 def calculate_data_size(
@@ -439,10 +454,11 @@ def calculate_data_size(
     start_time: int,
     end_time: int,
 ):
-    return sum(
+    size = sum(
         _calculate_data_type_size(root_path, fs, instrument_ids, data_type, start_time, end_time)
         for data_type in data_types
     )
+    return size
 
 
 def search_data_size_timestamp(
@@ -454,16 +470,15 @@ def search_data_size_timestamp(
     target_size=10485760,
 ):
     def inner(end_time):
-        return abs(
-            target_size
-            - calculate_data_size(
-                root_path=root_path,
-                fs=fs,
-                instrument_ids=instrument_ids,
-                data_types=data_types,
-                start_time=start_time,
-                end_time=int(end_time[0]),
-            )
+        actual_size = calculate_data_size(
+            root_path=root_path,
+            fs=fs,
+            instrument_ids=instrument_ids,
+            data_types=data_types,
+            start_time=start_time,
+            end_time=int(end_time[0]),
         )
+        value = abs(target_size - actual_size)
+        return value
 
     return inner

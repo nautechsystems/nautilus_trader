@@ -18,6 +18,7 @@ import functools
 import sys
 
 import fsspec
+import pandas as pd
 import pyarrow.dataset as ds
 import pytest
 from dask.utils import parse_bytes
@@ -210,7 +211,10 @@ class TestPersistenceCatalog:
         assert results == expected
 
     def test_search_data_size_timestamp(self):
+        # Arrange
         instrument_ids = self.catalog.instruments()["id"].tolist()
+
+        # Act
         target_func = search_data_size_timestamp(
             root_path=self.catalog.path,
             fs=self.catalog.fs,
@@ -219,15 +223,38 @@ class TestPersistenceCatalog:
             start_time=1576840503572000000,
             target_size=parse_bytes("1mib"),
         )
+
+        # Assert
         result = target_func([1576878597067000000])
         assert result == 1013827
 
     def test_calc_streaming_chunks(self):
+        # Arrange
         instrument_ids = self.catalog.instruments()["id"].tolist()
-        chunks = self.catalog.calc_streaming_chunks(
+
+        # Act
+        it = self.catalog.calc_streaming_chunks(
             instrument_ids=instrument_ids,
             data_types=[TradeTick],
-            start_time=1576840503572000000,
-            target_size=parse_bytes("100mib"),
+            start_time=make_unix_ns("2019-12-20"),
+            end_time=make_unix_ns("2019-12-21"),
+            target_size=parse_bytes("15kib"),
+            debug=False,
         )
-        assert chunks
+
+        # Assert
+        result = [(pd.Timestamp(s), pd.Timestamp(e)) for s, e in it]
+        expected = [
+            (pd.Timestamp("2019-12-20 00:00:00"), pd.Timestamp("2019-12-20 19:01:25.787733248")),
+            (
+                pd.Timestamp("2019-12-20 19:01:25.787733248"),
+                pd.Timestamp("2019-12-20 22:05:57.379827712"),
+            ),
+            (
+                pd.Timestamp("2019-12-20 22:05:57.379827712"),
+                pd.Timestamp("2019-12-20 23:59:59.999923968"),
+            ),
+            (pd.Timestamp("2019-12-20 23:59:59.999923968"), pd.Timestamp("2019-12-21 00:00:00")),
+            (pd.Timestamp("2019-12-21 00:00:00"), pd.Timestamp("2019-12-21 00:00:00")),
+        ]
+        assert result == expected
