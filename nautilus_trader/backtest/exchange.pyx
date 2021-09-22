@@ -1135,7 +1135,7 @@ cdef class SimulatedExchange:
 
     cdef list _determine_limit_price_and_volume(self, PassiveOrder order):
         if self.fill_limit_at_price:
-            return [(order.price, Quantity(order.quantity - order.filled_qty, order.quantity.precision))]
+            return [(order.price, order.leaves_qty)]
         cdef OrderBook book = self.get_book(order.instrument_id)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.quantity, side=order.side)
 
@@ -1181,12 +1181,14 @@ cdef class SimulatedExchange:
                 org_qty: Decimal = fill_qty.as_decimal()
                 adj_qty: Decimal = fill_qty - (fill_qty - position.quantity)
                 fill_qty = Quantity(adj_qty, fill_qty.precision)
-                self._generate_order_updated(
-                    order=order,
-                    qty=Quantity(order.quantity.as_decimal() - (org_qty - adj_qty), fill_qty.precision),  # noqa
-                    price=None,
-                    trigger=None,
-                )
+                updated_qty = order.quantity.as_decimal() - (org_qty - adj_qty)
+                if updated_qty > 0:
+                    self._generate_order_updated(
+                        order=order,
+                        qty=Quantity(updated_qty, fill_qty.precision),  # noqa
+                        price=None,
+                        trigger=None,
+                    )
             self._fill_order(
                 order=order,
                 last_qty=fill_qty,
@@ -1230,12 +1232,14 @@ cdef class SimulatedExchange:
                 org_qty: Decimal = fill_qty.as_decimal()
                 adj_qty: Decimal = fill_qty - (fill_qty - position.quantity)
                 fill_qty = Quantity(adj_qty, fill_qty.precision)
-                self._generate_order_updated(
-                    order=order,
-                    qty=Quantity(order.quantity.as_decimal() - (org_qty - adj_qty), fill_qty.precision),  # noqa
-                    price=None,
-                    trigger=None,
-                )
+                updated_qty = order.quantity.as_decimal() - (org_qty - adj_qty)
+                if updated_qty > 0:
+                    self._generate_order_updated(
+                        order=order,
+                        qty=Quantity(updated_qty, fill_qty.precision),  # noqa
+                        price=None,
+                        trigger=None,
+                    )
             self._fill_order(
                 order=order,
                 last_qty=fill_qty,
@@ -1256,7 +1260,7 @@ cdef class SimulatedExchange:
                 fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
             self._fill_order(
                 order=order,
-                last_qty=Quantity(order.quantity - order.filled_qty, instrument.size_precision),
+                last_qty=Quantity(order.leaves_qty, instrument.size_precision),
                 last_px=fill_px,
                 liquidity_side=liquidity_side,
                 venue_position_id=position_id,
