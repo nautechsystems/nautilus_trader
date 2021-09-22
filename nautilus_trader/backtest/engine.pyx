@@ -480,6 +480,7 @@ cdef class BacktestEngine:
         list modules=None,
         FillModel fill_model=None,
         BookLevel order_book_level=BookLevel.L1,
+        fill_limit_at_price=False,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -507,6 +508,8 @@ cdef class BacktestEngine:
             The fill model for the exchange (if None then no probabilistic fills).
         order_book_level : BookLevel
             The default order book level for fill modelling.
+        fill_limit_at_price : bool
+            If limit orders should be filled at their original price only (overrides slippage).
 
         Raises
         ------
@@ -540,6 +543,7 @@ cdef class BacktestEngine:
             exchange_order_book_level=order_book_level,
             clock=self._test_clock,
             logger=self._test_logger,
+            fill_limit_at_price=fill_limit_at_price,
         )
 
         self._exchanges[venue] = exchange
