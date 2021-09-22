@@ -1190,7 +1190,7 @@ cdef class SimulatedExchange:
                         trigger=None,
                     )
             if fill_qty <= 0:
-                break
+                return  # Done
             self._fill_order(
                 order=order,
                 last_qty=fill_qty,
@@ -1243,7 +1243,7 @@ cdef class SimulatedExchange:
                         trigger=None,
                     )
             if fill_qty <= 0:
-                break
+                return  # Done
             self._fill_order(
                 order=order,
                 last_qty=fill_qty,
