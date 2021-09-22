@@ -570,10 +570,10 @@ cdef class SimulatedExchange:
     cdef PositionId _get_position_id(self, Order order, bint generate=True):
         cdef PositionId position_id
         if OMSType.HEDGING:
-            if order.position_id is not None:
-                return order.position_id
             position_id = self.cache.position_id(order.client_order_id)
-            if position_id is None and generate:
+            if position_id is not None:
+                return position_id
+            if generate:
                 # Generate a venue position ID
                 return self._generate_venue_position_id(order.instrument_id)
         ####################################################################
