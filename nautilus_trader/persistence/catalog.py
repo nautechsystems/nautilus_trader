@@ -382,7 +382,6 @@ class DataCatalog(metaclass=Singleton):
                 options=options,
             )
             end_nanos = int(result.x[0])
-            print(start_nanos, end_nanos)
             if (start_nanos, end_nanos) == last:
                 break
             yield start_nanos, end_nanos
