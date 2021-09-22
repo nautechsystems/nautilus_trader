@@ -20,6 +20,7 @@ from typing import Dict, List, Optional, Union
 import pydantic
 
 from nautilus_trader.backtest.engine import BacktestEngineConfig
+from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
 
 
@@ -116,6 +117,7 @@ class BacktestDataConfig(Partialable):
     catalog_path: str
     data_type: type
     catalog_fs_protocol: str = None
+    catalog_fs_storage_options: Optional[Dict] = None
     instrument_id: Optional[str] = None
     start_time: Optional[Union[datetime, str, int]] = None
     end_time: Optional[Union[datetime, str, int]] = None
@@ -132,6 +134,32 @@ class BacktestDataConfig(Partialable):
             as_nautilus=True,
         )
 
+    def catalog(self):
+        return DataCatalog(
+            path=self.catalog_path,
+            fs_protocol=self.catalog_fs_protocol,
+            fs_storage_options=self.catalog_fs_storage_options,
+        )
+
+    def load(self, start_time=None, end_time=None):
+        query = self.query
+        query.update(
+            {
+                "start": start_time or query["start"],
+                "end": end_time or query["end"],
+            }
+        )
+
+        catalog = self.catalog()
+        return {
+            "type": query["cls"],
+            "data": catalog.query(**query),
+            "instrument": catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)[
+                0
+            ],
+            "client_id": self.client_id,
+        }
+
 
 @pydantic.dataclasses.dataclass()
 class BacktestRunConfig(Partialable):
@@ -145,3 +173,4 @@ class BacktestRunConfig(Partialable):
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
     strategies: Optional[List[ImportableStrategyConfig]] = None
+    batch_size_bytes: Optional[int] = None

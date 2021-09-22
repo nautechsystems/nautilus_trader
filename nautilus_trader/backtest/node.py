@@ -12,13 +12,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import logging
 import pickle
-from functools import partial
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import cloudpickle
 import dask
+import pandas as pd
 from dask.base import normalize_token
 from dask.base import tokenize
 from dask.delayed import Delayed
@@ -40,10 +40,12 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orderbook.data import OrderBookDelta
-from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from nautilus_trader.trading.config import StrategyFactory
 from nautilus_trader.trading.strategy import TradingStrategy
+
+
+logger = logging.getLogger(__name__)
 
 
 class BacktestNode:
@@ -77,19 +79,13 @@ class BacktestNode:
         results: List[Tuple[str, Dict[str, Any]]] = []
         for config in run_configs:
             config.check(ignore=("name",))  # check all values set
-            input_data = []
-            for data_config in config.data:
-                load_func = partial(
-                    self._load_delayed,
-                    dask_key_name=f"load-{tokenize(data_config.query)}",
-                )
-                input_data.append(load_func(data_config))
             results.append(
                 self._run_delayed(
                     name=config.name or f"backtest-{tokenize(config)}",
                     venue_configs=config.venues,
-                    input_data=input_data,
+                    data_configs=config.data,
                     strategy_configs=config.strategies,
+                    batch_size_bytes=config.batch_size_bytes,
                 )
             )
         return self._gather_delayed(results)
@@ -112,63 +108,72 @@ class BacktestNode:
         results: List[BacktestResult] = []
         for config in run_configs:
             config.check(ignore=("name",))  # check all values set
-            input_data = []
-            for data_config in config.data:
-                input_data.append(self._load(data_config))
             results.append(
                 self._run(
                     name=config.name or f"backtest-{tokenize(config)}",
                     venue_configs=config.venues,
-                    input_data=input_data,
+                    data_configs=config.data,
                     strategy_configs=config.strategies,
+                    batch_size_bytes=config.batch_size_bytes,
                 )
             )
         return self._gather(results)
 
-    @dask.delayed(pure=True)
-    def _load_delayed(self, config: BacktestDataConfig):
-        return self._load(config=config)
-
-    def _load(self, config: BacktestDataConfig):
-        catalog = DataCatalog(
-            path=config.catalog_path,
-            fs_protocol=config.catalog_fs_protocol,
-        )
-        query = config.query
-        return {
-            "type": query["cls"],
-            "data": catalog.query(**query),
-            "instrument": catalog.instruments(
-                instrument_ids=config.instrument_id, as_nautilus=True
-            )[0],
-            "client_id": config.client_id,
-        }
+    # @dask.delayed(pure=True)
+    # def _load_delayed(self, config: BacktestDataConfig):
+    #     return self._load(config=config)
+    #
+    # def _load(self, config: BacktestDataConfig):
+    #     query = config.query
+    #     return {
+    #         "type": query["cls"],
+    #         "data": config.catalog.query(**query),
+    #         "instrument": config.catalog.instruments(
+    #             instrument_ids=config.instrument_id, as_nautilus=True
+    #         )[0],
+    #         "client_id": config.client_id,
+    #     }
 
     @dask.delayed
-    def _run_delayed(self, name, venue_configs, input_data, strategy_configs):
+    def _run_delayed(
+        self,
+        name: str,
+        venue_configs: List[BacktestVenueConfig],
+        data_configs: List[BacktestDataConfig],
+        strategy_configs: List[ImportableStrategyConfig],
+        batch_size_bytes: Optional[int] = None,
+    ):
         return self._run(
             name=name,
             venue_configs=venue_configs,
-            input_data=input_data,
+            data_configs=data_configs,
             strategy_configs=strategy_configs,
+            batch_size_bytes=batch_size_bytes,
         )
 
-    def _run(self, name, venue_configs, input_data, strategy_configs) -> BacktestResult:
+    def _run(
+        self,
+        name,
+        venue_configs: List[BacktestVenueConfig],
+        data_configs: List[BacktestDataConfig],
+        strategy_configs: List[ImportableStrategyConfig],
+        batch_size_bytes: Optional[int] = None,
+    ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
             venue_configs=venue_configs,
-            input_data=input_data,
+            data_configs=data_configs,
         )
         results: BacktestResult = self._run_engine(
             name=name,
             engine=engine,
+            data_configs=data_configs,
             strategy_configs=strategy_configs,
+            batch_size_bytes=batch_size_bytes,
         )
         return results
 
     def _create_engine(
-        self,
-        venue_configs: List[BacktestVenueConfig],
-        input_data,
+        self, venue_configs: List[BacktestVenueConfig], data_configs: List[BacktestDataConfig]
     ):
         # Configure backtest engine
         config = BacktestEngineConfig(
@@ -178,20 +183,13 @@ class BacktestNode:
         # Build the backtest engine
         engine = BacktestEngine(config=config)
 
-        # Add data
-        for d in input_data:
-            instrument = d["instrument"]
-            if instrument is not None:
+        # Add instruments
+        for config in data_configs:
+            instruments = config.catalog().instruments(
+                instrument_ids=config.instrument_id, as_nautilus=True
+            )
+            for instrument in instruments or []:
                 engine.add_instrument(instrument)
-
-            if d["type"] == QuoteTick:
-                engine.add_ticks(data=d["data"])
-            elif d["type"] == TradeTick:
-                engine.add_ticks(data=d["data"])
-            elif d["type"] == OrderBookDelta:
-                engine.add_order_book_data(data=d["data"])
-            else:
-                engine.add_generic_data(client_id=d["client_id"], data=d["data"])
 
         # Add venues
         for config in venue_configs:
@@ -209,7 +207,9 @@ class BacktestNode:
         self,
         name: str,
         engine: BacktestEngine,
+        data_configs: List[BacktestDataConfig],
         strategy_configs: List[ImportableStrategyConfig],
+        batch_size_bytes: Optional[int] = None,
     ) -> BacktestResult:
         """
         Actual execution of a backtest instance. Creates strategies and runs the engine
@@ -219,7 +219,13 @@ class BacktestNode:
             StrategyFactory.create(config) for config in strategy_configs
         ]
 
-        engine.run(strategies=strategies)
+        # Actual run backtest
+        backtest_runner(
+            engine=engine,
+            strategies=strategies,
+            data_configs=data_configs,
+            batch_size_bytes=batch_size_bytes,
+        )
 
         result = BacktestResult.from_engine(backtest_id=name, engine=engine)
 
@@ -235,9 +241,79 @@ class BacktestNode:
         return BacktestRunResults(sum(results, list()))
 
 
+def _load_engine_data(engine: BacktestEngine, data):
+    if data["type"] == QuoteTick:
+        engine.add_ticks(data=data["data"])
+    elif data["type"] == TradeTick:
+        engine.add_ticks(data=data["data"])
+    elif data["type"] == OrderBookDelta:
+        engine.add_order_book_data(data=data["data"])
+    else:
+        engine.add_generic_data(client_id=data["client_id"], data=data["data"])
+
+
+def backtest_runner(
+    engine: BacktestEngine,
+    strategies: List[TradingStrategy],
+    data_configs: List[BacktestDataConfig],
+    batch_size_bytes: Optional[int] = None,
+):
+    """Execute a backtest run"""
+    if batch_size_bytes is not None:
+        return streaming_backtest_runner(
+            engine=engine,
+            strategies=strategies,
+            data_configs=data_configs,
+            batch_size_bytes=batch_size_bytes,
+        )
+
+    # Load data
+    for config in data_configs:
+        d = config.load()
+        _load_engine_data(engine=engine, data=d)
+
+    return engine.run(strategies=strategies)
+
+
+def streaming_backtest_runner(
+    engine: BacktestEngine,
+    data_configs: List[BacktestDataConfig],
+    strategies: List[TradingStrategy],
+    batch_size_bytes: Optional[int] = None,
+):
+    config = data_configs[0]
+    catalog = config.catalog()
+
+    for strategy in strategies:
+        engine.trader.add_strategy(strategy)
+    streaming_kw = merge_data_configs_for_calc_streaming_chunks(data_configs=data_configs)
+    for start, end in catalog.calc_streaming_chunks(**streaming_kw, target_size=batch_size_bytes):
+        print(f"Streaming backtest run from {pd.Timestamp(start)} to {pd.Timestamp(end)}")
+        data = config.load(start_time=start, end_time=end)
+        _load_engine_data(engine=engine, data=data)
+        engine.run(streaming=True)
+
+
 # Register tokenization methods with dask
 for cls in Instrument.__subclasses__():
     normalize_token.register(cls, func=cls.to_dict)
+
+
+def merge_data_configs_for_calc_streaming_chunks(data_configs: List[BacktestDataConfig]):
+    instrument_ids = [c.instrument_id for c in data_configs]
+    data_types = [c.data_type for c in data_configs]
+    starts = [c.start_time for c in data_configs]
+    if len(set(starts)) > 1:
+        logger.warning("Multiple start dates in data_configs, using min")
+    ends = [c.end_time for c in data_configs]
+    if len(set(ends)) > 1:
+        logger.warning("Multiple start dates in data_configs, using min")
+    return {
+        "instrument_ids": instrument_ids,
+        "data_types": data_types,
+        "start_time": starts[0],
+        "end_time": ends[0],
+    }
 
 
 @normalize_token.register(object)

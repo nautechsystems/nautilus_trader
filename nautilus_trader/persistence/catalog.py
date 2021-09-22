@@ -381,6 +381,7 @@ class DataCatalog(metaclass=Singleton):
                 bounds=((start_nanos, end_nanos),),
                 options=options,
             )
+            assert result.success, "Optimisation did not complete successfully - check inputs"
             end_nanos = int(result.x[0])
             if (start_nanos, end_nanos) == last:
                 break
