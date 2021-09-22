@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Dict
 
 from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
@@ -79,6 +80,8 @@ cdef class SimulatedExchange:
         AccountType account_type,
         Currency base_currency,  # Can be None
         list starting_balances not None,
+        default_leverage not None: Decimal,
+        leverages not None: Dict[InstrumentId, Decimal],
         bint is_frozen_account,
         list instruments not None,
         list modules not None,
@@ -106,6 +109,10 @@ cdef class SimulatedExchange:
             The account base currency for the client. Use ``None`` for multi-currency accounts.
         starting_balances : list[Money]
             The starting balances for the exchange.
+        default_leverage : Decimal
+            The account default leverage (for margin accounts).
+        leverages : Dict[InstrumentId, Decimal]
+            The instrument specific leverage configuration (for margin accounts).
         is_frozen_account : bool
             If the account for this exchange is frozen (balances will not change).
         cache : CacheFacade
@@ -162,6 +169,8 @@ cdef class SimulatedExchange:
         self.account_type = account_type
         self.base_currency = base_currency
         self.starting_balances = starting_balances
+        self.default_leverage = default_leverage
+        self.leverages = leverages
         self.is_frozen_account = is_frozen_account
         self.fill_limit_at_price = fill_limit_at_price
 
@@ -676,6 +685,14 @@ cdef class SimulatedExchange:
             reported=True,
             ts_event=self._clock.timestamp_ns(),
         )
+
+        # Set leverages
+        cdef Account account = self.get_account()
+        if account.is_margin_account():
+            account.set_default_leverage(self.default_leverage)
+            # Set instrument specific leverages
+            for instrument_id, leverage in self.leverages.items():
+                account.set_leverage(instrument_id, leverage)
 
     cdef void _generate_order_submitted(self, Order order) except *:
         # Generate event

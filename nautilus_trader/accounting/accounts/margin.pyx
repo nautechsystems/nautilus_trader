@@ -63,6 +63,7 @@ cdef class MarginAccount(Account):
         cdef dict margins_init = event.info.get("margins_init", {})
         cdef dict margins_maint = event.info.get("margins_maint", {})
 
+        self.default_leverage = Decimal(1)
         self._leverages = {}                 # type: dict[InstrumentId, Decimal]
         self._margins_init = margins_init    # type: dict[InstrumentId, Money]
         self._margins_maint = margins_maint  # type: dict[InstrumentId, Money]
@@ -171,6 +172,28 @@ cdef class MarginAccount(Account):
         return self._margins_maint.get(instrument_id)
 
 # -- COMMANDS --------------------------------------------------------------------------------------
+
+    cpdef void set_default_leverage(self, leverage: Decimal) except *:
+        """
+        Set the default leverage for the account (if not specified by instrument).
+
+        Parameters
+        ----------
+        leverage : Decimal
+            The default leverage value
+
+        Returns
+        -------
+        TypeError
+            If leverage is not of type `Decimal`.
+        ValueError
+            If leverage is not >= 1.
+
+        """
+        Condition.type(leverage, Decimal, "leverage")
+        Condition.true(leverage >= 1, "leverage was not >= 1")
+
+        self.default_leverage = leverage
 
     cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal) except *:
         """
@@ -419,7 +442,7 @@ cdef class MarginAccount(Account):
 
         leverage: Decimal = self._leverages.get(instrument.id)
         if leverage is None:
-            leverage = Decimal(1)
+            leverage = self.default_leverage
             self._leverages[instrument.id] = leverage
 
         adjusted_notional: Decimal = notional / leverage
@@ -476,7 +499,7 @@ cdef class MarginAccount(Account):
 
         leverage: Decimal = self._leverages.get(instrument.id)
         if leverage is None:
-            leverage = Decimal(1)
+            leverage = self.default_leverage
             self._leverages[instrument.id] = leverage
 
         adjusted_notional: Decimal = notional / leverage

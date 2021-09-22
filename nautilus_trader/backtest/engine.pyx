@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import socket
+from decimal import Decimal
 from typing import List, Optional, Union
 
 import pandas as pd
@@ -476,6 +477,8 @@ cdef class BacktestEngine:
         AccountType account_type,
         Currency base_currency,
         list starting_balances,
+        default_leverage=None,
+        dict leverages=None,
         bint is_frozen_account=False,
         list modules=None,
         FillModel fill_model=None,
@@ -500,6 +503,10 @@ cdef class BacktestEngine:
             The account base currency for the client. Use ``None`` for multi-currency accounts.
         starting_balances : list[Money]
             The starting account balances (specify one for a single asset account).
+        default_leverage : Decimal
+            The account default leverage (for margin accounts).
+        leverages : Dict[InstrumentId, Decimal]
+            The instrument specific leverage configuration (for margin accounts).
         is_frozen_account : bool
             If the account for this exchange is frozen (balances will not change).
         modules : list[SimulationModule, optional
@@ -535,6 +542,8 @@ cdef class BacktestEngine:
             account_type=account_type,
             base_currency=base_currency,
             starting_balances=starting_balances,
+            default_leverage=default_leverage or Decimal(10),
+            leverages=leverages or {},
             is_frozen_account=is_frozen_account,
             instruments=self._cache.instruments(venue),
             modules=modules,
