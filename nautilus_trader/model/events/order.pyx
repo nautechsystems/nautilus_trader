@@ -1913,7 +1913,14 @@ cdef class OrderUpdated(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the object was initialized.
 
+        Raises
+        ------
+        ValueError
+            If quantity is not positive (> 0).
+
         """
+        Condition.positive(quantity, "quantity")
+
         super().__init__(
             trader_id,
             strategy_id,
@@ -2103,6 +2110,7 @@ cdef class OrderFilled(OrderEvent):
 
         """
         Condition.positive(last_qty, "last_qty")
+
         if info is None:
             info = {}
         super().__init__(
