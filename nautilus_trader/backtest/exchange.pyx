@@ -87,6 +87,7 @@ cdef class SimulatedExchange:
         TestClock clock not None,
         Logger logger not None,
         BookLevel exchange_order_book_level=BookLevel.L1,
+        fill_limit_at_price=False,
     ):
         """
         Initialize a new instance of the ``SimulatedExchange`` class.
@@ -115,6 +116,8 @@ cdef class SimulatedExchange:
             The clock for the exchange.
         logger : Logger
             The logger for the exchange.
+        fill_limit_at_price : bool
+            If limit orders should be filled at their original price only (overrides slippage).
 
         Raises
         ------
@@ -160,6 +163,7 @@ cdef class SimulatedExchange:
         self.base_currency = base_currency
         self.starting_balances = starting_balances
         self.is_frozen_account = is_frozen_account
+        self.fill_limit_at_price = fill_limit_at_price
 
         self.fill_model = fill_model
 
@@ -811,6 +815,16 @@ cdef class SimulatedExchange:
     cdef void _process_order(self, Order order) except *:
         Condition.not_in(order.client_order_id, self._working_orders, "order.client_order_id", "working_orders")
 
+        cdef PositionId position_id
+        if order.position_id is not None:
+            position_id = self.cache.position_id(order.client_order_id)
+            if position_id is not None and position_id != order.position_id:
+                self._reject_order(
+                    order,
+                    "SUBMITTED POSITION_ID does not match exchange position ID.",
+                )
+                return
+
         # Check reduce-only instruction
         cdef Position position
         if order.is_reduce_only:
@@ -1120,6 +1134,8 @@ cdef class SimulatedExchange:
             return bid < price or (bid == price and self.fill_model.is_stop_filled())
 
     cdef list _determine_limit_price_and_volume(self, PassiveOrder order):
+        if self.fill_limit_at_price:
+            return [(order.price, Quantity(order.quantity - order.filled_qty, order.quantity.precision))]
         cdef OrderBook book = self.get_book(order.instrument_id)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.quantity, side=order.side)
 

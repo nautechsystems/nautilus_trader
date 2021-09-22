@@ -82,6 +82,7 @@ cdef class SimulatedExchange:
     """The account starting balances for each backtest run.\n\n:returns: `bool`"""
     cdef readonly bint is_frozen_account
     """If the account for the exchange is frozen.\n\n:returns: `bool`"""
+    cdef readonly bint fill_limit_at_price  # TODO(cs): Temporary flag
 
     cdef readonly FillModel fill_model
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
