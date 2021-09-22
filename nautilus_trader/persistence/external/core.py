@@ -31,6 +31,7 @@ from fsspec.core import OpenFile
 from tqdm import tqdm
 
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.metadata import write_partition_column_mappings
 from nautilus_trader.persistence.external.readers import Reader
@@ -195,6 +196,21 @@ def determine_partition_cols(cls: type, instrument_id: str = None) -> Union[List
     return None
 
 
+def merge_existing_data(catalog: DataCatalog, cls: type, df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Handle existing data for instrument subclasses; instruments all live in a single file, so merge with existing data.
+    For all other classes, simply return data unchanged.
+    """
+    if cls not in Instrument.__subclasses__():
+        return df
+    else:
+        try:
+            existing = catalog.instruments(instrument_type=cls)
+            return existing.append(df.drop(["type"], axis=1)).drop_duplicates()
+        except pa.lib.ArrowInvalid:
+            return df
+
+
 def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]], **kwargs):
     """
     Write tables to catalog.
@@ -217,11 +233,12 @@ def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame
         partition_cols = determine_partition_cols(cls=cls, instrument_id=instrument_id)
         name = f"{class_to_filename(cls)}.parquet"
         path = f"{catalog.path}/data/{name}"
+        merged = merge_existing_data(catalog=catalog, cls=cls, df=df)
         with named_lock(name):
             write_parquet(
                 fs=catalog.fs,
                 path=path,
-                df=df,
+                df=merged,
                 partition_cols=partition_cols,
                 schema=schema,
                 **kwargs,
@@ -299,9 +316,7 @@ def read_progress(func, total):
     return inner
 
 
-def _parse_file_start_by_filename(
-    fn: str, fs: fsspec.AbstractFileSystem, timestamp_column="ts_init"
-):
+def _parse_file_start_by_filename(fn: str):
     """
     Parse start time by filename
 
@@ -316,36 +331,23 @@ def _parse_file_start_by_filename(
         return int(match.groups()[0])
 
 
-def _parse_start_from_data(fn: str, fs: fsspec.AbstractFileSystem, timestamp_column="ts_init"):
-    f = pq.ParquetFile(fs.open(fn))
-    first_row = f.read_row_group(0).slice(length=1).to_pandas()
-    return first_row.iloc[0][timestamp_column]
-
-
-def _parse_file_start(
-    fn: str, fs: fsspec.AbstractFileSystem, timestamp_column="ts_init"
-) -> Tuple[str, pd.Timestamp]:
-
+def _parse_file_start(fn: str) -> Optional[Tuple[str, pd.Timestamp]]:
     instrument_id = re.findall(r"instrument_id\=(.*)\/", fn)[0] if "instrument_id" in fn else None
-    for method in (_parse_file_start_by_filename, _parse_start_from_data):
-        start: int = method(fn=fn, fs=fs, timestamp_column=timestamp_column)
-        if start is not None:
-            start = pd.Timestamp(start)
-            return instrument_id, start
-    raise ValueError(f"Unable to parse filename: {fn}")
+    start = _parse_file_start_by_filename(fn=fn)
+    if start is not None:
+        start = pd.Timestamp(start)
+        return instrument_id, start
+    return None
 
 
-def _validate_dataset(
-    catalog: DataCatalog, path: str, new_partition_format="%Y%m%d", timestamp_column="ts_init"
-):
+def _validate_dataset(catalog: DataCatalog, path: str, new_partition_format="%Y%m%d"):
     """
     Repartition dataset into sorted time chunks (default dates) and drop duplicates.
     """
     fs = catalog.fs
     dataset = ds.dataset(path, filesystem=fs)
     fn_to_start = [
-        (fn, _parse_file_start(fn=fn, fs=fs, timestamp_column=timestamp_column))
-        for fn in dataset.files
+        (fn, _parse_file_start(fn=fn)) for fn in dataset.files if _parse_file_start(fn=fn)
     ]
 
     sort_key = lambda x: (x[1][0], x[1][1].strftime(new_partition_format))  # noqa: E731
@@ -353,6 +355,7 @@ def _validate_dataset(
     for part, values_iter in groupby(sorted(fn_to_start, key=sort_key), key=sort_key):
         values = list(values_iter)
         filenames = [v[0] for v in values]
+
         # Read files, drop duplicates
         df: pd.DataFrame = ds.dataset(filenames, filesystem=fs).to_table().to_pandas()
         df = df.drop_duplicates(ignore_index=True, keep="last")
