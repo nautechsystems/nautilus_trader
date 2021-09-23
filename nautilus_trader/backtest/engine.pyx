@@ -24,7 +24,6 @@ import pytz
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
-from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
@@ -70,6 +69,7 @@ from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.cache.cache import CacheConfig
 from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.execution.engine import ExecEngineConfig
@@ -893,6 +893,7 @@ cdef class BacktestEngine:
             self._log.info("-----------------------------------------------------------------")
             for statistic in self.analyzer.get_performance_stats_returns_formatted():
                 self._log.info(statistic)
+            self._log.info("-----------------------------------------------------------------")
 
     def _add_data_client_if_not_exists(self, ClientId client_id) -> None:
         if client_id not in self._data_engine.registered_clients():

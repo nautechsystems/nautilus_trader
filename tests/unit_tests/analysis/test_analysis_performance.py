@@ -45,13 +45,6 @@ class TestAnalyzer:
             clock=TestClock(),
         )
 
-    def test_get_daily_returns_when_no_data_returns_empty_series(self):
-        # Arrange, Act
-        result = self.analyzer.daily_returns()
-
-        # Assert
-        assert result.empty
-
     def test_get_realized_pnls_when_no_data_returns_none(self):
         # Arrange, Act
         result = self.analyzer.realized_pnls()
@@ -66,7 +59,7 @@ class TestAnalyzer:
         # Assert
         assert result is None
 
-    def test_analyzer_tracks_daily_returns(self):
+    def test_analyzer_tracks_returns(self):
         # Arrange
         t1 = datetime(year=2010, month=1, day=1)
         t2 = datetime(year=2010, month=1, day=2)
@@ -91,12 +84,10 @@ class TestAnalyzer:
         self.analyzer.add_return(t9, 0.26)
         self.analyzer.add_return(t10, -0.10)
         self.analyzer.add_return(t10, -0.10)
-        result = self.analyzer.daily_returns()
+        result = self.analyzer.returns()
 
         # Assert
         assert len(result) == 10
-        assert sum(result) == -0.12
-        assert result.iloc[9] == -0.20
 
     def test_get_realized_pnls_when_all_flat_positions_returns_expected_series(self):
         # Arrange

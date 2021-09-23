@@ -6,6 +6,7 @@ Released on **TBD**
 - Renamed `BookLevel` to `BookType`.
 
 ## Enhancements
+- Added `quantstats` (removed `empyrical`).
 - Added streaming backtest machinery.
 - Improved `DataCatalog` functionality.
 - Improved logging for adding data to `BacktestEngine`.
