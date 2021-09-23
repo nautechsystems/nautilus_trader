@@ -86,8 +86,8 @@ cdef class SimulatedExchange:
     """The accounts instrument specific leverage configuration.\n\n:returns: `dict[InstrumentId, Decimal]`"""
     cdef readonly bint is_frozen_account
     """If the account for the exchange is frozen.\n\n:returns: `bool`"""
-    cdef readonly bint fill_limit_at_price  # TODO(cs): Temporary flag
-
+    cdef readonly bint fill_limit_at_price
+    """If limit orders should be filled at their original price.\n\n:returns: `bool`"""
     cdef readonly FillModel fill_model
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
     cdef readonly list modules
