@@ -27,6 +27,7 @@ from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -44,6 +45,7 @@ from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrderList
+from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -198,13 +200,13 @@ cdef class SimulatedExchange:
             self._instrument_indexer[instrument.id] = index
             self._log.info(f"Loaded instrument {instrument.id.value}.")
 
-        self._books = {}                # type: dict[InstrumentId, OrderBook]
-        self._instrument_orders = {}    # type: dict[InstrumentId, dict[ClientOrderId, PassiveOrder]]
-        self._working_orders = {}       # type: dict[ClientOrderId, PassiveOrder]
-        self._position_index = {}       # type: dict[ClientOrderId, PositionId]
-        self._symbol_pos_count = {}     # type: dict[InstrumentId, int]
-        self._symbol_ord_count = {}     # type: dict[InstrumentId, int]
+        self._books = {}              # type: dict[InstrumentId, OrderBook]
+        self._instrument_orders = {}  # type: dict[InstrumentId, dict[ClientOrderId, PassiveOrder]]
+        self._working_orders = {}     # type: dict[ClientOrderId, PassiveOrder]
+        self._symbol_pos_count = {}   # type: dict[InstrumentId, int]
+        self._symbol_ord_count = {}   # type: dict[InstrumentId, int]
         self._executions_count = 0
+        self._message_queue = Queue()
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -407,6 +409,11 @@ cdef class SimulatedExchange:
             ts_event=self._clock.timestamp_ns(),
         )
 
+    cpdef void send(self, TradingCommand command) except *:
+        Condition.not_none(command, "command")
+
+        self._message_queue.put_nowait(command)
+
     cpdef void process_order_book(self, OrderBookData data) except *:
         """
         Process the exchanges market for the given order book data.
@@ -487,9 +494,11 @@ cdef class SimulatedExchange:
         if not self._log.is_bypassed:
             self._log.debug(f"Processed {bar}")
 
-    cpdef void process_modules(self, int64_t now_ns) except *:
+    cpdef void process(self, int64_t now_ns) except *:
         """
-        Process the simulation modules by advancing their time.
+        Process the exchange to the gives time.
+
+        All pending commands will be processed along with all simulation modules.
 
         Parameters
         ----------
@@ -498,6 +507,40 @@ cdef class SimulatedExchange:
 
         """
         self._clock.set_time(now_ns)
+
+        cdef:
+            TradingCommand command
+            PassiveOrder order
+        while self._message_queue.count > 0:
+            command = self._message_queue.get_nowait()
+            if isinstance(command, SubmitOrder):
+                self._process_order(command.order)
+            elif isinstance(command, SubmitOrderList):
+                pass  # ...
+            elif isinstance(command, CancelOrder):
+                order = self._working_orders.pop(command.client_order_id, None)
+                if order is None:
+                    self._generate_order_cancel_rejected(
+                        command.strategy_id,
+                        command.instrument_id,
+                        command.client_order_id,
+                        command.venue_order_id,
+                        f"{repr(command.client_order_id)} not found",
+                    )
+                else:
+                    self._cancel_order(order)
+            elif isinstance(command, ModifyOrder):
+                order = self._working_orders.get(command.client_order_id)
+                if order is None:
+                    self._generate_order_modify_rejected(
+                        command.strategy_id,
+                        command.instrument_id,
+                        command.client_order_id,
+                        command.venue_order_id,
+                        f"{repr(command.client_order_id)} not found",
+                    )
+                else:
+                    self._update_order(order, command.quantity, command.price, command.trigger)
 
         # Iterate over modules
         cdef SimulationModule module
@@ -526,59 +569,12 @@ cdef class SimulatedExchange:
         self._books.clear()
         self._instrument_orders.clear()
         self._working_orders.clear()
-        self._position_index.clear()
         self._symbol_pos_count.clear()
         self._symbol_ord_count.clear()
         self._executions_count = 0
+        self._message_queue = Queue()
 
         self._log.info("Reset.")
-
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
-
-    cpdef void handle_submit_order(self, SubmitOrder command) except *:
-        Condition.not_none(command, "command")
-
-        if command.position_id is not None:
-            self._position_index[command.order.client_order_id] = command.position_id
-
-        self._generate_order_submitted(command.order)
-        self._process_order(command.order)
-
-    cpdef void handle_submit_order_list(self, SubmitOrderList command) except *:
-        Condition.not_none(command, "command")
-
-        # TODO(cs): Implement
-        raise NotImplementedError("order lists are not implemented in this version.")
-
-    cpdef void handle_cancel_order(self, CancelOrder command) except *:
-        Condition.not_none(command, "command")
-
-        cdef PassiveOrder order = self._working_orders.pop(command.client_order_id, None)
-        if order is None:
-            self._generate_order_cancel_rejected(
-                command.strategy_id,
-                command.instrument_id,
-                command.client_order_id,
-                command.venue_order_id,
-                f"{repr(command.client_order_id)} not found",
-            )
-        else:
-            self._cancel_order(order)
-
-    cpdef void handle_modify_order(self, ModifyOrder command) except *:
-        Condition.not_none(command, "command")
-
-        cdef PassiveOrder order = self._working_orders.get(command.client_order_id)
-        if order is None:
-            self._generate_order_modify_rejected(
-                command.strategy_id,
-                command.instrument_id,
-                command.client_order_id,
-                command.venue_order_id,
-                f"{repr(command.client_order_id)} not found",
-            )
-        else:
-            self._update_order(order, command.quantity, command.price, command.trigger)
 
 # --------------------------------------------------------------------------------------------------
 
