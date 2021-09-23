@@ -19,7 +19,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 
 
@@ -84,13 +84,13 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def subscribe_order_book_deltas(
-        self, instrument_id: InstrumentId, level: BookLevel, kwargs: dict = None
+        self, instrument_id: InstrumentId, book_type: BookType, kwargs: dict = None
     ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def subscribe_order_book_snapshots(
-        self, instrument_id: InstrumentId, level: BookLevel, depth: int = 0, kwargs: dict = None
+        self, instrument_id: InstrumentId, book_type: BookType, depth: int = 0, kwargs: dict = None
     ):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

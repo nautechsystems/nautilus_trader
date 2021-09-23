@@ -16,7 +16,7 @@
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.base import Instrument
@@ -99,11 +99,11 @@ class OrderbookImbalance(TradingStrategy):
 
         self.subscribe_order_book_deltas(
             instrument_id=self.instrument.id,
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
         )
         self._book = OrderBook.create(
             instrument=self.instrument,
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
         )
 
     def on_order_book_delta(self, data: OrderBookData):

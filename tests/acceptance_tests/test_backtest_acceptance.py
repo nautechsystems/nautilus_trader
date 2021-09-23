@@ -30,7 +30,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
@@ -388,7 +388,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             base_currency=None,
             oms_type=OMSType.NETTING,
             starting_balances=[Money(10000, GBP)],
-            order_book_level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
         )
 
     def teardown(self):
@@ -445,7 +445,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             base_currency=None,
             oms_type=OMSType.NETTING,
             starting_balances=[Money(10000, GBP)],
-            order_book_level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
         )
 
     def teardown(self):

@@ -31,7 +31,7 @@ from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -89,7 +89,7 @@ cdef class SimulatedExchange:
         FillModel fill_model not None,
         TestClock clock not None,
         Logger logger not None,
-        BookLevel exchange_order_book_level=BookLevel.L1,
+        BookType book_type=BookType.L1_TBBO,
         fill_limit_at_price=False,
     ):
         """
@@ -123,6 +123,8 @@ cdef class SimulatedExchange:
             The clock for the exchange.
         logger : Logger
             The logger for the exchange.
+        book_type : BookType
+            The order book type for the exchange.
         fill_limit_at_price : bool
             If limit orders should be filled at their original price only (overrides slippage).
 
@@ -161,7 +163,7 @@ cdef class SimulatedExchange:
         self.venue_type = venue_type
         self.oms_type = oms_type
         self._log.info(f"OMSType={OMSTypeParser.to_str(oms_type)}")
-        self.exchange_order_book_level = exchange_order_book_level
+        self.book_type = book_type
 
         self.cache = cache
         self.exec_client = None  # Initialized when execution client registered
@@ -285,7 +287,7 @@ cdef class SimulatedExchange:
             # Create order book
             book = OrderBook.create(
                 instrument=instrument,
-                level=self.exchange_order_book_level,
+                book_type=self.book_type,
                 simulated=True,
             )
 
@@ -445,7 +447,7 @@ cdef class SimulatedExchange:
         self._clock.set_time(tick.ts_init)
 
         cdef OrderBook book = self.get_book(tick.instrument_id)
-        if book.level == BookLevel.L1:
+        if book.type == BookType.L1_TBBO:
             book.update_tick(tick)
 
         self._iterate_matching_engine(
@@ -474,7 +476,7 @@ cdef class SimulatedExchange:
 
         # TODO(cs): Implement simulated order book bar processing
         # cdef OrderBook book = self.get_book(bar.type.instrument_id)
-        # if book.level == BookLevel.L1:
+        # if book.level == BookType.L1_TBBO:
         #     book.update_tick(tick)
         #
         # self._iterate_matching_engine(
@@ -1240,7 +1242,7 @@ cdef class SimulatedExchange:
         for fill_px, fill_qty in fills:
             if order.type == OrderType.STOP_MARKET:
                 fill_px = order.price  # TODO: Temporary strategy for market moving through price
-            if self.exchange_order_book_level == BookLevel.L1 and self.fill_model.is_slipped():
+            if self.book_type == BookType.L1_TBBO and self.fill_model.is_slipped():
                 instrument = self.instruments[order.instrument_id]  # TODO: Pending refactoring
                 if order.side == OrderSide.BUY:
                     fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
@@ -1272,7 +1274,7 @@ cdef class SimulatedExchange:
                 return  # Done early
 
         # TODO: For L1 fill remaining size at next tick price (temporary)
-        if self.exchange_order_book_level == BookLevel.L1 and order.is_working_c():
+        if self.book_type == BookType.L1_TBBO and order.is_working_c():
             fill_px = fills[-1][0]
             instrument = self.instruments[order.instrument_id]  # TODO: Pending refactoring
             if order.side == OrderSide.BUY:

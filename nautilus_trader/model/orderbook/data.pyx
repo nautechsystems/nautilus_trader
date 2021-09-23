@@ -22,8 +22,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.c_enums.book_action cimport BookAction
 from nautilus_trader.model.c_enums.book_action cimport BookActionParser
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
-from nautilus_trader.model.c_enums.book_level cimport BookLevelParser
+from nautilus_trader.model.c_enums.book_type cimport BookType
+from nautilus_trader.model.c_enums.book_type cimport BookTypeParser
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 
@@ -40,7 +40,7 @@ cdef class OrderBookData(Data):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        BookLevel level,
+        BookType book_type,
         int64_t ts_event,
         int64_t ts_init,
     ):
@@ -51,8 +51,8 @@ cdef class OrderBookData(Data):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the book.
-        level : BookLevel {``L1``, ``L2``, ``L3``}
-            The order book level.
+        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+            The order book type.
         ts_event: int64
             The UNIX timestamp (nanoseconds) when the data event occurred.
         ts_init: int64
@@ -62,7 +62,7 @@ cdef class OrderBookData(Data):
         super().__init__(ts_event, ts_init)
 
         self.instrument_id = instrument_id
-        self.level = level
+        self.book_type = book_type
 
 
 cdef class OrderBookSnapshot(OrderBookData):
@@ -73,7 +73,7 @@ cdef class OrderBookSnapshot(OrderBookData):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        BookLevel level,
+        BookType book_type,
         list bids not None,
         list asks not None,
         int64_t ts_event,
@@ -86,8 +86,8 @@ cdef class OrderBookSnapshot(OrderBookData):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the book.
-        level : BookLevel {``L1``, ``L2``, ``L3``}
-            The order book level.
+        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+            The order book type.
         bids : list
             The bids for the snapshot.
         asks : list
@@ -98,7 +98,7 @@ cdef class OrderBookSnapshot(OrderBookData):
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(instrument_id, level, ts_event, ts_init)
+        super().__init__(instrument_id, book_type, ts_event, ts_init)
 
         self.bids = bids
         self.asks = asks
@@ -112,7 +112,7 @@ cdef class OrderBookSnapshot(OrderBookData):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"'{self.instrument_id}', "
-                f"level={BookLevelParser.to_str(self.level)}, "
+                f"book_type={BookTypeParser.to_str(self.book_type)}, "
                 f"bids={self.bids}, "
                 f"asks={self.asks}, "
                 f"ts_init={self.ts_init})")
@@ -122,7 +122,7 @@ cdef class OrderBookSnapshot(OrderBookData):
         Condition.not_none(values, "values")
         return OrderBookSnapshot(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            level=BookLevelParser.from_str(values["level"]),
+            book_type=BookTypeParser.from_str(values["book_type"]),
             bids=orjson.loads(values["bids"]),
             asks=orjson.loads(values["asks"]),
             ts_event=values["ts_event"],
@@ -135,7 +135,7 @@ cdef class OrderBookSnapshot(OrderBookData):
         return {
             "type": "OrderBookSnapshot",
             "instrument_id": obj.instrument_id.value,
-            "level": BookLevelParser.to_str(obj.level),
+            "book_type": BookTypeParser.to_str(obj.book_type),
             "bids": orjson.dumps(obj.bids),
             "asks": orjson.dumps(obj.asks),
             "ts_event": obj.ts_event,
@@ -180,7 +180,7 @@ cdef class OrderBookDeltas(OrderBookData):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        BookLevel level,
+        BookType book_type,
         list deltas not None,
         int64_t ts_event,
         int64_t ts_init,
@@ -192,8 +192,8 @@ cdef class OrderBookDeltas(OrderBookData):
         ----------
         instrument_id : InstrumentId
             The instrument ID for the book.
-        level : BookLevel {``L1``, ``L2``, ``L3``}
-            The order book level.
+        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+            The order book type.
         deltas : list[OrderBookDelta]
             The list of order book changes.
         ts_event: int64
@@ -202,7 +202,7 @@ cdef class OrderBookDeltas(OrderBookData):
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(instrument_id, level, ts_event, ts_init)
+        super().__init__(instrument_id, book_type, ts_event, ts_init)
 
         self.deltas = deltas
 
@@ -215,7 +215,7 @@ cdef class OrderBookDeltas(OrderBookData):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"'{self.instrument_id}', "
-                f"level={BookLevelParser.to_str(self.level)}, "
+                f"book_type={BookTypeParser.to_str(self.book_type)}, "
                 f"{self.deltas}, "
                 f"ts_init={self.ts_init})")
 
@@ -224,7 +224,7 @@ cdef class OrderBookDeltas(OrderBookData):
         Condition.not_none(values, "values")
         return OrderBookDeltas(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            level=BookLevelParser.from_str(values["level"]),
+            book_type=BookTypeParser.from_str(values["book_type"]),
             deltas=[OrderBookDelta.from_dict_c(d) for d in orjson.loads(values["deltas"])],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -236,7 +236,7 @@ cdef class OrderBookDeltas(OrderBookData):
         return {
             "type": "OrderBookDeltas",
             "instrument_id": obj.instrument_id.value,
-            "level": BookLevelParser.to_str(obj.level),
+            "book_type": BookTypeParser.to_str(obj.book_type),
             "deltas": orjson.dumps([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
@@ -280,7 +280,7 @@ cdef class OrderBookDelta(OrderBookData):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        BookLevel level,
+        BookType book_type,
         BookAction action,
         Order order,
         int64_t ts_event,
@@ -293,8 +293,8 @@ cdef class OrderBookDelta(OrderBookData):
         ----------
         instrument_id : InstrumentId
             The instrument ID.
-        level : BookLevel {``L1``, ``L2``, ``L3``}
-            The order book level.
+        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+            The order book type.
         action : BookAction {``ADD``, ``UPDATED``, ``DELETE``, ``CLEAR``}
             The order book delta action.
         order : Order
@@ -305,7 +305,7 @@ cdef class OrderBookDelta(OrderBookData):
             The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         """
-        super().__init__(instrument_id, level, ts_event, ts_init)
+        super().__init__(instrument_id, book_type, ts_event, ts_init)
 
         self.action = action
         self.order = order
@@ -319,7 +319,7 @@ cdef class OrderBookDelta(OrderBookData):
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
                 f"'{self.instrument_id}', "
-                f"level={BookLevelParser.to_str(self.level)}, "
+                f"book_type={BookTypeParser.to_str(self.book_type)}, "
                 f"action={BookActionParser.to_str(self.action)}, "
                 f"order={self.order}, "
                 f"ts_init={self.ts_init})")
@@ -336,7 +336,7 @@ cdef class OrderBookDelta(OrderBookData):
         }) if values['action'] != "CLEAR" else None
         return OrderBookDelta(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            level=BookLevelParser.from_str(values["level"]),
+            book_type=BookTypeParser.from_str(values["book_type"]),
             action=BookActionParser.from_str(values["action"]),
             order=order,
             ts_event=values["ts_event"],
@@ -349,7 +349,7 @@ cdef class OrderBookDelta(OrderBookData):
         return {
             "type": "OrderBookDelta",
             "instrument_id": obj.instrument_id.value,
-            "level": BookLevelParser.to_str(obj.level),
+            "book_type": BookTypeParser.to_str(obj.book_type),
             "action": BookActionParser.to_str(obj.action),
             "order_price": obj.order.price if obj.order else None,
             "order_size": obj.order.size if obj.order else None,
