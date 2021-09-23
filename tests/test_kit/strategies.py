@@ -30,7 +30,7 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.position import PositionChanged
@@ -400,7 +400,7 @@ class OrderBookImbalanceStrategy(TradingStrategy):
             return
 
         # Create orderbook
-        self.book = OrderBook.create(instrument=self.instrument, level=BookLevel.L2)
+        self.book = OrderBook.create(instrument=self.instrument, book_type=BookType.L2_MBP)
 
         # Subscribe to live data
         self.subscribe_order_book_deltas(self.instrument_id)
@@ -523,7 +523,7 @@ class MarketMaker(TradingStrategy):
             return
 
         # Create orderbook
-        self._book = OrderBook.create(instrument=self.instrument, level=BookLevel.L2)
+        self._book = OrderBook.create(instrument=self.instrument, book_type=BookType.L2_MBP)
 
         # Subscribe to live data
         self.subscribe_order_book_deltas(self.instrument_id)

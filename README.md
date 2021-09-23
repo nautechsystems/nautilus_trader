@@ -13,9 +13,9 @@
 
 | Platform          | Rust | Python   |
 |:------------------|:-----|:---------|
-| Linux (x86-64)    | TBA  | 3.8+     |
-| macOS (x86-64)    | TBA  | 3.8+     |
-| Windows (x86-64)  | TBA  | 3.8+     |
+| Linux (x86_64)    | TBA  | 3.8+     |
+| macOS (x86_64)    | TBA  | 3.8+     |
+| Windows (x86_64)  | TBA  | 3.8+     |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io

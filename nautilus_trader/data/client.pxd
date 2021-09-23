@@ -19,7 +19,7 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
@@ -80,8 +80,8 @@ cdef class MarketDataClient(DataClient):
 
     cpdef void subscribe_instruments(self) except *
     cpdef void subscribe_instrument(self, InstrumentId instrument_id) except *
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookLevel level, dict kwargs=*) except *
-    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookLevel level, int depth=*, dict kwargs=*) except *
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, dict kwargs=*) except *
+    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict kwargs=*) except *
     cpdef void subscribe_ticker(self, InstrumentId instrument_id) except *
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id) except *
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id) except *

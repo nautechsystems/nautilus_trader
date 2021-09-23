@@ -36,7 +36,7 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
@@ -2249,7 +2249,7 @@ class TestL2OrderBookExchange:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            exchange_order_book_level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
         )
 
         self.exec_client = BacktestExecClient(
@@ -2271,7 +2271,7 @@ class TestL2OrderBookExchange:
         self.cache.add_order_book(
             OrderBook.create(
                 instrument=USDJPY_SIM,
-                level=BookLevel.L2,
+                book_type=BookType.L2_MBP,
             )
         )
 

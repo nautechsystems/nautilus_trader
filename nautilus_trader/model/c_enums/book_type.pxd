@@ -14,16 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cpdef enum BookLevel:
-    L1 = 1,
-    L2 = 2,
-    L3 = 3,
+cpdef enum BookType:
+    L1_TBBO = 1,  # Top-of-book best bid/offer
+    L2_MBP = 2,   # Market by price
+    L3_MBO = 3,   # Market by order
 
 
-cdef class BookLevelParser:
+cdef class BookTypeParser:
 
     @staticmethod
     cdef str to_str(int value)
 
     @staticmethod
-    cdef BookLevel from_str(str value) except *
+    cdef BookType from_str(str value) except *

@@ -625,7 +625,7 @@ cdef class DataEngine(Component):
         # Always re-subscribe to override previous settings
         client.subscribe_order_book_deltas(
             instrument_id=instrument_id,
-            level=metadata["level"],
+            book_type=metadata["book_type"],
             kwargs=metadata.get("kwargs"),
         )
 
@@ -666,7 +666,7 @@ cdef class DataEngine(Component):
                 return
             order_book = OrderBook.create(
                 instrument=instrument,
-                level=metadata["level"],
+                book_type=metadata["book_type"],
             )
 
             self._cache.add_order_book(order_book)
@@ -677,14 +677,14 @@ cdef class DataEngine(Component):
             if instrument_id not in client.subscribed_order_book_deltas():
                 client.subscribe_order_book_deltas(
                     instrument_id=instrument_id,
-                    level=metadata.get("level"),
+                    book_type=metadata.get("book_type"),
                     kwargs=metadata.get("kwargs"),
                 )
         except NotImplementedError:
             if instrument_id not in client.subscribed_order_book_snapshots():
                 client.subscribe_order_book_snapshots(
                     instrument_id=instrument_id,
-                    level=metadata.get("level"),
+                    book_type=metadata.get("book_type"),
                     depth=metadata.get("depth"),
                     kwargs=metadata.get("kwargs"),
                 )

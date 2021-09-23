@@ -29,7 +29,7 @@ from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.c_enums.account_type import AccountType
-from nautilus_trader.model.c_enums.book_level import BookLevel
+from nautilus_trader.model.c_enums.book_type import BookType
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
@@ -312,7 +312,7 @@ class TestStubs:
     @staticmethod
     def order_book(
         instrument=None,
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
         bid_price=10,
         ask_price=15,
         bid_levels=3,
@@ -323,7 +323,7 @@ class TestStubs:
         instrument = instrument or TestInstrumentProvider.default_fx_ccy("AUD/USD")
         order_book = OrderBook.create(
             instrument=instrument,
-            level=level,
+            book_type=book_type,
         )
         snapshot = TestStubs.order_book_snapshot(
             instrument_id=instrument.id,
@@ -346,14 +346,14 @@ class TestStubs:
         ask_levels=3,
         bid_volume=10,
         ask_volume=10,
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
     ) -> OrderBookSnapshot:
         err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
         assert bid_price < ask_price, err
 
         return OrderBookSnapshot(
             instrument_id=instrument_id or TestStubs.audusd_id(),
-            level=level,
+            book_type=book_type,
             bids=[(float(bid_price - i), float(bid_volume * (1 + i))) for i in range(bid_levels)],
             asks=[(float(ask_price + i), float(ask_volume * (1 + i))) for i in range(ask_levels)],
             ts_event=0,

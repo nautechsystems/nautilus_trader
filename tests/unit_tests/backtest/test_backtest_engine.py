@@ -32,7 +32,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -118,7 +118,7 @@ class TestBacktestEngineData:
 
         snapshot1 = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             bids=[[1550.15, 0.51], [1580.00, 1.20]],
             asks=[[1552.15, 1.51], [1582.00, 2.20]],
             ts_event=0,
@@ -127,7 +127,7 @@ class TestBacktestEngineData:
 
         snapshot2 = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             bids=[[1551.15, 0.51], [1581.00, 1.20]],
             asks=[[1553.15, 1.51], [1583.00, 2.20]],
             ts_event=1_000_000_000,
@@ -150,7 +150,7 @@ class TestBacktestEngineData:
         deltas = [
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                level=BookLevel.L2,
+                book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
                 order=Order(
                     price=Price.from_str("13.0"),
@@ -162,7 +162,7 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                level=BookLevel.L2,
+                book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
                 order=Order(
                     price=Price.from_str("12.0"),
@@ -174,7 +174,7 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                level=BookLevel.L2,
+                book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
                 order=Order(
                     price=Price.from_str("11.0"),
@@ -186,7 +186,7 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                level=BookLevel.L2,
+                book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
                 order=Order(
                     price=Price.from_str("10.0"),
@@ -198,7 +198,7 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                level=BookLevel.L2,
+                book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
                 order=Order(
                     price=Price.from_str("9.0"),
@@ -210,7 +210,7 @@ class TestBacktestEngineData:
             ),
             OrderBookDelta(
                 instrument_id=AUDUSD_SIM.id,
-                level=BookLevel.L2,
+                book_type=BookType.L2_MBP,
                 action=BookAction.ADD,
                 order=Order(
                     price=Price.from_str("0.0"),
@@ -224,7 +224,7 @@ class TestBacktestEngineData:
 
         operations1 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             deltas=deltas,
             ts_event=0,
             ts_init=0,
@@ -232,7 +232,7 @@ class TestBacktestEngineData:
 
         operations2 = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             deltas=deltas,
             ts_event=1000,
             ts_init=1000,

@@ -18,7 +18,7 @@ from itertools import repeat
 from typing import Dict, List
 
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookLevelParser
+from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook.data import Order
@@ -43,7 +43,7 @@ def serialize(data: OrderBookData):
             _parse_delta(
                 OrderBookDelta(
                     instrument_id=data.instrument_id,
-                    level=data.level,
+                    book_type=data.book_type,
                     order=None,
                     action=BookAction.CLEAR,
                     ts_event=data.ts_event,
@@ -60,7 +60,7 @@ def serialize(data: OrderBookData):
                 _parse_delta(
                     OrderBookDelta(
                         instrument_id=data.instrument_id,
-                        level=data.level,
+                        book_type=data.book_type,
                         ts_event=data.ts_event,
                         ts_init=data.ts_init,
                         order=Order(price=price, size=volume, side=side),
@@ -88,7 +88,7 @@ def _build_order_book_snapshot(values):
     assert len(values) >= 2, f"Not enough values passed! {values}"
     return OrderBookSnapshot(
         instrument_id=InstrumentId.from_str(values[1]["instrument_id"]),
-        level=BookLevelParser.from_str_py(values[1]["level"]),
+        book_type=BookTypeParser.from_str_py(values[1]["book_type"]),
         bids=[
             (order["order_price"], order["order_size"])
             for order in values[1:]
@@ -107,7 +107,7 @@ def _build_order_book_snapshot(values):
 def _build_order_book_deltas(values):
     return OrderBookDeltas(
         instrument_id=InstrumentId.from_str(values[0]["instrument_id"]),
-        level=BookLevelParser.from_str_py(values[0]["level"]),
+        book_type=BookTypeParser.from_str_py(values[0]["book_type"]),
         deltas=[OrderBookDelta.from_dict(v) for v in values],
         ts_event=values[0]["ts_event"],
         ts_init=values[0]["ts_init"],

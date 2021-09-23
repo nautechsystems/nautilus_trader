@@ -14,34 +14,34 @@
 # -------------------------------------------------------------------------------------------------
 
 
-cdef class BookLevelParser:
+cdef class BookTypeParser:
 
     @staticmethod
     cdef str to_str(int value):
         if value == 1:
-            return "L1"
+            return "L1_TBBO"
         elif value == 2:
-            return "L2"
+            return "L2_MBP"
         elif value == 3:
-            return "L3"
+            return "L3_MBO"
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
-    cdef BookLevel from_str(str value) except *:
-        if value == "L1":
-            return BookLevel.L1
-        elif value == "L2":
-            return BookLevel.L2
-        elif value == "L3":
-            return BookLevel.L3
+    cdef BookType from_str(str value) except *:
+        if value == "L1_TBBO":
+            return BookType.L1_TBBO
+        elif value == "L2_MBP":
+            return BookType.L2_MBP
+        elif value == "L3_MBO":
+            return BookType.L3_MBO
         else:
             raise ValueError(f"value was invalid, was {value}")
 
     @staticmethod
     def to_str_py(int value):
-        return BookLevelParser.to_str(value)
+        return BookTypeParser.to_str(value)
 
     @staticmethod
     def from_str_py(str value):
-        return BookLevelParser.from_str(value)
+        return BookTypeParser.from_str(value)

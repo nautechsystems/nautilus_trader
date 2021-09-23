@@ -3,7 +3,7 @@
 Released on **TBD**
 
 ## Breaking Changes
-None
+- Renamed `BookLevel` to `BookType`.
 
 ## Enhancements
 None

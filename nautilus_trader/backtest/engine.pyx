@@ -52,7 +52,7 @@ from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.data.bar cimport Bar
@@ -482,7 +482,7 @@ cdef class BacktestEngine:
         bint is_frozen_account=False,
         list modules=None,
         FillModel fill_model=None,
-        BookLevel order_book_level=BookLevel.L1,
+        BookType book_type=BookType.L1_TBBO,
         fill_limit_at_price=False,
     ) -> None:
         """
@@ -513,8 +513,8 @@ cdef class BacktestEngine:
             The simulation modules to load into the exchange.
         fill_model : FillModel, optional
             The fill model for the exchange (if None then no probabilistic fills).
-        order_book_level : BookLevel
-            The default order book level for fill modelling.
+        book_type : BookType
+            The default order book type for fill modelling.
         fill_limit_at_price : bool
             If limit orders should be filled at their original price only (overrides slippage).
 
@@ -549,7 +549,7 @@ cdef class BacktestEngine:
             modules=modules,
             cache=self._cache,
             fill_model=fill_model,
-            exchange_order_book_level=order_book_level,
+            book_type=book_type,
             clock=self._test_clock,
             logger=self._test_logger,
             fill_limit_at_price=fill_limit_at_price,

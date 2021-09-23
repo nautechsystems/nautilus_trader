@@ -16,7 +16,7 @@
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.orderbook.data cimport Order
@@ -31,8 +31,8 @@ from nautilus_trader.model.orderbook.level cimport Level
 cdef class OrderBook:
     cdef readonly InstrumentId instrument_id
     """The order book instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly BookLevel level
-    """The order book level {``L1``, ``L2``, ``L3``}.\n\n:returns: `BookLevel`"""
+    cdef readonly BookType type
+    """The order book type {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}.\n\n:returns: `BookType`"""
     cdef readonly uint8_t price_precision
     """The order book price precision.\n\n:returns: `uint8`"""
     cdef readonly uint8_t size_precision
