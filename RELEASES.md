@@ -6,13 +6,15 @@ Released on **TBD**
 - Renamed `BookLevel` to `BookType`.
 
 ## Enhancements
-- Added `quantstats` (removed `empyrical`).
 - Added streaming backtest machinery.
+- Added `quantstats` (removed `empyrical`).
 - Improved `DataCatalog` functionality.
 - Improved logging for adding data to `BacktestEngine`.
 - Improved parquet serialization and machinery.
 
 ## Fixes
+- Fixed `SimulatedExchange` request processing.
+- Fixed `BacktestEngine` event ordering in main loop.
 - Fixed locked balance calculation for `CASH` accounts.
 - Fixed fill dynamics for `reduce-only` orders.
 - Fixed `PositionId` handling for `HEDGING` OMS exchanges.

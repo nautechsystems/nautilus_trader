@@ -78,4 +78,3 @@ cdef class BacktestEngine:
 
     cdef Data _next(self)
     cdef void _advance_time(self, int64_t now_ns) except *
-    cdef void _process_modules(self, int64_t now_ns) except *

@@ -716,6 +716,7 @@ cdef class BacktestEngine:
         self._test_clock.set_time(start_ns)
         self._test_logger.change_clock_c(self._test_clock)
 
+        cdef SimulatedExchange exchange
         if not streaming:
             for exchange in self._exchanges.values():
                 exchange.initialize_account()
@@ -751,18 +752,26 @@ cdef class BacktestEngine:
         cdef Data data = self._next()
         while data is not None:
             self._advance_time(data.ts_init)
+            self._data_engine.process(data)
             if isinstance(data, OrderBookData):
                 self._exchanges[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, Tick):
                 self._exchanges[data.instrument_id.venue].process_tick(data)
-            self._data_engine.process(data)
-            self._process_modules(data.ts_init)
+            for exchange in self._exchanges.values():
+                exchange.process(data.ts_init)
             self.iteration += 1
             data = self._next()
+        # ---------------------------------------------------------------------#
+        # Process remaining messages
+        for exchange in self._exchanges.values():
+            exchange.process(self._test_clock.timestamp_ns())
         # ---------------------------------------------------------------------#
 
         if not streaming:
             self.trader.stop()
+            # Process remaining messages
+            for exchange in self._exchanges.values():
+                exchange.process(self._test_clock.timestamp_ns())
             self._post_run(
                 run_started=run_started,
                 run_finished=self._clock.utc_now(),
@@ -786,11 +795,6 @@ cdef class BacktestEngine:
             self._test_clock.set_time(event_handler.event.ts_event)
             event_handler.handle()
         self._test_clock.set_time(now_ns)
-
-    cdef void _process_modules(self, int64_t now_ns) except *:
-        cdef SimulatedExchange exchange
-        for exchange in self._exchanges.values():
-            exchange.process_modules(now_ns)
 
     def _pre_run(
         self,
