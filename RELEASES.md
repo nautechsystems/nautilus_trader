@@ -6,10 +6,16 @@ Released on **TBD**
 - Renamed `BookLevel` to `BookType`.
 
 ## Enhancements
-None
+- Added streaming backtest machinery.
+- Improved `DataCatalog` functionality.
+- Improved logging for adding data to `BacktestEngine`.
+- Improved parquet serialization and machinery.
 
 ## Fixes
-None
+- Fixed locked balance calculation for `CASH` accounts.
+- Fixed fill dynamics for `reduce-only` orders.
+- Fixed `PositionId` handling for `HEDGING` OMS exchanges.
+- Fixed parquet `Instrument` serialization.
 
 ---
 
