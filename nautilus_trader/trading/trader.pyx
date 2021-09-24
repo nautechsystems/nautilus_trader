@@ -27,7 +27,6 @@ import pandas as pd
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
@@ -264,8 +263,8 @@ cdef class Trader(Component):
         """
         Condition.not_none(strategy, "strategy")
         Condition.not_in(strategy, self._strategies, "strategy", "strategies")
-        Condition.true(strategy.state_c() != ComponentState.RUNNING, "strategy.state_c() was RUNNING")
-        Condition.true(strategy.state_c() != ComponentState.DISPOSED, "strategy.state_c() was DISPOSED")
+        Condition.true(not strategy.is_running_c(), "strategy.state was RUNNING")
+        Condition.true(not strategy.is_disposed_c(), "strategy.state was DISPOSED")
 
         if self.is_running_c():
             self._log.error("Cannot add a strategy to a running trader.")
@@ -325,8 +324,8 @@ cdef class Trader(Component):
 
         """
         Condition.not_in(component, self._components, "component", "components")
-        Condition.true(component.state_c() != ComponentState.RUNNING, "component.state_c() was RUNNING")
-        Condition.true(component.state_c() != ComponentState.DISPOSED, "component.state_c() was DISPOSED")
+        Condition.true(not component.is_running_c(), "strategy.state was RUNNING")
+        Condition.true(not component.is_disposed_c(), "strategy.state was DISPOSED")
 
         if self.is_running_c():
             self._log.error("Cannot add component to a running trader.")

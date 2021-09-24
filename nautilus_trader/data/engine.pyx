@@ -35,7 +35,6 @@ from cpython.datetime cimport timedelta
 
 from typing import Callable, Optional
 
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport CMD
