@@ -301,8 +301,6 @@ cdef class LiveExecutionClient(ExecutionClient):
         """
         Reconcile the given orders state based on the given report.
 
-        Returns the result of the reconciliation.
-
         Parameters
         ----------
         report : OrderStatusReport

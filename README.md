@@ -11,11 +11,11 @@
 ![total-lines](https://img.shields.io/tokei/lines/github/nautechsystems/nautilus_trader)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-| Platform          | Python versions |
-|:------------------|:----------------|
-| Linux (x86-64)    | 3.8, 3.9        |
-| macOS (x86-64)    | 3.8, 3.9        |
-| Windows (x86-64)  | 3.8, 3.9        |
+| Platform          | Rust | Python   |
+|:------------------|:-----|:---------|
+| Linux (x86_64)    | TBA  | 3.8+     |
+| macOS (x86_64)    | TBA  | 3.8+     |
+| Windows (x86_64)  | TBA  | 3.8+     |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -120,7 +120,7 @@ Refer to the [Installation Guide](https://docs.nautilustrader.io/getting-started
 Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity is import we recommend Cython).
 The below are some examples of this:
 - [indicator](/examples/indicators/ema.py) example written in Python.
-- [indicators](/nautilus_trader/indicators/) examples written in Cython.
+- [indicator](/nautilus_trader/indicators/) examples written in Cython.
 - [strategy](/examples/strategies/) examples written in both Python and Cython.
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
 

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
@@ -34,6 +35,7 @@ cdef class CashAccount(Account):
     cpdef Money calculate_balance_locked(
         self,
         Instrument instrument,
+        OrderSide side,
         Quantity quantity,
         Price price,
         bint inverse_as_quote=*,

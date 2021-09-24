@@ -15,8 +15,6 @@
 
 from typing import Any, Callable
 
-from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.component cimport Component
@@ -34,11 +32,10 @@ cdef class Trader(Component):
     cdef DataEngine _data_engine
     cdef RiskEngine _risk_engine
     cdef ExecutionEngine _exec_engine
-    cdef ReportProvider _report_provider
     cdef list _strategies
     cdef list _components
 
-    cdef readonly PerformanceAnalyzer analyzer
+    cdef readonly analyzer
     """The traders performance analyzer.\n\n:returns: `PerformanceAnalyzer`"""
 
     cdef list strategies_c(self)

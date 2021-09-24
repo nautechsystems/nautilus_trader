@@ -31,6 +31,7 @@ from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.events.order import OrderDenied
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -1149,7 +1150,7 @@ class TestActor:
         )
 
         # Act
-        actor.subscribe_order_book_snapshots(AUDUSD_SIM.id, level=2)
+        actor.subscribe_order_book_snapshots(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
 
         # Assert
         assert self.data_engine.command_count == 1
@@ -1165,7 +1166,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        actor.subscribe_order_book_snapshots(AUDUSD_SIM.id, level=2)
+        actor.subscribe_order_book_snapshots(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
 
         # Act
         actor.unsubscribe_order_book_snapshots(AUDUSD_SIM.id)
@@ -1185,7 +1186,7 @@ class TestActor:
         )
 
         # Act
-        actor.subscribe_order_book_deltas(AUDUSD_SIM.id, level=2)
+        actor.subscribe_order_book_deltas(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
 
         # Assert
         assert self.data_engine.command_count == 1

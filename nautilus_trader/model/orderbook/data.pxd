@@ -15,7 +15,7 @@
 
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.c_enums.book_action cimport BookAction
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 
@@ -23,8 +23,8 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 cdef class OrderBookData(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
-    cdef readonly BookLevel level
-    """The order book level (L1, L2, L3).\n\n:returns: `BookLevel`"""
+    cdef readonly BookType book_type
+    """The order book type (L1_TBBO, L2_MBP, L3_MBO).\n\n:returns: `BookType`"""
 
 
 cdef class OrderBookSnapshot(OrderBookData):

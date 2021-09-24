@@ -26,8 +26,6 @@ from typing import Any, Callable
 import pandas as pd
 
 from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
@@ -41,6 +39,9 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.strategy cimport TradingStrategy
+
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.analysis.reports import ReportProvider
 
 
 cdef class Trader(Component):
@@ -114,7 +115,6 @@ cdef class Trader(Component):
         self._data_engine = data_engine
         self._risk_engine = risk_engine
         self._exec_engine = exec_engine
-        self._report_provider = ReportProvider()
 
         self._strategies = []
         self._components = []
@@ -461,7 +461,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_orders_report(self._cache.orders())
+        return ReportProvider.generate_orders_report(self._cache.orders())
 
     cpdef object generate_order_fills_report(self):
         """
@@ -472,7 +472,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_order_fills_report(self._cache.orders())
+        return ReportProvider.generate_order_fills_report(self._cache.orders())
 
     cpdef object generate_positions_report(self):
         """
@@ -483,7 +483,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_positions_report(self._cache.positions())
+        return ReportProvider.generate_positions_report(self._cache.positions())
 
     cpdef object generate_account_report(self, Venue venue):
         """
@@ -497,4 +497,4 @@ cdef class Trader(Component):
         cdef Account account = self._cache.account_for_venue(venue)
         if account is None:
             return pd.DataFrame()
-        return self._report_provider.generate_account_report(account)
+        return ReportProvider.generate_account_report(account)
