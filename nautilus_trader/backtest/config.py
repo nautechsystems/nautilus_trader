@@ -70,6 +70,9 @@ class Partialable:
         """Return a new instance with some attributes replaced."""
         return self.__class__(**{**{k: getattr(self, k) for k in self.fields()}, **kwargs})
 
+    def __dask_tokenize__(self):
+        return tuple(self.fields())
+
     def __repr__(self):
         dataclass_repr_func = dataclasses._repr_fn(
             fields=list(self.fields().values()), globals=self.__dict__

@@ -202,10 +202,11 @@ def test_strategies_tokenization(backtest_config: BacktestRunConfig):
 
 def test_venue_config_tokenization(backtest_config: BacktestRunConfig):
     # Arrange, Act
-    result = tokenize(backtest_config.venues[0])
+    venue = backtest_config.venues[0]
+    result = tokenize(venue)
 
     # Assert
-    assert result == "820d33524245a874a50b05468e93bd5c"
+    assert result == "929e4f4f526a79fbe27d73fb17762d1d"
 
 
 def test_data_config_tokenization(backtest_config: BacktestRunConfig):
@@ -216,15 +217,18 @@ def test_data_config_tokenization(backtest_config: BacktestRunConfig):
     result = tokenize(data_config)
 
     # Assert
-    assert result == "f8c3c0fc8a62aa9a1f364d2e29db73c9"
+    assert result == "0a079d684fc98e92bc0faffb84ecab5a"
 
 
 def test_engine_config_tokenization(backtest_config: BacktestRunConfig):
-    # Arrange, Act
-    result = tokenize(backtest_config.engine)
+    # Arrange,
+    engine_config = backtest_config.engine
+
+    # Act
+    result = tokenize(engine_config)
 
     # Assert
-    assert result == "df9a7197dae0975a6b2466cbc9ff21e7"
+    assert result == "e919728ae60d2b1e2a3f8f2cb5a01949"
 
 
 def test_tokenization_config(backtest_config: BacktestRunConfig):
@@ -232,7 +236,7 @@ def test_tokenization_config(backtest_config: BacktestRunConfig):
     result = tokenize(backtest_config)
 
     # Assert
-    assert result == "01b9d08875cc6513e6545756c26c86ba"
+    assert result == "5315c7c40e08a6569f77c1c1afab9311"
 
 
 def test_backtest_data_config_load(catalog):

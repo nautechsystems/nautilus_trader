@@ -113,6 +113,9 @@ class BacktestEngineConfig(pydantic.BaseModel):
     bypass_logging: bool = False
     run_analysis: bool = True
 
+    def __dask_tokenize__(self):
+        return tuple(self.dict().items())
+
 
 cdef class BacktestEngine:
     """
