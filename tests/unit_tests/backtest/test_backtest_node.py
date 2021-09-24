@@ -60,13 +60,15 @@ class TestBacktestNode:
                 ),
             )
         ]
+        self.backtest_configs_strategies = [
+            self.backtest_configs[0].replace(strategies=self.strategies)
+        ]
         aud_usd_data_loader()  # Load sample data
 
     def test_init(self):
         node = BacktestNode()
         assert node
 
-    @pytest.mark.skip(reason="dask broken")
     def test_build_graph_shared_nodes(self):
         # Arrange
         node = BacktestNode()
@@ -80,11 +82,10 @@ class TestBacktestNode:
         assert result == [
             "_gather_delayed",
             "_run_delayed",
-            "_run_delayed",
-            "load",
         ]
 
-    def test_backtest_against_example(self):
+    @pytest.mark.parametrize("batch_size_bytes", [None, parse_bytes("1mib")])
+    def test_backtest_against_example_run(self, batch_size_bytes):
         """Replicate examples/fx_ema_cross_audusd_ticks.py backtest result."""
         # Arrange
         config = BacktestRunConfig(
@@ -92,6 +93,7 @@ class TestBacktestNode:
             venues=[self.venue_config],
             data=[self.data_config],
             strategies=self.strategies,
+            batch_size_bytes=batch_size_bytes,
         )
 
         node = BacktestNode()
@@ -125,8 +127,7 @@ class TestBacktestNode:
         node = BacktestNode()
 
         # Act
-        config = self.backtest_configs[0].replace(strategies=self.strategies)
-        result = node.run_sync([config])
+        result = node.run_sync(run_configs=self.backtest_configs_strategies)
 
         # Assert
         assert len(result.results) == 1
@@ -146,13 +147,13 @@ class TestBacktestNode:
     def test_backtest_build_graph(self):
         # Arrange
         node = BacktestNode()
-        tasks = node.build_graph(self.backtest_configs)
+        tasks = node.build_graph(self.backtest_configs_strategies)
 
         # Act
         result: BacktestRunResults = tasks.compute()
 
         # Assert
-        assert len(result.results) == 2
+        assert len(result.results) == 1
 
     def test_backtest_run_distributed(self):
         from distributed import Client
@@ -160,7 +161,7 @@ class TestBacktestNode:
         # Arrange
         node = BacktestNode()
         with Client(processes=False):
-            tasks = node.build_graph(self.backtest_configs)
+            tasks = node.build_graph(self.backtest_configs_strategies)
 
             # Act
             result = tasks.compute()
@@ -173,12 +174,12 @@ class TestBacktestNode:
         node = BacktestNode()
 
         # Act
-        result = node.run_sync(self.backtest_configs)
+        result = node.run_sync(self.backtest_configs_strategies)
 
         # Assert
         assert isinstance(result, BacktestRunResults)
-        assert len(result.results) == 2
+        assert len(result.results) == 1
         assert (
             str(result.results[0])
-            == "BacktestResult(backtest-c2c5a31261ee3c438a03f8bc3a7746f5, SIM[USD]=1000000.00)"
+            == "BacktestResult(backtest-61ec06367f6ef9f5eb7c5a79b9a66bfb, SIM[USD]=996365.88)"
         )
