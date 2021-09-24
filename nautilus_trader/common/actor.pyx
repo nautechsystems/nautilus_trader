@@ -31,7 +31,6 @@ import cython
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.base cimport CacheFacade
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.component cimport Component
