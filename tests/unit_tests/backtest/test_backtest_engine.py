@@ -340,7 +340,8 @@ class TestBacktestEngine:
 
     def test_initialization(self):
         # Arrange, Act
-        self.engine.run(strategies=[TradingStrategy()])
+        self.engine.add_strategy(TradingStrategy())
+        self.engine.run()
         # Assert
         assert len(self.engine.trader.strategy_states()) == 1
 
@@ -457,9 +458,10 @@ class TestBacktestWithAddedBars:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert strategy.fast_ema.count == 30117

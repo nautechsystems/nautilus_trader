@@ -219,10 +219,11 @@ class BacktestNode:
             StrategyFactory.create(config) for config in strategy_configs
         ]
 
+        engine.add_strategies(strategies)
+
         # Actual run backtest
         backtest_runner(
             engine=engine,
-            strategies=strategies,
             data_configs=data_configs,
             batch_size_bytes=batch_size_bytes,
         )
@@ -254,7 +255,6 @@ def _load_engine_data(engine: BacktestEngine, data):
 
 def backtest_runner(
     engine: BacktestEngine,
-    strategies: List[TradingStrategy],
     data_configs: List[BacktestDataConfig],
     batch_size_bytes: Optional[int] = None,
 ):
@@ -262,7 +262,6 @@ def backtest_runner(
     if batch_size_bytes is not None:
         return streaming_backtest_runner(
             engine=engine,
-            strategies=strategies,
             data_configs=data_configs,
             batch_size_bytes=batch_size_bytes,
         )
@@ -272,20 +271,17 @@ def backtest_runner(
         d = config.load()
         _load_engine_data(engine=engine, data=d)
 
-    return engine.run(strategies=strategies)
+    return engine.run()
 
 
 def streaming_backtest_runner(
     engine: BacktestEngine,
     data_configs: List[BacktestDataConfig],
-    strategies: List[TradingStrategy],
     batch_size_bytes: Optional[int] = None,
 ):
     config = data_configs[0]
     catalog = config.catalog()
 
-    for strategy in strategies:
-        engine.trader.add_strategy(strategy)
     streaming_kw = merge_data_configs_for_calc_streaming_chunks(data_configs=data_configs)
     for start, end in catalog.calc_streaming_chunks(**streaming_kw, target_size=batch_size_bytes):
         print(f"Streaming backtest run from {pd.Timestamp(start)} to {pd.Timestamp(end)}")

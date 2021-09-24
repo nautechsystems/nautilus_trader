@@ -152,8 +152,7 @@ cdef class BacktestEngine:
 
         # Setup components
         self._clock = LiveClock()
-        self.created_time = self._clock.utc_now()
-
+        created_time = self._clock.utc_now()
         self._test_clock = TestClock()
         self._uuid_factory = UUIDFactory()
 
@@ -269,10 +268,13 @@ cdef class BacktestEngine:
         self.analyzer = PerformanceAnalyzer()
 
         self.iteration = 0
+        self._run_started = None
+        self._backtest_start = None
+        self._backtest_end = None
 
-        self.time_to_initialize = self._clock.delta(self.created_time)
         self._log.info(
-            f"Initialized in {int(self.time_to_initialize.total_seconds() * 1000)}ms.",
+            f"Initialized in "
+            f"{int(self._clock.delta(created_time).total_seconds() * 1000)}ms.",
         )
 
     def list_venues(self):
@@ -583,20 +585,24 @@ cdef class BacktestEngine:
         """
         self._log.debug(f"Resetting...")
 
+        if self.trader.is_running_c():
+            # End current backtest run
+            self._end()
+
         # Reset DataEngine
-        if self._data_engine.state_c() == ComponentState.RUNNING:
+        if self._data_engine.is_running_c():
             self._data_engine.stop()
         self._data_engine.reset()
 
         # Reset ExecEngine
-        if self._exec_engine.state_c() == ComponentState.RUNNING:
+        if self._exec_engine.is_running_c():
             self._exec_engine.stop()
         if self._config.cache_database is not None and self._config.cache_database.flush:
             self._exec_engine.flush_db()
         self._exec_engine.reset()
 
         # Reset RiskEngine
-        if self._risk_engine.state_c() == ComponentState.RUNNING:
+        if self._risk_engine.is_running_c():
             self._risk_engine.stop()
         self._risk_engine.reset()
 
@@ -606,6 +612,9 @@ cdef class BacktestEngine:
             exchange.reset()
 
         self.iteration = 0
+        self._run_started = None
+        self._backtest_start = None
+        self._backtest_end = None
 
         self._log.info("Reset.")
 
@@ -626,9 +635,9 @@ cdef class BacktestEngine:
         """
         self.trader.dispose()
 
-        if self._data_engine.state_c() == ComponentState.RUNNING:
+        if self._data_engine.is_running_c():
             self._data_engine.stop()
-        if self._exec_engine.state_c() == ComponentState.RUNNING:
+        if self._exec_engine.is_running_c():
             self._exec_engine.stop()
 
         self._data_engine.dispose()
@@ -653,87 +662,136 @@ cdef class BacktestEngine:
 
         self._exchanges[venue].set_fill_model(model)
 
+    def add_strategy(self, strategy: TradingStrategy) -> None:
+        # Checked inside trader
+        self.trader.add_strategy(strategy)
+
+    def add_strategies(self, strategies: List[TradingStrategy]) -> None:
+        # Checked inside trader
+        self.trader.add_strategies(strategies)
+
     def run(
         self,
         start: Union[datetime, str, int]=None,
-        stop: Union[datetime, str, int]=None,
-        strategies: Optional[List[TradingStrategy]]=None,
-        streaming: bool=False,
+        end: Union[datetime, str, int]=None,
     ) -> None:
         """
-        Run a backtest from the start datetime to the stop datetime.
+        Run a backtest from the start datetime to the end datetime.
 
         Parameters
         ----------
         start : Union[datetime, str, int], optional
             The start datetime (UTC) for the backtest run. If ``None`` engine runs
             from the start of the data.
-        stop : Union[datetime, str, int], optional
-            The stop datetime (UTC) for the backtest run. If ``None`` engine runs
+        end : Union[datetime, str, int], optional
+            The end datetime (UTC) for the backtest run. If ``None`` engine runs
             to the end of the data.
-        strategies : list, optional
-            The strategies for the backtest run (if None will use previous).
-        streaming : bool, default = False
-            If the engine in being run in streaming mode.
 
         Raises
         ------
         ValueError
             If no data has been added to the engine.
         ValueError
-            If the `start` is >= the `stop` datetime.
+            If the `start` is >= the `end` datetime.
 
         """
         # Precondition checks
         Condition.not_empty(self._data, "data")
         if start is None:
-            # Set start to start of data
+            # Set `start` to start of data
             start = nanos_to_unix_dt(self._data[0].ts_init)
         else:
             start = pd.to_datetime(start, utc=True)
-        if stop is None:
-            # Set stop to end of data
-            stop = nanos_to_unix_dt(self._data[-1].ts_init)
+        if end is None:
+            # Set `end` to end of data
+            end = nanos_to_unix_dt(self._data[-1].ts_init)
         else:
-            stop = pd.to_datetime(stop, utc=True)
+            end = pd.to_datetime(end, utc=True)
         Condition.equal(start.tzinfo, pytz.utc, "start.tzinfo", "UTC")
-        Condition.equal(stop.tzinfo, pytz.utc, "stop.tzinfo", "UTC")
-        Condition.true(start < stop, "start was >= stop")
-        if strategies:
-            Condition.not_empty(strategies, "strategies")
-            Condition.list_type(strategies, TradingStrategy, "strategies")
+        Condition.equal(end.tzinfo, pytz.utc, "end.tzinfo", "UTC")
+        Condition.true(start < end, "start was >= end")
 
-        # Run the backtest
         self._log.info(f"Running backtest...")
-        cdef datetime run_started = self._clock.utc_now()
+        self._run_started = self._clock.utc_now()
+        self._backtest_start = start
+        self._backtest_end = end
 
-        self._pre_run(run_started, start, stop)
+        self._run(start, end)
+        self._end()
+
+    def run_streaming(
+        self,
+        start: Union[datetime, str, int]=None,
+        end: Union[datetime, str, int]=None,
+    ):
+        """
+        Run a backtest on streaming data.
+
+        Parameters
+        ----------
+        start : Union[datetime, str, int], optional
+            The start datetime (UTC) for the current block of data. If ``None``
+            engine runs from the start of the data.
+        end : Union[datetime, str, int], optional
+            The end datetime (UTC) for the current block of data. If ``None`` engine runs
+            to the end of the data.
+
+        """
+        # Precondition checks
+        Condition.not_empty(self._data, "data")
+        if start is None:
+            # Set `start` to start of data
+            start = nanos_to_unix_dt(self._data[0].ts_init)
+        else:
+            start = pd.to_datetime(start, utc=True)
+        if end is None:
+            # Set `end` to end of data
+            end = nanos_to_unix_dt(self._data[-1].ts_init)
+        else:
+            end = pd.to_datetime(end, utc=True)
+        Condition.equal(start.tzinfo, pytz.utc, "start.tzinfo", "UTC")
+        Condition.equal(end.tzinfo, pytz.utc, "end.tzinfo", "UTC")
+        Condition.true(start < end, "start was >= end")
+
+        self._log.info(f"Running streaming backtest...")
+        self._run_started = self._clock.utc_now()
+
+        self._run(start, end)
+
+    def end_streaming(self):
+        """End the backtest streaming run."""
+        self._end()
+
+    def _run(
+        self,
+        start: Union[datetime, str, int]=None,
+        end: Union[datetime, str, int]=None,
+    ):
+        if self.iteration == 0:
+            self._backtest_start = start
+            self._pre_run()
 
         cdef int64_t start_ns = dt_to_unix_nanos(start)
-        cdef int64_t stop_ns = dt_to_unix_nanos(stop)
+        cdef int64_t end_ns = dt_to_unix_nanos(end)
 
         # Setup clocks
         self._test_clock.set_time(start_ns)
         self._test_logger.change_clock_c(self._test_clock)
 
+        self._log.info("=================================================================")
+        self._log.info("BACKTEST RUN")
+        self._log.info("=================================================================")
+
         cdef SimulatedExchange exchange
-        if not streaming:
+        if self.iteration == 0:
             for exchange in self._exchanges.values():
                 exchange.initialize_account()
-
-        self._log.info("=================================================================")
-        self._log.info("BACKTEST")
-        self._log.info("=================================================================")
-
-        # Setup new strategies
-        if strategies:
-            self.trader.add_strategies(strategies)
 
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start_ns)
 
         # Start main components
-        if not streaming:
+        if self.iteration == 0:
             self._data_engine.start()
             self._exec_engine.start()
             self.trader.start()
@@ -751,6 +809,8 @@ cdef class BacktestEngine:
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         cdef Data data = self._next()
         while data is not None:
+            if data.ts_init > end_ns:
+                break
             self._advance_time(data.ts_init)
             self._data_engine.process(data)
             if isinstance(data, OrderBookData):
@@ -767,17 +827,14 @@ cdef class BacktestEngine:
             exchange.process(self._test_clock.timestamp_ns())
         # ---------------------------------------------------------------------#
 
-        if not streaming:
-            self.trader.stop()
-            # Process remaining messages
-            for exchange in self._exchanges.values():
-                exchange.process(self._test_clock.timestamp_ns())
-            self._post_run(
-                run_started=run_started,
-                run_finished=self._clock.utc_now(),
-                start=start,
-                stop=stop,
-            )
+    def _end(self):
+        self.trader.stop()
+        # Process remaining messages
+        for exchange in self._exchanges.values():
+            exchange.process(self._test_clock.timestamp_ns())
+
+        self._backtest_end = self._test_clock.utc_now()
+        self._post_run()
 
     cdef Data _next(self):
         cdef int64_t cursor = self._index
@@ -796,19 +853,15 @@ cdef class BacktestEngine:
             event_handler.handle()
         self._test_clock.set_time(now_ns)
 
-    def _pre_run(
-        self,
-        datetime run_started,
-        datetime start,
-        datetime stop,
-    ):
+    def _pre_run(self):
         log_memory(self._log)
         self._log.info("=================================================================")
-        self._log.info(" BACKTEST RUN")
+        self._log.info(" BACKTEST PRE-RUN")
         self._log.info("=================================================================")
-        self._log.info(f"Run started:    {format_iso8601(run_started)}")
-        self._log.info(f"Backtest start: {format_iso8601(start)}")
-        self._log.info(f"Backtest stop:  {format_iso8601(stop)}")
+        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
+        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
+        backtest_end = format_iso8601(self._backtest_end) if self._backtest_end else 'streaming...'
+        self._log.info(f"Backtest end:   {backtest_end}")
 
         for exchange in self._exchanges.values():
             self._log.info("=================================================================")
@@ -820,23 +873,16 @@ cdef class BacktestEngine:
                 balances = ', '.join([b.to_str() for b in exchange.starting_balances])
                 self._log.info(f"Account balances (starting): {balances}")
 
-    def _post_run(
-        self,
-        datetime run_started,
-        datetime run_finished,
-        datetime start,
-        datetime stop,
-    ):
+    def _post_run(self):
+        run_finished = self._clock.utc_now()
         self._log.info("=================================================================")
-        self._log.info(" BACKTEST DIAGNOSTICS")
+        self._log.info(" BACKTEST POST-RUN")
         self._log.info("=================================================================")
-        self._log.info(f"Run started:    {format_iso8601(run_started)}")
+        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
         self._log.info(f"Run finished:   {format_iso8601(run_finished)}")
-        self._log.info(f"Backtest start: {format_iso8601(start)}")
-        self._log.info(f"Backtest stop:  {format_iso8601(stop)}")
-        self._log.info(f"Elapsed time:   {run_finished - run_started}")
-        # for resolution in self._data_producer.execution_resolutions:
-        #     self._log.info(f"Execution resolution: {resolution}")
+        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
+        self._log.info(f"Backtest end:   {format_iso8601(self._backtest_end)}")
+        self._log.info(f"Elapsed time:   {run_finished - self._run_started}")
         self._log.info(f"Iterations: {self.iteration:,}")
         self._log.info(f"Total events: {self._exec_engine.event_count:,}")
         self._log.info(f"Total orders: {self.cache.orders_total_count():,}")

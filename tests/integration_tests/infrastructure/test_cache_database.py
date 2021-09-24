@@ -801,9 +801,10 @@ class TestExecutionCacheWithRedisDatabaseTests:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Generate a lot of data
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Reset engine
         self.engine.reset()

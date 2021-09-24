@@ -124,7 +124,7 @@ class VolatilityMarketMaker(TradingStrategy):
         self.subscribe_quote_ticks(self.instrument_id)
         self.subscribe_order_book_snapshots(
             self.instrument_id,
-            book_type=BookType.L2,
+            book_type=BookType.L2_MBP,
             depth=10,
             interval_ms=1000,
         )  # For debugging

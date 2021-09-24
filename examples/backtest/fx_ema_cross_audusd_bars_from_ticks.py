@@ -97,13 +97,14 @@ if __name__ == "__main__":
         trade_size=Decimal(1_000_000),
         order_id_tag="001",
     )
-    # Instantiate your strategy
+    # Instantiate and add your strategy
     strategy = EMACross(config=config)
+    engine.add_strategy(strategy=strategy)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 
     # Run the engine from start to end of data
-    engine.run(strategies=[strategy])
+    engine.run()
 
     # Optionally view reports
     with pd.option_context(
