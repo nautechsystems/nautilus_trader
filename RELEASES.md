@@ -23,6 +23,7 @@ Released on **TBD**
 - Fixed fill dynamics for `reduce-only` orders.
 - Fixed `PositionId` handling for `HEDGING` OMS exchanges.
 - Fixed parquet `Instrument` serialization.
+- Fixed `CASH` account PnL calculations with base currency.
 
 ---
 
