@@ -107,7 +107,7 @@ if __name__ == "__main__":
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 
-    # Run the engine from start to end of data
+    # Run the engine (from start to end of data)
     engine.run(end=datetime(2012, 2, 10))
 
     # Optionally view reports

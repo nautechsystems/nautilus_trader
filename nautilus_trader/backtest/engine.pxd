@@ -56,7 +56,6 @@ cdef class BacktestEngine:
     cdef int64_t _index
     cdef datetime _run_started
     cdef datetime _backtest_start
-    cdef datetime _backtest_end
 
     cdef readonly Trader trader
     """The trader for the backtest.\n\n:returns: `Trader`"""
