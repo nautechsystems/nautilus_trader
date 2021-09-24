@@ -267,7 +267,7 @@ cdef class Trader(Component):
         Condition.true(strategy.state_c() != ComponentState.RUNNING, "strategy.state_c() was RUNNING")
         Condition.true(strategy.state_c() != ComponentState.DISPOSED, "strategy.state_c() was DISPOSED")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             self._log.error("Cannot add a strategy to a running trader.")
             return
 
@@ -328,7 +328,7 @@ cdef class Trader(Component):
         Condition.true(component.state_c() != ComponentState.RUNNING, "component.state_c() was RUNNING")
         Condition.true(component.state_c() != ComponentState.DISPOSED, "component.state_c() was DISPOSED")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             self._log.error("Cannot add component to a running trader.")
             return
 
@@ -376,7 +376,7 @@ cdef class Trader(Component):
             If state is ``RUNNING``.
 
         """
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             self._log.error("Cannot clear the strategies of a running trader.")
             return
 
@@ -395,7 +395,7 @@ cdef class Trader(Component):
             If state is ``RUNNING``.
 
         """
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             self._log.error("Cannot clear the components of a running trader.")
             return
 

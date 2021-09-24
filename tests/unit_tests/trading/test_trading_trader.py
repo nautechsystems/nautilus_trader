@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from decimal import Decimal
 
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
@@ -20,7 +21,6 @@ from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -151,7 +151,7 @@ class TestTrader:
     def test_initialize_trader(self):
         # Arrange, Act, Assert
         assert self.trader.id == TraderId("TESTER-000")
-        assert self.trader.state == ComponentState.INITIALIZED
+        assert self.trader.is_initialized
         assert len(self.trader.strategy_states()) == 0
 
     def test_add_strategy(self):
@@ -275,7 +275,7 @@ class TestTrader:
         strategy_states = self.trader.strategy_states()
 
         # Assert
-        assert self.trader.state == ComponentState.RUNNING
+        assert self.trader.is_running
         assert strategy_states[StrategyId("TradingStrategy-001")] == "RUNNING"
         assert strategy_states[StrategyId("TradingStrategy-002")] == "RUNNING"
 
@@ -294,7 +294,7 @@ class TestTrader:
         strategy_states = self.trader.strategy_states()
 
         # Assert
-        assert self.trader.state == ComponentState.STOPPED
+        assert self.trader.is_stopped
         assert strategy_states[StrategyId("TradingStrategy-001")] == "STOPPED"
         assert strategy_states[StrategyId("TradingStrategy-002")] == "STOPPED"
 
