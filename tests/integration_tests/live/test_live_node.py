@@ -19,7 +19,6 @@ import pytest
 
 from nautilus_trader.adapters.betfair.factory import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factory import BetfairLiveExecutionClientFactory
-from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.infrastructure.cache import CacheDatabaseConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.live.node import TradingNodeConfig
@@ -119,7 +118,7 @@ class TestTradingNodeOperation:
         await asyncio.sleep(2)
 
         # Assert
-        assert self.node.trader.state == ComponentState.RUNNING
+        assert self.node.trader.is_running
 
     @pytest.mark.asyncio
     async def test_stop(self):
@@ -133,7 +132,7 @@ class TestTradingNodeOperation:
         await asyncio.sleep(3)  # Allow node to stop
 
         # Assert
-        assert self.node.trader.state == ComponentState.STOPPED
+        assert self.node.trader.is_stopped
 
     @pytest.mark.skip(reason="refactor TradingNode coroutines")
     @pytest.mark.asyncio
@@ -151,4 +150,4 @@ class TestTradingNodeOperation:
         await asyncio.sleep(1)  # Allow node to dispose
 
         # Assert
-        assert self.node.trader.state == ComponentState.DISPOSED
+        assert self.node.trader.is_disposed

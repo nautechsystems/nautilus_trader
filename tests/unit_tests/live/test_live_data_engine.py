@@ -18,7 +18,6 @@ import asyncio
 import pytest
 
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.uuid import UUIDFactory
 from nautilus_trader.core.data import Data
@@ -237,7 +236,7 @@ class TestLiveDataEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.state == ComponentState.RUNNING
+        assert self.engine.is_running
 
         # Tear Down
         self.engine.stop()
@@ -250,7 +249,7 @@ class TestLiveDataEngine:
         self.engine.kill()
 
         # Assert
-        assert self.engine.state == ComponentState.STOPPED
+        assert self.engine.is_stopped
 
     @pytest.mark.asyncio
     async def test_kill_when_not_running_with_messages_on_queue(self):
