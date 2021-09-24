@@ -364,7 +364,7 @@ class DataCatalog(metaclass=Singleton):
         start_nanos: int = make_unix_ns(start_time)
         end_nanos: int = make_unix_ns(end_time)
         options = {"disp": True} if debug else {}
-        last = None
+        last = (0, 0)
         while True:
             target_func = search_data_size_timestamp(
                 root_path=str(self.path),
@@ -383,7 +383,7 @@ class DataCatalog(metaclass=Singleton):
             )
             assert result.success, "Optimisation did not complete successfully - check inputs"
             end_nanos = int(result.x[0])
-            if (start_nanos, end_nanos) == last:
+            if (start_nanos, end_nanos) == last or (start_nanos, end_nanos) == (last[1], last[1]):
                 break
             yield start_nanos, end_nanos
             last = (start_nanos, end_nanos)

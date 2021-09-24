@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+import pytest
 from dask.utils import parse_bytes
 
 from nautilus_trader.backtest.config import BacktestDataConfig
@@ -65,6 +66,7 @@ class TestBacktestNode:
         node = BacktestNode()
         assert node
 
+    @pytest.mark.skip(reason="dask broken")
     def test_build_graph_shared_nodes(self):
         # Arrange
         node = BacktestNode()
@@ -133,7 +135,7 @@ class TestBacktestNode:
         # Arrange
         node = BacktestNode()
         base = self.backtest_configs[0]
-        config = base.replace(strategies=self.strategies, batch_size_bytes=parse_bytes("1mib"))
+        config = base.replace(strategies=self.strategies, batch_size_bytes=parse_bytes("10kib"))
 
         # Act
         result = node.run_sync([config])
