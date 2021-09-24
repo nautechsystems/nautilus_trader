@@ -72,11 +72,12 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             )
             strategies = [TradingStrategy()]
             start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
-            stop = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
-            return (engine, start, stop, strategies), {}
+            end = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
+            return (engine, start, end, strategies), {}
 
-        def run(engine, start, stop, strategies):
-            engine.run(start=start, stop=stop, strategies=strategies)
+        def run(engine, start, end, strategies):
+            engine.add_strategies(strategies=strategies)
+            engine.run(start=start, end=end)
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
 
@@ -114,12 +115,13 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             strategy = EMACross(config=config)
 
             start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
-            stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
+            end = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-            return (engine, start, stop, strategy), {}
+            return (engine, start, end, strategy), {}
 
-        def run(engine, start, stop, strategy):
-            engine.run(start=start, stop=stop, strategies=[strategy])
+        def run(engine, start, end, strategy):
+            engine.add_strategy(strategy)
+            engine.run(start=start, end=end)
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1)
 
@@ -163,11 +165,12 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             strategy = EMACross(config=config)
 
             start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
-            stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+            end = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-            return (engine, start, stop, [strategy]), {}
+            return (engine, start, end, [strategy]), {}
 
-        def run(engine, start, stop, strategies):
-            engine.run(start=start, stop=stop, strategies=strategies)
+        def run(engine, start, end, strategies):
+            engine.add_strategies(strategies)
+            engine.run(start=start, end=end)
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1)

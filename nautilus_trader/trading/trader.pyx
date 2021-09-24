@@ -210,14 +210,14 @@ cdef class Trader(Component):
     cpdef void _stop(self) except *:
         cdef TradingStrategy strategy
         for strategy in self._strategies:
-            if strategy.state_c() == ComponentState.RUNNING:
+            if strategy.is_running_c():
                 strategy.stop()
             else:
                 self._log.warning(f"{strategy} already stopped.")
 
         cdef Actor component
         for component in self._components:
-            if component.state_c() == ComponentState.RUNNING:
+            if component.is_running_c():
                 component.stop()
             else:
                 self._log.warning(f"{component} already stopped.")

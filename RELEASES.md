@@ -3,10 +3,13 @@
 Released on **TBD**
 
 ## Breaking Changes
+- `BacktestEngine.run` method signature change.
 - Renamed `BookLevel` to `BookType`.
 
 ## Enhancements
 - Added streaming backtest machinery.
+- Added `BacktestEngine.run_streaming()`.
+- Added `BacktestEngine.end_streaming()`
 - Added `quantstats` (removed `empyrical`).
 - Improved `DataCatalog` functionality.
 - Improved logging for adding data to `BacktestEngine`.

@@ -54,6 +54,9 @@ cdef class BacktestEngine:
     cdef list _data
     cdef int64_t _data_len
     cdef int64_t _index
+    cdef datetime _run_started
+    cdef datetime _backtest_start
+    cdef datetime _backtest_end
 
     cdef readonly Trader trader
     """The trader for the backtest.\n\n:returns: `Trader`"""
@@ -63,10 +66,6 @@ cdef class BacktestEngine:
     """The backtest engine machine ID.\n\n:returns: `str`"""
     cdef readonly UUID4 instance_id
     """The backtest engine instance ID.\n\n:returns: `UUID4`"""
-    cdef readonly datetime created_time
-    """The backtest engine created time.\n\n:returns: `datetime`"""
-    cdef readonly timedelta time_to_initialize
-    """The backtest engine time to initialize.\n\n:returns: `timedelta`"""
     cdef readonly int iteration
     """The backtest engine iteration count.\n\n:returns: `int`"""
     cdef readonly CacheFacade cache
