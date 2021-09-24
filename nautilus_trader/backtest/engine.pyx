@@ -45,7 +45,6 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.core.text cimport pad_string
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -94,8 +93,6 @@ class BacktestEngineConfig(pydantic.BaseModel):
         The configuration for the risk engine.
     exec_engine : ExecEngineConfig, optional
         The configuration for the execution engine.
-    use_data_cache : bool, default=False
-        If use cache for DataProducer (increased performance with repeated backtests on same data).
     bypass_logging : bool, default=False
         If logging should be bypassed.
     run_analysis : bool, default=True
@@ -849,16 +846,17 @@ cdef class BacktestEngine:
         log_memory(self._log)
 
         for exchange in self._exchanges.values():
+            account = exchange.exec_client.get_account()
             self._log.info("=================================================================")
             self._log.info(f"SimulatedVenue {exchange.id}")
             self._log.info("=================================================================")
-            self._log.info(f"AccountId({exchange.exec_client.account_id})")
+            self._log.info(f"{repr(account)}")
             self._log.info("-----------------------------------------------------------------")
             self._log.info(f"Balances starting:")
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
-                for b in exchange.starting_balances:
+                for b in account.starting_balances().values():
                     self._log.info(b.to_str())
         self._log.info("=================================================================")
 
@@ -881,12 +879,12 @@ cdef class BacktestEngine:
             return
 
         for exchange in self._exchanges.values():
+            account = exchange.exec_client.get_account()
             self._log.info("=================================================================")
             self._log.info(f"SimulatedVenue {exchange.id}")
             self._log.info("=================================================================")
-            self._log.info(f"AccountId({exchange.exec_client.account_id})")
+            self._log.info(f"{repr(account)}")
             self._log.info("-----------------------------------------------------------------")
-            account = exchange.exec_client.get_account()
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
