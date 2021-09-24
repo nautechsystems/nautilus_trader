@@ -317,7 +317,7 @@ class TestTradingStrategy:
 
         # Assert
         assert "on_reset" in strategy.calls
-        assert strategy.state == ComponentState.INITIALIZED
+        assert strategy.is_initialized
         assert strategy.ema1.count == 0
         assert strategy.ema2.count == 0
 
@@ -341,7 +341,7 @@ class TestTradingStrategy:
 
         # Assert
         assert "on_dispose" in strategy.calls
-        assert strategy.state == ComponentState.DISPOSED
+        assert strategy.is_disposed
 
     def test_save_load(self):
         # Arrange
@@ -363,7 +363,7 @@ class TestTradingStrategy:
         # Assert
         assert state == {"UserState": b"1"}
         assert "on_save" in strategy.calls
-        assert strategy.state == ComponentState.INITIALIZED
+        assert strategy.is_initialized
 
     def test_register_indicator_for_quote_ticks_when_already_registered(self):
         # Arrange

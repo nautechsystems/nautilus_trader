@@ -5,6 +5,7 @@ Released on **TBD**
 ## Breaking Changes
 - `BacktestEngine.run` method signature change.
 - Renamed `BookLevel` to `BookType`.
+- Renamed `FillModel` params.
 
 ## Enhancements
 - Added streaming backtest machinery.

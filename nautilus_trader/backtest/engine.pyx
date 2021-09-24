@@ -31,7 +31,6 @@ from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
@@ -270,7 +269,6 @@ cdef class BacktestEngine:
         self.iteration = 0
         self._run_started = None
         self._backtest_start = None
-        self._backtest_end = None
 
         self._log.info(
             f"Initialized in "
@@ -614,7 +612,6 @@ cdef class BacktestEngine:
         self.iteration = 0
         self._run_started = None
         self._backtest_start = None
-        self._backtest_end = None
 
         self._log.info("Reset.")
 
@@ -676,7 +673,10 @@ cdef class BacktestEngine:
         end: Union[datetime, str, int]=None,
     ) -> None:
         """
-        Run a backtest from the start datetime to the end datetime.
+        Run a backtest.
+
+        At the end of the run the trader and strategies will be stopped, then
+        post-run analysis performed.
 
         Parameters
         ----------
@@ -695,27 +695,6 @@ cdef class BacktestEngine:
             If the `start` is >= the `end` datetime.
 
         """
-        # Precondition checks
-        Condition.not_empty(self._data, "data")
-        if start is None:
-            # Set `start` to start of data
-            start = nanos_to_unix_dt(self._data[0].ts_init)
-        else:
-            start = pd.to_datetime(start, utc=True)
-        if end is None:
-            # Set `end` to end of data
-            end = nanos_to_unix_dt(self._data[-1].ts_init)
-        else:
-            end = pd.to_datetime(end, utc=True)
-        Condition.equal(start.tzinfo, pytz.utc, "start.tzinfo", "UTC")
-        Condition.equal(end.tzinfo, pytz.utc, "end.tzinfo", "UTC")
-        Condition.true(start < end, "start was >= end")
-
-        self._log.info(f"Running backtest...")
-        self._run_started = self._clock.utc_now()
-        self._backtest_start = start
-        self._backtest_end = end
-
         self._run(start, end)
         self._end()
 
@@ -725,7 +704,17 @@ cdef class BacktestEngine:
         end: Union[datetime, str, int]=None,
     ):
         """
-        Run a backtest on streaming data.
+        Run a backtest in streaming mode.
+
+        If more data than can fit in memory is to be run through the backtest
+        engine, then streaming mode can be utilized. The expected sequence is as
+        follows:
+         - Add initial data block and strategies.
+         - Call `run_streaming()`.
+         - Call `clear_data()`.
+         - Add next block of data stream.
+         - Call `run_streaming()`.
+         - Call `end_streaming()` when there is no more data to run on.
 
         Parameters
         ----------
@@ -737,29 +726,18 @@ cdef class BacktestEngine:
             to the end of the data.
 
         """
-        # Precondition checks
-        Condition.not_empty(self._data, "data")
-        if start is None:
-            # Set `start` to start of data
-            start = nanos_to_unix_dt(self._data[0].ts_init)
-        else:
-            start = pd.to_datetime(start, utc=True)
-        if end is None:
-            # Set `end` to end of data
-            end = nanos_to_unix_dt(self._data[-1].ts_init)
-        else:
-            end = pd.to_datetime(end, utc=True)
-        Condition.equal(start.tzinfo, pytz.utc, "start.tzinfo", "UTC")
-        Condition.equal(end.tzinfo, pytz.utc, "end.tzinfo", "UTC")
-        Condition.true(start < end, "start was >= end")
-
-        self._log.info(f"Running streaming backtest...")
-        self._run_started = self._clock.utc_now()
-
         self._run(start, end)
 
     def end_streaming(self):
-        """End the backtest streaming run."""
+        """
+        End the backtest streaming run.
+
+        The following sequence of events will occur:
+         - The trader will be stopped which in turn stops the strategies.
+         - The exchanges will process all pending messages.
+         - Post-run analysis is performed.
+
+        """
         self._end()
 
     def _run(
@@ -767,34 +745,43 @@ cdef class BacktestEngine:
         start: Union[datetime, str, int]=None,
         end: Union[datetime, str, int]=None,
     ):
-        if self.iteration == 0:
-            self._backtest_start = start
-            self._pre_run()
+        cdef int64_t start_ns
+        cdef int64_t end_ns
+        # Time range check and set
+        Condition.not_empty(self._data, "data")
+        if start is None:
+            # Set `start` to start of data
+            start_ns = self._data[0].ts_init
+        else:
+            start = pd.to_datetime(start, utc=True)
+            Condition.equal(start.tzinfo, pytz.utc, "start.tzinfo", "UTC")
+            start_ns = dt_to_unix_nanos(start)
+        if end is None:
+            # Set `end` to end of data
+            end_ns = self._data[-1].ts_init
+        else:
+            end = pd.to_datetime(end, utc=True)
+            Condition.equal(end.tzinfo, pytz.utc, "end.tzinfo", "UTC")
+            end_ns = dt_to_unix_nanos(end)
+        Condition.true(start_ns < end_ns, "start was >= end")
 
-        cdef int64_t start_ns = dt_to_unix_nanos(start)
-        cdef int64_t end_ns = dt_to_unix_nanos(end)
-
-        # Setup clocks
+        # Set clocks
         self._test_clock.set_time(start_ns)
-        self._test_logger.change_clock_c(self._test_clock)
-
-        self._log.info("=================================================================")
-        self._log.info("BACKTEST RUN")
-        self._log.info("=================================================================")
-
-        cdef SimulatedExchange exchange
-        if self.iteration == 0:
-            for exchange in self._exchanges.values():
-                exchange.initialize_account()
-
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start_ns)
 
-        # Start main components
         if self.iteration == 0:
+            # Initialize engine
+            self._backtest_start = nanos_to_unix_dt(start_ns)
+            self._test_logger.change_clock_c(self._test_clock)
+            for strategy in self.trader.strategies_c():
+                strategy.clock.set_time(start_ns)
+            for exchange in self._exchanges.values():
+                exchange.initialize_account()
             self._data_engine.start()
             self._exec_engine.start()
             self.trader.start()
+            self._pre_run()
 
         # Set data stream length
         self._data_len = len(self._data)
@@ -833,7 +820,6 @@ cdef class BacktestEngine:
         for exchange in self._exchanges.values():
             exchange.process(self._test_clock.timestamp_ns())
 
-        self._backtest_end = self._test_clock.utc_now()
         self._post_run()
 
     cdef Data _next(self):
@@ -854,24 +840,27 @@ cdef class BacktestEngine:
         self._test_clock.set_time(now_ns)
 
     def _pre_run(self):
-        log_memory(self._log)
         self._log.info("=================================================================")
-        self._log.info(" BACKTEST PRE-RUN")
+        self._log.info(" BACKTEST RUN")
         self._log.info("=================================================================")
+        self._run_started = self._clock.utc_now()
         self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
         self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
-        backtest_end = format_iso8601(self._backtest_end) if self._backtest_end else 'streaming...'
-        self._log.info(f"Backtest end:   {backtest_end}")
+        log_memory(self._log)
 
         for exchange in self._exchanges.values():
             self._log.info("=================================================================")
-            self._log.info(exchange.exec_client.account_id.value)
+            self._log.info(f"SimulatedVenue {exchange.id}")
             self._log.info("=================================================================")
+            self._log.info(f"AccountId({exchange.exec_client.account_id})")
+            self._log.info("-----------------------------------------------------------------")
+            self._log.info(f"Balances starting:")
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
-                balances = ', '.join([b.to_str() for b in exchange.starting_balances])
-                self._log.info(f"Account balances (starting): {balances}")
+                for b in exchange.starting_balances:
+                    self._log.info(b.to_str())
+        self._log.info("=================================================================")
 
     def _post_run(self):
         run_finished = self._clock.utc_now()
@@ -881,7 +870,7 @@ cdef class BacktestEngine:
         self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
         self._log.info(f"Run finished:   {format_iso8601(run_finished)}")
         self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
-        self._log.info(f"Backtest end:   {format_iso8601(self._backtest_end)}")
+        self._log.info(f"Backtest end:   {format_iso8601(self._test_clock.utc_now())}")
         self._log.info(f"Elapsed time:   {run_finished - self._run_started}")
         self._log.info(f"Iterations: {self.iteration:,}")
         self._log.info(f"Total events: {self._exec_engine.event_count:,}")
@@ -893,26 +882,35 @@ cdef class BacktestEngine:
 
         for exchange in self._exchanges.values():
             self._log.info("=================================================================")
-            self._log.info(f" {exchange.exec_client.account_id.value}")
+            self._log.info(f"SimulatedVenue {exchange.id}")
             self._log.info("=================================================================")
+            self._log.info(f"AccountId({exchange.exec_client.account_id})")
+            self._log.info("-----------------------------------------------------------------")
             account = exchange.exec_client.get_account()
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
                 if account is None:
                     continue
-                account_balances_starting = ', '.join([b.to_str() for b in account.starting_balances().values()])
-                account_balances_ending = ', '.join([b.to_str() for b in account.balances_total().values()])
-                account_commissions = ', '.join([b.to_str() for b in account.commissions().values()])
-                unrealized_pnls = ', '.join([b.to_str() for b in self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()])
-                account_starting_length = len(account_balances_starting)
-                account_balances_ending = pad_string(account_balances_ending, account_starting_length)
-                account_commissions = pad_string(account_commissions, account_starting_length)
-                unrealized_pnls = pad_string(unrealized_pnls, account_starting_length)
-                self._log.info(f"Account balances (starting): {account_balances_starting}")
-                self._log.info(f"Account balances (ending):   {account_balances_ending}")
-                self._log.info(f"Commissions (total):         {account_commissions}")
-                self._log.info(f"Unrealized PnLs:             {unrealized_pnls}")
+                self._log.info(f"Balances starting:")
+                for b in account.starting_balances().values():
+                    self._log.info(b.to_str())
+                self._log.info("-----------------------------------------------------------------")
+                self._log.info(f"Balances ending:")
+                for b in account.balances_total().values():
+                    self._log.info(b.to_str())
+                self._log.info("-----------------------------------------------------------------")
+                self._log.info(f"Commissions:")
+                for b in account.commissions().values():
+                    self._log.info(b.to_str())
+                self._log.info("-----------------------------------------------------------------")
+                self._log.info(f"Unrealized PnLs:")
+                unrealized_pnls = self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()
+                if not unrealized_pnls:
+                    self._log.info("None")
+                else:
+                    for b in self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values():
+                        self._log.info(b.to_str())
 
             # Log output diagnostics for all simulation modules
             for module in exchange.modules:

@@ -68,8 +68,8 @@ if __name__ == "__main__":
 
     # Create a fill model (optional)
     fill_model = FillModel(
-        prob_fill_at_limit=0.2,
-        prob_fill_at_stop=0.95,
+        prob_fill_on_limit=0.2,
+        prob_fill_on_stop=0.95,
         prob_slippage=0.5,
         random_seed=42,
     )
@@ -107,7 +107,7 @@ if __name__ == "__main__":
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 
-    # Run the engine from start to end of data
+    # Run the engine (from start to end of data)
     engine.run(end=datetime(2012, 2, 10))
 
     # Optionally view reports

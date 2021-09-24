@@ -35,7 +35,6 @@ from cpython.datetime cimport timedelta
 
 from typing import Callable, Optional
 
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport CMD
@@ -1086,7 +1085,7 @@ cdef class DataEngine(Component):
                 self._log.debug(f"Applying partial bar {partial} for {partial.type}.")
                 aggregator.set_partial(partial)
             else:
-                if self._fsm.state == ComponentState.RUNNING:
+                if self.is_running_c():
                     # Only log this error if the component is running, because
                     # there may have been an immediate stop called after start
                     # - with the partial bar being for a now removed aggregator.
