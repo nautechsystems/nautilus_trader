@@ -298,11 +298,11 @@ cdef class CashAccount(Account):
         fill_px: Decimal = fill.last_px.as_decimal()
 
         if fill.order_side == OrderSide.BUY:
-            if base_currency:
+            if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(fill_qty, base_currency)
             pnls[quote_currency] = Money(-(fill_px * fill_qty), quote_currency)
         else:  # OrderSide.SELL
-            if base_currency:
+            if base_currency and not self.base_currency:
                 pnls[base_currency] = Money(-fill_qty, base_currency)
             pnls[quote_currency] = Money(fill_px * fill_qty, quote_currency)
 
