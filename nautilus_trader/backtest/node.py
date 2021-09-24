@@ -219,7 +219,8 @@ class BacktestNode:
             StrategyFactory.create(config) for config in strategy_configs
         ]
 
-        engine.run(strategies=strategies)
+        engine.add_strategies(strategies)
+        engine.run()
 
         result = BacktestResult.from_engine(backtest_id=name, engine=engine)
 

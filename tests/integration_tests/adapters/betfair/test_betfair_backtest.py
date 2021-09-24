@@ -96,7 +96,8 @@ def test_betfair_backtest(provider):
     strategy = OrderBookImbalanceStrategy(instrument_id=instruments[0].id, trade_size=20)
 
     engine = create_engine(instruments=instruments, data=all_data)
-    engine.run(strategies=[strategy])
+    engine.add_strategy(strategy)
+    engine.run()
 
     assert strategy.instrument_status == InstrumentStatus.CLOSED
     assert strategy.close_price == 1.0

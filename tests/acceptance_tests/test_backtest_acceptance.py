@@ -98,9 +98,10 @@ class TestBacktestAcceptanceTestsUSDJPY:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 2689
@@ -117,8 +118,9 @@ class TestBacktestAcceptanceTestsUSDJPY:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
         result1 = self.engine.analyzer.get_performance_stats_pnls()
 
         # Act
@@ -155,9 +157,10 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Note since these strategies are operating on the same instrument_id as per
         # the EMACross BUY/SELL logic they will be flattening each others positions.
         # The purpose of the test is just to ensure multiple strategies can run together.
+        self.engine.add_strategies(strategies=[strategy1, strategy2])
 
         # Act
-        self.engine.run(strategies=[strategy1, strategy2])
+        self.engine.run()
 
         # Assert
         assert strategy1.fast_ema.count == 2689
@@ -215,9 +218,10 @@ class TestBacktestAcceptanceTestsGBPUSD:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert strategy.fast_ema.count == 8353
@@ -271,9 +275,10 @@ class TestBacktestAcceptanceTestsAUDUSD:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert strategy.fast_ema.count == 1771
@@ -290,9 +295,10 @@ class TestBacktestAcceptanceTestsAUDUSD:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert strategy.fast_ema.count == 1000
@@ -340,15 +346,16 @@ class TestBacktestAcceptanceTestsETHUSDT:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert strategy.fast_ema.count == 279
-        assert self.engine.iteration == 69806
+        assert self.engine.iteration == 69805
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == Money(
-            998450.62196820, USDT
+            998449.62565820, USDT
         )
 
 
@@ -400,9 +407,10 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             instrument_id=str(self.instrument.id), trade_size=Decimal(10)
         )
         strategy = OrderBookImbalanceStrategy(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert self.engine.iteration in (8199, 7812)
@@ -458,9 +466,10 @@ class TestBacktestAcceptanceTestsMarketMaking:
             trade_size=Decimal(10),
             max_size=Decimal(30),
         )
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert self.engine.iteration == 9319
