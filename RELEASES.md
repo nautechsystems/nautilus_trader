@@ -5,6 +5,8 @@ Released on **TBD**
 ## Breaking Changes
 - `BacktestEngine.run` method signature change.
 - Renamed `BookLevel` to `BookType`.
+- Renamed `FillModel` params.
+- Renamed param `stop` to `end` for data ranges generally.
 
 ## Enhancements
 - Added streaming backtest machinery.

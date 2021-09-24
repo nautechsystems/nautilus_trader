@@ -68,8 +68,8 @@ if __name__ == "__main__":
 
     # Create a fill model (optional)
     fill_model = FillModel(
-        prob_fill_at_limit=0.2,
-        prob_fill_at_stop=0.95,
+        prob_fill_on_limit=0.2,
+        prob_fill_on_stop=0.95,
         prob_slippage=0.5,
         random_seed=42,
     )
