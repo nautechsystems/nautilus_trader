@@ -109,9 +109,9 @@ class TestBacktestNode:
             "account_type": "MARGIN",
             "base_currency": "USD",
             "currency": "USD",
-            "free": "976269.59",
+            "free": "994356.25",
             "info": b"{}",  # noqa: P103
-            "locked": "20096.29",
+            "locked": "2009.63",
             "reported": False,
             "total": "996365.88",
             "venue": Venue("SIM"),
