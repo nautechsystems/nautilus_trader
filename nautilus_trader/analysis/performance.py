@@ -429,13 +429,13 @@ class PerformanceAnalyzer:
 
         return (self.avg_winner(currency) * win_rate) + (self.avg_loser(currency) * loss_rate)
 
-    def returns(self) -> pd.DataFrame:
+    def returns(self) -> pd.Series:
         """
         Return raw the returns data.
 
         Returns
         -------
-        pd.DataFrame
+        pd.Series
 
         """
         return self._returns
