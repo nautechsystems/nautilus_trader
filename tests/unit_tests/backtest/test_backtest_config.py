@@ -339,8 +339,8 @@ def test_backtest_against_example(catalog):
                 base_currency="USD",  # Standard single-currency account
                 starting_balances=["1000000 USD"],
                 # fill_model=FillModel(  # TODO(cs): Implement next iteration
-                #     prob_fill_at_limit=0.2,
-                #     prob_fill_at_stop=0.95,
+                #     prob_fill_on_limit=0.2,
+                #     prob_fill_on_stop=0.95,
                 #     prob_slippage=0.5,
                 #     random_seed=42,
                 # ),

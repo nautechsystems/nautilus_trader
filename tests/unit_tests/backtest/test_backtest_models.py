@@ -38,7 +38,7 @@ class TestFillModel:
     def test_is_stop_filled_with_random_seed(self):
         # Arrange
         fill_model = FillModel(
-            prob_fill_at_stop=0.5,
+            prob_fill_on_stop=0.5,
             random_seed=42,
         )
 
@@ -48,7 +48,7 @@ class TestFillModel:
     def test_is_limit_filled_with_random_seed(self):
         # Arrange
         fill_model = FillModel(
-            prob_fill_at_limit=0.5,
+            prob_fill_on_limit=0.5,
             random_seed=42,
         )
 
