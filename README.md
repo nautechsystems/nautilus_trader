@@ -13,7 +13,6 @@
 |:---------|:--------|:----------------|
 | v1.129.0 | master  | [![build-test](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml) |
 | v1.130.0 | develop | [![build-test](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml) |
-| docs     | develop | [![docs](https://github.com/nautechsystems/nautilus_trader/actions/workflows/docs.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/docs.yml) |
 
 | Platform         | Rust | Python |
 |:-----------------|:-----|:-------|

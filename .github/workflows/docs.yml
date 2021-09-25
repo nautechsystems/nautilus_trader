@@ -1,11 +1,18 @@
 name: docs
 
+# Build NautilusTrader docs on completion of the `build_test` workflow
+
 on:
-  push:
+  workflow_run:
+    workflows:
+      - build_test
     branches: [ develop ]
+    types:
+      - completed
 
 jobs:
   docs:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     strategy:
       fail-fast: false
       matrix:
