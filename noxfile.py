@@ -114,7 +114,7 @@ def _run_coverage(session: Session):
         "--cov-report=term",
         "--cov-report=xml",
         "--cov=nautilus_trader",
-        # There is an odd Coverage/Cython bug when using pytest-xdist
+        # There is an odd Coverage/Cython bug when using pytest-xdist,
         # so we have to run tests single-threaded here.
         parallel=False,
     )
