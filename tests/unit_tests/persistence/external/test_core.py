@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import pickle
-import sys
 from unittest.mock import patch
 
 import fsspec
@@ -45,6 +44,8 @@ from nautilus_trader.persistence.external.core import write_parquet
 from nautilus_trader.persistence.external.core import write_tables
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import CATALOG_DATA_PATH
+from tests.test_kit.mocks import CATALOG_ROOT_PATH
 from tests.test_kit.mocks import MockReader
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
@@ -55,7 +56,6 @@ from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
 TEST_DATA = PACKAGE_ROOT + "/data"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 class TestPersistenceCore:
     def setup(self):
         data_catalog_setup()
@@ -261,8 +261,8 @@ class TestPersistenceCore:
 
         # Assert
         assert result.equals(df[["value"]])  # instrument_id is a partition now
-        assert dataset.files[0].startswith("/root/sample.parquet/instrument_id=a/")
-        assert dataset.files[1].startswith("/root/sample.parquet/instrument_id=b/")
+        assert dataset.files[0].startswith(f"{CATALOG_ROOT_PATH}/sample.parquet/instrument_id=a/")
+        assert dataset.files[1].startswith(f"{CATALOG_ROOT_PATH}/sample.parquet/instrument_id=b/")
 
     def test_write_parquet_determine_partitions_writes_instrument_id(
         self,
@@ -284,8 +284,8 @@ class TestPersistenceCore:
         write_tables(catalog=self.catalog, tables=tables)
 
         # Assert
-        files = self.fs.ls("/root/data/quote_tick.parquet")
-        expected = "/root/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
+        files = self.fs.ls(f"{CATALOG_ROOT_PATH}/data/quote_tick.parquet")
+        expected = f"{CATALOG_ROOT_PATH}/data/quote_tick.parquet/instrument_id=AUD-USD.SIM"
         assert expected in files
 
     def test_load_text_betfair(self):
@@ -441,12 +441,12 @@ class TestPersistenceCore:
         # Assert
         assert len(original_partitions) == 6
         expected = [
-            "/root/sample.parquet/instrument_id=a/20200101.parquet",
-            "/root/sample.parquet/instrument_id=a/20200104.parquet",
-            "/root/sample.parquet/instrument_id=a/20200108.parquet",
-            "/root/sample.parquet/instrument_id=b/20200101.parquet",
-            "/root/sample.parquet/instrument_id=b/20200104.parquet",
-            "/root/sample.parquet/instrument_id=b/20200108.parquet",
+            f"{CATALOG_ROOT_PATH}/sample.parquet/instrument_id=a/20200101.parquet",
+            f"{CATALOG_ROOT_PATH}/sample.parquet/instrument_id=a/20200104.parquet",
+            f"{CATALOG_ROOT_PATH}/sample.parquet/instrument_id=a/20200108.parquet",
+            f"{CATALOG_ROOT_PATH}/sample.parquet/instrument_id=b/20200101.parquet",
+            f"{CATALOG_ROOT_PATH}/sample.parquet/instrument_id=b/20200104.parquet",
+            f"{CATALOG_ROOT_PATH}/sample.parquet/instrument_id=b/20200108.parquet",
         ]
         assert new_partitions == expected
 
@@ -465,14 +465,14 @@ class TestPersistenceCore:
         ins1, ins2 = self.catalog.instruments()["id"].tolist()
 
         expected = [
-            f"/root/data/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/root/data/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
-            "/root/data/betting_instrument.parquet/20210922.parquet",
-            f"/root/data/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/root/data/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
-            f"/root/data/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/root/data/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
-            f"/root/data/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
-            f"/root/data/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
+            f"{CATALOG_DATA_PATH}/betfair_ticker.parquet/instrument_id={ins1}/20191220.parquet",
+            f"{CATALOG_DATA_PATH}/betfair_ticker.parquet/instrument_id={ins2}/20191220.parquet",
+            f"{CATALOG_DATA_PATH}/betting_instrument.parquet/20210922.parquet",
+            f"{CATALOG_DATA_PATH}/instrument_status_update.parquet/instrument_id={ins1}/20191220.parquet",
+            f"{CATALOG_DATA_PATH}/instrument_status_update.parquet/instrument_id={ins2}/20191220.parquet",
+            f"{CATALOG_DATA_PATH}/order_book_data.parquet/instrument_id={ins1}/20191220.parquet",
+            f"{CATALOG_DATA_PATH}/order_book_data.parquet/instrument_id={ins2}/20191220.parquet",
+            f"{CATALOG_DATA_PATH}/trade_tick.parquet/instrument_id={ins1}/20191220.parquet",
+            f"{CATALOG_DATA_PATH}/trade_tick.parquet/instrument_id={ins2}/20191220.parquet",
         ]
         assert new_partitions == expected

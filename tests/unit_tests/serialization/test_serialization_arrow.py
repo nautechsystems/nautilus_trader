@@ -14,11 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import copy
-import os
-import sys
 
 import pytest
-from fsspec.implementations.memory import MemoryFileSystem
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.events.risk import TradingStateChanged
@@ -41,6 +38,8 @@ from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.serialization.arrow.util import class_to_filename
+from tests.test_kit.mocks import CATALOG_ROOT_PATH
+from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -49,25 +48,11 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-def _reset():
-    """Cleanup resources before each test run"""
-    os.environ["NAUTILUS_CATALOG"] = "memory:///root/"
-    catalog = DataCatalog.from_env()
-    assert isinstance(catalog.fs, MemoryFileSystem)
-    try:
-        catalog.fs.rm("/", recursive=True)
-    except FileNotFoundError:
-        pass
-    catalog.fs.mkdir("/root/data")
-    assert catalog.fs.exists("/root/")
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="does not run on windows")
 class TestParquetSerializer:
     def setup(self):
         # Fixture Setup
-        _reset()
-        self.catalog = DataCatalog(path="/root", fs_protocol="memory")
+        data_catalog_setup()
+        self.catalog = DataCatalog(path=CATALOG_ROOT_PATH, fs_protocol="memory")
         self.order_factory = OrderFactory(
             trader_id=TraderId("T-001"),
             strategy_id=StrategyId("S-001"),

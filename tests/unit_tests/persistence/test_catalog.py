@@ -15,7 +15,6 @@
 
 import datetime
 import functools
-import sys
 
 import fsspec
 import pandas as pd
@@ -42,6 +41,7 @@ from nautilus_trader.persistence.external.core import write_objects
 from nautilus_trader.persistence.external.core import write_tables
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import CATALOG_DATA_PATH
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
 
@@ -49,7 +49,6 @@ from tests.test_kit.providers import TestInstrumentProvider
 TEST_DATA_DIR = PACKAGE_ROOT + "/data"
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 class TestPersistenceCatalog:
     def setup(self):
         data_catalog_setup()
@@ -160,7 +159,7 @@ class TestPersistenceCatalog:
 
         # Assert
         assert len(df) == 1
-        assert self.fs.isdir("/root/data/quote_tick.parquet/instrument_id=AUD-USD.SIM/")
+        assert self.fs.isdir(f"{CATALOG_DATA_PATH}/quote_tick.parquet/instrument_id=AUD-USD.SIM/")
         # Ensure we "unmap" the keys that we write the partition filenames as;
         # this instrument_id should be AUD/USD not AUD-USD
         assert df.iloc[0]["instrument_id"] == instrument.id.value

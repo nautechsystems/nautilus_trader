@@ -819,22 +819,29 @@ class MockReader(Reader):
         yield block
 
 
+def get_filesystem_path(*paths) -> str:
+    return os.path.join(os.path.abspath(".").split(os.path.sep)[0] + os.path.sep, *paths)
+
+
+CATALOG_ROOT_PATH = get_filesystem_path("root")
+CATALOG_DATA_PATH = os.path.join(CATALOG_ROOT_PATH, "data")
+
+
 def data_catalog_setup():
     """
     Reset the filesystem and DataCatalog to a clean state
     """
     clear_singleton_instances(DataCatalog)
-
-    os.environ["NAUTILUS_CATALOG"] = "memory:///root/"
+    os.environ["NAUTILUS_CATALOG"] = f"memory://{CATALOG_ROOT_PATH}"
     catalog = DataCatalog.from_env()
     assert isinstance(catalog.fs, MemoryFileSystem)
     try:
         catalog.fs.rm("/", recursive=True)
     except FileNotFoundError:
         pass
-    catalog.fs.mkdir("/root/data")
-    assert catalog.fs.exists("/root/")
-    assert not catalog.fs.ls("/root/data")
+    catalog.fs.mkdir(CATALOG_DATA_PATH)
+    assert catalog.fs.exists(CATALOG_ROOT_PATH)
+    assert not catalog.fs.ls(CATALOG_DATA_PATH)
 
 
 def aud_usd_data_loader():

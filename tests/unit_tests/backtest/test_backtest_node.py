@@ -14,6 +14,7 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
+from tests.test_kit.mocks import CATALOG_ROOT_PATH
 from tests.test_kit.mocks import aud_usd_data_loader
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.strategies import EMACrossConfig
@@ -33,7 +34,7 @@ class TestBacktestNode:
             # fill_model=fill_model,  # TODO(cs): Implement next iteration
         )
         self.data_config = BacktestDataConfig(
-            catalog_path="/root",
+            catalog_path=CATALOG_ROOT_PATH,
             catalog_fs_protocol="memory",
             data_type=QuoteTick,
             instrument_id="AUD/USD.SIM",

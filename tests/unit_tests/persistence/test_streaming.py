@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import pathlib
-import sys
 
 import pytest
 
@@ -33,9 +32,9 @@ from nautilus_trader.persistence.streaming import FeatherWriter
 from nautilus_trader.persistence.streaming import read_feather
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import CATALOG_ROOT_PATH
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 class TestPersistenceStreaming:
     def setup(self):
         self.catalog = DataCatalog.from_env()
@@ -62,7 +61,7 @@ class TestPersistenceStreaming:
     @pytest.mark.skip("Awaiting backtest config refactor")
     def test_feather_writer(self):
         # Arrange
-        path = "/root/backtest001"
+        path = f"{CATALOG_ROOT_PATH}/backtest001"
         instruments = self.catalog.instruments(as_nautilus=True)
         engine = BacktestEngine()
         self.catalog.setup_engine(engine=engine, instruments=instruments)
@@ -83,7 +82,7 @@ class TestPersistenceStreaming:
 
         # Assert
         result = {}
-        for path in self.fs.ls("/root/backtest001/"):
+        for path in self.fs.ls("{CATALOG_ROOT_PATH}/backtest001/"):
             name = pathlib.Path(path).name
             persisted = read_feather(fs=self.fs, path=path)
             if persisted is not None:

@@ -17,7 +17,6 @@ import copy
 import dataclasses
 import pathlib
 import pickle
-import sys
 from datetime import datetime
 from typing import Optional
 
@@ -35,6 +34,7 @@ from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import CATALOG_ROOT_PATH
 from tests.test_kit.mocks import aud_usd_data_loader
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
@@ -42,8 +42,6 @@ from tests.test_kit.strategies import EMACrossConfig
 
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
-
-pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 
 
 @pytest.fixture(autouse=True, scope="function")
@@ -84,7 +82,7 @@ def backtest_config(catalog):
         ],
         data=[
             BacktestDataConfig(
-                catalog_path="/root",
+                catalog_path=CATALOG_ROOT_PATH,
                 catalog_fs_protocol="memory",
                 data_type=QuoteTick,
                 instrument_id="AUD/USD.SIM",
@@ -242,7 +240,7 @@ def test_tokenization_config(backtest_config: BacktestRunConfig):
 def test_backtest_data_config_load(catalog):
     instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
     c = BacktestDataConfig(
-        catalog_path="/root/",
+        catalog_path=CATALOG_ROOT_PATH,
         catalog_fs_protocol="memory",
         data_type=QuoteTick,
         instrument_id=instrument.id.value,
