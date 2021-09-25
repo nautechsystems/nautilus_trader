@@ -1,18 +1,23 @@
-name: performance
+name: build-test
 
 on:
-  push:
-    branches: [ develop ]
+  workflow_run:
+    workflows:
+      - pre-commit
+    branches: [ master, develop ]
+    types:
+      - completed
 
 jobs:
-  performance:
+  build_test:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     strategy:
       fail-fast: false
       matrix:
-        # We only actually run on a single OS/Python pair, but use the matrix
-        # form so that our Action calls can mirror the main test flow.
-        python-version: [ 3.9 ]
-    runs-on: ubuntu-latest
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        python-version: [ 3.8 ]
+    name: build_test - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v2
@@ -36,14 +41,34 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ steps.poetry-cache.outputs.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-codecov-${{ hashFiles('**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-test-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.python-version }}-poetry-codecov-
+            ${{ runner.os }}-${{ matrix.python-version }}-poetry-test-
             ${{ runner.os }}-${{ matrix.python-version }}-poetry-
 
-      # Redis is a dep for integration tests
-      - name: Install Redis
-        run: sudo apt-get install redis-server
+      # Install and run database dependencies
+      - name: Install Redis (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install redis
+          redis-server --daemonize yes
+
+      - name: Install Redis (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install redis-server
+          redis-server --daemonize yes
+
+      # Run tests
+      - name: Run tests with coverage
+        run: nox -s coverage --reuse-existing-virtualenvs
+
+      # Upload to codecov
+      - uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.xml
+          verbose: true
 
       # Run performance
       - name: Run performance tests
