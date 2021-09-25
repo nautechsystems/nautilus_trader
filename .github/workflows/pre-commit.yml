@@ -1,5 +1,7 @@
 name: pre-commit checks
 
+# Initial CI workflow
+
 on:
   push:
     branches: [ develop, master ]
