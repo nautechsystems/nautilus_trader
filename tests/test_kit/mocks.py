@@ -839,9 +839,9 @@ def data_catalog_setup():
         catalog.fs.rm(CATALOG_ROOT_PATH, recursive=True)
     except FileNotFoundError:
         pass
-    catalog.fs.mkdir(CATALOG_ROOT_PATH)
-    catalog.fs.mkdir(CATALOG_DATA_PATH)
+    catalog.fs.makedirs(CATALOG_DATA_PATH, exist_ok=True)
     assert catalog.fs.exists(CATALOG_ROOT_PATH)
+    assert catalog.fs.exists(CATALOG_DATA_PATH)
     assert not catalog.fs.ls(CATALOG_DATA_PATH)
 
 
