@@ -37,7 +37,7 @@ struct UUID4 uuid4_new(void);
 /**
  * Initializes a new instance of the UUID4 struct.
  */
-struct UUID4 uuid4_free(struct UUID4 uuid);
+void uuid4_free(struct UUID4 uuid);
 
 /**
  * Returns a UTF-8 encoded bytes representation of the UUID value.

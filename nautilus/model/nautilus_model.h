@@ -34,6 +34,12 @@ typedef struct Venue {
   struct String *value;
 } Venue;
 
+typedef struct InstrumentId {
+  struct Symbol symbol;
+  struct Venue venue;
+  struct String *value;
+} InstrumentId;
+
 typedef struct Price {
   int64_t mantissa;
   uint8_t precision;
@@ -50,11 +56,6 @@ typedef struct Ladder {
   struct HashMap_u64__BookPrice *cache;
 } Ladder;
 
-typedef struct InstrumentId {
-  struct Symbol symbol;
-  struct Venue venue;
-} InstrumentId;
-
 typedef struct OrderBook {
   struct Ladder bids;
   struct Ladder asks;
@@ -64,13 +65,27 @@ typedef struct OrderBook {
   int64_t ts_last;
 } OrderBook;
 
-struct Symbol symbol_new(const char *ptr);
+void instrument_id_free(struct InstrumentId id);
 
-const char *symbol_as_bytes(struct Symbol self);
+uintptr_t instrument_id_len(struct InstrumentId id);
 
-struct Venue venue_new(const char *ptr);
+const uint8_t *instrument_id_as_utf8(const struct InstrumentId *self);
 
-const char *venue_as_bytes(struct Venue self);
+struct Symbol symbol_new(uint8_t *ptr, uintptr_t length);
+
+void symbol_free(struct Symbol s);
+
+uintptr_t symbol_len(struct Symbol s);
+
+const uint8_t *symbol_as_utf8(const struct Symbol *self);
+
+struct Venue venue_new(uint8_t *ptr, uintptr_t length);
+
+void venue_free(struct Venue v);
+
+uintptr_t venue_len(struct Venue v);
+
+const uint8_t *venue_as_utf8(const struct Venue *self);
 
 struct Price price_new(double value, uint8_t precision);
 

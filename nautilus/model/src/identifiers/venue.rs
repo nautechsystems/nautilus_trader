@@ -13,9 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::{CStr, CString};
 use std::fmt::{Debug, Display, Formatter, Result};
-use std::os::raw::c_char;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq)]
@@ -24,9 +22,9 @@ pub struct Venue {
 }
 
 impl Venue {
-    pub fn from_str(s: &str) -> Venue {
+    pub fn from(s: &str) -> Venue {
         Venue {
-            value: Box::new(s.to_string()),
+            value: Box::from(s.to_owned()),
         }
     }
 
@@ -34,17 +32,28 @@ impl Venue {
     // C API
     //##########################################################################
     #[no_mangle]
-    pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
-        // SAFETY: checks `ptr` can be parsed into a valid C string
-        let s = CStr::from_ptr(ptr);
+    pub unsafe extern "C" fn venue_new(ptr: *mut u8, length: usize) -> Venue {
+        // SAFETY: Checks ptr is a valid UTF-8 string
+        let vec = Vec::from_raw_parts(ptr, length, length);
+        let s = String::from_utf8(vec).expect("invalid UTF-8 string");
         Venue {
-            value: Box::new(s.to_str().expect("invalid UTF-8 string").to_string()),
+            value: Box::from(s.to_string()),
         }
     }
 
     #[no_mangle]
-    pub extern "C" fn venue_as_bytes(self) -> *const c_char {
-        CString::new(self.value.to_string()).unwrap().into_raw()
+    pub extern "C" fn venue_free(v: Venue) {
+        drop(v); // Memory freed here
+    }
+
+    #[no_mangle]
+    pub extern "C" fn venue_len(v: Venue) -> usize {
+        v.value.len()
+    }
+
+    #[no_mangle]
+    pub extern "C" fn venue_as_utf8(&self) -> *const u8 {
+        self.value.as_ptr()
     }
 }
 
@@ -66,8 +75,8 @@ mod tests {
 
     #[test]
     fn venue_from_str() {
-        let venue1 = Venue::from_str("XRD/USD");
-        let venue2 = Venue::from_str("BTC/USD");
+        let venue1 = Venue::from("XRD/USD");
+        let venue2 = Venue::from("BTC/USD");
 
         assert_eq!(venue1, venue1);
         assert_ne!(venue1, venue2);

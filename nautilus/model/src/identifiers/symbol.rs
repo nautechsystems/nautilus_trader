@@ -13,9 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::{CStr, CString};
 use std::fmt::{Debug, Display, Formatter, Result};
-use std::os::raw::c_char;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq)]
@@ -24,9 +22,9 @@ pub struct Symbol {
 }
 
 impl Symbol {
-    pub fn from_str(s: &str) -> Symbol {
+    pub fn from(s: &str) -> Symbol {
         Symbol {
-            value: Box::new(s.to_string()),
+            value: Box::from(s.to_owned()),
         }
     }
 
@@ -34,17 +32,28 @@ impl Symbol {
     // C API
     //##########################################################################
     #[no_mangle]
-    pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
-        // SAFETY: checks `ptr` can be parsed into a valid C string
-        let s = CStr::from_ptr(ptr);
+    pub unsafe extern "C" fn symbol_new(ptr: *mut u8, length: usize) -> Symbol {
+        // SAFETY: Checks ptr is a valid UTF-8 string
+        let vec = Vec::from_raw_parts(ptr, length, length);
+        let s = String::from_utf8(vec).expect("invalid UTF-8 string");
         Symbol {
-            value: Box::new(s.to_str().expect("invalid UTF-8 string").to_string()),
+            value: Box::from(s),
         }
     }
 
     #[no_mangle]
-    pub extern "C" fn symbol_as_bytes(self) -> *const c_char {
-        CString::new(self.value.to_string()).unwrap().into_raw()
+    pub extern "C" fn symbol_free(s: Symbol) {
+        drop(s); // Memory freed here
+    }
+
+    #[no_mangle]
+    pub extern "C" fn symbol_len(s: Symbol) -> usize {
+        s.value.len()
+    }
+
+    #[no_mangle]
+    pub extern "C" fn symbol_as_utf8(&self) -> *const u8 {
+        self.value.as_ptr()
     }
 }
 
@@ -66,12 +75,11 @@ mod tests {
 
     #[test]
     fn symbol_from_str() {
-        let symbol1 = Symbol::from_str("XRD/USD");
-        let symbol2 = Symbol::from_str("BTC/USD");
+        let symbol1 = Symbol::from("XRD/USD");
+        let symbol2 = Symbol::from("BTC/USD");
 
         assert_eq!(symbol1, symbol1);
         assert_ne!(symbol1, symbol2);
-        assert_eq!(symbol1.value.len(), 7);
         assert_eq!(symbol1.to_string(), "XRD/USD")
     }
 }

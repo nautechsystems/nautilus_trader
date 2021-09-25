@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub fn prec_from_str(s: &str) -> u8 {
+pub fn precision_from_str(s: &str) -> u8 {
     let lower_s = s.to_lowercase();
     if lower_s.find(".").is_none() {
         return 0;
@@ -24,12 +24,12 @@ pub fn prec_from_str(s: &str) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use crate::text::prec_from_str;
+    use crate::text::precision_from_str;
 
     #[test]
-    fn test_prec_from_str() {
-        assert_eq!(prec_from_str("1"), 0);
-        assert_eq!(prec_from_str("2.1"), 1);
-        assert_eq!(prec_from_str("2.204622"), 6);
+    fn test_precision_from_str() {
+        assert_eq!(precision_from_str("1"), 0);
+        assert_eq!(precision_from_str("2.1"), 1);
+        assert_eq!(precision_from_str("2.204622"), 6);
     }
 }

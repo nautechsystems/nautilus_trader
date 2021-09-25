@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use crate::objects::{FIXED_EXPONENT, FIXED_PRECISION};
-use nautilus_core::text::prec_from_str;
+use nautilus_core::text::precision_from_str;
 use std::cmp::Ordering;
 use std::fmt::{Debug, Display, Formatter, Result};
 use std::ops::{AddAssign, Mul, MulAssign};
@@ -43,7 +43,7 @@ impl Price {
             Ok(number) => number,
             Err(err) => panic!("Cannot parse `input` string '{}' as f64, {}", input, err),
         };
-        Price::new(float_res, prec_from_str(input))
+        Price::new(float_res, precision_from_str(input))
     }
 
     pub fn is_zero(&self) -> bool {

@@ -15,28 +15,35 @@
 
 use crate::identifiers::symbol::Symbol;
 use crate::identifiers::venue::Venue;
-use std::ffi::CStr;
 use std::fmt::{Debug, Display, Formatter, Result};
-use std::os::raw::c_char;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq)]
 pub struct InstrumentId {
     pub symbol: Symbol,
     pub venue: Venue,
+    pub value: Box<String>,
 }
 
 impl InstrumentId {
     pub fn new(symbol: Symbol, venue: Venue) -> InstrumentId {
-        InstrumentId { symbol, venue }
+        let mut s = symbol.to_string();
+        s.push_str(".");
+        s.push_str(&venue.value);
+        InstrumentId {
+            symbol,
+            venue,
+            value: Box::new(s),
+        }
     }
 
     pub fn from_str(value: &str) -> InstrumentId {
         let pieces: Vec<&str> = value.split(".").collect();
         assert!(pieces.len() >= 2);
         InstrumentId {
-            symbol: Symbol::from_str(&String::from(pieces[0])),
-            venue: Venue::from_str(&String::from(pieces[1])),
+            symbol: Symbol::from(&String::from(pieces[0])),
+            venue: Venue::from(&String::from(pieces[1])),
+            value: Box::new(value.parse().unwrap()),
         }
     }
 
@@ -50,15 +57,31 @@ impl InstrumentId {
     //##########################################################################
     // C API
     //##########################################################################
-    pub unsafe fn instrument_id_from_raw(ptr: *const c_char) -> InstrumentId {
-        // SAFETY: checks `ptr` can be parsed into a valid C string
-        let s = CStr::from_ptr(ptr).to_str().expect("invalid UTF-8 string");
+    pub unsafe fn instrument_id_new(ptr: *mut u8, length: usize) -> InstrumentId {
+        // SAFETY: Checks ptr is a valid UTF-8 string
+        let vec = Vec::from_raw_parts(ptr, length, length);
+        let s = String::from_utf8(vec).expect("invalid UTF-8 string");
         let pieces: Vec<&str> = s.split(".").collect();
         assert!(pieces.len() >= 2);
-        InstrumentId {
-            symbol: Symbol::from_str(&String::from(pieces[0])),
-            venue: Venue::from_str(&String::from(pieces[1])),
-        }
+        InstrumentId::new(
+            Symbol::from(&String::from(pieces[0])),
+            Venue::from(&String::from(pieces[1])),
+        )
+    }
+
+    #[no_mangle]
+    pub extern "C" fn instrument_id_free(id: InstrumentId) {
+        drop(id); // Memory freed here
+    }
+
+    #[no_mangle]
+    pub extern "C" fn instrument_id_len(id: InstrumentId) -> usize {
+        id.symbol.value.len()
+    }
+
+    #[no_mangle]
+    pub extern "C" fn instrument_id_as_utf8(&self) -> *const u8 {
+        self.value.as_ptr()
     }
 }
 
