@@ -29,8 +29,8 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BarAggregationParser
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookActionParser
-from nautilus_trader.model.enums import BookLevel
-from nautilus_trader.model.enums import BookLevelParser
+from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import BookTypeParser
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import ContingencyTypeParser
 from nautilus_trader.model.enums import CurrencyType
@@ -763,22 +763,22 @@ class TestBookLevel:
     def test_orderbook_level_parser_given_invalid_value_raises_value_error(self):
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
-            BookLevelParser.to_str_py(0)
+            BookTypeParser.to_str_py(0)
 
         with pytest.raises(ValueError):
-            BookLevelParser.from_str_py("")
+            BookTypeParser.from_str_py("")
 
     @pytest.mark.parametrize(
         "enum, expected",
         [
-            [BookLevel.L1, "L1"],
-            [BookLevel.L2, "L2"],
-            [BookLevel.L3, "L3"],
+            [BookType.L1_TBBO, "L1_TBBO"],
+            [BookType.L2_MBP, "L2_MBP"],
+            [BookType.L3_MBO, "L3_MBO"],
         ],
     )
     def test_orderbook_level_to_str(self, enum, expected):
         # Arrange, Act
-        result = BookLevelParser.to_str_py(enum)
+        result = BookTypeParser.to_str_py(enum)
 
         # Assert
         assert expected == result
@@ -787,9 +787,9 @@ class TestBookLevel:
         "string, expected",
         [
             ["", None],
-            ["L1", BookLevel.L1],
-            ["L2", BookLevel.L2],
-            ["L3", BookLevel.L3],
+            ["L1_TBBO", BookType.L1_TBBO],
+            ["L2_MBP", BookType.L2_MBP],
+            ["L3_MBO", BookType.L3_MBO],
         ],
     )
     def test_orderbook_level_from_str(self, string, expected):
@@ -797,7 +797,7 @@ class TestBookLevel:
         if expected is None:
             return
 
-        result = BookLevelParser.from_str_py(string)
+        result = BookTypeParser.from_str_py(string)
 
         # Assert
         assert expected == result

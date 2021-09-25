@@ -117,7 +117,7 @@ BSP_SCHEMA =pa.schema(
         "order_price": pa.float64(),
         "order_size": pa.float64(),
         "order_id": pa.string(),
-        "level": pa.string(),
+        "book_type": pa.string(),
     },
     metadata={"type": "BSPOrderBookDelta"},
 )

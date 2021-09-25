@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.accounting.factory import AccountFactory
-
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport TestClock
@@ -30,6 +28,8 @@ from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.msgbus.bus cimport MessageBus
+
+from nautilus_trader.accounting.factory import AccountFactory
 
 
 cdef class BacktestExecClient(ExecutionClient):
@@ -116,7 +116,14 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Condition.true(self.is_connected, "not connected")
 
-        self._exchange.handle_submit_order(command)
+        self.generate_order_submitted(
+            strategy_id=command.strategy_id,
+            instrument_id=command.instrument_id,
+            client_order_id=command.order.client_order_id,
+            ts_event=self._clock.timestamp_ns(),
+        )
+
+        self._exchange.send(command)
 
     cpdef void submit_order_list(self, SubmitOrderList command) except *:
         """
@@ -130,7 +137,8 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Condition.true(self.is_connected, "not connected")
 
-        self._exchange.handle_submit_order_list(command)
+        # TODO(cs): Implement
+        raise NotImplementedError("order lists are not implemented in this version.")
 
     cpdef void modify_order(self, ModifyOrder command) except *:
         """
@@ -144,7 +152,7 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Condition.true(self.is_connected, "not connected")
 
-        self._exchange.handle_modify_order(command)
+        self._exchange.send(command)
 
     cpdef void cancel_order(self, CancelOrder command) except *:
         """
@@ -158,4 +166,4 @@ cdef class BacktestExecClient(ExecutionClient):
         """
         Condition.true(self.is_connected, "not connected")
 
-        self._exchange.handle_cancel_order(command)
+        self._exchange.send(command)

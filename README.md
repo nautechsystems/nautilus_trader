@@ -1,7 +1,5 @@
 # NautilusTrader
 
-![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
-![docs](https://github.com/nautechsystems/nautilus_trader/workflows/docs/badge.svg)
 [![codacy-quality](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 ![python](https://img.shields.io/badge/python-3.8+-blue.svg)
@@ -11,11 +9,16 @@
 ![total-lines](https://img.shields.io/tokei/lines/github/nautechsystems/nautilus_trader)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-| Platform          | Rust  | Python |
-|:------------------|:------|:-------|
-| Linux (x86-64)    | 1.55+ | 3.8+   |
-| macOS (x86-64)    | 1.55+ | 3.8+   |
-| Windows (x86-64)  | 1.55+ | 3.8+   |
+| Build    | Branch  | Status          |
+|:---------|:--------|:----------------|
+| v1.129.0 | master  | [![build-test](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml) |
+| v1.130.0 | develop | [![build-test](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml) |
+
+| Platform         | Rust  | Python |
+|:-----------------|:------|:-------|
+| Linux (x86_64)   | 1.55+ | 3.8+   |
+| macOS (x86_64)   | 1.55+ | 3.8+   |
+| Windows (x86_64) | 1.55+ | 3.8+   |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -40,7 +43,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Reliable:** Type safety through Cython. Redis backed performant state persistence.
 - **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker.
 - **Integrated:** Modular adapters mean any REST/FIX/WebSocket API can be integrated.
-- **Advanced:** Time-in-force options `GTD`, `IOC`, `FOK` etc, advanced order types and triggers, `post-only`, `reduce-only`, `hidden` execution instructions. Contingency order lists including `OCO`, `OTO` etc.
+- **Advanced:** Time-in-force options `GTD`, `IOC`, `FOK` etc, advanced order types and triggers, `post-only`, `reduce-only`, `hidden`. Contingency order lists including `OCO`, `OTO` etc.
 - **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
@@ -120,7 +123,7 @@ Refer to the [Installation Guide](https://docs.nautilustrader.io/getting-started
 Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity is import we recommend Cython).
 The below are some examples of this:
 - [indicator](/examples/indicators/ema.py) example written in Python.
-- [indicators](/nautilus_trader/indicators/) examples written in Cython.
+- [indicator](/nautilus_trader/indicators/) examples written in Cython.
 - [strategy](/examples/strategies/) examples written in both Python and Cython.
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
 

@@ -1043,9 +1043,10 @@ class TestExecutionCacheIntegrityCheck:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Generate a lot of data
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Remove data
         self.engine.cache.clear_cache()
@@ -1063,9 +1064,10 @@ class TestExecutionCacheIntegrityCheck:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Generate a lot of data
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Clear index
         self.engine.cache.clear_index()

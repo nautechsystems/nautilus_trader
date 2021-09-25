@@ -16,14 +16,18 @@
 import inspect
 import os
 from datetime import datetime
+from functools import partial
 from typing import Dict, Generator, List, Optional
 
+import pandas as pd
 from fsspec.implementations.memory import MemoryFileSystem
 
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.messages import ExecutionReport
 from nautilus_trader.execution.messages import OrderStatusReport
@@ -35,17 +39,23 @@ from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.c_enums.order_side import OrderSide
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.bar import BarType
+from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.base import Instrument
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.position import Position
 from nautilus_trader.persistence.catalog import DataCatalog
+from nautilus_trader.persistence.external.core import process_files
+from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.external.readers import Reader
 from nautilus_trader.persistence.util import clear_singleton_instances
 from nautilus_trader.trading.strategy import TradingStrategy
@@ -825,3 +835,39 @@ def data_catalog_setup():
     catalog.fs.mkdir("/root/data")
     assert catalog.fs.exists("/root/")
     assert not catalog.fs.ls("/root/data")
+
+
+def aud_usd_data_loader():
+    from tests.test_kit.providers import TestInstrumentProvider
+    from tests.test_kit.stubs import TestStubs
+    from tests.unit_tests.backtest.test_backtest_config import TEST_DATA_DIR
+
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
+
+    def parse_csv_tick(df, instrument_id):
+        yield instrument
+        for r in df.values:
+            ts = secs_to_nanos(pd.Timestamp(r[0]).timestamp())
+            tick = QuoteTick(
+                instrument_id=instrument_id,
+                bid=Price.from_str(str(r[1])),
+                ask=Price.from_str(str(r[2])),
+                bid_size=Quantity.from_int(1_000_000),
+                ask_size=Quantity.from_int(1_000_000),
+                ts_event=ts,
+                ts_init=ts,
+            )
+            yield tick
+
+    catalog = DataCatalog.from_env()
+    instrument_provider = InstrumentProvider()
+    instrument_provider.add(instrument)
+    process_files(
+        glob_path=f"{TEST_DATA_DIR}/truefx-audusd-ticks.csv",
+        reader=CSVReader(
+            block_parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id()),
+            as_dataframe=True,
+        ),
+        instrument_provider=instrument_provider,
+        catalog=catalog,
+    )

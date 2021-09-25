@@ -23,7 +23,7 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.objects import Money
@@ -73,7 +73,7 @@ class TestPersistenceStreaming:
             account_type=AccountType.CASH,
             base_currency=GBP,
             starting_balances=[Money(100_000, GBP)],
-            order_book_level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
         )
 
         # Act

@@ -24,6 +24,7 @@ from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events.order import OrderFilled
@@ -123,7 +124,7 @@ class VolatilityMarketMaker(TradingStrategy):
         self.subscribe_quote_ticks(self.instrument_id)
         self.subscribe_order_book_snapshots(
             self.instrument_id,
-            level=2,
+            book_type=BookType.L2_MBP,
             depth=10,
             interval_ms=1000,
         )  # For debugging

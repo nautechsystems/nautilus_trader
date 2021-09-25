@@ -27,7 +27,7 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.live.data_client cimport LiveMarketDataClient
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -197,7 +197,7 @@ cdef class BetfairDataClient(LiveMarketDataClient):
 
     cpdef void subscribe_order_book_deltas(
         self, InstrumentId instrument_id,
-        BookLevel level,
+        BookType book_type,
         dict kwargs=None,
     ) except *:
         """
@@ -207,8 +207,8 @@ cdef class BetfairDataClient(LiveMarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : BookLevel {``L1``, ``L2``, ``L3``}
-            The order book level.
+        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+            The order book type.
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
 

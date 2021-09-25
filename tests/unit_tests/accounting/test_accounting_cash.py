@@ -20,9 +20,7 @@ import pytest
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
@@ -43,8 +41,6 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.portfolio.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -58,9 +54,6 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 class TestCashAccount:
     def setup(self):
         # Fixture Setup
-        self.clock = TestClock()
-        self.logger = Logger(self.clock)
-
         self.trader_id = TestStubs.trader_id()
 
         self.order_factory = OrderFactory(
@@ -69,39 +62,17 @@ class TestCashAccount:
             clock=TestClock(),
         )
 
-        self.msgbus = MessageBus(
-            trader_id=self.trader_id,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.cache = TestStubs.cache()
-
-        self.portfolio = Portfolio(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exec_engine = ExecutionEngine(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
     def test_instantiated_accounts_basic_properties(self):
         # Arrange, Act
         account = TestStubs.cash_account()
 
         # Assert
+        assert account == account
+        assert not account != account
         assert account.id == AccountId("SIM", "000")
         assert str(account) == "CashAccount(id=SIM-000, type=CASH, base=USD)"
         assert repr(account) == "CashAccount(id=SIM-000, type=CASH, base=USD)"
         assert isinstance(hash(account), int)
-        assert account == account
-        assert not account != account
 
     def test_instantiate_single_asset_cash_account(self):
         # Arrange
@@ -263,6 +234,74 @@ class TestCashAccount:
         assert account.balance_free(ETH) == Money(20.00000000, ETH)
         assert account.balance_locked(ETH) == Money(0.00000000, ETH)
 
+    def test_calculate_balance_locked_buy(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    USD,
+                    Money(1_000_000.00, USD),
+                    Money(0.00, USD),
+                    Money(1_000_000.00, USD),
+                ),
+            ],
+            info={},  # No default currency set
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        account = CashAccount(event)
+
+        # Act
+        result = account.calculate_balance_locked(
+            instrument=AUDUSD_SIM,
+            side=OrderSide.BUY,
+            quantity=Quantity.from_int(1_000_000),
+            price=Price.from_str("0.80"),
+        )
+
+        # Assert
+        assert result == Money(800_032.00, USD)  # Notional + expected commission
+
+    def test_calculate_balance_locked_sell(self):
+        # Arrange
+        event = AccountState(
+            account_id=AccountId("SIM", "001"),
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            reported=True,
+            balances=[
+                AccountBalance(
+                    USD,
+                    Money(1_000_000.00, USD),
+                    Money(0.00, USD),
+                    Money(1_000_000.00, USD),
+                ),
+            ],
+            info={},  # No default currency set
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        account = CashAccount(event)
+
+        # Act
+        result = account.calculate_balance_locked(
+            instrument=AUDUSD_SIM,
+            side=OrderSide.SELL,
+            quantity=Quantity.from_int(1_000_000),
+            price=Price.from_str("0.80"),
+        )
+
+        # Assert
+        assert result == Money(1_000_040.00, AUD)  # Notional + expected commission
+
     def test_calculate_pnls_for_single_currency_cash_account(self):
         # Arrange
         event = AccountState(
@@ -310,7 +349,7 @@ class TestCashAccount:
         )
 
         # Assert
-        assert result == [Money(1000000.00, AUD), Money(-800016.00, USD)]
+        assert result == [Money(-800016.00, USD)]
 
     def test_calculate_pnls_for_multi_currency_cash_account_btcusdt(self):
         # Arrange

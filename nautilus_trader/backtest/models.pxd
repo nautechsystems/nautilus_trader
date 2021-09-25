@@ -15,10 +15,10 @@
 
 
 cdef class FillModel:
-    cdef readonly double prob_fill_at_limit
-    """The probability of limit orders filling at the limit price.\n\n:returns: `bool`"""
-    cdef readonly double prob_fill_at_stop
-    """The probability of stop orders filling at the stop price.\n\n:returns: `bool`"""
+    cdef readonly double prob_fill_on_limit
+    """The probability of limit orders filling on the limit price.\n\n:returns: `bool`"""
+    cdef readonly double prob_fill_on_stop
+    """The probability of stop orders filling on the stop price.\n\n:returns: `bool`"""
     cdef readonly double prob_slippage
     """The probability of aggressive order execution slipping.\n\n:returns: `bool`"""
 

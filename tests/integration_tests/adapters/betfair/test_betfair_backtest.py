@@ -25,7 +25,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.venue import InstrumentClosePrice
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientId
@@ -78,7 +78,7 @@ def create_engine(instruments, data):
         account_type=AccountType.CASH,
         base_currency=GBP,
         starting_balances=[Money(100_000, GBP)],
-        order_book_level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
     )
     return engine
 
@@ -96,7 +96,8 @@ def test_betfair_backtest(provider):
     strategy = OrderBookImbalanceStrategy(instrument_id=instruments[0].id, trade_size=20)
 
     engine = create_engine(instruments=instruments, data=all_data)
-    engine.run(strategies=[strategy])
+    engine.add_strategy(strategy)
+    engine.run()
 
     assert strategy.instrument_status == InstrumentStatus.CLOSED
     assert strategy.close_price == 1.0

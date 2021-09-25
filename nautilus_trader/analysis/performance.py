@@ -13,39 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport date
-from cpython.datetime cimport datetime
+from datetime import datetime
+from typing import Dict, List, Optional
 
 import numpy as np
-from empyrical import alpha
-from empyrical import annual_return
-from empyrical import annual_volatility
-from empyrical import beta
-from empyrical import calmar_ratio
-from empyrical import cum_returns_final
-from empyrical import max_drawdown
-from empyrical import omega_ratio
-from empyrical import sharpe_ratio
-from empyrical import sortino_ratio
-from empyrical import stability_of_timeseries
-from empyrical import tail_ratio
+import pandas as pd
+import quantstats
 from numpy import float64
 
-cimport numpy as np
-
-import pandas as pd
-from scipy.stats import kurtosis
-from scipy.stats import skew
-
-from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.position cimport Position
+from nautilus_trader.accounting.accounts.base import Account
+from nautilus_trader.core.datetime import nanos_to_unix_dt
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.position import Position
 
 
-cdef class PerformanceAnalyzer:
+class PerformanceAnalyzer:
     """
     Provides a performance analyzer for tracking and generating performance
     metrics and statistics.
@@ -56,11 +40,11 @@ cdef class PerformanceAnalyzer:
         Initialize a new instance of the ``PerformanceAnalyzer`` class.
         """
         self._account_balances_starting = {}  # type: dict[Currency, Money]
-        self._account_balances = {}           # type: dict[Currency, Money]
-        self._realized_pnls = {}              # type: dict[Currency, list[float]]
-        self._daily_returns = pd.Series(dtype=float64)
+        self._account_balances = {}  # type: dict[Currency, Money]
+        self._realized_pnls = {}  # type: dict[Currency, pd.Series]
+        self._returns = pd.Series(dtype=float64)
 
-    cpdef void calculate_statistics(self, Account account, list positions) except *:
+    def calculate_statistics(self, account: Account, positions: List[Position]) -> None:
         """
         Calculate performance metrics from the given data.
 
@@ -72,17 +56,15 @@ cdef class PerformanceAnalyzer:
             The positions for the calculations.
 
         """
-        Condition.not_none(account, "account")
-        Condition.not_none(positions, "positions")
-
         self._account_balances_starting = account.starting_balances()
         self._account_balances = account.balances_total()
         self._realized_pnls = {}
-        self._daily_returns = pd.Series(dtype=float64)
+        self._returns = pd.Series(dtype=float64)
 
         self.add_positions(positions)
+        self._returns.sort_index()
 
-    cpdef void add_positions(self, list positions) except *:
+    def add_positions(self, positions: List[Position]) -> None:
         """
         Add positions data to the analyzer.
 
@@ -92,14 +74,11 @@ cdef class PerformanceAnalyzer:
             The positions for analysis.
 
         """
-        Condition.not_none(positions, "positions")
-
-        cdef Position position
         for position in positions:
             self.add_trade(position.id, position.realized_pnl)
             self.add_return(nanos_to_unix_dt(position.ts_closed), position.realized_return)
 
-    cpdef void add_trade(self, PositionId position_id, Money realized_pnl) except *:
+    def add_trade(self, position_id: PositionId, realized_pnl: Money) -> None:
         """
         Add trade data to the analyzer.
 
@@ -111,15 +90,12 @@ cdef class PerformanceAnalyzer:
             The realized PnL for the trade.
 
         """
-        Condition.not_none(position_id, "position_id")
-        Condition.not_none(realized_pnl, "realized_pnl")
-
-        cdef Currency currency = realized_pnl.currency
-        realized_pnls = self._realized_pnls.get(currency, pd.Series(dtype=float64))
+        currency = realized_pnl.currency
+        realized_pnls = self._realized_pnls.get(currency, pd.Series())
         realized_pnls.loc[position_id.value] = realized_pnl.as_double()
         self._realized_pnls[currency] = realized_pnls
 
-    cpdef void add_return(self, datetime timestamp, double value) except *:
+    def add_return(self, timestamp: datetime, value: float) -> None:
         """
         Add return data to the analyzer.
 
@@ -131,15 +107,11 @@ cdef class PerformanceAnalyzer:
             The return value to add.
 
         """
-        Condition.not_none(timestamp, "time")
+        if timestamp not in self._returns:
+            self._returns.loc[timestamp] = 0.0
+        self._returns.loc[timestamp] += float(value)
 
-        cdef date index_date = timestamp.date()
-        if index_date not in self._daily_returns:
-            self._daily_returns.loc[index_date] = 0
-
-        self._daily_returns.loc[index_date] += value
-
-    cpdef void reset(self) except *:
+    def reset(self) -> None:
         """
         Reset the analyzer.
 
@@ -148,9 +120,9 @@ cdef class PerformanceAnalyzer:
         self._account_balances_starting = {}
         self._account_balances = {}
         self._realized_pnls = {}
-        self._daily_returns = pd.Series(dtype=float64)
+        self._returns = pd.DataFrame(dtype=float64)
 
-    cpdef object realized_pnls(self, Currency currency=None):
+    def realized_pnls(self, currency: Currency = None) -> Optional[pd.Series]:
         """
         Return the realized PnL for the portfolio.
 
@@ -174,12 +146,14 @@ cdef class PerformanceAnalyzer:
         if not self._realized_pnls:
             return None
         if currency is None:
-            Condition.true(len(self._account_balances) == 1, "currency was None for multi-currency portfolio")
+            assert (
+                len(self._account_balances) == 1
+            ), "currency was None for multi-currency portfolio"
             currency = next(iter(self._account_balances.keys()))
 
         return self._realized_pnls.get(currency)
 
-    cpdef double total_pnl(self, Currency currency=None) except *:
+    def total_pnl(self, currency: Currency = None) -> float:
         """
         Return the total PnL for the portfolio.
 
@@ -192,7 +166,7 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        double
+        float
 
         Raises
         ------
@@ -205,9 +179,11 @@ cdef class PerformanceAnalyzer:
         if not self._account_balances:
             return 0.0
         if currency is None:
-            Condition.true(len(self._account_balances) == 1, "currency was None for multi-currency portfolio")
+            assert (
+                len(self._account_balances) == 1
+            ), "currency was None for multi-currency portfolio"
             currency = next(iter(self._account_balances.keys()))
-        Condition.is_in(currency, self._account_balances, "currency", "self._account_balances")
+        assert currency in self._account_balances, "currency not found in account_balances"
 
         account_balance = self._account_balances.get(currency)
         account_balance_starting = self._account_balances_starting.get(currency, Money(0, currency))
@@ -217,7 +193,7 @@ cdef class PerformanceAnalyzer:
 
         return float(account_balance - account_balance_starting)
 
-    cpdef double total_pnl_percentage(self, Currency currency=None) except *:
+    def total_pnl_percentage(self, currency: Currency = None) -> float:
         """
         Return the percentage change of the total PnL for the portfolio.
 
@@ -230,7 +206,7 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        double
+        float
 
         Raises
         ------
@@ -243,9 +219,11 @@ cdef class PerformanceAnalyzer:
         if not self._account_balances:
             return 0.0
         if currency is None:
-            Condition.true(len(self._account_balances) == 1, "currency was None for multi-currency portfolio")
+            assert (
+                len(self._account_balances) == 1
+            ), "currency was None for multi-currency portfolio"
             currency = next(iter(self._account_balances.keys()))
-        Condition.is_in(currency, self._account_balances, "currency", "self._account_balances")
+        assert currency in self._account_balances, "currency not in account_balances"
 
         account_balance = self._account_balances.get(currency)
         account_balance_starting = self._account_balances_starting.get(currency, Money(0, currency))
@@ -263,7 +241,7 @@ cdef class PerformanceAnalyzer:
 
         return (difference / starting) * 100
 
-    cpdef double max_winner(self, Currency currency=None) except *:
+    def max_winner(self, currency: Currency = None) -> float:
         """
         Return the maximum winner for the portfolio.
 
@@ -274,7 +252,7 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        double
+        float
 
         """
         realized_pnls = self.realized_pnls(currency)
@@ -283,7 +261,7 @@ cdef class PerformanceAnalyzer:
 
         return max(realized_pnls)
 
-    cpdef double max_loser(self, Currency currency=None) except *:
+    def max_loser(self, currency: Currency = None) -> float:
         """
         Return the maximum loser for the portfolio.
 
@@ -294,20 +272,20 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        double
+        float
 
         """
         realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
 
-        cdef list losers = [x for x in realized_pnls if x < 0.0]
+        losers = [x for x in realized_pnls if x < 0.0]
         if realized_pnls is None or not losers:
             return 0.0
 
         return min(np.asarray(losers, dtype=np.float64))
 
-    cpdef double min_winner(self, Currency currency=None) except *:
+    def min_winner(self, currency: Currency = None) -> float:
         """
         Return the minimum winner for the portfolio.
 
@@ -318,20 +296,20 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        double
+        float
 
         """
         realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
 
-        cdef list winners = [x for x in realized_pnls if x > 0.0]
+        winners = [x for x in realized_pnls if x > 0.0]
         if realized_pnls is None or not winners:
             return 0.0
 
         return min(np.asarray(winners, dtype=np.float64))
 
-    cpdef double min_loser(self, Currency currency=None) except *:
+    def min_loser(self, currency: Currency = None) -> float:
         """
         Return the minimum loser for the portfolio.
 
@@ -342,20 +320,20 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        double
+        float
 
         """
         realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
 
-        cdef list losers = [x for x in realized_pnls if x <= 0.0]
+        losers = [x for x in realized_pnls if x <= 0.0]
         if not losers:
             return 0.0
 
         return max(np.asarray(losers, dtype=np.float64))  # max is least loser
 
-    cpdef double avg_winner(self, Currency currency=None) except *:
+    def avg_winner(self, currency: Currency = None) -> float:
         """
         Return the average winner for the portfolio.
 
@@ -366,21 +344,21 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        double
+        float
 
         """
         realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
 
-        cdef np.ndarray pnls = realized_pnls.to_numpy()
-        cdef np.ndarray winners = pnls[pnls > 0.0]
+        pnls = realized_pnls.to_numpy()
+        winners = pnls[pnls > 0.0]
         if len(winners) == 0:
             return 0.0
         else:
             return winners.mean()
 
-    cpdef double avg_loser(self, Currency currency=None) except *:
+    def avg_loser(self, currency: Currency = None) -> float:
         """
         Return the average loser for the portfolio.
 
@@ -391,21 +369,21 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        double
+        float
 
         """
         realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
 
-        cdef np.ndarray pnls = realized_pnls.to_numpy()
-        cdef np.ndarray losers = pnls[pnls <= 0.0]
+        pnls = realized_pnls.to_numpy()
+        losers = pnls[pnls <= 0.0]
         if len(losers) == 0:
             return 0.0
         else:
             return losers.mean()
 
-    cpdef double win_rate(self, Currency currency=None) except *:
+    def win_rate(self, currency: Currency = None) -> float:
         """
         Return the win rate (after commission) for the portfolio.
 
@@ -416,19 +394,19 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        double
+        float
 
         """
         realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
 
-        cdef list winners = [x for x in realized_pnls if x > 0.0]
-        cdef list losers = [x for x in realized_pnls if x <= 0.0]
+        winners = [x for x in realized_pnls if x > 0.0]
+        losers = [x for x in realized_pnls if x <= 0.0]
 
         return len(winners) / float(max(1, (len(winners) + len(losers))))
 
-    cpdef double expectancy(self, Currency currency=None) except *:
+    def expectancy(self, currency: Currency = None) -> float:
         """
         Return the expectancy for the portfolio.
 
@@ -439,210 +417,133 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        double
+        float
 
         """
         realized_pnls = self.realized_pnls(currency)
         if realized_pnls is None or realized_pnls.empty:
             return 0.0
 
-        cdef double win_rate = self.win_rate(currency)
-        cdef double loss_rate = 1.0 - win_rate
+        win_rate = self.win_rate(currency)
+        loss_rate = 1.0 - win_rate
 
         return (self.avg_winner(currency) * win_rate) + (self.avg_loser(currency) * loss_rate)
 
-    cpdef object daily_returns(self):
+    def returns(self) -> pd.Series:
         """
-        Return the returns data.
+        Return raw the returns data.
 
         Returns
         -------
         pd.Series
 
         """
-        return self._daily_returns
+        return self._returns
 
-    cpdef double annual_return(self) except *:
+    def returns_avg(self) -> float:
         """
-        Return the mean annual growth rate of returns.
+        Return the average of the returns.
 
         Returns
         -------
-        double
+        float
+
+        """
+        return quantstats.stats.avg_return(returns=self._returns)
+
+    def returns_avg_win(self) -> float:
+        """
+        Return the average win of the returns.
+
+        Returns
+        -------
+        float
+
+        """
+        return quantstats.stats.avg_win(returns=self._returns)
+
+    def returns_avg_loss(self) -> float:
+        """
+        Return the average loss of the returns.
+
+        Returns
+        -------
+        float
+
+        """
+        return quantstats.stats.avg_loss(returns=self._returns)
+
+    def returns_annual_volatility(self) -> float:
+        """
+        Return the mean annual growth rate of the returns.
+
+        Returns
+        -------
+        float
 
         Notes
         -----
         This is equivalent to the compound annual growth rate.
 
         """
-        return annual_return(returns=self._daily_returns)
+        return quantstats.stats.volatility(returns=self._returns)
 
-    cpdef double cum_return(self) except *:
+    def sharpe_ratio(self) -> float:
         """
-        Return the cumulative return for the portfolio.
+        Return the Sharpe ratio of the returns.
 
         Returns
         -------
-        double
+        float
 
         """
-        return cum_returns_final(returns=self._daily_returns)
+        return quantstats.stats.sharpe(returns=self._returns)
 
-    cpdef double max_drawdown_return(self) except *:
+    def sortino_ratio(self) -> float:
         """
-        Return the maximum return drawdown for the portfolio.
+        Return the Sortino ratio of the returns.
 
         Returns
         -------
-        double
+        float
 
         """
-        return max_drawdown(returns=self._daily_returns)
+        return quantstats.stats.sortino(returns=self._returns)
 
-    cpdef double annual_volatility(self) except *:
+    def profit_factor(self) -> float:
         """
-        Return the annual volatility for the portfolio.
+        Return the profit ratio (win ratio / loss ratio).
 
         Returns
         -------
-        double
+        float
 
         """
-        return annual_volatility(returns=self._daily_returns)
+        return quantstats.stats.profit_factor(returns=self._returns)
 
-    cpdef double sharpe_ratio(self) except *:
+    def profit_ratio(self) -> float:
         """
-        Return the sharpe ratio for the portfolio.
+        Return the profit ratio (win ratio / loss ratio).
 
         Returns
         -------
-        double
+        float
 
         """
-        return sharpe_ratio(returns=self._daily_returns)
+        return quantstats.stats.profit_ratio(returns=self._returns)
 
-    cpdef double calmar_ratio(self) except *:
+    def risk_return_ratio(self) -> float:
         """
-        Return the calmar ratio for the portfolio.
+        Return the return / risk ratio (sharpe ratio without factoring in the risk-free rate).
 
         Returns
         -------
-        double
+        float
 
         """
-        return calmar_ratio(returns=self._daily_returns)
+        return quantstats.stats.risk_return_ratio(returns=self._returns)
 
-    cpdef double sortino_ratio(self) except *:
-        """
-        Return the sortino ratio for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        return sortino_ratio(returns=self._daily_returns)
-
-    cpdef double omega_ratio(self) except *:
-        """
-        Return the omega ratio for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        return omega_ratio(returns=self._daily_returns)
-
-    cpdef double stability_of_timeseries(self) except *:
-        """
-        Return the stability of time series for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        return stability_of_timeseries(returns=self._daily_returns)
-
-    cpdef double returns_mean(self) except *:
-        """
-        Return the returns mean for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        return np.mean(self._daily_returns)
-
-    cpdef double returns_variance(self) except *:
-        """
-        Return the returns variance for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        return np.var(self._daily_returns)
-
-    cpdef double returns_skew(self) except *:
-        """
-        Return the returns skew for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        return skew(self._daily_returns)
-
-    cpdef double returns_kurtosis(self) except *:
-        """
-        Return the returns kurtosis for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        return kurtosis(self._daily_returns)
-
-    cpdef double returns_tail_ratio(self) except *:
-        """
-        Return the returns tail ratio for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        return tail_ratio(self._daily_returns)
-
-    cpdef double alpha(self) except *:
-        """
-        Return the alpha for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        return alpha(returns=self._daily_returns, factor_returns=self._daily_returns)
-
-    cpdef double beta(self) except *:
-        """
-        Return the beta for the portfolio.
-
-        Returns
-        -------
-        double
-
-        """
-        return beta(returns=self._daily_returns, factor_returns=self._daily_returns)
-
-    cpdef dict get_performance_stats_pnls(self, Currency currency=None):
+    def get_performance_stats_pnls(self, currency: Currency = None) -> Dict[str, float]:
         """
         Return the performance statistics for PnL from the last backtest run.
 
@@ -655,7 +556,7 @@ cdef class PerformanceAnalyzer:
 
         Returns
         -------
-        dict[str, double]
+        dict[str, float]
 
         """
         return {
@@ -671,7 +572,7 @@ cdef class PerformanceAnalyzer:
             "Expectancy": self.expectancy(currency),
         }
 
-    cpdef list get_performance_stats_pnls_formatted(self, Currency currency=None):
+    def get_performance_stats_pnls_formatted(self, currency: Currency = None) -> List[str]:
         """
         Return the performance statistics from the last backtest run formatted
         for printing in the backtest run footer.
@@ -699,7 +600,7 @@ cdef class PerformanceAnalyzer:
             f"Expectancy:        {round(self.expectancy(currency), currency.precision):,} {currency}",
         ]
 
-    cpdef dict get_performance_stats_returns(self):
+    def get_performance_stats_returns(self) -> Dict[str, float]:
         """
         Return the performance statistics from the last backtest run.
 
@@ -709,25 +610,18 @@ cdef class PerformanceAnalyzer:
 
         """
         return {
-            "AnnualReturn": self.annual_return(),
-            "CumReturn": self.cum_return(),
-            "MaxDrawdown": self.max_drawdown_return(),
-            "AnnualVol": self.annual_volatility(),
-            "SharpeRatio": self.sharpe_ratio(),
-            "CalmarRatio": self.calmar_ratio(),
-            "SortinoRatio": self.sortino_ratio(),
-            "OmegaRatio": self.omega_ratio(),
-            "Stability": self.stability_of_timeseries(),
-            "ReturnsMean": self.returns_mean(),
-            "ReturnsVariance": self.returns_variance(),
-            "ReturnsSkew": self.returns_skew(),
-            "ReturnsKurtosis": self.returns_kurtosis(),
-            "TailRatio": self.returns_tail_ratio(),
-            "Alpha": self.alpha(),
-            "Beta": self.beta()
+            "returns_avg": self.returns_avg(),
+            "returns_avg_win": self.returns_avg_win(),
+            "returns_avg_loss": self.returns_avg_loss(),
+            "returns_annual_volatility": self.returns_annual_volatility(),
+            "sharpe_ratio": self.sharpe_ratio(),
+            "sortino_ratio": self.sortino_ratio(),
+            "profit_factor": self.profit_factor(),
+            "profit_ratio": self.profit_ratio(),
+            "risk_return_ratio": self.risk_return_ratio(),
         }
 
-    cpdef list get_performance_stats_returns_formatted(self):
+    def get_performance_stats_returns_formatted(self) -> List[str]:
         """
         Return the performance statistics for returns from the last backtest run
         formatted for printing in the backtest run footer.
@@ -738,20 +632,13 @@ cdef class PerformanceAnalyzer:
 
         """
         return [
-            f"Annual return:     {round(self.annual_return() * 100, 2)}%",
-            f"Cum returns:       {round(self.cum_return() * 100, 2)}%",
-            f"Max drawdown:      {round(self.max_drawdown_return() * 100, 2)}%",
-            f"Annual vol:        {round(self.annual_volatility() * 100, 2)}%",
-            f"Sharpe ratio:      {round(self.sharpe_ratio(), 2)}",
-            f"Calmar ratio:      {round(self.calmar_ratio(), 2)}",
-            f"Sortino ratio:     {round(self.sortino_ratio(), 2)}",
-            f"Omega ratio:       {round(self.omega_ratio(), 2)}",
-            f"Stability:         {round(self.stability_of_timeseries(), 2)}",
-            f"Returns Mean:      {round(self.returns_mean(), 5)}",
-            f"Returns Variance:  {round(self.returns_variance(), 8)}",
-            f"Returns Skew:      {round(self.returns_skew(), 2)}",
-            f"Returns Kurtosis:  {round(self.returns_kurtosis(), 2)}",
-            f"Tail ratio:        {round(self.returns_tail_ratio(), 2)}",
-            f"Alpha:             {round(self.alpha(), 2)}",
-            f"Beta:              {round(self.beta(), 2)}"
+            f"Returns Avg:          {round(self.returns_avg() * 100, 2)}%",
+            f"Returns Avg win:      {round(self.returns_avg_win() * 100, 2)}%",
+            f"Returns Avg loss:     {round(self.returns_avg_loss() * 100, 2)}%",
+            f"Volatility (Annual):  {round(self.returns_annual_volatility() * 100, 2)}%",
+            f"Sharpe ratio:         {round(self.sharpe_ratio(), 2)}",
+            f"Sortino ratio:        {round(self.sortino_ratio(), 2)}",
+            f"Profit factor:        {round(self.profit_factor(), 2)}",
+            f"Profit ratio:         {round(self.profit_ratio(), 2)}",
+            f"Return Risk Ratio:    {round(self.risk_return_ratio(), 2)}",
         ]

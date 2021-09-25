@@ -18,7 +18,7 @@ import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook.book import BookIntegrityError
@@ -78,7 +78,7 @@ def test_instantiate_base_class_directly_raises_value_error():
     with pytest.raises(RuntimeError):
         OrderBook(
             instrument_id=AUDUSD_SIM.id,
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             price_precision=5,
             size_precision=0,
         )
@@ -95,7 +95,7 @@ def test_create_level_1_order_book():
 
     # Assert
     assert isinstance(book, L1OrderBook)
-    assert book.level == BookLevel.L1
+    assert book.type == BookType.L1_TBBO
     assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
     assert book.bids.reverse
     assert not book.asks.reverse
@@ -107,12 +107,12 @@ def test_create_level_2_order_book():
     # Act
     book = OrderBook.create(
         instrument=AUDUSD_SIM,
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
     )
 
     # Assert
     assert isinstance(book, L2OrderBook)
-    assert book.level == BookLevel.L2
+    assert book.type == BookType.L2_MBP
     assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
     assert book.bids.reverse
     assert not book.asks.reverse
@@ -123,12 +123,12 @@ def test_create_level_3_order_book():
     # Act
     book = OrderBook.create(
         instrument=AUDUSD_SIM,
-        level=BookLevel.L3,
+        book_type=BookType.L3_MBO,
     )
 
     # Assert
     assert isinstance(book, L3OrderBook)
-    assert book.level == BookLevel.L3
+    assert book.type == BookType.L3_MBO
     assert isinstance(book.bids, Ladder) and isinstance(book.asks, Ladder)
     assert book.bids.reverse
     assert not book.asks.reverse
@@ -141,7 +141,7 @@ def test_create_level_fail():
     with pytest.raises(ValueError):
         OrderBook.create(
             instrument=AUDUSD_SIM,
-            level=0,
+            book_type=0,
         )
 
 
@@ -149,7 +149,7 @@ def test_best_bid_or_ask_price_with_no_orders_returns_none():
     # Arrange
     book = OrderBook.create(
         instrument=AUDUSD_SIM,
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
     )
 
     # Act
@@ -162,7 +162,7 @@ def test_best_bid_or_ask_qty_with_no_orders_returns_none():
     # Arrange
     book = OrderBook.create(
         instrument=AUDUSD_SIM,
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
     )
 
     # Act
@@ -175,7 +175,7 @@ def test_spread_with_no_orders_returns_none():
     # Arrange
     book = OrderBook.create(
         instrument=AUDUSD_SIM,
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
     )
 
     # Act
@@ -187,7 +187,7 @@ def test_add_orders_to_book():
     # Arrange
     book = OrderBook.create(
         instrument=AUDUSD_SIM,
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
     )
 
     # Act
@@ -205,7 +205,7 @@ def test_add_orders_to_book():
 def test_repr():
     book = OrderBook.create(
         instrument=AUDUSD_SIM,
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
     )
 
     # Act
@@ -248,7 +248,7 @@ def test_add(empty_l2_book):
 def test_delete_l1():
     book = OrderBook.create(
         instrument=AUDUSD_SIM,
-        level=BookLevel.L1,
+        book_type=BookType.L1_TBBO,
     )
     order = TestStubs.order(price=10.0, side=OrderSide.BUY)
     book.update(order)
@@ -293,7 +293,7 @@ def test_check_integrity_deep(empty_l2_book):
 def test_orderbook_snapshot(empty_l2_book):
     snapshot = OrderBookSnapshot(
         instrument_id=empty_l2_book.instrument_id,
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
         bids=[[1550.15, 0.51], [1580.00, 1.20]],
         asks=[[1552.15, 1.51], [1582.00, 2.20]],
         ts_event=0,
@@ -307,7 +307,7 @@ def test_orderbook_snapshot(empty_l2_book):
 def test_orderbook_operation_update(empty_l2_book, clock):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
         action=BookAction.UPDATE,
         order=Order(
             0.5814,
@@ -325,7 +325,7 @@ def test_orderbook_operation_update(empty_l2_book, clock):
 def test_orderbook_operation_add(empty_l2_book, clock):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
         action=BookAction.ADD,
         order=Order(
             0.5900,
@@ -343,7 +343,7 @@ def test_orderbook_operation_add(empty_l2_book, clock):
 def test_orderbook_operations(empty_l2_book):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
         action=BookAction.UPDATE,
         order=Order(
             0.5814,
@@ -356,7 +356,7 @@ def test_orderbook_operations(empty_l2_book):
     )
     deltas = OrderBookDeltas(
         instrument_id=TestStubs.audusd_id(),
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
         deltas=[delta],
         ts_event=pd.Timestamp.utcnow().timestamp() * 1e9,
         ts_init=pd.Timestamp.utcnow().timestamp() * 1e9,
@@ -368,7 +368,7 @@ def test_orderbook_operations(empty_l2_book):
 def test_apply(empty_l2_book, clock):
     snapshot = OrderBookSnapshot(
         instrument_id=empty_l2_book.instrument_id,
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
         bids=[[150.0, 0.51]],
         asks=[[160.0, 1.51]],
         ts_event=0,
@@ -378,7 +378,7 @@ def test_apply(empty_l2_book, clock):
     assert empty_l2_book.best_ask_price() == 160
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
         action=BookAction.ADD,
         order=Order(
             155.0,
@@ -404,7 +404,7 @@ def test_orderbook_midpoint_empty(empty_l2_book):
 def test_timestamp_ns(empty_l2_book, clock):
     delta = OrderBookDelta(
         instrument_id=TestStubs.audusd_id(),
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
         action=BookAction.ADD,
         order=Order(
             0.5900,

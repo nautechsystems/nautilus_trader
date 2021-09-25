@@ -28,8 +28,6 @@ from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.model.c_enums.account_type import AccountType
-from nautilus_trader.model.c_enums.book_level import BookLevel
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
@@ -39,8 +37,10 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.data.venue import VenueStatusUpdate
+from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
@@ -312,7 +312,7 @@ class TestStubs:
     @staticmethod
     def order_book(
         instrument=None,
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
         bid_price=10,
         ask_price=15,
         bid_levels=3,
@@ -323,7 +323,7 @@ class TestStubs:
         instrument = instrument or TestInstrumentProvider.default_fx_ccy("AUD/USD")
         order_book = OrderBook.create(
             instrument=instrument,
-            level=level,
+            book_type=book_type,
         )
         snapshot = TestStubs.order_book_snapshot(
             instrument_id=instrument.id,
@@ -346,14 +346,14 @@ class TestStubs:
         ask_levels=3,
         bid_volume=10,
         ask_volume=10,
-        level=BookLevel.L2,
+        book_type=BookType.L2_MBP,
     ) -> OrderBookSnapshot:
         err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
         assert bid_price < ask_price, err
 
         return OrderBookSnapshot(
             instrument_id=instrument_id or TestStubs.audusd_id(),
-            level=level,
+            book_type=book_type,
             bids=[(float(bid_price - i), float(bid_volume * (1 + i))) for i in range(bid_levels)],
             asks=[(float(ask_price + i), float(ask_volume * (1 + i))) for i in range(ask_levels)],
             ts_event=0,
@@ -424,11 +424,8 @@ class TestStubs:
 
     @staticmethod
     def event_cash_account_state(account_id=None) -> AccountState:
-        if account_id is None:
-            account_id = TestStubs.account_id()
-
         return AccountState(
-            account_id=account_id,
+            account_id=account_id or TestStubs.account_id(),
             account_type=AccountType.CASH,
             base_currency=USD,
             reported=True,  # reported
@@ -448,11 +445,8 @@ class TestStubs:
 
     @staticmethod
     def event_margin_account_state(account_id=None) -> AccountState:
-        if account_id is None:
-            account_id = TestStubs.account_id()
-
         return AccountState(
-            account_id=account_id,
+            account_id=account_id or TestStubs.account_id(),
             account_type=AccountType.MARGIN,
             base_currency=USD,
             reported=True,  # reported
@@ -471,11 +465,11 @@ class TestStubs:
         )
 
     @staticmethod
-    def event_order_submitted(order) -> OrderSubmitted:
+    def event_order_submitted(order, account_id=None) -> OrderSubmitted:
         return OrderSubmitted(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=TestStubs.account_id(),
+            account_id=account_id or TestStubs.account_id(),
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             ts_event=0,
@@ -484,27 +478,25 @@ class TestStubs:
         )
 
     @staticmethod
-    def event_order_accepted(order, venue_order_id=None) -> OrderAccepted:
-        if venue_order_id is None:
-            venue_order_id = VenueOrderId("1")
+    def event_order_accepted(order, account_id=None, venue_order_id=None) -> OrderAccepted:
         return OrderAccepted(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=TestStubs.account_id(),
+            account_id=account_id or TestStubs.account_id(),
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            venue_order_id=venue_order_id,
+            venue_order_id=venue_order_id or VenueOrderId("1"),
             ts_event=0,
             event_id=UUID4(),
             ts_init=0,
         )
 
     @staticmethod
-    def event_order_rejected(order) -> OrderRejected:
+    def event_order_rejected(order, account_id=None) -> OrderRejected:
         return OrderRejected(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=TestStubs.account_id(),
+            account_id=account_id or TestStubs.account_id(),
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             reason="ORDER_REJECTED",
@@ -518,7 +510,7 @@ class TestStubs:
         return OrderPendingUpdate(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=TestStubs.account_id(),
+            account_id=order.account_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,
@@ -532,7 +524,7 @@ class TestStubs:
         return OrderPendingCancel(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
-            account_id=TestStubs.account_id(),
+            account_id=order.account_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
             venue_order_id=order.venue_order_id,

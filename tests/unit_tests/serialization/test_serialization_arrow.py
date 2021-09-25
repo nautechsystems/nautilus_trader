@@ -25,7 +25,7 @@ from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.events.system import ComponentStateChanged
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.model.c_enums.book_action import BookAction
-from nautilus_trader.model.c_enums.book_level import BookLevel
+from nautilus_trader.model.c_enums.book_type import BookType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import PositionId
@@ -109,7 +109,7 @@ class TestParquetSerializer:
     def test_serialize_and_deserialize_order_book_delta(self):
         delta = OrderBookDelta(
             instrument_id=TestStubs.audusd_id(),
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             action=BookAction.CLEAR,
             order=None,
             ts_event=0,
@@ -122,7 +122,7 @@ class TestParquetSerializer:
         # Assert
         expected = OrderBookDeltas(
             instrument_id=TestStubs.audusd_id(),
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             deltas=[delta],
             ts_event=0,
             ts_init=0,
@@ -135,11 +135,11 @@ class TestParquetSerializer:
             "instrument_id": "AUD/USD.SIM",
             "ts_event": 0,
             "ts_init": 0,
-            "level": "L2",
+            "book_type": "L2_MBP",
         }
         deltas = OrderBookDeltas(
             instrument_id=TestStubs.audusd_id(),
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             deltas=[
                 OrderBookDelta.from_dict(
                     {
@@ -178,7 +178,7 @@ class TestParquetSerializer:
             "instrument_id": "AUD/USD.SIM",
             "ts_event": 0,
             "ts_init": 0,
-            "level": "L2",
+            "book_type": "L2_MBP",
         }
         deltas = [
             {
@@ -212,7 +212,7 @@ class TestParquetSerializer:
         ]
         deltas = OrderBookDeltas(
             instrument_id=TestStubs.audusd_id(),
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             deltas=[OrderBookDelta.from_dict({**kw, **d}) for d in deltas],
             ts_event=0,
             ts_init=0,

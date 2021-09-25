@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import socket
+from decimal import Decimal
 from typing import List, Optional, Union
 
 import pandas as pd
@@ -23,7 +24,6 @@ import pytz
 from cpython.datetime cimport datetime
 from libc.stdint cimport int64_t
 
-from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
 from nautilus_trader.backtest.data_client cimport BacktestDataClient
 from nautilus_trader.backtest.data_client cimport BacktestMarketDataClient
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
@@ -31,7 +31,6 @@ from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.cache cimport Cache
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
@@ -46,12 +45,11 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.core.text cimport pad_string
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.aggregation_source cimport AggregationSource
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
 from nautilus_trader.model.data.bar cimport Bar
@@ -69,6 +67,7 @@ from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.serialization.msgpack.serializer cimport MsgPackSerializer
 from nautilus_trader.trading.strategy cimport TradingStrategy
 
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
 from nautilus_trader.cache.cache import CacheConfig
 from nautilus_trader.data.engine import DataEngineConfig
 from nautilus_trader.execution.engine import ExecEngineConfig
@@ -94,12 +93,11 @@ class BacktestEngineConfig(pydantic.BaseModel):
         The configuration for the risk engine.
     exec_engine : ExecEngineConfig, optional
         The configuration for the execution engine.
-    use_data_cache : bool, default=False
-        If use cache for DataProducer (increased performance with repeated backtests on same data).
     bypass_logging : bool, default=False
         If logging should be bypassed.
     run_analysis : bool, default=True
         If post backtest performance analysis should be run.
+
     """
 
     trader_id: str = "BACKTESTER-000"
@@ -109,9 +107,11 @@ class BacktestEngineConfig(pydantic.BaseModel):
     data_engine: Optional[DataEngineConfig] = None
     risk_engine: Optional[RiskEngineConfig] = None
     exec_engine: Optional[ExecEngineConfig] = None
-    use_data_cache: bool = False
     bypass_logging: bool = False
     run_analysis: bool = True
+
+    def __dask_tokenize__(self):
+        return tuple(self.dict().items())
 
 
 cdef class BacktestEngine:
@@ -151,8 +151,7 @@ cdef class BacktestEngine:
 
         # Setup components
         self._clock = LiveClock()
-        self.created_time = self._clock.utc_now()
-
+        created_time = self._clock.utc_now()
         self._test_clock = TestClock()
         self._uuid_factory = UUIDFactory()
 
@@ -268,10 +267,12 @@ cdef class BacktestEngine:
         self.analyzer = PerformanceAnalyzer()
 
         self.iteration = 0
+        self._run_started = None
+        self._backtest_start = None
 
-        self.time_to_initialize = self._clock.delta(self.created_time)
         self._log.info(
-            f"Initialized in {int(self.time_to_initialize.total_seconds() * 1000)}ms.",
+            f"Initialized in "
+            f"{int(self._clock.delta(created_time).total_seconds() * 1000)}ms.",
         )
 
     def list_venues(self):
@@ -323,7 +324,10 @@ cdef class BacktestEngine:
         # Add data
         self._data = sorted(self._data + data, key=lambda x: x.ts_init)
 
-        self._log.info(f"Added {len(data)} GenericData elements.")
+        self._log.info(
+            f"Added {len(data)} {type(data[0].data).__name__} "
+            f"GenericData element{'' if len(data) == 1 else 's'}.",
+        )
 
     def add_instrument(self, Instrument instrument) -> None:
         """
@@ -379,7 +383,8 @@ cdef class BacktestEngine:
         self._data = sorted(self._data + data, key=lambda x: x.ts_init)
 
         self._log.info(
-            f"Added {len(data):,} {first.instrument_id} OrderBookData elements.",
+            f"Added {len(data):,} {first.instrument_id} "
+            f"OrderBookData element{'' if len(data) == 1 else 's'}.",
         )
 
     def add_ticks(self, list data) -> None:
@@ -413,7 +418,8 @@ cdef class BacktestEngine:
         self._data = sorted(self._data + data, key=lambda x: x.ts_init)
 
         self._log.info(
-            f"Added {len(data):,} {first.instrument_id} {type(first).__name__} elements.",
+            f"Added {len(data):,} {first.instrument_id} "
+            f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
         )
 
     def add_bars(self, list data) -> None:
@@ -458,7 +464,10 @@ cdef class BacktestEngine:
         # Add data
         self._data = sorted(self._data + data, key=lambda x: x.ts_init)
 
-        self._log.info(f"Added {len(data):,} {first.type} Bar elements.")
+        self._log.info(
+            f"Added {len(data):,} {first.type} "
+            f"Bar element{'' if len(data) == 1 else 's'}.",
+        )
 
     def add_venue(
         self,
@@ -468,10 +477,13 @@ cdef class BacktestEngine:
         AccountType account_type,
         Currency base_currency,
         list starting_balances,
+        default_leverage=None,
+        dict leverages=None,
         bint is_frozen_account=False,
         list modules=None,
         FillModel fill_model=None,
-        BookLevel order_book_level=BookLevel.L1,
+        BookType book_type=BookType.L1_TBBO,
+        fill_limit_at_price=False,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -491,14 +503,20 @@ cdef class BacktestEngine:
             The account base currency for the client. Use ``None`` for multi-currency accounts.
         starting_balances : list[Money]
             The starting account balances (specify one for a single asset account).
+        default_leverage : Decimal
+            The account default leverage (for margin accounts).
+        leverages : Dict[InstrumentId, Decimal]
+            The instrument specific leverage configuration (for margin accounts).
         is_frozen_account : bool
             If the account for this exchange is frozen (balances will not change).
         modules : list[SimulationModule, optional
             The simulation modules to load into the exchange.
         fill_model : FillModel, optional
             The fill model for the exchange (if None then no probabilistic fills).
-        order_book_level : BookLevel
-            The default order book level for fill modelling.
+        book_type : BookType
+            The default order book type for fill modelling.
+        fill_limit_at_price : bool
+            If limit orders should be filled at their original price only (overrides slippage).
 
         Raises
         ------
@@ -524,14 +542,17 @@ cdef class BacktestEngine:
             account_type=account_type,
             base_currency=base_currency,
             starting_balances=starting_balances,
+            default_leverage=default_leverage or Decimal(10),
+            leverages=leverages or {},
             is_frozen_account=is_frozen_account,
             instruments=self._cache.instruments(venue),
             modules=modules,
             cache=self._cache,
             fill_model=fill_model,
-            exchange_order_book_level=order_book_level,
+            book_type=book_type,
             clock=self._test_clock,
             logger=self._test_logger,
+            fill_limit_at_price=fill_limit_at_price,
         )
 
         self._exchanges[venue] = exchange
@@ -562,20 +583,24 @@ cdef class BacktestEngine:
         """
         self._log.debug(f"Resetting...")
 
+        if self.trader.is_running_c():
+            # End current backtest run
+            self._end()
+
         # Reset DataEngine
-        if self._data_engine.state_c() == ComponentState.RUNNING:
+        if self._data_engine.is_running_c():
             self._data_engine.stop()
         self._data_engine.reset()
 
         # Reset ExecEngine
-        if self._exec_engine.state_c() == ComponentState.RUNNING:
+        if self._exec_engine.is_running_c():
             self._exec_engine.stop()
         if self._config.cache_database is not None and self._config.cache_database.flush:
             self._exec_engine.flush_db()
         self._exec_engine.reset()
 
         # Reset RiskEngine
-        if self._risk_engine.state_c() == ComponentState.RUNNING:
+        if self._risk_engine.is_running_c():
             self._risk_engine.stop()
         self._risk_engine.reset()
 
@@ -585,6 +610,8 @@ cdef class BacktestEngine:
             exchange.reset()
 
         self.iteration = 0
+        self._run_started = None
+        self._backtest_start = None
 
         self._log.info("Reset.")
 
@@ -605,9 +632,9 @@ cdef class BacktestEngine:
         """
         self.trader.dispose()
 
-        if self._data_engine.state_c() == ComponentState.RUNNING:
+        if self._data_engine.is_running_c():
             self._data_engine.stop()
-        if self._exec_engine.state_c() == ComponentState.RUNNING:
+        if self._exec_engine.is_running_c():
             self._exec_engine.stop()
 
         self._data_engine.dispose()
@@ -632,89 +659,129 @@ cdef class BacktestEngine:
 
         self._exchanges[venue].set_fill_model(model)
 
+    def add_strategy(self, strategy: TradingStrategy) -> None:
+        # Checked inside trader
+        self.trader.add_strategy(strategy)
+
+    def add_strategies(self, strategies: List[TradingStrategy]) -> None:
+        # Checked inside trader
+        self.trader.add_strategies(strategies)
+
     def run(
         self,
         start: Union[datetime, str, int]=None,
-        stop: Union[datetime, str, int]=None,
-        strategies: Optional[List[TradingStrategy]]=None,
-        streaming: bool=False,
+        end: Union[datetime, str, int]=None,
     ) -> None:
         """
-        Run a backtest from the start datetime to the stop datetime.
+        Run a backtest.
+
+        At the end of the run the trader and strategies will be stopped, then
+        post-run analysis performed.
 
         Parameters
         ----------
         start : Union[datetime, str, int], optional
             The start datetime (UTC) for the backtest run. If ``None`` engine runs
             from the start of the data.
-        stop : Union[datetime, str, int], optional
-            The stop datetime (UTC) for the backtest run. If ``None`` engine runs
+        end : Union[datetime, str, int], optional
+            The end datetime (UTC) for the backtest run. If ``None`` engine runs
             to the end of the data.
-        strategies : list, optional
-            The strategies for the backtest run (if None will use previous).
-        streaming : bool, default = False
-            If the engine in being run in streaming mode.
 
         Raises
         ------
         ValueError
             If no data has been added to the engine.
         ValueError
-            If the `start` is >= the `stop` datetime.
+            If the `start` is >= the `end` datetime.
 
         """
-        # Precondition checks
+        self._run(start, end)
+        self._end()
+
+    def run_streaming(
+        self,
+        start: Union[datetime, str, int]=None,
+        end: Union[datetime, str, int]=None,
+    ):
+        """
+        Run a backtest in streaming mode.
+
+        If more data than can fit in memory is to be run through the backtest
+        engine, then streaming mode can be utilized. The expected sequence is as
+        follows:
+         - Add initial data block and strategies.
+         - Call `run_streaming()`.
+         - Call `clear_data()`.
+         - Add next block of data stream.
+         - Call `run_streaming()`.
+         - Call `end_streaming()` when there is no more data to run on.
+
+        Parameters
+        ----------
+        start : Union[datetime, str, int], optional
+            The start datetime (UTC) for the current block of data. If ``None``
+            engine runs from the start of the data.
+        end : Union[datetime, str, int], optional
+            The end datetime (UTC) for the current block of data. If ``None`` engine runs
+            to the end of the data.
+
+        """
+        self._run(start, end)
+
+    def end_streaming(self):
+        """
+        End the backtest streaming run.
+
+        The following sequence of events will occur:
+         - The trader will be stopped which in turn stops the strategies.
+         - The exchanges will process all pending messages.
+         - Post-run analysis is performed.
+
+        """
+        self._end()
+
+    def _run(
+        self,
+        start: Union[datetime, str, int]=None,
+        end: Union[datetime, str, int]=None,
+    ):
+        cdef int64_t start_ns
+        cdef int64_t end_ns
+        # Time range check and set
         Condition.not_empty(self._data, "data")
         if start is None:
-            # Set start to start of data
-            start = nanos_to_unix_dt(self._data[0].ts_init)
+            # Set `start` to start of data
+            start_ns = self._data[0].ts_init
         else:
             start = pd.to_datetime(start, utc=True)
-        if stop is None:
-            # Set stop to end of data
-            stop = nanos_to_unix_dt(self._data[-1].ts_init)
+            Condition.equal(start.tzinfo, pytz.utc, "start.tzinfo", "UTC")
+            start_ns = dt_to_unix_nanos(start)
+        if end is None:
+            # Set `end` to end of data
+            end_ns = self._data[-1].ts_init
         else:
-            stop = pd.to_datetime(stop, utc=True)
-        Condition.equal(start.tzinfo, pytz.utc, "start.tzinfo", "UTC")
-        Condition.equal(stop.tzinfo, pytz.utc, "stop.tzinfo", "UTC")
-        Condition.true(start < stop, "start was >= stop")
-        if strategies:
-            Condition.not_empty(strategies, "strategies")
-            Condition.list_type(strategies, TradingStrategy, "strategies")
+            end = pd.to_datetime(end, utc=True)
+            Condition.equal(end.tzinfo, pytz.utc, "end.tzinfo", "UTC")
+            end_ns = dt_to_unix_nanos(end)
+        Condition.true(start_ns < end_ns, "start was >= end")
 
-        # Run the backtest
-        self._log.info(f"Running backtest...")
-        cdef datetime run_started = self._clock.utc_now()
-
-        self._pre_run(run_started, start, stop)
-
-        cdef int64_t start_ns = dt_to_unix_nanos(start)
-        cdef int64_t stop_ns = dt_to_unix_nanos(stop)
-
-        # Setup clocks
+        # Set clocks
         self._test_clock.set_time(start_ns)
-        self._test_logger.change_clock_c(self._test_clock)
-
-        if not streaming:
-            for exchange in self._exchanges.values():
-                exchange.initialize_account()
-
-        self._log.info("=================================================================")
-        self._log.info("BACKTEST")
-        self._log.info("=================================================================")
-
-        # Setup new strategies
-        if strategies:
-            self.trader.add_strategies(strategies)
-
         for strategy in self.trader.strategies_c():
             strategy.clock.set_time(start_ns)
 
-        # Start main components
-        if not streaming:
+        if self.iteration == 0:
+            # Initialize engine
+            self._backtest_start = nanos_to_unix_dt(start_ns)
+            self._test_logger.change_clock_c(self._test_clock)
+            for strategy in self.trader.strategies_c():
+                strategy.clock.set_time(start_ns)
+            for exchange in self._exchanges.values():
+                exchange.initialize_account()
             self._data_engine.start()
             self._exec_engine.start()
             self.trader.start()
+            self._pre_run()
 
         # Set data stream length
         self._data_len = len(self._data)
@@ -729,25 +796,31 @@ cdef class BacktestEngine:
         # -- MAIN BACKTEST LOOP -----------------------------------------------#
         cdef Data data = self._next()
         while data is not None:
+            if data.ts_init > end_ns:
+                break
             self._advance_time(data.ts_init)
+            self._data_engine.process(data)
             if isinstance(data, OrderBookData):
                 self._exchanges[data.instrument_id.venue].process_order_book(data)
             elif isinstance(data, Tick):
                 self._exchanges[data.instrument_id.venue].process_tick(data)
-            self._data_engine.process(data)
-            self._process_modules(data.ts_init)
+            for exchange in self._exchanges.values():
+                exchange.process(data.ts_init)
             self.iteration += 1
             data = self._next()
         # ---------------------------------------------------------------------#
+        # Process remaining messages
+        for exchange in self._exchanges.values():
+            exchange.process(self._test_clock.timestamp_ns())
+        # ---------------------------------------------------------------------#
 
-        if not streaming:
-            self.trader.stop()
-            self._post_run(
-                run_started=run_started,
-                run_finished=self._clock.utc_now(),
-                start=start,
-                stop=stop,
-            )
+    def _end(self):
+        self.trader.stop()
+        # Process remaining messages
+        for exchange in self._exchanges.values():
+            exchange.process(self._test_clock.timestamp_ns())
+
+        self._post_run()
 
     cdef Data _next(self):
         cdef int64_t cursor = self._index
@@ -766,52 +839,40 @@ cdef class BacktestEngine:
             event_handler.handle()
         self._test_clock.set_time(now_ns)
 
-    cdef void _process_modules(self, int64_t now_ns) except *:
-        cdef SimulatedExchange exchange
-        for exchange in self._exchanges.values():
-            exchange.process_modules(now_ns)
-
-    def _pre_run(
-        self,
-        datetime run_started,
-        datetime start,
-        datetime stop,
-    ):
-        log_memory(self._log)
+    def _pre_run(self):
         self._log.info("=================================================================")
         self._log.info(" BACKTEST RUN")
         self._log.info("=================================================================")
-        self._log.info(f"Run started:    {format_iso8601(run_started)}")
-        self._log.info(f"Backtest start: {format_iso8601(start)}")
-        self._log.info(f"Backtest stop:  {format_iso8601(stop)}")
+        self._run_started = self._clock.utc_now()
+        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
+        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
+        log_memory(self._log)
 
         for exchange in self._exchanges.values():
+            account = exchange.exec_client.get_account()
             self._log.info("=================================================================")
-            self._log.info(exchange.exec_client.account_id.value)
+            self._log.info(f"SimulatedVenue {exchange.id}")
             self._log.info("=================================================================")
+            self._log.info(f"{repr(account)}")
+            self._log.info("-----------------------------------------------------------------")
+            self._log.info(f"Balances starting:")
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
-                balances = ', '.join([b.to_str() for b in exchange.starting_balances])
-                self._log.info(f"Account balances (starting): {balances}")
+                for b in account.starting_balances().values():
+                    self._log.info(b.to_str())
+        self._log.info("=================================================================")
 
-    def _post_run(
-        self,
-        datetime run_started,
-        datetime run_finished,
-        datetime start,
-        datetime stop,
-    ):
+    def _post_run(self):
+        run_finished = self._clock.utc_now()
         self._log.info("=================================================================")
-        self._log.info(" BACKTEST DIAGNOSTICS")
+        self._log.info(" BACKTEST POST-RUN")
         self._log.info("=================================================================")
-        self._log.info(f"Run started:    {format_iso8601(run_started)}")
+        self._log.info(f"Run started:    {format_iso8601(self._run_started)}")
         self._log.info(f"Run finished:   {format_iso8601(run_finished)}")
-        self._log.info(f"Backtest start: {format_iso8601(start)}")
-        self._log.info(f"Backtest stop:  {format_iso8601(stop)}")
-        self._log.info(f"Elapsed time:   {run_finished - run_started}")
-        # for resolution in self._data_producer.execution_resolutions:
-        #     self._log.info(f"Execution resolution: {resolution}")
+        self._log.info(f"Backtest start: {format_iso8601(self._backtest_start)}")
+        self._log.info(f"Backtest end:   {format_iso8601(self._test_clock.utc_now())}")
+        self._log.info(f"Elapsed time:   {run_finished - self._run_started}")
         self._log.info(f"Iterations: {self.iteration:,}")
         self._log.info(f"Total events: {self._exec_engine.event_count:,}")
         self._log.info(f"Total orders: {self.cache.orders_total_count():,}")
@@ -821,27 +882,36 @@ cdef class BacktestEngine:
             return
 
         for exchange in self._exchanges.values():
-            self._log.info("=================================================================")
-            self._log.info(f" {exchange.exec_client.account_id.value}")
-            self._log.info("=================================================================")
             account = exchange.exec_client.get_account()
+            self._log.info("=================================================================")
+            self._log.info(f"SimulatedVenue {exchange.id}")
+            self._log.info("=================================================================")
+            self._log.info(f"{repr(account)}")
+            self._log.info("-----------------------------------------------------------------")
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
             else:
                 if account is None:
                     continue
-                account_balances_starting = ', '.join([b.to_str() for b in account.starting_balances().values()])
-                account_balances_ending = ', '.join([b.to_str() for b in account.balances_total().values()])
-                account_commissions = ', '.join([b.to_str() for b in account.commissions().values()])
-                unrealized_pnls = ', '.join([b.to_str() for b in self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()])
-                account_starting_length = len(account_balances_starting)
-                account_balances_ending = pad_string(account_balances_ending, account_starting_length)
-                account_commissions = pad_string(account_commissions, account_starting_length)
-                unrealized_pnls = pad_string(unrealized_pnls, account_starting_length)
-                self._log.info(f"Account balances (starting): {account_balances_starting}")
-                self._log.info(f"Account balances (ending):   {account_balances_ending}")
-                self._log.info(f"Commissions (total):         {account_commissions}")
-                self._log.info(f"Unrealized PnLs:             {unrealized_pnls}")
+                self._log.info(f"Balances starting:")
+                for b in account.starting_balances().values():
+                    self._log.info(b.to_str())
+                self._log.info("-----------------------------------------------------------------")
+                self._log.info(f"Balances ending:")
+                for b in account.balances_total().values():
+                    self._log.info(b.to_str())
+                self._log.info("-----------------------------------------------------------------")
+                self._log.info(f"Commissions:")
+                for b in account.commissions().values():
+                    self._log.info(b.to_str())
+                self._log.info("-----------------------------------------------------------------")
+                self._log.info(f"Unrealized PnLs:")
+                unrealized_pnls = self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values()
+                if not unrealized_pnls:
+                    self._log.info("None")
+                else:
+                    for b in self.portfolio.unrealized_pnls(Venue(exchange.id.value)).values():
+                        self._log.info(b.to_str())
 
             # Log output diagnostics for all simulation modules
             for module in exchange.modules:
@@ -872,6 +942,7 @@ cdef class BacktestEngine:
             self._log.info("-----------------------------------------------------------------")
             for statistic in self.analyzer.get_performance_stats_returns_formatted():
                 self._log.info(statistic)
+            self._log.info("-----------------------------------------------------------------")
 
     def _add_data_client_if_not_exists(self, ClientId client_id) -> None:
         if client_id not in self._data_engine.registered_clients():

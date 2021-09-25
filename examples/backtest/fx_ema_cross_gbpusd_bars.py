@@ -72,8 +72,8 @@ if __name__ == "__main__":
 
     # Create a fill model (optional)
     fill_model = FillModel(
-        prob_fill_at_limit=0.2,
-        prob_fill_at_stop=0.95,
+        prob_fill_on_limit=0.2,
+        prob_fill_on_stop=0.95,
         prob_slippage=0.5,
         random_seed=42,
     )
@@ -91,7 +91,7 @@ if __name__ == "__main__":
         oms_type=OMSType.HEDGING,  # Venue will generate position_ids
         account_type=AccountType.MARGIN,
         base_currency=USD,  # Standard single-currency account
-        starting_balances=[Money(1_000_000, USD)],
+        starting_balances=[Money(10_000_000, USD)],
         fill_model=fill_model,
         modules=[fx_rollover_interest],
     )
@@ -105,13 +105,14 @@ if __name__ == "__main__":
         trade_size=Decimal(1_000_000),
         order_id_tag="001",
     )
-    # Instantiate your strategy
+    # Instantiate and add your strategy
     strategy = EMACross(config=config)
+    engine.add_strategy(strategy=strategy)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 
-    # Run the engine from start to end of data
-    engine.run(strategies=[strategy])
+    # Run the engine (from start to end of data)
+    engine.run()
 
     # Optionally view reports
     with pd.option_context(

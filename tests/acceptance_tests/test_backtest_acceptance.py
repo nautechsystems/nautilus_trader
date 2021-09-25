@@ -30,7 +30,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
@@ -98,9 +98,10 @@ class TestBacktestAcceptanceTestsUSDJPY:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 2689
@@ -117,8 +118,9 @@ class TestBacktestAcceptanceTestsUSDJPY:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
         result1 = self.engine.analyzer.get_performance_stats_pnls()
 
         # Act
@@ -155,15 +157,16 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Note since these strategies are operating on the same instrument_id as per
         # the EMACross BUY/SELL logic they will be flattening each others positions.
         # The purpose of the test is just to ensure multiple strategies can run together.
+        self.engine.add_strategies(strategies=[strategy1, strategy2])
 
         # Act
-        self.engine.run(strategies=[strategy1, strategy2])
+        self.engine.run()
 
         # Assert
         assert strategy1.fast_ema.count == 2689
         assert strategy2.fast_ema.count == 2689
         assert self.engine.iteration == 115044
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.26, USD)
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(985622.52, USD)
 
 
 class TestBacktestAcceptanceTestsGBPUSD:
@@ -215,9 +218,10 @@ class TestBacktestAcceptanceTestsGBPUSD:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert strategy.fast_ema.count == 8353
@@ -271,9 +275,10 @@ class TestBacktestAcceptanceTestsAUDUSD:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert strategy.fast_ema.count == 1771
@@ -290,9 +295,10 @@ class TestBacktestAcceptanceTestsAUDUSD:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert strategy.fast_ema.count == 1000
@@ -340,9 +346,10 @@ class TestBacktestAcceptanceTestsETHUSDT:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert strategy.fast_ema.count == 279
@@ -388,7 +395,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             base_currency=None,
             oms_type=OMSType.NETTING,
             starting_balances=[Money(10000, GBP)],
-            order_book_level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
         )
 
     def teardown(self):
@@ -400,9 +407,10 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             instrument_id=str(self.instrument.id), trade_size=Decimal(10)
         )
         strategy = OrderBookImbalanceStrategy(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert self.engine.iteration in (8199, 7812)
@@ -445,7 +453,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             base_currency=None,
             oms_type=OMSType.NETTING,
             starting_balances=[Money(10000, GBP)],
-            order_book_level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
         )
 
     def teardown(self):
@@ -458,9 +466,10 @@ class TestBacktestAcceptanceTestsMarketMaking:
             trade_size=Decimal(10),
             max_size=Decimal(30),
         )
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert self.engine.iteration == 9319

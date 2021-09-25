@@ -21,17 +21,15 @@ from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.model.c_enums.account_type cimport AccountType
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.venue_type cimport VenueType
-from nautilus_trader.model.commands.trading cimport CancelOrder
-from nautilus_trader.model.commands.trading cimport ModifyOrder
-from nautilus_trader.model.commands.trading cimport SubmitOrder
-from nautilus_trader.model.commands.trading cimport SubmitOrderList
+from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.tick cimport Tick
@@ -67,8 +65,8 @@ cdef class SimulatedExchange:
     """The venues type.\n\n:returns: `VenueType`"""
     cdef readonly OMSType oms_type
     """The exchange order management system type.\n\n:returns: `OMSType`"""
-    cdef readonly BookLevel exchange_order_book_level
-    """The exchange default order book level.\n\n:returns: `BookLevel`"""
+    cdef readonly BookType book_type
+    """The exchange default order book type.\n\n:returns: `BookType`"""
     cdef readonly CacheFacade cache
     """The read-only cache wired to the exchange.\n\n:returns: `CacheFacade`"""
     cdef readonly BacktestExecClient exec_client
@@ -80,9 +78,14 @@ cdef class SimulatedExchange:
     """The account base currency (None for multi-currency accounts).\n\n:returns: `Currency` or ``None``"""
     cdef readonly list starting_balances
     """The account starting balances for each backtest run.\n\n:returns: `bool`"""
+    cdef readonly default_leverage
+    """The accounts default leverage.\n\n:returns: `Decimal`"""
+    cdef readonly dict leverages
+    """The accounts instrument specific leverage configuration.\n\n:returns: `dict[InstrumentId, Decimal]`"""
     cdef readonly bint is_frozen_account
     """If the account for the exchange is frozen.\n\n:returns: `bool`"""
-
+    cdef readonly bint fill_limit_at_price
+    """If limit orders should be filled at their original price.\n\n:returns: `bool`"""
     cdef readonly FillModel fill_model
     """The fill model for the exchange.\n\n:returns: `FillModel`"""
     cdef readonly list modules
@@ -91,13 +94,13 @@ cdef class SimulatedExchange:
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
 
     cdef dict _books
+    cdef dict _instrument_indexer
     cdef dict _instrument_orders
     cdef dict _working_orders
-    cdef dict _position_index
-    cdef dict _instrument_indexer
     cdef dict _symbol_pos_count
     cdef dict _symbol_ord_count
     cdef int _executions_count
+    cdef Queue _message_queue
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id)
     cpdef Price best_ask_price(self, InstrumentId instrument_id)
@@ -110,19 +113,13 @@ cdef class SimulatedExchange:
     cpdef void set_fill_model(self, FillModel fill_model) except *
     cpdef void initialize_account(self) except *
     cpdef void adjust_account(self, Money adjustment) except *
+    cpdef void send(self, TradingCommand command) except *
     cpdef void process_order_book(self, OrderBookData data) except *
     cpdef void process_tick(self, Tick tick) except *
     cpdef void process_bar(self, Bar bar) except *
-    cpdef void process_modules(self, int64_t now_ns) except *
+    cpdef void process(self, int64_t now_ns) except *
     cpdef void check_residuals(self) except *
     cpdef void reset(self) except *
-
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
-
-    cpdef void handle_submit_order(self, SubmitOrder command) except *
-    cpdef void handle_submit_order_list(self, SubmitOrderList command) except *
-    cpdef void handle_modify_order(self, ModifyOrder command) except *
-    cpdef void handle_cancel_order(self, CancelOrder command) except *
 
 # --------------------------------------------------------------------------------------------------
 
