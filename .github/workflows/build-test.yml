@@ -1,19 +1,22 @@
 name: build-test
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - pre-commit
     branches: [ master, develop ]
-  pull_request:
-    branches: [ master, develop ]
+    types:
+      - completed
 
 jobs:
-  test:
+  build_test:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
         python-version: [ 3.8 ]
-    name: test - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    name: build_test - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
     steps:
