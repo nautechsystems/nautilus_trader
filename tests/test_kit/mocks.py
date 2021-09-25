@@ -836,9 +836,10 @@ def data_catalog_setup():
     catalog = DataCatalog.from_env()
     assert isinstance(catalog.fs, MemoryFileSystem)
     try:
-        catalog.fs.rm("/", recursive=True)
+        catalog.fs.rm(CATALOG_ROOT_PATH, recursive=True)
     except FileNotFoundError:
         pass
+    catalog.fs.mkdir(CATALOG_ROOT_PATH)
     catalog.fs.mkdir(CATALOG_DATA_PATH)
     assert catalog.fs.exists(CATALOG_ROOT_PATH)
     assert not catalog.fs.ls(CATALOG_DATA_PATH)
