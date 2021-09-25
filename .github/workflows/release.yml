@@ -33,13 +33,8 @@ jobs:
 
   tag_release:
     needs: [ test_pip_install ]
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-latest ]
-        python-version: [ 3.8 ]
-    name: tag_release - Python ${{ matrix.python-version }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: tag_release - Python 3.9 Linux
+    runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
 
@@ -52,7 +47,7 @@ jobs:
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: 3.9
 
       # Install build dependencies
       - name: Install build dependencies
@@ -113,14 +108,10 @@ jobs:
 
   publish_sdist:
     needs: [ tag_release ]
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-latest ]
-        python-version: [ 3.9 ]
-    name: publish_sdist - Python ${{ matrix.python-version }} (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: publish_sdist - Python 3.9 Linux
+    runs-on: ubuntu-latest
     env:
+      # Skip build copy to avoid C dynamic libs being copied into the source
       SKIP_BUILD_COPY: true
 
     steps:
@@ -130,7 +121,7 @@ jobs:
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: 3.9
 
       # Install build dependencies
       - name: Install build dependencies

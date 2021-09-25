@@ -105,12 +105,7 @@ jobs:
 
   docs:
     needs: [ build_test ]
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: [ 3.8 ]
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v2
 
@@ -118,7 +113,7 @@ jobs:
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: 3.8
 
       # Install build dependencies
       - name: Install build dependencies
