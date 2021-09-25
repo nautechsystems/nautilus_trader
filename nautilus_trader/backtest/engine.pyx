@@ -97,6 +97,7 @@ class BacktestEngineConfig(pydantic.BaseModel):
         If logging should be bypassed.
     run_analysis : bool, default=True
         If post backtest performance analysis should be run.
+
     """
 
     trader_id: str = "BACKTESTER-000"
@@ -106,9 +107,11 @@ class BacktestEngineConfig(pydantic.BaseModel):
     data_engine: Optional[DataEngineConfig] = None
     risk_engine: Optional[RiskEngineConfig] = None
     exec_engine: Optional[ExecEngineConfig] = None
-    use_data_cache: bool = False
     bypass_logging: bool = False
     run_analysis: bool = True
+
+    def __dask_tokenize__(self):
+        return tuple(self.dict().items())
 
 
 cdef class BacktestEngine:

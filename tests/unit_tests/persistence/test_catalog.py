@@ -235,6 +235,7 @@ class TestPersistenceCatalog:
         result = target_func([1576878597067000000])
         assert result == 1013827
 
+    @pytest.mark.skip(reason="WIP")
     def test_calc_streaming_chunks(self):
         # Arrange
         instrument_ids = self.catalog.instruments()["id"].tolist()

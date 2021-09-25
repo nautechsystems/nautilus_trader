@@ -9,15 +9,16 @@ Released on **TBD**
 
 ## Enhancements
 - Added streaming backtest machinery.
+- Added `quantstats` (removed `empyrical`).
 - Added `BacktestEngine.run_streaming()`.
 - Added `BacktestEngine.end_streaming()`
-- Added `quantstats` (removed `empyrical`).
+- Added `Portfolio.balances_locked(venue)`.
 - Improved `DataCatalog` functionality.
-- Improved logging for adding data to `BacktestEngine`.
+- Improved logging for `BacktestEngine`.
 - Improved parquet serialization and machinery.
 
 ## Fixes
-- Fixed `SimulatedExchange` request processing.
+- Fixed `SimulatedExchange` message processing.
 - Fixed `BacktestEngine` event ordering in main loop.
 - Fixed locked balance calculation for `CASH` accounts.
 - Fixed fill dynamics for `reduce-only` orders.
