@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import pathlib
 import re
 from itertools import groupby
@@ -214,7 +215,6 @@ def merge_existing_data(catalog: DataCatalog, cls: type, df: pd.DataFrame) -> pd
 def write_tables(catalog: DataCatalog, tables: Dict[type, Dict[str, pd.DataFrame]], **kwargs):
     """
     Write tables to catalog.
-
     """
     rows_written = 0
 
