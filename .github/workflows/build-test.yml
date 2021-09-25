@@ -36,18 +36,6 @@ jobs:
         if: runner.os != 'Windows'
         run: pip install .[distributed,docs]
 
-      # Export package requirements
-      - name: Export package requirements
-        run: poetry export --extras docs --without-hashes -f requirements.txt > requirements.txt
-
-      # Install package dependencies
-      - name: Install package dependencies
-        run: pip install -r requirements.txt
-
-      # Install extra docs dependencies
-      - name: Install extra docs dependencies
-        run: pip install toml numpydoc sphinx sphinx-rtd-theme
-
       # Setup Poetry caching
       - name: Get Poetry cache dir
         id: poetry-cache
@@ -105,25 +93,3 @@ jobs:
           alert-threshold: '200%'
           comment-always: true
           fail-on-alert: false
-
-      # Build docs
-      - name: Build docs
-        run: sphinx-build docs/source docs/build
-
-      # Add nojeckyll
-      - name: Add nojeckyll
-        run: touch docs/build/.nojekyll
-
-      # Add CNAME
-      - name: Add CNAME
-        run: echo "api.nautilustrader.io" >> docs/build/CNAME
-
-      # Publish API docs
-      - name: Publish API docs
-        uses: s0/git-publish-subdir-action@develop
-        env:
-          REPO: self
-          BRANCH: gh-pages
-          FOLDER: docs/build
-          SQUASH_HISTORY: false
-          GITHUB_TOKEN: ${{ secrets.GHPAGES_ACCESS }}
