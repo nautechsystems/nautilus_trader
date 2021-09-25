@@ -1,5 +1,7 @@
 name: build-test
 
+# Build and test NautilusTrader on completion of the `pre-commit` workflow
+
 on:
   workflow_run:
     workflows:
