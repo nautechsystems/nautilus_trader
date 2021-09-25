@@ -139,9 +139,33 @@ class TestPortfolio:
         # Assert
         assert result.id.issuer == "BINANCE"
 
+    def test_balances_locked_when_no_account_for_venue_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.portfolio.balances_locked(SIM) is None
+
+    def test_margins_init_when_no_account_for_venue_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.portfolio.margins_init(SIM) is None
+
+    def test_margins_maint_when_no_account_for_venue_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.portfolio.margins_maint(SIM) is None
+
+    def test_unrealized_pnl_for_instrument_when_no_instrument_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.portfolio.unrealized_pnl(USDJPY_SIM.id) is None
+
+    def test_unrealized_pnl_for_venue_when_no_account_returns_empty_dict(self):
+        # Arrange, Act, Assert
+        assert self.portfolio.unrealized_pnls(SIM) == {}
+
     def test_net_position_when_no_positions_returns_zero(self):
         # Arrange, Act, Assert
         assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(0)
+
+    def test_net_exposures_when_no_positions_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.portfolio.net_exposures(SIM) is None
 
     def test_is_net_long_when_no_positions_returns_false(self):
         # Arrange, Act, Assert
@@ -159,22 +183,6 @@ class TestPortfolio:
         # Arrange, Act, Assert
         assert self.portfolio.is_flat(AUDUSD_SIM.id) is True
 
-    def test_unrealized_pnl_for_instrument_when_no_instrument_returns_none(self):
-        # Arrange, Act, Assert
-        assert self.portfolio.unrealized_pnl(USDJPY_SIM.id) is None
-
-    def test_unrealized_pnl_for_venue_when_no_account_returns_empty_dict(self):
-        # Arrange, Act, Assert
-        assert self.portfolio.unrealized_pnls(SIM) == {}
-
-    def test_margins_init_when_no_account_returns_none(self):
-        # Arrange, Act, Assert
-        assert self.portfolio.margins_init(SIM) is None
-
-    def test_margins_maint_when_no_account_returns_none(self):
-        # Arrange, Act, Assert
-        assert self.portfolio.margins_maint(SIM) is None
-
     def test_open_value_when_no_account_returns_none(self):
         # Arrange, Act, Assert
         assert self.portfolio.net_exposures(SIM) is None
@@ -189,7 +197,56 @@ class TestPortfolio:
         # Assert
         assert self.portfolio.unrealized_pnl(GBPUSD_SIM.id) is None
 
-    def test_update_orders_working(self):
+    def test_update_orders_working_cash_account(self):
+        # Arrange
+        AccountFactory.register_calculated_account("BINANCE")
+
+        account_id = AccountId("BINANCE", "000")
+        state = AccountState(
+            account_id=account_id,
+            account_type=AccountType.CASH,
+            base_currency=None,  # Multi-currency account
+            reported=True,
+            balances=[
+                AccountBalance(
+                    BTC,
+                    Money(10.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(10.00000000, BTC),
+                ),
+                AccountBalance(
+                    USDT,
+                    Money(100000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100000.00000000, USDT),
+                ),
+            ],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.portfolio.update_account(state)
+
+        # Create two working orders
+        order = self.order_factory.limit(
+            BTCUSDT_BINANCE.id,
+            OrderSide.BUY,
+            Quantity.from_str("1.0"),
+            Price.from_str("50000.00"),
+        )
+
+        self.cache.add_order(order, position_id=None)
+
+        # Act: push order state to ACCEPTED
+        self.exec_engine.process(TestStubs.event_order_submitted(order, account_id=account_id))
+        self.exec_engine.process(TestStubs.event_order_accepted(order, account_id=account_id))
+
+        # Assert
+        assert self.portfolio.balances_locked(BINANCE)[USDT].as_decimal() == 50100
+
+    def test_update_orders_working_margin_account(self):
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")
 
