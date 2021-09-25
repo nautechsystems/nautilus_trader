@@ -1,7 +1,5 @@
 name: release
 
-# Test, tag then publish pushes on the master branch
-
 on:
   workflow_run:
     workflows:
@@ -11,14 +9,35 @@ on:
       - completed
 
 jobs:
-  tag_release:
+  test_pip_install:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
+        python-version: [ 3.8 ]
+    name: test_pip_install - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+
+      # Install build dependencies
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip setuptools wheel poetry
+
+      # Test pip installation
+      - name: Test pip installation
+        if: runner.os != 'Windows'
+        run: pip install .[distributed,docs]
+
+  tag_release:
+    needs: [ test_pip_install ]
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest ]
         python-version: [ 3.8 ]
-    name: test-tag-publish - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    name: tag_release - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
@@ -37,6 +56,11 @@ jobs:
       # Install build dependencies
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel poetry
+
+      # Test pip installation
+      - name: Test pip installation
+        if: runner.os != 'Windows'
+        run: pip install .[distributed,docs]
 
       # Setup Poetry caching
       - name: Get Poetry cache dir

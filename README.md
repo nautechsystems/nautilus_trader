@@ -44,7 +44,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Reliable:** Type safety through Cython. Redis backed performant state persistence.
 - **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker.
 - **Integrated:** Modular adapters mean any REST/FIX/WebSocket API can be integrated.
-- **Advanced:** Time-in-force options `GTD`, `IOC`, `FOK` etc, advanced order types and triggers, `post-only`, `reduce-only`, `hidden` execution instructions. Contingency order lists including `OCO`, `OTO` etc.
+- **Advanced:** Time-in-force options `GTD`, `IOC`, `FOK` etc, advanced order types and triggers, `post-only`, `reduce-only`, `hidden`. Contingency order lists including `OCO`, `OTO` etc.
 - **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).

@@ -1,7 +1,5 @@
 name: build-test
 
-# Test pushes and pull requests on non-master branches
-
 on:
   push:
     branches: [ master, develop ]
@@ -30,11 +28,6 @@ jobs:
       # Install build dependencies
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel poetry nox
-
-      # Test pip installation
-      - name: Test pip installation
-        if: runner.os != 'Windows'
-        run: pip install .[distributed,docs]
 
       # Setup Poetry caching
       - name: Get Poetry cache dir
@@ -65,9 +58,7 @@ jobs:
 
       # Run tests
       - name: Run tests with coverage
-        run: |
-          nox -s coverage --reuse-existing-virtualenvs
-          redis-cli shutdown
+        run: nox -s coverage --reuse-existing-virtualenvs
 
       # Upload to codecov
       - uses: codecov/codecov-action@v1
