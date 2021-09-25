@@ -1,8 +1,5 @@
 # NautilusTrader
 
-![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
-![docs](https://github.com/nautechsystems/nautilus_trader/workflows/docs/badge.svg)
-[![codacy-quality](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 ![python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
@@ -10,6 +7,11 @@
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 ![total-lines](https://img.shields.io/tokei/lines/github/nautechsystems/nautilus_trader)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
+| Build                           | Status          |
+|:--------------------------------|:----------------|
+| NautilusTrader (master)         | [![test](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml) |
+| NautilusTrader (develop)        | [![test](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml) |
 
 | Platform          | Rust | Python   |
 |:------------------|:-----|:---------|

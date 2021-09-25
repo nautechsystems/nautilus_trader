@@ -1,0 +1,129 @@
+name: build-test
+
+# Test pushes and pull requests on non-master branches
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop ]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        python-version: [ 3.8 ]
+    name: test - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+
+      # Python setup
+      - name: Set up Python environment
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Install build dependencies
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip setuptools wheel poetry nox
+
+      # Test pip installation
+      - name: Test pip installation
+        if: runner.os != 'Windows'
+        run: pip install .[distributed,docs]
+
+      # Export package requirements
+      - name: Export package requirements
+        run: poetry export --extras docs --without-hashes -f requirements.txt > requirements.txt
+
+      # Install package dependencies
+      - name: Install package dependencies
+        run: pip install -r requirements.txt
+
+      # Install extra docs dependencies
+      - name: Install extra docs dependencies
+        run: pip install toml numpydoc sphinx sphinx-rtd-theme
+
+      # Setup Poetry caching
+      - name: Get Poetry cache dir
+        id: poetry-cache
+        run: echo "::set-output name=dir::$(poetry config cache-dir)"
+
+      - name: Poetry/Nox cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ steps.poetry-cache.outputs.dir }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-test-${{ hashFiles('**/poetry.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.python-version }}-poetry-test-
+            ${{ runner.os }}-${{ matrix.python-version }}-poetry-
+
+      # Install and run database dependencies
+      - name: Install Redis (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install redis
+          redis-server --daemonize yes
+
+      - name: Install Redis (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install redis-server
+          redis-server --daemonize yes
+
+      # Run tests
+      - name: Run tests with coverage
+        run: |
+          nox -s coverage --reuse-existing-virtualenvs
+          redis-cli shutdown
+
+      # Upload to codecov
+      - uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.xml
+          verbose: true
+
+      # Run performance
+      - name: Run performance tests
+        run: nox -rs performance_tests -- no-parallel
+
+      # Store benchmark results
+      - name: Store benchmark result
+        uses: rhysd/github-action-benchmark@v1
+        with:
+          name: Benchmark with pytest-benchmark
+          tool: "pytest"
+          output-file-path: output.json
+          github-token: ${{ secrets.GHPAGES_ACCESS }}
+          auto-push: true
+          # Show alert with commit comment on detecting possible performance regression
+          alert-threshold: '200%'
+          comment-always: true
+          fail-on-alert: false
+
+      # Build docs
+      - name: Build docs
+        run: sphinx-build docs/source docs/build
+
+      # Add nojeckyll
+      - name: Add nojeckyll
+        run: touch docs/build/.nojekyll
+
+      # Add CNAME
+      - name: Add CNAME
+        run: echo "api.nautilustrader.io" >> docs/build/CNAME
+
+      # Publish API docs
+      - name: Publish API docs
+        uses: s0/git-publish-subdir-action@develop
+        env:
+          REPO: self
+          BRANCH: gh-pages
+          FOLDER: docs/build
+          SQUASH_HISTORY: false
+          GITHUB_TOKEN: ${{ secrets.GHPAGES_ACCESS }}
