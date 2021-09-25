@@ -14,8 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import re
-
-from fastuuid import uuid4
+import uuid
 
 from nautilus_trader.core.correctness cimport Condition
 
@@ -55,7 +54,7 @@ cdef class UUID4:
         if value is not None:
             Condition.true(_UUID_REGEX.match(value), "value is not a valid UUID")
         else:
-            value = str(uuid4())
+            value = str(uuid.uuid4())
 
         self.value = value
 

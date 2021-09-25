@@ -68,8 +68,12 @@ jobs:
           redis-server --daemonize yes
 
       # Run tests
-      - name: Run tests with coverage
-        run: nox -s coverage --reuse-existing-virtualenvs
+      - name: Run tests
+        run: nox -rs tests_with_integration
+
+      # Run code coverage
+      - name: Run code coverage
+        run: nox -rs coverage
 
       # Upload to codecov
       - uses: codecov/codecov-action@v1
@@ -78,9 +82,9 @@ jobs:
           file: ./coverage.xml
           verbose: true
 
-      # Run performance
+      # Run performance tests
       - name: Run performance tests
-        run: nox -rs performance_tests -- no-parallel
+        run: nox -rs performance_tests
 
       # Store benchmark results
       - name: Store benchmark result
