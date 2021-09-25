@@ -69,14 +69,17 @@ jobs:
 
       # Run tests
       - name: Run tests
-        run: nox -rs tests_with_integration
+        run: nox -rs tests_with_integration -- no-parallel
 
       # Run code coverage
       - name: Run code coverage
-        run: nox -rs coverage
+        if: runner.os == 'Linux'
+        run: nox -rs coverage -- no-parallel
 
-      # Upload to codecov
-      - uses: codecov/codecov-action@v1
+      # Upload coverage report to codecov
+      - name: Upload coverage report
+        if: runner.os == 'Linux'
+        uses: codecov/codecov-action@v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: ./coverage.xml
@@ -84,7 +87,7 @@ jobs:
 
       # Run performance tests
       - name: Run performance tests
-        run: nox -rs performance_tests
+        run: nox -rs performance_tests -- no-parallel
 
       # Store benchmark results
       - name: Store benchmark result
