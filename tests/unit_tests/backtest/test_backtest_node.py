@@ -1,3 +1,4 @@
+import sys
 from decimal import Decimal
 
 import pytest
@@ -17,6 +18,9 @@ from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests.test_kit.mocks import aud_usd_data_loader
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.strategies import EMACrossConfig
+
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="test path broken on windows")
 
 
 class TestBacktestNode:
