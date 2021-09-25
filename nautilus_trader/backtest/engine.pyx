@@ -45,7 +45,6 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.core.text cimport pad_string
 from nautilus_trader.execution.engine cimport ExecutionEngine
 from nautilus_trader.infrastructure.cache cimport RedisCacheDatabase
 from nautilus_trader.model.c_enums.account_type cimport AccountType
@@ -94,12 +93,11 @@ class BacktestEngineConfig(pydantic.BaseModel):
         The configuration for the risk engine.
     exec_engine : ExecEngineConfig, optional
         The configuration for the execution engine.
-    use_data_cache : bool, default=False
-        If use cache for DataProducer (increased performance with repeated backtests on same data).
     bypass_logging : bool, default=False
         If logging should be bypassed.
     run_analysis : bool, default=True
         If post backtest performance analysis should be run.
+
     """
 
     trader_id: str = "BACKTESTER-000"
@@ -109,7 +107,6 @@ class BacktestEngineConfig(pydantic.BaseModel):
     data_engine: Optional[DataEngineConfig] = None
     risk_engine: Optional[RiskEngineConfig] = None
     exec_engine: Optional[ExecEngineConfig] = None
-    use_data_cache: bool = False
     bypass_logging: bool = False
     run_analysis: bool = True
 
