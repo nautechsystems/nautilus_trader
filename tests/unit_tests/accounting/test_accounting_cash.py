@@ -349,7 +349,7 @@ class TestCashAccount:
         )
 
         # Assert
-        assert result == [Money(1000000.00, AUD), Money(-800016.00, USD)]
+        assert result == [Money(-800016.00, USD)]
 
     def test_calculate_pnls_for_multi_currency_cash_account_btcusdt(self):
         # Arrange
