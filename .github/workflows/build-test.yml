@@ -110,7 +110,6 @@ jobs:
 
   docs:
     needs: [ build-test ]
-    name: docs - Python 3.9 (Linux)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
