@@ -11,8 +11,8 @@
 
 | Branch    | Version | Status |
 |:----------|:--------|:-------|
-| `master`  | ![version](https://img.shields.io/endpoint?url=https//github.com/nautechsystems/nautilus_trader/tree/master/version.json) | [![build-test](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml) |
-| `develop` | ![version](https://img.shields.io/endpoint?url=https//github.com/nautechsystems/nautilus_trader/tree/develop/version.json) | [![build-test](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml) |
+| `master`  | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json) | [![build-test](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml) |
+| `develop` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json) | [![build-test](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml) |
 
 | Platform         | Rust | Python   |
 |:-----------------|:-----|:---------|
