@@ -18,8 +18,8 @@ from tests.test_kit.performance import PerformanceHarness
 
 
 model = FillModel(
-    prob_fill_at_stop=0.95,
-    prob_fill_at_limit=0.5,
+    prob_fill_on_stop=0.95,
+    prob_fill_on_limit=0.5,
     random_seed=42,
 )
 

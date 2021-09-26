@@ -51,7 +51,7 @@ from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import InstrumentStatus
 from nautilus_trader.model.enums import LiquiditySide
@@ -288,7 +288,7 @@ def _handle_market_snapshot(selection, instrument, ts_event, ts_init):
         asks = [(p, v) for _, p, v in selection.get(ask_keys[0], [])]
     if bids or asks:
         snapshot = OrderBookSnapshot(
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             instrument_id=instrument.id,
             bids=[(price_to_probability(p, OrderSide.BUY), v) for p, v in asks],
             asks=[(price_to_probability(p, OrderSide.SELL), v) for p, v in bids],
@@ -351,7 +351,7 @@ def _handle_bsp_updates(runner, instrument, ts_event, ts_init):
             price, volume = upd
             delta = BSPOrderBookDelta(
                 instrument_id=instrument.id,
-                level=BookLevel.L2,
+                book_type=BookType.L2_MBP,
                 action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                 order=Order(
                     price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
@@ -377,7 +377,7 @@ def _handle_book_updates(runner, instrument, ts_event, ts_init):
             deltas.append(
                 OrderBookDelta(
                     instrument_id=instrument.id,
-                    level=BookLevel.L2,
+                    book_type=BookType.L2_MBP,
                     action=BookAction.DELETE if volume == 0 else BookAction.UPDATE,
                     order=Order(
                         price=price_to_probability(price, side=B2N_MARKET_STREAM_SIDE[side]),
@@ -390,7 +390,7 @@ def _handle_book_updates(runner, instrument, ts_event, ts_init):
             )
     if deltas:
         ob_update = OrderBookDeltas(
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             instrument_id=instrument.id,
             deltas=deltas,
             ts_event=ts_event,
@@ -560,7 +560,7 @@ def build_market_snapshot_messages(
 
 def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
     per_instrument_deltas = defaultdict(list)
-    level = one(set(deltas.level for deltas in all_deltas))
+    book_type = one(set(deltas.book_type for deltas in all_deltas))
     ts_event = one(set(deltas.ts_event for deltas in all_deltas))
     ts_init = one(set(deltas.ts_init for deltas in all_deltas))
 
@@ -570,7 +570,7 @@ def _merge_order_book_deltas(all_deltas: List[OrderBookDeltas]):
         OrderBookDeltas(
             instrument_id=instrument_id,
             deltas=deltas,
-            level=level,
+            book_type=book_type,
             ts_event=ts_event,
             ts_init=ts_init,
         )

@@ -26,7 +26,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
@@ -155,7 +155,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         Logger logger not None,
     ):
         """
-        Initialize a new instance of the ``BacktestDataProducer`` class.
+        Initialize a new instance of the ``BacktestMarketDataClient`` class.
 
         Parameters
         ----------
@@ -221,7 +221,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void subscribe_order_book_snapshots(
         self,
         InstrumentId instrument_id,
-        BookLevel level,
+        BookType book_type,
         int depth=0,
         dict kwargs=None,
     ) except *:
@@ -232,7 +232,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : BookLevel {``L1``, ``L2``, ``L3``}
+        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
             The order book level.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
@@ -248,7 +248,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void subscribe_order_book_deltas(
         self,
         InstrumentId instrument_id,
-        BookLevel level,
+        BookType book_type,
         dict kwargs=None,
     ) except *:
         """
@@ -258,8 +258,8 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        level : BookLevel {``L1``, ``L2``, ``L3``}
-            The order book level.
+        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+            The order book type.
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
 

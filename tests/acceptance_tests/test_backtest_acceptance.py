@@ -19,20 +19,19 @@ from decimal import Decimal
 import pandas as pd
 import pytest
 
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
+from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import AUD
-from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.betting import BettingInstrument
@@ -62,19 +61,14 @@ class TestBacktestAcceptanceTestsUSDJPY:
         self.venue = Venue("SIM")
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
+        # Setup data
+        wrangler = QuoteTickDataWrangler(instrument=self.usdjpy)
+        ticks = wrangler.process_bar_data(
+            bid_data=TestDataProvider.usdjpy_1min_bid(),
+            ask_data=TestDataProvider.usdjpy_1min_ask(),
+        )
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_bars_as_ticks(
-            self.usdjpy.id,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-            TestDataProvider.usdjpy_1min_bid(),
-        )
-        self.engine.add_bars_as_ticks(
-            self.usdjpy.id,
-            BarAggregation.MINUTE,
-            PriceType.ASK,
-            TestDataProvider.usdjpy_1min_ask(),
-        )
+        self.engine.add_ticks(ticks)
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -104,13 +98,14 @@ class TestBacktestAcceptanceTestsUSDJPY:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert - Should return expected PnL
         assert strategy.fast_ema.count == 2689
-        assert self.engine.iteration == 115043
+        assert self.engine.iteration == 115044
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.26, USD)
 
     def test_rerun_ema_cross_strategy_returns_identical_performance(self):
@@ -123,12 +118,14 @@ class TestBacktestAcceptanceTestsUSDJPY:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
         result1 = self.engine.analyzer.get_performance_stats_pnls()
 
         # Act
         self.engine.reset()
+        self.engine.add_instrument(self.usdjpy)  # TODO(cs): Having to replace instrument
         self.engine.run()
         result2 = self.engine.analyzer.get_performance_stats_pnls()
 
@@ -160,15 +157,16 @@ class TestBacktestAcceptanceTestsUSDJPY:
         # Note since these strategies are operating on the same instrument_id as per
         # the EMACross BUY/SELL logic they will be flattening each others positions.
         # The purpose of the test is just to ensure multiple strategies can run together.
+        self.engine.add_strategies(strategies=[strategy1, strategy2])
 
         # Act
-        self.engine.run(strategies=[strategy1, strategy2])
+        self.engine.run()
 
         # Assert
         assert strategy1.fast_ema.count == 2689
         assert strategy2.fast_ema.count == 2689
-        assert self.engine.iteration == 115043
-        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(992811.26, USD)
+        assert self.engine.iteration == 115044
+        assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(985622.52, USD)
 
 
 class TestBacktestAcceptanceTestsGBPUSD:
@@ -183,19 +181,14 @@ class TestBacktestAcceptanceTestsGBPUSD:
         self.venue = Venue("SIM")
         self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
+        # Setup data
+        wrangler = QuoteTickDataWrangler(self.gbpusd)
+        ticks = wrangler.process_bar_data(
+            bid_data=TestDataProvider.gbpusd_1min_bid(),
+            ask_data=TestDataProvider.gbpusd_1min_ask(),
+        )
         self.engine.add_instrument(self.gbpusd)
-        self.engine.add_bars_as_ticks(
-            self.gbpusd.id,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-            TestDataProvider.gbpusd_1min_bid(),
-        )
-        self.engine.add_bars_as_ticks(
-            self.gbpusd.id,
-            BarAggregation.MINUTE,
-            PriceType.ASK,
-            TestDataProvider.gbpusd_1min_ask(),
-        )
+        self.engine.add_ticks(ticks)
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -225,13 +218,14 @@ class TestBacktestAcceptanceTestsGBPUSD:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert strategy.fast_ema.count == 8353
-        assert self.engine.iteration == 120467
+        assert self.engine.iteration == 120468
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(931346.81, GBP)
 
 
@@ -247,8 +241,11 @@ class TestBacktestAcceptanceTestsAUDUSD:
         self.venue = Venue("SIM")
         self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
+        # Setup data
+        wrangler = QuoteTickDataWrangler(self.audusd)
+        ticks = wrangler.process(TestDataProvider.audusd_ticks())
         self.engine.add_instrument(self.audusd)
-        self.engine.add_quote_ticks(self.audusd.id, TestDataProvider.audusd_ticks())
+        self.engine.add_ticks(ticks)
 
         interest_rate_data = pd.read_csv(
             os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -278,13 +275,14 @@ class TestBacktestAcceptanceTestsAUDUSD:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert strategy.fast_ema.count == 1771
-        assert self.engine.iteration == 99999
+        assert self.engine.iteration == 100000
         assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(987920.04, AUD)
 
     def test_run_ema_cross_with_tick_bar_spec(self):
@@ -297,14 +295,15 @@ class TestBacktestAcceptanceTestsAUDUSD:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
-        assert strategy.fast_ema.count == 999
-        assert self.engine.iteration == 99999
-        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(993431.86, AUD)
+        assert strategy.fast_ema.count == 1000
+        assert self.engine.iteration == 100000
+        assert self.engine.portfolio.account(self.venue).balance_total(AUD) == Money(994441.60, AUD)
 
 
 class TestBacktestAcceptanceTestsETHUSDT:
@@ -319,8 +318,12 @@ class TestBacktestAcceptanceTestsETHUSDT:
         self.venue = Venue("BINANCE")
         self.ethusdt = TestInstrumentProvider.ethusdt_binance()
 
+        # Setup data
+        wrangler = TradeTickDataWrangler(instrument=self.ethusdt)
+        ticks = wrangler.process(TestDataProvider.ethusdt_trades())
         self.engine.add_instrument(self.ethusdt)
-        self.engine.add_trade_ticks(self.ethusdt.id, TestDataProvider.ethusdt_trades())
+        self.engine.add_ticks(ticks)
+
         self.engine.add_venue(
             venue=self.venue,
             venue_type=VenueType.EXCHANGE,
@@ -343,64 +346,16 @@ class TestBacktestAcceptanceTestsETHUSDT:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert strategy.fast_ema.count == 279
         assert self.engine.iteration == 69806
         assert self.engine.portfolio.account(self.venue).balance_total(USDT) == Money(
             998450.62196820, USDT
-        )
-
-
-class TestBacktestAcceptanceTestsBTCUSDTWithTradesAndQuotes:
-    def setup(self):
-        # Fixture Setup
-        config = BacktestEngineConfig(
-            bypass_logging=True,
-            run_analysis=False,
-        )
-        self.engine = BacktestEngine(config=config)
-
-        self.venue = Venue("BINANCE")
-        self.btcusdt = TestInstrumentProvider.btcusdt_binance()
-
-        self.engine.add_instrument(self.btcusdt)
-        self.engine.add_trade_ticks(self.btcusdt.id, TestDataProvider.tardis_trades())
-        self.engine.add_quote_ticks(self.btcusdt.id, TestDataProvider.tardis_quotes())
-        self.engine.add_venue(
-            venue=self.venue,
-            venue_type=VenueType.EXCHANGE,
-            oms_type=OMSType.NETTING,
-            account_type=AccountType.MARGIN,
-            base_currency=None,  # Multi-currency account
-            starting_balances=[Money(1_000_000, USDT), Money(10, BTC)],
-        )
-
-    def teardown(self):
-        self.engine.dispose()
-
-    def test_run_ema_cross_with_tick_bar_spec(self):
-        # Arrange
-        config = EMACrossConfig(
-            instrument_id=str(self.btcusdt.id),
-            bar_type="BTC/USDT.BINANCE-250-TICK-LAST-INTERNAL",
-            trade_size=Decimal(1),
-            fast_ema=10,
-            slow_ema=20,
-        )
-        strategy = EMACross(config=config)
-
-        # Act
-        self.engine.run(strategies=[strategy])
-
-        # Assert
-        assert strategy.fast_ema.count == 39
-        assert self.engine.iteration == 19998
-        assert self.engine.portfolio.account(self.venue).balance_total(USDT) == Money(
-            999843.41688000, USDT
         )
 
 
@@ -423,14 +378,14 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
 
         for instrument in instruments[:1]:
-            self.engine.add_instrument(instrument)
             trade_ticks = [
                 d for d in data if isinstance(d, TradeTick) and d.instrument_id == instrument.id
             ]
             order_book_deltas = [
                 d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
             ]
-            self.engine.add_trade_tick_objects(instrument.id, trade_ticks)
+            self.engine.add_instrument(instrument)
+            self.engine.add_ticks(trade_ticks)
             self.engine.add_order_book_data(order_book_deltas)
             self.instrument = instrument
         self.engine.add_venue(
@@ -440,7 +395,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             base_currency=None,
             oms_type=OMSType.NETTING,
             starting_balances=[Money(10000, GBP)],
-            order_book_level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
         )
 
     def teardown(self):
@@ -452,12 +407,13 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             instrument_id=str(self.instrument.id), trade_size=Decimal(10)
         )
         strategy = OrderBookImbalanceStrategy(config=config)
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
-        assert self.engine.iteration in (8825, 9319)
+        assert self.engine.iteration in (8199, 7812)
 
 
 @pytest.mark.skip(reason="bm to fix")
@@ -480,14 +436,14 @@ class TestBacktestAcceptanceTestsMarketMaking:
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
 
         for instrument in instruments[:1]:
-            self.engine.add_instrument(instrument)
             trade_ticks = [
                 d for d in data if isinstance(d, TradeTick) and d.instrument_id == instrument.id
             ]
             order_book_deltas = [
                 d for d in data if isinstance(d, OrderBookData) and d.instrument_id == instrument.id
             ]
-            self.engine.add_trade_tick_objects(instrument.id, trade_ticks)
+            self.engine.add_instrument(instrument)
+            self.engine.add_ticks(trade_ticks)
             self.engine.add_order_book_data(order_book_deltas)
             self.instrument = instrument
         self.engine.add_venue(
@@ -497,7 +453,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             base_currency=None,
             oms_type=OMSType.NETTING,
             starting_balances=[Money(10000, GBP)],
-            order_book_level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
         )
 
     def teardown(self):
@@ -510,9 +466,10 @@ class TestBacktestAcceptanceTestsMarketMaking:
             trade_size=Decimal(10),
             max_size=Decimal(30),
         )
+        self.engine.add_strategy(strategy)
 
         # Act
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Assert
         assert self.engine.iteration == 9319

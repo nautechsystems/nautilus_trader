@@ -17,14 +17,13 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
 
-from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.backtest.data_producer cimport DataProducer
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.uuid cimport UUIDFactory
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.engine cimport DataEngine
 from nautilus_trader.execution.engine cimport ExecutionEngine
@@ -47,53 +46,33 @@ cdef class BacktestEngine:
     cdef DataEngine _data_engine
     cdef ExecutionEngine _exec_engine
     cdef RiskEngine _risk_engine
-    cdef DataProducer _data_producer
     cdef LoggerAdapter _log
     cdef Logger _logger
     cdef Logger _test_logger
 
     cdef dict _exchanges
-    cdef list _generic_data
     cdef list _data
-    cdef list _order_book_data
-    cdef dict _quote_ticks
-    cdef dict _trade_ticks
-    cdef dict _bars_bid
-    cdef dict _bars_ask
+    cdef int64_t _data_len
+    cdef int64_t _index
+    cdef datetime _run_started
+    cdef datetime _backtest_start
 
     cdef readonly Trader trader
     """The trader for the backtest.\n\n:returns: `Trader`"""
     cdef readonly TraderId trader_id
     """The trader ID associated with the engine.\n\n:returns: `TraderId`"""
-    cdef readonly str host_id
-    """The backtest engine host ID.\n\n:returns: `str`"""
+    cdef readonly str machine_id
+    """The backtest engine machine ID.\n\n:returns: `str`"""
     cdef readonly UUID4 instance_id
     """The backtest engine instance ID.\n\n:returns: `UUID4`"""
-    cdef readonly datetime created_time
-    """The backtest engine created time.\n\n:returns: `datetime`"""
-    cdef readonly timedelta time_to_initialize
-    """The backtest engine time to initialize.\n\n:returns: `timedelta`"""
     cdef readonly int iteration
     """The backtest engine iteration count.\n\n:returns: `int`"""
     cdef readonly CacheFacade cache
     """The backtest engine cache.\n\n:returns: `CacheFacade`"""
     cdef readonly PortfolioFacade portfolio
     """The backtest engine portfolio.\n\n:returns: `PortfolioFacade`"""
-    cdef readonly PerformanceAnalyzer analyzer
+    cdef readonly analyzer
     """The performance analyzer for the backtest.\n\n:returns: `PerformanceAnalyzer`"""
 
+    cdef Data _next(self)
     cdef void _advance_time(self, int64_t now_ns) except *
-    cdef void _process_modules(self, int64_t now_ns) except *
-    cdef void _pre_run(
-        self,
-        datetime run_started,
-        datetime start,
-        datetime stop,
-    ) except *
-    cdef void _post_run(
-        self,
-        datetime run_started,
-        datetime run_finished,
-        datetime start,
-        datetime stop,
-    ) except *

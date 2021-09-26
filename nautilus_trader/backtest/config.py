@@ -14,11 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import dataclasses
-from typing import List, Optional
+from datetime import datetime
+from typing import Dict, List, Optional, Union
 
 import pydantic
 
 from nautilus_trader.backtest.engine import BacktestEngineConfig
+from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.trading.config import ImportableStrategyConfig
 
 
@@ -27,20 +29,36 @@ class Partialable:
     The abstract base class for all partialable configurations.
     """
 
+    def fields(self) -> Dict[str, dataclasses.Field]:
+        return {field.name: field for field in dataclasses.fields(self)}
+
     def missing(self):
-        return [x for x in self.__dataclass_fields__ if getattr(self, x) is None]
+        return [x for x in self.fields() if getattr(self, x) is None]
+
+    def optional_fields(self):
+        for field in self.fields().values():
+            if (
+                hasattr(field.type, "__args__")
+                and len(field.type.__args__) == 2
+                and field.type.__args__[-1] is type(None)  # noqa: E721
+            ):
+                # Check if exactly two arguments exists and one of them are None type
+                yield field.name
 
     def is_partial(self):
         return any(self.missing())
 
     def check(self, ignore=None):
-        missing = [m for m in self.missing() if m not in (ignore or {})]
+        optional = tuple(self.optional_fields())
+        missing = [
+            name for name in self.missing() if not (name in (ignore or {}) or name in optional)
+        ]
         if missing:
             raise AssertionError(f"Missing fields: {missing}")
 
     def _check_kwargs(self, kw):
         for k in kw:
-            assert k in self.__dataclass_fields__, f"Unknown kwarg: {k}"
+            assert k in self.fields(), f"Unknown kwarg: {k}"
 
     def update(self, **kwargs):
         """Update attributes on this instance."""
@@ -50,13 +68,14 @@ class Partialable:
 
     def replace(self, **kwargs):
         """Return a new instance with some attributes replaced."""
-        return self.__class__(
-            **{**{k: getattr(self, k) for k in self.__dataclass_fields__}, **kwargs}
-        )
+        return self.__class__(**{**{k: getattr(self, k) for k in self.fields()}, **kwargs})
+
+    def __dask_tokenize__(self):
+        return tuple(self.fields())
 
     def __repr__(self):
         dataclass_repr_func = dataclasses._repr_fn(
-            fields=list(self.__dataclass_fields__.values()), globals=self.__dict__
+            fields=list(self.fields().values()), globals=self.__dict__
         )
         r = dataclass_repr_func(self)
         if self.missing():
@@ -101,9 +120,10 @@ class BacktestDataConfig(Partialable):
     catalog_path: str
     data_type: type
     catalog_fs_protocol: str = None
+    catalog_fs_storage_options: Optional[Dict] = None
     instrument_id: Optional[str] = None
-    start_time: Optional[int] = None
-    end_time: Optional[int] = None
+    start_time: Optional[Union[datetime, str, int]] = None
+    end_time: Optional[Union[datetime, str, int]] = None
     filters: Optional[dict] = None
     client_id: Optional[str] = None
 
@@ -116,6 +136,32 @@ class BacktestDataConfig(Partialable):
             end=self.end_time,
             as_nautilus=True,
         )
+
+    def catalog(self):
+        return DataCatalog(
+            path=self.catalog_path,
+            fs_protocol=self.catalog_fs_protocol,
+            fs_storage_options=self.catalog_fs_storage_options,
+        )
+
+    def load(self, start_time=None, end_time=None):
+        query = self.query
+        query.update(
+            {
+                "start": start_time or query["start"],
+                "end": end_time or query["end"],
+            }
+        )
+
+        catalog = self.catalog()
+        return {
+            "type": query["cls"],
+            "data": catalog.query(**query),
+            "instrument": catalog.instruments(instrument_ids=self.instrument_id, as_nautilus=True)[
+                0
+            ],
+            "client_id": self.client_id,
+        }
 
 
 @pydantic.dataclasses.dataclass()
@@ -130,3 +176,4 @@ class BacktestRunConfig(Partialable):
     venues: Optional[List[BacktestVenueConfig]] = None
     data: Optional[List[BacktestDataConfig]] = None
     strategies: Optional[List[ImportableStrategyConfig]] = None
+    batch_size_bytes: Optional[int] = None

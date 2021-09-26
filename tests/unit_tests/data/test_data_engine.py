@@ -37,7 +37,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
-from nautilus_trader.model.enums import BookLevel
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -697,7 +697,7 @@ class TestDataEngine:
                 OrderBook,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
-                    "level": 2,
+                    "book_type": 2,
                     "depth": 10,
                     "interval_ms": 1000,
                 },
@@ -723,7 +723,7 @@ class TestDataEngine:
                 OrderBookData,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
-                    "level": 2,
+                    "book_type": 2,
                     "depth": 10,
                     "interval_ms": 1000,
                 },
@@ -749,7 +749,7 @@ class TestDataEngine:
                 OrderBook,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
-                    "level": 2,
+                    "book_type": 2,
                     "depth": 25,
                     "interval_ms": 1000,
                 },
@@ -775,7 +775,7 @@ class TestDataEngine:
                 OrderBook,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
-                    "level": 2,
+                    "book_type": 2,
                     "depth": 25,
                     "interval_ms": 1000,
                 },
@@ -816,7 +816,7 @@ class TestDataEngine:
                 OrderBookData,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
-                    "level": 2,
+                    "book_type": 2,
                     "depth": 25,
                     "interval_ms": 1000,
                 },
@@ -857,7 +857,7 @@ class TestDataEngine:
                 OrderBook,
                 metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
-                    "level": 2,
+                    "book_type": 2,
                     "depth": 25,
                     "interval_ms": 1000,
                 },
@@ -907,7 +907,7 @@ class TestDataEngine:
                 OrderBook,
                 {
                     "instrument_id": ETHUSDT_BINANCE.id,
-                    "level": BookLevel.L2,
+                    "book_type": BookType.L2_MBP,
                     "depth": 25,
                     "interval_ms": 1000,  # Streaming
                 },
@@ -920,7 +920,7 @@ class TestDataEngine:
 
         snapshot = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
             ts_event=0,
@@ -952,7 +952,7 @@ class TestDataEngine:
                 OrderBookData,
                 {
                     "instrument_id": ETHUSDT_BINANCE.id,
-                    "level": BookLevel.L3,
+                    "book_type": BookType.L3_MBO,
                     "depth": 5,
                 },
             ),
@@ -964,7 +964,7 @@ class TestDataEngine:
 
         deltas = OrderBookDeltas(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             deltas=[],
             ts_event=0,
             ts_init=0,
@@ -1001,7 +1001,7 @@ class TestDataEngine:
                 OrderBook,
                 {
                     "instrument_id": ETHUSDT_BINANCE.id,
-                    "level": BookLevel.L2,
+                    "book_type": BookType.L2_MBP,
                     "depth": 25,
                     "interval_ms": 1000,
                 },
@@ -1016,7 +1016,7 @@ class TestDataEngine:
                 OrderBook,
                 {
                     "instrument_id": ETHUSDT_BINANCE.id,
-                    "level": BookLevel.L2,
+                    "book_type": BookType.L2_MBP,
                     "depth": 25,
                     "interval_ms": 1000,
                 },
@@ -1030,7 +1030,7 @@ class TestDataEngine:
 
         snapshot = OrderBookSnapshot(
             instrument_id=ETHUSDT_BINANCE.id,
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             bids=[[1000, 1]],
             asks=[[1001, 1]],
             ts_event=0,

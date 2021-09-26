@@ -35,7 +35,6 @@ from cpython.datetime cimport timedelta
 
 from typing import Callable, Optional
 
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport CMD
@@ -59,7 +58,6 @@ from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregation
-from nautilus_trader.model.c_enums.bar_aggregation cimport BarAggregationParser
 from nautilus_trader.model.c_enums.price_type cimport PriceType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
@@ -626,7 +624,7 @@ cdef class DataEngine(Component):
         # Always re-subscribe to override previous settings
         client.subscribe_order_book_deltas(
             instrument_id=instrument_id,
-            level=metadata["level"],
+            book_type=metadata["book_type"],
             kwargs=metadata.get("kwargs"),
         )
 
@@ -667,7 +665,7 @@ cdef class DataEngine(Component):
                 return
             order_book = OrderBook.create(
                 instrument=instrument,
-                level=metadata["level"],
+                book_type=metadata["book_type"],
             )
 
             self._cache.add_order_book(order_book)
@@ -678,14 +676,14 @@ cdef class DataEngine(Component):
             if instrument_id not in client.subscribed_order_book_deltas():
                 client.subscribe_order_book_deltas(
                     instrument_id=instrument_id,
-                    level=metadata.get("level"),
+                    book_type=metadata.get("book_type"),
                     kwargs=metadata.get("kwargs"),
                 )
         except NotImplementedError:
             if instrument_id not in client.subscribed_order_book_snapshots():
                 client.subscribe_order_book_snapshots(
                     instrument_id=instrument_id,
-                    level=metadata.get("level"),
+                    book_type=metadata.get("book_type"),
                     depth=metadata.get("depth"),
                     kwargs=metadata.get("kwargs"),
                 )
@@ -1087,7 +1085,7 @@ cdef class DataEngine(Component):
                 self._log.debug(f"Applying partial bar {partial} for {partial.type}.")
                 aggregator.set_partial(partial)
             else:
-                if self._fsm.state == ComponentState.RUNNING:
+                if self.is_running_c():
                     # Only log this error if the component is running, because
                     # there may have been an immediate stop called after start
                     # - with the partial bar being for a now removed aggregator.

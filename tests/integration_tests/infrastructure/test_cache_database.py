@@ -19,6 +19,7 @@ from decimal import Decimal
 import pytest
 import redis
 
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.common.clock import TestClock
@@ -30,11 +31,9 @@ from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Venue
@@ -758,7 +757,7 @@ class TestExecutionCacheWithRedisDatabaseTests:
     def setup(self):
         # Fixture Setup
         config = BacktestEngineConfig(
-            bypass_logging=True,
+            bypass_logging=False,
             run_analysis=False,
             cache_database=CacheDatabaseConfig(),  # default redis
             cache_db_flush=False,
@@ -768,19 +767,13 @@ class TestExecutionCacheWithRedisDatabaseTests:
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
+        wrangler = QuoteTickDataWrangler(self.usdjpy)
+        ticks = wrangler.process_bar_data(
+            bid_data=TestDataProvider.usdjpy_1min_bid(),
+            ask_data=TestDataProvider.usdjpy_1min_ask(),
+        )
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_bars_as_ticks(
-            self.usdjpy.id,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-            TestDataProvider.usdjpy_1min_bid(),
-        )
-        self.engine.add_bars_as_ticks(
-            self.usdjpy.id,
-            BarAggregation.MINUTE,
-            PriceType.ASK,
-            TestDataProvider.usdjpy_1min_ask(),
-        )
+        self.engine.add_ticks(ticks)
 
         self.engine.add_venue(
             venue=Venue("SIM"),
@@ -808,12 +801,14 @@ class TestExecutionCacheWithRedisDatabaseTests:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Generate a lot of data
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Reset engine
         self.engine.reset()
+        self.engine.add_instrument(self.usdjpy)
 
         # Act
         self.engine.run()

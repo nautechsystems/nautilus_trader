@@ -158,11 +158,11 @@ cdef class OrderInitialized(OrderEvent):
         parent_order_id : ClientOrderId, optional
             The orders parent client order ID.
         child_order_ids : list[ClientOrderId], optional
-            The orders child client order ID(s).
+            The order child client order ID(s).
         contingency : ContingencyType
-            The orders contingency type.
+            The order contingency type.
         contingency_ids : list[ClientOrderId], optional
-            The orders contingency client order ID(s).
+            The order contingency client order ID(s).
         tags : str, optional
             The custom user tags for the order. These are optional and can
             contain any arbitrary delimiter if required.
@@ -1913,7 +1913,14 @@ cdef class OrderUpdated(OrderEvent):
         ts_init : int64
             The UNIX timestamp (nanoseconds) when the object was initialized.
 
+        Raises
+        ------
+        ValueError
+            If quantity is not positive (> 0).
+
         """
+        Condition.positive(quantity, "quantity")
+
         super().__init__(
             trader_id,
             strategy_id,
@@ -2103,6 +2110,7 @@ cdef class OrderFilled(OrderEvent):
 
         """
         Condition.positive(last_qty, "last_qty")
+
         if info is None:
             info = {}
         super().__init__(

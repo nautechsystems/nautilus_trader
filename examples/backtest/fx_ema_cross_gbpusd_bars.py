@@ -27,15 +27,14 @@ sys.path.insert(
 
 from examples.strategies.ema_cross_simple import EMACross
 from examples.strategies.ema_cross_simple import EMACrossConfig
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -63,24 +62,18 @@ if __name__ == "__main__":
     GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
 
     # Setup data
+    wrangler = QuoteTickDataWrangler(instrument=GBPUSD_SIM)
+    ticks = wrangler.process_bar_data(
+        bid_data=TestDataProvider.gbpusd_1min_bid(),
+        ask_data=TestDataProvider.gbpusd_1min_ask(),
+    )
     engine.add_instrument(GBPUSD_SIM)
-    engine.add_bars_as_ticks(
-        instrument_id=GBPUSD_SIM.id,
-        aggregation=BarAggregation.MINUTE,
-        price_type=PriceType.BID,
-        data=TestDataProvider.gbpusd_1min_bid(),  # Stub data from the test kit
-    )
-    engine.add_bars_as_ticks(
-        instrument_id=GBPUSD_SIM.id,
-        aggregation=BarAggregation.MINUTE,
-        price_type=PriceType.ASK,
-        data=TestDataProvider.gbpusd_1min_ask(),  # Stub data from the test kit
-    )
+    engine.add_ticks(ticks)
 
     # Create a fill model (optional)
     fill_model = FillModel(
-        prob_fill_at_limit=0.2,
-        prob_fill_at_stop=0.95,
+        prob_fill_on_limit=0.2,
+        prob_fill_on_stop=0.95,
         prob_slippage=0.5,
         random_seed=42,
     )
@@ -98,7 +91,7 @@ if __name__ == "__main__":
         oms_type=OMSType.HEDGING,  # Venue will generate position_ids
         account_type=AccountType.MARGIN,
         base_currency=USD,  # Standard single-currency account
-        starting_balances=[Money(1_000_000, USD)],
+        starting_balances=[Money(10_000_000, USD)],
         fill_model=fill_model,
         modules=[fx_rollover_interest],
     )
@@ -112,13 +105,14 @@ if __name__ == "__main__":
         trade_size=Decimal(1_000_000),
         order_id_tag="001",
     )
-    # Instantiate your strategy
+    # Instantiate and add your strategy
     strategy = EMACross(config=config)
+    engine.add_strategy(strategy=strategy)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 
-    # Run the engine from start to end of data
-    engine.run(strategies=[strategy])
+    # Run the engine (from start to end of data)
+    engine.run()
 
     # Optionally view reports
     with pd.option_context(

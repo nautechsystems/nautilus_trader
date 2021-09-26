@@ -26,8 +26,8 @@ cdef class FillModel:
 
     def __init__(
         self,
-        double prob_fill_at_limit=1.0,
-        double prob_fill_at_stop=1.0,
+        double prob_fill_on_limit=1.0,
+        double prob_fill_on_stop=1.0,
         double prob_slippage=0.0,
         random_seed=None,
     ):
@@ -36,9 +36,9 @@ cdef class FillModel:
 
         Parameters
         ----------
-        prob_fill_at_limit : double
+        prob_fill_on_limit : double
             The probability of limit order filling if the market rests on its price.
-        prob_fill_at_stop : double
+        prob_fill_on_stop : double
             The probability of stop orders filling if the market rests on its price.
         prob_slippage : double
             The probability of order fill prices slipping by one tick.
@@ -53,8 +53,8 @@ cdef class FillModel:
             If random_seed is not None and not of type `int`.
 
         """
-        Condition.in_range(prob_fill_at_limit, 0.0, 1.0, "prob_fill_at_limit")
-        Condition.in_range(prob_fill_at_stop, 0.0, 1.0, "prob_fill_at_stop")
+        Condition.in_range(prob_fill_on_limit, 0.0, 1.0, "prob_fill_on_limit")
+        Condition.in_range(prob_fill_on_stop, 0.0, 1.0, "prob_fill_on_stop")
         Condition.in_range(prob_slippage, 0.0, 1.0, "prob_slippage")
         if random_seed is not None:
             Condition.type(random_seed, int, "random_seed")
@@ -62,8 +62,8 @@ cdef class FillModel:
         else:
             random.seed()
 
-        self.prob_fill_at_limit = prob_fill_at_limit
-        self.prob_fill_at_stop = prob_fill_at_stop
+        self.prob_fill_on_limit = prob_fill_on_limit
+        self.prob_fill_on_stop = prob_fill_on_stop
         self.prob_slippage = prob_slippage
 
     cpdef bint is_limit_filled(self) except *:
@@ -75,7 +75,7 @@ cdef class FillModel:
         bool
 
         """
-        return self._event_success(self.prob_fill_at_limit)
+        return self._event_success(self.prob_fill_on_limit)
 
     cpdef bint is_stop_filled(self) except *:
         """
@@ -86,7 +86,7 @@ cdef class FillModel:
         bool
 
         """
-        return self._event_success(self.prob_fill_at_stop)
+        return self._event_success(self.prob_fill_on_stop)
 
     cpdef bint is_slipped(self) except *:
         """

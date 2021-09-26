@@ -1,7 +1,7 @@
 repos:
 
   - repo: https://github.com/psf/black
-    rev: 21.8b0
+    rev: 21.9b0
     hooks:
       - id: black
         args: [
@@ -25,7 +25,7 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v3.4.0
+    rev: v4.0.1
     hooks:
       - id: forbid-new-submodules
       - id: fix-encoding-pragma
@@ -128,6 +128,12 @@ repos:
         - "--ignore=D100,D101,D102,D103,D104,D105,D107,D200,D203,D205,D212,D213,D400,D415"
         additional_dependencies:
           - toml
+
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.5.0
+    hooks:
+      - id: nbstripout
+
 
 # Flake8 ignore justifications
 # ----------------------------

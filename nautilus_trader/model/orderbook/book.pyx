@@ -24,7 +24,7 @@ from nautilus_trader.model.orderbook.error import BookIntegrityError
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.book_action cimport BookAction
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.order_side cimport OrderSide
 from nautilus_trader.model.c_enums.order_side cimport OrderSideParser
 from nautilus_trader.model.data.tick cimport TradeTick
@@ -50,7 +50,7 @@ cdef class OrderBook:
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        BookLevel level,
+        BookType book_type,
         uint8_t price_precision,
         uint8_t size_precision,
     ):
@@ -58,7 +58,7 @@ cdef class OrderBook:
             raise RuntimeError("cannot instantiate OrderBook directly: use OrderBook.create()")
 
         self.instrument_id = instrument_id
-        self.level = level
+        self.type = book_type
         self.price_precision = price_precision
         self.size_precision = size_precision
         self.bids = Ladder(
@@ -76,7 +76,7 @@ cdef class OrderBook:
     @staticmethod
     def create(
         Instrument instrument,
-        BookLevel level,
+        BookType book_type,
         bint simulated=False,
     ):
         """
@@ -86,7 +86,7 @@ cdef class OrderBook:
         ----------
         instrument : Instrument
             The instrument for the book.
-        level : BookLevel {``L1``, ``L2``, ``L3``}
+        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
             The order book level.
         simulated : bool
             If the order book should be simulated (for backtesting only).
@@ -97,9 +97,9 @@ cdef class OrderBook:
 
         """
         Condition.not_none(instrument, "instrument")
-        Condition.in_range_int(level, 1, 3, "level")
+        Condition.in_range_int(book_type, 1, 3, "book_type")
 
-        if level == BookLevel.L1:
+        if book_type == BookType.L1_TBBO:
             if simulated:
                 return SimulatedL1OrderBook(
                     instrument_id=instrument.id,
@@ -112,7 +112,7 @@ cdef class OrderBook:
                     price_precision=instrument.price_precision,
                     size_precision=instrument.size_precision,
                 )
-        elif level == BookLevel.L2:
+        elif book_type == BookType.L2_MBP:
             if simulated:
                 return SimulatedL2OrderBook(
                     instrument_id=instrument.id,
@@ -125,7 +125,7 @@ cdef class OrderBook:
                     price_precision=instrument.price_precision,
                     size_precision=instrument.size_precision,
                 )
-        elif level == BookLevel.L3:
+        elif book_type == BookType.L3_MBO:
             if simulated:
                 return SimulatedL3OrderBook(
                     instrument_id=instrument.id,
@@ -193,11 +193,11 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If delta.level is not equal to self.level.
+            If delta.book_type is not equal to self.type.
 
         """
         Condition.not_none(delta, "delta")
-        Condition.equal(delta.level, self.level, "delta.level", "self.level")
+        Condition.equal(delta.book_type, self.type, "delta.book_type", "self.type")
 
         self._apply_delta(delta)
 
@@ -213,11 +213,11 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If snapshot.level is not equal to self.level.
+            If snapshot.book_type is not equal to self.type.
 
         """
         Condition.not_none(deltas, "deltas")
-        Condition.equal(deltas.level, self.level, "deltas.level", "self.level")
+        Condition.equal(deltas.book_type, self.type, "deltas.book_type", "self.type")
 
         cdef OrderBookDelta delta
         for delta in deltas.deltas:
@@ -235,15 +235,15 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If snapshot.level is not equal to self.level.
+            If snapshot.book_type is not equal to self.type.
 
         """
         Condition.not_none(snapshot, "snapshot")
-        Condition.equal(snapshot.level, self.level, "snapshot.level", "self.level")
+        Condition.equal(snapshot.book_type, self.type, "snapshot.book_type", "self.type")
 
         self.clear()
         # Use `update` instead of `add` (when book has been cleared they're
-        # equivalent) to make work for L1 Orderbook.
+        # equivalent) to make work for L1_TBBO Orderbook.
         cdef Order order
         for bid in snapshot.bids:
             order = Order(
@@ -274,10 +274,10 @@ cdef class OrderBook:
         Raises
         ------
         ValueError
-            If data.level is not equal to self.level.
+            If data.level is not equal to self.type.
 
         """
-        Condition(data.level, self.level, "data.level", "self.level")
+        Condition(data.book_type, self.type, "data.book_type", "self.type")
 
         if isinstance(data, OrderBookSnapshot):
             self.apply_snapshot(snapshot=data)
@@ -675,7 +675,7 @@ cdef class OrderBook:
 cdef class L3OrderBook(OrderBook):
 
     """
-    Provides an L3 order book.
+    Provides an L3_MBO order book.
 
     A level 3 order books `Levels` can be made up of multiple orders.
     This class maps directly to the functionality of the base class.
@@ -709,7 +709,7 @@ cdef class L3OrderBook(OrderBook):
         """
         super().__init__(
             instrument_id=instrument_id,
-            level=BookLevel.L3,
+            book_type=BookType.L3_MBO,
             price_precision=price_precision,
             size_precision=size_precision,
         )
@@ -717,9 +717,9 @@ cdef class L3OrderBook(OrderBook):
 
 cdef class L2OrderBook(OrderBook):
     """
-    Provides an L2 order book.
+    Provides a L2_MBP order book.
 
-    A level 2 order books `Levels` are only made up of a single order.
+    The books `Levels` are only made up of a single order.
     """
 
     def __init__(
@@ -750,7 +750,7 @@ cdef class L2OrderBook(OrderBook):
         """
         super().__init__(
             instrument_id=instrument_id,
-            level=BookLevel.L2,
+            book_type=BookType.L2_MBP,
             price_precision=price_precision,
             size_precision=size_precision,
         )
@@ -805,9 +805,9 @@ cdef class L2OrderBook(OrderBook):
         """
         Check order book integrity.
 
-        For a L2 order book:
+        For a L2_MBP order book:
         - There should be at most one order per level.
-        - The bid side price should not be greater than the ask side price.
+        - The bid side price should not be greater than or equal to the ask side price.
 
         Raises
         ------
@@ -840,7 +840,7 @@ cdef class L2OrderBook(OrderBook):
 
 cdef class L1OrderBook(OrderBook):
     """
-    Provides a L1 order book.
+    Provides a L1_TBBO order book.
 
     A level 1 order book has a single (top) `Level`.
     """
@@ -873,7 +873,7 @@ cdef class L1OrderBook(OrderBook):
         """
         super().__init__(
             instrument_id=instrument_id,
-            level=BookLevel.L1,
+            book_type=BookType.L1_TBBO,
             price_precision=price_precision,
             size_precision=size_precision,
         )
@@ -904,7 +904,7 @@ cdef class L1OrderBook(OrderBook):
         # Because of the way we typically get updates from a L1 order book (bid
         # and ask updates at the same time), its quite probable that the last
         # bid is now the ask price we are trying to insert (or vice versa). We
-        # just need to add some extra protection against this if we are calling
+        # just need to add some extra protection against this if we aren't calling
         # `check_integrity()` on each individual update.
         if (
             order.side == OrderSide.BUY
@@ -938,9 +938,9 @@ cdef class L1OrderBook(OrderBook):
         """
         Check order book integrity.
 
-        For a L1 order book:
+        For a L1_TBBO order book:
         - There should be at most one level per side.
-        - The bid side price should not be greater than the ask side price.
+        - The bid side price should not be greater than or equal to the ask side price.
 
         Raises
         ------

@@ -65,13 +65,14 @@ class RiskEngineConfig(pydantic.BaseModel):
         If True then all risk checks are bypassed (will still check for duplicate IDs).
     max_order_rate : str, default=100/00:00:01
         The maximum order rate per timedelta.
-    max_notional_per_order : Dict[str, Decimal]
+    max_notional_per_order : Dict[str, str]
         The maximum notional value of an order per instrument ID.
+        The value should be a valid decimal format.
     """
 
     bypass: bool = False
     max_order_rate: pydantic.ConstrainedStr = "100/00:00:01"
-    max_notional_per_order: Dict[str, Decimal] = {}
+    max_notional_per_order: Dict[str, str] = {}
 
 
 cdef class RiskEngine(Component):
@@ -178,7 +179,7 @@ cdef class RiskEngine(Component):
     def _initialize_risk_checks(self, config: RiskEngineConfig):
         cdef dict max_notional_config = config.max_notional_per_order
         for instrument_id, value in max_notional_config.items():
-            self.set_max_notional_per_order(InstrumentId.from_str_c(instrument_id), value)
+            self.set_max_notional_per_order(InstrumentId.from_str_c(instrument_id), Decimal(value))
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 

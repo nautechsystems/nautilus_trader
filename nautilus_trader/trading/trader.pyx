@@ -26,10 +26,7 @@ from typing import Any, Callable
 import pandas as pd
 
 from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.analysis.performance cimport PerformanceAnalyzer
-from nautilus_trader.analysis.reports cimport ReportProvider
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.logging cimport Logger
@@ -41,6 +38,9 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.risk.engine cimport RiskEngine
 from nautilus_trader.trading.strategy cimport TradingStrategy
+
+from nautilus_trader.analysis.performance import PerformanceAnalyzer
+from nautilus_trader.analysis.reports import ReportProvider
 
 
 cdef class Trader(Component):
@@ -114,7 +114,6 @@ cdef class Trader(Component):
         self._data_engine = data_engine
         self._risk_engine = risk_engine
         self._exec_engine = exec_engine
-        self._report_provider = ReportProvider()
 
         self._strategies = []
         self._components = []
@@ -210,14 +209,14 @@ cdef class Trader(Component):
     cpdef void _stop(self) except *:
         cdef TradingStrategy strategy
         for strategy in self._strategies:
-            if strategy.state_c() == ComponentState.RUNNING:
+            if strategy.is_running_c():
                 strategy.stop()
             else:
                 self._log.warning(f"{strategy} already stopped.")
 
         cdef Actor component
         for component in self._components:
-            if component.state_c() == ComponentState.RUNNING:
+            if component.is_running_c():
                 component.stop()
             else:
                 self._log.warning(f"{component} already stopped.")
@@ -264,10 +263,10 @@ cdef class Trader(Component):
         """
         Condition.not_none(strategy, "strategy")
         Condition.not_in(strategy, self._strategies, "strategy", "strategies")
-        Condition.true(strategy.state_c() != ComponentState.RUNNING, "strategy.state_c() was RUNNING")
-        Condition.true(strategy.state_c() != ComponentState.DISPOSED, "strategy.state_c() was DISPOSED")
+        Condition.true(not strategy.is_running_c(), "strategy.state was RUNNING")
+        Condition.true(not strategy.is_disposed_c(), "strategy.state was DISPOSED")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             self._log.error("Cannot add a strategy to a running trader.")
             return
 
@@ -325,10 +324,10 @@ cdef class Trader(Component):
 
         """
         Condition.not_in(component, self._components, "component", "components")
-        Condition.true(component.state_c() != ComponentState.RUNNING, "component.state_c() was RUNNING")
-        Condition.true(component.state_c() != ComponentState.DISPOSED, "component.state_c() was DISPOSED")
+        Condition.true(not component.is_running_c(), "strategy.state was RUNNING")
+        Condition.true(not component.is_disposed_c(), "strategy.state was DISPOSED")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             self._log.error("Cannot add component to a running trader.")
             return
 
@@ -376,7 +375,7 @@ cdef class Trader(Component):
             If state is ``RUNNING``.
 
         """
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             self._log.error("Cannot clear the strategies of a running trader.")
             return
 
@@ -395,7 +394,7 @@ cdef class Trader(Component):
             If state is ``RUNNING``.
 
         """
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             self._log.error("Cannot clear the components of a running trader.")
             return
 
@@ -461,7 +460,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_orders_report(self._cache.orders())
+        return ReportProvider.generate_orders_report(self._cache.orders())
 
     cpdef object generate_order_fills_report(self):
         """
@@ -472,7 +471,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_order_fills_report(self._cache.orders())
+        return ReportProvider.generate_order_fills_report(self._cache.orders())
 
     cpdef object generate_positions_report(self):
         """
@@ -483,7 +482,7 @@ cdef class Trader(Component):
         pd.DataFrame
 
         """
-        return self._report_provider.generate_positions_report(self._cache.positions())
+        return ReportProvider.generate_positions_report(self._cache.positions())
 
     cpdef object generate_account_report(self, Venue venue):
         """
@@ -497,4 +496,4 @@ cdef class Trader(Component):
         cdef Account account = self._cache.account_for_venue(venue)
         if account is None:
             return pd.DataFrame()
-        return self._report_provider.generate_account_report(account)
+        return ReportProvider.generate_account_report(account)

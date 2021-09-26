@@ -116,7 +116,7 @@ class EMACross(TradingStrategy):
 
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
-        # self.subscribe_order_book(self.instrument_id, level=2, depth=25)  # For debugging
+        # self.subscribe_order_book(self.instrument_id, book_type=2, depth=25)  # For debugging
         # self.subscribe_quote_ticks(self.instrument_id)  # For debugging
         # self.subscribe_trade_ticks(self.instrument_id)  # For debugging
 

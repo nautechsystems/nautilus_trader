@@ -32,7 +32,6 @@ from pydantic import PositiveFloat
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.cache.cache import CacheConfig
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.logging import LiveLogger
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.common.logging import LoggerAdapter
@@ -167,7 +166,7 @@ class TradingNode:
 
         # Identifiers
         self.trader_id = TraderId(config.trader_id)
-        self.host_id = socket.gethostname()
+        self.machine_id = socket.gethostname()
         self.instance_id = self._uuid_factory.generate()
 
         # Setup logging
@@ -175,7 +174,7 @@ class TradingNode:
             loop=self._loop,
             clock=self._clock,
             trader_id=self.trader_id,
-            host_id=self.host_id,
+            machine_id=self.machine_id,
             instance_id=self.instance_id,
             level_stdout=LogLevelParser.from_str_py(config.log_level.upper()),
         )
@@ -655,7 +654,7 @@ class TradingNode:
         self._is_stopping = True
         self._log.info("STOPPING...")
 
-        if self.trader.state == ComponentState.RUNNING:
+        if self.trader.is_running:
             self.trader.stop()
             self._log.info(
                 f"Awaiting residual state ({self._config.check_residuals_delay}s delay)...",
@@ -667,11 +666,11 @@ class TradingNode:
         if self._config.save_strategy_state:
             self.trader.save()
 
-        if self._data_engine.state == ComponentState.RUNNING:
+        if self._data_engine.is_running:
             self._data_engine.stop()
-        if self._exec_engine.state == ComponentState.RUNNING:
+        if self._exec_engine.is_running:
             self._exec_engine.stop()
-        if self._risk_engine.state == ComponentState.RUNNING:
+        if self._risk_engine.is_running:
             self._risk_engine.stop()
 
         self._log.info(

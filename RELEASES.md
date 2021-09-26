@@ -1,3 +1,33 @@
+# NautilusTrader 1.130.0 Beta - Release Notes
+
+Released on 26th, September 2021
+
+## Breaking Changes
+- `BacktestEngine.run` method signature change.
+- Renamed `BookLevel` to `BookType`.
+- Renamed `FillModel` params.
+
+## Enhancements
+- Added streaming backtest machinery.
+- Added `quantstats` (removed `empyrical`).
+- Added `BacktestEngine.run_streaming()`.
+- Added `BacktestEngine.end_streaming()`
+- Added `Portfolio.balances_locked(venue)`.
+- Improved `DataCatalog` functionality.
+- Improved logging for `BacktestEngine`.
+- Improved parquet serialization and machinery.
+
+## Fixes
+- Fixed `SimulatedExchange` message processing.
+- Fixed `BacktestEngine` event ordering in main loop.
+- Fixed locked balance calculation for `CASH` accounts.
+- Fixed fill dynamics for `reduce-only` orders.
+- Fixed `PositionId` handling for `HEDGING` OMS exchanges.
+- Fixed parquet `Instrument` serialization.
+- Fixed `CASH` account PnL calculations with base currency.
+
+---
+
 # NautilusTrader 1.129.0 Beta - Release Notes
 
 Released on 12th, September 2021

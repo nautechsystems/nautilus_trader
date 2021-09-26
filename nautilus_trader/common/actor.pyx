@@ -31,7 +31,6 @@ import cython
 from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.base cimport CacheFacade
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.component cimport Component
@@ -46,7 +45,7 @@ from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
@@ -630,7 +629,7 @@ cdef class Actor(Component):
     cpdef void subscribe_order_book_deltas(
         self,
         InstrumentId instrument_id,
-        BookLevel level=BookLevel.L2,
+        BookType book_type=BookType.L2_MBP,
         dict kwargs=None,
     ) except *:
         """
@@ -641,8 +640,8 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument ID to subscribe to.
-        level : BookLevel {``L1``, ``L2``, ``L3``}
-            The order book level.
+        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+            The order book type.
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
 
@@ -660,7 +659,7 @@ cdef class Actor(Component):
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(OrderBookData, metadata={
                 "instrument_id": instrument_id,
-                "level": level,
+                "book_type": book_type,
                 "kwargs": kwargs,
             }),
             command_id=self._uuid_factory.generate(),
@@ -672,7 +671,7 @@ cdef class Actor(Component):
     cpdef void subscribe_order_book_snapshots(
         self,
         InstrumentId instrument_id,
-        BookLevel level=BookLevel.L2,
+        BookType book_type=BookType.L2_MBP,
         int depth=0,
         int interval_ms=1000,
         dict kwargs=None,
@@ -688,8 +687,8 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument ID to subscribe to.
-        level : BookLevel {``L1``, ``L2``, ``L3``}
-            The order book level.
+        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+            The order book type.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         interval_ms : int
@@ -721,7 +720,7 @@ cdef class Actor(Component):
             client_id=ClientId(instrument_id.venue.value),
             data_type=DataType(OrderBook, metadata={
                 "instrument_id": instrument_id,
-                "level": level,
+                "book_type": book_type,
                 "depth": depth,
                 "interval_ms": interval_ms,
                 "kwargs": kwargs,
@@ -1402,7 +1401,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(instrument, "instrument")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_instrument(instrument)
             except Exception as ex:
@@ -1427,7 +1426,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(delta, "data")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_order_book_delta(delta)
             except Exception as ex:
@@ -1452,7 +1451,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(order_book, "order_book")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_order_book(order_book)
             except Exception as ex:
@@ -1482,7 +1481,7 @@ cdef class Actor(Component):
         if is_historical:
             return  # Don't pass to on_ticker()
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_ticker(ticker)
             except Exception as ex:
@@ -1512,7 +1511,7 @@ cdef class Actor(Component):
         if is_historical:
             return  # Don't pass to on_quote_tick()
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_quote_tick(tick)
             except Exception as ex:
@@ -1572,7 +1571,7 @@ cdef class Actor(Component):
         if is_historical:
             return  # Don't pass to on_trade_tick()
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_trade_tick(tick)
             except Exception as ex:
@@ -1632,7 +1631,7 @@ cdef class Actor(Component):
         if is_historical:
             return  # Don't pass to on_bar()
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_bar(bar)
             except Exception as ex:
@@ -1691,7 +1690,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(update, "update")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_venue_status_update(update)
             except Exception as ex:
@@ -1716,7 +1715,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(update, "update")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_instrument_status_update(update)
             except Exception as ex:
@@ -1741,7 +1740,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(update, "update")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_instrument_close_price(update)
             except Exception as ex:
@@ -1766,7 +1765,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(data, "data")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_data(data)
             except Exception as ex:
@@ -1791,7 +1790,7 @@ cdef class Actor(Component):
         """
         Condition.not_none(event, "event")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_event(event)
             except Exception as ex:

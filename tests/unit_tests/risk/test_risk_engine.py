@@ -17,7 +17,6 @@ from datetime import timedelta
 from decimal import Decimal
 
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.events.risk import TradingStateChanged
 from nautilus_trader.common.logging import Logger
@@ -150,7 +149,7 @@ class TestRiskEngine:
         self.risk_engine.stop()
 
         # Assert
-        assert self.risk_engine.state == ComponentState.STOPPED
+        assert self.risk_engine.is_stopped
 
     def test_process_event_then_handles(self):
         # Arrange
