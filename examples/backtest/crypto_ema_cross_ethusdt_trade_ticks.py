@@ -27,6 +27,7 @@ sys.path.insert(
 
 from examples.strategies.ema_cross_simple import EMACross
 from examples.strategies.ema_cross_simple import EMACrossConfig
+from nautilus_trader.backtest.data.wranglers import TradeTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
@@ -57,13 +58,15 @@ if __name__ == "__main__":
     ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
     # Setup data
+    wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
+    ticks = wrangler.process(TestDataProvider.ethusdt_trades())
     engine.add_instrument(ETHUSDT_BINANCE)
-    engine.add_trade_ticks(ETHUSDT_BINANCE.id, TestDataProvider.ethusdt_trades())
+    engine.add_ticks(ticks)
 
     # Create a fill model (optional)
     fill_model = FillModel(
-        prob_fill_at_limit=0.2,
-        prob_fill_at_stop=0.95,
+        prob_fill_on_limit=0.2,
+        prob_fill_on_stop=0.95,
         prob_slippage=0.5,
         random_seed=42,
     )
@@ -89,13 +92,14 @@ if __name__ == "__main__":
         slow_ema=20,
         order_id_tag="001",
     )
-    # Instantiate your strategy
+    # Instantiate and add your strategy
     strategy = EMACross(config=config)
+    engine.add_strategy(strategy=strategy)
 
     input("Press Enter to continue...")  # noqa (always Python 3)
 
     # Run the engine (from start to end of data)
-    engine.run(strategies=[strategy])
+    engine.run()
 
     # Optionally view reports
     with pd.option_context(

@@ -58,7 +58,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.limit import LimitOrder
 from nautilus_trader.model.orders.market import MarketOrder
 from nautilus_trader.persistence.external.core import make_raw_files
-from nautilus_trader.persistence.external.parsers import TextReader
+from nautilus_trader.persistence.external.readers import TextReader
 from nautilus_trader.portfolio.portfolio import Portfolio
 from tests import TESTS_PACKAGE_ROOT
 from tests.test_kit import PACKAGE_ROOT

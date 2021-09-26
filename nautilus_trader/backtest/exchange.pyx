@@ -14,23 +14,25 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Dict
 
 from libc.limits cimport INT_MAX
 from libc.limits cimport INT_MIN
 from libc.stdint cimport int64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.backtest.execution cimport BacktestExecClient
+from nautilus_trader.backtest.execution_client cimport BacktestExecClient
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.uuid cimport UUIDFactory
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.c_enums.account_type cimport AccountType
 from nautilus_trader.model.c_enums.account_type cimport AccountTypeParser
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.c_enums.depth_type cimport DepthType
 from nautilus_trader.model.c_enums.liquidity_side cimport LiquiditySide
 from nautilus_trader.model.c_enums.oms_type cimport OMSType
@@ -43,6 +45,7 @@ from nautilus_trader.model.commands.trading cimport CancelOrder
 from nautilus_trader.model.commands.trading cimport ModifyOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrder
 from nautilus_trader.model.commands.trading cimport SubmitOrderList
+from nautilus_trader.model.commands.trading cimport TradingCommand
 from nautilus_trader.model.data.tick cimport Tick
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecutionId
@@ -79,6 +82,8 @@ cdef class SimulatedExchange:
         AccountType account_type,
         Currency base_currency,  # Can be None
         list starting_balances not None,
+        default_leverage not None: Decimal,
+        leverages not None: Dict[InstrumentId, Decimal],
         bint is_frozen_account,
         list instruments not None,
         list modules not None,
@@ -86,7 +91,8 @@ cdef class SimulatedExchange:
         FillModel fill_model not None,
         TestClock clock not None,
         Logger logger not None,
-        BookLevel exchange_order_book_level=BookLevel.L1,
+        BookType book_type=BookType.L1_TBBO,
+        fill_limit_at_price=False,
     ):
         """
         Initialize a new instance of the ``SimulatedExchange`` class.
@@ -105,6 +111,10 @@ cdef class SimulatedExchange:
             The account base currency for the client. Use ``None`` for multi-currency accounts.
         starting_balances : list[Money]
             The starting balances for the exchange.
+        default_leverage : Decimal
+            The account default leverage (for margin accounts).
+        leverages : Dict[InstrumentId, Decimal]
+            The instrument specific leverage configuration (for margin accounts).
         is_frozen_account : bool
             If the account for this exchange is frozen (balances will not change).
         cache : CacheFacade
@@ -115,6 +125,10 @@ cdef class SimulatedExchange:
             The clock for the exchange.
         logger : Logger
             The logger for the exchange.
+        book_type : BookType
+            The order book type for the exchange.
+        fill_limit_at_price : bool
+            If limit orders should be filled at their original price only (overrides slippage).
 
         Raises
         ------
@@ -151,7 +165,7 @@ cdef class SimulatedExchange:
         self.venue_type = venue_type
         self.oms_type = oms_type
         self._log.info(f"OMSType={OMSTypeParser.to_str(oms_type)}")
-        self.exchange_order_book_level = exchange_order_book_level
+        self.book_type = book_type
 
         self.cache = cache
         self.exec_client = None  # Initialized when execution client registered
@@ -159,7 +173,10 @@ cdef class SimulatedExchange:
         self.account_type = account_type
         self.base_currency = base_currency
         self.starting_balances = starting_balances
+        self.default_leverage = default_leverage
+        self.leverages = leverages
         self.is_frozen_account = is_frozen_account
+        self.fill_limit_at_price = fill_limit_at_price
 
         self.fill_model = fill_model
 
@@ -183,13 +200,13 @@ cdef class SimulatedExchange:
             self._instrument_indexer[instrument.id] = index
             self._log.info(f"Loaded instrument {instrument.id.value}.")
 
-        self._books = {}                # type: dict[InstrumentId, OrderBook]
-        self._instrument_orders = {}    # type: dict[InstrumentId, dict[ClientOrderId, PassiveOrder]]
-        self._working_orders = {}       # type: dict[ClientOrderId, PassiveOrder]
-        self._position_index = {}       # type: dict[ClientOrderId, PositionId]
-        self._symbol_pos_count = {}     # type: dict[InstrumentId, int]
-        self._symbol_ord_count = {}     # type: dict[InstrumentId, int]
+        self._books = {}              # type: dict[InstrumentId, OrderBook]
+        self._instrument_orders = {}  # type: dict[InstrumentId, dict[ClientOrderId, PassiveOrder]]
+        self._working_orders = {}     # type: dict[ClientOrderId, PassiveOrder]
+        self._symbol_pos_count = {}   # type: dict[InstrumentId, int]
+        self._symbol_ord_count = {}   # type: dict[InstrumentId, int]
         self._executions_count = 0
+        self._message_queue = Queue()
 
     def __repr__(self) -> str:
         return (f"{type(self).__name__}("
@@ -272,7 +289,7 @@ cdef class SimulatedExchange:
             # Create order book
             book = OrderBook.create(
                 instrument=instrument,
-                level=self.exchange_order_book_level,
+                book_type=self.book_type,
                 simulated=True,
             )
 
@@ -347,6 +364,12 @@ cdef class SimulatedExchange:
 
         self._log.info("Changed fill model.")
 
+    cpdef void initialize_account(self) except *:
+        """
+        Initialize the account to the starting balances.
+        """
+        self._generate_fresh_account_state()
+
     cpdef void adjust_account(self, Money adjustment) except *:
         """
         Adjust the account at the exchange with the given adjustment.
@@ -385,6 +408,11 @@ cdef class SimulatedExchange:
             reported=True,
             ts_event=self._clock.timestamp_ns(),
         )
+
+    cpdef void send(self, TradingCommand command) except *:
+        Condition.not_none(command, "command")
+
+        self._message_queue.put_nowait(command)
 
     cpdef void process_order_book(self, OrderBookData data) except *:
         """
@@ -426,7 +454,7 @@ cdef class SimulatedExchange:
         self._clock.set_time(tick.ts_init)
 
         cdef OrderBook book = self.get_book(tick.instrument_id)
-        if book.level == BookLevel.L1:
+        if book.type == BookType.L1_TBBO:
             book.update_tick(tick)
 
         self._iterate_matching_engine(
@@ -437,9 +465,40 @@ cdef class SimulatedExchange:
         if not self._log.is_bypassed:
             self._log.debug(f"Processed {tick}")
 
-    cpdef void process_modules(self, int64_t now_ns) except *:
+    cpdef void process_bar(self, Bar bar) except *:
         """
-        Process the simulation modules by advancing their time.
+        Process the exchanges market for the given bar.
+
+        Market dynamics are simulated by auctioning working orders.
+
+        Parameters
+        ----------
+        bar : Bar
+            The tick to process.
+
+        """
+        Condition.not_none(bar, "bar")
+
+        self._clock.set_time(bar.ts_init)
+
+        # TODO(cs): Implement simulated order book bar processing
+        # cdef OrderBook book = self.get_book(bar.type.instrument_id)
+        # if book.level == BookType.L1_TBBO:
+        #     book.update_tick(tick)
+        #
+        # self._iterate_matching_engine(
+        #     tick.instrument_id,
+        #     tick.ts_init,
+        # )
+
+        if not self._log.is_bypassed:
+            self._log.debug(f"Processed {bar}")
+
+    cpdef void process(self, int64_t now_ns) except *:
+        """
+        Process the exchange to the gives time.
+
+        All pending commands will be processed along with all simulation modules.
 
         Parameters
         ----------
@@ -448,6 +507,40 @@ cdef class SimulatedExchange:
 
         """
         self._clock.set_time(now_ns)
+
+        cdef:
+            TradingCommand command
+            PassiveOrder order
+        while self._message_queue.count > 0:
+            command = self._message_queue.get_nowait()
+            if isinstance(command, SubmitOrder):
+                self._process_order(command.order)
+            elif isinstance(command, SubmitOrderList):
+                pass  # ...
+            elif isinstance(command, CancelOrder):
+                order = self._working_orders.pop(command.client_order_id, None)
+                if order is None:
+                    self._generate_order_cancel_rejected(
+                        command.strategy_id,
+                        command.instrument_id,
+                        command.client_order_id,
+                        command.venue_order_id,
+                        f"{repr(command.client_order_id)} not found",
+                    )
+                else:
+                    self._cancel_order(order)
+            elif isinstance(command, ModifyOrder):
+                order = self._working_orders.get(command.client_order_id)
+                if order is None:
+                    self._generate_order_modify_rejected(
+                        command.strategy_id,
+                        command.instrument_id,
+                        command.client_order_id,
+                        command.venue_order_id,
+                        f"{repr(command.client_order_id)} not found",
+                    )
+                else:
+                    self._update_order(order, command.quantity, command.price, command.trigger)
 
         # Iterate over modules
         cdef SimulationModule module
@@ -476,69 +569,22 @@ cdef class SimulatedExchange:
         self._books.clear()
         self._instrument_orders.clear()
         self._working_orders.clear()
-        self._position_index.clear()
         self._symbol_pos_count.clear()
         self._symbol_ord_count.clear()
         self._executions_count = 0
+        self._message_queue = Queue()
 
         self._log.info("Reset.")
-
-# -- COMMAND HANDLERS ------------------------------------------------------------------------------
-
-    cpdef void handle_submit_order(self, SubmitOrder command) except *:
-        Condition.not_none(command, "command")
-
-        if command.position_id is not None:
-            self._position_index[command.order.client_order_id] = command.position_id
-
-        self._generate_order_submitted(command.order)
-        self._process_order(command.order)
-
-    cpdef void handle_submit_order_list(self, SubmitOrderList command) except *:
-        Condition.not_none(command, "command")
-
-        # TODO(cs): Implement
-        raise NotImplementedError("order lists are not implemented in this version.")
-
-    cpdef void handle_cancel_order(self, CancelOrder command) except *:
-        Condition.not_none(command, "command")
-
-        cdef PassiveOrder order = self._working_orders.pop(command.client_order_id, None)
-        if order is None:
-            self._generate_order_cancel_rejected(
-                command.strategy_id,
-                command.instrument_id,
-                command.client_order_id,
-                command.venue_order_id,
-                f"{repr(command.client_order_id)} not found",
-            )
-        else:
-            self._cancel_order(order)
-
-    cpdef void handle_modify_order(self, ModifyOrder command) except *:
-        Condition.not_none(command, "command")
-
-        cdef PassiveOrder order = self._working_orders.get(command.client_order_id)
-        if order is None:
-            self._generate_order_modify_rejected(
-                command.strategy_id,
-                command.instrument_id,
-                command.client_order_id,
-                command.venue_order_id,
-                f"{repr(command.client_order_id)} not found",
-            )
-        else:
-            self._update_order(order, command.quantity, command.price, command.trigger)
 
 # --------------------------------------------------------------------------------------------------
 
     cdef PositionId _get_position_id(self, Order order, bint generate=True):
         cdef PositionId position_id
         if OMSType.HEDGING:
-            if order.position_id is not None:
-                return order.position_id
             position_id = self.cache.position_id(order.client_order_id)
-            if position_id is None and generate:
+            if position_id is not None:
+                return position_id
+            if generate:
                 # Generate a venue position ID
                 return self._generate_venue_position_id(order.instrument_id)
         ####################################################################
@@ -637,6 +683,14 @@ cdef class SimulatedExchange:
             reported=True,
             ts_event=self._clock.timestamp_ns(),
         )
+
+        # Set leverages
+        cdef Account account = self.get_account()
+        if account.is_margin_account():
+            account.set_default_leverage(self.default_leverage)
+            # Set instrument specific leverages
+            for instrument_id, leverage in self.leverages.items():
+                account.set_leverage(instrument_id, leverage)
 
     cdef void _generate_order_submitted(self, Order order) except *:
         # Generate event
@@ -775,6 +829,16 @@ cdef class SimulatedExchange:
 
     cdef void _process_order(self, Order order) except *:
         Condition.not_in(order.client_order_id, self._working_orders, "order.client_order_id", "working_orders")
+
+        cdef PositionId position_id
+        if order.position_id is not None:
+            position_id = self.cache.position_id(order.client_order_id)
+            if position_id is not None and position_id != order.position_id:
+                self._reject_order(
+                    order,
+                    "SUBMITTED POSITION_ID does not match exchange position ID.",
+                )
+                return
 
         # Check reduce-only instruction
         cdef Position position
@@ -985,14 +1049,13 @@ cdef class SimulatedExchange:
         for order in working_orders.copy().values():  # Copy dict for safe loop
             if not order.is_working_c():
                 continue  # Orders state has changed since the loop started
+            elif order.expire_time and timestamp_ns >= order.expire_time_ns:
+                self._delete_order(order)
+                self._expire_order(order)
+                return
 
             # Check for order match
             self._match_order(order)
-
-            # Check for order expiry (if expire time then compare nanoseconds)
-            if order.expire_time and timestamp_ns >= order.expire_time_ns:
-                self._delete_order(order)
-                self._expire_order(order)
 
     cdef void _match_order(self, PassiveOrder order) except *:
         if order.type == OrderType.LIMIT:
@@ -1086,6 +1149,8 @@ cdef class SimulatedExchange:
             return bid < price or (bid == price and self.fill_model.is_stop_filled())
 
     cdef list _determine_limit_price_and_volume(self, PassiveOrder order):
+        if self.fill_limit_at_price:
+            return [(order.price, order.leaves_qty)]
         cdef OrderBook book = self.get_book(order.instrument_id)
         cdef OrderBookOrder submit_order = OrderBookOrder(price=order.price, size=order.quantity, side=order.side)
 
@@ -1131,12 +1196,16 @@ cdef class SimulatedExchange:
                 org_qty: Decimal = fill_qty.as_decimal()
                 adj_qty: Decimal = fill_qty - (fill_qty - position.quantity)
                 fill_qty = Quantity(adj_qty, fill_qty.precision)
-                self._generate_order_updated(
-                    order=order,
-                    qty=Quantity(order.quantity.as_decimal() - (org_qty - adj_qty), fill_qty.precision),  # noqa
-                    price=None,
-                    trigger=None,
-                )
+                updated_qty = order.quantity.as_decimal() - (org_qty - adj_qty)
+                if updated_qty > 0:
+                    self._generate_order_updated(
+                        order=order,
+                        qty=Quantity(updated_qty, fill_qty.precision),  # noqa
+                        price=None,
+                        trigger=None,
+                    )
+            if fill_qty <= 0:
+                return  # Done
             self._fill_order(
                 order=order,
                 last_qty=fill_qty,
@@ -1169,7 +1238,7 @@ cdef class SimulatedExchange:
         for fill_px, fill_qty in fills:
             if order.type == OrderType.STOP_MARKET:
                 fill_px = order.price  # TODO: Temporary strategy for market moving through price
-            if self.exchange_order_book_level == BookLevel.L1 and self.fill_model.is_slipped():
+            if self.book_type == BookType.L1_TBBO and self.fill_model.is_slipped():
                 instrument = self.instruments[order.instrument_id]  # TODO: Pending refactoring
                 if order.side == OrderSide.BUY:
                     fill_px = Price(fill_px + instrument.price_increment, instrument.price_precision)
@@ -1180,12 +1249,16 @@ cdef class SimulatedExchange:
                 org_qty: Decimal = fill_qty.as_decimal()
                 adj_qty: Decimal = fill_qty - (fill_qty - position.quantity)
                 fill_qty = Quantity(adj_qty, fill_qty.precision)
-                self._generate_order_updated(
-                    order=order,
-                    qty=Quantity(order.quantity.as_decimal() - (org_qty - adj_qty), fill_qty.precision),  # noqa
-                    price=None,
-                    trigger=None,
-                )
+                updated_qty = order.quantity.as_decimal() - (org_qty - adj_qty)
+                if updated_qty > 0:
+                    self._generate_order_updated(
+                        order=order,
+                        qty=Quantity(updated_qty, fill_qty.precision),  # noqa
+                        price=None,
+                        trigger=None,
+                    )
+            if fill_qty <= 0:
+                return  # Done
             self._fill_order(
                 order=order,
                 last_qty=fill_qty,
@@ -1197,7 +1270,7 @@ cdef class SimulatedExchange:
                 return  # Done early
 
         # TODO: For L1 fill remaining size at next tick price (temporary)
-        if self.exchange_order_book_level == BookLevel.L1 and order.is_working_c():
+        if self.book_type == BookType.L1_TBBO and order.is_working_c():
             fill_px = fills[-1][0]
             instrument = self.instruments[order.instrument_id]  # TODO: Pending refactoring
             if order.side == OrderSide.BUY:
@@ -1206,7 +1279,7 @@ cdef class SimulatedExchange:
                 fill_px = Price(fill_px - instrument.price_increment, instrument.price_precision)
             self._fill_order(
                 order=order,
-                last_qty=Quantity(order.quantity - order.filled_qty, instrument.size_precision),
+                last_qty=Quantity(order.leaves_qty, instrument.size_precision),
                 last_px=fill_px,
                 liquidity_side=liquidity_side,
                 venue_position_id=position_id,

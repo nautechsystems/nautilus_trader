@@ -12,3 +12,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+
+cpdef enum BookType:
+    L1_TBBO = 1,  # Top-of-book best bid/offer
+    L2_MBP = 2,   # Market by price
+    L3_MBO = 3,   # Market by order
+
+
+cdef class BookTypeParser:
+
+    @staticmethod
+    cdef str to_str(int value)
+
+    @staticmethod
+    cdef BookType from_str(str value) except *

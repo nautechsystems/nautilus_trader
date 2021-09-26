@@ -131,6 +131,8 @@ cdef class Portfolio(PortfolioFacade):
     cpdef void initialize_orders(self) except *:
         """
         Initialize the portfolios orders.
+
+        Performs all account calculations for the current order state.
         """
         cdef list all_orders_working = self._cache.orders_working()
 
@@ -186,6 +188,8 @@ cdef class Portfolio(PortfolioFacade):
     cpdef void initialize_positions(self) except *:
         """
         Initialize the portfolios positions.
+
+        Performs all account calculations for the current position state.
         """
         # Clean slate
         self._unrealized_pnls.clear()
@@ -254,6 +258,10 @@ cdef class Portfolio(PortfolioFacade):
     cpdef void update_tick(self, QuoteTick tick) except *:
         """
         Update the portfolio with the given tick.
+
+        Clears the unrealized PnL for the quote ticks instrument, and
+        performs any initialization calculations which may have been pending
+        a market quote update.
 
         Parameters
         ----------
@@ -347,7 +355,7 @@ cdef class Portfolio(PortfolioFacade):
         else:
             account.apply(event)
 
-        self._log.debug(f"Updated {event}.")
+        self._log.debug(f"Updated with {event}.")
 
     cpdef void update_order(self, OrderEvent event) except *:
         """
@@ -428,7 +436,7 @@ cdef class Portfolio(PortfolioFacade):
                 msg=account_state,
             )
 
-        self._log.debug(f"Updated {event}.")
+        self._log.debug(f"Updated with {event}.")
 
     cpdef void update_position(self, PositionEvent event) except *:
         """
@@ -490,7 +498,7 @@ cdef class Portfolio(PortfolioFacade):
                 msg=account_state,
             )
 
-        self._log.debug(f"Updated {event}.")
+        self._log.debug(f"Updated with {event}.")
 
     cpdef void reset(self) except *:
         """
@@ -536,6 +544,32 @@ cdef class Portfolio(PortfolioFacade):
 
         return account
 
+    cpdef dict balances_locked(self, Venue venue):
+        """
+        Return the balances locked for the given venue (if found).
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the margin.
+
+        Returns
+        -------
+        dict[Currency, Money] or ``None``
+
+        """
+        Condition.not_none(venue, "venue")
+
+        cdef Account account = self._cache.account_for_venue(venue)
+        if account is None:
+            self._log.error(
+                f"Cannot get balances locked: "
+                f"no account registered for {venue}."
+            )
+            return None
+
+        return account.balances_locked()
+
     cpdef dict margins_init(self, Venue venue):
         """
         Return the initial (order) margins for the given venue (if found).
@@ -555,7 +589,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef Account account = self._cache.account_for_venue(venue)
         if account is None:
             self._log.error(
-                f"Cannot calculate order margin: "
+                f"Cannot get initial (order) margins: "
                 f"no account registered for {venue}."
             )
             return None
@@ -584,7 +618,7 @@ cdef class Portfolio(PortfolioFacade):
         cdef Account account = self._cache.account_for_venue(venue)
         if account is None:
             self._log.error(
-                f"Cannot calculate position margin: "
+                f"Cannot get maintenance (position) margins: "
                 f"no account registered for {venue}."
             )
             return None

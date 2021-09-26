@@ -29,6 +29,9 @@ cdef class MarginAccount(Account):
     cdef dict _margins_init
     cdef dict _margins_maint
 
+    cdef readonly default_leverage
+    """The accounts default leverage setting.\n\n:returns: `Decimal`"""
+
 # -- QUERIES ---------------------------------------------------------------------------------------
 
     cpdef dict leverages(self)
@@ -40,6 +43,7 @@ cdef class MarginAccount(Account):
 
 # -- COMMANDS --------------------------------------------------------------------------------------
 
+    cpdef void set_default_leverage(self, leverage: Decimal) except *
     cpdef void set_leverage(self, InstrumentId instrument_id, leverage: Decimal) except *
     cpdef void update_margin_init(self, InstrumentId instrument_id, Money locked) except *
     cpdef void update_margin_maint(self, InstrumentId instrument_id, Money margin_maint) except *

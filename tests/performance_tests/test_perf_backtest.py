@@ -20,15 +20,14 @@ from decimal import Decimal
 import pandas as pd
 import pytz
 
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OMSType
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -53,19 +52,14 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             config = BacktestEngineConfig(bypass_logging=True)
             engine = BacktestEngine(config=config)
 
+            # Setup data
+            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+            ticks = wrangler.process_bar_data(
+                bid_data=TestDataProvider.usdjpy_1min_bid(),
+                ask_data=TestDataProvider.usdjpy_1min_ask(),
+            )
             engine.add_instrument(USDJPY_SIM)
-            engine.add_bars_as_ticks(
-                USDJPY_SIM.id,
-                BarAggregation.MINUTE,
-                PriceType.BID,
-                TestDataProvider.usdjpy_1min_bid(),
-            )
-            engine.add_bars_as_ticks(
-                USDJPY_SIM.id,
-                BarAggregation.MINUTE,
-                PriceType.ASK,
-                TestDataProvider.usdjpy_1min_ask(),
-            )
+            engine.add_ticks(ticks)
 
             engine.add_venue(
                 venue=Venue("SIM"),
@@ -78,11 +72,12 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             )
             strategies = [TradingStrategy()]
             start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
-            stop = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
-            return (engine, start, stop, strategies), {}
+            end = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
+            return (engine, start, end, strategies), {}
 
-        def run(engine, start, stop, strategies):
-            engine.run(start=start, stop=stop, strategies=strategies)
+        def run(engine, start, end, strategies):
+            engine.add_strategies(strategies=strategies)
+            engine.run(start=start, end=end)
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
 
@@ -92,19 +87,14 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             config = BacktestEngineConfig(bypass_logging=True)
             engine = BacktestEngine(config=config)
 
+            # Setup data
+            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+            ticks = wrangler.process_bar_data(
+                bid_data=TestDataProvider.usdjpy_1min_bid(),
+                ask_data=TestDataProvider.usdjpy_1min_ask(),
+            )
             engine.add_instrument(USDJPY_SIM)
-            engine.add_bars_as_ticks(
-                USDJPY_SIM.id,
-                BarAggregation.MINUTE,
-                PriceType.BID,
-                TestDataProvider.usdjpy_1min_bid(),
-            )
-            engine.add_bars_as_ticks(
-                USDJPY_SIM.id,
-                BarAggregation.MINUTE,
-                PriceType.ASK,
-                TestDataProvider.usdjpy_1min_ask(),
-            )
+            engine.add_ticks(ticks)
 
             engine.add_venue(
                 venue=Venue("SIM"),
@@ -125,12 +115,13 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             strategy = EMACross(config=config)
 
             start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
-            stop = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
+            end = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-            return (engine, start, stop, strategy), {}
+            return (engine, start, end, strategy), {}
 
-        def run(engine, start, stop, strategy):
-            engine.run(start=start, stop=stop, strategies=[strategy])
+        def run(engine, start, end, strategy):
+            engine.add_strategy(strategy)
+            engine.run(start=start, end=end)
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1)
 
@@ -140,19 +131,14 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             config = BacktestEngineConfig(bypass_logging=True)
             engine = BacktestEngine(config=config)
 
+            # Setup data
+            wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+            ticks = wrangler.process_bar_data(
+                bid_data=TestDataProvider.usdjpy_1min_bid(),
+                ask_data=TestDataProvider.usdjpy_1min_ask(),
+            )
             engine.add_instrument(USDJPY_SIM)
-            engine.add_bars_as_ticks(
-                USDJPY_SIM.id,
-                BarAggregation.MINUTE,
-                PriceType.BID,
-                TestDataProvider.usdjpy_1min_bid(),
-            )
-            engine.add_bars_as_ticks(
-                USDJPY_SIM.id,
-                BarAggregation.MINUTE,
-                PriceType.ASK,
-                TestDataProvider.usdjpy_1min_ask(),
-            )
+            engine.add_ticks(ticks)
 
             interest_rate_data = pd.read_csv(
                 os.path.join(PACKAGE_ROOT, "data", "short-term-interest.csv")
@@ -179,11 +165,12 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             strategy = EMACross(config=config)
 
             start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
-            stop = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+            end = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-            return (engine, start, stop, [strategy]), {}
+            return (engine, start, end, [strategy]), {}
 
-        def run(engine, start, stop, strategies):
-            engine.run(start=start, stop=stop, strategies=strategies)
+        def run(engine, start, end, strategies):
+            engine.add_strategies(strategies)
+            engine.run(start=start, end=end)
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1)

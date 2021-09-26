@@ -59,7 +59,7 @@ NAUTILUS_PARQUET_SCHEMA = {
             "order_price": pa.float64(),
             "order_size": pa.float64(),
             "order_id": pa.string(),
-            "level": pa.string(),
+            "book_type": pa.string(),
             # Track grouped OrderBookDeltas
             "_type": pa.dictionary(pa.int8(), pa.string()),
             "_last": pa.bool_(),
@@ -174,9 +174,9 @@ NAUTILUS_PARQUET_SCHEMA = {
             # --------------------- #
             "order_list_id": pa.string(),
             "parent_order_id": pa.string(),
-            "child_order_ids": pa.binary(-1),
+            "child_order_ids": pa.string(),
             "contingency": pa.string(),
-            "contingency_ids": pa.binary(-1),
+            "contingency_ids": pa.string(),
             "tags": pa.string(),
             "event_id": pa.string(),
             "ts_init": pa.int64(),

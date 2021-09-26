@@ -183,6 +183,7 @@ cdef class AccountsManager:
             # Calculate balance locked
             locked: Decimal = account.calculate_balance_locked(
                 instrument,
+                order.side,
                 order.quantity,
                 order.price,
             ).as_decimal()

@@ -13,33 +13,33 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import List
+
+import orjson
 import pandas as pd
 
-from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport nanos_to_timedelta
-from nautilus_trader.core.datetime cimport nanos_to_unix_dt
-from nautilus_trader.model.c_enums.order_status cimport OrderStatus
-from nautilus_trader.model.events.account cimport AccountState
+from nautilus_trader.accounting.accounts.base import Account
+from nautilus_trader.core.datetime import nanos_to_timedelta
+from nautilus_trader.core.datetime import nanos_to_unix_dt
+from nautilus_trader.model.c_enums.order_status import OrderStatus
+from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.orders.base import Order
+from nautilus_trader.model.position import Position
 
 
-cdef class ReportProvider:
+class ReportProvider:
     """
     Provides various trading reports.
     """
 
-    def __init__(self):
-        """
-        Initialize a new instance of the ``ReportProvider`` class.
-        """
-
-    cpdef object generate_orders_report(self, list orders):
+    @staticmethod
+    def generate_orders_report(orders: List[Order]) -> pd.DataFrame:
         """
         Return an orders report dataframe.
 
         Parameters
         ----------
-        orders : dict[VenueOrderId, Order]
+        orders : list[Order]
             The orders for the report.
 
         Returns
@@ -47,22 +47,21 @@ cdef class ReportProvider:
         pd.DataFrame
 
         """
-        Condition.not_none(orders, "orders")
-
         if not orders:
             return pd.DataFrame()
 
-        cdef list orders_all = [o.to_dict() for o in orders]
+        orders_all = [o.to_dict() for o in orders]
 
         return pd.DataFrame(data=orders_all).set_index("client_order_id").sort_index()
 
-    cpdef object generate_order_fills_report(self, list orders):
+    @staticmethod
+    def generate_order_fills_report(orders: List[Order]) -> pd.DataFrame:
         """
         Return an order fills report dataframe.
 
         Parameters
         ----------
-        orders : dict[VenueOrderId, Order]
+        orders : list[Order]
             The orders for the report.
 
         Returns
@@ -70,12 +69,10 @@ cdef class ReportProvider:
         pd.DataFrame
 
         """
-        Condition.not_none(orders, "orders")
-
         if not orders:
             return pd.DataFrame()
 
-        cdef list filled_orders = [o.to_dict() for o in orders if o.status == OrderStatus.FILLED]
+        filled_orders = [o.to_dict() for o in orders if o.status == OrderStatus.FILLED]
         if not filled_orders:
             return pd.DataFrame()
 
@@ -85,13 +82,14 @@ cdef class ReportProvider:
 
         return report
 
-    cpdef object generate_positions_report(self, list positions):
+    @staticmethod
+    def generate_positions_report(positions: List[Position]) -> pd.DataFrame:
         """
         Return a positions report dataframe.
 
         Parameters
         ----------
-        positions : dict[PositionId, Position]
+        positions : list[Position]
             The positions for the report.
 
         Returns
@@ -99,12 +97,10 @@ cdef class ReportProvider:
         pd.DataFrame
 
         """
-        Condition.not_none(positions, "positions")
-
         if not positions:
             return pd.DataFrame()
 
-        cdef list trades = [p.to_dict() for p in positions if p.is_closed]
+        trades = [p.to_dict() for p in positions if p.is_closed]
         if not trades:
             return pd.DataFrame()
 
@@ -121,7 +117,8 @@ cdef class ReportProvider:
 
         return report
 
-    cpdef object generate_account_report(self, Account account):
+    @staticmethod
+    def generate_account_report(account: Account) -> pd.DataFrame:
         """
         Generate an account report for the given optional time range.
 
@@ -135,19 +132,22 @@ cdef class ReportProvider:
         pd.DataFrame
 
         """
-        Condition.not_none(account, "account")
-
-        cdef list states = account.events_c()
+        states = account.events
 
         if not states:
             return pd.DataFrame()
 
-        cdef list account_states = [AccountState.to_dict_c(s) for s in states]
+        account_states = [AccountState.to_dict(s) for s in states]
+        balances = [
+            {**balance, **state}
+            for state in account_states
+            for balance in orjson.loads(state.pop("balances", "[]"))
+        ]
 
         if not account_states:
             return pd.DataFrame()
 
-        report = pd.DataFrame(data=account_states).set_index("ts_event").sort_index()
+        report = pd.DataFrame(data=balances).set_index("ts_event").sort_index()
         report.index = [nanos_to_unix_dt(row) for row in report.index]
         del report["ts_init"]
         del report["type"]

@@ -19,7 +19,7 @@ from typing import Dict
 
 import orjson
 
-from nautilus_trader.persistence.external.parsers import TextReader
+from nautilus_trader.persistence.external.readers import TextReader
 
 
 def flatten_tree(y: Dict, **filters):

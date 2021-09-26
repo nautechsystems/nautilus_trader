@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.cache.cache import Cache
@@ -25,11 +26,9 @@ from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OMSType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import VenueType
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
@@ -1015,19 +1014,14 @@ class TestExecutionCacheIntegrityCheck:
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
+        # Setup data
+        wrangler = QuoteTickDataWrangler(self.usdjpy)
+        ticks = wrangler.process_bar_data(
+            bid_data=TestDataProvider.usdjpy_1min_bid(),
+            ask_data=TestDataProvider.usdjpy_1min_ask(),
+        )
         self.engine.add_instrument(self.usdjpy)
-        self.engine.add_bars_as_ticks(
-            self.usdjpy.id,
-            BarAggregation.MINUTE,
-            PriceType.BID,
-            TestDataProvider.usdjpy_1min_bid()[:2000],
-        )
-        self.engine.add_bars_as_ticks(
-            self.usdjpy.id,
-            BarAggregation.MINUTE,
-            PriceType.ASK,
-            TestDataProvider.usdjpy_1min_ask()[:2000],
-        )
+        self.engine.add_ticks(ticks)
 
         self.engine.add_venue(
             venue=Venue("SIM"),
@@ -1049,9 +1043,10 @@ class TestExecutionCacheIntegrityCheck:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Generate a lot of data
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Remove data
         self.engine.cache.clear_cache()
@@ -1069,9 +1064,10 @@ class TestExecutionCacheIntegrityCheck:
             slow_ema=20,
         )
         strategy = EMACross(config=config)
+        self.engine.add_strategy(strategy)
 
         # Generate a lot of data
-        self.engine.run(strategies=[strategy])
+        self.engine.run()
 
         # Clear index
         self.engine.cache.clear_index()

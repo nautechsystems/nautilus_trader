@@ -18,13 +18,12 @@ import dataclasses
 import pathlib
 import pickle
 import sys
-from decimal import Decimal
-from functools import partial
+from datetime import datetime
 from typing import Optional
 
 import dask
-import pandas as pd
 import pytest
+import pytz
 from dask.base import tokenize
 
 from nautilus_trader.backtest.config import BacktestDataConfig
@@ -32,22 +31,14 @@ from nautilus_trader.backtest.config import BacktestRunConfig
 from nautilus_trader.backtest.config import BacktestVenueConfig
 from nautilus_trader.backtest.config import Partialable
 from nautilus_trader.backtest.engine import BacktestEngineConfig
-from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.model.data.tick import QuoteTick
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog import DataCatalog
-from nautilus_trader.persistence.external.core import process_files
-from nautilus_trader.persistence.external.parsers import CSVReader
 from nautilus_trader.trading.config import ImportableStrategyConfig
 from tests.test_kit import PACKAGE_ROOT
+from tests.test_kit.mocks import aud_usd_data_loader
 from tests.test_kit.mocks import data_catalog_setup
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.strategies import EMACrossConfig
-from tests.test_kit.stubs import TestStubs
 
 
 TEST_DATA_DIR = str(pathlib.Path(PACKAGE_ROOT).joinpath("data"))
@@ -65,35 +56,7 @@ def reset():
 
 @pytest.fixture(scope="function")
 def data_loader():
-    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
-
-    def parse_csv_tick(df, instrument_id):
-        yield instrument
-        for r in df.values:
-            ts = secs_to_nanos(pd.Timestamp(r[0]).timestamp())
-            tick = QuoteTick(
-                instrument_id=instrument_id,
-                bid=Price.from_str(str(r[1])),
-                ask=Price.from_str(str(r[2])),
-                bid_size=Quantity.from_int(1_000_000),
-                ask_size=Quantity.from_int(1_000_000),
-                ts_event=ts,
-                ts_init=ts,
-            )
-            yield tick
-
-    catalog = DataCatalog.from_env()
-    instrument_provider = InstrumentProvider()
-    instrument_provider.add(instrument)
-    process_files(
-        glob_path=f"{TEST_DATA_DIR}/truefx-audusd-ticks.csv",
-        reader=CSVReader(
-            block_parser=partial(parse_csv_tick, instrument_id=TestStubs.audusd_id()),
-            as_dataframe=True,
-        ),
-        instrument_provider=instrument_provider,
-        catalog=catalog,
-    )
+    aud_usd_data_loader()
 
 
 @pytest.fixture(scope="function")
@@ -170,8 +133,8 @@ def backtest_configs(backtest_config):
 
 @dataclasses.dataclass(repr=False)
 class Test(Partialable):
-    a: Optional[int] = None
-    b: Optional[int] = None
+    a: int = None
+    b: int = None
     c: Optional[str] = None
 
 
@@ -210,25 +173,70 @@ def test_partialable_check():
     test = Test().replace(a=5)
     with pytest.raises(AssertionError):
         test.check()
-    test = test.replace(b=1)
+    test = test.replace(b=1, c=1)
+    assert test.check() is None
+
+
+def test_partialable_optional_check():
+    test = Test().replace(a=5)
     with pytest.raises(AssertionError):
         test.check()
+    test = test.replace(b=1)
+    assert test.check() is None
 
 
 def test_backtest_config_pickle(backtest_config):
     pickle.loads(pickle.dumps(backtest_config))  # noqa: S301
 
 
-def test_tokenization(backtest_config):
-    # All inputs to dask delayed functions must be deterministically tokenizable
-    required = [
-        (backtest_config.venues, "80f12df18a4e3472036e6a39dba9291e"),
-    ]
-    for inputs, value in required:
-        # Generate many tokens to ensure determinism
-        result = tokenize(inputs)
-        assert result == value
-        # assert all(x == tokens[0] for x in tokens), f"Tokens do not much for {r}"
+# All inputs to dask delayed functions must be deterministically tokenizable
+
+
+def test_strategies_tokenization(backtest_config: BacktestRunConfig):
+    # Arrange, Act
+    result = tokenize(backtest_config.strategies)
+
+    # Assert
+    assert result == "8c9f081a88f539969f3dff99d6e05e36"
+
+
+def test_venue_config_tokenization(backtest_config: BacktestRunConfig):
+    # Arrange, Act
+    venue = backtest_config.venues[0]
+    result = tokenize(venue)
+
+    # Assert
+    assert result == "04c48e76f89c4ba393caa3f7dc138b00"
+
+
+def test_data_config_tokenization(backtest_config: BacktestRunConfig):
+    # Arrange, Act
+    data_config = backtest_config.data[0]
+
+    # Act
+    result = tokenize(data_config)
+
+    # Assert
+    assert result == "f479a81a847b7ceb8dc682b818c6df57"
+
+
+def test_engine_config_tokenization(backtest_config: BacktestRunConfig):
+    # Arrange,
+    engine_config = backtest_config.engine
+
+    # Act
+    result = tokenize(engine_config)
+
+    # Assert
+    assert result == "75bb34760c59279b83be3191f6ae3fb3"
+
+
+def test_tokenization_config(backtest_config: BacktestRunConfig):
+    # Arrange, Act
+    result = tokenize(backtest_config)
+
+    # Assert
+    assert result == "aafc2db1578af6d4f73a0f6d525af98c"
 
 
 def test_backtest_data_config_load(catalog):
@@ -246,8 +254,8 @@ def test_backtest_data_config_load(catalog):
         "as_nautilus": True,
         "cls": QuoteTick,
         "instrument_ids": ["AUD/USD.SIM"],
-        "start": 1580398089820000000,
-        "end": 1580504394501000000,
+        "start": datetime(2020, 1, 30, 15, 28, 9, 820000, tzinfo=pytz.utc),
+        "end": datetime(2020, 1, 31, 20, 59, 54, 501000, tzinfo=pytz.utc),
     }
 
 
@@ -280,121 +288,3 @@ def test_backtest_config_partial():
         ],
     )
     assert config.is_partial()
-
-
-def test_build_graph_shared_nodes(backtest_configs):
-    # Arrange
-    node = BacktestNode()
-    graph = node.build_graph(backtest_configs)
-    dsk = graph.dask.to_dict()
-
-    # Act - The strategies share the same input data,
-    result = sorted([k.split("-")[0] for k in dsk.keys()])
-
-    # Assert
-    assert result == [
-        "_gather_delayed",
-        "_run_delayed",
-        "_run_delayed",
-        "load",
-    ]
-
-
-def test_backtest_against_example(catalog):
-    """Replicate examples/fx_ema_cross_audusd_ticks.py backtest result."""
-    # Arrange
-    config = BacktestRunConfig(
-        engine=BacktestEngineConfig(),
-        venues=[
-            BacktestVenueConfig(
-                name="SIM",
-                venue_type="ECN",
-                oms_type="HEDGING",  # Venue will generate position_ids
-                account_type="MARGIN",
-                base_currency="USD",  # Standard single-currency account
-                starting_balances=["1000000 USD"],
-                # fill_model=FillModel(  # TODO(cs): Implement next iteration
-                #     prob_fill_at_limit=0.2,
-                #     prob_fill_at_stop=0.95,
-                #     prob_slippage=0.5,
-                #     random_seed=42,
-                # ),
-            )
-        ],
-        data=[
-            BacktestDataConfig(
-                catalog_path="/root",
-                catalog_fs_protocol="memory",
-                data_type=QuoteTick,
-                instrument_id="AUD/USD.SIM",
-                start_time=1580398089820000000,
-                end_time=1580504394501000000,
-            )
-        ],
-        strategies=[
-            ImportableStrategyConfig(
-                path="tests.test_kit.strategies:EMACross",
-                config=EMACrossConfig(
-                    instrument_id="AUD/USD.SIM",
-                    bar_type="AUD/USD.SIM-100-TICK-MID-INTERNAL",
-                    fast_ema_period=10,
-                    slow_ema_period=20,
-                    trade_size=Decimal(1_000_000),
-                    order_id_tag="001",
-                ),
-            )
-        ],
-    )
-
-    node = BacktestNode()
-
-    # Act
-    tasks = node.build_graph([config])
-    results = tasks.compute()
-    result = results[list(results)[0]]
-
-    # Assert
-    assert len(result["account"]) == 193
-    assert len(result["positions"]) == 48
-    assert len(result["fills"]) == 96
-    account_result = result["account"]["balances"].iloc[-2]
-    expected = b'[{"type":"AccountBalance","currency":"USD","total":"996365.88","locked":"20096.29","free":"976269.59"}]'
-    assert account_result == expected
-
-
-def test_backtest_run_sync(backtest_configs, catalog):
-    # Arrange
-    node = BacktestNode()
-
-    # Act
-    result = node.run_sync(backtest_configs)
-
-    # Assert
-    assert len(result) == 2
-
-
-def test_backtest_build_graph(backtest_configs, catalog):
-    # Arrange
-    node = BacktestNode()
-    tasks = node.build_graph(backtest_configs)
-
-    # Act
-    result = tasks.compute()
-
-    # Assert
-    assert len(result) == 2
-
-
-def test_backtest_run_distributed(backtest_configs, catalog):
-    from distributed import Client
-
-    # Arrange
-    node = BacktestNode()
-    with Client(processes=False):
-        tasks = node.build_graph(backtest_configs)
-
-        # Act
-        result = tasks.compute()
-
-        # Assert
-        assert result

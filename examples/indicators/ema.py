@@ -130,5 +130,5 @@ class PyExponentialMovingAverage(Indicator):
     def _reset(self):
         # Override this method to reset stateful values introduced in the class.
         # This method will be called by the base when `.reset()` is called.
+        self.value = 0.0
         self.count = 0
-        self.value = 0

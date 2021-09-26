@@ -23,11 +23,11 @@ import pandas as pd
 from pandas import DataFrame
 
 from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
-from nautilus_trader.backtest.loaders import CSVBarDataLoader
-from nautilus_trader.backtest.loaders import CSVTickDataLoader
-from nautilus_trader.backtest.loaders import ParquetTickDataLoader
-from nautilus_trader.backtest.loaders import TardisQuoteDataLoader
-from nautilus_trader.backtest.loaders import TardisTradeDataLoader
+from nautilus_trader.backtest.data.loaders import CSVBarDataLoader
+from nautilus_trader.backtest.data.loaders import CSVTickDataLoader
+from nautilus_trader.backtest.data.loaders import ParquetTickDataLoader
+from nautilus_trader.backtest.data.loaders import TardisQuoteDataLoader
+from nautilus_trader.backtest.data.loaders import TardisTradeDataLoader
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.currencies import ADA

@@ -1,27 +1,28 @@
 # NautilusTrader
 
-![build](https://github.com/nautechsystems/nautilus_trader/workflows/build/badge.svg)
-![docs](https://github.com/nautechsystems/nautilus_trader/workflows/docs/badge.svg)
 [![codacy-quality](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
-![python](https://img.shields.io/badge/python-3.8+-blue.svg)
-![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
-[![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
-![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 ![total-lines](https://img.shields.io/tokei/lines/github/nautechsystems/nautilus_trader)
+![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
+![pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
+![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
+[![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
 [![code-style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-| Platform          | Python versions |
-|:------------------|:----------------|
-| Linux (x86-64)    | 3.8, 3.9        |
-| macOS (x86-64)    | 3.8, 3.9        |
-| Windows (x86-64)  | 3.8, 3.9        |
+| Branch    | Version | Status |
+|:----------|:--------|:-------|
+| `master`  | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json) | [![build-test](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml) |
+| `develop` | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json) | [![build-test](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build-test.yml) |
 
-### Documentation
-https://docs.nautilustrader.io
+| Platform         | Rust    | Python |
+|:-----------------|:--------|:-------|
+| Linux (x86_64)   | `TBA`   | `3.8+` |
+| macOS (x86_64)   | `TBA`   | `3.8+` |
+| Windows (x86_64) | `TBA`   | `3.8+` |
 
-### Support
-info@nautechsystems.io
+- **Website:** https://nautilustrader.io
+- **Docs:** https://docs.nautilustrader.io
+- **Support:** info@nautechsystems.io
 
 ## Introduction
 
@@ -42,9 +43,11 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Reliable:** Type safety through Cython. Redis backed performant state persistence.
 - **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker.
 - **Integrated:** Modular adapters mean any REST/FIX/WebSocket API can be integrated.
-- **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data.
+- **Advanced:** Time-in-force options `GTD`, `IOC`, `FOK` etc, advanced order types and triggers, `post-only`, `reduce-only`, `hidden`. Contingency order lists including `OCO`, `OTO` etc.
+- **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies.
 - **AI Agent Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES).
+- **Distributed:** Run backtests synchronously or as a graph distributed across a `dask` cluster.
 
 ## Why NautilusTrader?
 
@@ -62,8 +65,8 @@ platform was designed from the ground up to hold its own in terms of performance
 
 Python has simply caught up in performance (via Cython offering C-level speed) and general tooling,
 making it a suitable language for building a large system such as this. The benefit being that a
-Python native environment can be offered, suitable for professional quantitative traders and hedge
-funds.
+Python native environment can be offered, suitable for professional quantitative traders and trading
+firms.
 
 ## Why Python?
 
@@ -90,8 +93,8 @@ written in Cython, however the libraries can be accessed from both pure Python a
 ## Architecture Quality Attributes
 
 - Reliability
-- Testability
 - Performance
+- Testability
 - Modularity
 - Maintainability
 - Deployability
@@ -115,27 +118,14 @@ To install the latest binary wheel from PyPI:
 
 Refer to the [Installation Guide](https://docs.nautilustrader.io/getting-started/installation) for other options and further details.
 
-## Makefile
-
-A `Makefile` is provided to automate most installation and build tasks. It provides the following targets:
-- `make install` -- Installs the package using poetry.
-- `make build` -- Runs the Cython build script.
-- `make clean` -- Cleans all none source artifacts from the repository.
-- `make clean-build` -- Runs `clean` and then `build`.
-- `make docs` -- Builds the internal documentation HTML using Sphinx.
-- `make pre-commit` -- Runs the pre-commit checks over all files.
-
 ## Examples
 
 Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity is import we recommend Cython).
 The below are some examples of this:
-- [indicator written in Python](/examples/indicators/ema.py) example.
-- [indicators written in Cython](/nautilus_trader/indicators/) examples.
-- [strategies written in Python ](/examples/strategies/) examples.
-- [strategy written in Cython ](/examples/strategies/ema_cross_cython.pyx) example.
-
-Here are some examples of backtest launch scripts using a `BacktestEngine` directly, and test data contained within the repo.
-- [backtest](/examples/backtest/) examples.
+- [indicator](/examples/indicators/ema.py) example written in Python.
+- [indicator](/nautilus_trader/indicators/) examples written in Cython.
+- [strategy](/examples/strategies/) examples written in both Python and Cython.
+- [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
 
 ## Release schedule
 
@@ -146,6 +136,16 @@ NautilusTrader is currently following a bi-weekly release schedule.
 We aim to make the developer experience for this hybrid codebase of Cython and Python
 as pleasant as possible.
 Please refer to the [Developer Guide](https://docs.nautilustrader.io/developer-guide) for helpful information.
+
+## Makefile
+
+A `Makefile` is provided to automate most installation and build tasks. It provides the following targets:
+- `make install` -- Installs the package using poetry.
+- `make build` -- Runs the Cython build script.
+- `make clean` -- Cleans all none source artifacts from the repository.
+- `make clean-build` -- Runs `clean` and then `build`.
+- `make docs` -- Builds the internal documentation HTML using Sphinx.
+- `make pre-commit` -- Runs the pre-commit checks over all files.
 
 ## Contributing
 
@@ -159,7 +159,7 @@ Please make all pull requests to the `develop` branch.
 
 ## License
 
-NautilusTrader is licensed under the LGPL v3.0 as found in the [LICENSE](https://github.com/nautechsystems/nautilus_trader/blob/master/LICENSE) file.
+NautilusTrader is licensed under the [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html).
 
 Contributors are also required to sign a standard Contributor License Agreement (CLA), which is administered automatically through [CLA Assistant](https://cla-assistant.io/).
 

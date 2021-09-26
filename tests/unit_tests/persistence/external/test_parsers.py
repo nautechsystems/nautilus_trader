@@ -16,25 +16,23 @@
 import pathlib
 import sys
 from functools import partial
-from unittest.mock import Mock
 
-import fsspec.implementations.memory
 import orjson
 import pandas as pd
 import pytest
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.backtest.data.wranglers import QuoteTickDataWrangler
 from nautilus_trader.core.datetime import dt_to_unix_nanos
-from nautilus_trader.data.wrangling import QuoteTickDataWrangler
 from nautilus_trader.model.instruments.currency import CurrencySpot
 from nautilus_trader.persistence.catalog import DataCatalog
 from nautilus_trader.persistence.external.core import make_raw_files
 from nautilus_trader.persistence.external.core import process_raw_file
-from nautilus_trader.persistence.external.parsers import ByteReader
-from nautilus_trader.persistence.external.parsers import CSVReader
-from nautilus_trader.persistence.external.parsers import LinePreprocessor
-from nautilus_trader.persistence.external.parsers import ParquetReader
-from nautilus_trader.persistence.external.parsers import TextReader
+from nautilus_trader.persistence.external.readers import ByteReader
+from nautilus_trader.persistence.external.readers import CSVReader
+from nautilus_trader.persistence.external.readers import LinePreprocessor
+from nautilus_trader.persistence.external.readers import ParquetReader
+from nautilus_trader.persistence.external.readers import TextReader
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.test_kit import PACKAGE_ROOT
@@ -54,15 +52,7 @@ class TestPersistenceParsers:
         data_catalog_setup()
         self.catalog = DataCatalog.from_env()
         self.reader = MockReader()
-        self.mock_catalog = self._mock_catalog()
         self.line_preprocessor = TestLineProcessor()
-
-    @staticmethod
-    def _mock_catalog():
-        mock_catalog = Mock(spec=DataCatalog)
-        mock_catalog.path = "/root"
-        mock_catalog.fs = fsspec.implementations.memory.MemoryFileSystem()
-        return mock_catalog
 
     def test_line_preprocessor_preprocess(self):
         line = b'2021-06-29T06:04:11.943000 - {"op":"mcm","id":1,"clk":"AOkiAKEMAL4P","pt":1624946651810}\n'
@@ -155,7 +145,7 @@ class TestPersistenceParsers:
 
         reader = TextReader(line_parser=parser)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/binance-btcusdt-instrument.txt")[0]
-        result = process_raw_file(catalog=self.mock_catalog, raw_file=raw_file, reader=reader)
+        result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         expected = 1
         assert result == expected
 
@@ -164,23 +154,21 @@ class TestPersistenceParsers:
             if data is None:
                 return
             data.loc[:, "timestamp"] = pd.to_datetime(data["timestamp"])
-            wrangler = QuoteTickDataWrangler(
-                instrument=TestInstrumentProvider.default_fx_ccy("AUD/USD"),
-                data_quotes=data.set_index("timestamp"),
-            )
-            wrangler.pre_process(0)
-            yield from wrangler.build_ticks()
+            instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+            wrangler = QuoteTickDataWrangler(instrument)
+            ticks = wrangler.process(data.set_index("timestamp"))
+            yield from ticks
 
         reader = CSVReader(block_parser=parser, as_dataframe=True)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/truefx-audusd-ticks.csv")[0]
-        result = process_raw_file(catalog=self.mock_catalog, raw_file=raw_file, reader=reader)
+        result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         assert result == 100000
 
     def test_text_reader(self):
         provider = BetfairInstrumentProvider.from_instruments([])
         reader = BetfairTestStubs.betfair_reader(provider)  # type: TextReader
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/betfair/1.166811431.bz2")[0]
-        result = process_raw_file(catalog=self.mock_catalog, raw_file=raw_file, reader=reader)
+        result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         assert result == 22692
 
     def test_byte_json_parser(self):
@@ -191,7 +179,7 @@ class TestPersistenceParsers:
 
         reader = ByteReader(block_parser=parser)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/crypto*.json")[0]
-        result = process_raw_file(catalog=self.mock_catalog, raw_file=raw_file, reader=reader)
+        result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         assert result == 6
 
     def test_parquet_reader(self):
@@ -200,16 +188,14 @@ class TestPersistenceParsers:
                 return
             data.loc[:, "timestamp"] = pd.to_datetime(data["timestamp"])
             data = data.set_index("timestamp")[["bid", "ask", "bid_size", "ask_size"]]
-            wrangler = QuoteTickDataWrangler(
-                instrument=TestInstrumentProvider.default_fx_ccy("AUD/USD"),
-                data_quotes=data,
-            )
-            wrangler.pre_process(0)
-            yield from wrangler.build_ticks()
+            instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+            wrangler = QuoteTickDataWrangler(instrument)
+            ticks = wrangler.process(data)
+            yield from ticks
 
         reader = ParquetReader(parser=parser)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/binance-btcusdt-quotes.parquet")[0]
-        result = process_raw_file(catalog=self.mock_catalog, raw_file=raw_file, reader=reader)
+        result = process_raw_file(catalog=self.catalog, raw_file=raw_file, reader=reader)
         assert result == 451
 
 

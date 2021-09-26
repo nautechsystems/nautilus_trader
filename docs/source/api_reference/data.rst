@@ -39,12 +39,3 @@ Messages
    :inherited-members:
    :members:
    :member-order: bysource
-
-Wrangling
----------
-
-.. automodule:: nautilus_trader.data.wrangling
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource

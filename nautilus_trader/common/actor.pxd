@@ -24,7 +24,7 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
-from nautilus_trader.model.c_enums.book_level cimport BookLevel
+from nautilus_trader.model.c_enums.book_type cimport BookType
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
@@ -98,13 +98,13 @@ cdef class Actor(Component):
     cpdef void subscribe_order_book_deltas(
         self,
         InstrumentId instrument_id,
-        BookLevel level=*,
+        BookType book_type=*,
         dict kwargs=*,
     ) except *
     cpdef void subscribe_order_book_snapshots(
         self,
         InstrumentId instrument_id,
-        BookLevel level=*,
+        BookType book_type=*,
         int depth=*,
         int interval_ms=*,
         dict kwargs=*,

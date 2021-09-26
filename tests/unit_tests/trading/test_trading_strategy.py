@@ -15,13 +15,14 @@
 
 from datetime import datetime
 from datetime import timedelta
+from decimal import Decimal
 
 import pytest
 import pytz
 
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.backtest.exchange import SimulatedExchange
-from nautilus_trader.backtest.execution import BacktestExecClient
+from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
@@ -119,6 +120,8 @@ class TestTradingStrategy:
             account_type=AccountType.MARGIN,
             base_currency=USD,
             starting_balances=[Money(1_000_000, USD)],
+            default_leverage=Decimal(50),
+            leverages={},
             is_frozen_account=False,
             cache=self.cache,
             instruments=[USDJPY_SIM],
@@ -314,7 +317,7 @@ class TestTradingStrategy:
 
         # Assert
         assert "on_reset" in strategy.calls
-        assert strategy.state == ComponentState.INITIALIZED
+        assert strategy.is_initialized
         assert strategy.ema1.count == 0
         assert strategy.ema2.count == 0
 
@@ -338,7 +341,7 @@ class TestTradingStrategy:
 
         # Assert
         assert "on_dispose" in strategy.calls
-        assert strategy.state == ComponentState.DISPOSED
+        assert strategy.is_disposed
 
     def test_save_load(self):
         # Arrange
@@ -360,7 +363,7 @@ class TestTradingStrategy:
         # Assert
         assert state == {"UserState": b"1"}
         assert "on_save" in strategy.calls
-        assert strategy.state == ComponentState.INITIALIZED
+        assert strategy.is_initialized
 
     def test_register_indicator_for_quote_ticks_when_already_registered(self):
         # Arrange
@@ -732,6 +735,7 @@ class TestTradingStrategy:
 
         # Act
         strategy.submit_order(order)
+        self.exchange.process(0)
 
         # Assert
         assert order in strategy.cache.orders()
@@ -793,9 +797,11 @@ class TestTradingStrategy:
         )
 
         strategy.submit_order(order)
+        self.exchange.process(0)
 
         # Act
         strategy.cancel_order(order)
+        self.exchange.process(0)
 
         # Assert
         assert order in strategy.cache.orders()
@@ -826,10 +832,12 @@ class TestTradingStrategy:
         )
 
         strategy.submit_order(order)
+        self.exchange.process(0)
         self.exec_engine.process(TestStubs.event_order_pending_cancel(order))
 
         # Act
         strategy.cancel_order(order)
+        self.exchange.process(0)
 
         # Assert
         assert strategy.cache.orders()[0].status == OrderStatus.PENDING_CANCEL
@@ -858,10 +866,12 @@ class TestTradingStrategy:
         )
 
         strategy.submit_order(order)
+        self.exchange.process(0)
         self.exec_engine.process(TestStubs.event_order_expired(order))
 
         # Act
         strategy.cancel_order(order)
+        self.exchange.process(0)
 
         # Assert
         assert strategy.cache.orders()[0].status == OrderStatus.EXPIRED
@@ -890,6 +900,7 @@ class TestTradingStrategy:
         )
 
         strategy.submit_order(order)
+        self.exchange.process(0)
         self.exec_engine.process(TestStubs.event_order_pending_update(order))
 
         # Act
@@ -898,6 +909,7 @@ class TestTradingStrategy:
             quantity=Quantity.from_int(100000),
             price=Price.from_str("90.000"),
         )
+        self.exchange.process(0)
 
         # Assert
         assert self.exec_engine.command_count == 1
@@ -922,6 +934,7 @@ class TestTradingStrategy:
         )
 
         strategy.submit_order(order)
+        self.exchange.process(0)
         self.exec_engine.process(TestStubs.event_order_pending_cancel(order))
 
         # Act
@@ -930,6 +943,7 @@ class TestTradingStrategy:
             quantity=Quantity.from_int(100000),
             price=Price.from_str("90.000"),
         )
+        self.exchange.process(0)
 
         # Assert
         assert self.exec_engine.command_count == 1
@@ -954,6 +968,7 @@ class TestTradingStrategy:
         )
 
         strategy.submit_order(order)
+        self.exchange.process(0)
         self.exec_engine.process(TestStubs.event_order_expired(order))
 
         # Act
@@ -962,6 +977,7 @@ class TestTradingStrategy:
             quantity=Quantity.from_int(100000),
             price=Price.from_str("90.000"),
         )
+        self.exchange.process(0)
 
         # Assert
         assert self.exec_engine.command_count == 1
@@ -1017,6 +1033,7 @@ class TestTradingStrategy:
         )
 
         strategy.submit_order(order)
+        self.exchange.process(0)
 
         # Act
         strategy.modify_order(
@@ -1024,6 +1041,7 @@ class TestTradingStrategy:
             quantity=Quantity.from_int(110000),
             price=Price.from_str("90.001"),
         )
+        self.exchange.process(0)
 
         # Assert
         assert strategy.cache.orders()[0] == order
@@ -1062,10 +1080,13 @@ class TestTradingStrategy:
         )
 
         strategy.submit_order(order1)
+        self.exchange.process(0)
         strategy.submit_order(order2)
+        self.exchange.process(0)
 
         # Act
         strategy.cancel_all_orders(USDJPY_SIM.id)
+        self.exchange.process(0)
 
         # Assert
         assert order1 in self.cache.orders()
@@ -1100,12 +1121,15 @@ class TestTradingStrategy:
         )
 
         strategy.submit_order(order1)
+        self.exchange.process(0)
         strategy.submit_order(order2, PositionId("1-001"))  # Generated by exchange
+        self.exchange.process(0)
 
         position = strategy.cache.positions_closed()[0]
 
         # Act
         strategy.flatten_position(position)
+        self.exchange.process(0)
 
         # Assert
         assert strategy.portfolio.is_completely_flat()
@@ -1129,11 +1153,13 @@ class TestTradingStrategy:
         )
 
         strategy.submit_order(order)
+        self.exchange.process(0)
 
         position = self.cache.positions_open()[0]
 
         # Act
         strategy.flatten_position(position)
+        self.exchange.process(0)
 
         # Assert
         assert order.status == OrderStatus.FILLED
@@ -1167,10 +1193,13 @@ class TestTradingStrategy:
         )
 
         strategy.submit_order(order1)
+        self.exchange.process(0)
         strategy.submit_order(order2)
+        self.exchange.process(0)
 
         # Act
         strategy.flatten_all_positions(USDJPY_SIM.id)
+        self.exchange.process(0)
 
         # Assert
         assert order1.status == OrderStatus.FILLED

@@ -13,17 +13,28 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.instruments.base cimport Instrument
 
-cpdef enum BookLevel:
-    L1 = 1,
-    L2 = 2,
-    L3 = 3,
+
+cdef class QuoteTickDataWrangler:
+    cdef readonly Instrument instrument
+
+    cpdef QuoteTick _build_tick(self, double[:] values, double timestamp)
 
 
-cdef class BookLevelParser:
+cdef class TradeTickDataWrangler:
+    cdef readonly Instrument instrument
+    cdef readonly processed_data
 
-    @staticmethod
-    cdef str to_str(int value)
+    cpdef TradeTick _build_tick(self, str[:] values, double timestamp)
 
-    @staticmethod
-    cdef BookLevel from_str(str value) except *
+
+cdef class BarDataWrangler:
+    cdef readonly BarType bar_type
+    cdef readonly Instrument instrument
+
+    cpdef Bar _build_bar(self, double[:] values, double timestamp)

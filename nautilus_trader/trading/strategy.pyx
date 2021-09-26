@@ -31,7 +31,6 @@ import pydantic
 
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.c_enums.component_state cimport ComponentState
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport CMD
@@ -838,7 +837,7 @@ cdef class TradingStrategy(Actor):
         if is_historical:
             return  # Don't pass to on_tick()
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_quote_tick(tick)
             except Exception as ex:
@@ -875,7 +874,7 @@ cdef class TradingStrategy(Actor):
         if is_historical:
             return  # Don't pass to on_tick()
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_trade_tick(tick)
             except Exception as ex:
@@ -912,7 +911,7 @@ cdef class TradingStrategy(Actor):
         if is_historical:
             return  # Don't pass to on_bar()
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_bar(bar)
             except Exception as ex:
@@ -942,7 +941,7 @@ cdef class TradingStrategy(Actor):
         else:
             self.log.info(f"{RECV}{EVT} {event}.")
 
-        if self._fsm.state == ComponentState.RUNNING:
+        if self.is_running_c():
             try:
                 self.on_event(event)
             except Exception as ex:

@@ -19,8 +19,6 @@ import pytest
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import PositionSide
@@ -29,8 +27,6 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.portfolio.portfolio import Portfolio
 from tests.test_kit.providers import TestInstrumentProvider
 from tests.test_kit.stubs import TestStubs
 
@@ -44,37 +40,12 @@ BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 class TestMarginAccount:
     def setup(self):
         # Fixture Setup
-        self.clock = TestClock()
-        self.logger = Logger(self.clock)
-
         self.trader_id = TestStubs.trader_id()
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
             strategy_id=StrategyId("S-001"),
             clock=TestClock(),
-        )
-
-        self.msgbus = MessageBus(
-            trader_id=self.trader_id,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.cache = TestStubs.cache()
-
-        self.portfolio = Portfolio(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exec_engine = ExecutionEngine(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
         )
 
     def test_instantiated_accounts_basic_properties(self):
@@ -88,6 +59,18 @@ class TestMarginAccount:
         assert isinstance(hash(account), int)
         assert account == account
         assert not account != account
+        assert account.default_leverage == Decimal(1)
+
+    def test_set_default_leverage(self):
+        # Arrange
+        account = TestStubs.margin_account()
+
+        # Act
+        account.set_default_leverage(Decimal(100))
+
+        # Assert
+        assert account.default_leverage == Decimal(100)
+        assert account.leverages() == {}
 
     def test_set_leverage(self):
         # Arrange
@@ -139,6 +122,21 @@ class TestMarginAccount:
         # Assert
         assert result == Money(48.06, USD)
 
+    def test_calculate_margin_init_with_default_leverage(self):
+        # Arrange
+        account = TestStubs.margin_account()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        account.set_default_leverage(Decimal(10))
+
+        result = account.calculate_margin_init(
+            instrument=instrument,
+            quantity=Quantity.from_int(100000),
+            price=Price.from_str("0.80000"),
+        )
+
+        # Assert
+        assert result == Money(240.32, USD)
+
     @pytest.mark.parametrize(
         "inverse_as_quote, expected",
         [
@@ -176,3 +174,37 @@ class TestMarginAccount:
 
         # Assert
         assert result == Money(0.03697710, BTC)
+
+    def test_calculate_margin_maint_with_leverage_fx_instrument(self):
+        # Arrange
+        account = TestStubs.margin_account()
+        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        account.set_default_leverage(Decimal(50))
+
+        # Act
+        result = account.calculate_margin_maint(
+            instrument=instrument,
+            side=PositionSide.LONG,
+            quantity=Quantity.from_int(1_000_000),
+            avg_open_px=Price.from_str("1.00000"),
+        )
+
+        # Assert
+        assert result == Money(600.40, USD)
+
+    def test_calculate_margin_maint_with_leverage_inverse_instrument(self):
+        # Arrange
+        account = TestStubs.margin_account()
+        instrument = TestInstrumentProvider.xbtusd_bitmex()
+        account.set_default_leverage(Decimal(10))
+
+        # Act
+        result = account.calculate_margin_maint(
+            instrument=instrument,
+            side=PositionSide.LONG,
+            quantity=Quantity.from_int(100000),
+            avg_open_px=Price.from_str("100000.00"),
+        )
+
+        # Assert
+        assert result == Money(0.00042500, BTC)

@@ -36,7 +36,7 @@ cdef class Account:
         self.base_currency = event.base_currency
         self.calculate_account_state = calculate_account_state
 
-        self._events = [event]      # type: list[AccountState]
+        self._events = [event]      # type: list[AccountState]  # `last_event_c()` guaranteed
         self._commissions = {}      # type: dict[Currency, Money]
         self._balances = {}         # type: dict[Currency, AccountBalance]
         self._balances_starting = {b.currency: b.total for b in event.balances}
@@ -65,7 +65,7 @@ cdef class Account:
         return self.type == AccountType.MARGIN
 
     cdef AccountState last_event_c(self):
-        return self._events[-1]  # Always at least one event
+        return self._events[-1]  # Guaranteed at least one event from initialization
 
     cdef list events_c(self):
         return self._events.copy()
@@ -398,7 +398,6 @@ cdef class Account:
             If `balances` is empty.
 
         """
-        Condition.not_none(balances, "balances")
         Condition.not_empty(balances, "balances")
 
         cdef AccountBalance balance
