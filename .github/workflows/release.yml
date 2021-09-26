@@ -39,7 +39,7 @@ jobs:
 
   tag-release:
     needs: [ test-pip-install ]
-    name: tag-release - Python 3.9 (Linux)
+    name: tag-release - Python 3.9 (ubuntu-latest)
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create-release.outputs.upload_url }}
@@ -109,7 +109,7 @@ jobs:
 
   publish-sdist:
     needs: [ tag-release ]
-    name: publish-sdist - Python 3.9 (Linux)
+    name: publish-sdist - Python 3.9 (ubuntu-latest)
     runs-on: ubuntu-latest
     env:
       # Skip build copy to avoid *.so files being copied into the source
