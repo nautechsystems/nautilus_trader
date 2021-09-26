@@ -1,6 +1,6 @@
 name: release
 
-# Release NautilusTrader on completion of the `build_test` workflow
+# Release NautilusTrader on successful completion of the `build` workflow
 
 on:
   workflow_run:
