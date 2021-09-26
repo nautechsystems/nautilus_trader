@@ -1,6 +1,6 @@
 name: docs
 
-# Build and test NautilusTrader then build and deploy the docs
+# Build and deploy the NautilusTrader API documentation
 
 on:
   push:
