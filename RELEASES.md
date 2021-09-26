@@ -1,6 +1,6 @@
 # NautilusTrader 1.130.0 Beta - Release Notes
 
-Released on **TBD**
+Released on 26th, September 2021
 
 ## Breaking Changes
 - `BacktestEngine.run` method signature change.
