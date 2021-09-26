@@ -1,6 +1,6 @@
 name: build
 
-# Build and test NautilusTrader then build and deploy the docs
+# Build and test NautilusTrader
 
 on:
   push:
@@ -77,12 +77,12 @@ jobs:
         run: nox -rs tests_with_integration -- no-parallel
 
       # Run code coverage (Linux)
-      - name: Run code coverage
+      - name: Run code coverage (Linux)
         if: runner.os == 'Linux'
         run: nox -rs coverage
 
       # Upload coverage report to codecov (Linux)
-      - name: Upload coverage report
+      - name: Upload coverage report (Linux)
         if: runner.os == 'Linux'
         uses: codecov/codecov-action@v1
         with:
@@ -91,12 +91,12 @@ jobs:
           verbose: true
 
       # Run performance tests (Linux)
-      - name: Run performance tests
+      - name: Run performance tests (Linux)
         if: runner.os == 'Linux'
         run: nox -rs performance_tests
 
       # Store benchmark results (Linux)
-      - name: Store benchmark result
+      - name: Store benchmark result (Linux)
         if: runner.os == 'Linux'
         uses: rhysd/github-action-benchmark@v1
         with:
