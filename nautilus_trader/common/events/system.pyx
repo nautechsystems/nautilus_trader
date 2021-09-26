@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from orjson import orjson
+import ast
 
 from libc.stdint cimport int64_t
 
@@ -98,7 +98,7 @@ cdef class ComponentStateChanged(Event):
             component_id=ComponentId(values["component_id"]),
             component_type=values["component_type"],
             state=ComponentStateParser.from_str(values["state"]),
-            config=orjson.loads(values["config"]),
+            config=ast.literal_eval(values["config"]),
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
@@ -113,7 +113,7 @@ cdef class ComponentStateChanged(Event):
             "component_id": obj.component_id.value,
             "component_type": obj.component_type,
             "state": ComponentStateParser.to_str(obj.state),
-            "config": orjson.dumps(obj.config),
+            "config": str(obj.config),  # Convert config dict to string for safer serialization
             "event_id": obj.id.value,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
