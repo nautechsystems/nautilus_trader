@@ -1,7 +1,7 @@
 repos:
 
   - repo: https://github.com/psf/black
-    rev: 21.8b0
+    rev: 21.9b0
     hooks:
       - id: black
         args: [
@@ -25,7 +25,7 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v3.4.0
+    rev: v4.0.1
     hooks:
       - id: forbid-new-submodules
       - id: fix-encoding-pragma
@@ -133,6 +133,7 @@ repos:
     rev: 0.5.0
     hooks:
       - id: nbstripout
+
 
 # Flake8 ignore justifications
 # ----------------------------
