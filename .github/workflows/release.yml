@@ -170,7 +170,7 @@ jobs:
           ASSET_PATH: ${{ steps.vars.outputs.asset_path }}
           ASSET_NAME: ${{ steps.vars.outputs.asset_name }}
         with:
-          upload_url: ${{ needs.tag_release.outputs.upload_url }}
+          upload_url: ${{ needs.tag-release.outputs.upload_url }}
           asset_path: ${{ env.ASSET_PATH }}
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/zip
@@ -244,7 +244,7 @@ jobs:
           ASSET_PATH: ${{ steps.vars-unix.outputs.asset_path }}
           ASSET_NAME: ${{ steps.vars-unix.outputs.asset_name }}
         with:
-          upload_url: ${{ needs.tag_release.outputs.upload_url }}
+          upload_url: ${{ needs.tag-release.outputs.upload_url }}
           asset_path: ${{ env.ASSET_PATH }}
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/wheel
@@ -266,7 +266,7 @@ jobs:
           ASSET_PATH: ${{ steps.vars-windows.outputs.asset_path }}
           ASSET_NAME: ${{ steps.vars-windows.outputs.asset_name }}
         with:
-          upload_url: ${{ needs.tag_release.outputs.upload_url }}
+          upload_url: ${{ needs.tag-release.outputs.upload_url }}
           asset_path: ${{ env.ASSET_PATH }}
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/wheel
