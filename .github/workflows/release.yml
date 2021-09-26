@@ -5,7 +5,7 @@ name: release
 on:
   workflow_run:
     workflows:
-      - build-test
+      - build
     branches: [ master ]
     types:
       - completed
@@ -18,10 +18,16 @@ jobs:
       matrix:
         os: [ ubuntu-latest, macos-latest ]
         python-version: [ 3.8, 3.9 ]
-    name: test_pip_install - Python ${{ matrix.python-version }} (${{ matrix.os }})
+    name: test-pip-install - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
+
+      # Python setup
+      - name: Set up Python environment
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
 
       # Install build dependencies
       - name: Install build dependencies
@@ -42,6 +48,8 @@ jobs:
       - uses: actions/checkout@v2
         with:
           fetch-depth: 2
+
+      # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
@@ -114,6 +122,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+
+      # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
@@ -185,6 +195,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+
+      # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v2
         with:
